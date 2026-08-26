@@ -357,6 +357,20 @@ impl Emitter {
         }
     }
 
+    pub fn module_by_type(&self, module_type: &str) -> Option<&ModuleInstance> {
+        self.modules
+            .iter()
+            .find(|module| module.module_type.0 == module_type)
+    }
+
+    pub fn module_by_id(&self, id: ModuleId) -> Option<&ModuleInstance> {
+        self.modules.iter().find(|module| module.id == id)
+    }
+
+    pub fn module_by_id_mut(&mut self, id: ModuleId) -> Option<&mut ModuleInstance> {
+        self.modules.iter_mut().find(|module| module.id == id)
+    }
+
     fn emission(&self) -> (f32, u32) {
         match &self.module(MODULE_EMISSION).parameters {
             ModuleParameters::Emission {
@@ -773,6 +787,7 @@ pub enum Value {
     Range(ScalarRange),
     Curve(Curve),
     Gradient(Gradient),
+    Shape(EmitterShape),
     Parameter(ParameterId),
     Asset(AssetId),
     Material(MaterialId),
@@ -1147,6 +1162,23 @@ fn validate_value(
                 format!("{path}.id"),
             );
         }
+        Value::Shape(shape) => match shape {
+            EmitterShape::Circle { radius } | EmitterShape::Ring { radius }
+                if !radius.is_finite() || *radius < 0.0 =>
+            {
+                invalid_value(report, path, "shape radius must be finite and non-negative");
+            }
+            EmitterShape::Cone { radius, depth }
+                if !radius.is_finite() || *radius < 0.0 || !depth.is_finite() || *depth <= 0.0 =>
+            {
+                invalid_value(
+                    report,
+                    path,
+                    "cone radius must be non-negative and depth must be positive",
+                );
+            }
+            _ => {}
+        },
         Value::Parameter(id) if id.is_nil() => {
             invalid_value(report, path, "parameter reference cannot be nil");
         }

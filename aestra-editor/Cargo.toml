@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+aestra-authoring = { path = "../crates/aestra-authoring" }
 aestra-bevy = { path = "../aestra-bevy" }
 bevy.workspace = true
 rfd = "0.15"

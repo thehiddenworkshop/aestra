@@ -6,6 +6,13 @@ This plan turns `aestra_ai_native_vfx_editor_plan.md` into a build sequence for 
 current repository. The source document remains the long-term product and
 architecture vision; this file is the shorter delivery plan.
 
+## Current delivery status
+
+- M0 reference behavior and architecture decisions: complete.
+- M1 semantic core and format v2 foundation: complete for the initial module set.
+- M2 deterministic authoring operations: complete for current editor operations.
+- Next: M3 module registry, compiler frontend, and CPU runtime extraction.
+
 ## 1. Assessment of the current prototype
 
 The existing vertical slice already proves several useful contracts:

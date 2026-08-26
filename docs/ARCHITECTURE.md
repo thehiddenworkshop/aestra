@@ -10,7 +10,10 @@ The UI is built directly with Bevy UI. Reusable editor widgets remain independen
 
 ```text
 Authoring UI (Bevy UI)
-              │ edits
+              │ submits
+              ▼
+Semantic commands + transactions (aestra-authoring)
+              │ validates and edits
               ▼
 EffectAsset + validation (aestra-core)
               │ compiles
@@ -32,9 +35,16 @@ Runtime IR (planned) ──► CPU reference runtime
 - Exposes `AestraPlugin` and `EffectPlayer` for direct integration in Bevy applications.
 - Owns no editor or viewer state.
 
+### `aestra-authoring`
+
+- Owns semantic commands, atomic transactions, inverse-command history, locks, selection, and diffs.
+- Executes independently of Bevy UI so scripts and future AI clients use the same path as the editor.
+- Validates a complete transaction before replacing the working document.
+- Stores forward and inverse commands for undo/redo rather than document snapshots.
+
 ### `aestra-editor`
 
-- Owns selection, undo/redo, panels, viewport controls, and timeline state.
+- Owns panels, viewport controls, timeline state, and an authoring-backed session.
 - Presents Bevy-native UI and editor interactions.
 - Consumes `aestra-bevy` through an explicit session resource.
 - Must not add game-only concepts to the semantic asset schema.

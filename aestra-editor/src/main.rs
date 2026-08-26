@@ -696,7 +696,7 @@ fn spawn_asset_browser(
             );
             toolbar_button(panel, "+ Add Emitter", EditorAction::AddLayer, PlainMarker);
             for (index, layer) in session.effect.emitters.iter().enumerate() {
-                let selected = index == session.selected_layer;
+                let selected = index == session.selected_layer_index();
                 panel
                     .spawn((
                         Button,
@@ -863,7 +863,7 @@ fn spawn_preview_grid(parent: &mut ChildSpawnerCommands) {
 }
 
 fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
-    let layer = &session.effect.emitters[session.selected_layer];
+    let layer = session.selected_layer();
     parent
         .spawn((
             Node {
@@ -1504,7 +1504,7 @@ fn handle_buttons(
             Interaction::Hovered => background.0 = theme::BUTTON_HOVER,
             Interaction::None => {
                 background.0 = layer_row.map_or(theme::BUTTON, |row| {
-                    if row.0 == session.selected_layer {
+                    if row.0 == session.selected_layer_index() {
                         theme::SELECTION
                     } else {
                         theme::PANEL_DARK
@@ -1549,96 +1549,29 @@ fn handle_buttons(
                     EditorAction::AddLayer => session.add_layer(),
                     EditorAction::DuplicateLayer => session.duplicate_selected_layer(),
                     EditorAction::DeleteLayer => session.delete_selected_layer(),
-                    EditorAction::SelectLayer(index) => {
-                        session.selected_layer = index;
-                        session.status = format!("Selected {}", session.selected_layer().name);
-                        session.ui_revision += 1;
-                    }
-                    EditorAction::SpawnRate(delta) => {
-                        session.edit("Changed spawn rate", true, |session| {
-                            let layer = session.selected_layer_mut();
-                            *layer.spawn_rate_mut() = (layer.spawn_rate() + delta).max(0.0);
-                        });
-                    }
-                    EditorAction::Burst(delta) => {
-                        session.edit("Changed burst count", true, |session| {
-                            let layer = session.selected_layer_mut();
-                            let burst_count = layer.burst_count();
-                            *layer.burst_count_mut() = if delta.is_negative() {
-                                burst_count.saturating_sub(delta.unsigned_abs())
-                            } else {
-                                burst_count.saturating_add(delta as u32)
-                            };
-                        });
-                    }
-                    EditorAction::Lifetime(delta) => {
-                        session.edit("Changed lifetime", true, |session| {
-                            let layer = session.selected_layer_mut();
-                            let lifetime = layer.lifetime_mut();
-                            lifetime.min = (lifetime.min + delta).max(0.05);
-                            lifetime.max = (lifetime.max + delta).max(lifetime.min);
-                        });
-                    }
-                    EditorAction::LayerStart(delta) => {
-                        session.edit("Moved layer", true, |session| {
-                            let duration = session.effect.duration;
-                            let layer = session.selected_layer_mut();
-                            layer.start_time =
-                                (layer.start_time + delta).clamp(0.0, (duration - 0.05).max(0.0));
-                            layer.duration = layer.duration.min(duration - layer.start_time);
-                        });
-                    }
+                    EditorAction::SelectLayer(index) => session.select_layer(index),
+                    EditorAction::SpawnRate(delta) => session.adjust_spawn_rate(delta),
+                    EditorAction::Burst(delta) => session.adjust_burst_count(delta),
+                    EditorAction::Lifetime(delta) => session.adjust_lifetime(delta),
+                    EditorAction::LayerStart(delta) => session.adjust_selected_start(delta),
                     EditorAction::LayerDuration(delta) => {
-                        session.edit("Trimmed layer", true, |session| {
-                            let effect_duration = session.effect.duration;
-                            let layer = session.selected_layer_mut();
-                            layer.duration = (layer.duration + delta)
-                                .clamp(0.05, effect_duration - layer.start_time);
-                        });
+                        session.adjust_selected_duration(delta);
                     }
                     EditorAction::EffectDuration(delta) => {
-                        session.edit("Changed effect duration", true, |session| {
-                            session.effect.duration = (session.effect.duration + delta).max(0.25);
-                            let effect_duration = session.effect.duration;
-                            for layer in &mut session.effect.emitters {
-                                layer.start_time =
-                                    layer.start_time.min((effect_duration - 0.05).max(0.0));
-                                layer.duration = layer
-                                    .duration
-                                    .min(effect_duration - layer.start_time)
-                                    .max(0.05);
-                            }
-                            session.time = session.time.min(effect_duration);
-                        });
+                        session.adjust_effect_duration(delta);
                     }
                     EditorAction::CurveValue { curve, key, delta } => {
-                        session.edit("Edited curve", true, |session| {
-                            let layer = session.selected_layer_mut();
-                            let keys = match curve {
-                                CurveTarget::Size => &mut layer.size_curve_mut().keys,
-                                CurveTarget::Opacity => &mut layer.opacity_curve_mut().keys,
-                            };
-                            if let Some(curve_key) = keys.get_mut(key) {
-                                curve_key.value = match curve {
-                                    CurveTarget::Size => (curve_key.value + delta).max(0.0),
-                                    CurveTarget::Opacity => {
-                                        (curve_key.value + delta).clamp(0.0, 1.0)
-                                    }
-                                };
-                            }
-                        });
+                        let (parameter, range) = match curve {
+                            CurveTarget::Size => ("size", 0.0..=f32::MAX),
+                            CurveTarget::Opacity => ("opacity", 0.0..=1.0),
+                        };
+                        session.adjust_curve_key(parameter, key, delta, range);
                     }
                     EditorAction::ColorPreset => {
-                        session.edit("Changed color gradient", true, |session| {
-                            cycle_color_gradient(session.selected_layer_mut());
-                        });
+                        let gradient = cycled_color_gradient(session.selected_layer());
+                        session.set_color_gradient(gradient);
                     }
-                    EditorAction::ToggleLayer => {
-                        session.edit("Toggled layer visibility", true, |session| {
-                            let layer = session.selected_layer_mut();
-                            layer.enabled = !layer.enabled;
-                        });
-                    }
+                    EditorAction::ToggleLayer => session.toggle_selected_layer(),
                     EditorAction::ToggleGrid => menu.show_grid = !menu.show_grid,
                     EditorAction::ShowAbout => menu.show_about = true,
                     EditorAction::CloseAbout => menu.show_about = false,
@@ -1706,7 +1639,8 @@ fn save_session(session: &mut EditorSession, save_as: bool) {
     }
 }
 
-fn cycle_color_gradient(layer: &mut aestra_bevy::Emitter) {
+fn cycled_color_gradient(layer: &aestra_bevy::Emitter) -> aestra_bevy::Gradient {
+    let mut gradient = layer.color_gradient().clone();
     let first = layer
         .color_gradient()
         .keys
@@ -1731,8 +1665,8 @@ fn cycle_color_gradient(layer: &mut aestra_bevy::Emitter) {
             [0.35, 0.02, 0.01, 0.0],
         ]
     };
-    let key_count = layer.color_gradient().keys.len();
-    for (index, key) in layer.color_gradient_mut().keys.iter_mut().enumerate() {
+    let key_count = gradient.keys.len();
+    for (index, key) in gradient.keys.iter_mut().enumerate() {
         let palette_index = if key_count <= 1 {
             0
         } else {
@@ -1740,6 +1674,7 @@ fn cycle_color_gradient(layer: &mut aestra_bevy::Emitter) {
         };
         key.color = palette[palette_index];
     }
+    gradient
 }
 
 fn scrub_timeline(
@@ -1877,7 +1812,7 @@ fn update_editor_labels(
     if !session.is_changed() {
         return;
     }
-    let layer = &session.effect.emitters[session.selected_layer];
+    let layer = session.selected_layer();
     for (mut text, playback, time, status, title, values, count) in &mut labels {
         if playback.is_some() {
             text.0 = if session.playing { "Pause" } else { "Play" }.into();
@@ -1916,7 +1851,7 @@ fn update_layer_selection(
         return;
     }
     for (row, mut color) in &mut rows {
-        color.0 = if row.0 == session.selected_layer {
+        color.0 = if row.0 == session.selected_layer_index() {
             theme::SELECTION
         } else {
             theme::PANEL_DARK

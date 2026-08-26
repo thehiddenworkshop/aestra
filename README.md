@@ -46,10 +46,12 @@ aestra/
 ├── aestra-bevy/             Bevy playback and rendering integration
 ├── aestra-viewer/           Viewer, frame capture, and contact-sheet binary
 ├── assets/effects/          Authored `.aestra.ron` choreography assets
-└── crates/aestra-core/      Engine-independent semantic effect model
+└── crates/
+    ├── aestra-core/         Engine-independent semantic effect model
+    └── aestra-authoring/    Commands, transactions, history, locks, and diffs
 ```
 
-The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns the format-v2 semantic model, typed IDs, persistence, and structured validation. `aestra-bevy` adapts that model to Bevy playback, and both binaries use the same integration path.
+The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns the format-v2 semantic model, typed IDs, persistence, and structured validation. `aestra-authoring` owns UI-independent commands, atomic transactions, inverse-command history, semantic selection, locks, and diffs. `aestra-bevy` adapts the model to Bevy playback, and both binaries use the same integration path.
 
 ## Viewer and visual analysis
 

@@ -5,6 +5,7 @@ members = [
     "aestra-bevy",
     "aestra-viewer",
     "crates/aestra-core",
+    "crates/aestra-authoring",
 ]
 
 [workspace.package]
