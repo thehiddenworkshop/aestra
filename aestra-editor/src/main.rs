@@ -1,8 +1,18 @@
 mod session;
 mod theme;
 
-use aestra_bevy::EffectAsset;
-use bevy::{prelude::*, ui::RelativeCursorPosition, window::WindowResolution};
+use aestra_bevy::{
+    DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterShape, ModuleId, ModuleInstance,
+    ModuleParameters, RendererId, RendererProperties, StageKind, Value,
+};
+use aestra_compiler::{ModuleMetadata, ModuleRegistry};
+use bevy::{
+    input::{ButtonState, keyboard::KeyboardInput, mouse::MouseScrollUnit},
+    picking::events::{Pointer, Scroll},
+    prelude::*,
+    ui::RelativeCursorPosition,
+    window::WindowResolution,
+};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use session::EditorSession;
 use std::{fs, path::PathBuf};
@@ -22,6 +32,8 @@ fn main() {
         ))
         .insert_resource(EffectCatalog::scan())
         .init_resource::<MenuState>()
+        .init_resource::<EditorModuleRegistry>()
+        .init_resource::<ModulePaletteState>()
         .init_resource::<RenderedUiRevision>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -36,6 +48,7 @@ fn main() {
         .add_systems(
             Update,
             (
+                module_palette_keyboard,
                 keyboard_shortcuts,
                 handle_buttons,
                 scrub_timeline,
@@ -68,29 +81,92 @@ enum EditorAction {
     DuplicateLayer,
     DeleteLayer,
     SelectLayer(usize),
-    SpawnRate(f32),
-    Burst(i32),
-    Lifetime(f32),
     LayerStart(f32),
     LayerDuration(f32),
     EffectDuration(f32),
-    CurveValue {
-        curve: CurveTarget,
-        key: usize,
-        delta: f32,
+    OpenModulePalette(StackStage),
+    CloseModulePalette,
+    AddModule(usize),
+    AddSpriteRenderer,
+    AdjustModuleInput {
+        module: ModuleId,
+        input: u8,
+        direction: i8,
     },
-    ColorPreset,
-    ToggleLayer,
+    ToggleModule(ModuleId),
+    MoveModule(ModuleId, i8),
+    DuplicateModule(ModuleId),
+    DeleteModule(ModuleId),
+    ToggleRenderer(RendererId),
+    CycleRendererBlend(RendererId),
+    AdjustRendererSoftness(RendererId, i8),
+    DuplicateRenderer(RendererId),
+    DeleteRenderer(RendererId),
     ToggleMenu(MenuKind),
     ToggleGrid,
     ShowAbout,
     CloseAbout,
 }
 
-#[derive(Clone, Copy)]
-enum CurveTarget {
-    Size,
-    Opacity,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StackStage {
+    EmitterUpdate,
+    ParticleSpawn,
+    ParticleUpdate,
+    Render,
+}
+
+impl StackStage {
+    const ALL: [Self; 4] = [
+        Self::EmitterUpdate,
+        Self::ParticleSpawn,
+        Self::ParticleUpdate,
+        Self::Render,
+    ];
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::EmitterUpdate => "EMITTER UPDATE",
+            Self::ParticleSpawn => "PARTICLE SPAWN",
+            Self::ParticleUpdate => "PARTICLE UPDATE",
+            Self::Render => "RENDER",
+        }
+    }
+
+    fn semantic(self) -> Option<StageKind> {
+        match self {
+            Self::EmitterUpdate => Some(StageKind::EmitterUpdate),
+            Self::ParticleSpawn => Some(StageKind::ParticleSpawn),
+            Self::ParticleUpdate => Some(StageKind::ParticleUpdate),
+            Self::Render => None,
+        }
+    }
+}
+
+#[derive(Resource)]
+struct EditorModuleRegistry(ModuleRegistry);
+
+impl Default for EditorModuleRegistry {
+    fn default() -> Self {
+        Self(ModuleRegistry::builtin())
+    }
+}
+
+#[derive(Resource)]
+struct ModulePaletteState {
+    open: bool,
+    stage: StackStage,
+    query: String,
+}
+
+impl Default for ModulePaletteState {
+    fn default() -> Self {
+        Self {
+            open: false,
+            stage: StackStage::EmitterUpdate,
+            query: String::new(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -183,9 +259,6 @@ struct StatusLabel;
 struct InspectorTitle;
 
 #[derive(Component)]
-struct InspectorValues;
-
-#[derive(Component)]
 struct ParticleCountLabel;
 
 #[derive(Component)]
@@ -199,10 +272,19 @@ fn setup_editor(
     session: Res<EditorSession>,
     menu: Res<MenuState>,
     catalog: Res<EffectCatalog>,
+    registry: Res<EditorModuleRegistry>,
+    palette: Res<ModulePaletteState>,
     mut rendered: ResMut<RenderedUiRevision>,
 ) {
     commands.spawn(Camera2d);
-    spawn_editor_ui(&mut commands, &session, &menu, &catalog);
+    spawn_editor_ui(
+        &mut commands,
+        &session,
+        &menu,
+        &catalog,
+        &registry,
+        &palette,
+    );
     rendered.0 = session.ui_revision;
 }
 
@@ -211,6 +293,8 @@ fn spawn_editor_ui(
     session: &EditorSession,
     menu: &MenuState,
     catalog: &EffectCatalog,
+    registry: &EditorModuleRegistry,
+    palette: &ModulePaletteState,
 ) {
     commands
         .spawn((
@@ -238,7 +322,7 @@ fn spawn_editor_ui(
             .with_children(|main| {
                 spawn_asset_browser(main, session, catalog);
                 spawn_preview(main);
-                spawn_inspector(main, session);
+                spawn_inspector(main, session, registry, palette);
             });
             spawn_timeline(root, session);
             spawn_status_bar(root);
@@ -861,12 +945,18 @@ fn spawn_preview_grid(parent: &mut ChildSpawnerCommands) {
     }
 }
 
-fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_inspector(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    registry: &EditorModuleRegistry,
+    palette: &ModulePaletteState,
+) {
     let layer = session.selected_layer();
+    let emitter_index = session.selected_layer_index();
     parent
         .spawn((
             Node {
-                width: Val::Px(286.0),
+                width: Val::Px(390.0),
                 height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 border: UiRect::left(Val::Px(1.0)),
@@ -876,7 +966,7 @@ fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
             BorderColor::all(theme::BORDER),
         ))
         .with_children(|panel| {
-            panel_heading(panel, "INSPECTOR", "EMITTER");
+            panel_heading(panel, "MODULE STACK", "LIVE COMPILE");
             panel.spawn((
                 Text::new(&layer.name),
                 InspectorTitle,
@@ -890,122 +980,746 @@ fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                     ..default()
                 },
             ));
-            inspector_section(panel, "EMISSION");
-            property_stepper(
-                panel,
-                &format!("Spawn rate  {:.1}/s", layer.spawn_rate()),
-                EditorAction::SpawnRate(-5.0),
-                EditorAction::SpawnRate(5.0),
-            );
-            property_stepper(
-                panel,
-                &format!("Burst  {}", layer.burst_count()),
-                EditorAction::Burst(-4),
-                EditorAction::Burst(4),
-            );
-            property_stepper(
-                panel,
-                &format!(
-                    "Lifetime  {:.2}-{:.2}s",
-                    layer.lifetime().min,
-                    layer.lifetime().max
-                ),
-                EditorAction::Lifetime(-0.1),
-                EditorAction::Lifetime(0.1),
-            );
-            inspector_section(panel, "CHOREOGRAPHY");
-            property_stepper(
-                panel,
-                &format!("Start  {:.2}s", layer.start_time),
-                EditorAction::LayerStart(-0.05),
-                EditorAction::LayerStart(0.05),
-            );
-            property_stepper(
-                panel,
-                &format!("Duration  {:.2}s", layer.duration),
-                EditorAction::LayerDuration(-0.05),
-                EditorAction::LayerDuration(0.05),
-            );
-
-            inspector_section(panel, "CURVES & COLOR");
-            spawn_curve_preview(panel, layer.size_curve());
-            spawn_gradient_preview(panel, layer.color_gradient());
-            let size_middle = layer.size_curve().keys.len() / 2;
-            let size_end = layer.size_curve().keys.len().saturating_sub(1);
-            let opacity_middle = layer.opacity_curve().keys.len() / 2;
-            property_stepper(
-                panel,
-                &format!("Size start  {:.1}", layer.size_curve().keys[0].value),
-                EditorAction::CurveValue {
-                    curve: CurveTarget::Size,
-                    key: 0,
-                    delta: -1.0,
-                },
-                EditorAction::CurveValue {
-                    curve: CurveTarget::Size,
-                    key: 0,
-                    delta: 1.0,
-                },
-            );
-            property_stepper(
-                panel,
-                &format!(
-                    "Size peak  {:.1}",
-                    layer.size_curve().keys[size_middle].value
-                ),
-                EditorAction::CurveValue {
-                    curve: CurveTarget::Size,
-                    key: size_middle,
-                    delta: -1.0,
-                },
-                EditorAction::CurveValue {
-                    curve: CurveTarget::Size,
-                    key: size_middle,
-                    delta: 1.0,
-                },
-            );
-            property_stepper(
-                panel,
-                &format!("Size end  {:.1}", layer.size_curve().keys[size_end].value),
-                EditorAction::CurveValue {
-                    curve: CurveTarget::Size,
-                    key: size_end,
-                    delta: -1.0,
-                },
-                EditorAction::CurveValue {
-                    curve: CurveTarget::Size,
-                    key: size_end,
-                    delta: 1.0,
-                },
-            );
-            property_stepper(
-                panel,
-                &format!(
-                    "Opacity peak  {:.2}",
-                    layer.opacity_curve().keys[opacity_middle].value
-                ),
-                EditorAction::CurveValue {
-                    curve: CurveTarget::Opacity,
-                    key: opacity_middle,
-                    delta: -0.1,
-                },
-                EditorAction::CurveValue {
-                    curve: CurveTarget::Opacity,
-                    key: opacity_middle,
-                    delta: 0.1,
-                },
-            );
-            inspector_action_button(panel, "Cycle color gradient", EditorAction::ColorPreset);
-            inspector_action_button(
-                panel,
-                if layer.enabled {
-                    "Layer visible"
-                } else {
-                    "Layer hidden"
-                },
-                EditorAction::ToggleLayer,
-            );
+            panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        flex_direction: FlexDirection::Column,
+                        overflow: Overflow::scroll_y(),
+                        scrollbar_width: 8.0,
+                        padding: UiRect::bottom(Val::Px(12.0)),
+                        ..default()
+                    },
+                    ScrollPosition::default(),
+                ))
+                .observe(
+                    |scroll: On<Pointer<Scroll>>,
+                     mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
+                        if let Ok((mut position, computed)) = nodes.get_mut(scroll.entity) {
+                            let delta = match scroll.unit {
+                                MouseScrollUnit::Line => scroll.y * 24.0,
+                                MouseScrollUnit::Pixel => scroll.y,
+                            };
+                            let range = (computed.content_size().y - computed.size().y).max(0.0)
+                                * computed.inverse_scale_factor;
+                            position.y = (position.y - delta).clamp(0.0, range);
+                        }
+                    },
+                )
+                .with_children(|stack| {
+                    property_stepper(
+                        stack,
+                        &format!("Start  {:.2}s", layer.start_time),
+                        EditorAction::LayerStart(-0.05),
+                        EditorAction::LayerStart(0.05),
+                    );
+                    property_stepper(
+                        stack,
+                        &format!("Duration  {:.2}s", layer.duration),
+                        EditorAction::LayerDuration(-0.05),
+                        EditorAction::LayerDuration(0.05),
+                    );
+                    for stage in StackStage::ALL {
+                        spawn_stage_header(stack, stage);
+                        if stage == StackStage::Render {
+                            for (renderer_index, renderer) in layer.renderers.iter().enumerate() {
+                                spawn_renderer_card(
+                                    stack,
+                                    renderer,
+                                    &format!(
+                                        "effect.emitters[{emitter_index}].renderers[{renderer_index}]"
+                                    ),
+                                    session,
+                                );
+                            }
+                            spawn_stage_diagnostics(
+                                stack,
+                                stage,
+                                &format!("effect.emitters[{emitter_index}].renderers"),
+                                session,
+                                registry,
+                            );
+                            continue;
+                        }
+                        let semantic = stage.semantic().expect("module stage has semantics");
+                        for (module_index, module) in layer.modules.iter().enumerate() {
+                            if module.stage != semantic {
+                                continue;
+                            }
+                            spawn_module_card(
+                                stack,
+                                module,
+                                registry.0.get(&module.module_type),
+                                &format!(
+                                    "effect.emitters[{emitter_index}].modules[{module_index}]"
+                                ),
+                                session,
+                            );
+                        }
+                        spawn_stage_diagnostics(
+                            stack,
+                            stage,
+                            &format!("effect.emitters[{emitter_index}].modules"),
+                            session,
+                            registry,
+                        );
+                    }
+                });
+            if palette.open {
+                spawn_module_palette(panel, registry, palette);
+            }
         });
+}
+
+fn spawn_stage_header(parent: &mut ChildSpawnerCommands, stage: StackStage) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(30.0),
+                padding: UiRect::horizontal(Val::Px(10.0)),
+                margin: UiRect::top(Val::Px(5.0)),
+                align_items: AlignItems::Center,
+                border: UiRect::bottom(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(stage.title()),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::ACCENT),
+            ));
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            mini_button(row, "+", EditorAction::OpenModulePalette(stage));
+        });
+}
+
+fn spawn_module_card(
+    parent: &mut ChildSpawnerCommands,
+    module: &ModuleInstance,
+    metadata: Option<&ModuleMetadata>,
+    diagnostic_path: &str,
+    session: &EditorSession,
+) {
+    let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
+    let meta = metadata.map_or_else(
+        || "Unknown module".to_string(),
+        |item| format!("{}  ·  cost {}", item.category, item.approximate_cost),
+    );
+    parent
+        .spawn((
+            Node {
+                width: Val::Auto,
+                margin: UiRect::axes(Val::Px(9.0), Val::Px(3.0)),
+                padding: UiRect::all(Val::Px(8.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(4.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(if module.enabled {
+                theme::PANEL_LIGHT
+            } else {
+                theme::PANEL_DARK
+            }),
+            BorderColor::all(
+                if session
+                    .diagnostics
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.path.starts_with(diagnostic_path))
+                {
+                    Color::srgb(0.82, 0.28, 0.24)
+                } else {
+                    theme::BORDER_BRIGHT
+                },
+            ),
+        ))
+        .with_children(|card| {
+            card.spawn(Node {
+                width: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(4.0),
+                ..default()
+            })
+            .with_children(|header| {
+                header.spawn((
+                    Text::new(display_name),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(if module.enabled {
+                        theme::TEXT
+                    } else {
+                        theme::TEXT_FAINT
+                    }),
+                    Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    },
+                ));
+                stack_button(
+                    header,
+                    if module.enabled { "ON" } else { "OFF" },
+                    EditorAction::ToggleModule(module.id),
+                    34.0,
+                );
+                stack_button(header, "↑", EditorAction::MoveModule(module.id, -1), 24.0);
+                stack_button(header, "↓", EditorAction::MoveModule(module.id, 1), 24.0);
+                stack_button(
+                    header,
+                    "DUP",
+                    EditorAction::DuplicateModule(module.id),
+                    34.0,
+                );
+                stack_button(header, "×", EditorAction::DeleteModule(module.id), 24.0);
+            });
+            card.spawn((
+                Text::new(meta),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+            if let Some(metadata) = metadata {
+                for (input_index, input) in metadata.inputs.iter().enumerate() {
+                    let value = module_parameter(module, input.name)
+                        .map_or_else(|| "missing".into(), format_value);
+                    property_stepper(
+                        card,
+                        &format!("{}  {value}", pretty_name(input.name)),
+                        EditorAction::AdjustModuleInput {
+                            module: module.id,
+                            input: input_index as u8,
+                            direction: -1,
+                        },
+                        EditorAction::AdjustModuleInput {
+                            module: module.id,
+                            input: input_index as u8,
+                            direction: 1,
+                        },
+                    );
+                }
+            }
+            spawn_inline_diagnostics(card, diagnostic_path, session);
+        });
+}
+
+fn spawn_renderer_card(
+    parent: &mut ChildSpawnerCommands,
+    renderer: &aestra_bevy::RendererInstance,
+    diagnostic_path: &str,
+    session: &EditorSession,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Auto,
+                margin: UiRect::axes(Val::Px(9.0), Val::Px(3.0)),
+                padding: UiRect::all(Val::Px(8.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(5.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_LIGHT),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|card| {
+            card.spawn(Node {
+                width: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(4.0),
+                ..default()
+            })
+            .with_children(|header| {
+                header.spawn((
+                    Text::new("Sprite Renderer"),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT),
+                    Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    },
+                ));
+                stack_button(
+                    header,
+                    if renderer.enabled { "ON" } else { "OFF" },
+                    EditorAction::ToggleRenderer(renderer.id),
+                    34.0,
+                );
+                stack_button(
+                    header,
+                    "DUP",
+                    EditorAction::DuplicateRenderer(renderer.id),
+                    34.0,
+                );
+                stack_button(header, "×", EditorAction::DeleteRenderer(renderer.id), 24.0);
+            });
+            inspector_action_button(
+                card,
+                &format!("Blend  {:?}", renderer.blend),
+                EditorAction::CycleRendererBlend(renderer.id),
+            );
+            let RendererProperties::Sprite { softness } = renderer.properties else {
+                spawn_inline_diagnostics(card, diagnostic_path, session);
+                return;
+            };
+            property_stepper(
+                card,
+                &format!("Softness  {softness:.2}"),
+                EditorAction::AdjustRendererSoftness(renderer.id, -1),
+                EditorAction::AdjustRendererSoftness(renderer.id, 1),
+            );
+            spawn_inline_diagnostics(card, diagnostic_path, session);
+        });
+}
+
+fn spawn_inline_diagnostics(
+    parent: &mut ChildSpawnerCommands,
+    path: &str,
+    session: &EditorSession,
+) {
+    for diagnostic in session
+        .diagnostics
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.path.starts_with(path))
+    {
+        let color = match diagnostic.severity {
+            DiagnosticSeverity::Error => Color::srgb(1.0, 0.38, 0.32),
+            DiagnosticSeverity::Warning => Color::srgb(1.0, 0.72, 0.28),
+            DiagnosticSeverity::Info => theme::TEXT_MUTED,
+        };
+        parent.spawn((
+            Text::new(format!("{:?}: {}", diagnostic.code, diagnostic.message)),
+            TextFont {
+                font_size: FontSize::Px(8.0),
+                ..default()
+            },
+            TextColor(color),
+        ));
+    }
+}
+
+fn spawn_stage_diagnostics(
+    parent: &mut ChildSpawnerCommands,
+    stage: StackStage,
+    path: &str,
+    session: &EditorSession,
+    registry: &EditorModuleRegistry,
+) {
+    for diagnostic in session
+        .diagnostics
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.path == path)
+        .filter(|diagnostic| {
+            if stage == StackStage::Render {
+                return true;
+            }
+            if diagnostic.code != DiagnosticCode::MissingModule {
+                return stage == StackStage::EmitterUpdate;
+            }
+            registry.0.iter().any(|metadata| {
+                metadata.stages.contains(
+                    &stage
+                        .semantic()
+                        .expect("non-render stages have semantic stages"),
+                ) && diagnostic.message.contains(&metadata.type_id.0)
+            })
+        })
+    {
+        parent.spawn((
+            Text::new(format!("⚠ {}", diagnostic.message)),
+            TextFont {
+                font_size: FontSize::Px(8.0),
+                ..default()
+            },
+            TextColor(Color::srgb(1.0, 0.38, 0.32)),
+            Node {
+                margin: UiRect::horizontal(Val::Px(10.0)),
+                ..default()
+            },
+        ));
+    }
+}
+
+fn spawn_module_palette(
+    parent: &mut ChildSpawnerCommands,
+    registry: &EditorModuleRegistry,
+    palette: &ModulePaletteState,
+) {
+    parent
+        .spawn((
+            GlobalZIndex(120),
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Px(10.0),
+                top: Val::Px(76.0),
+                width: Val::Px(360.0),
+                max_height: Val::Px(430.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(6.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::ACCENT_DIM),
+        ))
+        .with_children(|popup| {
+            popup
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|header| {
+                    header.spawn((
+                        Text::new(format!("ADD TO {}", palette.stage.title())),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::ACCENT),
+                        Node {
+                            flex_grow: 1.0,
+                            ..default()
+                        },
+                    ));
+                    stack_button(header, "×", EditorAction::CloseModulePalette, 28.0);
+                });
+            popup.spawn((
+                Text::new(format!(
+                    "Search: {}▏",
+                    if palette.query.is_empty() {
+                        "type to filter"
+                    } else {
+                        &palette.query
+                    }
+                )),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(32.0),
+                    padding: UiRect::all(Val::Px(8.0)),
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BackgroundColor(theme::PANEL_DARK),
+                BorderColor::all(theme::BORDER_BRIGHT),
+            ));
+            let query = palette.query.to_lowercase();
+            let mut results = 0;
+            if palette.stage == StackStage::Render
+                && (query.is_empty() || "sprite renderer render".contains(&query))
+            {
+                palette_result(
+                    popup,
+                    "Sprite Renderer",
+                    "Render · translucent particle sprites",
+                    EditorAction::AddSpriteRenderer,
+                );
+                results += 1;
+            }
+            for (index, metadata) in registry.0.iter().enumerate() {
+                let Some(stage) = palette.stage.semantic() else {
+                    continue;
+                };
+                if !metadata.stages.contains(&stage) || !module_matches(metadata, &query) {
+                    continue;
+                }
+                palette_result(
+                    popup,
+                    metadata.display_name,
+                    &format!(
+                        "{} · {} · cost {}",
+                        metadata.category, metadata.type_id.0, metadata.approximate_cost
+                    ),
+                    EditorAction::AddModule(index),
+                );
+                results += 1;
+            }
+            if results == 0 {
+                popup.spawn((
+                    Text::new("No modules match this stage and search."),
+                    TextFont {
+                        font_size: FontSize::Px(10.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_FAINT),
+                ));
+            }
+        });
+}
+
+fn palette_result(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    subtitle: &str,
+    action: EditorAction,
+) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::all(Val::Px(8.0)),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::FlexStart,
+                row_gap: Val::Px(2.0),
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+            ));
+            button.spawn((
+                Text::new(subtitle),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+        });
+}
+
+fn stack_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAction, width: f32) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: Val::Px(width),
+                height: Val::Px(21.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+            ));
+        });
+}
+
+fn module_matches(metadata: &ModuleMetadata, query: &str) -> bool {
+    query.is_empty()
+        || metadata.display_name.to_lowercase().contains(query)
+        || metadata.category.to_lowercase().contains(query)
+        || metadata.type_id.0.to_lowercase().contains(query)
+        || metadata.tags.iter().any(|tag| tag.contains(query))
+}
+
+fn module_parameter(module: &ModuleInstance, name: &str) -> Option<Value> {
+    match (&module.parameters, name) {
+        (
+            ModuleParameters::Emission {
+                spawn_rate,
+                burst_count: _,
+            },
+            "spawn_rate",
+        ) => Some(Value::Scalar(*spawn_rate)),
+        (ModuleParameters::Emission { burst_count, .. }, "burst_count") => {
+            Some(Value::U32(*burst_count))
+        }
+        (ModuleParameters::Shape { shape }, "shape") => Some(Value::Shape(*shape)),
+        (ModuleParameters::Initialize { lifetime, .. }, "lifetime") => {
+            Some(Value::Range(*lifetime))
+        }
+        (ModuleParameters::Initialize { speed, .. }, "speed") => Some(Value::Range(*speed)),
+        (
+            ModuleParameters::Initialize {
+                direction_degrees, ..
+            },
+            "direction_degrees",
+        ) => Some(Value::Scalar(*direction_degrees)),
+        (ModuleParameters::Initialize { spread_degrees, .. }, "spread_degrees") => {
+            Some(Value::Scalar(*spread_degrees))
+        }
+        (
+            ModuleParameters::Initialize {
+                angular_velocity, ..
+            },
+            "angular_velocity",
+        ) => Some(Value::Range(*angular_velocity)),
+        (ModuleParameters::Motion { gravity, .. }, "gravity") => Some(Value::Vec2(*gravity)),
+        (ModuleParameters::Motion { drag, .. }, "drag") => Some(Value::Scalar(*drag)),
+        (ModuleParameters::Motion { turbulence, .. }, "turbulence") => {
+            Some(Value::Scalar(*turbulence))
+        }
+        (ModuleParameters::Appearance { size, .. }, "size") => Some(Value::Curve(size.clone())),
+        (ModuleParameters::Appearance { opacity, .. }, "opacity") => {
+            Some(Value::Curve(opacity.clone()))
+        }
+        (ModuleParameters::Appearance { color, .. }, "color") => {
+            Some(Value::Gradient(color.clone()))
+        }
+        (ModuleParameters::Custom(values), name) => values.get(name).cloned(),
+        _ => None,
+    }
+}
+
+fn format_value(value: Value) -> String {
+    match value {
+        Value::Bool(value) => value.to_string(),
+        Value::U32(value) => value.to_string(),
+        Value::Scalar(value) => format!("{value:.2}"),
+        Value::Vec2(value) => format!("[{:.1}, {:.1}]", value[0], value[1]),
+        Value::Vec3(value) => format!("[{:.1}, {:.1}, {:.1}]", value[0], value[1], value[2]),
+        Value::Vec4(value) => format!(
+            "[{:.1}, {:.1}, {:.1}, {:.1}]",
+            value[0], value[1], value[2], value[3]
+        ),
+        Value::Text(value) => value,
+        Value::Range(value) => format!("{:.2} – {:.2}", value.min, value.max),
+        Value::Curve(value) => format!("Curve · {} keys", value.keys.len()),
+        Value::Gradient(value) => format!("Gradient · {} keys", value.keys.len()),
+        Value::Shape(EmitterShape::Point) => "Point".into(),
+        Value::Shape(EmitterShape::Circle { radius }) => format!("Circle · r {radius:.1}"),
+        Value::Shape(EmitterShape::Ring { radius }) => format!("Ring · r {radius:.1}"),
+        Value::Shape(EmitterShape::Cone { radius, depth }) => {
+            format!("Cone · r {radius:.1} d {depth:.1}")
+        }
+        Value::Parameter(id) => format!("Parameter {id}"),
+        Value::Asset(id) => format!("Asset {id}"),
+        Value::Material(id) => format!("Material {id}"),
+    }
+}
+
+fn pretty_name(name: &str) -> String {
+    let mut result = name.replace('_', " ");
+    if let Some(first) = result.get_mut(0..1) {
+        first.make_ascii_uppercase();
+    }
+    result
+}
+
+fn adjusted_module_value(module: &ModuleInstance, name: &str, direction: i8) -> Option<Value> {
+    let direction = direction as f32;
+    let value = module_parameter(module, name)?;
+    Some(match value {
+        Value::Bool(value) => Value::Bool(!value),
+        Value::U32(value) => Value::U32(if direction < 0.0 {
+            value.saturating_sub(if name == "burst_count" { 4 } else { 1 })
+        } else {
+            value.saturating_add(if name == "burst_count" { 4 } else { 1 })
+        }),
+        Value::Scalar(value) => {
+            let step = match name {
+                "spawn_rate" | "direction_degrees" | "spread_degrees" => 5.0,
+                "drag" => 0.1,
+                _ => 0.5,
+            };
+            let mut value = value + direction * step;
+            if matches!(name, "spawn_rate" | "spread_degrees" | "drag") {
+                value = value.max(0.0);
+            }
+            Value::Scalar(value)
+        }
+        Value::Vec2(mut value) => {
+            value[1] += direction * 5.0;
+            Value::Vec2(value)
+        }
+        Value::Vec3(mut value) => {
+            for component in &mut value {
+                *component += direction * 0.1;
+            }
+            Value::Vec3(value)
+        }
+        Value::Vec4(mut value) => {
+            for component in &mut value {
+                *component += direction * 0.1;
+            }
+            Value::Vec4(value)
+        }
+        Value::Range(mut value) => {
+            let step = if name == "speed" { 5.0 } else { 0.1 };
+            value.min += direction * step;
+            value.max += direction * step;
+            if name == "lifetime" {
+                value.min = value.min.max(0.05);
+                value.max = value.max.max(value.min);
+            }
+            Value::Range(value)
+        }
+        Value::Curve(mut curve) => {
+            let index = curve.keys.len() / 2;
+            let key = curve.keys.get_mut(index)?;
+            let step = if name == "opacity" { 0.1 } else { 1.0 };
+            key.value = (key.value + direction * step).max(0.0);
+            if name == "opacity" {
+                key.value = key.value.min(1.0);
+            }
+            Value::Curve(curve)
+        }
+        Value::Gradient(mut gradient) => {
+            for key in &mut gradient.keys {
+                key.color.rotate_left(if direction < 0.0 { 3 } else { 1 });
+            }
+            Value::Gradient(gradient)
+        }
+        Value::Shape(shape) => {
+            let index = match shape {
+                EmitterShape::Point => 0,
+                EmitterShape::Circle { .. } => 1,
+                EmitterShape::Ring { .. } => 2,
+                EmitterShape::Cone { .. } => 3,
+            };
+            let next = (index as i8 + direction.signum() as i8).rem_euclid(4);
+            Value::Shape(match next {
+                0 => EmitterShape::Point,
+                1 => EmitterShape::Circle { radius: 12.0 },
+                2 => EmitterShape::Ring { radius: 12.0 },
+                _ => EmitterShape::Cone {
+                    radius: 12.0,
+                    depth: 24.0,
+                },
+            })
+        }
+        Value::Text(_) | Value::Parameter(_) | Value::Asset(_) | Value::Material(_) => return None,
+    })
 }
 
 fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
@@ -1263,25 +1977,6 @@ fn panel_heading(parent: &mut ChildSpawnerCommands, title: &str, meta: &str) {
         });
 }
 
-fn inspector_section(parent: &mut ChildSpawnerCommands, title: &str) {
-    parent.spawn((
-        Text::new(title),
-        TextFont {
-            font_size: FontSize::Px(9.0),
-            ..default()
-        },
-        TextColor(theme::ACCENT),
-        Node {
-            width: Val::Percent(100.0),
-            height: Val::Px(27.0),
-            padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
-            margin: UiRect::top(Val::Px(4.0)),
-            ..default()
-        },
-        BackgroundColor(theme::PANEL),
-    ));
-}
-
 fn property_stepper(
     parent: &mut ChildSpawnerCommands,
     label: &str,
@@ -1373,74 +2068,51 @@ fn inspector_action_button(parent: &mut ChildSpawnerCommands, label: &str, actio
         });
 }
 
-fn spawn_curve_preview(parent: &mut ChildSpawnerCommands, curve: &aestra_bevy::Curve) {
-    let maximum = curve
-        .keys
-        .iter()
-        .map(|key| key.value)
-        .fold(0.001_f32, f32::max);
-    parent
-        .spawn((
-            Node {
-                width: Val::Auto,
-                height: Val::Px(26.0),
-                margin: UiRect::horizontal(Val::Px(12.0)),
-                padding: UiRect::all(Val::Px(2.0)),
-                align_items: AlignItems::End,
-                column_gap: Val::Px(1.0),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(theme::TIMELINE_BG),
-            BorderColor::all(theme::BORDER),
-        ))
-        .with_children(|preview| {
-            for index in 0..24 {
-                let value = curve.sample(index as f32 / 23.0) / maximum;
-                preview.spawn((
-                    Node {
-                        flex_grow: 1.0,
-                        height: Val::Percent((value * 100.0).clamp(2.0, 100.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::ACCENT_DIM),
-                ));
+fn module_palette_keyboard(
+    mut input: MessageReader<KeyboardInput>,
+    mut palette: ResMut<ModulePaletteState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !palette.open {
+        return;
+    }
+    let mut changed = false;
+    for event in input.read() {
+        if event.state != ButtonState::Pressed {
+            continue;
+        }
+        match event.key_code {
+            KeyCode::Escape => {
+                palette.open = false;
+                changed = true;
             }
-        });
-}
-
-fn spawn_gradient_preview(parent: &mut ChildSpawnerCommands, gradient: &aestra_bevy::Gradient) {
-    parent
-        .spawn((
-            Node {
-                width: Val::Auto,
-                height: Val::Px(14.0),
-                margin: UiRect::horizontal(Val::Px(12.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BorderColor::all(theme::BORDER),
-        ))
-        .with_children(|preview| {
-            for index in 0..24 {
-                let color = gradient.sample(index as f32 / 23.0);
-                preview.spawn((
-                    Node {
-                        flex_grow: 1.0,
-                        height: Val::Percent(100.0),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(color[0], color[1], color[2], color[3])),
-                ));
+            KeyCode::Backspace => {
+                changed |= palette.query.pop().is_some();
             }
-        });
+            _ => {
+                if let Some(text) = &event.text {
+                    let clean = text.chars().filter(|character| !character.is_control());
+                    let previous = palette.query.len();
+                    palette.query.extend(clean);
+                    changed |= palette.query.len() != previous;
+                }
+            }
+        }
+    }
+    if changed {
+        session.ui_revision += 1;
+    }
 }
 
 fn keyboard_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
+    palette: Res<ModulePaletteState>,
 ) {
+    if palette.open {
+        return;
+    }
     let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
 
@@ -1497,6 +2169,8 @@ fn handle_buttons(
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     catalog: Res<EffectCatalog>,
+    registry: Res<EditorModuleRegistry>,
+    mut palette: ResMut<ModulePaletteState>,
 ) {
     for (interaction, action, layer_row, mut background) in &mut buttons {
         match *interaction {
@@ -1549,9 +2223,6 @@ fn handle_buttons(
                     EditorAction::DuplicateLayer => session.duplicate_selected_layer(),
                     EditorAction::DeleteLayer => session.delete_selected_layer(),
                     EditorAction::SelectLayer(index) => session.select_layer(index),
-                    EditorAction::SpawnRate(delta) => session.adjust_spawn_rate(delta),
-                    EditorAction::Burst(delta) => session.adjust_burst_count(delta),
-                    EditorAction::Lifetime(delta) => session.adjust_lifetime(delta),
                     EditorAction::LayerStart(delta) => session.adjust_selected_start(delta),
                     EditorAction::LayerDuration(delta) => {
                         session.adjust_selected_duration(delta);
@@ -1559,18 +2230,51 @@ fn handle_buttons(
                     EditorAction::EffectDuration(delta) => {
                         session.adjust_effect_duration(delta);
                     }
-                    EditorAction::CurveValue { curve, key, delta } => {
-                        let (parameter, range) = match curve {
-                            CurveTarget::Size => ("size", 0.0..=f32::MAX),
-                            CurveTarget::Opacity => ("opacity", 0.0..=1.0),
-                        };
-                        session.adjust_curve_key(parameter, key, delta, range);
+                    EditorAction::OpenModulePalette(stage) => {
+                        palette.open = true;
+                        palette.stage = stage;
+                        palette.query.clear();
+                        session.ui_revision += 1;
                     }
-                    EditorAction::ColorPreset => {
-                        let gradient = cycled_color_gradient(session.selected_layer());
-                        session.set_color_gradient(gradient);
+                    EditorAction::CloseModulePalette => {
+                        palette.open = false;
+                        session.ui_revision += 1;
                     }
-                    EditorAction::ToggleLayer => session.toggle_selected_layer(),
+                    EditorAction::AddModule(index) => {
+                        let module = registry
+                            .0
+                            .iter()
+                            .nth(index)
+                            .and_then(|metadata| registry.0.instantiate(&metadata.type_id));
+                        if let Some(module) = module {
+                            session.add_module(module);
+                            palette.open = false;
+                        } else {
+                            session.status = "Module is unavailable in the registry".into();
+                        }
+                    }
+                    EditorAction::AddSpriteRenderer => {
+                        session.add_sprite_renderer();
+                        palette.open = false;
+                    }
+                    EditorAction::AdjustModuleInput {
+                        module,
+                        input,
+                        direction,
+                    } => adjust_module_input(&mut session, &registry.0, module, input, direction),
+                    EditorAction::ToggleModule(id) => session.toggle_module(id),
+                    EditorAction::MoveModule(id, direction) => {
+                        session.move_module(id, direction);
+                    }
+                    EditorAction::DuplicateModule(id) => session.duplicate_module(id),
+                    EditorAction::DeleteModule(id) => session.delete_module(id),
+                    EditorAction::ToggleRenderer(id) => session.toggle_renderer(id),
+                    EditorAction::CycleRendererBlend(id) => session.cycle_renderer_blend(id),
+                    EditorAction::AdjustRendererSoftness(id, direction) => {
+                        session.adjust_renderer_softness(id, direction as f32 * 0.1);
+                    }
+                    EditorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
+                    EditorAction::DeleteRenderer(id) => session.delete_renderer(id),
                     EditorAction::ToggleGrid => menu.show_grid = !menu.show_grid,
                     EditorAction::ShowAbout => menu.show_about = true,
                     EditorAction::CloseAbout => menu.show_about = false,
@@ -1579,6 +2283,37 @@ fn handle_buttons(
             }
         }
     }
+}
+
+fn adjust_module_input(
+    session: &mut EditorSession,
+    registry: &ModuleRegistry,
+    module_id: ModuleId,
+    input_index: u8,
+    direction: i8,
+) {
+    let Some(module) = session
+        .selected_layer()
+        .modules
+        .iter()
+        .find(|module| module.id == module_id)
+    else {
+        session.status = "Module no longer exists".into();
+        return;
+    };
+    let Some(input) = registry
+        .get(&module.module_type)
+        .and_then(|metadata| metadata.inputs.get(input_index as usize))
+    else {
+        session.status = "Module input metadata is unavailable".into();
+        return;
+    };
+    let parameter = input.name;
+    let Some(value) = adjusted_module_value(module, parameter, direction) else {
+        session.status = format!("{parameter} needs a dedicated editor");
+        return;
+    };
+    session.set_module_parameter(module_id, parameter, value);
 }
 
 fn open_effect_dialog(session: &mut EditorSession) {
@@ -1636,44 +2371,6 @@ fn save_session(session: &mut EditorSession, save_as: bool) {
     if let Err(error) = session.save_as(path) {
         session.status = format!("Save failed: {error}");
     }
-}
-
-fn cycled_color_gradient(layer: &aestra_bevy::Emitter) -> aestra_bevy::Gradient {
-    let mut gradient = layer.color_gradient().clone();
-    let first = layer
-        .color_gradient()
-        .keys
-        .first()
-        .map_or([0.4, 0.4, 1.0, 1.0], |key| key.color);
-    let palette = if first[0] > 0.72 {
-        [
-            [0.25, 1.0, 0.68, 1.0],
-            [0.10, 0.62, 0.82, 1.0],
-            [0.02, 0.18, 0.28, 0.0],
-        ]
-    } else if first[1] > 0.85 {
-        [
-            [0.38, 0.72, 1.0, 1.0],
-            [0.68, 0.28, 1.0, 1.0],
-            [0.18, 0.05, 0.42, 0.0],
-        ]
-    } else {
-        [
-            [1.0, 0.82, 0.28, 1.0],
-            [1.0, 0.24, 0.08, 1.0],
-            [0.35, 0.02, 0.01, 0.0],
-        ]
-    };
-    let key_count = gradient.keys.len();
-    for (index, key) in gradient.keys.iter_mut().enumerate() {
-        let palette_index = if key_count <= 1 {
-            0
-        } else {
-            (index * 2 / (key_count - 1)).min(2)
-        };
-        key.color = palette[palette_index];
-    }
-    gradient
 }
 
 fn scrub_timeline(
@@ -1738,9 +2435,11 @@ fn rebuild_editor_ui(
     session: Res<EditorSession>,
     menu: Res<MenuState>,
     mut catalog: ResMut<EffectCatalog>,
+    registry_and_palette: (Res<EditorModuleRegistry>, Res<ModulePaletteState>),
     mut rendered: ResMut<RenderedUiRevision>,
     roots: Query<Entity, With<EditorRoot>>,
 ) {
+    let (registry, palette) = registry_and_palette;
     if rendered.0 == session.ui_revision {
         return;
     }
@@ -1748,7 +2447,14 @@ fn rebuild_editor_ui(
         commands.entity(root).despawn();
     }
     *catalog = EffectCatalog::scan();
-    spawn_editor_ui(&mut commands, &session, &menu, &catalog);
+    spawn_editor_ui(
+        &mut commands,
+        &session,
+        &menu,
+        &catalog,
+        &registry,
+        &palette,
+    );
     rendered.0 = session.ui_revision;
 }
 
@@ -1809,7 +2515,6 @@ fn update_editor_labels(
         Option<&TimeLabel>,
         Option<&StatusLabel>,
         Option<&InspectorTitle>,
-        Option<&InspectorValues>,
         Option<&ParticleCountLabel>,
     )>,
 ) {
@@ -1817,7 +2522,7 @@ fn update_editor_labels(
         return;
     }
     let layer = session.selected_layer();
-    for (mut text, playback, time, status, title, values, count) in &mut labels {
+    for (mut text, playback, time, status, title, count) in &mut labels {
         if playback.is_some() {
             text.0 = if session.playing { "Pause" } else { "Play" }.into();
         } else if time.is_some() {
@@ -1833,8 +2538,6 @@ fn update_editor_labels(
             );
         } else if title.is_some() {
             text.0 = layer.name.clone();
-        } else if values.is_some() {
-            text.0 = inspector_text(layer);
         } else if count.is_some() {
             text.0 = format!("{} LIVE PARTICLES  |  60 FPS", session.samples.len());
         }
@@ -1863,18 +2566,6 @@ fn update_layer_selection(
     }
 }
 
-fn inspector_text(layer: &aestra_bevy::Emitter) -> String {
-    format!(
-        "Spawn rate       {:>7.1} /s\nBurst            {:>7}\nLifetime      {:>4.2}-{:>4.2} s\nMax particles    {:>7}\nTurbulence       {:>7.1}",
-        layer.spawn_rate(),
-        layer.burst_count(),
-        layer.lifetime().min,
-        layer.lifetime().max,
-        layer.max_particles,
-        layer.turbulence(),
-    )
-}
-
 fn layer_color(index: usize) -> Color {
     match index % 4 {
         0 => Color::srgb(0.48, 0.31, 0.98),
@@ -1897,5 +2588,31 @@ mod tests {
         let effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("bundled effect should parse");
         assert_eq!(effect.format_version, 2);
         assert_eq!(effect.emitters.len(), 4);
+    }
+
+    #[test]
+    fn palette_search_uses_registry_names_categories_ids_and_tags() {
+        let registry = ModuleRegistry::builtin();
+        let motion = registry
+            .iter()
+            .find(|metadata| metadata.type_id.0.ends_with("motion"))
+            .unwrap();
+        assert!(module_matches(motion, "motion"));
+        assert!(module_matches(motion, "forces"));
+        assert!(module_matches(motion, "force"));
+        assert!(!module_matches(motion, "color"));
+    }
+
+    #[test]
+    fn metadata_control_adjusts_builtin_values() {
+        let module = ModuleInstance::emission(20.0, 4);
+        assert_eq!(
+            adjusted_module_value(&module, "spawn_rate", 1),
+            Some(Value::Scalar(25.0))
+        );
+        assert_eq!(
+            adjusted_module_value(&module, "burst_count", -1),
+            Some(Value::U32(0))
+        );
     }
 }

@@ -1,7 +1,7 @@
 use crate::{EffectCommand, EffectDiff, EffectTransaction, LockState, SemanticTarget};
 use aestra_core::{
-    EffectAsset, Emitter, EmitterId, ModuleId, ModuleParameters, RendererId, ValidationReport,
-    Value,
+    DiagnosticCode, EffectAsset, Emitter, EmitterId, ModuleId, ModuleParameters, RendererId,
+    ValidationReport, Value,
 };
 use thiserror::Error;
 
@@ -61,7 +61,14 @@ impl CommandExecutor {
             inverse_commands = command_inverse;
         }
 
-        working.validate()?;
+        let mut report = working.validation_report();
+        report.diagnostics.retain(|diagnostic| {
+            !matches!(
+                diagnostic.code,
+                DiagnosticCode::MissingModule | DiagnosticCode::MissingRenderer
+            )
+        });
+        report.into_result()?;
         let diff = EffectDiff::between(&before, &working);
         *effect = working;
         Ok(TransactionOutcome {

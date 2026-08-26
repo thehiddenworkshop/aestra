@@ -40,6 +40,52 @@ fn semantic_parameter_command_executes_without_ui() {
 }
 
 #[test]
+fn module_stack_duplicate_delete_and_undo_are_semantic_commands() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let original = effect.emitters[0]
+        .module_by_type(MODULE_EMISSION)
+        .unwrap()
+        .id;
+    let duplicate = EffectCommand::duplicate_module(&effect, emitter, original).unwrap();
+    let duplicate_id = match &duplicate {
+        EffectCommand::AddModule { module, .. } => module.id,
+        _ => unreachable!(),
+    };
+    let outcome = CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::single("Duplicate module", duplicate),
+    )
+    .unwrap();
+    assert_eq!(effect.emitters[0].modules.len(), 6);
+    assert_ne!(original, duplicate_id);
+
+    CommandExecutor::execute(&mut effect, &LockState::default(), &outcome.inverse).unwrap();
+    assert_eq!(effect.emitters[0].modules.len(), 5);
+
+    CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::single(
+            "Delete required module",
+            EffectCommand::RemoveModule {
+                emitter,
+                module: original,
+            },
+        ),
+    )
+    .expect("authoring permits compiler-invalid intermediate stacks");
+    assert!(
+        effect
+            .validation_report()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == aestra_core::DiagnosticCode::MissingModule)
+    );
+}
+
+#[test]
 fn failed_transaction_is_atomic() {
     let mut effect = test_effect();
     let before = effect.clone();

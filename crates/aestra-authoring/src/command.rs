@@ -143,6 +143,41 @@ impl EffectCommand {
             index: index + 1,
         })
     }
+
+    pub fn duplicate_module(
+        effect: &aestra_core::EffectAsset,
+        emitter: EmitterId,
+        id: ModuleId,
+    ) -> Option<Self> {
+        let emitter = effect.emitters.iter().find(|item| item.id == emitter)?;
+        let index = emitter.modules.iter().position(|module| module.id == id)?;
+        let mut module = emitter.modules[index].clone();
+        module.regenerate_ids();
+        Some(Self::AddModule {
+            emitter: emitter.id,
+            module,
+            index: index + 1,
+        })
+    }
+
+    pub fn duplicate_renderer(
+        effect: &aestra_core::EffectAsset,
+        emitter: EmitterId,
+        id: RendererId,
+    ) -> Option<Self> {
+        let emitter = effect.emitters.iter().find(|item| item.id == emitter)?;
+        let index = emitter
+            .renderers
+            .iter()
+            .position(|renderer| renderer.id == id)?;
+        let mut renderer = emitter.renderers[index].clone();
+        renderer.id = RendererId::new();
+        Some(Self::AddRenderer {
+            emitter: emitter.id,
+            renderer,
+            index: index + 1,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

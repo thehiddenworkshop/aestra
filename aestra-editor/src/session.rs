@@ -3,8 +3,8 @@ use aestra_authoring::{
     Selection,
 };
 use aestra_bevy::{
-    AssetError, EffectAsset, Emitter, Gradient, MODULE_APPEARANCE, MODULE_EMISSION,
-    MODULE_INITIALIZE, ScalarRange, ValidationReport, Value,
+    AssetError, BlendMode, EffectAsset, Emitter, ModuleId, ModuleInstance, RendererId,
+    RendererInstance, RendererProperties, ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::EffectInstance;
@@ -292,22 +292,34 @@ impl EditorSession {
         }
     }
 
-    pub fn set_selected_module_parameter(
-        &mut self,
-        label: &str,
-        module_type: &str,
-        parameter: &str,
-        value: Value,
-    ) {
+    pub fn add_module(&mut self, module: ModuleInstance) {
         let emitter = self.selected_layer();
-        let Some(module) = emitter.module_by_type(module_type).map(|module| module.id) else {
-            self.status = format!("Emitter is missing module '{module_type}'");
-            return;
-        };
+        let emitter_id = emitter.id;
+        let index = emitter
+            .modules
+            .iter()
+            .rposition(|item| item.stage == module.stage)
+            .map_or(emitter.modules.len(), |index| index + 1);
+        let module_id = module.id;
+        if self.execute(
+            "Added module",
+            EffectCommand::AddModule {
+                emitter: emitter_id,
+                module,
+                index,
+            },
+            true,
+        ) {
+            self.selection.primary = aestra_authoring::SemanticTarget::Module(module_id);
+        }
+    }
+
+    pub fn set_module_parameter(&mut self, module: ModuleId, parameter: &str, value: Value) {
+        let emitter = self.selected_layer().id;
         self.execute(
-            label,
+            format!("Changed {parameter}"),
             EffectCommand::SetModuleParameter {
-                emitter: emitter.id,
+                emitter,
                 module,
                 parameter: parameter.into(),
                 value,
@@ -316,40 +328,179 @@ impl EditorSession {
         );
     }
 
-    pub fn adjust_spawn_rate(&mut self, delta: f32) {
-        let value = (self.selected_layer().spawn_rate() + delta).max(0.0);
-        self.set_selected_module_parameter(
-            "Changed spawn rate",
-            MODULE_EMISSION,
-            "spawn_rate",
-            Value::Scalar(value),
-        );
-    }
-
-    pub fn adjust_burst_count(&mut self, delta: i32) {
-        let current = self.selected_layer().burst_count();
-        let value = if delta.is_negative() {
-            current.saturating_sub(delta.unsigned_abs())
-        } else {
-            current.saturating_add(delta as u32)
+    pub fn toggle_module(&mut self, id: ModuleId) {
+        let emitter = self.selected_layer();
+        let Some(module) = emitter.modules.iter().find(|module| module.id == id) else {
+            self.status = "Module no longer exists".into();
+            return;
         };
-        self.set_selected_module_parameter(
-            "Changed burst count",
-            MODULE_EMISSION,
-            "burst_count",
-            Value::U32(value),
+        self.execute(
+            "Toggled module",
+            EffectCommand::SetModuleEnabled {
+                emitter: emitter.id,
+                module: id,
+                enabled: !module.enabled,
+            },
+            true,
         );
     }
 
-    pub fn adjust_lifetime(&mut self, delta: f32) {
-        let current = self.selected_layer().lifetime();
-        let min = (current.min + delta).max(0.05);
-        let max = (current.max + delta).max(min);
-        self.set_selected_module_parameter(
-            "Changed lifetime",
-            MODULE_INITIALIZE,
-            "lifetime",
-            Value::Range(ScalarRange::new(min, max)),
+    pub fn move_module(&mut self, id: ModuleId, direction: i8) {
+        let emitter = self.selected_layer();
+        let Some(index) = emitter.modules.iter().position(|module| module.id == id) else {
+            self.status = "Module no longer exists".into();
+            return;
+        };
+        let stage = &emitter.modules[index].stage;
+        let sibling = if direction < 0 {
+            emitter.modules[..index]
+                .iter()
+                .rposition(|module| &module.stage == stage)
+        } else {
+            emitter.modules[index + 1..]
+                .iter()
+                .position(|module| &module.stage == stage)
+                .map(|offset| index + offset + 1)
+        };
+        let Some(target) = sibling else {
+            self.status = "Module is already at the edge of its stage".into();
+            return;
+        };
+        self.execute(
+            "Reordered module",
+            EffectCommand::MoveModule {
+                emitter: emitter.id,
+                module: id,
+                index: target,
+            },
+            true,
+        );
+    }
+
+    pub fn duplicate_module(&mut self, id: ModuleId) {
+        let emitter = self.selected_layer().id;
+        let Some(command) = EffectCommand::duplicate_module(&self.effect, emitter, id) else {
+            self.status = "Module no longer exists".into();
+            return;
+        };
+        let duplicate = match &command {
+            EffectCommand::AddModule { module, .. } => module.id,
+            _ => unreachable!(),
+        };
+        if self.execute("Duplicated module", command, true) {
+            self.selection.primary = aestra_authoring::SemanticTarget::Module(duplicate);
+        }
+    }
+
+    pub fn delete_module(&mut self, id: ModuleId) {
+        let emitter = self.selected_layer().id;
+        self.execute(
+            "Deleted module",
+            EffectCommand::RemoveModule {
+                emitter,
+                module: id,
+            },
+            true,
+        );
+    }
+
+    pub fn add_sprite_renderer(&mut self) {
+        let emitter = self.selected_layer();
+        let renderer = RendererInstance::sprite(BlendMode::Additive, 0.5);
+        let renderer_id = renderer.id;
+        if self.execute(
+            "Added sprite renderer",
+            EffectCommand::AddRenderer {
+                emitter: emitter.id,
+                renderer,
+                index: emitter.renderers.len(),
+            },
+            true,
+        ) {
+            self.selection.primary = aestra_authoring::SemanticTarget::Renderer(renderer_id);
+        }
+    }
+
+    pub fn toggle_renderer(&mut self, id: RendererId) {
+        let emitter = self.selected_layer();
+        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
+            self.status = "Renderer no longer exists".into();
+            return;
+        };
+        self.execute(
+            "Toggled renderer",
+            EffectCommand::SetRendererEnabled {
+                emitter: emitter.id,
+                renderer: id,
+                enabled: !renderer.enabled,
+            },
+            true,
+        );
+    }
+
+    pub fn cycle_renderer_blend(&mut self, id: RendererId) {
+        let emitter = self.selected_layer();
+        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
+            self.status = "Renderer no longer exists".into();
+            return;
+        };
+        let blend = match renderer.blend {
+            BlendMode::Alpha => BlendMode::Additive,
+            BlendMode::Additive => BlendMode::Multiply,
+            BlendMode::Multiply => BlendMode::Alpha,
+        };
+        self.execute(
+            "Changed renderer blend",
+            EffectCommand::SetRendererBlend {
+                emitter: emitter.id,
+                renderer: id,
+                blend,
+            },
+            true,
+        );
+    }
+
+    pub fn adjust_renderer_softness(&mut self, id: RendererId, delta: f32) {
+        let emitter = self.selected_layer();
+        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
+            self.status = "Renderer no longer exists".into();
+            return;
+        };
+        let RendererProperties::Sprite { softness } = renderer.properties else {
+            self.status = "This renderer has no softness property".into();
+            return;
+        };
+        self.execute(
+            "Changed renderer softness",
+            EffectCommand::SetRendererProperties {
+                emitter: emitter.id,
+                renderer: id,
+                properties: RendererProperties::Sprite {
+                    softness: (softness + delta).max(0.0),
+                },
+            },
+            true,
+        );
+    }
+
+    pub fn duplicate_renderer(&mut self, id: RendererId) {
+        let emitter = self.selected_layer().id;
+        let Some(command) = EffectCommand::duplicate_renderer(&self.effect, emitter, id) else {
+            self.status = "Renderer no longer exists".into();
+            return;
+        };
+        self.execute("Duplicated renderer", command, true);
+    }
+
+    pub fn delete_renderer(&mut self, id: RendererId) {
+        let emitter = self.selected_layer().id;
+        self.execute(
+            "Deleted renderer",
+            EffectCommand::RemoveRenderer {
+                emitter,
+                renderer: id,
+            },
+            true,
         );
     }
 
@@ -398,55 +549,6 @@ impl EditorSession {
         }));
         self.execute_transaction(
             EffectTransaction::new("Changed effect duration", commands),
-            true,
-        );
-    }
-
-    pub fn adjust_curve_key(
-        &mut self,
-        parameter: &str,
-        key: usize,
-        delta: f32,
-        range: std::ops::RangeInclusive<f32>,
-    ) {
-        let mut curve = match parameter {
-            "size" => self.selected_layer().size_curve().clone(),
-            "opacity" => self.selected_layer().opacity_curve().clone(),
-            _ => {
-                self.status = format!("Unknown curve '{parameter}'");
-                return;
-            }
-        };
-        let Some(curve_key) = curve.keys.get_mut(key) else {
-            self.status = format!("Curve key {key} does not exist");
-            return;
-        };
-        curve_key.value = (curve_key.value + delta).clamp(*range.start(), *range.end());
-        self.set_selected_module_parameter(
-            "Edited curve",
-            MODULE_APPEARANCE,
-            parameter,
-            Value::Curve(curve),
-        );
-    }
-
-    pub fn set_color_gradient(&mut self, gradient: Gradient) {
-        self.set_selected_module_parameter(
-            "Changed color gradient",
-            MODULE_APPEARANCE,
-            "color",
-            Value::Gradient(gradient),
-        );
-    }
-
-    pub fn toggle_selected_layer(&mut self) {
-        let emitter = self.selected_layer();
-        self.execute(
-            "Toggled layer visibility",
-            EffectCommand::SetEmitterEnabled {
-                id: emitter.id,
-                enabled: !emitter.enabled,
-            },
             true,
         );
     }
@@ -505,12 +607,11 @@ mod tests {
             "sample.ron",
         );
         let original = session.effect.emitters[0].spawn_rate();
-        session.set_selected_module_parameter(
-            "Changed rate",
-            MODULE_EMISSION,
-            "spawn_rate",
-            Value::Scalar(77.0),
-        );
+        let module = session.effect.emitters[0]
+            .module_by_type(aestra_bevy::MODULE_EMISSION)
+            .unwrap()
+            .id;
+        session.set_module_parameter(module, "spawn_rate", Value::Scalar(77.0));
         assert_eq!(session.effect.emitters[0].spawn_rate(), 77.0);
         assert_eq!(preview_spawn_rate(&session), 77.0);
         session.undo();
@@ -560,6 +661,28 @@ mod tests {
         session.undo();
         assert_eq!(session.effect.emitters.len(), 2);
         assert_eq!(session.effect.emitters[1].id, added);
+    }
+
+    #[test]
+    fn module_stack_edits_recompile_and_are_reversible() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        let original = session.selected_layer().modules[0].id;
+        session.duplicate_module(original);
+        assert_eq!(session.selected_layer().modules.len(), 6);
+        assert!(session.preview.is_some());
+        session.undo();
+        assert_eq!(session.selected_layer().modules.len(), 5);
+
+        session.delete_module(original);
+        assert_eq!(session.selected_layer().modules.len(), 4);
+        assert!(session.preview.is_none());
+        assert!(!session.diagnostics.is_valid());
+        session.undo();
+        assert_eq!(session.selected_layer().modules.len(), 5);
+        assert!(session.preview.is_some());
     }
 
     #[test]

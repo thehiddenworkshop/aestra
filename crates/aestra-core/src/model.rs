@@ -274,24 +274,7 @@ impl Emitter {
     pub fn regenerate_ids(&mut self) {
         self.id = EmitterId::new();
         for module in &mut self.modules {
-            module.id = ModuleId::new();
-            match &mut module.parameters {
-                ModuleParameters::Appearance {
-                    size,
-                    opacity,
-                    color,
-                } => {
-                    size.id = CurveId::new();
-                    opacity.id = CurveId::new();
-                    color.id = GradientId::new();
-                }
-                ModuleParameters::Custom(values) => {
-                    for value in values.values_mut() {
-                        value.regenerate_ids();
-                    }
-                }
-                _ => {}
-            }
+            module.regenerate_ids();
         }
         for renderer in &mut self.renderers {
             renderer.id = RendererId::new();
@@ -529,12 +512,6 @@ impl Emitter {
                     format!("{path}.modules"),
                     format!("emitter is missing required module '{required}'"),
                 ));
-            } else if count > 1 {
-                report.push(Diagnostic::error(
-                    DiagnosticCode::DuplicateModule,
-                    format!("{path}.modules"),
-                    format!("emitter has more than one '{required}' module"),
-                ));
             }
         }
 
@@ -669,6 +646,28 @@ impl ModuleInstance {
                 color,
             },
             bindings: BTreeMap::new(),
+        }
+    }
+
+    /// Assign fresh semantic IDs to a cloned module and its nested authored values.
+    pub fn regenerate_ids(&mut self) {
+        self.id = ModuleId::new();
+        match &mut self.parameters {
+            ModuleParameters::Appearance {
+                size,
+                opacity,
+                color,
+            } => {
+                size.id = CurveId::new();
+                opacity.id = CurveId::new();
+                color.id = GradientId::new();
+            }
+            ModuleParameters::Custom(values) => {
+                for value in values.values_mut() {
+                    value.regenerate_ids();
+                }
+            }
+            _ => {}
         }
     }
 

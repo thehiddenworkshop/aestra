@@ -27,6 +27,21 @@ fn builtin_registry_exposes_authoring_and_runtime_metadata() {
 }
 
 #[test]
+fn builtin_registry_instantiates_every_catalog_module() {
+    let registry = ModuleRegistry::builtin();
+    for metadata in registry.iter() {
+        let instance = registry
+            .instantiate(&metadata.type_id)
+            .expect("built-in catalog entries must be authorable");
+        assert_eq!(instance.module_type, metadata.type_id);
+        assert!(metadata.stages.contains(&instance.stage));
+        for input in &metadata.inputs {
+            assert_eq!(instance.parameter_type(input.name), Some(input.value_type));
+        }
+    }
+}
+
+#[test]
 fn compiler_lowers_ordered_stages_and_records_source_locations() {
     let asset = EffectAsset::from_ron(SAMPLE).unwrap();
     let compiled = EffectCompiler::default().compile(&asset).unwrap();

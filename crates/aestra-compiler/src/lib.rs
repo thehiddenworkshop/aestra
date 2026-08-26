@@ -3,9 +3,10 @@
 pub use aestra_core::ValueType;
 
 use aestra_core::{
-    Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, MODULE_APPEARANCE, MODULE_EMISSION,
-    MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, ModuleInstance, ModuleParameters, ModuleTypeId,
-    ParameterId, RENDERER_SPRITE, RendererProperties, StageKind, ValidationReport,
+    ColorKey, Curve, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
+    EmitterShape, Gradient, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION,
+    MODULE_SHAPE, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_SPRITE,
+    RendererProperties, ScalarRange, StageKind, ValidationReport,
 };
 use aestra_runtime::{
     CompiledCurve, CompiledEffect, CompiledEmitter, CompiledGradient, CompiledParameter,
@@ -75,6 +76,41 @@ impl ModuleRegistry {
 
     pub fn is_empty(&self) -> bool {
         self.modules.is_empty()
+    }
+
+    /// Creates an authored instance using the catalog's production-ready defaults.
+    pub fn instantiate(&self, type_id: &ModuleTypeId) -> Option<ModuleInstance> {
+        self.get(type_id)?;
+        match type_id.0.as_str() {
+            MODULE_EMISSION => Some(ModuleInstance::emission(24.0, 0)),
+            MODULE_SHAPE => Some(ModuleInstance::shape(EmitterShape::Point)),
+            MODULE_INITIALIZE => Some(ModuleInstance::initialize(
+                ScalarRange::new(0.8, 1.4),
+                ScalarRange::new(35.0, 70.0),
+                90.0,
+                30.0,
+                ScalarRange::new(-1.0, 1.0),
+            )),
+            MODULE_MOTION => Some(ModuleInstance::motion([0.0, -18.0], 0.6, 4.0)),
+            MODULE_APPEARANCE => Some(ModuleInstance::appearance(
+                Curve::new(vec![
+                    CurveKey::new(0.0, 4.0),
+                    CurveKey::new(0.35, 10.0),
+                    CurveKey::new(1.0, 1.0),
+                ]),
+                Curve::new(vec![
+                    CurveKey::new(0.0, 0.0),
+                    CurveKey::new(0.12, 1.0),
+                    CurveKey::new(1.0, 0.0),
+                ]),
+                Gradient::new(vec![
+                    ColorKey::new(0.0, [0.35, 0.75, 1.0, 1.0]),
+                    ColorKey::new(0.5, [0.62, 0.3, 1.0, 1.0]),
+                    ColorKey::new(1.0, [0.15, 0.05, 0.4, 0.0]),
+                ]),
+            )),
+            _ => None,
+        }
     }
 }
 
