@@ -22,7 +22,7 @@ Typed execution plan (aestra-compiler)
               │ instantiates
               ▼
 EffectInstance (aestra-runtime) ──► CPU reference interpreter
-                            └─────► GPU compute runtime + Bevy renderer (next)
+                            └─────► WESL GPU compute runtime + Bevy renderer
 ```
 
 ### `aestra-core`
@@ -73,9 +73,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Produces individual PNGs, a contact sheet, and a capture manifest for visual or AI review.
 - Shares runtime behavior with games by using `AestraPlugin` directly.
 
-### GPU runtime (next)
+### GPU runtime
 
 - Resolves asset references and compiles curves/gradients into GPU-friendly tables.
+- Authors compute shaders in WESL and lets Bevy lower them at the wgpu boundary.
 - Applies platform budgets and capability fallbacks.
 - Runs compute simulation, event queues, sorting, and indirect drawing.
 - Preserves the public Bevy plugin contract: spawn, stop, parameter overrides, and events.

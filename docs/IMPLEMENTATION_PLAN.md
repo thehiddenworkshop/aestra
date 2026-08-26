@@ -12,7 +12,10 @@ architecture vision; this file is the shorter delivery plan.
 - M1 semantic core and format v2 foundation: complete for the initial module set.
 - M2 deterministic authoring operations: complete for current editor operations.
 - M3 module registry, compiler frontend, and CPU runtime: complete for the initial module set.
-- Next: M4 first GPU production slice using the compiled particle layout and execution plans.
+- M4 first GPU production slice: in progress. The deterministic WESL compute substrate,
+  bounded particle pools, compaction lists, counters, indirect arguments, and preview
+  readback are implemented; native GPU sprite drawing, culling, and image regression
+  remain.
 
 ## 1. Assessment of the current prototype
 
@@ -211,6 +214,9 @@ Implement in `aestra-bevy`:
 - conformance tests against the CPU interpreter and a headless render smoke test;
 - the same runtime path in games, editor preview, viewer, and capture mode.
 
+Shader policy: Aestra authors and tests WESL modules. Bevy's WESL loader performs
+the final lowering required by wgpu; checked-in runtime shader sources are not WGSL.
+
 The demo effect for this milestone should exercise a timed burst, continuous
 emission, forces, curves, gradients, at least two emitters, and multiple sprite
 renderers without relying on product-specific examples.
@@ -310,7 +316,7 @@ changes:
 7. Move persistence and semantic validation out of `aestra-bevy`.
 8. Update editor/viewer loading so both accept and save only v2 assets.
 
-This slice intentionally does not redesign the UI, generate WGSL, add an LLM, or
+This slice intentionally does not redesign the UI, generate WESL, add an LLM, or
 implement every future module.
 
 ## 6. Verification required at every milestone

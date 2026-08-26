@@ -12,3 +12,7 @@ aestra-compiler = { path = "../crates/aestra-compiler" }
 aestra-core = { path = "../crates/aestra-core" }
 aestra-runtime = { path = "../crates/aestra-runtime" }
 bevy.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+wesl = "0.3.2"

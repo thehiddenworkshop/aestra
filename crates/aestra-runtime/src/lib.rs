@@ -59,7 +59,8 @@ impl<T> Expression<T> {
 }
 
 impl<T: RuntimeParameterValue> Expression<T> {
-    fn resolve<'a>(&'a self, parameters: &'a [RuntimeValue]) -> &'a T {
+    /// Resolves a compiler expression against an instance's packed parameter table.
+    pub fn resolve<'a>(&'a self, parameters: &'a [RuntimeValue]) -> &'a T {
         match self {
             Self::Constant(value) => value,
             Self::Parameter(slot) => T::from_runtime(
@@ -124,6 +125,18 @@ impl CompiledCurve {
         }
         self.last_value
     }
+
+    pub fn first(&self) -> Option<(f32, f32)> {
+        self.first
+    }
+
+    pub fn last_value(&self) -> f32 {
+        self.last_value
+    }
+
+    pub fn segments(&self) -> &[CurveSegment] {
+        &self.segments
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -180,6 +193,18 @@ impl CompiledGradient {
             }
         }
         self.last_color
+    }
+
+    pub fn first(&self) -> Option<(f32, [f32; 4])> {
+        self.first
+    }
+
+    pub fn last_color(&self) -> [f32; 4] {
+        self.last_color
+    }
+
+    pub fn segments(&self) -> &[GradientSegment] {
+        &self.segments
     }
 }
 
@@ -498,6 +523,11 @@ impl EffectInstance {
             .parameter_slots
             .get(&id)
             .and_then(|slot| self.parameters.get(slot.0))
+    }
+
+    /// Packed values used by compiled expressions and GPU artifact generation.
+    pub fn parameter_values(&self) -> &[RuntimeValue] {
+        &self.parameters
     }
 
     pub fn overridden_parameters(

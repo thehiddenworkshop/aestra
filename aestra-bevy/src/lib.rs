@@ -1,5 +1,7 @@
 //! Bevy integration for compiled Aestra effects.
 
+pub mod gpu;
+
 pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
 pub use aestra_core::*;
 pub use aestra_runtime::{
@@ -19,7 +21,9 @@ pub struct AestraPlugin;
 
 impl Plugin for AestraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (prepare_effect_players, play_effects).chain());
+        app.add_systems(Update, (prepare_effect_players, play_effects).chain())
+            .add_observer(gpu::receive_readback);
+        gpu::install(app);
     }
 }
 
@@ -31,6 +35,7 @@ pub struct EffectPlayer {
     pub speed: f32,
     pub playing: bool,
     samples: Vec<ParticleSample>,
+    gpu_samples: Vec<ParticleSample>,
 }
 
 impl EffectPlayer {
@@ -49,6 +54,7 @@ impl EffectPlayer {
             speed: 1.0,
             playing: true,
             samples: Vec::new(),
+            gpu_samples: Vec::new(),
         }
     }
 
@@ -119,8 +125,14 @@ fn play_effects(
             }
         }
 
-        let mut samples = std::mem::take(&mut player.samples);
-        player.instance.evaluate(&mut samples);
+        let uses_gpu_readback = !player.gpu_samples.is_empty();
+        let samples = if uses_gpu_readback {
+            std::mem::take(&mut player.gpu_samples)
+        } else {
+            let mut samples = std::mem::take(&mut player.samples);
+            player.instance.evaluate(&mut samples);
+            samples
+        };
 
         for child in children.iter() {
             let Ok((slot, mut sprite, mut transform, mut visibility)) = particles.get_mut(*child)
@@ -143,7 +155,11 @@ fn play_effects(
             transform.rotation = Quat::from_rotation_z(sample.rotation);
             *visibility = Visibility::Visible;
         }
-        player.samples = samples;
+        if uses_gpu_readback {
+            player.gpu_samples = samples;
+        } else {
+            player.samples = samples;
+        }
     }
 }
 

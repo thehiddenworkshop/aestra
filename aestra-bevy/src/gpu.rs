@@ -1,0 +1,652 @@
+//! GPU artifact packing and Bevy render-world compute integration.
+
+use aestra_core::{EmitterShape, ScalarRange};
+use aestra_runtime::{
+    CompiledCurve, CompiledGradient, EffectInstance, ExecutionPlan, Instruction, RuntimeValue,
+};
+use bevy::{
+    asset::embedded_asset,
+    ecs::schedule::IntoScheduleConfigs,
+    prelude::*,
+    render::{
+        Render, RenderApp, RenderStartup, RenderSystems,
+        extract_component::{ExtractComponent, ExtractComponentPlugin},
+        gpu_readback::{Readback, ReadbackComplete},
+        render_asset::RenderAssets,
+        render_resource::{
+            BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
+            BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
+            ComputePipelineDescriptor, PipelineCache, ShaderStages, ShaderType,
+            binding_types::{storage_buffer, storage_buffer_read_only},
+        },
+        renderer::{RenderContext, RenderDevice, RenderGraph},
+        storage::{GpuShaderBuffer, ShaderBuffer},
+    },
+};
+use thiserror::Error;
+
+use crate::EffectPlayer;
+
+pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy/shaders/aestra_simulation.wesl";
+pub const MAX_CURVE_KEYS: usize = 8;
+const WORKGROUP_SIZE: u32 = 64;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum GpuArtifactError {
+    #[error("emitter '{0}' has no {1} instruction")]
+    MissingInstruction(String, &'static str),
+    #[error("{kind} has {actual} keys; the GPU profile supports at most {maximum}")]
+    KeyLimit {
+        kind: &'static str,
+        actual: usize,
+        maximum: usize,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct GpuCurve {
+    pub keys: [Vec2; MAX_CURVE_KEYS],
+    pub count: u32,
+    pub _padding: Vec3,
+}
+
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct GpuGradientKey {
+    pub color: Vec4,
+    pub time: f32,
+    pub _padding: Vec3,
+}
+
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct GpuGradient {
+    pub keys: [GpuGradientKey; MAX_CURVE_KEYS],
+    pub count: u32,
+    pub _padding: Vec3,
+}
+
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct GpuEmitter {
+    pub slot_offset: u32,
+    pub max_particles: u32,
+    pub burst_count: u32,
+    pub shape_kind: u32,
+    pub start_time: f32,
+    pub duration: f32,
+    pub spawn_rate: f32,
+    pub shape_radius: f32,
+    pub shape_depth: f32,
+    pub direction_radians: f32,
+    pub spread_radians: f32,
+    pub drag: f32,
+    pub lifetime: Vec2,
+    pub speed: Vec2,
+    pub angular_velocity: Vec2,
+    pub gravity: Vec2,
+    pub turbulence: f32,
+    pub _padding: Vec3,
+    pub size: GpuCurve,
+    pub opacity: GpuCurve,
+    pub color: GpuGradient,
+}
+
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct GpuGlobals {
+    pub time: f32,
+    pub total_slots: u32,
+    pub seed: u32,
+    pub emitter_count: u32,
+}
+
+/// Stable storage/readback ABI shared with `aestra_simulation.wesl`.
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct GpuParticle {
+    pub color: Vec4,
+    pub position: Vec2,
+    pub size: f32,
+    pub rotation: f32,
+    pub normalized_age: f32,
+    pub emitter_index: u32,
+    pub alive: u32,
+    pub _padding: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct GpuEffectArtifact {
+    pub emitters: Vec<GpuEmitter>,
+    pub particles: Vec<GpuParticle>,
+    pub total_slots: u32,
+}
+
+impl GpuEffectArtifact {
+    pub fn from_instance(instance: &EffectInstance) -> Result<Self, GpuArtifactError> {
+        let parameters = instance.parameter_values();
+        let mut slot_offset = 0_u32;
+        let mut emitters = Vec::with_capacity(instance.effect().emitters.len());
+        for emitter in &instance.effect().emitters {
+            let (spawn_rate, burst_count) =
+                emission(&emitter.execution, parameters).ok_or_else(|| {
+                    GpuArtifactError::MissingInstruction(emitter.name.clone(), "Emit")
+                })?;
+            let shape = shape(&emitter.execution, parameters).ok_or_else(|| {
+                GpuArtifactError::MissingInstruction(emitter.name.clone(), "SampleShape")
+            })?;
+            let init = initialize(&emitter.execution, parameters).ok_or_else(|| {
+                GpuArtifactError::MissingInstruction(emitter.name.clone(), "Initialize")
+            })?;
+            let motion = motion(&emitter.execution, parameters).unwrap_or_default();
+            let appearance = appearance(&emitter.execution, parameters).ok_or_else(|| {
+                GpuArtifactError::MissingInstruction(emitter.name.clone(), "Appearance")
+            })?;
+            let (shape_kind, shape_radius, shape_depth) = match shape {
+                EmitterShape::Point => (0, 0.0, 0.0),
+                EmitterShape::Circle { radius } => (1, radius, 0.0),
+                EmitterShape::Ring { radius } => (2, radius, 0.0),
+                EmitterShape::Cone { radius, depth } => (3, radius, depth),
+            };
+            emitters.push(GpuEmitter {
+                slot_offset,
+                max_particles: emitter.max_particles,
+                burst_count: if emitter.enabled { burst_count } else { 0 },
+                shape_kind,
+                start_time: emitter.start_time,
+                duration: emitter.duration,
+                spawn_rate: if emitter.enabled { spawn_rate } else { 0.0 },
+                shape_radius,
+                shape_depth,
+                direction_radians: init.direction_degrees.to_radians(),
+                spread_radians: init.spread_degrees.to_radians(),
+                drag: motion.drag,
+                lifetime: Vec2::new(init.lifetime.min, init.lifetime.max),
+                speed: Vec2::new(init.speed.min, init.speed.max),
+                angular_velocity: Vec2::new(init.angular_velocity.min, init.angular_velocity.max),
+                gravity: Vec2::from_array(motion.gravity),
+                turbulence: motion.turbulence,
+                size: pack_curve(appearance.size)?,
+                opacity: pack_curve(appearance.opacity)?,
+                color: pack_gradient(appearance.color)?,
+                _padding: Vec3::ZERO,
+            });
+            slot_offset = slot_offset.saturating_add(emitter.max_particles);
+        }
+        Ok(Self {
+            emitters,
+            particles: vec![GpuParticle::default(); slot_offset as usize],
+            total_slots: slot_offset,
+        })
+    }
+}
+
+#[derive(Component, Clone, ExtractComponent)]
+struct GpuEffectBuffers {
+    emitters: Handle<ShaderBuffer>,
+    particles: Handle<ShaderBuffer>,
+    alive: Handle<ShaderBuffer>,
+    dead: Handle<ShaderBuffer>,
+    counters: Handle<ShaderBuffer>,
+    indirect: Handle<ShaderBuffer>,
+    globals: Handle<ShaderBuffer>,
+    workgroups: u32,
+    total_slots: u32,
+}
+
+#[derive(Component)]
+pub(crate) struct GpuReadbackOwner(Entity);
+
+#[derive(Component)]
+struct GpuBindGroup(BindGroup);
+
+type UnpreparedPlayers<'w, 's> = Query<
+    'w,
+    's,
+    (Entity, &'static EffectPlayer),
+    (Added<EffectPlayer>, Without<GpuEffectBuffers>),
+>;
+
+#[derive(Resource)]
+struct SimulationPipeline {
+    layout: BindGroupLayoutDescriptor,
+    reset: CachedComputePipelineId,
+    simulate: CachedComputePipelineId,
+}
+
+pub(crate) fn install(app: &mut App) {
+    embedded_asset!(app, "shaders/aestra_simulation.wesl");
+    app.add_plugins(ExtractComponentPlugin::<GpuEffectBuffers>::default())
+        .add_systems(
+            Update,
+            (
+                prepare_gpu_players,
+                update_gpu_inputs.after(crate::play_effects),
+            )
+                .chain(),
+        );
+    let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+        return;
+    };
+    render_app
+        .add_systems(RenderStartup, init_pipeline)
+        .add_systems(
+            Render,
+            prepare_bind_groups.in_set(RenderSystems::PrepareBindGroups),
+        )
+        .add_systems(RenderGraph, run_simulation);
+}
+
+fn prepare_gpu_players(
+    mut commands: Commands,
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
+    players: UnpreparedPlayers,
+) {
+    for (entity, player) in &players {
+        let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance) else {
+            continue;
+        };
+        if artifact.total_slots == 0 {
+            continue;
+        }
+        let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
+        let particles = buffers.add(ShaderBuffer::from(artifact.particles));
+        let alive = buffers.add(ShaderBuffer::from(vec![
+            0_u32;
+            artifact.total_slots as usize
+        ]));
+        let dead = buffers.add(ShaderBuffer::from(vec![
+            0_u32;
+            artifact.total_slots as usize
+        ]));
+        let counters = buffers.add(ShaderBuffer::from(vec![0_u32; 2]));
+        let mut indirect_buffer = ShaderBuffer::from(vec![6_u32, 0, 0, 0]);
+        indirect_buffer.buffer_description.usage |= BufferUsages::INDIRECT;
+        let indirect = buffers.add(indirect_buffer);
+        let globals = buffers.add(ShaderBuffer::from(GpuGlobals {
+            time: player.elapsed(),
+            total_slots: artifact.total_slots,
+            seed: fold_seed(player.instance.seed()),
+            emitter_count: player.effect().emitters.len() as u32,
+        }));
+        commands.entity(entity).insert(GpuEffectBuffers {
+            emitters,
+            particles: particles.clone(),
+            alive,
+            dead,
+            counters,
+            indirect,
+            globals,
+            workgroups: artifact.total_slots.div_ceil(WORKGROUP_SIZE),
+            total_slots: artifact.total_slots,
+        });
+        commands.entity(entity).with_children(|parent| {
+            parent.spawn((Readback::buffer(particles), GpuReadbackOwner(entity)));
+        });
+    }
+}
+
+fn update_gpu_inputs(
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
+    players: Query<(&EffectPlayer, &GpuEffectBuffers)>,
+) {
+    for (player, gpu) in &players {
+        if let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance)
+            && let Some(mut buffer) = buffers.get_mut(&gpu.emitters)
+        {
+            buffer.set_data(artifact.emitters);
+        }
+        if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
+            buffer.set_data(GpuGlobals {
+                time: player.elapsed(),
+                total_slots: gpu.total_slots,
+                seed: fold_seed(player.instance.seed()),
+                emitter_count: player.effect().emitters.len() as u32,
+            });
+        }
+    }
+}
+
+pub(crate) fn receive_readback(
+    event: On<ReadbackComplete>,
+    owners: Query<&GpuReadbackOwner>,
+    mut players: Query<&mut EffectPlayer>,
+) {
+    let Ok(owner) = owners.get(event.event_target()) else {
+        return;
+    };
+    let Ok(mut player) = players.get_mut(owner.0) else {
+        return;
+    };
+    let particles: Vec<GpuParticle> = event.to_shader_type();
+    player.gpu_samples.clear();
+    player.gpu_samples.extend(
+        particles
+            .into_iter()
+            .filter(|particle| particle.alive != 0)
+            .map(|particle| aestra_runtime::ParticleSample {
+                emitter_index: particle.emitter_index as usize,
+                position: particle.position.to_array(),
+                size: particle.size,
+                rotation: particle.rotation,
+                color: particle.color.to_array(),
+                normalized_age: particle.normalized_age,
+            }),
+    );
+}
+
+fn init_pipeline(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    pipeline_cache: Res<PipelineCache>,
+) {
+    let layout = BindGroupLayoutDescriptor::new(
+        "aestra_gpu_simulation",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::COMPUTE,
+            (
+                storage_buffer_read_only::<Vec<GpuEmitter>>(false),
+                storage_buffer::<Vec<GpuParticle>>(false),
+                storage_buffer::<Vec<u32>>(false),
+                storage_buffer::<Vec<u32>>(false),
+                storage_buffer::<Vec<u32>>(false),
+                storage_buffer::<Vec<u32>>(false),
+                storage_buffer_read_only::<GpuGlobals>(false),
+            ),
+        ),
+    );
+    let shader = asset_server.load(WESL_SHADER_PATH);
+    let reset = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+        label: Some("aestra reset counters".into()),
+        layout: vec![layout.clone()],
+        shader: shader.clone(),
+        entry_point: Some("reset".into()),
+        ..default()
+    });
+    let simulate = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+        label: Some("aestra simulate particles".into()),
+        layout: vec![layout.clone()],
+        shader,
+        entry_point: Some("simulate".into()),
+        ..default()
+    });
+    commands.insert_resource(SimulationPipeline {
+        layout,
+        reset,
+        simulate,
+    });
+}
+
+fn prepare_bind_groups(
+    mut commands: Commands,
+    pipeline: Res<SimulationPipeline>,
+    render_device: Res<RenderDevice>,
+    pipeline_cache: Res<PipelineCache>,
+    buffers: Res<RenderAssets<GpuShaderBuffer>>,
+    effects: Query<(Entity, &GpuEffectBuffers)>,
+) {
+    for (entity, effect) in &effects {
+        let Some(emitters) = buffers.get(&effect.emitters) else {
+            continue;
+        };
+        let Some(particles) = buffers.get(&effect.particles) else {
+            continue;
+        };
+        let Some(alive) = buffers.get(&effect.alive) else {
+            continue;
+        };
+        let Some(dead) = buffers.get(&effect.dead) else {
+            continue;
+        };
+        let Some(counters) = buffers.get(&effect.counters) else {
+            continue;
+        };
+        let Some(indirect) = buffers.get(&effect.indirect) else {
+            continue;
+        };
+        let Some(globals) = buffers.get(&effect.globals) else {
+            continue;
+        };
+        let bind_group = render_device.create_bind_group(
+            Some("aestra_gpu_simulation"),
+            &pipeline_cache.get_bind_group_layout(&pipeline.layout),
+            &BindGroupEntries::sequential((
+                emitters.buffer.as_entire_buffer_binding(),
+                particles.buffer.as_entire_buffer_binding(),
+                alive.buffer.as_entire_buffer_binding(),
+                dead.buffer.as_entire_buffer_binding(),
+                counters.buffer.as_entire_buffer_binding(),
+                indirect.buffer.as_entire_buffer_binding(),
+                globals.buffer.as_entire_buffer_binding(),
+            )),
+        );
+        commands.entity(entity).insert(GpuBindGroup(bind_group));
+    }
+}
+
+fn run_simulation(
+    mut render_context: RenderContext,
+    pipeline_cache: Res<PipelineCache>,
+    pipeline: Res<SimulationPipeline>,
+    effects: Query<(&GpuEffectBuffers, &GpuBindGroup)>,
+) {
+    let (Some(reset), Some(simulate)) = (
+        pipeline_cache.get_compute_pipeline(pipeline.reset),
+        pipeline_cache.get_compute_pipeline(pipeline.simulate),
+    ) else {
+        return;
+    };
+    for (effect, bind_group) in &effects {
+        let mut pass =
+            render_context
+                .command_encoder()
+                .begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("aestra simulation"),
+                    ..default()
+                });
+        pass.set_bind_group(0, &bind_group.0, &[]);
+        pass.set_pipeline(reset);
+        pass.dispatch_workgroups(1, 1, 1);
+        pass.set_pipeline(simulate);
+        pass.dispatch_workgroups(effect.workgroups, 1, 1);
+    }
+}
+
+fn fold_seed(seed: u64) -> u32 {
+    seed as u32 ^ (seed >> 32) as u32
+}
+
+fn pack_curve(curve: &CompiledCurve) -> Result<GpuCurve, GpuArtifactError> {
+    let mut points = Vec::new();
+    if let Some(first) = curve.first() {
+        points.push(first);
+        points.extend(
+            curve
+                .segments()
+                .iter()
+                .map(|segment| (segment.end_time, segment.end_value)),
+        );
+    }
+    if points.len() > MAX_CURVE_KEYS {
+        return Err(GpuArtifactError::KeyLimit {
+            kind: "curve",
+            actual: points.len(),
+            maximum: MAX_CURVE_KEYS,
+        });
+    }
+    let mut packed = GpuCurve {
+        count: points.len() as u32,
+        ..default()
+    };
+    for (target, (time, value)) in packed.keys.iter_mut().zip(points) {
+        *target = Vec2::new(time, value);
+    }
+    Ok(packed)
+}
+
+fn pack_gradient(gradient: &CompiledGradient) -> Result<GpuGradient, GpuArtifactError> {
+    let mut points = Vec::new();
+    if let Some(first) = gradient.first() {
+        points.push(first);
+        points.extend(
+            gradient
+                .segments()
+                .iter()
+                .map(|segment| (segment.end_time, segment.end_color)),
+        );
+    }
+    if points.len() > MAX_CURVE_KEYS {
+        return Err(GpuArtifactError::KeyLimit {
+            kind: "gradient",
+            actual: points.len(),
+            maximum: MAX_CURVE_KEYS,
+        });
+    }
+    let mut packed = GpuGradient {
+        count: points.len() as u32,
+        ..default()
+    };
+    for (target, (time, color)) in packed.keys.iter_mut().zip(points) {
+        target.time = time;
+        target.color = Vec4::from_array(color);
+    }
+    Ok(packed)
+}
+
+fn emission(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<(f32, u32)> {
+    plan.emitter_update
+        .iter()
+        .find_map(|instruction| match instruction {
+            Instruction::Emit {
+                spawn_rate,
+                burst_count,
+                ..
+            } => Some((*spawn_rate.resolve(values), *burst_count.resolve(values))),
+            _ => None,
+        })
+}
+
+fn shape(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<EmitterShape> {
+    plan.particle_spawn
+        .iter()
+        .find_map(|instruction| match instruction {
+            Instruction::SampleShape { shape, .. } => Some(*shape.resolve(values)),
+            _ => None,
+        })
+}
+
+struct GpuInitialize {
+    lifetime: ScalarRange,
+    speed: ScalarRange,
+    direction_degrees: f32,
+    spread_degrees: f32,
+    angular_velocity: ScalarRange,
+}
+
+fn initialize(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuInitialize> {
+    plan.particle_spawn
+        .iter()
+        .find_map(|instruction| match instruction {
+            Instruction::Initialize {
+                lifetime,
+                speed,
+                direction_degrees,
+                spread_degrees,
+                angular_velocity,
+                ..
+            } => Some(GpuInitialize {
+                lifetime: *lifetime.resolve(values),
+                speed: *speed.resolve(values),
+                direction_degrees: *direction_degrees.resolve(values),
+                spread_degrees: *spread_degrees.resolve(values),
+                angular_velocity: *angular_velocity.resolve(values),
+            }),
+            _ => None,
+        })
+}
+
+#[derive(Default)]
+struct GpuMotion {
+    gravity: [f32; 2],
+    drag: f32,
+    turbulence: f32,
+}
+
+fn motion(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuMotion> {
+    plan.particle_update
+        .iter()
+        .find_map(|instruction| match instruction {
+            Instruction::Motion {
+                gravity,
+                drag,
+                turbulence,
+                ..
+            } => Some(GpuMotion {
+                gravity: *gravity.resolve(values),
+                drag: *drag.resolve(values),
+                turbulence: *turbulence.resolve(values),
+            }),
+            _ => None,
+        })
+}
+
+struct GpuAppearance<'a> {
+    size: &'a CompiledCurve,
+    opacity: &'a CompiledCurve,
+    color: &'a CompiledGradient,
+}
+
+fn appearance<'a>(
+    plan: &'a ExecutionPlan,
+    values: &'a [RuntimeValue],
+) -> Option<GpuAppearance<'a>> {
+    plan.particle_update
+        .iter()
+        .find_map(|instruction| match instruction {
+            Instruction::Appearance {
+                size,
+                opacity,
+                color,
+                ..
+            } => Some(GpuAppearance {
+                size: size.resolve(values),
+                opacity: opacity.resolve(values),
+                color: color.resolve(values),
+            }),
+            _ => None,
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aestra_compiler::EffectCompiler;
+    use aestra_core::{EffectAsset, Emitter};
+    use std::sync::Arc;
+
+    #[test]
+    fn artifact_capacity_matches_authored_bounds() {
+        let mut effect = EffectAsset::new("GPU", 2.0);
+        let mut first = Emitter::basic_sprite("First", 2.0);
+        first.max_particles = 17;
+        let mut second = Emitter::basic_sprite("Second", 2.0);
+        second.max_particles = 23;
+        effect.emitters.extend([first, second]);
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
+        assert_eq!(artifact.total_slots, 40);
+        assert_eq!(artifact.emitters[0].slot_offset, 0);
+        assert_eq!(artifact.emitters[1].slot_offset, 17);
+        assert_eq!(artifact.particles.len(), 40);
+    }
+
+    #[test]
+    fn gpu_hash_seed_fold_matches_cpu_contract() {
+        let seed = 0x1234_5678_9abc_def0;
+        assert_eq!(fold_seed(seed), 0x8888_8888);
+    }
+
+    #[test]
+    fn authored_wesl_compiles_and_validates() {
+        let compiler = wesl::Wesl::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/shaders"));
+        let module = "package::aestra_simulation".parse().unwrap();
+        let output = compiler.compile(&module).unwrap().to_string();
+        assert!(output.contains("fn simulate"));
+        assert!(output.contains("fn reset"));
+    }
+}

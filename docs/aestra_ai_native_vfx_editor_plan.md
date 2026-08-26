@@ -232,7 +232,7 @@ Intermediate representation
      |
 Optimization
      |
-WGSL / pipeline generation
+WESL / pipeline generation
      |
 Runtime artifact
 ```
@@ -576,8 +576,8 @@ Advanced support can include:
 
 - expression graphs
 - custom modules
-- WGSL
-- generated WGSL inspection
+- WESL
+- generated WESL inspection
 - shader debugging
 
 AI should help users move between these abstraction levels rather than hiding the lower levels.
@@ -602,7 +602,7 @@ Avoid making the giant node graph the entire application.
 | Ask Aestra                                                     |
 | "Make the trail softer and approximately 30% longer..."        |
 +----------------------------------------------------------------+
-| Graph | Timeline | Curves | Profiler | Diagnostics | WGSL      |
+| Graph | Timeline | Curves | Profiler | Diagnostics | WESL      |
 +----------------------------------------------------------------+
 ```
 
@@ -1130,7 +1130,7 @@ Also consider:
 
 ```text
 golden compilation tests
-WGSL snapshot tests
+WESL snapshot tests
 effect migration tests
 graph validation tests
 performance regression tests
@@ -1247,7 +1247,7 @@ Why is particle count continuously increasing?
 Make this deterministic.
 Remove modules that have no effect.
 Find redundant calculations.
-Explain generated WGSL for this module.
+Explain generated WESL for this module.
 ```
 
 ## AI as optimizer
@@ -1660,7 +1660,7 @@ Timeline
 Curves
 Diagnostics
 Profiler
-Generated WGSL
+Generated WESL
 ```
 
 
@@ -2805,7 +2805,7 @@ The long-term architecture should converge toward:
               |                               |
           Validator                        Compiler
               |                               |
-          Diagnostics                       WGSL
+          Diagnostics                       WESL
                                               |
                                             GPU
                                               |
@@ -4702,7 +4702,7 @@ This semantic metadata supports:
 
 # 104. GPU Memory Model
 
-Aestra must explicitly design particle storage instead of letting it emerge accidentally from WGSL generation.
+Aestra must explicitly design particle storage instead of letting it emerge accidentally from WESL generation.
 
 The runtime should define strategies for:
 
@@ -4957,7 +4957,7 @@ MaterialInstance
 Defines:
 
 ```text
-shader graph / WGSL logic
+shader graph / WESL logic
 input schema
 particle attribute bindings
 render state
@@ -5057,7 +5057,7 @@ MaterialInput:
         <- particle.age / particle.lifetime
 ```
 
-Avoid hard-coding renderer-specific WGSL variable names in authored data.
+Avoid hard-coding renderer-specific WESL variable names in authored data.
 
 ---
 
@@ -5682,7 +5682,7 @@ built-in modules
 project modules
 plugins
 subgraphs/functions
-advanced WGSL modules
+advanced WESL modules
 ```
 
 ---
@@ -5742,7 +5742,7 @@ Subgraphs should have typed inputs and outputs.
 
 # 138. Compiler Intermediate Representation
 
-Do not compile the editor graph directly into ad-hoc WGSL strings.
+Do not compile the editor graph directly into ad-hoc WESL strings.
 
 Introduce a compiler IR.
 
@@ -5761,7 +5761,7 @@ Optimization
     |
 Backend lowering
     |
-WGSL / pipelines / runtime descriptors
+WESL / pipelines / runtime descriptors
 ```
 
 The IR should represent:
@@ -6459,7 +6459,7 @@ Aestra IR
     +-- choose stateful/stateless path
     |
     v
-WGSL + pipeline descriptors
+WESL + pipeline descriptors
     |
     v
 CompiledEffect
@@ -6594,7 +6594,7 @@ Aestra should not consider the core runtime architecture stable until:
 - [ ] Particle attributes can bind to material inputs.
 - [ ] Module definitions are not permanently limited to a closed Rust enum.
 - [ ] User/project-defined modules are architecturally possible.
-- [ ] A compiler IR exists between semantic graphs and WGSL generation.
+- [ ] A compiler IR exists between semantic graphs and WESL generation.
 - [ ] The runtime can allocate, update, kill, and compact particles on GPU.
 - [ ] Indirect dispatch/draw is architecturally possible.
 - [ ] Sorting is optional and renderer-controlled.
@@ -6677,7 +6677,7 @@ The complete intended architecture should converge toward:
                            |
                        Materials
                            |
-                         WGSL
+                         WESL
                            |
                         wgpu/Bevy
 ```
