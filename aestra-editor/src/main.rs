@@ -10,12 +10,17 @@ use aestra_bevy::{
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use bevy::{
+    camera::RenderTarget,
     ecs::system::SystemParam,
     input::{ButtonState, keyboard::KeyboardInput, mouse::MouseScrollUnit},
     picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer, Scroll},
+    picking::pointer::PointerButton,
     prelude::*,
     ui::{InteractionDisabled, RelativeCursorPosition},
-    window::{CursorIcon, PrimaryWindow, SystemCursorIcon, WindowResolution},
+    window::{
+        CursorIcon, PrimaryWindow, SystemCursorIcon, WindowCloseRequested, WindowMoved,
+        WindowPosition, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
+    },
 };
 use docking::{DockAxis, DockDrop, DockNode, DockNodeId, DockPanel, DockStack, WorkspaceLayout};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
@@ -43,6 +48,7 @@ fn main() {
         .insert_resource(WorkspaceLayout::load())
         .init_resource::<RenderedUiRevision>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
+            close_when_requested: false,
             primary_window: Some(Window {
                 title: "Aestra — VFX Choreography Editor".into(),
                 resolution: WindowResolution::new(1440, 900),
@@ -55,24 +61,34 @@ fn main() {
         .add_systems(
             Update,
             (
-                module_palette_keyboard,
-                keyboard_shortcuts,
-                handle_buttons,
-                scrub_timeline,
-                advance_playback,
-                update_preview,
-                update_editor_labels,
-                update_history_actions,
-                update_playhead,
-                update_layer_selection,
-                update_menu_visibility,
-                update_preview_grid_visibility,
-                clear_finished_dock_drag,
-                sync_dock_drop_hints,
-                sync_tab_reorder_hints,
-                sync_tab_append_hint,
-                update_dock_zone_style,
-                rebuild_editor_ui,
+                (
+                    module_palette_keyboard,
+                    keyboard_shortcuts,
+                    handle_buttons,
+                    handle_window_close_requests,
+                    persist_native_window_geometry,
+                    dismiss_tab_context_menu,
+                    scrub_timeline,
+                    advance_playback,
+                    update_preview,
+                    update_editor_labels,
+                    update_history_actions,
+                )
+                    .chain(),
+                (
+                    update_playhead,
+                    update_layer_selection,
+                    update_menu_visibility,
+                    update_preview_grid_visibility,
+                    clear_finished_dock_drag,
+                    sync_dock_drop_hints,
+                    sync_tab_reorder_hints,
+                    sync_tab_append_hint,
+                    update_dock_zone_style,
+                    rebuild_editor_ui,
+                    sync_native_floating_windows,
+                )
+                    .chain(),
             )
                 .chain(),
         )
@@ -129,6 +145,7 @@ enum EditorAction {
     SelectDockPanel(DockPanel),
     CloseDockPanel(DockPanel),
     ShowDockPanel(DockPanel),
+    FloatDockPanel(DockPanel, [f32; 2]),
     ToggleMenu(MenuKind),
     ToggleGrid,
     ResetWorkspaceLayout,
@@ -220,6 +237,7 @@ enum MenuKind {
 #[derive(Resource)]
 struct MenuState {
     open: Option<MenuKind>,
+    tab_context: Option<TabContextMenu>,
     show_grid: bool,
     show_about: bool,
 }
@@ -228,10 +246,17 @@ impl Default for MenuState {
     fn default() -> Self {
         Self {
             open: None,
+            tab_context: None,
             show_grid: true,
             show_about: false,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct TabContextMenu {
+    panel: DockPanel,
+    position: [f32; 2],
 }
 
 #[derive(Resource, Default)]
@@ -266,6 +291,19 @@ struct DockTabAppendZone(DockNodeId);
 
 #[derive(Component)]
 struct DockTabAppendIndicator(DockNodeId);
+
+#[derive(Component)]
+struct NativeFloatingWindow(DockPanel);
+
+#[derive(Component)]
+struct NativeFloatingCamera(DockPanel);
+
+#[derive(Component)]
+struct NativeFloatingUi {
+    panel: DockPanel,
+    window: Entity,
+    camera: Entity,
+}
 
 #[derive(Component)]
 struct SplitterGrip;
@@ -385,6 +423,7 @@ struct PanelSources<'a> {
 struct UiBuildResources<'w> {
     catalog: Res<'w, EffectCatalog>,
     layout: Res<'w, WorkspaceLayout>,
+    menu: Res<'w, MenuState>,
     registry: Res<'w, EditorModuleRegistry>,
     palette: Res<'w, ModulePaletteState>,
     workspace: Res<'w, WorkspaceState>,
@@ -448,23 +487,74 @@ fn spawn_editor_ui(
         .with_children(|root| {
             spawn_menu_bar(root, sources.session);
             spawn_toolbar(root, sources.session);
-            spawn_editor_content(root, workspace, layout, sources);
+            spawn_editor_content(root, menu, workspace, layout, sources);
             spawn_status_bar(root);
             spawn_about_overlay(root, menu.show_about);
         });
 }
 
+fn spawn_tab_context_menu(parent: &mut ChildSpawnerCommands, context: Option<TabContextMenu>) {
+    let Some(context) = context else {
+        return;
+    };
+    parent
+        .spawn((
+            GlobalZIndex(180),
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(context.position[0]),
+                top: Val::Px(context.position[1]),
+                width: Val::Px(188.0),
+                padding: UiRect::all(Val::Px(5.0)),
+                flex_direction: FlexDirection::Column,
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(5.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|menu| {
+            menu.spawn((
+                Button,
+                EditorAction::FloatDockPanel(context.panel, context.position),
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(30.0),
+                    padding: UiRect::horizontal(Val::Px(9.0)),
+                    align_items: AlignItems::Center,
+                    border_radius: BorderRadius::all(Val::Px(3.0)),
+                    ..default()
+                },
+                BackgroundColor(theme::PANEL),
+            ))
+            .with_children(|item| {
+                item.spawn((
+                    Text::new("Float Panel"),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
+            });
+        });
+}
+
 fn spawn_editor_content(
     parent: &mut ChildSpawnerCommands,
+    menu: &MenuState,
     workspace: &WorkspaceState,
     layout: &WorkspaceLayout,
     sources: PanelSources<'_>,
 ) {
     parent
-        .spawn(EditorContent)
+        .spawn((EditorContent, RelativeCursorPosition::default()))
         .apply_scene(ui_shell::editor_content())
         .with_children(|content| {
             spawn_dock_node(content, &layout.root, workspace, sources);
+            spawn_tab_context_menu(content, menu.tab_context);
         });
 }
 
@@ -939,24 +1029,59 @@ fn spawn_dock_stack(
         .apply_scene(ui_shell::dock_pane())
         .with_children(|pane| {
             spawn_dock_tab_bar(pane, node, stack);
-            match stack.active {
-                Some(DockPanel::Viewport) => spawn_preview(pane),
-                Some(DockPanel::Assets) => {
-                    spawn_asset_browser(pane, sources.session, sources.catalog);
-                }
-                Some(DockPanel::Inspector) => {
-                    spawn_inspector(pane, sources.session, sources.registry, sources.palette);
-                }
-                Some(DockPanel::Timeline) => spawn_timeline(pane, sources.session),
-                Some(DockPanel::Curves) => {
-                    spawn_curves_workspace(pane, sources.session, sources.registry, workspace);
-                }
-                Some(DockPanel::Changes) => {
-                    spawn_changes_workspace(pane, sources.session);
-                }
-                None => {}
+            if let Some(panel) = stack.active {
+                spawn_panel_content(pane, panel, workspace, sources);
             }
             spawn_dock_drop_overlay(pane, node);
+        });
+}
+
+fn spawn_panel_content(
+    parent: &mut ChildSpawnerCommands,
+    panel: DockPanel,
+    workspace: &WorkspaceState,
+    sources: PanelSources<'_>,
+) {
+    match panel {
+        DockPanel::Viewport => spawn_preview(parent),
+        DockPanel::Assets => spawn_asset_browser(parent, sources.session, sources.catalog),
+        DockPanel::Inspector => {
+            spawn_inspector(parent, sources.session, sources.registry, sources.palette);
+        }
+        DockPanel::Timeline => spawn_timeline(parent, sources.session),
+        DockPanel::Curves => {
+            spawn_curves_workspace(parent, sources.session, sources.registry, workspace);
+        }
+        DockPanel::Changes => spawn_changes_workspace(parent, sources.session),
+    }
+}
+
+fn spawn_native_floating_ui(
+    commands: &mut Commands,
+    panel: DockPanel,
+    window: Entity,
+    camera: Entity,
+    workspace: &WorkspaceState,
+    sources: PanelSources<'_>,
+) {
+    commands
+        .spawn((
+            NativeFloatingUi {
+                panel,
+                window,
+                camera,
+            },
+            UiTargetCamera(camera),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+        ))
+        .with_children(|root| {
+            spawn_panel_content(root, panel, workspace, sources);
         });
 }
 
@@ -1166,7 +1291,6 @@ fn spawn_dock_tab(parent: &mut ChildSpawnerCommands, panel: DockPanel, selected:
                 should_block_lower: false,
                 is_hoverable: true,
             },
-            GlobalZIndex(20),
             Node {
                 height: Val::Px(28.0),
                 min_width: Val::Px(92.0),
@@ -1196,6 +1320,7 @@ fn spawn_dock_tab(parent: &mut ChildSpawnerCommands, panel: DockPanel, selected:
         .observe(move_dock_tab)
         .observe(reset_dock_tab)
         .observe(reorder_dock_tab)
+        .observe(open_dock_tab_context_menu)
         .with_children(|tab| {
             tab.spawn((
                 Text::new(panel.title()),
@@ -1376,23 +1501,29 @@ fn move_dock_tab(drag: On<Pointer<Drag>>, mut tabs: Query<&mut UiTransform, With
 
 fn begin_dock_tab_drag(
     drag: On<Pointer<DragStart>>,
-    mut tabs: Query<(&DockTab, &mut GlobalZIndex)>,
+    tabs: Query<&DockTab>,
+    mut commands: Commands,
     mut state: ResMut<DockDragState>,
 ) {
-    if let Ok((tab, mut z_index)) = tabs.get_mut(drag.event_target()) {
+    if let Ok(tab) = tabs.get(drag.event_target()) {
         state.0 = Some(tab.0);
-        *z_index = GlobalZIndex(160);
+        commands
+            .entity(drag.event_target())
+            .insert(GlobalZIndex(160));
     }
 }
 
 fn reset_dock_tab(
     drag: On<Pointer<DragEnd>>,
-    mut tabs: Query<(&mut UiTransform, &mut GlobalZIndex), With<DockTab>>,
+    mut tabs: Query<&mut UiTransform, With<DockTab>>,
+    mut commands: Commands,
     mut state: ResMut<DockDragState>,
 ) {
-    if let Ok((mut transform, mut z_index)) = tabs.get_mut(drag.event_target()) {
+    if let Ok(mut transform) = tabs.get_mut(drag.event_target()) {
         transform.translation = Val2::ZERO;
-        *z_index = GlobalZIndex(20);
+        commands
+            .entity(drag.event_target())
+            .remove::<GlobalZIndex>();
     }
     state.0 = None;
 }
@@ -1400,16 +1531,61 @@ fn reset_dock_tab(
 fn clear_finished_dock_drag(
     buttons: Res<ButtonInput<MouseButton>>,
     mut state: ResMut<DockDragState>,
-    mut tabs: Query<(&mut UiTransform, &mut GlobalZIndex), With<DockTab>>,
+    mut tabs: Query<(Entity, &mut UiTransform), With<DockTab>>,
+    mut commands: Commands,
 ) {
     if state.0.is_none() || buttons.pressed(MouseButton::Left) {
         return;
     }
     state.0 = None;
-    for (mut transform, mut z_index) in &mut tabs {
+    for (entity, mut transform) in &mut tabs {
         transform.translation = Val2::ZERO;
-        *z_index = GlobalZIndex(20);
+        commands.entity(entity).remove::<GlobalZIndex>();
     }
+}
+
+fn open_dock_tab_context_menu(
+    mut click: On<Pointer<Click>>,
+    tabs: Query<&DockTab>,
+    parents: Query<&ChildOf>,
+    layout: Res<WorkspaceLayout>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut menu: ResMut<MenuState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    let mut entity = click.event_target();
+    let tab = loop {
+        if let Ok(tab) = tabs.get(entity) {
+            break tab;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    if tab.0 == DockPanel::Viewport
+        || layout
+            .floating
+            .iter()
+            .any(|floating| floating.panel == tab.0)
+    {
+        return;
+    }
+    menu.open = None;
+    let maximum_x = (window.width() - 188.0).max(0.0);
+    let maximum_y = (window.height() - 148.0).max(0.0);
+    menu.tab_context = Some(TabContextMenu {
+        panel: tab.0,
+        position: [
+            click.pointer_location.position.x.clamp(0.0, maximum_x),
+            (click.pointer_location.position.y - 84.0).clamp(0.0, maximum_y),
+        ],
+    });
+    session.ui_revision += 1;
+    click.propagate(false);
 }
 
 fn dock_panel_drop(
@@ -3991,8 +4167,12 @@ fn keyboard_shortcuts(
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
 
     if keys.just_pressed(KeyCode::Escape) {
+        let context_was_open = menu.tab_context.take().is_some();
         menu.open = None;
         menu.show_about = false;
+        if context_was_open {
+            session.ui_revision += 1;
+        }
     }
     if control && keys.just_pressed(KeyCode::KeyN) && confirm_discard(&session) {
         session.new_effect();
@@ -4061,6 +4241,7 @@ fn handle_buttons(
         ResMut<WorkspaceState>,
         ResMut<WorkspaceLayout>,
     ),
+    window: Single<&Window, With<PrimaryWindow>>,
 ) {
     let (catalog, registry, mut palette, mut workspace, mut layout) = editor_resources;
     for (interaction, action, layer_row, dock_tab, dock_close, disabled, mut background) in
@@ -4095,6 +4276,9 @@ fn handle_buttons(
             Interaction::Pressed => {
                 background.0 = theme::ACCENT_DIM;
                 if let EditorAction::ToggleMenu(kind) = *action {
+                    if menu.tab_context.take().is_some() {
+                        session.ui_revision += 1;
+                    }
                     menu.open = if menu.open == Some(kind) {
                         None
                     } else {
@@ -4103,6 +4287,9 @@ fn handle_buttons(
                     continue;
                 }
                 menu.open = None;
+                if menu.tab_context.take().is_some() {
+                    session.ui_revision += 1;
+                }
                 match *action {
                     EditorAction::NewEffect => {
                         if confirm_discard(&session) {
@@ -4296,6 +4483,26 @@ fn handle_buttons(
                             }
                         }
                     }
+                    EditorAction::FloatDockPanel(panel, pointer_position) => {
+                        let available_size = [window.width(), (window.height() - 108.0).max(180.0)];
+                        let origin = match window.position {
+                            WindowPosition::At(position) => position,
+                            _ => IVec2::new(80, 80),
+                        };
+                        let scale = window.scale_factor();
+                        let position = [
+                            origin.x as f32 + (pointer_position[0] - 92.0) * scale,
+                            origin.y as f32 + (pointer_position[1] + 68.0) * scale,
+                        ];
+                        if layout.float_panel(panel, position, available_size) {
+                            if let Err(error) = layout.save() {
+                                warn!("failed to save editor workspace layout: {error}");
+                            }
+                            session.ui_revision += 1;
+                            session.status =
+                                format!("Floated {} panel", panel.title().to_ascii_lowercase());
+                        }
+                    }
                     EditorAction::ToggleGrid => menu.show_grid = !menu.show_grid,
                     EditorAction::ResetWorkspaceLayout => {
                         *layout = WorkspaceLayout::default();
@@ -4321,6 +4528,16 @@ fn reveal_dock_panel(layout: &mut WorkspaceLayout, session: &mut EditorSession, 
     session.ui_revision += 1;
     if let Err(error) = layout.save() {
         warn!("failed to save editor workspace layout: {error}");
+    }
+}
+
+fn dismiss_tab_context_menu(
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut menu: ResMut<MenuState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if buttons.just_pressed(MouseButton::Left) && menu.tab_context.take().is_some() {
+        session.ui_revision += 1;
     }
 }
 
@@ -4667,6 +4884,145 @@ fn update_preview_grid_visibility(
     }
 }
 
+fn handle_window_close_requests(
+    mut close_requests: MessageReader<WindowCloseRequested>,
+    primary: Single<Entity, With<PrimaryWindow>>,
+    floating_windows: Query<&NativeFloatingWindow>,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut session: ResMut<EditorSession>,
+    mut commands: Commands,
+) {
+    for request in close_requests.read() {
+        if request.window == *primary {
+            commands.write_message(AppExit::Success);
+            continue;
+        }
+        let Ok(floating) = floating_windows.get(request.window) else {
+            continue;
+        };
+        if layout.redock(floating.0) {
+            if let Err(error) = layout.save() {
+                warn!("failed to save editor workspace layout: {error}");
+            }
+            session.ui_revision += 1;
+            session.status = format!(
+                "Docked {} panel after closing its window",
+                floating.0.title().to_ascii_lowercase()
+            );
+        }
+    }
+}
+
+fn persist_native_window_geometry(
+    mut moved: MessageReader<WindowMoved>,
+    mut resized: MessageReader<WindowResized>,
+    floating_windows: Query<&NativeFloatingWindow>,
+    mut layout: ResMut<WorkspaceLayout>,
+) {
+    let mut changed = false;
+    for event in moved.read() {
+        let Ok(floating) = floating_windows.get(event.window) else {
+            continue;
+        };
+        changed |= layout.update_floating_geometry(
+            floating.0,
+            Some([event.position.x as f32, event.position.y as f32]),
+            None,
+        );
+    }
+    for event in resized.read() {
+        let Ok(floating) = floating_windows.get(event.window) else {
+            continue;
+        };
+        changed |=
+            layout.update_floating_geometry(floating.0, None, Some([event.width, event.height]));
+    }
+    if changed && let Err(error) = layout.save() {
+        warn!("failed to save editor workspace layout: {error}");
+    }
+}
+
+fn sync_native_floating_windows(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    editor_resources: UiBuildResources,
+    windows: Query<(Entity, &NativeFloatingWindow)>,
+    cameras: Query<(Entity, &NativeFloatingCamera)>,
+    roots: Query<(Entity, &NativeFloatingUi)>,
+) {
+    for (entity, native) in &windows {
+        if editor_resources
+            .layout
+            .floating
+            .iter()
+            .all(|floating| floating.panel != native.0)
+        {
+            commands.entity(entity).despawn();
+            for (camera_entity, camera) in &cameras {
+                if camera.0 == native.0 {
+                    commands.entity(camera_entity).despawn();
+                }
+            }
+            for (root_entity, root) in &roots {
+                if root.panel == native.0 {
+                    commands.entity(root_entity).despawn();
+                }
+            }
+        }
+    }
+
+    let sources = PanelSources {
+        session: &session,
+        catalog: &editor_resources.catalog,
+        registry: &editor_resources.registry,
+        palette: &editor_resources.palette,
+    };
+    for floating in &editor_resources.layout.floating {
+        if windows.iter().any(|(_, native)| native.0 == floating.panel) {
+            continue;
+        }
+        let window = commands
+            .spawn((
+                Window {
+                    title: format!("{} — Aestra", floating.panel.title()),
+                    resolution: WindowResolution::new(
+                        floating.size[0].round() as u32,
+                        floating.size[1].round() as u32,
+                    ),
+                    position: WindowPosition::At(IVec2::new(
+                        floating.position[0].round() as i32,
+                        floating.position[1].round() as i32,
+                    )),
+                    resize_constraints: WindowResizeConstraints {
+                        min_width: 260.0,
+                        min_height: 180.0,
+                        ..default()
+                    },
+                    resizable: true,
+                    ..default()
+                },
+                CursorIcon::default(),
+                NativeFloatingWindow(floating.panel),
+            ))
+            .id();
+        let camera = commands
+            .spawn((
+                Camera2d,
+                RenderTarget::Window(WindowRef::Entity(window)),
+                NativeFloatingCamera(floating.panel),
+            ))
+            .id();
+        spawn_native_floating_ui(
+            &mut commands,
+            floating.panel,
+            window,
+            camera,
+            &editor_resources.workspace,
+            sources,
+        );
+    }
+}
+
 fn rebuild_editor_ui(
     mut commands: Commands,
     session: Res<EditorSession>,
@@ -4674,6 +5030,7 @@ fn rebuild_editor_ui(
     mut rendered: ResMut<RenderedUiRevision>,
     root: Single<Entity, With<EditorRoot>>,
     contents: Query<Entity, With<EditorContent>>,
+    floating_roots: Query<(Entity, &NativeFloatingUi)>,
 ) {
     if rendered.0 == session.ui_revision {
         return;
@@ -4690,11 +5047,30 @@ fn rebuild_editor_ui(
     commands.entity(*root).with_children(|root| {
         spawn_editor_content(
             root,
+            &editor_resources.menu,
             &editor_resources.workspace,
             &editor_resources.layout,
             sources,
         );
     });
+    for (entity, floating_root) in &floating_roots {
+        commands.entity(entity).despawn();
+        if editor_resources
+            .layout
+            .floating
+            .iter()
+            .any(|floating| floating.panel == floating_root.panel)
+        {
+            spawn_native_floating_ui(
+                &mut commands,
+                floating_root.panel,
+                floating_root.window,
+                floating_root.camera,
+                &editor_resources.workspace,
+                sources,
+            );
+        }
+    }
     rendered.0 = session.ui_revision;
 }
 
@@ -4929,10 +5305,7 @@ mod tests {
             app.world().get::<UiTransform>(tab).unwrap().translation,
             Val2::ZERO
         );
-        assert_eq!(
-            *app.world().get::<GlobalZIndex>(tab).unwrap(),
-            GlobalZIndex(20)
-        );
+        assert!(!app.world().entity(tab).contains::<GlobalZIndex>());
     }
 
     #[test]

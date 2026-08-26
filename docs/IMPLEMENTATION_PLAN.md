@@ -33,9 +33,10 @@ architecture vision; this file is the shorter delivery plan.
   stateful GPU module work. The editor workspace now uses an in-code BSN shell and a
   persisted recursive dock tree. Every authoring panel can be inserted and reordered
   through tab strips or split through directional panel-content drop regions; empty branches collapse automatically,
-  splitters expose directional cursors, and closed panels can be restored from View.
-  The remaining M5 work is floating panels, the
-  broader diagnostics/generated-code/profiler tab set, viewport gizmos, and recovery.
+  splitters expose directional cursors, closed panels can be restored from View, and
+  docked tabs can become persisted native secondary windows through an explicit
+  context action, enabling multi-monitor layouts. The remaining M5 work is the broader
+  diagnostics/generated-code/profiler tab set, viewport gizmos, and recovery.
 
 ## 1. Assessment of the current prototype
 

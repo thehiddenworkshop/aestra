@@ -64,6 +64,24 @@ pub(crate) struct DockStack {
     pub(crate) active: Option<DockPanel>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct FloatingPanel {
+    pub(crate) panel: DockPanel,
+    pub(crate) position: [f32; 2],
+    pub(crate) size: [f32; 2],
+}
+
+impl Default for FloatingPanel {
+    fn default() -> Self {
+        Self {
+            panel: DockPanel::Inspector,
+            position: [120.0, 80.0],
+            size: [420.0, 520.0],
+        }
+    }
+}
+
 impl DockStack {
     pub(crate) fn new(tabs: impl IntoIterator<Item = DockPanel>, active: DockPanel) -> Self {
         let mut stack = Self {
@@ -232,6 +250,7 @@ impl DockNode {
 #[serde(default)]
 pub(crate) struct WorkspaceLayout {
     pub(crate) root: DockNode,
+    pub(crate) floating: Vec<FloatingPanel>,
     next_node_id: u64,
 }
 
@@ -249,6 +268,7 @@ impl Default for WorkspaceLayout {
         let top = DockNode::split(6, DockAxis::Horizontal, 0.17, assets, center_right);
         Self {
             root: DockNode::split(7, DockAxis::Vertical, 0.71, top, bottom),
+            floating: Vec::new(),
             next_node_id: 8,
         }
     }
@@ -276,6 +296,7 @@ impl WorkspaceLayout {
     pub(crate) fn dock(&mut self, panel: DockPanel, target: DockNodeId, drop: DockDrop) -> bool {
         let previous = self.clone();
         self.root.remove_panel(panel);
+        self.floating.retain(|floating| floating.panel != panel);
         if drop == DockDrop::Center {
             let Some(stack) = self.root.find_tabs_mut(target) else {
                 *self = previous;
@@ -327,11 +348,12 @@ impl WorkspaceLayout {
         target: DockPanel,
         before: bool,
     ) -> bool {
-        if panel == target || !self.root.contains(panel) || !self.root.contains(target) {
+        if panel == target || !self.contains(panel) || !self.root.contains(target) {
             return false;
         }
         let previous = self.clone();
         self.root.remove_panel(panel);
+        self.floating.retain(|floating| floating.panel != panel);
         let Some(target_node) = self.root.node_containing(target) else {
             *self = previous;
             return false;
@@ -353,6 +375,9 @@ impl WorkspaceLayout {
     }
 
     pub(crate) fn is_active(&self, panel: DockPanel) -> bool {
+        if self.floating.iter().any(|floating| floating.panel == panel) {
+            return true;
+        }
         fn visit(node: &DockNode, panel: DockPanel) -> bool {
             match node {
                 DockNode::Split { first, second, .. } => {
@@ -366,15 +391,19 @@ impl WorkspaceLayout {
     }
 
     pub(crate) fn close(&mut self, panel: DockPanel) -> bool {
-        if !panel.closable() || !self.root.contains(panel) {
+        if !panel.closable() || !self.contains(panel) {
             return false;
         }
         self.root.remove_panel(panel);
+        self.floating.retain(|floating| floating.panel != panel);
         self.root.normalize();
         true
     }
 
     pub(crate) fn show(&mut self, panel: DockPanel) -> bool {
+        if self.floating.iter().any(|floating| floating.panel == panel) {
+            return false;
+        }
         if self.root.contains(panel) {
             return self.root.activate(panel);
         }
@@ -409,6 +438,63 @@ impl WorkspaceLayout {
         self.dock(panel, target, drop)
     }
 
+    pub(crate) fn float_panel(
+        &mut self,
+        panel: DockPanel,
+        position: [f32; 2],
+        available_size: [f32; 2],
+    ) -> bool {
+        if panel == DockPanel::Viewport || !self.root.contains(panel) {
+            return false;
+        }
+        self.root.remove_panel(panel);
+        self.root.normalize();
+        let size = default_floating_size(panel, available_size);
+        self.floating.push(FloatingPanel {
+            panel,
+            position,
+            size,
+        });
+        true
+    }
+
+    pub(crate) fn update_floating_geometry(
+        &mut self,
+        panel: DockPanel,
+        position: Option<[f32; 2]>,
+        size: Option<[f32; 2]>,
+    ) -> bool {
+        let floating = self
+            .floating
+            .iter_mut()
+            .find(|floating| floating.panel == panel);
+        let Some(floating) = floating else {
+            return false;
+        };
+        let previous = floating.clone();
+        if let Some(position) = position {
+            floating.position = position;
+        }
+        if let Some(size) = size {
+            floating.size = [size[0].max(260.0), size[1].max(180.0)];
+        }
+        *floating != previous
+    }
+
+    pub(crate) fn redock(&mut self, panel: DockPanel) -> bool {
+        if !self.floating.iter().any(|floating| floating.panel == panel) {
+            return false;
+        }
+        let previous = self.clone();
+        self.floating.retain(|floating| floating.panel != panel);
+        if self.show(panel) {
+            true
+        } else {
+            *self = previous;
+            false
+        }
+    }
+
     pub(crate) fn resize_split(&mut self, id: DockNodeId, delta: f32, span: f32) -> bool {
         if span <= 0.0 {
             return false;
@@ -430,6 +516,10 @@ impl WorkspaceLayout {
         id
     }
 
+    fn contains(&self, panel: DockPanel) -> bool {
+        self.root.contains(panel) || self.floating.iter().any(|floating| floating.panel == panel)
+    }
+
     fn normalized(mut self) -> Self {
         self.root.normalize();
         let maximum_id = max_node_id(&self.root);
@@ -438,11 +528,34 @@ impl WorkspaceLayout {
             return Self::default();
         }
         for panel in DockPanel::ALL {
-            remove_duplicate_occurrences(&mut self.root, panel, &mut false);
+            let mut found = false;
+            remove_duplicate_occurrences(&mut self.root, panel, &mut found);
+            self.floating.retain(|floating| {
+                if floating.panel != panel {
+                    true
+                } else if found || panel == DockPanel::Viewport {
+                    false
+                } else {
+                    found = true;
+                    true
+                }
+            });
         }
         self.root.normalize();
         self
     }
+}
+
+fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2] {
+    let preferred: [f32; 2] = match panel {
+        DockPanel::Timeline | DockPanel::Curves | DockPanel::Changes => [720.0, 320.0],
+        DockPanel::Assets | DockPanel::Inspector => [420.0, 520.0],
+        DockPanel::Viewport => [760.0, 540.0],
+    };
+    [
+        preferred[0].min(available_size[0].max(260.0)),
+        preferred[1].min(available_size[1].max(180.0)),
+    ]
 }
 
 fn remove_duplicate_occurrences(node: &mut DockNode, panel: DockPanel, found: &mut bool) {
@@ -557,5 +670,30 @@ mod tests {
         assert!(layout.reorder_tab(DockPanel::Assets, DockPanel::Curves, false));
         assert_eq!(layout.root.node_containing(DockPanel::Assets), Some(bottom));
         assert!(layout.is_active(DockPanel::Assets));
+    }
+
+    #[test]
+    fn floating_panels_leave_no_empty_dock_and_can_redock() {
+        let mut layout = WorkspaceLayout::default();
+        assert!(layout.float_panel(DockPanel::Inspector, [900.0, 80.0], [1200.0, 800.0]));
+        assert!(!layout.root.contains(DockPanel::Inspector));
+        assert_eq!(layout.floating[0].panel, DockPanel::Inspector);
+
+        assert!(layout.redock(DockPanel::Inspector));
+        assert!(layout.floating.is_empty());
+        assert!(layout.root.contains(DockPanel::Inspector));
+    }
+
+    #[test]
+    fn floating_window_geometry_is_persisted_and_size_is_clamped() {
+        let mut layout = WorkspaceLayout::default();
+        assert!(layout.float_panel(DockPanel::Assets, [40.0, 40.0], [1000.0, 700.0]));
+        assert!(layout.update_floating_geometry(
+            DockPanel::Assets,
+            Some([-2400.0, 160.0]),
+            Some([100.0, 120.0]),
+        ));
+        assert_eq!(layout.floating[0].position, [-2400.0, 160.0]);
+        assert_eq!(layout.floating[0].size, [260.0, 180.0]);
     }
 }

@@ -75,7 +75,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Owns a persisted recursive workspace dock tree with tab-strip insertion and
   directional panel-content splitting,
   closable/recoverable panels, collapsing empty branches, transient drop targets,
-  draggable splitter gutters, and directional resize cursors.
+  persisted native secondary windows for multi-monitor panels, draggable splitter
+  gutters, and directional resize cursors.
 - Keeps window chrome stable while rebuilding only effect-dependent workspace content.
 - Consumes `aestra-bevy` through an explicit session resource.
 - Must not add game-only concepts to the semantic asset schema.
@@ -139,7 +140,7 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - node/module stack for spawn, initialize, update, renderer, and events
 - autosave/recovery and asset migrations
 - [x] persistent recursive pane resizing and dockable authoring-panel tab stacks
-- floating panels
+- [x] persisted native floating panel windows with redocking
 
 ### Phase 3 — production renderer
 
