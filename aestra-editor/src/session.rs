@@ -1,6 +1,6 @@
 use aestra_authoring::{
-    CommandError, CommandHistory, EffectCommand, EffectDiff, EffectTransaction, LockState,
-    Selection,
+    CommandError, CommandExecutor, CommandHistory, EffectCommand, EffectDiff, EffectTransaction,
+    LockState, Selection, TransactionPreview,
 };
 use aestra_bevy::{
     AssetError, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, ModuleId, ModuleInstance,
@@ -23,6 +23,12 @@ pub(crate) enum SessionError {
     Compile(#[from] CompileError),
 }
 
+pub(crate) struct PendingChange {
+    pub preview: TransactionPreview,
+    pub diagnostics: ValidationReport,
+    pub can_apply: bool,
+}
+
 #[derive(Resource)]
 pub(crate) struct EditorSession {
     pub effect: EffectAsset,
@@ -31,6 +37,7 @@ pub(crate) struct EditorSession {
     pub locks: LockState,
     pub diagnostics: ValidationReport,
     pub last_diff: EffectDiff,
+    pub pending_change: Option<PendingChange>,
     pub time: f32,
     pub playing: bool,
     pub speed: f32,
@@ -57,6 +64,7 @@ impl EditorSession {
             locks: LockState::default(),
             diagnostics,
             last_diff: EffectDiff::default(),
+            pending_change: None,
             time: 0.0,
             playing: true,
             speed: 1.0,
@@ -86,6 +94,7 @@ impl EditorSession {
         self.locks = LockState::default();
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
+        self.pending_change = None;
         self.time = 0.0;
         self.playing = false;
         self.dirty = true;
@@ -105,6 +114,7 @@ impl EditorSession {
         self.locks = LockState::default();
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
+        self.pending_change = None;
         self.time = 0.0;
         self.playing = false;
         self.dirty = false;
@@ -146,6 +156,7 @@ impl EditorSession {
         transaction: EffectTransaction,
         rebuild_ui: bool,
     ) -> bool {
+        let discarded_preview = self.pending_change.take().is_some();
         let label = transaction.label.clone();
         match self
             .history
@@ -164,13 +175,102 @@ impl EditorSession {
                 true
             }
             Err(error) => {
+                if discarded_preview {
+                    self.refresh_preview();
+                }
                 self.record_command_error("Edit failed", error);
                 false
             }
         }
     }
 
+    pub fn preview_transaction(&mut self, transaction: EffectTransaction) -> bool {
+        let label = transaction.label.clone();
+        let preview = match CommandExecutor::preview(&self.effect, &self.locks, transaction) {
+            Ok(preview) => preview,
+            Err(error) => {
+                self.record_command_error("Preview failed", error);
+                return false;
+            }
+        };
+        let (diagnostics, can_apply) = match compile_preview(preview.candidate()) {
+            Ok(runtime_preview) => {
+                self.preview = Some(runtime_preview);
+                self.samples.clear();
+                self.time = 0.0;
+                (preview.candidate().validation_report(), true)
+            }
+            Err(error) => {
+                self.preview = compile_preview(&self.effect).ok();
+                (error.report().clone(), false)
+            }
+        };
+        let change_count = preview.diff().changes.len();
+        self.pending_change = Some(PendingChange {
+            preview,
+            diagnostics,
+            can_apply,
+        });
+        self.status = if can_apply {
+            format!("Reviewing {label} ({change_count} changes)")
+        } else {
+            format!("{label} has compiler errors and cannot be applied")
+        };
+        self.ui_revision += 1;
+        true
+    }
+
+    pub fn apply_pending_change(&mut self) -> bool {
+        let Some(pending) = self.pending_change.take() else {
+            self.status = "There is no transaction to apply".into();
+            return false;
+        };
+        if !pending.can_apply {
+            self.status = "Resolve the preview diagnostics before applying".into();
+            self.pending_change = Some(pending);
+            self.ui_revision += 1;
+            return false;
+        }
+        let label = pending.preview.transaction().label.clone();
+        match self
+            .history
+            .commit_preview(&mut self.effect, &self.locks, pending.preview)
+        {
+            Ok(diff) => {
+                self.last_diff = diff;
+                self.selection.repair(&self.effect);
+                self.refresh_preview();
+                self.time = self.time.clamp(0.0, self.effect.duration);
+                self.dirty = true;
+                self.status = format!("Applied {label}");
+                self.ui_revision += 1;
+                true
+            }
+            Err(error) => {
+                self.refresh_preview();
+                self.record_command_error("Apply failed", error);
+                false
+            }
+        }
+    }
+
+    pub fn discard_pending_change(&mut self) -> bool {
+        let Some(pending) = self.pending_change.take() else {
+            self.status = "There is no transaction to discard".into();
+            return false;
+        };
+        let label = pending.preview.transaction().label.clone();
+        self.refresh_preview();
+        self.time = self.time.clamp(0.0, self.effect.duration);
+        self.status = format!("Discarded {label}");
+        self.ui_revision += 1;
+        true
+    }
+
     pub fn undo(&mut self) {
+        if self.pending_change.take().is_some() {
+            self.refresh_preview();
+        }
         match self.history.undo(&mut self.effect) {
             Ok(Some(result)) => {
                 self.selection.repair(&self.effect);
@@ -187,6 +287,9 @@ impl EditorSession {
     }
 
     pub fn redo(&mut self) {
+        if self.pending_change.take().is_some() {
+            self.refresh_preview();
+        }
         match self.history.redo(&mut self.effect) {
             Ok(Some(result)) => {
                 self.selection.repair(&self.effect);
@@ -262,33 +365,6 @@ impl EditorSession {
         };
         if self.execute("Duplicated emitter layer", command, true) {
             self.selection.select_emitter(duplicate);
-        }
-    }
-
-    pub fn delete_selected_layer(&mut self) {
-        if self.effect.emitters.len() <= 1 {
-            self.status = "An effect must keep at least one layer".into();
-            return;
-        }
-        let index = self.selected_layer_index();
-        let id = self.effect.emitters[index].id;
-        let next = self
-            .effect
-            .emitters
-            .get(index + 1)
-            .or_else(|| {
-                index
-                    .checked_sub(1)
-                    .and_then(|index| self.effect.emitters.get(index))
-            })
-            .map(|emitter| emitter.id);
-        if self.execute(
-            "Deleted emitter layer",
-            EffectCommand::RemoveEmitter { id },
-            true,
-        ) && let Some(next) = next
-        {
-            self.selection.select_emitter(next);
         }
     }
 
@@ -504,18 +580,6 @@ impl EditorSession {
         }
     }
 
-    pub fn delete_module(&mut self, id: ModuleId) {
-        let emitter = self.selected_layer().id;
-        self.execute(
-            "Deleted module",
-            EffectCommand::RemoveModule {
-                emitter,
-                module: id,
-            },
-            true,
-        );
-    }
-
     pub fn add_sprite_renderer(&mut self) {
         let emitter = self.selected_layer();
         let renderer = RendererInstance::sprite(BlendMode::Additive, 0.5);
@@ -602,18 +666,6 @@ impl EditorSession {
             return;
         };
         self.execute("Duplicated renderer", command, true);
-    }
-
-    pub fn delete_renderer(&mut self, id: RendererId) {
-        let emitter = self.selected_layer().id;
-        self.execute(
-            "Deleted renderer",
-            EffectCommand::RemoveRenderer {
-                emitter,
-                renderer: id,
-            },
-            true,
-        );
     }
 
     pub fn adjust_selected_start(&mut self, delta: f32) {
@@ -768,7 +820,11 @@ mod tests {
         session.redo();
         assert_eq!(session.effect.emitters.len(), 2);
         assert_eq!(session.effect.emitters[1].id, added);
-        session.delete_selected_layer();
+        session.execute(
+            "Deleted emitter layer",
+            EffectCommand::RemoveEmitter { id: added },
+            true,
+        );
         assert_eq!(session.effect.emitters.len(), 1);
         session.undo();
         assert_eq!(session.effect.emitters.len(), 2);
@@ -788,7 +844,15 @@ mod tests {
         session.undo();
         assert_eq!(session.selected_layer().modules.len(), 5);
 
-        session.delete_module(original);
+        let emitter = session.selected_layer().id;
+        session.execute(
+            "Deleted module",
+            EffectCommand::RemoveModule {
+                emitter,
+                module: original,
+            },
+            true,
+        );
         assert_eq!(session.selected_layer().modules.len(), 4);
         assert!(session.preview.is_none());
         assert!(!session.diagnostics.is_valid());
@@ -814,6 +878,89 @@ mod tests {
         session.undo();
         assert_eq!(session.effect.emitters[0].size_curve().keys[1], original);
         assert!(session.preview.is_some());
+    }
+
+    #[test]
+    fn transaction_preview_applies_as_one_undoable_edit() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        let emitter = session.effect.emitters[0].id;
+        let module = session.effect.emitters[0]
+            .module_by_type(aestra_bevy::MODULE_EMISSION)
+            .unwrap()
+            .id;
+        let original = session.effect.emitters[0].spawn_rate();
+        let transaction = EffectTransaction::new(
+            "Tune emission",
+            vec![
+                EffectCommand::SetModuleParameter {
+                    emitter,
+                    module,
+                    parameter: "spawn_rate".into(),
+                    value: Value::Scalar(91.0),
+                },
+                EffectCommand::SetEffectLooping { looping: false },
+            ],
+        );
+
+        assert!(session.preview_transaction(transaction));
+        assert_eq!(session.effect.emitters[0].spawn_rate(), original);
+        assert_eq!(preview_spawn_rate(&session), 91.0);
+        assert_eq!(
+            session
+                .pending_change
+                .as_ref()
+                .unwrap()
+                .preview
+                .diff()
+                .changes
+                .len(),
+            2
+        );
+
+        assert!(session.apply_pending_change());
+        assert!(session.pending_change.is_none());
+        assert_eq!(session.effect.emitters[0].spawn_rate(), 91.0);
+        session.undo();
+        assert_eq!(session.effect.emitters[0].spawn_rate(), original);
+        assert!(session.effect.looping);
+    }
+
+    #[test]
+    fn discarded_and_invalid_previews_never_change_the_effect() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        let before = session.effect.clone();
+        assert!(session.preview_transaction(EffectTransaction::single(
+            "Rename effect",
+            EffectCommand::SetEffectName {
+                name: "Candidate".into(),
+            },
+        )));
+        assert!(session.discard_pending_change());
+        assert_eq!(session.effect, before);
+
+        let emitter = session.effect.emitters[0].id;
+        let required_module = session.effect.emitters[0]
+            .module_by_type(aestra_bevy::MODULE_EMISSION)
+            .unwrap()
+            .id;
+        assert!(session.preview_transaction(EffectTransaction::single(
+            "Delete required module",
+            EffectCommand::RemoveModule {
+                emitter,
+                module: required_module,
+            },
+        )));
+        let pending = session.pending_change.as_ref().unwrap();
+        assert!(!pending.can_apply);
+        assert!(!pending.diagnostics.is_valid());
+        assert!(!session.apply_pending_change());
+        assert_eq!(session.effect, before);
     }
 
     #[test]

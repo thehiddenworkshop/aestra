@@ -1,6 +1,7 @@
 mod session;
 mod theme;
 
+use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction};
 use aestra_bevy::{
     ColorKey, CurveKey, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterShape, ModuleId,
     ModuleInstance, ModuleParameters, RendererId, RendererProperties, StageKind, Value,
@@ -111,6 +112,8 @@ enum EditorAction {
     AdjustRendererSoftness(RendererId, i8),
     DuplicateRenderer(RendererId),
     DeleteRenderer(RendererId),
+    ApplyPendingChange,
+    DiscardPendingChange,
     ToggleMenu(MenuKind),
     ToggleGrid,
     ShowAbout,
@@ -121,6 +124,7 @@ enum EditorAction {
 enum WorkspaceTab {
     Timeline,
     Curves,
+    Changes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1885,6 +1889,7 @@ fn spawn_workspace(
     match workspace.tab {
         WorkspaceTab::Timeline => spawn_timeline(parent, session),
         WorkspaceTab::Curves => spawn_curves_workspace(parent, session, registry, workspace),
+        WorkspaceTab::Changes => spawn_changes_workspace(parent, session),
     }
 }
 
@@ -1917,6 +1922,7 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                 .with_children(|header| {
                     workspace_tab_button(header, "TIMELINE", WorkspaceTab::Timeline, true);
                     workspace_tab_button(header, "CURVES", WorkspaceTab::Curves, false);
+                    workspace_tab_button(header, "CHANGES", WorkspaceTab::Changes, false);
                     header.spawn((
                         Text::new("00:00.000  /  00:02.800"),
                         TimeLabel,
@@ -2113,6 +2119,7 @@ fn spawn_curves_workspace(
                 .with_children(|header| {
                     workspace_tab_button(header, "TIMELINE", WorkspaceTab::Timeline, false);
                     workspace_tab_button(header, "CURVES", WorkspaceTab::Curves, true);
+                    workspace_tab_button(header, "CHANGES", WorkspaceTab::Changes, false);
                     header.spawn(Node {
                         flex_grow: 1.0,
                         ..default()
@@ -2196,6 +2203,246 @@ fn spawn_curves_workspace(
                     });
                 });
         });
+}
+
+fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(226.0),
+                flex_direction: FlexDirection::Column,
+                border: UiRect::top(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|panel| {
+            panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(38.0),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(Val::Px(14.0)),
+                        column_gap: Val::Px(8.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL_LIGHT),
+                ))
+                .with_children(|header| {
+                    workspace_tab_button(header, "TIMELINE", WorkspaceTab::Timeline, false);
+                    workspace_tab_button(header, "CURVES", WorkspaceTab::Curves, false);
+                    workspace_tab_button(header, "CHANGES", WorkspaceTab::Changes, true);
+                    header.spawn(Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    });
+                    let summary = session.pending_change.as_ref().map_or_else(
+                        || "NO TRANSACTION PENDING".to_string(),
+                        |pending| {
+                            format!(
+                                "{}  ·  {} CHANGES",
+                                pending.preview.transaction().label.to_uppercase(),
+                                pending.preview.diff().changes.len()
+                            )
+                        },
+                    );
+                    header.spawn((
+                        Text::new(summary),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_FAINT),
+                    ));
+                });
+
+            let Some(pending) = &session.pending_change else {
+                panel.spawn((
+                    Text::new(
+                        "No proposed changes. Structural deletions open here for review before they modify the effect.",
+                    ),
+                    TextFont {
+                        font_size: FontSize::Px(12.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_MUTED),
+                    Node {
+                        margin: UiRect::all(Val::Px(28.0)),
+                        ..default()
+                    },
+                ));
+                return;
+            };
+
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Row,
+                    ..default()
+                })
+                .with_children(|body| {
+                    body.spawn((
+                        Node {
+                            width: Val::Percent(66.0),
+                            height: Val::Percent(100.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(Val::Px(8.0)),
+                            row_gap: Val::Px(4.0),
+                            overflow: Overflow::scroll_y(),
+                            border: UiRect::right(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme::PANEL_DARK),
+                        BorderColor::all(theme::BORDER),
+                        ScrollPosition::default(),
+                    ))
+                    .with_children(|changes| {
+                        for change in &pending.preview.diff().changes {
+                            let (kind, color) = change_kind_style(change.kind);
+                            let values = match (&change.before, &change.after) {
+                                (Some(before), Some(after)) => format!("{before}  →  {after}"),
+                                (Some(before), None) => before.clone(),
+                                (None, Some(after)) => after.clone(),
+                                (None, None) => String::new(),
+                            };
+                            changes
+                                .spawn((
+                                    Node {
+                                        width: Val::Percent(100.0),
+                                        min_height: Val::Px(30.0),
+                                        align_items: AlignItems::Center,
+                                        padding: UiRect::horizontal(Val::Px(8.0)),
+                                        column_gap: Val::Px(8.0),
+                                        border_radius: BorderRadius::all(Val::Px(3.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme::PANEL),
+                                ))
+                                .with_children(|row| {
+                                    row.spawn((
+                                        Text::new(kind),
+                                        TextFont {
+                                            font_size: FontSize::Px(9.0),
+                                            ..default()
+                                        },
+                                        TextColor(color),
+                                        Node {
+                                            width: Val::Px(58.0),
+                                            ..default()
+                                        },
+                                    ));
+                                    row.spawn((
+                                        Text::new(change.path.clone()),
+                                        TextFont {
+                                            font_size: FontSize::Px(10.0),
+                                            ..default()
+                                        },
+                                        TextColor(theme::TEXT),
+                                        Node {
+                                            width: Val::Percent(42.0),
+                                            ..default()
+                                        },
+                                    ));
+                                    row.spawn((
+                                        Text::new(values),
+                                        TextFont {
+                                            font_size: FontSize::Px(9.0),
+                                            ..default()
+                                        },
+                                        TextColor(theme::TEXT_MUTED),
+                                    ));
+                                });
+                        }
+                    });
+                    body.spawn(Node {
+                        flex_grow: 1.0,
+                        height: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(Val::Px(10.0)),
+                        row_gap: Val::Px(6.0),
+                        overflow: Overflow::scroll_y(),
+                        ..default()
+                    })
+                    .with_children(|review| {
+                        let errors = pending
+                            .diagnostics
+                            .diagnostics
+                            .iter()
+                            .filter(|item| item.severity == DiagnosticSeverity::Error)
+                            .count();
+                        review.spawn((
+                            Text::new(if pending.can_apply {
+                                "VALIDATED · READY TO APPLY".to_string()
+                            } else {
+                                format!("BLOCKED · {errors} COMPILER ERROR(S)")
+                            }),
+                            TextFont {
+                                font_size: FontSize::Px(10.0),
+                                ..default()
+                            },
+                            TextColor(if pending.can_apply {
+                                Color::srgb(0.35, 0.88, 0.57)
+                            } else {
+                                Color::srgb(1.0, 0.38, 0.32)
+                            }),
+                        ));
+                        for diagnostic in &pending.diagnostics.diagnostics {
+                            review.spawn((
+                                Text::new(format!(
+                                    "{:?} · {}\n{}",
+                                    diagnostic.code, diagnostic.path, diagnostic.message
+                                )),
+                                TextFont {
+                                    font_size: FontSize::Px(9.0),
+                                    ..default()
+                                },
+                                TextColor(match diagnostic.severity {
+                                    DiagnosticSeverity::Error => Color::srgb(1.0, 0.38, 0.32),
+                                    DiagnosticSeverity::Warning => Color::srgb(1.0, 0.74, 0.30),
+                                    DiagnosticSeverity::Info => theme::TEXT_MUTED,
+                                }),
+                            ));
+                        }
+                        review.spawn(Node {
+                            flex_grow: 1.0,
+                            ..default()
+                        });
+                        review
+                            .spawn(Node {
+                                width: Val::Percent(100.0),
+                                min_height: Val::Px(32.0),
+                                justify_content: JustifyContent::FlexEnd,
+                                column_gap: Val::Px(8.0),
+                                ..default()
+                            })
+                            .with_children(|actions| {
+                                inspector_action_button(
+                                    actions,
+                                    "Discard",
+                                    EditorAction::DiscardPendingChange,
+                                );
+                                inspector_action_button(
+                                    actions,
+                                    if pending.can_apply { "Apply" } else { "Apply blocked" },
+                                    EditorAction::ApplyPendingChange,
+                                );
+                            });
+                    });
+                });
+        });
+}
+
+fn change_kind_style(kind: ChangeKind) -> (&'static str, Color) {
+    match kind {
+        ChangeKind::Added => ("ADDED", Color::srgb(0.35, 0.88, 0.57)),
+        ChangeKind::Removed => ("REMOVED", Color::srgb(1.0, 0.38, 0.32)),
+        ChangeKind::Modified => ("MODIFIED", Color::srgb(0.45, 0.70, 1.0)),
+        ChangeKind::Moved => ("MOVED", Color::srgb(1.0, 0.74, 0.30)),
+    }
 }
 
 fn spawn_complex_input_list(
@@ -2926,8 +3173,9 @@ fn keyboard_shortcuts(
     if control && keys.just_pressed(KeyCode::Enter) {
         session.add_layer();
     }
-    if keys.just_pressed(KeyCode::Delete) {
-        session.delete_selected_layer();
+    if keys.just_pressed(KeyCode::Delete) && preview_selected_layer_deletion(&mut session) {
+        workspace.tab = WorkspaceTab::Changes;
+        workspace.complex = None;
     }
     if keys.just_pressed(KeyCode::Space) {
         session.playing = !session.playing;
@@ -3016,8 +3264,10 @@ fn handle_buttons(
                         workspace.complex = None;
                     }
                     EditorAction::DeleteLayer => {
-                        session.delete_selected_layer();
-                        workspace.complex = None;
+                        if preview_selected_layer_deletion(&mut session) {
+                            workspace.tab = WorkspaceTab::Changes;
+                            workspace.complex = None;
+                        }
                     }
                     EditorAction::SelectLayer(index) => {
                         session.select_layer(index);
@@ -3119,11 +3369,8 @@ fn handle_buttons(
                     }
                     EditorAction::DuplicateModule(id) => session.duplicate_module(id),
                     EditorAction::DeleteModule(id) => {
-                        session.delete_module(id);
-                        if workspace
-                            .complex
-                            .is_some_and(|selection| selection.module == id)
-                        {
+                        if preview_module_deletion(&mut session, id) {
+                            workspace.tab = WorkspaceTab::Changes;
                             workspace.complex = None;
                         }
                     }
@@ -3133,7 +3380,18 @@ fn handle_buttons(
                         session.adjust_renderer_softness(id, direction as f32 * 0.1);
                     }
                     EditorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
-                    EditorAction::DeleteRenderer(id) => session.delete_renderer(id),
+                    EditorAction::DeleteRenderer(id) => {
+                        if preview_renderer_deletion(&mut session, id) {
+                            workspace.tab = WorkspaceTab::Changes;
+                            workspace.complex = None;
+                        }
+                    }
+                    EditorAction::ApplyPendingChange => {
+                        session.apply_pending_change();
+                    }
+                    EditorAction::DiscardPendingChange => {
+                        session.discard_pending_change();
+                    }
                     EditorAction::ToggleGrid => menu.show_grid = !menu.show_grid,
                     EditorAction::ShowAbout => menu.show_about = true,
                     EditorAction::CloseAbout => menu.show_about = false,
@@ -3142,6 +3400,34 @@ fn handle_buttons(
             }
         }
     }
+}
+
+fn preview_selected_layer_deletion(session: &mut EditorSession) -> bool {
+    if session.effect.emitters.len() <= 1 {
+        session.status = "An effect must keep at least one layer".into();
+        return false;
+    }
+    let id = session.selected_layer().id;
+    session.preview_transaction(EffectTransaction::single(
+        "Delete emitter layer",
+        EffectCommand::RemoveEmitter { id },
+    ))
+}
+
+fn preview_module_deletion(session: &mut EditorSession, module: ModuleId) -> bool {
+    let emitter = session.selected_layer().id;
+    session.preview_transaction(EffectTransaction::single(
+        "Delete module",
+        EffectCommand::RemoveModule { emitter, module },
+    ))
+}
+
+fn preview_renderer_deletion(session: &mut EditorSession, renderer: RendererId) -> bool {
+    let emitter = session.selected_layer().id;
+    session.preview_transaction(EffectTransaction::single(
+        "Delete renderer",
+        EffectCommand::RemoveRenderer { emitter, renderer },
+    ))
 }
 
 fn adjust_module_input(

@@ -1,4 +1,6 @@
-use crate::{CommandError, CommandExecutor, EffectDiff, EffectTransaction, LockState};
+use crate::{
+    CommandError, CommandExecutor, EffectDiff, EffectTransaction, LockState, TransactionPreview,
+};
 use aestra_core::EffectAsset;
 use std::collections::VecDeque;
 
@@ -60,6 +62,18 @@ impl CommandHistory {
         }
         self.redo.clear();
         Ok(outcome.diff)
+    }
+
+    pub fn commit_preview(
+        &mut self,
+        effect: &mut EffectAsset,
+        locks: &LockState,
+        preview: TransactionPreview,
+    ) -> Result<EffectDiff, CommandError> {
+        if !preview.source_matches(effect) {
+            return Err(CommandError::StalePreview);
+        }
+        self.execute(effect, locks, preview.into_transaction())
     }
 
     pub fn undo(

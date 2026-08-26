@@ -31,6 +31,8 @@ pub enum CommandError {
     MissingBinding { parameter: String },
     #[error("transaction validation failed: {0}")]
     Validation(#[from] ValidationReport),
+    #[error("the document changed after this transaction was previewed")]
+    StalePreview,
 }
 
 #[derive(Debug, Clone)]
@@ -39,10 +41,56 @@ pub struct TransactionOutcome {
     pub diff: EffectDiff,
 }
 
+#[derive(Debug, Clone)]
+pub struct TransactionPreview {
+    source: EffectAsset,
+    candidate: EffectAsset,
+    transaction: EffectTransaction,
+    diff: EffectDiff,
+}
+
+impl TransactionPreview {
+    pub fn candidate(&self) -> &EffectAsset {
+        &self.candidate
+    }
+
+    pub fn transaction(&self) -> &EffectTransaction {
+        &self.transaction
+    }
+
+    pub fn diff(&self) -> &EffectDiff {
+        &self.diff
+    }
+
+    pub(crate) fn source_matches(&self, effect: &EffectAsset) -> bool {
+        &self.source == effect
+    }
+
+    pub(crate) fn into_transaction(self) -> EffectTransaction {
+        self.transaction
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct CommandExecutor;
 
 impl CommandExecutor {
+    pub fn preview(
+        effect: &EffectAsset,
+        locks: &LockState,
+        transaction: EffectTransaction,
+    ) -> Result<TransactionPreview, CommandError> {
+        let source = effect.clone();
+        let mut candidate = source.clone();
+        let outcome = Self::execute(&mut candidate, locks, &transaction)?;
+        Ok(TransactionPreview {
+            source,
+            candidate,
+            transaction,
+            diff: outcome.diff,
+        })
+    }
+
     pub fn execute(
         effect: &mut EffectAsset,
         locks: &LockState,

@@ -425,3 +425,86 @@ fn invalid_binding_type_leaves_the_document_unchanged() {
     assert!(matches!(error, CommandError::Validation(_)));
     assert_eq!(effect, before);
 }
+
+#[test]
+fn preview_is_non_mutating_and_commits_as_one_history_entry() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let original = effect.clone();
+    let transaction = EffectTransaction::new(
+        "Retiming",
+        vec![
+            EffectCommand::SetEffectDuration { duration: 1.5 },
+            EffectCommand::SetEmitterTiming {
+                id: emitter,
+                start_time: 0.0,
+                duration: 1.5,
+            },
+        ],
+    );
+
+    let preview = CommandExecutor::preview(&effect, &LockState::default(), transaction).unwrap();
+    assert_eq!(effect, original);
+    assert_eq!(preview.candidate().duration, 1.5);
+    assert_eq!(preview.diff().changes.len(), 2);
+
+    let mut history = CommandHistory::default();
+    history
+        .commit_preview(&mut effect, &LockState::default(), preview)
+        .unwrap();
+    assert_eq!(effect.duration, 1.5);
+
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect, original);
+}
+
+#[test]
+fn stale_or_locked_previews_never_mutate_the_document() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let preview = CommandExecutor::preview(
+        &effect,
+        &LockState::default(),
+        EffectTransaction::single(
+            "Rename emitter",
+            EffectCommand::SetEmitterName {
+                id: emitter,
+                name: "Renamed".into(),
+            },
+        ),
+    )
+    .unwrap();
+    effect.name = "Changed elsewhere".into();
+    let before_commit = effect.clone();
+    let mut history = CommandHistory::default();
+    assert!(matches!(
+        history.commit_preview(&mut effect, &LockState::default(), preview),
+        Err(CommandError::StalePreview)
+    ));
+    assert_eq!(effect, before_commit);
+
+    let module = effect.emitters[0]
+        .module_by_type(MODULE_INITIALIZE)
+        .unwrap()
+        .id;
+    let mut locks = LockState::default();
+    locks.lock(SemanticTarget::Module(module));
+    let locked_before = effect.clone();
+    assert!(matches!(
+        CommandExecutor::preview(
+            &effect,
+            &locks,
+            EffectTransaction::single(
+                "Change lifetime",
+                EffectCommand::SetModuleParameter {
+                    emitter,
+                    module,
+                    parameter: "lifetime".into(),
+                    value: Value::Range(ScalarRange::new(0.2, 0.4)),
+                },
+            ),
+        ),
+        Err(CommandError::Locked { .. })
+    ));
+    assert_eq!(effect, locked_before);
+}
