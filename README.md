@@ -1,58 +1,15 @@
 # Aestra
 
+> [!WARNING]
+> **Work in progress.** Aestra is under active development; features, APIs, and effect formats may change without notice.
+
 **Aestra is a Bevy-native VFX choreography toolkit.** It aims to give Rust/Bevy teams the authoring depth of Niagara while keeping effect assets portable, deterministic, and comfortable to integrate into any game runtime.
-
-The first vertical slice already includes:
-
-- a complete editor shell built with Bevy UI, including File/Edit/View/Help menus;
-- project effect discovery, native New/Open/Save/Save As workflows, and unsaved-change protection;
-- command-based undo/redo for emitter, timing, curve, gradient, and layer edits;
-- a discoverable built-in module registry and typed compiler execution plans;
-- immutable compiled effects and seeded deterministic runtime instances;
-- typed effect-parameter bindings with zero-recompile runtime overrides;
-- compiled curves/gradients, constant folding, and particle-attribute liveness;
-- an effect library, layer stack, viewport, inspector, interactive timeline, diagnostics and compiled-plan workspaces, transport, and status bar;
-- a BSN-composed editor shell with a persistent recursive dock tree, tab insertion,
-  directional splitting, floating panel windows, and visible draggable splitter gutters;
-- deterministic emitter evaluation with point, circle, ring, and cone shapes;
-- ranges, smooth curves, color gradients, drag, gravity, turbulence, and layer timing;
-- renderer declarations for billboards, ribbons, and meshes;
-- event-link data for spawn, death, and collision choreography;
-- RON asset validation, loading, and saving;
-- an authored four-layer `Prism Bloom` sample;
-- interactive timeline scrubbing, playback, emitter tuning, curve previews, and gradient presets.
 
 ## Run
 
 ```powershell
 cargo run -p aestra-editor
 ```
-
-Controls:
-
-- `Space`: play or pause
-- `R`: restart the effect
-- `G`: toggle the preview grid
-- `Ctrl+N` / `Ctrl+O`: create or open an effect
-- `Ctrl+S` / `Ctrl+Shift+S`: save or save as
-- `Ctrl+Z` / `Ctrl+Y`: undo or redo
-- `Ctrl+Enter`: add an emitter
-- `Ctrl+D` / `Delete`: duplicate or delete the selected emitter
-- layer rows: select an emitter
-- timeline: click or drag to scrub
-- highlighted pane-divider gutters: drag with horizontal/vertical resize cursors
-- drag onto panel content to split left/right/above/below using the highlighted half-panel preview
-- drag beside another tab to join its stack and insert before or after it; use the trailing strip to append
-- right-click a docked tab and choose `Float Panel` to create a native OS window that can move to another monitor
-- close the secondary OS window to return its panel to the main workspace
-- diagnostics: filter by severity and click an issue to reveal its owning emitter, module, or renderer
-- generated code: inspect the live typed execution plan, particle layout, parameter slots, source locations, renderer plans, optimizations, and WESL entry points; click a compiled row to reveal and scroll to its exact Inspector source with a fading highlight
-- overflowing panels expose draggable scrollbars in addition to mouse-wheel scrolling; scrollbars stay hidden when all content fits
-- footer compile state: click to open or reveal Diagnostics
-- `View > Panels`: use checkboxes to show or hide every authoring panel
-- empty dock branches collapse completely; drop targets appear only while dragging a tab
-- `View > Reset Workspace`: restore the default panel placement and sizes
-- inspector `-` / `+`: tune emission, timing, size, opacity, and duration
 
 The sample asset lives at [`assets/effects/prism_bloom.aestra.ron`](assets/effects/prism_bloom.aestra.ron).
 
@@ -140,9 +97,5 @@ cargo fmt --all -- --check
 cargo check --workspace
 cargo test --workspace
 ```
-
-The editor round-trip tests create a new multi-emitter effect, save it, and load it through the shared semantic model used by the viewer and game plugin.
-
-The runtime packs immutable compiled plans into bounded GPU buffers, evaluates them with embedded WESL compute shaders, compacts the live set, and presents alpha/additive sprites through GPU indirect draws. Conservative authored bounds participate in Bevy visibility culling. `AestraSettings` defaults to `PresentationMode::Auto`: native GPU is preferred, GPU readback is used when compute works without native indirect presentation, and the deterministic CPU interpreter is the final fallback. `GpuCapabilities`, `AestraRuntimeStatus`, and per-effect `EffectRuntimeStatus` expose the decision and its reason through the same `AestraPlugin` / `EffectPlayer` surface.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the product architecture and phased roadmap.
