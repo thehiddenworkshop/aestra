@@ -78,6 +78,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   persisted native secondary windows for multi-monitor panels, draggable splitter
   gutters, and directional resize cursors.
 - Keeps window chrome stable while rebuilding only effect-dependent workspace content.
+- Keeps versioned editor preferences separate from both semantic effect assets and the
+  persisted dock layout; the planned Settings panel edits that dedicated document.
+- Resolves editor-facing text through Fluent bundles with stable semantic message IDs,
+  an embedded complete English fallback, live locale switching, and the selected locale
+  persisted in editor settings. Asset-authored names, paths, and generated code remain
+  locale-independent.
 - Projects structured validation reports into a dockable diagnostics workspace with
   severity filtering and semantic-path navigation; the persistent footer exposes
   compile health and opens that workspace directly.
@@ -157,6 +163,8 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [ ] timeline zooming and snapping
 - node/module stack for spawn, initialize, update, renderer, and events
 - autosave/recovery and asset migrations
+- [ ] versioned persistent editor settings and a dockable Settings workspace
+- [ ] Fluent localization with catalog validation, fallback, and live locale switching
 - [x] persistent recursive pane resizing and dockable authoring-panel tab stacks
 - [x] persisted native floating panel windows with redocking
 

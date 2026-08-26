@@ -44,7 +44,7 @@ architecture vision; this file is the shorter delivery plan.
   machine-readable runtime snapshots with measured CPU/live-particle data, rolling
   history, per-emitter peaks, and explicitly labeled compiler estimates; native GPU
   timestamps remain a capability-dependent extension. The remaining M5 work is
-  viewport gizmos and recovery.
+  viewport gizmos, persistent editor settings, and recovery.
 
 ## 1. Assessment of the current prototype
 
@@ -267,12 +267,40 @@ Deliver:
 - preview transaction, semantic diff, accept/reject, and undo;
 - semantic viewport selection and gizmos that submit normal commands;
 - autosave/recovery and explicit asset migrations;
+- a dockable Settings workspace backed by a versioned, persistent editor-settings
+  document stored separately from effect assets and workspace layout;
+- editor localization through Fluent message catalogs, including runtime locale
+  switching, fallback, and localized diagnostics without translating asset data;
 - fixed-step preview, restart, frame step, seeded playback, and checkpoint-based
   backward scrubbing.
 
 Exit gate: the initial demo can be authored from an empty effect without editing
 RON, all mutations are undoable, and invalid operations produce targeted
 diagnostics without damaging the document.
+
+Persistent settings slice:
+
+1. Define a serde-defaulted `EditorSettings` model with an explicit format version.
+2. Store it as `settings.ron` in Aestra's platform configuration directory, separate
+   from `editor-layout.ron`, using atomic temporary-file replacement.
+3. Add a Settings command and dockable Settings panel with General, Preview,
+   Performance, Capture, Appearance, Language, and Keybindings categories.
+4. Apply reversible settings live where possible; clearly mark restart-only values.
+5. Preserve unknown/newer files without destructive rewrites, recover malformed files
+   to defaults with diagnostics, and test defaults, round trips, and persistence.
+
+Localization slice:
+
+1. Introduce a small editor localization service backed by Fluent bundles and stable,
+   semantic message identifiers; UI code must not use visible English text as keys.
+2. Ship an embedded `en-US` catalog as the complete fallback and load additional locale
+   catalogs from editor resources without coupling them to effect assets.
+3. Persist the selected locale in `EditorSettings`, allow live switching from the
+   Settings panel, and fall back from region to language and then `en-US`.
+4. Localize menus, commands, panels, tooltips, status text, validation messages, and
+   variable interpolation while leaving user-authored names, paths, and code untouched.
+5. Add catalog validation and tests for missing or malformed messages, fallback,
+   interpolation, and coverage of every registered editor command and panel title.
 
 ### M6 — Renderer, material, and asset breadth
 

@@ -126,6 +126,7 @@ enum EditorAction {
     AdjustPreviewSeed(i8),
     Save,
     SaveAs,
+    Exit,
     Undo,
     Redo,
     AddLayer,
@@ -819,6 +820,7 @@ fn spawn_menu_bar(
                     ("Open...", "Ctrl+O", EditorAction::OpenEffect),
                     ("Save", "Ctrl+S", EditorAction::Save),
                     ("Save As...", "Ctrl+Shift+S", EditorAction::SaveAs),
+                    ("Exit", "Alt+F4", EditorAction::Exit),
                 ],
             );
             spawn_dropdown(
@@ -900,6 +902,17 @@ fn spawn_dropdown(
         ))
         .with_children(|dropdown| {
             for (label, shortcut, action) in items {
+                if matches!(action, EditorAction::Exit) {
+                    dropdown.spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(1.0),
+                            margin: UiRect::vertical(Val::Px(4.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme::BORDER),
+                    ));
+                }
                 let mut item = dropdown.spawn((
                     Button,
                     *action,
@@ -6249,6 +6262,7 @@ fn keyboard_shortcuts(
 
 #[allow(clippy::type_complexity)]
 fn handle_buttons(
+    mut commands: Commands,
     mut buttons: Query<
         (
             &Interaction,
@@ -6411,6 +6425,13 @@ fn handle_buttons(
                     }
                     EditorAction::Save => save_session(&mut session, false),
                     EditorAction::SaveAs => save_session(&mut session, true),
+                    EditorAction::Exit => {
+                        if confirm_discard(&session) {
+                            commands.write_message(AppExit::Success);
+                        } else {
+                            session.status = "Exit cancelled".into();
+                        }
+                    }
                     EditorAction::Undo => session.undo(),
                     EditorAction::Redo => session.redo(),
                     EditorAction::AddLayer => session.add_layer(),
@@ -7251,7 +7272,11 @@ fn handle_window_close_requests(
 ) {
     for request in close_requests.read() {
         if request.window == *primary {
-            commands.write_message(AppExit::Success);
+            if confirm_discard(&session) {
+                commands.write_message(AppExit::Success);
+            } else {
+                session.status = "Exit cancelled".into();
+            }
             continue;
         }
         let Ok(floating) = floating_windows.get(request.window) else {
