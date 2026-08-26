@@ -31,9 +31,10 @@ architecture vision; this file is the shorter delivery plan.
   effects, while stateless effects seek directly and snapshotless backends explicitly
   restart and replay. Backend-native GPU snapshot capture remains part of future
   stateful GPU module work. The editor workspace now uses an in-code BSN shell,
-  persistent draggable splitters, dockable asset/inspector side panels, responsive
-  viewport sizing, and a stable chrome layer that survives effect-content rebuilds.
-  The remaining M5 work is arbitrary dock-tree tab stacks and floating panels, the
+  persistent dock tab stacks, closable/recoverable side panels, visible draggable
+  splitter gutters with directional cursors, responsive viewport sizing, and a stable
+  chrome layer that survives effect-content rebuilds. The remaining M5 work is nested
+  dock-tree placement and floating panels, the
   broader diagnostics/generated-code/profiler tab set, viewport gizmos, and recovery.
 
 ## 1. Assessment of the current prototype

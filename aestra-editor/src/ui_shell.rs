@@ -37,6 +37,7 @@ pub(crate) fn main_row() -> impl Scene {
             width: percent(100),
             flex_grow: 1.0,
             min_height: px(260),
+            position_type: PositionType::Relative,
         }
         BackgroundColor(theme::APP_BG)
     }
@@ -73,15 +74,17 @@ pub(crate) fn viewport_pane() -> impl Scene {
 }
 
 pub(crate) fn splitter(vertical: bool) -> impl Scene {
-    let width = if vertical { percent(100) } else { px(5) };
-    let height = if vertical { px(5) } else { percent(100) };
+    let width = if vertical { percent(100) } else { px(9) };
+    let height = if vertical { px(9) } else { percent(100) };
     bsn! {
         Node {
             width,
             height,
             flex_shrink: 0.0,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
         }
-        BackgroundColor(theme::SPLITTER)
+        BackgroundColor(theme::SPLITTER_GUTTER)
     }
 }
 

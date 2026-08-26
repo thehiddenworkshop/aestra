@@ -72,7 +72,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Owns panels, viewport controls, timeline state, and an authoring-backed session.
 - Presents Bevy-native UI and editor interactions.
-- Owns a persisted workspace layout with draggable splitters and dockable side panels.
+- Owns a persisted workspace layout with dock tab stacks, closable/recoverable panels,
+  collapsing empty docks, transient edge drop targets, clear draggable splitter gutters,
+  and directional resize cursors.
 - Keeps window chrome stable while rebuilding only effect-dependent workspace content.
 - Consumes `aestra-bevy` through an explicit session resource.
 - Must not add game-only concepts to the semantic asset schema.
@@ -135,8 +137,8 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [ ] timeline zooming and snapping
 - node/module stack for spawn, initialize, update, renderer, and events
 - autosave/recovery and asset migrations
-- [x] persistent pane resizing and dockable asset/inspector side panels
-- reusable tab stacks, floating panels, and arbitrary dock-tree placement
+- [x] persistent pane resizing and dockable asset/inspector tab stacks
+- nested dock-tree placement and floating panels
 
 ### Phase 3 — production renderer
 
