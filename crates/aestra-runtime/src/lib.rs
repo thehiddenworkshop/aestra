@@ -1,5 +1,12 @@
 //! Engine-independent compiled effect contracts and deterministic CPU execution.
 
+mod checkpoint;
+
+pub use checkpoint::{
+    CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
+    SeekPlan, SimulationSeekMode, StoredCheckpoint,
+};
+
 use aestra_core::{
     AssetId, BlendMode, Curve, EffectId, EmitterId, EmitterShape, Gradient, MaterialId, ModuleId,
     ParameterId, RendererId, ScalarRange, Value, ValueType,
@@ -405,6 +412,7 @@ pub struct CompiledEffect {
     pub name: String,
     pub duration: f32,
     pub looping: bool,
+    pub seek_mode: SimulationSeekMode,
     pub parameters: Vec<CompiledParameter>,
     pub parameter_slots: BTreeMap<ParameterId, ParameterSlot>,
     pub particle_layout: ParticleLayout,

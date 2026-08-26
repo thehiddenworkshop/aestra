@@ -6,8 +6,9 @@ pub mod gpu;
 pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
 pub use aestra_core::*;
 pub use aestra_runtime::{
-    ClockAdvance, CompiledEffect, DEFAULT_PLAYBACK_TICK_RATE, EffectInstance, ParameterError,
-    ParticleSample, PlaybackCheckpoint, PlaybackClock, RuntimeValue,
+    CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
+    CompiledEffect, DEFAULT_PLAYBACK_TICK_RATE, EffectInstance, ParameterError, ParticleSample,
+    PlaybackCheckpoint, PlaybackClock, RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 pub use capabilities::{
     ActiveBackend, AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRuntimeStatus,
@@ -113,7 +114,7 @@ impl EffectPlayer {
     }
 
     pub fn elapsed(&self) -> f32 {
-        self.instance.time()
+        self.clock.time(self.effect().duration)
     }
 
     pub fn frame(&self) -> u64 {
@@ -124,6 +125,10 @@ impl EffectPlayer {
         self.clock.tick_rate()
     }
 
+    pub fn seek_mode(&self) -> SimulationSeekMode {
+        self.effect().seek_mode
+    }
+
     pub fn restart(&mut self) {
         self.clock.restart();
         self.instance.restart();
@@ -132,27 +137,37 @@ impl EffectPlayer {
 
     pub fn seek(&mut self, time: f32) {
         let duration = self.effect().duration;
-        self.clock.seek_seconds(time, duration);
-        self.sync_instance_time();
+        let mut target = self.clock;
+        target.seek_seconds(time, duration);
+        self.seek_frame(target.frame());
     }
 
     pub fn seek_frame(&mut self, frame: u64) {
         let duration = self.effect().duration;
-        self.clock.seek_frame(frame, duration);
-        self.sync_instance_time();
+        let target = frame.min(self.clock.maximum_frame(duration));
+        if self.seek_mode() == SimulationSeekMode::StatelessDirect {
+            self.clock.seek_frame(target, duration);
+            self.sync_instance_time();
+            return;
+        }
+        if target < self.frame() {
+            self.clock.restart();
+            self.instance.restart();
+        }
+        let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
+        while self.frame() < target {
+            self.clock.step_forward(duration);
+            self.instance.advance(tick_seconds);
+        }
     }
 
     pub fn step_forward(&mut self) {
-        let duration = self.effect().duration;
-        self.clock.step_forward(duration);
-        self.sync_instance_time();
+        self.seek_frame(self.frame().saturating_add(1));
         self.playing = false;
     }
 
     pub fn step_back(&mut self) {
-        let duration = self.effect().duration;
-        self.clock.step_back(duration);
-        self.sync_instance_time();
+        self.seek_frame(self.frame().saturating_sub(1));
         self.playing = false;
     }
 
@@ -166,8 +181,9 @@ impl EffectPlayer {
 
     pub fn restore_checkpoint(&mut self, checkpoint: PlaybackCheckpoint) {
         let duration = self.effect().duration;
-        self.clock.restore(checkpoint, duration);
-        self.sync_instance_time();
+        let mut target = self.clock;
+        target.restore(checkpoint, duration);
+        self.seek_frame(target.frame());
         self.playing = false;
     }
 
@@ -182,10 +198,24 @@ impl EffectPlayer {
     fn advance_clock(&mut self, delta_seconds: f32) -> ClockAdvance {
         let duration = self.effect().duration;
         let looping = self.effect().looping;
+        let previous_frame = self.clock.frame();
         let result = self
             .clock
             .advance(delta_seconds, self.speed, duration, looping);
-        self.sync_instance_time();
+        match self.seek_mode() {
+            SimulationSeekMode::StatelessDirect => self.sync_instance_time(),
+            SimulationSeekMode::CheckpointRestore | SimulationSeekMode::RestartReplay => {
+                let ticks = if looping {
+                    result.ticks
+                } else {
+                    self.clock.frame().saturating_sub(previous_frame)
+                };
+                let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
+                for _ in 0..ticks {
+                    self.instance.advance(tick_seconds);
+                }
+            }
+        }
         result
     }
 
@@ -417,5 +447,20 @@ mod tests {
         player.restart();
         assert_eq!(player.frame(), 0);
         assert_eq!(player.elapsed(), 0.0);
+    }
+
+    #[test]
+    fn snapshotless_stateful_player_restarts_and_replays_backward_seeks() {
+        let mut effect = EffectAsset::new("Stateful Fallback", 2.0);
+        effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+        let mut compiled = EffectCompiler::default().compile(&effect).unwrap();
+        compiled.seek_mode = SimulationSeekMode::RestartReplay;
+        let mut player = EffectPlayer::from_compiled(Arc::new(compiled));
+
+        player.seek_frame(60);
+        assert_eq!(player.elapsed(), 1.0);
+        player.seek_frame(30);
+        assert_eq!(player.frame(), 30);
+        assert_eq!(player.elapsed(), 0.5);
     }
 }

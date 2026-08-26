@@ -12,7 +12,7 @@ use aestra_runtime::{
     CompiledCurve, CompiledEffect, CompiledEmitter, CompiledGradient, CompiledParameter,
     ExecutionPlan, Expression, Instruction, IrLocation, OptimizationStats, ParameterSlot,
     ParticleAttribute, ParticleLayout, RendererPlan, RuntimeParameterValue, RuntimeStage,
-    RuntimeValue,
+    RuntimeValue, SimulationSeekMode,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -300,6 +300,7 @@ impl EffectCompiler {
             name: asset.name.clone(),
             duration: asset.duration,
             looping: asset.looping,
+            seek_mode: SimulationSeekMode::StatelessDirect,
             parameters,
             parameter_slots,
             particle_layout: ParticleLayout {

@@ -49,8 +49,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Owns `CompiledEffect`, `EffectInstance`, particle layouts, and execution instructions.
 - Interprets compiled effects deterministically for a seed and time without Bevy.
-- Owns the fixed-step playback clock and frame checkpoint contract shared by games,
-  editor preview, viewer playback, and visual capture.
+- Owns the fixed-step playback clock and bounded, context-keyed checkpoint contract
+  shared by games, editor preview, viewer playback, and visual capture. Compiled
+  effects declare direct seek, checkpoint restore, or restart-and-replay semantics so
+  stateful backends cannot silently use stateless seeking.
 - Resolves indexed, type-checked parameter overrides without recompiling an effect.
 - Defines the engine-independent contract that future CPU and GPU backends must preserve.
 

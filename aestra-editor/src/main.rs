@@ -3815,14 +3815,8 @@ fn update_preview(
     mut session: ResMut<EditorSession>,
     mut particles: Query<(&PreviewParticle, &mut Node, &mut BackgroundColor)>,
 ) {
-    let time = session.time();
     let mut samples = std::mem::take(&mut session.samples);
-    if let Some(preview) = &mut session.preview {
-        preview.seek(time);
-        preview.evaluate(&mut samples);
-    } else {
-        samples.clear();
-    }
+    session.evaluate_preview(&mut samples);
     session.samples = samples;
     for (marker, mut node, mut background) in &mut particles {
         let Some(sample) = session.samples.get(marker.0) else {
@@ -3865,11 +3859,12 @@ fn update_editor_labels(
             text.0 = if session.playing { "Pause" } else { "Play" }.into();
         } else if time.is_some() {
             text.0 = format!(
-                "F{:05}  ·  {:02}:{:06.3}  /  00:{:06.3}",
+                "F{:05}  ·  {:02}:{:06.3}  /  00:{:06.3}  ·  {}",
                 session.frame(),
                 0,
                 session.time(),
-                session.playback_duration()
+                session.playback_duration(),
+                session.seek_status()
             );
         } else if status.is_some() {
             text.0 = format!(

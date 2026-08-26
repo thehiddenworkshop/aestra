@@ -5,6 +5,7 @@ use aestra_core::{
 };
 use aestra_runtime::{
     EffectInstance, Expression, Instruction, ParameterError, ParticleAttribute, RuntimeStage,
+    SimulationSeekMode,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -69,6 +70,7 @@ fn compiler_lowers_ordered_stages_and_records_source_locations() {
     let compiled = EffectCompiler::default().compile(&asset).unwrap();
 
     assert_eq!(compiled.source, asset.id);
+    assert_eq!(compiled.seek_mode, SimulationSeekMode::StatelessDirect);
     assert_eq!(compiled.emitters.len(), asset.emitters.len());
     assert_eq!(compiled.source_map.len(), 20);
     assert!(

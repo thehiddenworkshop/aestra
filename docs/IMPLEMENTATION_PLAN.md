@@ -26,9 +26,12 @@ architecture vision; this file is the shorter delivery plan.
   reviewed as semantic changes with compiler diagnostics, and applied or discarded as
   one history entry. A shared fixed-step playback clock now gives the runtime, editor,
   and viewer exact 60 Hz frame addressing, deterministic seed controls, restart/frame
-  stepping, tick-snapped scrubbing, and frame-addressed visual captures. The remaining
-  M5 work is checkpoint/re-simulation for future stateful effects, the broader
-  diagnostics/generated-code/profiler tab set, viewport gizmos, and recovery.
+  stepping, tick-snapped scrubbing, and frame-addressed visual captures. A bounded,
+  context-keyed checkpoint store now supports backward restore-and-replay for stateful
+  effects, while stateless effects seek directly and snapshotless backends explicitly
+  restart and replay. Backend-native GPU snapshot capture remains part of future
+  stateful GPU module work. The remaining M5 work is the broader diagnostics/generated-
+  code/profiler tab set, viewport gizmos, and recovery.
 
 ## 1. Assessment of the current prototype
 
