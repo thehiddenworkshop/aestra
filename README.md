@@ -12,6 +12,8 @@ The first vertical slice already includes:
 - typed effect-parameter bindings with zero-recompile runtime overrides;
 - compiled curves/gradients, constant folding, and particle-attribute liveness;
 - an effect library, layer stack, viewport, inspector, interactive timeline, transport, and status bar;
+- a BSN-composed editor shell with persistent side-panel docking, draggable pane splitters,
+  and a viewport that follows the available workspace size;
 - deterministic emitter evaluation with point, circle, ring, and cone shapes;
 - ranges, smooth curves, color gradients, drag, gravity, turbulence, and layer timing;
 - renderer declarations for billboards, ribbons, and meshes;
@@ -38,6 +40,9 @@ Controls:
 - `Ctrl+D` / `Delete`: duplicate or delete the selected emitter
 - layer rows: select an emitter
 - timeline: click or drag to scrub
+- pane dividers: drag to resize the asset browser, inspector, or bottom workspace
+- `ASSETS` / `INSPECTOR` tabs: drag onto the opposite side panel to dock there
+- `View > Reset Workspace`: restore the default panel placement and sizes
 - inspector `-` / `+`: tune emission, timing, size, opacity, and duration
 
 The sample asset lives at [`assets/effects/prism_bloom.aestra.ron`](assets/effects/prism_bloom.aestra.ron).

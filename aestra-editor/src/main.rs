@@ -1,5 +1,6 @@
 mod session;
 mod theme;
+mod ui_shell;
 
 use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction};
 use aestra_bevy::{
@@ -8,21 +9,24 @@ use aestra_bevy::{
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use bevy::{
+    ecs::system::SystemParam,
     input::{ButtonState, keyboard::KeyboardInput, mouse::MouseScrollUnit},
-    picking::events::{Click, Drag, DragEnd, Pointer, Scroll},
+    picking::events::{Click, Drag, DragDrop, DragEnd, Out, Over, Pointer, Scroll},
     prelude::*,
-    ui::RelativeCursorPosition,
-    window::WindowResolution,
+    ui::{InteractionDisabled, RelativeCursorPosition},
+    window::{CursorIcon, PrimaryWindow, SystemCursorIcon, WindowResolution},
 };
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+use serde::{Deserialize, Serialize};
 use session::EditorSession;
-use std::{fs, path::PathBuf};
+use std::{fs, io, path::PathBuf};
 
 const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
 const PARTICLE_POOL_SIZE: usize = 384;
-const PREVIEW_WIDTH: f32 = 680.0;
-const PREVIEW_HEIGHT: f32 = 430.0;
+const DEFAULT_LEFT_WIDTH: f32 = 224.0;
+const DEFAULT_RIGHT_WIDTH: f32 = 390.0;
+const DEFAULT_BOTTOM_HEIGHT: f32 = 226.0;
 
 fn main() {
     App::new()
@@ -36,6 +40,7 @@ fn main() {
         .init_resource::<EditorModuleRegistry>()
         .init_resource::<ModulePaletteState>()
         .init_resource::<WorkspaceState>()
+        .insert_resource(WorkspaceLayout::load())
         .init_resource::<RenderedUiRevision>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -57,10 +62,13 @@ fn main() {
                 advance_playback,
                 update_preview,
                 update_editor_labels,
+                update_history_actions,
                 update_playhead,
                 update_layer_selection,
                 update_menu_visibility,
                 update_preview_grid_visibility,
+                fit_workspace_to_window,
+                sync_workspace_layout,
                 rebuild_editor_ui,
             )
                 .chain(),
@@ -118,6 +126,7 @@ enum EditorAction {
     DiscardPendingChange,
     ToggleMenu(MenuKind),
     ToggleGrid,
+    ResetWorkspaceLayout,
     ShowAbout,
     CloseAbout,
 }
@@ -149,6 +158,148 @@ impl Default for WorkspaceState {
             complex: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+enum DockPanel {
+    #[default]
+    Assets,
+    Inspector,
+}
+
+impl DockPanel {
+    fn title(self) -> &'static str {
+        match self {
+            Self::Assets => "ASSETS",
+            Self::Inspector => "INSPECTOR",
+        }
+    }
+}
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+enum DockSlot {
+    Left,
+    Right,
+}
+
+#[derive(Resource, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+struct WorkspaceLayout {
+    left_width: f32,
+    right_width: f32,
+    bottom_height: f32,
+    left_panel: DockPanel,
+    right_panel: DockPanel,
+}
+
+impl Default for WorkspaceLayout {
+    fn default() -> Self {
+        Self {
+            left_width: DEFAULT_LEFT_WIDTH,
+            right_width: DEFAULT_RIGHT_WIDTH,
+            bottom_height: DEFAULT_BOTTOM_HEIGHT,
+            left_panel: DockPanel::Assets,
+            right_panel: DockPanel::Inspector,
+        }
+    }
+}
+
+impl WorkspaceLayout {
+    fn load() -> Self {
+        let path = workspace_layout_path();
+        fs::read_to_string(path)
+            .ok()
+            .and_then(|source| ron::from_str(&source).ok())
+            .map(Self::normalized)
+            .unwrap_or_default()
+    }
+
+    fn save(&self) -> io::Result<()> {
+        let path = workspace_layout_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let source = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+            .map_err(io::Error::other)?;
+        fs::write(path, source)
+    }
+
+    fn resize(&mut self, splitter: PaneSplitter, delta: Vec2, window: &Window) {
+        let scale = window.scale_factor().max(0.01);
+        let delta = delta / scale;
+        let maximum_bottom = (window.height() - 373.0).max(140.0);
+        match splitter {
+            PaneSplitter::Left => {
+                let maximum = (window.width() - self.right_width - 330.0).max(168.0);
+                self.left_width = (self.left_width + delta.x).clamp(168.0, maximum);
+            }
+            PaneSplitter::Right => {
+                let maximum = (window.width() - self.left_width - 330.0).max(240.0);
+                self.right_width = (self.right_width - delta.x).clamp(240.0, maximum);
+            }
+            PaneSplitter::Bottom => {
+                self.bottom_height = (self.bottom_height - delta.y).clamp(140.0, maximum_bottom)
+            }
+        }
+    }
+
+    fn normalized(mut self) -> Self {
+        let defaults = Self::default();
+        if !self.left_width.is_finite() {
+            self.left_width = defaults.left_width;
+        }
+        if !self.right_width.is_finite() {
+            self.right_width = defaults.right_width;
+        }
+        if !self.bottom_height.is_finite() {
+            self.bottom_height = defaults.bottom_height;
+        }
+        self.left_width = self.left_width.clamp(168.0, 800.0);
+        self.right_width = self.right_width.clamp(240.0, 800.0);
+        self.bottom_height = self.bottom_height.clamp(140.0, 800.0);
+        if self.left_panel == self.right_panel {
+            self.left_panel = defaults.left_panel;
+            self.right_panel = defaults.right_panel;
+        }
+        self
+    }
+
+    fn fit_to_window(&mut self, window: &Window) {
+        let maximum_bottom = (window.height() - 373.0).max(140.0);
+        self.bottom_height = self.bottom_height.clamp(140.0, maximum_bottom);
+        let maximum_left = (window.width() - self.right_width - 330.0).max(168.0);
+        self.left_width = self.left_width.clamp(168.0, maximum_left);
+        let maximum_right = (window.width() - self.left_width - 330.0).max(240.0);
+        self.right_width = self.right_width.clamp(240.0, maximum_right);
+    }
+
+    fn dock(&mut self, panel: DockPanel, slot: DockSlot) -> bool {
+        let current_slot = if self.left_panel == panel {
+            DockSlot::Left
+        } else {
+            DockSlot::Right
+        };
+        if current_slot == slot {
+            return false;
+        }
+        std::mem::swap(&mut self.left_panel, &mut self.right_panel);
+        true
+    }
+}
+
+fn workspace_layout_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("AESTRA_CONFIG_DIR") {
+        return PathBuf::from(path).join("editor-layout.ron");
+    }
+    #[cfg(target_os = "windows")]
+    if let Some(path) = std::env::var_os("APPDATA") {
+        return PathBuf::from(path).join("Aestra").join("editor-layout.ron");
+    }
+    #[cfg(not(target_os = "windows"))]
+    if let Some(path) = std::env::var_os("XDG_CONFIG_HOME") {
+        return PathBuf::from(path).join("aestra").join("editor-layout.ron");
+    }
+    PathBuf::from(".aestra").join("editor-layout.ron")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,6 +395,37 @@ struct RenderedUiRevision(u64);
 struct EditorRoot;
 
 #[derive(Component)]
+struct EditorContent;
+
+#[derive(Component)]
+struct DocumentMenuLabel;
+
+#[derive(Component)]
+struct DocumentToolbarLabel;
+
+#[derive(Component)]
+struct UndoMenuItem;
+
+#[derive(Component)]
+struct RedoMenuItem;
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+enum PaneSplitter {
+    Left,
+    Right,
+    Bottom,
+}
+
+#[derive(Component)]
+struct DockPane(DockSlot);
+
+#[derive(Component)]
+struct DockTab(DockPanel);
+
+#[derive(Component)]
+struct BottomWorkspace;
+
+#[derive(Component)]
 struct MenuDropdown(MenuKind);
 
 #[derive(Component)]
@@ -293,6 +475,9 @@ impl EffectCatalog {
 struct PreviewParticle(usize);
 
 #[derive(Component)]
+struct PreviewCanvas;
+
+#[derive(Component)]
 struct PlaybackLabel;
 
 #[derive(Component)]
@@ -313,11 +498,29 @@ struct Playhead;
 #[derive(Component)]
 struct LayerRow(usize);
 
+#[derive(Clone, Copy)]
+struct PanelSources<'a> {
+    session: &'a EditorSession,
+    catalog: &'a EffectCatalog,
+    registry: &'a EditorModuleRegistry,
+    palette: &'a ModulePaletteState,
+}
+
+#[derive(SystemParam)]
+struct UiBuildResources<'w> {
+    catalog: Res<'w, EffectCatalog>,
+    layout: Res<'w, WorkspaceLayout>,
+    registry: Res<'w, EditorModuleRegistry>,
+    palette: Res<'w, ModulePaletteState>,
+    workspace: Res<'w, WorkspaceState>,
+}
+
 fn setup_editor(
     mut commands: Commands,
     session: Res<EditorSession>,
     menu: Res<MenuState>,
     catalog: Res<EffectCatalog>,
+    layout: Res<WorkspaceLayout>,
     editor_resources: (
         Res<EditorModuleRegistry>,
         Res<ModulePaletteState>,
@@ -327,58 +530,75 @@ fn setup_editor(
 ) {
     let (registry, palette, workspace) = editor_resources;
     commands.spawn(Camera2d);
-    spawn_editor_ui(
-        &mut commands,
-        &session,
-        &menu,
-        &catalog,
-        &registry,
-        &palette,
-        &workspace,
-    );
+    let sources = PanelSources {
+        session: &session,
+        catalog: &catalog,
+        registry: &registry,
+        palette: &palette,
+    };
+    spawn_editor_ui(&mut commands, &menu, &workspace, &layout, sources);
     rendered.0 = session.ui_revision;
 }
 
 fn spawn_editor_ui(
     commands: &mut Commands,
-    session: &EditorSession,
     menu: &MenuState,
-    catalog: &EffectCatalog,
-    registry: &EditorModuleRegistry,
-    palette: &ModulePaletteState,
     workspace: &WorkspaceState,
+    layout: &WorkspaceLayout,
+    sources: PanelSources<'_>,
 ) {
     commands
-        .spawn((
-            EditorRoot,
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(theme::APP_BG),
-        ))
+        .spawn(EditorRoot)
+        .apply_scene(ui_shell::editor_root())
         .with_children(|root| {
-            spawn_menu_bar(root, session);
-            spawn_toolbar(root, session);
-            root.spawn((
-                Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    min_height: Val::Px(360.0),
-                    ..default()
-                },
-                BackgroundColor(theme::APP_BG),
-            ))
-            .with_children(|main| {
-                spawn_asset_browser(main, session, catalog);
-                spawn_preview(main);
-                spawn_inspector(main, session, registry, palette);
-            });
-            spawn_workspace(root, session, registry, workspace);
+            spawn_menu_bar(root, sources.session);
+            spawn_toolbar(root, sources.session);
+            spawn_editor_content(root, workspace, layout, sources);
             spawn_status_bar(root);
             spawn_about_overlay(root, menu.show_about);
+        });
+}
+
+fn spawn_editor_content(
+    parent: &mut ChildSpawnerCommands,
+    workspace: &WorkspaceState,
+    layout: &WorkspaceLayout,
+    sources: PanelSources<'_>,
+) {
+    parent
+        .spawn(EditorContent)
+        .apply_scene(ui_shell::editor_content())
+        .with_children(|content| {
+            content
+                .spawn(())
+                .apply_scene(ui_shell::main_row())
+                .with_children(|main| {
+                    spawn_dock_panel(
+                        main,
+                        layout.left_panel,
+                        DockSlot::Left,
+                        layout.left_width,
+                        sources,
+                    );
+                    spawn_pane_splitter(main, PaneSplitter::Left);
+                    spawn_preview(main);
+                    spawn_pane_splitter(main, PaneSplitter::Right);
+                    spawn_dock_panel(
+                        main,
+                        layout.right_panel,
+                        DockSlot::Right,
+                        layout.right_width,
+                        sources,
+                    );
+                });
+            spawn_pane_splitter(content, PaneSplitter::Bottom);
+            spawn_workspace(
+                content,
+                sources.session,
+                sources.registry,
+                workspace,
+                layout.bottom_height,
+            );
         });
 }
 
@@ -386,6 +606,7 @@ fn spawn_menu_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
     parent
         .spawn((
             Node {
+                grid_row: GridPlacement::start(1),
                 width: Val::Percent(100.0),
                 height: Val::Px(30.0),
                 align_items: AlignItems::Center,
@@ -412,6 +633,7 @@ fn spawn_menu_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                 .and_then(|name| name.to_str())
                 .unwrap_or("Untitled");
             bar.spawn((
+                DocumentMenuLabel,
                 Text::new(format!(
                     "{}{}  |  {}",
                     if session.dirty { "* " } else { "" },
@@ -436,23 +658,13 @@ fn spawn_menu_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                     ("Save As...", "Ctrl+Shift+S", EditorAction::SaveAs),
                 ],
             );
-            let undo_label = if session.can_undo() {
-                "Undo"
-            } else {
-                "Undo (empty)"
-            };
-            let redo_label = if session.can_redo() {
-                "Redo"
-            } else {
-                "Redo (empty)"
-            };
             spawn_dropdown(
                 bar,
                 MenuKind::Edit,
                 52.0,
                 &[
-                    (undo_label, "Ctrl+Z", EditorAction::Undo),
-                    (redo_label, "Ctrl+Y", EditorAction::Redo),
+                    ("Undo", "Ctrl+Z", EditorAction::Undo),
+                    ("Redo", "Ctrl+Y", EditorAction::Redo),
                     ("Add Emitter", "Ctrl+Enter", EditorAction::AddLayer),
                     ("Duplicate Emitter", "Ctrl+D", EditorAction::DuplicateLayer),
                     ("Delete Emitter", "Delete", EditorAction::DeleteLayer),
@@ -465,6 +677,7 @@ fn spawn_menu_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                 &[
                     ("Toggle Grid", "G", EditorAction::ToggleGrid),
                     ("Restart Preview", "R", EditorAction::Restart),
+                    ("Reset Workspace", "", EditorAction::ResetWorkspaceLayout),
                 ],
             );
             spawn_dropdown(
@@ -530,42 +743,50 @@ fn spawn_dropdown(
         ))
         .with_children(|dropdown| {
             for (label, shortcut, action) in items {
-                dropdown
-                    .spawn((
-                        Button,
-                        *action,
-                        Node {
-                            width: Val::Percent(100.0),
-                            height: Val::Px(29.0),
-                            padding: UiRect::horizontal(Val::Px(9.0)),
-                            align_items: AlignItems::Center,
-                            border_radius: BorderRadius::all(Val::Px(3.0)),
+                let mut item = dropdown.spawn((
+                    Button,
+                    *action,
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(29.0),
+                        padding: UiRect::horizontal(Val::Px(9.0)),
+                        align_items: AlignItems::Center,
+                        border_radius: BorderRadius::all(Val::Px(3.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL),
+                ));
+                match action {
+                    EditorAction::Undo => {
+                        item.insert(UndoMenuItem);
+                    }
+                    EditorAction::Redo => {
+                        item.insert(RedoMenuItem);
+                    }
+                    _ => {}
+                }
+                item.with_children(|item| {
+                    item.spawn((
+                        Text::new(*label),
+                        TextFont {
+                            font_size: FontSize::Px(11.0),
                             ..default()
                         },
-                        BackgroundColor(theme::PANEL),
-                    ))
-                    .with_children(|item| {
-                        item.spawn((
-                            Text::new(*label),
-                            TextFont {
-                                font_size: FontSize::Px(11.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                        ));
-                        item.spawn(Node {
-                            flex_grow: 1.0,
-                            ..default()
-                        });
-                        item.spawn((
-                            Text::new(*shortcut),
-                            TextFont {
-                                font_size: FontSize::Px(9.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT_FAINT),
-                        ));
+                        TextColor(theme::TEXT),
+                    ));
+                    item.spawn(Node {
+                        flex_grow: 1.0,
+                        ..default()
                     });
+                    item.spawn((
+                        Text::new(*shortcut),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_FAINT),
+                    ));
+                });
             }
         });
 }
@@ -635,6 +856,7 @@ fn spawn_toolbar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
     parent
         .spawn((
             Node {
+                grid_row: GridPlacement::start(2),
                 width: Val::Percent(100.0),
                 height: Val::Px(54.0),
                 align_items: AlignItems::Center,
@@ -672,6 +894,7 @@ fn spawn_toolbar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                 BackgroundColor(theme::BORDER),
             ));
             bar.spawn((
+                DocumentToolbarLabel,
                 Text::new(format!(
                     "{}  /  VFX CHOREOGRAPHY",
                     session.effect.name.to_uppercase()
@@ -736,24 +959,197 @@ fn toolbar_button<M: Component>(
         });
 }
 
+fn spawn_dock_panel(
+    parent: &mut ChildSpawnerCommands,
+    panel: DockPanel,
+    slot: DockSlot,
+    width: f32,
+    sources: PanelSources<'_>,
+) {
+    match panel {
+        DockPanel::Assets => {
+            spawn_asset_browser(parent, sources.session, sources.catalog, slot, width);
+        }
+        DockPanel::Inspector => {
+            spawn_inspector(
+                parent,
+                sources.session,
+                sources.registry,
+                sources.palette,
+                slot,
+                width,
+            );
+        }
+    }
+}
+
+fn spawn_pane_splitter(parent: &mut ChildSpawnerCommands, splitter: PaneSplitter) {
+    let vertical = splitter == PaneSplitter::Bottom;
+    parent
+        .spawn(splitter)
+        .apply_scene(ui_shell::splitter(vertical))
+        .observe(resize_workspace_pane)
+        .observe(save_workspace_layout)
+        .observe(show_resize_cursor)
+        .observe(reset_cursor);
+}
+
+fn spawn_dock_tab(parent: &mut ChildSpawnerCommands, panel: DockPanel) {
+    parent
+        .spawn((
+            Button,
+            DockTab(panel),
+            GlobalZIndex(20),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(28.0),
+                padding: UiRect::horizontal(Val::Px(9.0)),
+                align_items: AlignItems::Center,
+                border: UiRect::bottom(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_LIGHT),
+            BorderColor::all(theme::BORDER),
+        ))
+        .observe(move_dock_tab)
+        .observe(reset_dock_tab)
+        .with_children(|tab| {
+            tab.spawn((
+                Text::new(panel.title()),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+            tab.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            tab.spawn((
+                Text::new("DRAG TO DOCK"),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+fn dock_border(slot: DockSlot) -> UiRect {
+    match slot {
+        DockSlot::Left => UiRect::right(Val::Px(1.0)),
+        DockSlot::Right => UiRect::left(Val::Px(1.0)),
+    }
+}
+
+fn resize_workspace_pane(
+    drag: On<Pointer<Drag>>,
+    splitters: Query<&PaneSplitter>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut layout: ResMut<WorkspaceLayout>,
+) {
+    let Ok(splitter) = splitters.get(drag.event_target()) else {
+        return;
+    };
+    layout.resize(*splitter, drag.delta, &window);
+}
+
+fn save_workspace_layout(
+    drag: On<Pointer<DragEnd>>,
+    splitters: Query<&PaneSplitter>,
+    layout: Res<WorkspaceLayout>,
+) {
+    if splitters.contains(drag.event_target())
+        && let Err(error) = layout.save()
+    {
+        warn!("failed to save editor workspace layout: {error}");
+    }
+}
+
+fn show_resize_cursor(
+    over: On<Pointer<Over>>,
+    splitters: Query<&PaneSplitter>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+    mut colors: Query<&mut BackgroundColor, With<PaneSplitter>>,
+) {
+    let Ok(splitter) = splitters.get(over.event_target()) else {
+        return;
+    };
+    **cursor = CursorIcon::System(match splitter {
+        PaneSplitter::Left | PaneSplitter::Right => SystemCursorIcon::EwResize,
+        PaneSplitter::Bottom => SystemCursorIcon::NsResize,
+    });
+    if let Ok(mut color) = colors.get_mut(over.event_target()) {
+        color.0 = theme::SPLITTER_HOVER;
+    }
+}
+
+fn reset_cursor(
+    out: On<Pointer<Out>>,
+    splitters: Query<&PaneSplitter>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+    mut colors: Query<&mut BackgroundColor, With<PaneSplitter>>,
+) {
+    if splitters.contains(out.event_target()) {
+        **cursor = CursorIcon::System(SystemCursorIcon::Default);
+        if let Ok(mut color) = colors.get_mut(out.event_target()) {
+            color.0 = theme::SPLITTER;
+        }
+    }
+}
+
+fn move_dock_tab(drag: On<Pointer<Drag>>, mut tabs: Query<&mut UiTransform, With<DockTab>>) {
+    if let Ok(mut transform) = tabs.get_mut(drag.event_target()) {
+        transform.translation = Val2::px(drag.distance.x, drag.distance.y);
+    }
+}
+
+fn reset_dock_tab(drag: On<Pointer<DragEnd>>, mut tabs: Query<&mut UiTransform, With<DockTab>>) {
+    if let Ok(mut transform) = tabs.get_mut(drag.event_target()) {
+        transform.translation = Val2::ZERO;
+    }
+}
+
+fn dock_panel_drop(
+    mut drop: On<Pointer<DragDrop>>,
+    panes: Query<&DockPane>,
+    tabs: Query<&DockTab>,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut session: ResMut<EditorSession>,
+) {
+    let Ok(target) = panes.get(drop.event_target()) else {
+        return;
+    };
+    let Ok(tab) = tabs.get(drop.dropped) else {
+        return;
+    };
+    if layout.dock(tab.0, target.0) {
+        if let Err(error) = layout.save() {
+            warn!("failed to save editor workspace layout: {error}");
+        }
+        session.ui_revision += 1;
+        session.status = format!("Docked {} panel", tab.0.title().to_ascii_lowercase());
+    }
+    drop.propagate(false);
+}
+
 fn spawn_asset_browser(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     catalog: &EffectCatalog,
+    slot: DockSlot,
+    width: f32,
 ) {
     parent
-        .spawn((
-            Node {
-                width: Val::Px(224.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::right(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL_DARK),
-            BorderColor::all(theme::BORDER),
-        ))
+        .spawn((DockPane(slot), Pickable::default()))
+        .apply_scene(ui_shell::side_pane(width, dock_border(slot)))
+        .observe(dock_panel_drop)
         .with_children(|panel| {
+            spawn_dock_tab(panel, DockPanel::Assets);
             panel_heading(
                 panel,
                 "CURRENT EFFECT",
@@ -881,27 +1277,16 @@ fn spawn_asset_browser(
 
 fn spawn_preview(parent: &mut ChildSpawnerCommands) {
     parent
-        .spawn((
-            Node {
-                flex_grow: 1.0,
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                row_gap: Val::Px(8.0),
-                padding: UiRect::all(Val::Px(12.0)),
-                min_width: Val::Px(500.0),
-                ..default()
-            },
-            BackgroundColor(theme::VIEWPORT_FRAME),
-        ))
+        .spawn(())
+        .apply_scene(ui_shell::viewport_pane())
         .with_children(|column| {
             column
                 .spawn((
+                    PreviewCanvas,
                     Node {
-                        width: Val::Px(PREVIEW_WIDTH),
-                        max_width: Val::Percent(100.0),
-                        height: Val::Px(PREVIEW_HEIGHT),
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        min_height: Val::Px(180.0),
                         position_type: PositionType::Relative,
                         overflow: Overflow::clip(),
                         border: UiRect::all(Val::Px(1.0)),
@@ -916,8 +1301,8 @@ fn spawn_preview(parent: &mut ChildSpawnerCommands) {
                     canvas.spawn((
                         Node {
                             position_type: PositionType::Absolute,
-                            left: Val::Px(PREVIEW_WIDTH * 0.5 - 2.0),
-                            top: Val::Px(PREVIEW_HEIGHT * 0.5 - 2.0),
+                            left: Val::Percent(50.0),
+                            top: Val::Percent(50.0),
                             width: Val::Px(4.0),
                             height: Val::Px(4.0),
                             border_radius: BorderRadius::MAX,
@@ -1002,22 +1387,17 @@ fn spawn_inspector(
     session: &EditorSession,
     registry: &EditorModuleRegistry,
     palette: &ModulePaletteState,
+    slot: DockSlot,
+    width: f32,
 ) {
     let layer = session.selected_layer();
     let emitter_index = session.selected_layer_index();
     parent
-        .spawn((
-            Node {
-                width: Val::Px(390.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::left(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL_DARK),
-            BorderColor::all(theme::BORDER),
-        ))
+        .spawn((DockPane(slot), Pickable::default()))
+        .apply_scene(ui_shell::side_pane(width, dock_border(slot)))
+        .observe(dock_panel_drop)
         .with_children(|panel| {
+            spawn_dock_tab(panel, DockPanel::Inspector);
             panel_heading(panel, "MODULE STACK", "LIVE COMPILE");
             panel.spawn((
                 Text::new(&layer.name),
@@ -1887,27 +2267,21 @@ fn spawn_workspace(
     session: &EditorSession,
     registry: &EditorModuleRegistry,
     workspace: &WorkspaceState,
+    height: f32,
 ) {
     match workspace.tab {
-        WorkspaceTab::Timeline => spawn_timeline(parent, session),
-        WorkspaceTab::Curves => spawn_curves_workspace(parent, session, registry, workspace),
-        WorkspaceTab::Changes => spawn_changes_workspace(parent, session),
+        WorkspaceTab::Timeline => spawn_timeline(parent, session, height),
+        WorkspaceTab::Curves => {
+            spawn_curves_workspace(parent, session, registry, workspace, height);
+        }
+        WorkspaceTab::Changes => spawn_changes_workspace(parent, session, height),
     }
 }
 
-fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession, height: f32) {
     parent
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(226.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::top(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL),
-            BorderColor::all(theme::BORDER_BRIGHT),
-        ))
+        .spawn(BottomWorkspace)
+        .apply_scene(ui_shell::bottom_workspace(height))
         .with_children(|timeline| {
             timeline
                 .spawn((
@@ -2109,19 +2483,11 @@ fn spawn_curves_workspace(
     session: &EditorSession,
     registry: &EditorModuleRegistry,
     workspace: &WorkspaceState,
+    height: f32,
 ) {
     parent
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(226.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::top(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL),
-            BorderColor::all(theme::BORDER_BRIGHT),
-        ))
+        .spawn(BottomWorkspace)
+        .apply_scene(ui_shell::bottom_workspace(height))
         .with_children(|workspace_panel| {
             workspace_panel
                 .spawn((
@@ -2224,19 +2590,14 @@ fn spawn_curves_workspace(
         });
 }
 
-fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_changes_workspace(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    height: f32,
+) {
     parent
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(226.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::top(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL),
-            BorderColor::all(theme::BORDER_BRIGHT),
-        ))
+        .spawn(BottomWorkspace)
+        .apply_scene(ui_shell::bottom_workspace(height))
         .with_children(|panel| {
             panel
                 .spawn((
@@ -2954,6 +3315,7 @@ fn spawn_status_bar(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
             Node {
+                grid_row: GridPlacement::start(4),
                 width: Val::Percent(100.0),
                 height: Val::Px(24.0),
                 align_items: AlignItems::Center,
@@ -3220,18 +3582,27 @@ fn handle_buttons(
             &Interaction,
             &EditorAction,
             Option<&LayerRow>,
+            Option<&InteractionDisabled>,
             &mut BackgroundColor,
         ),
         (Changed<Interaction>, With<Button>),
     >,
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
-    catalog: Res<EffectCatalog>,
-    registry: Res<EditorModuleRegistry>,
-    mut palette: ResMut<ModulePaletteState>,
-    mut workspace: ResMut<WorkspaceState>,
+    editor_resources: (
+        Res<EffectCatalog>,
+        Res<EditorModuleRegistry>,
+        ResMut<ModulePaletteState>,
+        ResMut<WorkspaceState>,
+        ResMut<WorkspaceLayout>,
+    ),
 ) {
-    for (interaction, action, layer_row, mut background) in &mut buttons {
+    let (catalog, registry, mut palette, mut workspace, mut layout) = editor_resources;
+    for (interaction, action, layer_row, disabled, mut background) in &mut buttons {
+        if disabled.is_some() {
+            background.0 = theme::PANEL_DARK;
+            continue;
+        }
         match *interaction {
             Interaction::Hovered => background.0 = theme::BUTTON_HOVER,
             Interaction::None => {
@@ -3422,6 +3793,14 @@ fn handle_buttons(
                         session.discard_pending_change();
                     }
                     EditorAction::ToggleGrid => menu.show_grid = !menu.show_grid,
+                    EditorAction::ResetWorkspaceLayout => {
+                        *layout = WorkspaceLayout::default();
+                        if let Err(error) = layout.save() {
+                            warn!("failed to save editor workspace layout: {error}");
+                        }
+                        session.ui_revision += 1;
+                        session.status = "Workspace layout reset".into();
+                    }
                     EditorAction::ShowAbout => menu.show_about = true,
                     EditorAction::CloseAbout => menu.show_about = false,
                     EditorAction::ToggleMenu(_) => unreachable!(),
@@ -3774,36 +4153,62 @@ fn update_preview_grid_visibility(
     }
 }
 
+fn sync_workspace_layout(
+    layout: Res<WorkspaceLayout>,
+    mut panes: Query<(&DockPane, &mut Node), Without<BottomWorkspace>>,
+    mut workspace: Query<&mut Node, (With<BottomWorkspace>, Without<DockPane>)>,
+) {
+    if !layout.is_changed() {
+        return;
+    }
+    for (pane, mut node) in &mut panes {
+        node.width = Val::Px(match pane.0 {
+            DockSlot::Left => layout.left_width,
+            DockSlot::Right => layout.right_width,
+        });
+    }
+    for mut node in &mut workspace {
+        node.height = Val::Px(layout.bottom_height);
+    }
+}
+
+fn fit_workspace_to_window(
+    window: Single<Ref<Window>, With<PrimaryWindow>>,
+    mut layout: ResMut<WorkspaceLayout>,
+) {
+    if window.is_changed() {
+        layout.fit_to_window(&window);
+    }
+}
+
 fn rebuild_editor_ui(
     mut commands: Commands,
     session: Res<EditorSession>,
-    menu: Res<MenuState>,
-    mut catalog: ResMut<EffectCatalog>,
-    editor_resources: (
-        Res<EditorModuleRegistry>,
-        Res<ModulePaletteState>,
-        Res<WorkspaceState>,
-    ),
+    editor_resources: UiBuildResources,
     mut rendered: ResMut<RenderedUiRevision>,
-    roots: Query<Entity, With<EditorRoot>>,
+    root: Single<Entity, With<EditorRoot>>,
+    contents: Query<Entity, With<EditorContent>>,
 ) {
-    let (registry, palette, workspace) = editor_resources;
     if rendered.0 == session.ui_revision {
         return;
     }
-    for root in &roots {
-        commands.entity(root).despawn();
+    for content in &contents {
+        commands.entity(content).despawn();
     }
-    *catalog = EffectCatalog::scan();
-    spawn_editor_ui(
-        &mut commands,
-        &session,
-        &menu,
-        &catalog,
-        &registry,
-        &palette,
-        &workspace,
-    );
+    let sources = PanelSources {
+        session: &session,
+        catalog: &editor_resources.catalog,
+        registry: &editor_resources.registry,
+        palette: &editor_resources.palette,
+    };
+    commands.entity(*root).with_children(|root| {
+        spawn_editor_content(
+            root,
+            &editor_resources.workspace,
+            &editor_resources.layout,
+            sources,
+        );
+    });
     rendered.0 = session.ui_revision;
 }
 
@@ -3814,10 +4219,12 @@ fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
 fn update_preview(
     mut session: ResMut<EditorSession>,
     mut particles: Query<(&PreviewParticle, &mut Node, &mut BackgroundColor)>,
+    canvas: Single<&ComputedNode, With<PreviewCanvas>>,
 ) {
     let mut samples = std::mem::take(&mut session.samples);
     session.evaluate_preview(&mut samples);
     session.samples = samples;
+    let canvas_size = canvas.size() * canvas.inverse_scale_factor;
     for (marker, mut node, mut background) in &mut particles {
         let Some(sample) = session.samples.get(marker.0) else {
             node.display = Display::None;
@@ -3825,8 +4232,8 @@ fn update_preview(
         };
         let scale = sample.size.clamp(1.0, 38.0);
         node.display = Display::Flex;
-        node.left = Val::Px(PREVIEW_WIDTH * 0.5 + sample.position[0] - scale * 0.5);
-        node.top = Val::Px(PREVIEW_HEIGHT * 0.5 - sample.position[1] - scale * 0.5);
+        node.left = Val::Px(canvas_size.x * 0.5 + sample.position[0] - scale * 0.5);
+        node.top = Val::Px(canvas_size.y * 0.5 - sample.position[1] - scale * 0.5);
         node.width = Val::Px(scale);
         node.height = Val::Px(scale);
         background.0 = Color::srgba(
@@ -3848,13 +4255,17 @@ fn update_editor_labels(
         Option<&StatusLabel>,
         Option<&InspectorTitle>,
         Option<&ParticleCountLabel>,
+        Option<&DocumentMenuLabel>,
+        Option<&DocumentToolbarLabel>,
     )>,
 ) {
     if !session.is_changed() {
         return;
     }
     let layer = session.selected_layer();
-    for (mut text, playback, time, status, title, count) in &mut labels {
+    for (mut text, playback, time, status, title, count, document_menu, document_toolbar) in
+        &mut labels
+    {
         if playback.is_some() {
             text.0 = if session.playing { "Pause" } else { "Play" }.into();
         } else if time.is_some() {
@@ -3876,6 +4287,53 @@ fn update_editor_labels(
             text.0 = layer.name.clone();
         } else if count.is_some() {
             text.0 = format!("{} LIVE PARTICLES  |  60 FPS", session.samples.len());
+        } else if document_menu.is_some() {
+            let file = session
+                .source_path
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or("Untitled");
+            text.0 = format!(
+                "{}{}  |  {}",
+                if session.dirty { "* " } else { "" },
+                session.effect.name,
+                file
+            );
+        } else if document_toolbar.is_some() {
+            text.0 = format!(
+                "{}  /  VFX CHOREOGRAPHY",
+                session.effect.name.to_uppercase()
+            );
+        }
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn update_history_actions(
+    session: Res<EditorSession>,
+    mut commands: Commands,
+    mut items: Query<
+        (
+            Entity,
+            Has<UndoMenuItem>,
+            Has<RedoMenuItem>,
+            &mut BackgroundColor,
+        ),
+        Or<(With<UndoMenuItem>, With<RedoMenuItem>)>,
+    >,
+) {
+    if !session.is_changed() {
+        return;
+    }
+    for (entity, undo, redo, mut background) in &mut items {
+        let enabled = (undo && session.can_undo()) || (redo && session.can_redo());
+        if enabled {
+            commands.entity(entity).remove::<InteractionDisabled>();
+            background.0 = theme::PANEL;
+        } else {
+            commands.entity(entity).insert(InteractionDisabled);
+            background.0 = theme::PANEL_DARK;
         }
     }
 }
@@ -3918,6 +4376,73 @@ fn layer_color_alpha(index: usize, alpha: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_action_refresh_does_not_disable_unrelated_ui() {
+        let mut app = App::new();
+        app.insert_resource(EditorSession::from_embedded_sample(
+            EFFECT_SOURCE,
+            EFFECT_PATH,
+        ));
+        app.add_systems(Update, update_history_actions);
+
+        let particle_color = Color::srgba(0.8, 0.4, 1.0, 0.75);
+        let particle = app
+            .world_mut()
+            .spawn((PreviewParticle(0), BackgroundColor(particle_color)))
+            .id();
+        let undo = app
+            .world_mut()
+            .spawn((UndoMenuItem, BackgroundColor(theme::PANEL)))
+            .id();
+
+        app.update();
+
+        let world = app.world();
+        assert_eq!(
+            world.get::<BackgroundColor>(particle).unwrap().0,
+            particle_color
+        );
+        assert!(!world.entity(particle).contains::<InteractionDisabled>());
+        assert!(world.entity(undo).contains::<InteractionDisabled>());
+    }
+
+    #[test]
+    fn workspace_layout_round_trips_through_ron() {
+        let layout = WorkspaceLayout {
+            left_width: 280.0,
+            right_width: 360.0,
+            bottom_height: 240.0,
+            left_panel: DockPanel::Inspector,
+            right_panel: DockPanel::Assets,
+        };
+        let source = ron::to_string(&layout).unwrap();
+        assert_eq!(ron::from_str::<WorkspaceLayout>(&source).unwrap(), layout);
+    }
+
+    #[test]
+    fn docking_a_side_panel_swaps_occupied_slots() {
+        let mut layout = WorkspaceLayout::default();
+        assert!(layout.dock(DockPanel::Assets, DockSlot::Right));
+        assert_eq!(layout.left_panel, DockPanel::Inspector);
+        assert_eq!(layout.right_panel, DockPanel::Assets);
+        assert!(!layout.dock(DockPanel::Assets, DockSlot::Right));
+    }
+
+    #[test]
+    fn pane_resizing_respects_workspace_constraints() {
+        let window = Window {
+            resolution: WindowResolution::new(1000, 800),
+            ..default()
+        };
+        let mut layout = WorkspaceLayout::default();
+        layout.resize(PaneSplitter::Left, Vec2::new(-10_000.0, 0.0), &window);
+        layout.resize(PaneSplitter::Right, Vec2::new(-10_000.0, 0.0), &window);
+        layout.resize(PaneSplitter::Bottom, Vec2::new(0.0, 10_000.0), &window);
+        assert_eq!(layout.left_width, 168.0);
+        assert_eq!(layout.right_width, 502.0);
+        assert_eq!(layout.bottom_height, 140.0);
+    }
 
     #[test]
     fn bundled_effect_is_valid() {

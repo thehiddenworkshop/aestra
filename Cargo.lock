@@ -144,6 +144,8 @@ dependencies = [
  "aestra-runtime",
  "bevy",
  "rfd",
+ "ron",
+ "serde",
  "thiserror 2.0.20",
 ]
 

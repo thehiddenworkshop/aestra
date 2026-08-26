@@ -4,7 +4,12 @@
 
 Aestra is an effect choreography system, not only a particle editor. A production effect may combine bursts, trails, ribbons, mesh animation, material parameters, screen-space accents, sound/event cues, and child effects on one timeline. The editor therefore treats an effect as layered, timed data and keeps simulation modules separate from rendering modules.
 
-The UI is built directly with Bevy UI. Reusable editor widgets remain independent of effect semantics so they can later move into any shared Bevy editor-UI library.
+The UI is built directly with Bevy UI. Its stable shell and reusable structural
+scenes use Bevy Scene Notation (BSN), while dynamic authoring lists remain normal
+ECS-backed builders. Workspace placement and pane dimensions live in a persisted
+layout resource rather than in effect assets. Reusable editor widgets remain
+independent of effect semantics so they can later move into any shared Bevy
+editor-UI library.
 
 ## Boundaries
 
@@ -67,6 +72,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Owns panels, viewport controls, timeline state, and an authoring-backed session.
 - Presents Bevy-native UI and editor interactions.
+- Owns a persisted workspace layout with draggable splitters and dockable side panels.
+- Keeps window chrome stable while rebuilding only effect-dependent workspace content.
 - Consumes `aestra-bevy` through an explicit session resource.
 - Must not add game-only concepts to the semantic asset schema.
 
@@ -128,7 +135,8 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [ ] timeline zooming and snapping
 - node/module stack for spawn, initialize, update, renderer, and events
 - autosave/recovery and asset migrations
-- reusable, dockable Bevy UI panels
+- [x] persistent pane resizing and dockable asset/inspector side panels
+- reusable tab stacks, floating panels, and arbitrary dock-tree placement
 
 ### Phase 3 — production renderer
 
