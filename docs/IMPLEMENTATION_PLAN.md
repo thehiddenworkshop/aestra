@@ -30,11 +30,11 @@ architecture vision; this file is the shorter delivery plan.
   context-keyed checkpoint store now supports backward restore-and-replay for stateful
   effects, while stateless effects seek directly and snapshotless backends explicitly
   restart and replay. Backend-native GPU snapshot capture remains part of future
-  stateful GPU module work. The editor workspace now uses an in-code BSN shell,
-  persistent dock tab stacks, closable/recoverable side panels, visible draggable
-  splitter gutters with directional cursors, responsive viewport sizing, and a stable
-  chrome layer that survives effect-content rebuilds. The remaining M5 work is nested
-  dock-tree placement and floating panels, the
+  stateful GPU module work. The editor workspace now uses an in-code BSN shell and a
+  persisted recursive dock tree. Every authoring panel can be inserted and reordered
+  through tab strips or split through directional panel-content drop regions; empty branches collapse automatically,
+  splitters expose directional cursors, and closed panels can be restored from View.
+  The remaining M5 work is floating panels, the
   broader diagnostics/generated-code/profiler tab set, viewport gizmos, and recovery.
 
 ## 1. Assessment of the current prototype

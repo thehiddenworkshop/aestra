@@ -12,8 +12,8 @@ The first vertical slice already includes:
 - typed effect-parameter bindings with zero-recompile runtime overrides;
 - compiled curves/gradients, constant folding, and particle-attribute liveness;
 - an effect library, layer stack, viewport, inspector, interactive timeline, transport, and status bar;
-- a BSN-composed editor shell with persistent side-panel tab stacks, visible draggable
-  splitter gutters, resize cursors, and a viewport that follows the available workspace size;
+- a BSN-composed editor shell with a persistent recursive dock tree, five-way panel
+  drop targets, visible draggable splitter gutters, and directional resize cursors;
 - deterministic emitter evaluation with point, circle, ring, and cone shapes;
 - ranges, smooth curves, color gradients, drag, gravity, turbulence, and layer timing;
 - renderer declarations for billboards, ribbons, and meshes;
@@ -41,9 +41,10 @@ Controls:
 - layer rows: select an emitter
 - timeline: click or drag to scrub
 - highlighted pane-divider gutters: drag with horizontal/vertical resize cursors
-- `ASSETS` / `INSPECTOR` tabs: select, close, or drag onto either side dock to stack them
-- `View > Show Assets` / `Show Inspector`: restore a closed panel
-- empty side docks collapse completely; temporary edge targets appear only while dragging a tab
+- drag onto panel content to split left/right/above/below using the highlighted half-panel preview
+- drag beside another tab to join its stack and insert before or after it; use the trailing strip to append
+- `View > Show ...`: restore a closed Assets, Inspector, Timeline, Curves, or Changes panel
+- empty dock branches collapse completely; drop targets appear only while dragging a tab
 - `View > Reset Workspace`: restore the default panel placement and sizes
 - inspector `-` / `+`: tune emission, timing, size, opacity, and duration
 

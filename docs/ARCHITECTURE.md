@@ -6,8 +6,8 @@ Aestra is an effect choreography system, not only a particle editor. A productio
 
 The UI is built directly with Bevy UI. Its stable shell and reusable structural
 scenes use Bevy Scene Notation (BSN), while dynamic authoring lists remain normal
-ECS-backed builders. Workspace placement and pane dimensions live in a persisted
-layout resource rather than in effect assets. Reusable editor widgets remain
+ECS-backed builders. Workspace placement, tab stacks, and recursive split ratios live
+in a persisted dock-tree resource rather than in effect assets. Reusable editor widgets remain
 independent of effect semantics so they can later move into any shared Bevy
 editor-UI library.
 
@@ -72,9 +72,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Owns panels, viewport controls, timeline state, and an authoring-backed session.
 - Presents Bevy-native UI and editor interactions.
-- Owns a persisted workspace layout with dock tab stacks, closable/recoverable panels,
-  collapsing empty docks, transient edge drop targets, clear draggable splitter gutters,
-  and directional resize cursors.
+- Owns a persisted recursive workspace dock tree with tab-strip insertion and
+  directional panel-content splitting,
+  closable/recoverable panels, collapsing empty branches, transient drop targets,
+  draggable splitter gutters, and directional resize cursors.
 - Keeps window chrome stable while rebuilding only effect-dependent workspace content.
 - Consumes `aestra-bevy` through an explicit session resource.
 - Must not add game-only concepts to the semantic asset schema.
@@ -137,8 +138,8 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [ ] timeline zooming and snapping
 - node/module stack for spawn, initialize, update, renderer, and events
 - autosave/recovery and asset migrations
-- [x] persistent pane resizing and dockable asset/inspector tab stacks
-- nested dock-tree placement and floating panels
+- [x] persistent recursive pane resizing and dockable authoring-panel tab stacks
+- floating panels
 
 ### Phase 3 — production renderer
 

@@ -1,3 +1,4 @@
+mod docking;
 mod session;
 mod theme;
 mod ui_shell;
@@ -16,17 +17,14 @@ use bevy::{
     ui::{InteractionDisabled, RelativeCursorPosition},
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon, WindowResolution},
 };
+use docking::{DockAxis, DockDrop, DockNode, DockNodeId, DockPanel, DockStack, WorkspaceLayout};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
-use serde::{Deserialize, Serialize};
 use session::EditorSession;
-use std::{fs, io, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
 const PARTICLE_POOL_SIZE: usize = 384;
-const DEFAULT_LEFT_WIDTH: f32 = 224.0;
-const DEFAULT_RIGHT_WIDTH: f32 = 390.0;
-const DEFAULT_BOTTOM_HEIGHT: f32 = 226.0;
 
 fn main() {
     App::new()
@@ -71,8 +69,9 @@ fn main() {
                 update_preview_grid_visibility,
                 clear_finished_dock_drag,
                 sync_dock_drop_hints,
-                fit_workspace_to_window,
-                sync_workspace_layout,
+                sync_tab_reorder_hints,
+                sync_tab_append_hint,
+                update_dock_zone_style,
                 rebuild_editor_ui,
             )
                 .chain(),
@@ -111,7 +110,6 @@ enum EditorAction {
         direction: i8,
     },
     EditComplexInput(ModuleId, u8),
-    SelectWorkspace(WorkspaceTab),
     AddComplexKey,
     DeleteComplexKey,
     AdjustComplexTime(i8),
@@ -139,300 +137,15 @@ enum EditorAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WorkspaceTab {
-    Timeline,
-    Curves,
-    Changes,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ComplexSelection {
     module: ModuleId,
     input: u8,
     key: usize,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 struct WorkspaceState {
-    tab: WorkspaceTab,
     complex: Option<ComplexSelection>,
-}
-
-impl Default for WorkspaceState {
-    fn default() -> Self {
-        Self {
-            tab: WorkspaceTab::Timeline,
-            complex: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-enum DockPanel {
-    #[default]
-    Assets,
-    Inspector,
-}
-
-impl DockPanel {
-    fn title(self) -> &'static str {
-        match self {
-            Self::Assets => "ASSETS",
-            Self::Inspector => "INSPECTOR",
-        }
-    }
-}
-
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-enum DockSlot {
-    Left,
-    Right,
-}
-
-impl DockSlot {
-    fn default_for(panel: DockPanel) -> Self {
-        match panel {
-            DockPanel::Assets => Self::Left,
-            DockPanel::Inspector => Self::Right,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-struct DockStack {
-    tabs: Vec<DockPanel>,
-    active: Option<DockPanel>,
-}
-
-impl DockStack {
-    fn single(panel: DockPanel) -> Self {
-        Self {
-            tabs: vec![panel],
-            active: Some(panel),
-        }
-    }
-
-    fn normalize(&mut self) {
-        let mut unique = Vec::with_capacity(self.tabs.len());
-        self.tabs.retain(|panel| {
-            if unique.contains(panel) {
-                false
-            } else {
-                unique.push(*panel);
-                true
-            }
-        });
-        if !self
-            .active
-            .is_some_and(|active| self.tabs.contains(&active))
-        {
-            self.active = self.tabs.last().copied();
-        }
-    }
-
-    fn remove(&mut self, panel: DockPanel) {
-        self.tabs.retain(|candidate| *candidate != panel);
-        self.normalize();
-    }
-
-    fn push_active(&mut self, panel: DockPanel) {
-        self.remove(panel);
-        self.tabs.push(panel);
-        self.active = Some(panel);
-    }
-}
-
-#[derive(Resource, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-struct WorkspaceLayout {
-    left_width: f32,
-    right_width: f32,
-    bottom_height: f32,
-    left_stack: DockStack,
-    right_stack: DockStack,
-}
-
-impl Default for WorkspaceLayout {
-    fn default() -> Self {
-        Self {
-            left_width: DEFAULT_LEFT_WIDTH,
-            right_width: DEFAULT_RIGHT_WIDTH,
-            bottom_height: DEFAULT_BOTTOM_HEIGHT,
-            left_stack: DockStack::single(DockPanel::Assets),
-            right_stack: DockStack::single(DockPanel::Inspector),
-        }
-    }
-}
-
-impl WorkspaceLayout {
-    fn load() -> Self {
-        let path = workspace_layout_path();
-        fs::read_to_string(path)
-            .ok()
-            .and_then(|source| ron::from_str(&source).ok())
-            .map(Self::normalized)
-            .unwrap_or_default()
-    }
-
-    fn save(&self) -> io::Result<()> {
-        let path = workspace_layout_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let source = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
-            .map_err(io::Error::other)?;
-        fs::write(path, source)
-    }
-
-    fn resize(&mut self, splitter: PaneSplitter, delta: Vec2, window: &Window) {
-        let scale = window.scale_factor().max(0.01);
-        let delta = delta / scale;
-        let maximum_bottom = (window.height() - 373.0).max(140.0);
-        match splitter {
-            PaneSplitter::Left => {
-                let right_space = if self.right_stack.tabs.is_empty() {
-                    0.0
-                } else {
-                    self.right_width + 9.0
-                };
-                let maximum = (window.width() - right_space - 330.0).max(168.0);
-                self.left_width = (self.left_width + delta.x).clamp(168.0, maximum);
-            }
-            PaneSplitter::Right => {
-                let left_space = if self.left_stack.tabs.is_empty() {
-                    0.0
-                } else {
-                    self.left_width + 9.0
-                };
-                let maximum = (window.width() - left_space - 330.0).max(240.0);
-                self.right_width = (self.right_width - delta.x).clamp(240.0, maximum);
-            }
-            PaneSplitter::Bottom => {
-                self.bottom_height = (self.bottom_height - delta.y).clamp(140.0, maximum_bottom)
-            }
-        }
-    }
-
-    fn normalized(mut self) -> Self {
-        let defaults = Self::default();
-        if !self.left_width.is_finite() {
-            self.left_width = defaults.left_width;
-        }
-        if !self.right_width.is_finite() {
-            self.right_width = defaults.right_width;
-        }
-        if !self.bottom_height.is_finite() {
-            self.bottom_height = defaults.bottom_height;
-        }
-        self.left_width = self.left_width.clamp(168.0, 800.0);
-        self.right_width = self.right_width.clamp(240.0, 800.0);
-        self.bottom_height = self.bottom_height.clamp(140.0, 800.0);
-        self.left_stack.normalize();
-        self.right_stack.normalize();
-        for panel in self.left_stack.tabs.clone() {
-            self.right_stack.remove(panel);
-        }
-        self
-    }
-
-    fn fit_to_window(&mut self, window: &Window) {
-        let maximum_bottom = (window.height() - 373.0).max(140.0);
-        self.bottom_height = self.bottom_height.clamp(140.0, maximum_bottom);
-        let right_space = if self.right_stack.tabs.is_empty() {
-            0.0
-        } else {
-            self.right_width + 9.0
-        };
-        let maximum_left = (window.width() - right_space - 330.0).max(168.0);
-        self.left_width = self.left_width.clamp(168.0, maximum_left);
-        let left_space = if self.left_stack.tabs.is_empty() {
-            0.0
-        } else {
-            self.left_width + 9.0
-        };
-        let maximum_right = (window.width() - left_space - 330.0).max(240.0);
-        self.right_width = self.right_width.clamp(240.0, maximum_right);
-    }
-
-    fn dock(&mut self, panel: DockPanel, slot: DockSlot) -> bool {
-        let previous = self.clone();
-        self.left_stack.remove(panel);
-        self.right_stack.remove(panel);
-        self.stack_mut(slot).push_active(panel);
-        *self != previous
-    }
-
-    fn activate(&mut self, panel: DockPanel) -> bool {
-        let Some(slot) = self.slot_of(panel) else {
-            return false;
-        };
-        let stack = self.stack_mut(slot);
-        if stack.active == Some(panel) {
-            return false;
-        }
-        stack.active = Some(panel);
-        true
-    }
-
-    fn close(&mut self, panel: DockPanel) -> bool {
-        let previous = self.clone();
-        self.left_stack.remove(panel);
-        self.right_stack.remove(panel);
-        *self != previous
-    }
-
-    fn show(&mut self, panel: DockPanel) -> bool {
-        if self.is_visible(panel) {
-            return self.activate(panel);
-        }
-        self.stack_mut(DockSlot::default_for(panel))
-            .push_active(panel);
-        true
-    }
-
-    fn is_visible(&self, panel: DockPanel) -> bool {
-        self.slot_of(panel).is_some()
-    }
-
-    fn slot_of(&self, panel: DockPanel) -> Option<DockSlot> {
-        if self.left_stack.tabs.contains(&panel) {
-            Some(DockSlot::Left)
-        } else if self.right_stack.tabs.contains(&panel) {
-            Some(DockSlot::Right)
-        } else {
-            None
-        }
-    }
-
-    fn stack(&self, slot: DockSlot) -> &DockStack {
-        match slot {
-            DockSlot::Left => &self.left_stack,
-            DockSlot::Right => &self.right_stack,
-        }
-    }
-
-    fn stack_mut(&mut self, slot: DockSlot) -> &mut DockStack {
-        match slot {
-            DockSlot::Left => &mut self.left_stack,
-            DockSlot::Right => &mut self.right_stack,
-        }
-    }
-}
-
-fn workspace_layout_path() -> PathBuf {
-    if let Some(path) = std::env::var_os("AESTRA_CONFIG_DIR") {
-        return PathBuf::from(path).join("editor-layout.ron");
-    }
-    #[cfg(target_os = "windows")]
-    if let Some(path) = std::env::var_os("APPDATA") {
-        return PathBuf::from(path).join("Aestra").join("editor-layout.ron");
-    }
-    #[cfg(not(target_os = "windows"))]
-    if let Some(path) = std::env::var_os("XDG_CONFIG_HOME") {
-        return PathBuf::from(path).join("aestra").join("editor-layout.ron");
-    }
-    PathBuf::from(".aestra").join("editor-layout.ron")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -542,18 +255,17 @@ struct UndoMenuItem;
 #[derive(Component)]
 struct RedoMenuItem;
 
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-enum PaneSplitter {
-    Left,
-    Right,
-    Bottom,
-}
-
 #[derive(Component)]
-struct DockPane(DockSlot);
+struct DockPane(DockNodeId);
 
 #[derive(Component)]
 struct DockTab(DockPanel);
+
+#[derive(Component)]
+struct DockTabAppendZone(DockNodeId);
+
+#[derive(Component)]
+struct DockTabAppendIndicator(DockNodeId);
 
 #[derive(Component)]
 struct SplitterGrip;
@@ -562,19 +274,31 @@ struct SplitterGrip;
 struct DockCloseButton;
 
 #[derive(Component)]
-struct DockDropHint;
+struct DockDropHint(DockNodeId);
 
 #[derive(Component)]
-struct DockEdgeDropZone(DockSlot);
+struct DockDropZone {
+    node: DockNodeId,
+    drop: DockDrop,
+}
+
+#[derive(Component)]
+struct DockDropZoneLabel;
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+struct DockSplitter {
+    node: DockNodeId,
+    axis: DockAxis,
+}
+
+#[derive(Component)]
+struct DockFirstPane(DockNodeId);
 
 #[derive(Resource, Default)]
 struct DockDragState(Option<DockPanel>);
 
 #[derive(Resource, Default)]
-struct ResizeState(Option<PaneSplitter>);
-
-#[derive(Component)]
-struct BottomWorkspace;
+struct ResizeState(Option<DockSplitter>);
 
 #[derive(Component)]
 struct MenuDropdown(MenuKind);
@@ -668,10 +392,18 @@ struct UiBuildResources<'w> {
 
 #[derive(SystemParam)]
 struct DockDropQueries<'w, 's> {
-    panes: Query<'w, 's, &'static DockPane>,
-    edge_zones: Query<'w, 's, &'static DockEdgeDropZone>,
+    zones: Query<'w, 's, &'static DockDropZone>,
     tabs: Query<'w, 's, &'static DockTab>,
     parents: Query<'w, 's, &'static ChildOf>,
+}
+
+#[derive(SystemParam)]
+struct DockResizeQueries<'w, 's> {
+    splitters: Query<'w, 's, &'static DockSplitter>,
+    parents: Query<'w, 's, &'static ChildOf>,
+    computed: Query<'w, 's, &'static ComputedNode>,
+    first_panes: Query<'w, 's, (&'static DockFirstPane, &'static mut Node)>,
+    colors: Query<'w, 's, &'static mut BackgroundColor, With<DockSplitter>>,
 }
 
 fn setup_editor(
@@ -732,42 +464,7 @@ fn spawn_editor_content(
         .spawn(EditorContent)
         .apply_scene(ui_shell::editor_content())
         .with_children(|content| {
-            content
-                .spawn(())
-                .apply_scene(ui_shell::main_row())
-                .with_children(|main| {
-                    spawn_dock_edge_drop_zone(main, DockSlot::Left);
-                    if !layout.left_stack.tabs.is_empty() {
-                        spawn_dock_stack(
-                            main,
-                            DockSlot::Left,
-                            layout.left_width,
-                            &layout.left_stack,
-                            sources,
-                        );
-                        spawn_pane_splitter(main, PaneSplitter::Left);
-                    }
-                    spawn_preview(main);
-                    if !layout.right_stack.tabs.is_empty() {
-                        spawn_pane_splitter(main, PaneSplitter::Right);
-                        spawn_dock_stack(
-                            main,
-                            DockSlot::Right,
-                            layout.right_width,
-                            &layout.right_stack,
-                            sources,
-                        );
-                    }
-                    spawn_dock_edge_drop_zone(main, DockSlot::Right);
-                });
-            spawn_pane_splitter(content, PaneSplitter::Bottom);
-            spawn_workspace(
-                content,
-                sources.session,
-                sources.registry,
-                workspace,
-                layout.bottom_height,
-            );
+            spawn_dock_node(content, &layout.root, workspace, sources);
         });
 }
 
@@ -855,6 +552,21 @@ fn spawn_menu_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                         "Show Inspector",
                         "",
                         EditorAction::ShowDockPanel(DockPanel::Inspector),
+                    ),
+                    (
+                        "Show Timeline",
+                        "",
+                        EditorAction::ShowDockPanel(DockPanel::Timeline),
+                    ),
+                    (
+                        "Show Curves",
+                        "",
+                        EditorAction::ShowDockPanel(DockPanel::Curves),
+                    ),
+                    (
+                        "Show Changes",
+                        "",
+                        EditorAction::ShowDockPanel(DockPanel::Changes),
                     ),
                     ("Reset Workspace", "", EditorAction::ResetWorkspaceLayout),
                 ],
@@ -1138,122 +850,232 @@ fn toolbar_button<M: Component>(
         });
 }
 
+fn spawn_dock_node(
+    parent: &mut ChildSpawnerCommands,
+    node: &DockNode,
+    workspace: &WorkspaceState,
+    sources: PanelSources<'_>,
+) {
+    match node {
+        DockNode::Split {
+            id,
+            axis,
+            ratio,
+            first,
+            second,
+        } => {
+            let direction = match axis {
+                DockAxis::Horizontal => FlexDirection::Row,
+                DockAxis::Vertical => FlexDirection::Column,
+            };
+            parent
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    min_width: Val::Px(0.0),
+                    min_height: Val::Px(0.0),
+                    flex_direction: direction,
+                    ..default()
+                })
+                .with_children(|split| {
+                    split
+                        .spawn((
+                            DockFirstPane(*id),
+                            Node {
+                                width: if *axis == DockAxis::Horizontal {
+                                    Val::Percent(*ratio * 100.0)
+                                } else {
+                                    Val::Percent(100.0)
+                                },
+                                height: if *axis == DockAxis::Vertical {
+                                    Val::Percent(*ratio * 100.0)
+                                } else {
+                                    Val::Percent(100.0)
+                                },
+                                min_width: Val::Px(0.0),
+                                min_height: Val::Px(0.0),
+                                flex_shrink: 0.0,
+                                ..default()
+                            },
+                        ))
+                        .with_children(|pane| {
+                            spawn_dock_node(pane, first, workspace, sources);
+                        });
+                    spawn_tree_splitter(split, *id, *axis);
+                    split
+                        .spawn(Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            ..default()
+                        })
+                        .with_children(|pane| {
+                            spawn_dock_node(pane, second, workspace, sources);
+                        });
+                });
+        }
+        DockNode::Tabs { id, stack } => {
+            spawn_dock_stack(parent, *id, stack, workspace, sources);
+        }
+    }
+}
+
 fn spawn_dock_stack(
     parent: &mut ChildSpawnerCommands,
-    slot: DockSlot,
-    width: f32,
+    node: DockNodeId,
     stack: &DockStack,
+    workspace: &WorkspaceState,
     sources: PanelSources<'_>,
 ) {
     parent
-        .spawn((DockPane(slot), Pickable::default()))
-        .apply_scene(ui_shell::side_pane(width, dock_border(slot)))
-        .observe(dock_panel_drop)
+        .spawn((
+            DockPane(node),
+            RelativeCursorPosition::default(),
+            Pickable {
+                should_block_lower: false,
+                is_hoverable: true,
+            },
+        ))
+        .apply_scene(ui_shell::dock_pane())
         .with_children(|pane| {
-            spawn_dock_tab_bar(pane, stack);
+            spawn_dock_tab_bar(pane, node, stack);
             match stack.active {
+                Some(DockPanel::Viewport) => spawn_preview(pane),
                 Some(DockPanel::Assets) => {
                     spawn_asset_browser(pane, sources.session, sources.catalog);
                 }
                 Some(DockPanel::Inspector) => {
                     spawn_inspector(pane, sources.session, sources.registry, sources.palette);
                 }
-                None => spawn_empty_dock(pane),
+                Some(DockPanel::Timeline) => spawn_timeline(pane, sources.session),
+                Some(DockPanel::Curves) => {
+                    spawn_curves_workspace(pane, sources.session, sources.registry, workspace);
+                }
+                Some(DockPanel::Changes) => {
+                    spawn_changes_workspace(pane, sources.session);
+                }
+                None => {}
             }
-            spawn_dock_drop_hint(pane, slot);
+            spawn_dock_drop_overlay(pane, node);
         });
 }
 
-fn spawn_dock_drop_hint(parent: &mut ChildSpawnerCommands, slot: DockSlot) {
+fn spawn_dock_drop_overlay(parent: &mut ChildSpawnerCommands, node: DockNodeId) {
     parent
         .spawn((
-            DockDropHint,
+            DockDropHint(node),
             Visibility::Hidden,
             Pickable::IGNORE,
             GlobalZIndex(80),
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(8.0),
-                right: Val::Px(8.0),
-                top: Val::Px(40.0),
-                bottom: Val::Px(8.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border: UiRect::all(Val::Px(2.0)),
-                border_radius: BorderRadius::all(Val::Px(6.0)),
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                top: Val::Px(32.0),
+                bottom: Val::Px(0.0),
                 ..default()
             },
-            BackgroundColor(theme::DOCK_TARGET_FILL),
-            BorderColor::all(theme::DOCK_TARGET),
         ))
-        .with_children(|hint| {
-            hint.spawn((
-                Text::new(match slot {
-                    DockSlot::Left => "DROP IN LEFT DOCK",
-                    DockSlot::Right => "DROP IN RIGHT DOCK",
-                }),
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
-                Pickable::IGNORE,
-            ));
+        .with_children(|overlay| {
+            spawn_dock_drop_zone(overlay, node, DockDrop::Left);
+            spawn_dock_drop_zone(overlay, node, DockDrop::Right);
+            spawn_dock_drop_zone(overlay, node, DockDrop::Top);
+            spawn_dock_drop_zone(overlay, node, DockDrop::Bottom);
         });
 }
 
-fn spawn_dock_edge_drop_zone(parent: &mut ChildSpawnerCommands, slot: DockSlot) {
-    parent
-        .spawn((
-            DockEdgeDropZone(slot),
-            Visibility::Hidden,
-            Pickable::default(),
-            GlobalZIndex(90),
+fn spawn_dock_drop_zone(parent: &mut ChildSpawnerCommands, node: DockNodeId, drop: DockDrop) {
+    let (node_style, label) = match drop {
+        DockDrop::Left => (
             Node {
                 position_type: PositionType::Absolute,
-                left: if slot == DockSlot::Left {
-                    Val::Px(0.0)
-                } else {
-                    Val::Auto
-                },
-                right: if slot == DockSlot::Right {
-                    Val::Px(0.0)
-                } else {
-                    Val::Auto
-                },
-                top: Val::Px(0.0),
-                bottom: Val::Px(0.0),
-                width: Val::Px(72.0),
+                left: Val::Px(0.0),
+                top: Val::Percent(25.0),
+                width: Val::Percent(50.0),
+                height: Val::Percent(50.0),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
-                border: UiRect::all(Val::Px(2.0)),
                 ..default()
             },
-            BackgroundColor(theme::DOCK_TARGET_FILL),
-            BorderColor::all(theme::DOCK_TARGET),
+            "SPLIT LEFT",
+        ),
+        DockDrop::Right => (
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Px(0.0),
+                top: Val::Percent(25.0),
+                width: Val::Percent(50.0),
+                height: Val::Percent(50.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            "SPLIT RIGHT",
+        ),
+        DockDrop::Top => (
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                top: Val::Px(0.0),
+                height: Val::Percent(25.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            "SPLIT ABOVE",
+        ),
+        DockDrop::Bottom => (
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                bottom: Val::Px(0.0),
+                height: Val::Percent(25.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            "SPLIT BELOW",
+        ),
+        DockDrop::Center => return,
+    };
+    parent
+        .spawn((
+            DockDropZone { node, drop },
+            Interaction::None,
+            RelativeCursorPosition::default(),
+            Pickable::default(),
+            node_style,
+            BackgroundColor(theme::DOCK_TARGET_IDLE),
         ))
         .observe(dock_panel_drop)
         .with_children(|zone| {
             zone.spawn((
-                Text::new(match slot {
-                    DockSlot::Left => "LEFT\nDOCK",
-                    DockSlot::Right => "RIGHT\nDOCK",
-                }),
+                DockDropZoneLabel,
+                Text::new(label),
                 TextFont {
                     font_size: FontSize::Px(10.0),
                     ..default()
                 },
-                TextColor(theme::TEXT),
+                TextColor(theme::DOCK_TARGET_TEXT_IDLE),
+                Node {
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                    border_radius: BorderRadius::all(Val::Px(3.0)),
+                    ..default()
+                },
+                BackgroundColor(theme::DOCK_TARGET_LABEL_IDLE),
                 Pickable::IGNORE,
             ));
         });
 }
 
-fn spawn_pane_splitter(parent: &mut ChildSpawnerCommands, splitter: PaneSplitter) {
-    let horizontal = splitter == PaneSplitter::Bottom;
+fn spawn_tree_splitter(parent: &mut ChildSpawnerCommands, node: DockNodeId, axis: DockAxis) {
+    let splitter = DockSplitter { node, axis };
+    let horizontal_bar = axis == DockAxis::Vertical;
     parent
         .spawn(splitter)
-        .apply_scene(ui_shell::splitter(horizontal))
+        .apply_scene(ui_shell::splitter(horizontal_bar))
         .observe(begin_workspace_resize)
         .observe(resize_workspace_pane)
         .observe(finish_workspace_resize)
@@ -1263,12 +1085,12 @@ fn spawn_pane_splitter(parent: &mut ChildSpawnerCommands, splitter: PaneSplitter
             gutter.spawn((
                 SplitterGrip,
                 Node {
-                    width: if horizontal {
+                    width: if horizontal_bar {
                         Val::Px(52.0)
                     } else {
                         Val::Px(2.0)
                     },
-                    height: if horizontal {
+                    height: if horizontal_bar {
                         Val::Px(2.0)
                     } else {
                         Val::Px(52.0)
@@ -1282,7 +1104,7 @@ fn spawn_pane_splitter(parent: &mut ChildSpawnerCommands, splitter: PaneSplitter
         });
 }
 
-fn spawn_dock_tab_bar(parent: &mut ChildSpawnerCommands, stack: &DockStack) {
+fn spawn_dock_tab_bar(parent: &mut ChildSpawnerCommands, node: DockNodeId, stack: &DockStack) {
     parent
         .spawn((
             Node {
@@ -1302,21 +1124,34 @@ fn spawn_dock_tab_bar(parent: &mut ChildSpawnerCommands, stack: &DockStack) {
             for panel in &stack.tabs {
                 spawn_dock_tab(bar, *panel, stack.active == Some(*panel));
             }
-            if stack.tabs.is_empty() {
-                bar.spawn((
-                    Text::new("EMPTY DOCK"),
-                    TextFont {
-                        font_size: FontSize::Px(9.0),
-                        ..default()
-                    },
-                    TextColor(theme::TEXT_FAINT),
+            bar.spawn((
+                DockTabAppendZone(node),
+                RelativeCursorPosition::default(),
+                Pickable::default(),
+                Node {
+                    height: Val::Percent(100.0),
+                    min_width: Val::Px(28.0),
+                    flex_grow: 1.0,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::left(Val::Px(2.0)),
+                    ..default()
+                },
+            ))
+            .observe(append_dock_tab)
+            .with_children(|zone| {
+                zone.spawn((
+                    DockTabAppendIndicator(node),
+                    Visibility::Hidden,
                     Node {
-                        margin: UiRect::horizontal(Val::Px(7.0)),
+                        width: Val::Px(4.0),
+                        height: Val::Px(24.0),
+                        border_radius: BorderRadius::MAX,
                         ..default()
                     },
+                    BackgroundColor(theme::DOCK_TARGET),
                     Pickable::IGNORE,
                 ));
-            }
+            });
         });
 }
 
@@ -1326,6 +1161,7 @@ fn spawn_dock_tab(parent: &mut ChildSpawnerCommands, panel: DockPanel, selected:
             Button,
             EditorAction::SelectDockPanel(panel),
             DockTab(panel),
+            RelativeCursorPosition::default(),
             Pickable {
                 should_block_lower: false,
                 is_hoverable: true,
@@ -1359,6 +1195,7 @@ fn spawn_dock_tab(parent: &mut ChildSpawnerCommands, panel: DockPanel, selected:
         .observe(begin_dock_tab_drag)
         .observe(move_dock_tab)
         .observe(reset_dock_tab)
+        .observe(reorder_dock_tab)
         .with_children(|tab| {
             tab.spawn((
                 Text::new(panel.title()),
@@ -1373,82 +1210,94 @@ fn spawn_dock_tab(parent: &mut ChildSpawnerCommands, panel: DockPanel, selected:
                 flex_grow: 1.0,
                 ..default()
             });
-            tab.spawn((
-                Button,
-                EditorAction::CloseDockPanel(panel),
-                DockCloseButton,
-                Node {
-                    width: Val::Px(24.0),
-                    height: Val::Percent(100.0),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                },
-                BackgroundColor(Color::NONE),
-            ))
-            .with_children(|close| {
-                close.spawn((
-                    Text::new("x"),
-                    TextFont {
-                        font_size: FontSize::Px(13.0),
+            if panel.closable() {
+                tab.spawn((
+                    Button,
+                    EditorAction::CloseDockPanel(panel),
+                    DockCloseButton,
+                    Node {
+                        width: Val::Px(24.0),
+                        height: Val::Percent(100.0),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
                         ..default()
                     },
-                    TextColor(theme::TEXT_FAINT),
-                    Pickable::IGNORE,
-                ));
-            });
+                    BackgroundColor(Color::NONE),
+                ))
+                .with_children(|close| {
+                    close.spawn((
+                        Text::new("x"),
+                        TextFont {
+                            font_size: FontSize::Px(13.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_FAINT),
+                        Pickable::IGNORE,
+                    ));
+                });
+            }
         });
-}
-
-fn spawn_empty_dock(parent: &mut ChildSpawnerCommands) {
-    parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            flex_grow: 1.0,
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            ..default()
-        })
-        .with_children(|empty| {
-            empty.spawn((
-                Text::new("DRAG A PANEL HERE\nOR REOPEN IT FROM VIEW"),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-                Pickable::IGNORE,
-            ));
-        });
-}
-
-fn dock_border(_slot: DockSlot) -> UiRect {
-    UiRect::all(Val::Px(1.0))
 }
 
 fn resize_workspace_pane(
     drag: On<Pointer<Drag>>,
-    splitters: Query<&PaneSplitter>,
+    mut queries: DockResizeQueries,
     window: Single<&Window, With<PrimaryWindow>>,
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
-    mut colors: Query<&mut BackgroundColor, With<PaneSplitter>>,
     mut layout: ResMut<WorkspaceLayout>,
 ) {
-    let Ok(splitter) = splitters.get(drag.event_target()) else {
+    let Ok(splitter) = queries.splitters.get(drag.event_target()) else {
         return;
     };
+    let Ok(parent) = queries.parents.get(drag.event_target()) else {
+        return;
+    };
+    let Ok(parent_node) = queries.computed.get(parent.parent()) else {
+        return;
+    };
+    let scale = window.scale_factor().max(0.01);
+    let (delta, span) = match splitter.axis {
+        DockAxis::Horizontal => (drag.delta.x / scale, parent_node.size().x / scale),
+        DockAxis::Vertical => (drag.delta.y / scale, parent_node.size().y / scale),
+    };
+    if !layout.resize_split(splitter.node, delta, span) {
+        return;
+    }
+    let Some(DockNode::Split { ratio, .. }) = find_dock_node(&layout.root, splitter.node) else {
+        return;
+    };
+    for (pane, mut node) in &mut queries.first_panes {
+        if pane.0 != splitter.node {
+            continue;
+        }
+        match splitter.axis {
+            DockAxis::Horizontal => node.width = Val::Percent(*ratio * 100.0),
+            DockAxis::Vertical => node.height = Val::Percent(*ratio * 100.0),
+        }
+    }
     **cursor = resize_cursor(*splitter);
-    if let Ok(mut color) = colors.get_mut(drag.event_target()) {
+    if let Ok(mut color) = queries.colors.get_mut(drag.event_target()) {
         color.0 = theme::SPLITTER_HOVER;
     }
-    layout.resize(*splitter, drag.delta, &window);
+}
+
+fn find_dock_node(node: &DockNode, target: DockNodeId) -> Option<&DockNode> {
+    if node.id() == target {
+        return Some(node);
+    }
+    match node {
+        DockNode::Split { first, second, .. } => {
+            find_dock_node(first, target).or_else(|| find_dock_node(second, target))
+        }
+        DockNode::Tabs { .. } => None,
+    }
 }
 
 fn begin_workspace_resize(
     drag: On<Pointer<DragStart>>,
-    splitters: Query<&PaneSplitter>,
+    splitters: Query<&DockSplitter>,
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
-    mut colors: Query<&mut BackgroundColor, With<PaneSplitter>>,
+    mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
     mut state: ResMut<ResizeState>,
 ) {
     let Ok(splitter) = splitters.get(drag.event_target()) else {
@@ -1463,9 +1312,9 @@ fn begin_workspace_resize(
 
 fn finish_workspace_resize(
     drag: On<Pointer<DragEnd>>,
-    splitters: Query<&PaneSplitter>,
+    splitters: Query<&DockSplitter>,
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
-    mut colors: Query<&mut BackgroundColor, With<PaneSplitter>>,
+    mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
     mut state: ResMut<ResizeState>,
     layout: Res<WorkspaceLayout>,
 ) {
@@ -1482,18 +1331,18 @@ fn finish_workspace_resize(
     }
 }
 
-fn resize_cursor(splitter: PaneSplitter) -> CursorIcon {
-    CursorIcon::System(match splitter {
-        PaneSplitter::Left | PaneSplitter::Right => SystemCursorIcon::EwResize,
-        PaneSplitter::Bottom => SystemCursorIcon::NsResize,
+fn resize_cursor(splitter: DockSplitter) -> CursorIcon {
+    CursorIcon::System(match splitter.axis {
+        DockAxis::Horizontal => SystemCursorIcon::EwResize,
+        DockAxis::Vertical => SystemCursorIcon::NsResize,
     })
 }
 
 fn show_resize_cursor(
     over: On<Pointer<Over>>,
-    splitters: Query<&PaneSplitter>,
+    splitters: Query<&DockSplitter>,
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
-    mut colors: Query<&mut BackgroundColor, With<PaneSplitter>>,
+    mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
 ) {
     let Ok(splitter) = splitters.get(over.event_target()) else {
         return;
@@ -1506,10 +1355,10 @@ fn show_resize_cursor(
 
 fn reset_cursor(
     out: On<Pointer<Out>>,
-    splitters: Query<&PaneSplitter>,
+    splitters: Query<&DockSplitter>,
     state: Res<ResizeState>,
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
-    mut colors: Query<&mut BackgroundColor, With<PaneSplitter>>,
+    mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
 ) {
     if splitters.contains(out.event_target()) && state.0.is_none() {
         **cursor = CursorIcon::System(SystemCursorIcon::Default);
@@ -1527,40 +1376,39 @@ fn move_dock_tab(drag: On<Pointer<Drag>>, mut tabs: Query<&mut UiTransform, With
 
 fn begin_dock_tab_drag(
     drag: On<Pointer<DragStart>>,
-    tabs: Query<&DockTab>,
+    mut tabs: Query<(&DockTab, &mut GlobalZIndex)>,
     mut state: ResMut<DockDragState>,
 ) {
-    if let Ok(tab) = tabs.get(drag.event_target()) {
+    if let Ok((tab, mut z_index)) = tabs.get_mut(drag.event_target()) {
         state.0 = Some(tab.0);
+        *z_index = GlobalZIndex(160);
     }
 }
 
 fn reset_dock_tab(
     drag: On<Pointer<DragEnd>>,
-    mut tabs: Query<&mut UiTransform, With<DockTab>>,
-    mut panes: Query<&mut BorderColor, With<DockPane>>,
+    mut tabs: Query<(&mut UiTransform, &mut GlobalZIndex), With<DockTab>>,
     mut state: ResMut<DockDragState>,
 ) {
-    if let Ok(mut transform) = tabs.get_mut(drag.event_target()) {
+    if let Ok((mut transform, mut z_index)) = tabs.get_mut(drag.event_target()) {
         transform.translation = Val2::ZERO;
+        *z_index = GlobalZIndex(20);
     }
     state.0 = None;
-    for mut border in &mut panes {
-        border.set_all(theme::BORDER);
-    }
 }
 
 fn clear_finished_dock_drag(
     buttons: Res<ButtonInput<MouseButton>>,
     mut state: ResMut<DockDragState>,
-    mut tabs: Query<&mut UiTransform, With<DockTab>>,
+    mut tabs: Query<(&mut UiTransform, &mut GlobalZIndex), With<DockTab>>,
 ) {
     if state.0.is_none() || buttons.pressed(MouseButton::Left) {
         return;
     }
     state.0 = None;
-    for mut transform in &mut tabs {
+    for (mut transform, mut z_index) in &mut tabs {
         transform.translation = Val2::ZERO;
+        *z_index = GlobalZIndex(20);
     }
 }
 
@@ -1572,12 +1420,9 @@ fn dock_panel_drop(
     mut session: ResMut<EditorSession>,
 ) {
     let mut target_entity = drop.event_target();
-    let target_slot = loop {
-        if let Ok(target) = queries.panes.get(target_entity) {
-            break target.0;
-        }
-        if let Ok(target) = queries.edge_zones.get(target_entity) {
-            break target.0;
+    let zone = loop {
+        if let Ok(zone) = queries.zones.get(target_entity) {
+            break zone;
         }
         let Ok(parent) = queries.parents.get(target_entity) else {
             return;
@@ -1595,7 +1440,7 @@ fn dock_panel_drop(
         tab_entity = parent.parent();
     };
     drag_state.0 = None;
-    if layout.dock(tab.0, target_slot) {
+    if layout.dock(tab.0, zone.node, zone.drop) {
         if let Err(error) = layout.save() {
             warn!("failed to save editor workspace layout: {error}");
         }
@@ -1605,29 +1450,202 @@ fn dock_panel_drop(
     drop.propagate(false);
 }
 
-fn sync_dock_drop_hints(
-    state: Res<DockDragState>,
-    layout: Res<WorkspaceLayout>,
-    mut hints: Query<&mut Visibility, With<DockDropHint>>,
-    mut edge_zones: Query<(&DockEdgeDropZone, &mut Visibility), Without<DockDropHint>>,
+fn reorder_dock_tab(
+    mut drop: On<Pointer<DragDrop>>,
+    tabs: Query<(&DockTab, &RelativeCursorPosition)>,
+    parents: Query<&ChildOf>,
+    mut drag_state: ResMut<DockDragState>,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut session: ResMut<EditorSession>,
 ) {
-    if !state.is_changed() && !layout.is_changed() {
+    let mut target_entity = drop.event_target();
+    let (target, cursor) = loop {
+        if let Ok(tab) = tabs.get(target_entity) {
+            break tab;
+        }
+        let Ok(parent) = parents.get(target_entity) else {
+            return;
+        };
+        target_entity = parent.parent();
+    };
+    let mut source_entity = drop.dropped;
+    let source = loop {
+        if let Ok((tab, _)) = tabs.get(source_entity) {
+            break tab;
+        }
+        let Ok(parent) = parents.get(source_entity) else {
+            return;
+        };
+        source_entity = parent.parent();
+    };
+    if source.0 == target.0 {
         return;
     }
-    let visibility = if state.0.is_some() {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
-    for mut hint in &mut hints {
-        *hint = visibility;
+    let before = cursor.normalized.is_none_or(|position| position.x < 0.5);
+    drag_state.0 = None;
+    if layout.reorder_tab(source.0, target.0, before) {
+        if let Err(error) = layout.save() {
+            warn!("failed to save editor workspace layout: {error}");
+        }
+        session.ui_revision += 1;
+        session.status = format!(
+            "Moved {} {} {}",
+            source.0.title().to_ascii_lowercase(),
+            if before { "before" } else { "after" },
+            target.0.title().to_ascii_lowercase()
+        );
     }
-    for (zone, mut zone_visibility) in &mut edge_zones {
-        *zone_visibility = if state.0.is_some() && layout.stack(zone.0).tabs.is_empty() {
+    drop.propagate(false);
+}
+
+fn append_dock_tab(
+    mut drop: On<Pointer<DragDrop>>,
+    append_zones: Query<&DockTabAppendZone>,
+    tabs: Query<&DockTab>,
+    parents: Query<&ChildOf>,
+    mut drag_state: ResMut<DockDragState>,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut session: ResMut<EditorSession>,
+) {
+    let Ok(zone) = append_zones.get(drop.event_target()) else {
+        return;
+    };
+    let mut source_entity = drop.dropped;
+    let source = loop {
+        if let Ok(tab) = tabs.get(source_entity) {
+            break tab;
+        }
+        let Ok(parent) = parents.get(source_entity) else {
+            return;
+        };
+        source_entity = parent.parent();
+    };
+    drag_state.0 = None;
+    if layout.dock(source.0, zone.0, DockDrop::Center) {
+        if let Err(error) = layout.save() {
+            warn!("failed to save editor workspace layout: {error}");
+        }
+        session.ui_revision += 1;
+        session.status = format!(
+            "Moved {} to the end of the tab strip",
+            source.0.title().to_ascii_lowercase()
+        );
+    }
+    drop.propagate(false);
+}
+
+fn sync_dock_drop_hints(
+    state: Res<DockDragState>,
+    panes: Query<(&DockPane, &RelativeCursorPosition, &ComputedNode)>,
+    mut hints: Query<(&DockDropHint, &mut Visibility)>,
+) {
+    let hovered = state.0.and_then(|_| {
+        panes
+            .iter()
+            .filter(|(_, cursor, _)| cursor.cursor_over())
+            .min_by(|(_, _, left), (_, _, right)| {
+                left.size()
+                    .element_product()
+                    .total_cmp(&right.size().element_product())
+            })
+            .map(|(pane, _, _)| pane.0)
+    });
+    for (hint, mut visibility) in &mut hints {
+        *visibility = if hovered == Some(hint.0) {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn sync_tab_reorder_hints(
+    state: Res<DockDragState>,
+    layout: Res<WorkspaceLayout>,
+    mut tabs: Query<(
+        &DockTab,
+        &RelativeCursorPosition,
+        &mut Node,
+        &mut BorderColor,
+    )>,
+) {
+    for (tab, cursor, mut node, mut border) in &mut tabs {
+        let base = if layout.is_active(tab.0) {
+            theme::ACCENT_DIM
+        } else {
+            theme::BORDER
+        };
+        node.border.left = Val::Px(1.0);
+        node.border.right = Val::Px(1.0);
+        border.left = base;
+        border.right = base;
+
+        if state.0.is_none_or(|dragged| dragged == tab.0) || !cursor.cursor_over() {
+            continue;
+        }
+        let before = cursor.normalized.is_none_or(|position| position.x < 0.5);
+        if before {
+            node.border.left = Val::Px(4.0);
+            border.left = theme::DOCK_TARGET;
+        } else {
+            node.border.right = Val::Px(4.0);
+            border.right = theme::DOCK_TARGET;
+        }
+    }
+}
+
+fn sync_tab_append_hint(
+    state: Res<DockDragState>,
+    zones: Query<(&DockTabAppendZone, &RelativeCursorPosition)>,
+    mut indicators: Query<(&DockTabAppendIndicator, &mut Visibility)>,
+) {
+    for (indicator, mut visibility) in &mut indicators {
+        let hovered = state.0.is_some()
+            && zones
+                .iter()
+                .any(|(zone, cursor)| zone.0 == indicator.0 && cursor.cursor_over());
+        *visibility = if hovered {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn update_dock_zone_style(
+    state: Res<DockDragState>,
+    mut zones: Query<
+        (&RelativeCursorPosition, &Children, &mut BackgroundColor),
+        With<DockDropZone>,
+    >,
+    mut labels: Query<
+        (&mut TextColor, &mut BackgroundColor),
+        (With<DockDropZoneLabel>, Without<DockDropZone>),
+    >,
+) {
+    for (cursor, children, mut background) in &mut zones {
+        let hovered = state.0.is_some() && cursor.cursor_over();
+        background.0 = if hovered {
+            theme::DOCK_TARGET_HOVER
+        } else {
+            theme::DOCK_TARGET_IDLE
+        };
+        for child in children.iter() {
+            if let Ok((mut text, mut label_background)) = labels.get_mut(child) {
+                text.0 = if hovered {
+                    theme::TEXT
+                } else {
+                    theme::DOCK_TARGET_TEXT_IDLE
+                };
+                label_background.0 = if hovered {
+                    theme::DOCK_TARGET_LABEL
+                } else {
+                    theme::DOCK_TARGET_LABEL_IDLE
+                };
+            }
+        }
     }
 }
 
@@ -2758,26 +2776,16 @@ fn clamp_number(mut value: f32, min: Option<f32>, max: Option<f32>) -> f32 {
     value
 }
 
-fn spawn_workspace(
-    parent: &mut ChildSpawnerCommands,
-    session: &EditorSession,
-    registry: &EditorModuleRegistry,
-    workspace: &WorkspaceState,
-    height: f32,
-) {
-    match workspace.tab {
-        WorkspaceTab::Timeline => spawn_timeline(parent, session, height),
-        WorkspaceTab::Curves => {
-            spawn_curves_workspace(parent, session, registry, workspace, height);
-        }
-        WorkspaceTab::Changes => spawn_changes_workspace(parent, session, height),
-    }
-}
-
-fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession, height: f32) {
+fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
     parent
-        .spawn(BottomWorkspace)
-        .apply_scene(ui_shell::bottom_workspace(height))
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
         .with_children(|timeline| {
             timeline
                 .spawn((
@@ -2792,9 +2800,6 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession, he
                     BackgroundColor(theme::PANEL_LIGHT),
                 ))
                 .with_children(|header| {
-                    workspace_tab_button(header, "TIMELINE", WorkspaceTab::Timeline, true);
-                    workspace_tab_button(header, "CURVES", WorkspaceTab::Curves, false);
-                    workspace_tab_button(header, "CHANGES", WorkspaceTab::Changes, false);
                     header.spawn((
                         Text::new("00:00.000  /  00:02.800"),
                         TimeLabel,
@@ -2934,56 +2939,21 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession, he
         });
 }
 
-fn workspace_tab_button(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    tab: WorkspaceTab,
-    selected: bool,
-) {
-    parent
-        .spawn((
-            Button,
-            EditorAction::SelectWorkspace(tab),
-            Node {
-                width: Val::Px(82.0),
-                height: Val::Px(28.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                ..default()
-            },
-            BackgroundColor(if selected {
-                theme::SELECTION
-            } else {
-                theme::PANEL_LIGHT
-            }),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextColor(if selected {
-                    theme::ACCENT
-                } else {
-                    theme::TEXT_MUTED
-                }),
-            ));
-        });
-}
-
 fn spawn_curves_workspace(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     registry: &EditorModuleRegistry,
     workspace: &WorkspaceState,
-    height: f32,
 ) {
     parent
-        .spawn(BottomWorkspace)
-        .apply_scene(ui_shell::bottom_workspace(height))
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
         .with_children(|workspace_panel| {
             workspace_panel
                 .spawn((
@@ -2998,9 +2968,6 @@ fn spawn_curves_workspace(
                     BackgroundColor(theme::PANEL_LIGHT),
                 ))
                 .with_children(|header| {
-                    workspace_tab_button(header, "TIMELINE", WorkspaceTab::Timeline, false);
-                    workspace_tab_button(header, "CURVES", WorkspaceTab::Curves, true);
-                    workspace_tab_button(header, "CHANGES", WorkspaceTab::Changes, false);
                     header.spawn(Node {
                         flex_grow: 1.0,
                         ..default()
@@ -3086,14 +3053,16 @@ fn spawn_curves_workspace(
         });
 }
 
-fn spawn_changes_workspace(
-    parent: &mut ChildSpawnerCommands,
-    session: &EditorSession,
-    height: f32,
-) {
+fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
     parent
-        .spawn(BottomWorkspace)
-        .apply_scene(ui_shell::bottom_workspace(height))
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
         .with_children(|panel| {
             panel
                 .spawn((
@@ -3108,9 +3077,6 @@ fn spawn_changes_workspace(
                     BackgroundColor(theme::PANEL_LIGHT),
                 ))
                 .with_children(|header| {
-                    workspace_tab_button(header, "TIMELINE", WorkspaceTab::Timeline, false);
-                    workspace_tab_button(header, "CURVES", WorkspaceTab::Curves, false);
-                    workspace_tab_button(header, "CHANGES", WorkspaceTab::Changes, true);
                     header.spawn(Node {
                         flex_grow: 1.0,
                         ..default()
@@ -4016,6 +3982,7 @@ fn keyboard_shortcuts(
     mut menu: ResMut<MenuState>,
     palette: Res<ModulePaletteState>,
     mut workspace: ResMut<WorkspaceState>,
+    mut layout: ResMut<WorkspaceLayout>,
 ) {
     if palette.open {
         return;
@@ -4051,7 +4018,7 @@ fn keyboard_shortcuts(
         session.add_layer();
     }
     if keys.just_pressed(KeyCode::Delete) && preview_selected_layer_deletion(&mut session) {
-        workspace.tab = WorkspaceTab::Changes;
+        reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
         workspace.complex = None;
     }
     if keys.just_pressed(KeyCode::Space) {
@@ -4113,9 +4080,7 @@ fn handle_buttons(
                         theme::PANEL_DARK
                     }
                 } else if let Some(tab) = dock_tab {
-                    let active = layout
-                        .slot_of(tab.0)
-                        .is_some_and(|slot| layout.stack(slot).active == Some(tab.0));
+                    let active = layout.is_active(tab.0);
                     if active {
                         theme::PANEL
                     } else {
@@ -4178,7 +4143,7 @@ fn handle_buttons(
                     }
                     EditorAction::DeleteLayer => {
                         if preview_selected_layer_deletion(&mut session) {
-                            workspace.tab = WorkspaceTab::Changes;
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                             workspace.complex = None;
                         }
                     }
@@ -4234,16 +4199,12 @@ fn handle_buttons(
                         direction,
                     ),
                     EditorAction::EditComplexInput(module, input) => {
-                        workspace.tab = WorkspaceTab::Curves;
+                        reveal_dock_panel(&mut layout, &mut session, DockPanel::Curves);
                         workspace.complex = Some(ComplexSelection {
                             module,
                             input,
                             key: 0,
                         });
-                        session.ui_revision += 1;
-                    }
-                    EditorAction::SelectWorkspace(tab) => {
-                        workspace.tab = tab;
                         session.ui_revision += 1;
                     }
                     EditorAction::AddComplexKey => edit_complex_key(
@@ -4283,7 +4244,7 @@ fn handle_buttons(
                     EditorAction::DuplicateModule(id) => session.duplicate_module(id),
                     EditorAction::DeleteModule(id) => {
                         if preview_module_deletion(&mut session, id) {
-                            workspace.tab = WorkspaceTab::Changes;
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                             workspace.complex = None;
                         }
                     }
@@ -4295,7 +4256,7 @@ fn handle_buttons(
                     EditorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     EditorAction::DeleteRenderer(id) => {
                         if preview_renderer_deletion(&mut session, id) {
-                            workspace.tab = WorkspaceTab::Changes;
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                             workspace.complex = None;
                         }
                     }
@@ -4350,6 +4311,16 @@ fn handle_buttons(
                 }
             }
         }
+    }
+}
+
+fn reveal_dock_panel(layout: &mut WorkspaceLayout, session: &mut EditorSession, panel: DockPanel) {
+    if !layout.show(panel) {
+        return;
+    }
+    session.ui_revision += 1;
+    if let Err(error) = layout.save() {
+        warn!("failed to save editor workspace layout: {error}");
     }
 }
 
@@ -4696,34 +4667,6 @@ fn update_preview_grid_visibility(
     }
 }
 
-fn sync_workspace_layout(
-    layout: Res<WorkspaceLayout>,
-    mut panes: Query<(&DockPane, &mut Node), Without<BottomWorkspace>>,
-    mut workspace: Query<&mut Node, (With<BottomWorkspace>, Without<DockPane>)>,
-) {
-    if !layout.is_changed() {
-        return;
-    }
-    for (pane, mut node) in &mut panes {
-        node.width = Val::Px(match pane.0 {
-            DockSlot::Left => layout.left_width,
-            DockSlot::Right => layout.right_width,
-        });
-    }
-    for mut node in &mut workspace {
-        node.height = Val::Px(layout.bottom_height);
-    }
-}
-
-fn fit_workspace_to_window(
-    window: Single<Ref<Window>, With<PrimaryWindow>>,
-    mut layout: ResMut<WorkspaceLayout>,
-) {
-    if window.is_changed() {
-        layout.fit_to_window(&window);
-    }
-}
-
 fn rebuild_editor_ui(
     mut commands: Commands,
     session: Res<EditorSession>,
@@ -4951,42 +4894,6 @@ mod tests {
     }
 
     #[test]
-    fn workspace_layout_round_trips_through_ron() {
-        let layout = WorkspaceLayout {
-            left_width: 280.0,
-            right_width: 360.0,
-            bottom_height: 240.0,
-            left_stack: DockStack::single(DockPanel::Inspector),
-            right_stack: DockStack::single(DockPanel::Assets),
-        };
-        let source = ron::to_string(&layout).unwrap();
-        assert_eq!(ron::from_str::<WorkspaceLayout>(&source).unwrap(), layout);
-    }
-
-    #[test]
-    fn docking_a_side_panel_builds_a_tab_stack() {
-        let mut layout = WorkspaceLayout::default();
-        assert!(layout.dock(DockPanel::Assets, DockSlot::Right));
-        assert!(layout.left_stack.tabs.is_empty());
-        assert_eq!(
-            layout.right_stack.tabs,
-            vec![DockPanel::Inspector, DockPanel::Assets]
-        );
-        assert_eq!(layout.right_stack.active, Some(DockPanel::Assets));
-        assert!(!layout.dock(DockPanel::Assets, DockSlot::Right));
-    }
-
-    #[test]
-    fn closed_dock_panels_can_be_reopened_from_their_default_side() {
-        let mut layout = WorkspaceLayout::default();
-        assert!(layout.close(DockPanel::Inspector));
-        assert!(!layout.is_visible(DockPanel::Inspector));
-        assert!(layout.show(DockPanel::Inspector));
-        assert_eq!(layout.slot_of(DockPanel::Inspector), Some(DockSlot::Right));
-        assert_eq!(layout.right_stack.active, Some(DockPanel::Inspector));
-    }
-
-    #[test]
     fn dock_drag_state_clears_even_if_the_dragged_tab_was_rebuilt() {
         let mut app = App::new();
         let mut buttons = ButtonInput::<MouseButton>::default();
@@ -5002,6 +4909,7 @@ mod tests {
                     translation: Val2::px(20.0, 10.0),
                     ..default()
                 },
+                GlobalZIndex(160),
             ))
             .id();
 
@@ -5021,34 +4929,10 @@ mod tests {
             app.world().get::<UiTransform>(tab).unwrap().translation,
             Val2::ZERO
         );
-    }
-
-    #[test]
-    fn pane_resizing_respects_workspace_constraints() {
-        let window = Window {
-            resolution: WindowResolution::new(1000, 800),
-            ..default()
-        };
-        let mut layout = WorkspaceLayout::default();
-        layout.resize(PaneSplitter::Left, Vec2::new(-10_000.0, 0.0), &window);
-        layout.resize(PaneSplitter::Right, Vec2::new(-10_000.0, 0.0), &window);
-        layout.resize(PaneSplitter::Bottom, Vec2::new(0.0, 10_000.0), &window);
-        assert_eq!(layout.left_width, 168.0);
-        assert_eq!(layout.right_width, 493.0);
-        assert_eq!(layout.bottom_height, 140.0);
-    }
-
-    #[test]
-    fn hidden_docks_do_not_reserve_resize_space() {
-        let window = Window {
-            resolution: WindowResolution::new(1000, 800),
-            ..default()
-        };
-        let mut layout = WorkspaceLayout::default();
-        layout.close(DockPanel::Inspector);
-        layout.left_width = 800.0;
-        layout.fit_to_window(&window);
-        assert_eq!(layout.left_width, 670.0);
+        assert_eq!(
+            *app.world().get::<GlobalZIndex>(tab).unwrap(),
+            GlobalZIndex(20)
+        );
     }
 
     #[test]
