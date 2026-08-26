@@ -14,10 +14,11 @@ pub(crate) enum DockPanel {
     GeneratedCode,
     Profiler,
     Changes,
+    Settings,
 }
 
 impl DockPanel {
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 10] = [
         Self::Viewport,
         Self::Assets,
         Self::Inspector,
@@ -27,6 +28,7 @@ impl DockPanel {
         Self::GeneratedCode,
         Self::Profiler,
         Self::Changes,
+        Self::Settings,
     ];
 
     pub(crate) fn title(self) -> &'static str {
@@ -40,6 +42,7 @@ impl DockPanel {
             Self::GeneratedCode => "GENERATED CODE",
             Self::Profiler => "PROFILER",
             Self::Changes => "CHANGES",
+            Self::Settings => "SETTINGS",
         }
     }
 
@@ -186,6 +189,21 @@ impl DockNode {
         match self.find_mut(target)? {
             Self::Tabs { stack, .. } => Some(stack),
             Self::Split { .. } => None,
+        }
+    }
+
+    fn find_tabs(&self, target: DockNodeId) -> Option<&DockStack> {
+        if self.id() == target {
+            return match self {
+                Self::Tabs { stack, .. } => Some(stack),
+                Self::Split { .. } => None,
+            };
+        }
+        match self {
+            Self::Split { first, second, .. } => {
+                first.find_tabs(target).or_else(|| second.find_tabs(target))
+            }
+            Self::Tabs { .. } => None,
         }
     }
 
@@ -427,6 +445,17 @@ impl WorkspaceLayout {
         if self.root.contains(panel) {
             return self.root.activate(panel);
         }
+        if panel == DockPanel::Settings {
+            let Some(target) = self.root.node_containing(DockPanel::Viewport) else {
+                return false;
+            };
+            let previous = self.clone();
+            if !self.dock(panel, target, DockDrop::Center) {
+                return false;
+            }
+            self.reorder_tab(panel, DockPanel::Viewport, false);
+            return *self != previous;
+        }
         let bottom_group = [
             DockPanel::Timeline,
             DockPanel::Curves,
@@ -569,7 +598,34 @@ impl WorkspaceLayout {
             });
         }
         self.root.normalize();
+        self.migrate_lonely_settings_panel();
         self
+    }
+
+    fn migrate_lonely_settings_panel(&mut self) {
+        if self
+            .floating
+            .iter()
+            .any(|floating| floating.panel == DockPanel::Settings)
+        {
+            return;
+        }
+        let Some(settings_node) = self.root.node_containing(DockPanel::Settings) else {
+            return;
+        };
+        let Some(viewport_node) = self.root.node_containing(DockPanel::Viewport) else {
+            return;
+        };
+        if settings_node == viewport_node
+            || !self
+                .root
+                .find_tabs(settings_node)
+                .is_some_and(|stack| stack.tabs == [DockPanel::Settings])
+        {
+            return;
+        }
+        self.dock(DockPanel::Settings, viewport_node, DockDrop::Center);
+        self.reorder_tab(DockPanel::Settings, DockPanel::Viewport, false);
     }
 }
 
@@ -582,6 +638,7 @@ fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2]
         | DockPanel::Profiler
         | DockPanel::Changes => [720.0, 320.0],
         DockPanel::Assets | DockPanel::Inspector => [420.0, 520.0],
+        DockPanel::Settings => [520.0, 620.0],
         DockPanel::Viewport => [760.0, 540.0],
     };
     [
@@ -760,6 +817,45 @@ mod tests {
             Some(bottom)
         );
         assert!(layout.is_active(DockPanel::Profiler));
+    }
+
+    #[test]
+    fn settings_restores_beside_the_viewport_tab() {
+        let mut layout = WorkspaceLayout::default();
+        assert!(layout.show(DockPanel::Settings));
+        let viewport = layout.root.node_containing(DockPanel::Viewport).unwrap();
+        assert_eq!(
+            layout.root.node_containing(DockPanel::Settings),
+            Some(viewport)
+        );
+        let stack = layout.root.find_tabs(viewport).unwrap();
+        let viewport_index = stack
+            .tabs
+            .iter()
+            .position(|panel| *panel == DockPanel::Viewport)
+            .unwrap();
+        assert_eq!(
+            stack.tabs.get(viewport_index + 1),
+            Some(&DockPanel::Settings)
+        );
+        assert!(layout.is_active(DockPanel::Settings));
+    }
+
+    #[test]
+    fn legacy_lonely_settings_split_migrates_to_the_viewport_tabs() {
+        let mut layout = WorkspaceLayout::default();
+        let viewport = layout.root.node_containing(DockPanel::Viewport).unwrap();
+        assert!(layout.dock(DockPanel::Settings, viewport, DockDrop::Right));
+        assert_ne!(
+            layout.root.node_containing(DockPanel::Settings),
+            layout.root.node_containing(DockPanel::Viewport)
+        );
+
+        let layout = layout.normalized();
+        assert_eq!(
+            layout.root.node_containing(DockPanel::Settings),
+            layout.root.node_containing(DockPanel::Viewport)
+        );
     }
 
     #[test]

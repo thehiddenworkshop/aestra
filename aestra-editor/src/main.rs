@@ -1,5 +1,6 @@
 mod docking;
 mod session;
+mod settings;
 mod theme;
 mod ui_shell;
 
@@ -29,6 +30,7 @@ use bevy::{
 use docking::{DockAxis, DockDrop, DockNode, DockNodeId, DockPanel, DockStack, WorkspaceLayout};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use session::EditorSession;
+use settings::{EditorSettings, SettingsPersistence};
 use std::{
     collections::VecDeque,
     fs,
@@ -43,18 +45,30 @@ const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
 const PROFILER_HISTORY_SAMPLES: usize = 96;
 
 fn main() {
+    let (settings, persistence) = SettingsPersistence::load();
+    let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+    session.playing = settings.preview.play_on_open;
+    if let Some(diagnostic) = persistence.diagnostic() {
+        session.status = diagnostic.into();
+    }
+    let menu = MenuState {
+        show_grid: settings.preview.show_grid,
+        ..default()
+    };
+    let ui_scale = settings.appearance.ui_scale;
     App::new()
         .insert_resource(ClearColor(theme::APP_BG))
-        .insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ))
+        .insert_resource(session)
+        .insert_resource(settings)
+        .insert_resource(persistence)
+        .insert_resource(UiScale(ui_scale))
         .insert_resource(EffectCatalog::scan())
-        .init_resource::<MenuState>()
+        .insert_resource(menu)
         .init_resource::<EditorModuleRegistry>()
         .init_resource::<ModulePaletteState>()
         .init_resource::<DiagnosticsPanelState>()
         .init_resource::<ProfilerState>()
+        .init_resource::<SettingsPanelState>()
         .init_resource::<InspectorFocus>()
         .init_resource::<WorkspaceState>()
         .init_resource::<DockDragState>()
@@ -179,6 +193,10 @@ enum EditorAction {
     TogglePanelsSubmenu,
     ToggleGrid,
     ResetWorkspaceLayout,
+    SelectSettingsCategory(SettingsCategory),
+    ToggleSetting(SettingsToggle),
+    AdjustSetting(SettingsNumber, i8),
+    ResetEditorSettings,
     ShowAbout,
     CloseAbout,
 }
@@ -345,6 +363,62 @@ enum MenuKind {
     Help,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum SettingsCategory {
+    #[default]
+    General,
+    Preview,
+    Performance,
+    Capture,
+    Appearance,
+    Language,
+    Keybindings,
+}
+
+impl SettingsCategory {
+    const ALL: [Self; 7] = [
+        Self::General,
+        Self::Preview,
+        Self::Performance,
+        Self::Capture,
+        Self::Appearance,
+        Self::Language,
+        Self::Keybindings,
+    ];
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::General => "GENERAL",
+            Self::Preview => "PREVIEW",
+            Self::Performance => "PERFORMANCE",
+            Self::Capture => "CAPTURE",
+            Self::Appearance => "APPEARANCE",
+            Self::Language => "LANGUAGE",
+            Self::Keybindings => "KEYBINDINGS",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsToggle {
+    ConfirmUnsavedChanges,
+    ShowGrid,
+    PlayOnOpen,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsNumber {
+    PreviewParticleLimit,
+    CaptureFrameRate,
+    ContactSheetColumns,
+    UiScale,
+}
+
+#[derive(Resource, Default)]
+struct SettingsPanelState {
+    category: SettingsCategory,
+}
+
 #[derive(Resource)]
 struct MenuState {
     open: Option<MenuKind>,
@@ -407,6 +481,9 @@ struct DockTabAppendIndicator(DockNodeId);
 
 #[derive(Component)]
 struct DiagnosticsFilterButton(DiagnosticsFilter);
+
+#[derive(Component)]
+struct SettingsCategoryButton(SettingsCategory);
 
 #[derive(Component)]
 struct DiagnosticRow;
@@ -607,6 +684,9 @@ struct PanelSources<'a> {
     palette: &'a ModulePaletteState,
     diagnostics_panel: &'a DiagnosticsPanelState,
     profiler: &'a ProfilerState,
+    settings: &'a EditorSettings,
+    settings_panel: &'a SettingsPanelState,
+    settings_persistence: &'a SettingsPersistence,
 }
 
 #[derive(SystemParam)]
@@ -618,6 +698,9 @@ struct UiBuildResources<'w> {
     palette: Res<'w, ModulePaletteState>,
     diagnostics_panel: Res<'w, DiagnosticsPanelState>,
     profiler: Res<'w, ProfilerState>,
+    settings: Res<'w, EditorSettings>,
+    settings_panel: Res<'w, SettingsPanelState>,
+    settings_persistence: Res<'w, SettingsPersistence>,
     workspace: Res<'w, WorkspaceState>,
 }
 
@@ -628,6 +711,9 @@ struct SetupUiResources<'w> {
     workspace: Res<'w, WorkspaceState>,
     diagnostics_panel: Res<'w, DiagnosticsPanelState>,
     profiler: Res<'w, ProfilerState>,
+    settings: Res<'w, EditorSettings>,
+    settings_panel: Res<'w, SettingsPanelState>,
+    settings_persistence: Res<'w, SettingsPersistence>,
 }
 
 #[derive(SystemParam)]
@@ -663,6 +749,9 @@ fn setup_editor(
         palette: &editor_resources.palette,
         diagnostics_panel: &editor_resources.diagnostics_panel,
         profiler: &editor_resources.profiler,
+        settings: &editor_resources.settings,
+        settings_panel: &editor_resources.settings_panel,
+        settings_persistence: &editor_resources.settings_persistence,
     };
     spawn_editor_ui(
         &mut commands,
@@ -820,6 +909,11 @@ fn spawn_menu_bar(
                     ("Open...", "Ctrl+O", EditorAction::OpenEffect),
                     ("Save", "Ctrl+S", EditorAction::Save),
                     ("Save As...", "Ctrl+Shift+S", EditorAction::SaveAs),
+                    (
+                        "Settings",
+                        "",
+                        EditorAction::ShowDockPanel(DockPanel::Settings),
+                    ),
                     ("Exit", "Alt+F4", EditorAction::Exit),
                 ],
             );
@@ -902,7 +996,10 @@ fn spawn_dropdown(
         ))
         .with_children(|dropdown| {
             for (label, shortcut, action) in items {
-                if matches!(action, EditorAction::Exit) {
+                if matches!(
+                    action,
+                    EditorAction::ShowDockPanel(DockPanel::Settings) | EditorAction::Exit
+                ) {
                     dropdown.spawn((
                         Node {
                             width: Val::Percent(100.0),
@@ -1391,6 +1488,12 @@ fn spawn_panel_content(
         DockPanel::GeneratedCode => spawn_generated_code_workspace(parent, sources.session),
         DockPanel::Profiler => spawn_profiler_workspace(parent, sources.session, sources.profiler),
         DockPanel::Changes => spawn_changes_workspace(parent, sources.session),
+        DockPanel::Settings => spawn_settings_workspace(
+            parent,
+            sources.settings,
+            sources.settings_panel,
+            sources.settings_persistence,
+        ),
     }
 }
 
@@ -4195,6 +4298,409 @@ fn profiler_history_summary(history: &VecDeque<u64>) -> String {
     )
 }
 
+fn spawn_settings_workspace(
+    parent: &mut ChildSpawnerCommands,
+    settings: &EditorSettings,
+    state: &SettingsPanelState,
+    persistence: &SettingsPersistence,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
+        .with_children(|panel| {
+            panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(46.0),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(Val::Px(14.0)),
+                        column_gap: Val::Px(12.0),
+                        border: UiRect::bottom(Val::Px(1.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL_LIGHT),
+                    BorderColor::all(theme::BORDER),
+                ))
+                .with_children(|header| {
+                    header.spawn((
+                        Text::new("EDITOR SETTINGS"),
+                        TextFont {
+                            font_size: FontSize::Px(11.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                    ));
+                    header.spawn((
+                        Text::new(persistence.path().display().to_string()),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_FAINT),
+                        Node {
+                            flex_shrink: 1.0,
+                            ..default()
+                        },
+                    ));
+                    header.spawn(Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    });
+                    stack_button(
+                        header,
+                        "RESET SETTINGS",
+                        EditorAction::ResetEditorSettings,
+                        104.0,
+                    );
+                });
+            if let Some(diagnostic) = persistence.diagnostic() {
+                panel.spawn((
+                    Text::new(diagnostic),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(Color::srgb(1.0, 0.74, 0.30)),
+                    Node {
+                        width: Val::Percent(100.0),
+                        padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL),
+                ));
+            }
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    min_height: Val::Px(0.0),
+                    flex_direction: FlexDirection::Row,
+                    ..default()
+                })
+                .with_children(|body| {
+                    body.spawn((
+                        Node {
+                            width: Val::Px(156.0),
+                            height: Val::Percent(100.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(Val::Px(8.0)),
+                            row_gap: Val::Px(3.0),
+                            border: UiRect::right(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme::PANEL_DARK),
+                        BorderColor::all(theme::BORDER),
+                    ))
+                    .with_children(|categories| {
+                        for category in SettingsCategory::ALL {
+                            spawn_settings_category_button(
+                                categories,
+                                category,
+                                state.category == category,
+                            );
+                        }
+                    });
+                    body.spawn(Node {
+                        flex_grow: 1.0,
+                        height: Val::Percent(100.0),
+                        min_width: Val::Px(0.0),
+                        min_height: Val::Px(0.0),
+                        ..default()
+                    })
+                    .with_children(|content| {
+                        spawn_vertical_scroll_area(
+                            content,
+                            Node {
+                                flex_grow: 1.0,
+                                min_width: Val::Px(0.0),
+                                min_height: Val::Px(0.0),
+                                flex_direction: FlexDirection::Column,
+                                padding: UiRect::all(Val::Px(18.0)),
+                                row_gap: Val::Px(8.0),
+                                ..default()
+                            },
+                            |settings_body| {
+                                spawn_settings_category(settings_body, settings, state.category);
+                            },
+                        );
+                    });
+                });
+        });
+}
+
+fn spawn_settings_category_button(
+    parent: &mut ChildSpawnerCommands,
+    category: SettingsCategory,
+    selected: bool,
+) {
+    parent
+        .spawn((
+            Button,
+            EditorAction::SelectSettingsCategory(category),
+            SettingsCategoryButton(category),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(31.0),
+                align_items: AlignItems::Center,
+                padding: UiRect::horizontal(Val::Px(9.0)),
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(if selected {
+                theme::SELECTION
+            } else {
+                theme::PANEL_DARK
+            }),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(category.title()),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(if selected {
+                    theme::TEXT
+                } else {
+                    theme::TEXT_MUTED
+                }),
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+fn spawn_settings_category(
+    parent: &mut ChildSpawnerCommands,
+    settings: &EditorSettings,
+    category: SettingsCategory,
+) {
+    spawn_settings_heading(parent, category.title());
+    match category {
+        SettingsCategory::General => {
+            spawn_settings_toggle(
+                parent,
+                "Confirm unsaved changes",
+                "Ask before closing or replacing a modified effect.",
+                settings.general.confirm_unsaved_changes,
+                SettingsToggle::ConfirmUnsavedChanges,
+            );
+        }
+        SettingsCategory::Preview => {
+            spawn_settings_toggle(
+                parent,
+                "Viewport grid",
+                "Show the reference grid behind the effect preview.",
+                settings.preview.show_grid,
+                SettingsToggle::ShowGrid,
+            );
+            spawn_settings_toggle(
+                parent,
+                "Play on open",
+                "Start playback when the editor launches.",
+                settings.preview.play_on_open,
+                SettingsToggle::PlayOnOpen,
+            );
+        }
+        SettingsCategory::Performance => {
+            spawn_settings_number(
+                parent,
+                "Preview particle limit",
+                "Limit how many CPU-reference particles the editor presents.",
+                settings.performance.preview_particle_limit.to_string(),
+                SettingsNumber::PreviewParticleLimit,
+            );
+        }
+        SettingsCategory::Capture => {
+            spawn_settings_number(
+                parent,
+                "Capture frame rate",
+                "Default deterministic sampling frequency for future editor captures.",
+                format!("{} FPS", settings.capture.frame_rate),
+                SettingsNumber::CaptureFrameRate,
+            );
+            spawn_settings_number(
+                parent,
+                "Contact sheet columns",
+                "Default number of frames per row in generated contact sheets.",
+                settings.capture.contact_sheet_columns.to_string(),
+                SettingsNumber::ContactSheetColumns,
+            );
+        }
+        SettingsCategory::Appearance => {
+            spawn_settings_number(
+                parent,
+                "Interface scale",
+                "Scale all Bevy UI elements immediately.",
+                format!("{:.0}%", settings.appearance.ui_scale * 100.0),
+                SettingsNumber::UiScale,
+            );
+        }
+        SettingsCategory::Language => {
+            spawn_settings_read_only(
+                parent,
+                "Editor language",
+                "English (United States)",
+                "Stored as en-US. Additional Fluent catalogs and live language switching are the next localization slice.",
+            );
+        }
+        SettingsCategory::Keybindings => {
+            for (command, binding) in [
+                ("Play / Pause", "Space"),
+                ("Restart preview", "R"),
+                ("Save", "Ctrl+S"),
+                ("Undo", "Ctrl+Z"),
+                ("Redo", "Ctrl+Y"),
+                ("Add emitter", "Ctrl+Enter"),
+            ] {
+                spawn_settings_read_only(
+                    parent,
+                    command,
+                    binding,
+                    "Editable bindings will use the command registry rather than hard-coded UI shortcuts.",
+                );
+            }
+        }
+    }
+}
+
+fn spawn_settings_heading(parent: &mut ChildSpawnerCommands, title: &str) {
+    parent.spawn((
+        Text::new(title),
+        TextFont {
+            font_size: FontSize::Px(14.0),
+            ..default()
+        },
+        TextColor(theme::ACCENT),
+        Node {
+            margin: UiRect::bottom(Val::Px(6.0)),
+            ..default()
+        },
+    ));
+}
+
+fn settings_row(
+    parent: &mut ChildSpawnerCommands,
+    content: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(66.0),
+                padding: UiRect::all(Val::Px(11.0)),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(12.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(content);
+}
+
+fn spawn_settings_description(parent: &mut ChildSpawnerCommands, title: &str, description: &str) {
+    parent
+        .spawn(Node {
+            flex_grow: 1.0,
+            min_width: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(5.0),
+            ..default()
+        })
+        .with_children(|text| {
+            text.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+            ));
+            text.spawn((
+                Text::new(description),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+        });
+}
+
+fn spawn_settings_toggle(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    description: &str,
+    enabled: bool,
+    setting: SettingsToggle,
+) {
+    settings_row(parent, |row| {
+        spawn_settings_description(row, title, description);
+        stack_button(
+            row,
+            if enabled { "ON" } else { "OFF" },
+            EditorAction::ToggleSetting(setting),
+            54.0,
+        );
+    });
+}
+
+fn spawn_settings_number(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    description: &str,
+    value: String,
+    setting: SettingsNumber,
+) {
+    settings_row(parent, |row| {
+        spawn_settings_description(row, title, description);
+        mini_button(row, "−", EditorAction::AdjustSetting(setting, -1));
+        row.spawn((
+            Text::new(value),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_MUTED),
+            Node {
+                min_width: Val::Px(72.0),
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+        ));
+        mini_button(row, "+", EditorAction::AdjustSetting(setting, 1));
+    });
+}
+
+fn spawn_settings_read_only(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    value: &str,
+    description: &str,
+) {
+    settings_row(parent, |row| {
+        spawn_settings_description(row, title, description);
+        row.spawn((
+            Text::new(value),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_MUTED),
+        ));
+    });
+}
+
 fn spawn_vertical_scroll_area(
     parent: &mut ChildSpawnerCommands,
     mut viewport: Node,
@@ -6200,7 +6706,9 @@ fn keyboard_shortcuts(
     palette: Res<ModulePaletteState>,
     mut workspace: ResMut<WorkspaceState>,
     mut layout: ResMut<WorkspaceLayout>,
+    settings_resources: (ResMut<EditorSettings>, ResMut<SettingsPersistence>),
 ) {
+    let (mut settings, mut settings_persistence) = settings_resources;
     if palette.open {
         return;
     }
@@ -6216,12 +6724,12 @@ fn keyboard_shortcuts(
             session.ui_revision += 1;
         }
     }
-    if control && keys.just_pressed(KeyCode::KeyN) && confirm_discard(&session) {
+    if control && keys.just_pressed(KeyCode::KeyN) && confirm_discard(&session, &settings) {
         session.new_effect();
         workspace.complex = None;
     }
     if control && keys.just_pressed(KeyCode::KeyO) {
-        open_effect_dialog(&mut session);
+        open_effect_dialog(&mut session, &settings);
         workspace.complex = None;
     }
     if control && keys.just_pressed(KeyCode::KeyS) {
@@ -6257,6 +6765,9 @@ fn keyboard_shortcuts(
     }
     if keys.just_pressed(KeyCode::KeyG) && !control {
         menu.show_grid = !menu.show_grid;
+        settings.preview.show_grid = menu.show_grid;
+        session.ui_revision += 1;
+        persist_editor_settings(&settings, &mut settings_persistence, &mut session);
     }
 }
 
@@ -6271,6 +6782,7 @@ fn handle_buttons(
             Option<&DockTab>,
             Option<&DockCloseButton>,
             Option<&DiagnosticsFilterButton>,
+            Option<&SettingsCategoryButton>,
             Option<&CompiledPlanRow>,
             Option<&CompileStatusButton>,
             Option<&InteractionDisabled>,
@@ -6289,6 +6801,10 @@ fn handle_buttons(
         ResMut<DiagnosticsPanelState>,
         ResMut<InspectorFocus>,
         ResMut<ProfilerState>,
+        ResMut<SettingsPanelState>,
+        ResMut<EditorSettings>,
+        ResMut<SettingsPersistence>,
+        ResMut<UiScale>,
     ),
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
@@ -6301,6 +6817,10 @@ fn handle_buttons(
         mut diagnostics_panel,
         mut inspector_focus,
         mut profiler,
+        mut settings_panel,
+        mut settings,
+        mut settings_persistence,
+        mut ui_scale,
     ) = editor_resources;
     for (
         interaction,
@@ -6309,6 +6829,7 @@ fn handle_buttons(
         dock_tab,
         dock_close,
         diagnostics_filter,
+        settings_category,
         compiled_plan_row,
         compile_status,
         disabled,
@@ -6351,6 +6872,12 @@ fn handle_buttons(
                         theme::SELECTION
                     } else {
                         theme::BUTTON
+                    }
+                } else if let Some(category) = settings_category {
+                    if settings_panel.category == category.0 {
+                        theme::SELECTION
+                    } else {
+                        theme::PANEL_DARK
                     }
                 } else if compiled_plan_row.is_some() {
                     if matches!(
@@ -6396,17 +6923,17 @@ fn handle_buttons(
                 }
                 match *action {
                     EditorAction::NewEffect => {
-                        if confirm_discard(&session) {
+                        if confirm_discard(&session, &settings) {
                             session.new_effect();
                             workspace.complex = None;
                         }
                     }
                     EditorAction::OpenEffect => {
-                        open_effect_dialog(&mut session);
+                        open_effect_dialog(&mut session, &settings);
                         workspace.complex = None;
                     }
                     EditorAction::OpenCatalog(index) => {
-                        if confirm_discard(&session) {
+                        if confirm_discard(&session, &settings) {
                             if let Some(entry) = catalog.entries.get(index)
                                 && let Err(error) = session.open(&entry.path)
                             {
@@ -6426,7 +6953,7 @@ fn handle_buttons(
                     EditorAction::Save => save_session(&mut session, false),
                     EditorAction::SaveAs => save_session(&mut session, true),
                     EditorAction::Exit => {
-                        if confirm_discard(&session) {
+                        if confirm_discard(&session, &settings) {
                             commands.write_message(AppExit::Success);
                         } else {
                             session.status = "Exit cancelled".into();
@@ -6660,7 +7187,11 @@ fn handle_buttons(
                                 format!("Floated {} panel", panel.title().to_ascii_lowercase());
                         }
                     }
-                    EditorAction::ToggleGrid => menu.show_grid = !menu.show_grid,
+                    EditorAction::ToggleGrid => {
+                        menu.show_grid = !menu.show_grid;
+                        settings.preview.show_grid = menu.show_grid;
+                        persist_editor_settings(&settings, &mut settings_persistence, &mut session);
+                    }
                     EditorAction::ResetWorkspaceLayout => {
                         *layout = WorkspaceLayout::default();
                         if let Err(error) = layout.save() {
@@ -6668,6 +7199,77 @@ fn handle_buttons(
                         }
                         session.ui_revision += 1;
                         session.status = "Workspace layout reset".into();
+                    }
+                    EditorAction::SelectSettingsCategory(category) => {
+                        if settings_panel.category != category {
+                            settings_panel.category = category;
+                            session.ui_revision += 1;
+                        }
+                    }
+                    EditorAction::ToggleSetting(setting) => {
+                        match setting {
+                            SettingsToggle::ConfirmUnsavedChanges => {
+                                settings.general.confirm_unsaved_changes =
+                                    !settings.general.confirm_unsaved_changes;
+                            }
+                            SettingsToggle::ShowGrid => {
+                                settings.preview.show_grid = !settings.preview.show_grid;
+                                menu.show_grid = settings.preview.show_grid;
+                            }
+                            SettingsToggle::PlayOnOpen => {
+                                settings.preview.play_on_open = !settings.preview.play_on_open;
+                            }
+                        }
+                        session.ui_revision += 1;
+                        persist_editor_settings(&settings, &mut settings_persistence, &mut session);
+                    }
+                    EditorAction::AdjustSetting(setting, direction) => {
+                        match setting {
+                            SettingsNumber::PreviewParticleLimit => {
+                                settings.performance.preview_particle_limit =
+                                    (settings.performance.preview_particle_limit as isize
+                                        + isize::from(direction) * 64)
+                                        .clamp(64, PARTICLE_POOL_SIZE as isize)
+                                        as usize;
+                            }
+                            SettingsNumber::CaptureFrameRate => {
+                                settings.capture.frame_rate =
+                                    (i32::from(settings.capture.frame_rate)
+                                        + i32::from(direction) * 10)
+                                        .clamp(1, 240) as u16;
+                            }
+                            SettingsNumber::ContactSheetColumns => {
+                                settings.capture.contact_sheet_columns =
+                                    (i16::from(settings.capture.contact_sheet_columns)
+                                        + i16::from(direction))
+                                    .clamp(1, 16) as u8;
+                            }
+                            SettingsNumber::UiScale => {
+                                settings.appearance.ui_scale = ((settings.appearance.ui_scale
+                                    + f32::from(direction) * 0.05)
+                                    .clamp(0.75, 1.5)
+                                    * 20.0)
+                                    .round()
+                                    / 20.0;
+                                ui_scale.0 = settings.appearance.ui_scale;
+                            }
+                        }
+                        session.ui_revision += 1;
+                        persist_editor_settings(&settings, &mut settings_persistence, &mut session);
+                    }
+                    EditorAction::ResetEditorSettings => {
+                        match settings_persistence.replace_with_defaults() {
+                            Ok(defaults) => {
+                                *settings = defaults;
+                                menu.show_grid = settings.preview.show_grid;
+                                ui_scale.0 = settings.appearance.ui_scale;
+                                session.ui_revision += 1;
+                                session.status = "Editor settings reset".into();
+                            }
+                            Err(error) => {
+                                session.status = format!("Settings reset failed: {error}");
+                            }
+                        }
                     }
                     EditorAction::ShowAbout => menu.show_about = true,
                     EditorAction::CloseAbout => menu.show_about = false,
@@ -7071,8 +7673,8 @@ fn bounded_key_time(times: &[f32], index: usize, value: f32) -> f32 {
     value.clamp(previous, next)
 }
 
-fn open_effect_dialog(session: &mut EditorSession) {
-    if !confirm_discard(session) {
+fn open_effect_dialog(session: &mut EditorSession, settings: &EditorSettings) {
+    if !confirm_discard(session, settings) {
         session.status = "Open cancelled".into();
         return;
     }
@@ -7089,8 +7691,8 @@ fn open_effect_dialog(session: &mut EditorSession) {
     }
 }
 
-fn confirm_discard(session: &EditorSession) -> bool {
-    if !session.dirty {
+fn confirm_discard(session: &EditorSession, settings: &EditorSettings) -> bool {
+    if !session.dirty || !settings.general.confirm_unsaved_changes {
         return true;
     }
     matches!(
@@ -7102,6 +7704,17 @@ fn confirm_discard(session: &EditorSession) -> bool {
             .show(),
         MessageDialogResult::Yes
     )
+}
+
+fn persist_editor_settings(
+    settings: &EditorSettings,
+    persistence: &mut SettingsPersistence,
+    session: &mut EditorSession,
+) {
+    match persistence.persist(settings) {
+        Ok(()) => session.status = "Editor settings saved".into(),
+        Err(error) => session.status = format!("Settings save failed: {error}"),
+    }
 }
 
 fn save_session(session: &mut EditorSession, save_as: bool) {
@@ -7268,11 +7881,12 @@ fn handle_window_close_requests(
     floating_windows: Query<&NativeFloatingWindow>,
     mut layout: ResMut<WorkspaceLayout>,
     mut session: ResMut<EditorSession>,
+    settings: Res<EditorSettings>,
     mut commands: Commands,
 ) {
     for request in close_requests.read() {
         if request.window == *primary {
-            if confirm_discard(&session) {
+            if confirm_discard(&session, &settings) {
                 commands.write_message(AppExit::Success);
             } else {
                 session.status = "Exit cancelled".into();
@@ -7360,6 +7974,9 @@ fn sync_native_floating_windows(
         palette: &editor_resources.palette,
         diagnostics_panel: &editor_resources.diagnostics_panel,
         profiler: &editor_resources.profiler,
+        settings: &editor_resources.settings,
+        settings_panel: &editor_resources.settings_panel,
+        settings_persistence: &editor_resources.settings_persistence,
     };
     for floating in &editor_resources.layout.floating {
         if windows.iter().any(|(_, native)| native.0 == floating.panel) {
@@ -7429,6 +8046,9 @@ fn rebuild_editor_ui(
         palette: &editor_resources.palette,
         diagnostics_panel: &editor_resources.diagnostics_panel,
         profiler: &editor_resources.profiler,
+        settings: &editor_resources.settings,
+        settings_panel: &editor_resources.settings_panel,
+        settings_persistence: &editor_resources.settings_persistence,
     };
     commands.entity(*root).with_children(|root| {
         spawn_editor_content(
@@ -7467,6 +8087,7 @@ fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
 fn update_preview(
     mut session: ResMut<EditorSession>,
     mut profiler: ResMut<ProfilerState>,
+    settings: Res<EditorSettings>,
     mut particles: Query<(&PreviewParticle, &mut Node, &mut BackgroundColor)>,
     canvas: Single<&ComputedNode, With<PreviewCanvas>>,
 ) {
@@ -7486,6 +8107,10 @@ fn update_preview(
     }
     let canvas_size = canvas.size() * canvas.inverse_scale_factor;
     for (marker, mut node, mut background) in &mut particles {
+        if marker.0 >= settings.performance.preview_particle_limit {
+            node.display = Display::None;
+            continue;
+        }
         let Some(sample) = session.samples.get(marker.0) else {
             node.display = Display::None;
             continue;
@@ -7584,6 +8209,7 @@ fn update_profiler_labels(
 #[allow(clippy::type_complexity)]
 fn update_editor_labels(
     session: Res<EditorSession>,
+    settings: Res<EditorSettings>,
     mut labels: Query<(
         &mut Text,
         Option<&PlaybackLabel>,
@@ -7613,7 +8239,13 @@ fn update_editor_labels(
         } else if title.is_some() {
             text.0 = layer.name.clone();
         } else if count.is_some() {
-            text.0 = format!("{} LIVE PARTICLES  |  60 FPS", session.samples.len());
+            text.0 = format!(
+                "{} LIVE PARTICLES  |  60 FPS",
+                session
+                    .samples
+                    .len()
+                    .min(settings.performance.preview_particle_limit)
+            );
         } else if document_menu.is_some() {
             let file = session
                 .source_path

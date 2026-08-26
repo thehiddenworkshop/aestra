@@ -43,8 +43,11 @@ architecture vision; this file is the shorter delivery plan.
   optimizations, and WESL entry points. A dockable Profiler now consumes public,
   machine-readable runtime snapshots with measured CPU/live-particle data, rolling
   history, per-emitter peaks, and explicitly labeled compiler estimates; native GPU
-  timestamps remain a capability-dependent extension. The remaining M5 work is
-  viewport gizmos, persistent editor settings, and recovery.
+  timestamps remain a capability-dependent extension. A dockable Settings workspace
+  now owns versioned `settings.ron` persistence, live grid, particle-limit, and UI-scale
+  controls, capture defaults, protected recovery from malformed or newer files, and a
+  stored locale ready for Fluent catalogs. The remaining M5 work is viewport gizmos,
+  Fluent localization, and recovery.
 
 ## 1. Assessment of the current prototype
 
