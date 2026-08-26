@@ -1,11 +1,17 @@
 //! GPU artifact packing and Bevy render-world compute integration.
 
-use aestra_core::{EmitterShape, ScalarRange};
+mod render;
+
+use aestra_core::{BlendMode, EmitterShape, ScalarRange};
 use aestra_runtime::{
     CompiledCurve, CompiledGradient, EffectInstance, ExecutionPlan, Instruction, RuntimeValue,
 };
 use bevy::{
     asset::embedded_asset,
+    camera::{
+        primitives::Aabb,
+        visibility::{self, VisibilityClass},
+    },
     ecs::schedule::IntoScheduleConfigs,
     prelude::*,
     render::{
@@ -25,9 +31,11 @@ use bevy::{
 };
 use thiserror::Error;
 
-use crate::EffectPlayer;
+use crate::{AestraSettings, EffectPlayer, PresentationMode};
 
 pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy/shaders/aestra_simulation.wesl";
+pub const WESL_RENDER_SHADER_PATH: &str =
+    "embedded://aestra_bevy/shaders/aestra_sprite_render.wesl";
 pub const MAX_CURVE_KEYS: usize = 8;
 const WORKGROUP_SIZE: u32 = 64;
 
@@ -83,7 +91,9 @@ pub struct GpuEmitter {
     pub angular_velocity: Vec2,
     pub gravity: Vec2,
     pub turbulence: f32,
-    pub _padding: Vec3,
+    pub blend_mode: u32,
+    pub softness: f32,
+    pub _padding: f32,
     pub size: GpuCurve,
     pub opacity: GpuCurve,
     pub color: GpuGradient,
@@ -95,6 +105,11 @@ pub struct GpuGlobals {
     pub total_slots: u32,
     pub seed: u32,
     pub emitter_count: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct GpuRenderGlobals {
+    pub world_from_effect: Mat4,
 }
 
 /// Stable storage/readback ABI shared with `aestra_simulation.wesl`.
@@ -115,12 +130,14 @@ pub struct GpuEffectArtifact {
     pub emitters: Vec<GpuEmitter>,
     pub particles: Vec<GpuParticle>,
     pub total_slots: u32,
+    pub bounds_half_extents: Vec3,
 }
 
 impl GpuEffectArtifact {
     pub fn from_instance(instance: &EffectInstance) -> Result<Self, GpuArtifactError> {
         let parameters = instance.parameter_values();
         let mut slot_offset = 0_u32;
+        let mut bounds_half_extents = Vec2::splat(0.01);
         let mut emitters = Vec::with_capacity(instance.effect().emitters.len());
         for emitter in &instance.effect().emitters {
             let (spawn_rate, burst_count) =
@@ -143,6 +160,20 @@ impl GpuEffectArtifact {
                 EmitterShape::Ring { radius } => (2, radius, 0.0),
                 EmitterShape::Cone { radius, depth } => (3, radius, depth),
             };
+            let renderer = emitter.renderers.first();
+            let blend_mode = match renderer.map(|renderer| renderer.blend) {
+                Some(BlendMode::Additive) => GpuBlend::Additive,
+                _ => GpuBlend::Alpha,
+            };
+            let softness = renderer.map_or(0.25, |renderer| renderer.softness);
+            bounds_half_extents = bounds_half_extents.max(emitter_bounds(
+                shape,
+                init.lifetime,
+                init.speed,
+                motion.gravity,
+                motion.turbulence,
+                appearance.size,
+            ));
             emitters.push(GpuEmitter {
                 slot_offset,
                 max_particles: emitter.max_particles,
@@ -161,10 +192,12 @@ impl GpuEffectArtifact {
                 angular_velocity: Vec2::new(init.angular_velocity.min, init.angular_velocity.max),
                 gravity: Vec2::from_array(motion.gravity),
                 turbulence: motion.turbulence,
+                blend_mode: blend_mode as u32,
+                softness,
                 size: pack_curve(appearance.size)?,
                 opacity: pack_curve(appearance.opacity)?,
                 color: pack_gradient(appearance.color)?,
-                _padding: Vec3::ZERO,
+                _padding: 0.0,
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }
@@ -172,8 +205,16 @@ impl GpuEffectArtifact {
             emitters,
             particles: vec![GpuParticle::default(); slot_offset as usize],
             total_slots: slot_offset,
+            bounds_half_extents: bounds_half_extents.extend(0.1),
         })
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
+enum GpuBlend {
+    Alpha = 0,
+    Additive = 1,
 }
 
 #[derive(Component, Clone, ExtractComponent)]
@@ -185,8 +226,21 @@ struct GpuEffectBuffers {
     counters: Handle<ShaderBuffer>,
     indirect: Handle<ShaderBuffer>,
     globals: Handle<ShaderBuffer>,
+    render_globals: Handle<ShaderBuffer>,
     workgroups: u32,
     total_slots: u32,
+}
+
+#[derive(Component, Clone, ExtractComponent)]
+#[require(Transform, Visibility, VisibilityClass)]
+#[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
+struct GpuDrawInstance {
+    emitters: Handle<ShaderBuffer>,
+    particles: Handle<ShaderBuffer>,
+    alive: Handle<ShaderBuffer>,
+    indirect: Handle<ShaderBuffer>,
+    render_globals: Handle<ShaderBuffer>,
+    blend: GpuBlend,
 }
 
 #[derive(Component)]
@@ -211,15 +265,19 @@ struct SimulationPipeline {
 
 pub(crate) fn install(app: &mut App) {
     embedded_asset!(app, "shaders/aestra_simulation.wesl");
-    app.add_plugins(ExtractComponentPlugin::<GpuEffectBuffers>::default())
-        .add_systems(
-            Update,
-            (
-                prepare_gpu_players,
-                update_gpu_inputs.after(crate::play_effects),
-            )
-                .chain(),
-        );
+    embedded_asset!(app, "shaders/aestra_sprite_render.wesl");
+    app.add_plugins((
+        ExtractComponentPlugin::<GpuEffectBuffers>::default(),
+        ExtractComponentPlugin::<GpuDrawInstance>::default(),
+    ))
+    .add_systems(
+        Update,
+        (
+            prepare_gpu_players,
+            update_gpu_inputs.after(crate::play_effects),
+        )
+            .chain(),
+    );
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
         return;
     };
@@ -230,13 +288,18 @@ pub(crate) fn install(app: &mut App) {
             prepare_bind_groups.in_set(RenderSystems::PrepareBindGroups),
         )
         .add_systems(RenderGraph, run_simulation);
+    render::install(render_app);
 }
 
 fn prepare_gpu_players(
     mut commands: Commands,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
+    settings: Res<AestraSettings>,
     players: UnpreparedPlayers,
 ) {
+    if settings.presentation == PresentationMode::CpuReference {
+        return;
+    }
     for (entity, player) in &players {
         let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance) else {
             continue;
@@ -244,6 +307,15 @@ fn prepare_gpu_players(
         if artifact.total_slots == 0 {
             continue;
         }
+        let blends = artifact
+            .emitters
+            .iter()
+            .map(|emitter| emitter.blend_mode)
+            .collect::<std::collections::BTreeSet<_>>();
+        let bounds = Aabb {
+            center: Vec3A::ZERO,
+            half_extents: Vec3A::from(artifact.bounds_half_extents),
+        };
         let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
         let particles = buffers.add(ShaderBuffer::from(artifact.particles));
         let alive = buffers.add(ShaderBuffer::from(vec![
@@ -264,28 +336,63 @@ fn prepare_gpu_players(
             seed: fold_seed(player.instance.seed()),
             emitter_count: player.effect().emitters.len() as u32,
         }));
+        let render_globals = buffers.add(ShaderBuffer::from(GpuRenderGlobals {
+            world_from_effect: Mat4::IDENTITY,
+        }));
         commands.entity(entity).insert(GpuEffectBuffers {
-            emitters,
+            emitters: emitters.clone(),
             particles: particles.clone(),
-            alive,
+            alive: alive.clone(),
             dead,
             counters,
-            indirect,
+            indirect: indirect.clone(),
             globals,
+            render_globals: render_globals.clone(),
             workgroups: artifact.total_slots.div_ceil(WORKGROUP_SIZE),
             total_slots: artifact.total_slots,
         });
-        commands.entity(entity).with_children(|parent| {
-            parent.spawn((Readback::buffer(particles), GpuReadbackOwner(entity)));
-        });
+        commands
+            .entity(entity)
+            .with_children(|parent| match settings.presentation {
+                PresentationMode::Gpu => {
+                    for blend in blends {
+                        parent.spawn((
+                            GpuDrawInstance {
+                                emitters: emitters.clone(),
+                                particles: particles.clone(),
+                                alive: alive.clone(),
+                                indirect: indirect.clone(),
+                                render_globals: render_globals.clone(),
+                                blend: if blend == GpuBlend::Additive as u32 {
+                                    GpuBlend::Additive
+                                } else {
+                                    GpuBlend::Alpha
+                                },
+                            },
+                            bounds,
+                            Transform::default(),
+                            Visibility::Inherited,
+                        ));
+                    }
+                }
+                PresentationMode::GpuReadback => {
+                    parent.spawn((
+                        Readback::buffer(particles.clone()),
+                        GpuReadbackOwner(entity),
+                    ));
+                }
+                PresentationMode::CpuReference => {
+                    unreachable!("CPU reference players do not allocate GPU buffers")
+                }
+            });
     }
 }
 
 fn update_gpu_inputs(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    players: Query<(&EffectPlayer, &GpuEffectBuffers)>,
+    players: Query<(&EffectPlayer, &GlobalTransform, &GpuEffectBuffers)>,
 ) {
-    for (player, gpu) in &players {
+    for (player, transform, gpu) in &players {
         if let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance)
             && let Some(mut buffer) = buffers.get_mut(&gpu.emitters)
         {
@@ -297,6 +404,11 @@ fn update_gpu_inputs(
                 total_slots: gpu.total_slots,
                 seed: fold_seed(player.instance.seed()),
                 emitter_count: player.effect().emitters.len() as u32,
+            });
+        }
+        if let Some(mut buffer) = buffers.get_mut(&gpu.render_globals) {
+            buffer.set_data(GpuRenderGlobals {
+                world_from_effect: Mat4::from(transform.affine()),
             });
         }
     }
@@ -449,6 +561,42 @@ fn run_simulation(
 
 fn fold_seed(seed: u64) -> u32 {
     seed as u32 ^ (seed >> 32) as u32
+}
+
+fn emitter_bounds(
+    shape: EmitterShape,
+    lifetime: ScalarRange,
+    speed: ScalarRange,
+    gravity: [f32; 2],
+    turbulence: f32,
+    size: &CompiledCurve,
+) -> Vec2 {
+    let shape_extents = match shape {
+        EmitterShape::Point => Vec2::ZERO,
+        EmitterShape::Circle { radius } | EmitterShape::Ring { radius } => {
+            Vec2::splat(radius.abs())
+        }
+        EmitterShape::Cone { radius, depth } => Vec2::new(radius.abs(), depth.abs()),
+    };
+    let lifetime = lifetime.min.abs().max(lifetime.max.abs());
+    let speed = speed.min.abs().max(speed.max.abs());
+    let travel = speed * lifetime;
+    let size = size
+        .first()
+        .map_or(0.0, |(_, value)| value.abs())
+        .max(size.last_value().abs())
+        .max(
+            size.segments()
+                .iter()
+                .map(|segment| segment.start_value.abs().max(segment.end_value.abs()))
+                .fold(0.0, f32::max),
+        )
+        * 0.5;
+    shape_extents
+        + Vec2::new(
+            travel + turbulence.abs() + gravity[0].abs() * lifetime * 0.1 + size,
+            travel + gravity[1].abs() * lifetime * lifetime * 0.5 + size,
+        )
 }
 
 fn pack_curve(curve: &CompiledCurve) -> Result<GpuCurve, GpuArtifactError> {
@@ -648,5 +796,17 @@ mod tests {
         let output = compiler.compile(&module).unwrap().to_string();
         assert!(output.contains("fn simulate"));
         assert!(output.contains("fn reset"));
+    }
+
+    #[test]
+    fn sprite_render_wesl_compiles_and_validates() {
+        let source = include_str!("shaders/aestra_sprite_render.wesl").to_owned();
+        let module: wesl::ModulePath = "package::aestra_sprite_render".parse().unwrap();
+        let mut resolver = wesl::VirtualResolver::new();
+        resolver.add_module(module.clone(), source.into());
+        let compiler = wesl::Wesl::new("").set_custom_resolver(resolver);
+        let output = compiler.compile(&module).unwrap().to_string();
+        assert!(output.contains("fn fragment_alpha"));
+        assert!(output.contains("fn fragment_additive"));
     }
 }

@@ -10,18 +10,36 @@ pub use aestra_runtime::{
 
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{
-    Added, App, Children, Color, Commands, Component, Entity, Plugin, Quat, Query, Res, Sprite,
-    Time, Transform, Update, Vec2, Vec3, Visibility,
+    Added, App, Children, Color, Commands, Component, Entity, Plugin, Quat, Query, Res, Resource,
+    Sprite, Time, Transform, Update, Vec2, Vec3, Visibility,
 };
 use std::sync::Arc;
 
-/// Installs Aestra's compiled CPU playback adapter into a Bevy application.
+/// Selects the presentation path used by [`AestraPlugin`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PresentationMode {
+    /// Simulate and render particles entirely on the GPU.
+    #[default]
+    Gpu,
+    /// Use the deterministic CPU interpreter and pooled Bevy sprites.
+    CpuReference,
+    /// Simulate on the GPU, read particles back, and present them as Bevy sprites.
+    GpuReadback,
+}
+
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct AestraSettings {
+    pub presentation: PresentationMode,
+}
+
+/// Installs Aestra's compiled effect playback into a Bevy application.
 #[derive(Default)]
 pub struct AestraPlugin;
 
 impl Plugin for AestraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (prepare_effect_players, play_effects).chain())
+        app.init_resource::<AestraSettings>()
+            .add_systems(Update, (prepare_effect_players, play_effects).chain())
             .add_observer(gpu::receive_readback);
         gpu::install(app);
     }
@@ -89,8 +107,12 @@ struct RuntimeParticle(usize);
 
 fn prepare_effect_players(
     mut commands: Commands,
+    settings: Res<AestraSettings>,
     players: Query<(Entity, &EffectPlayer), Added<EffectPlayer>>,
 ) {
+    if settings.presentation == PresentationMode::Gpu {
+        return;
+    }
     for (entity, player) in &players {
         let capacity = player.effect().max_particles.min(4096);
         commands.entity(entity).with_children(|parent| {
@@ -108,6 +130,7 @@ fn prepare_effect_players(
 
 fn play_effects(
     time: Res<Time>,
+    settings: Res<AestraSettings>,
     mut players: Query<(&mut EffectPlayer, &Children)>,
     mut particles: Query<(
         &RuntimeParticle,
@@ -125,7 +148,12 @@ fn play_effects(
             }
         }
 
-        let uses_gpu_readback = !player.gpu_samples.is_empty();
+        if settings.presentation == PresentationMode::Gpu {
+            continue;
+        }
+
+        let uses_gpu_readback = settings.presentation == PresentationMode::GpuReadback
+            && !player.gpu_samples.is_empty();
         let samples = if uses_gpu_readback {
             std::mem::take(&mut player.gpu_samples)
         } else {
@@ -174,6 +202,14 @@ mod tests {
         let player = EffectPlayer::try_new(&effect).unwrap();
         assert_eq!(player.effect().source, effect.id);
         assert_eq!(player.effect().emitters.len(), 1);
+    }
+
+    #[test]
+    fn native_gpu_presentation_is_the_default() {
+        assert_eq!(
+            AestraSettings::default().presentation,
+            PresentationMode::Gpu
+        );
     }
 
     #[test]

@@ -110,6 +110,6 @@ cargo test --workspace
 
 The editor round-trip tests create a new multi-emitter effect, save it, and load it through the shared semantic model used by the viewer and game plugin.
 
-The runtime packs immutable compiled plans into bounded GPU buffers and evaluates them with embedded WESL compute shaders. Asynchronous readback currently feeds the pooled Bevy sprite presentation; the deterministic CPU interpreter remains the warm-up fallback and conformance oracle behind the same `AestraPlugin` / `EffectPlayer` surface.
+The runtime packs immutable compiled plans into bounded GPU buffers, evaluates them with embedded WESL compute shaders, compacts the live set, and presents alpha/additive sprites through GPU indirect draws. Conservative authored bounds participate in Bevy visibility culling. The deterministic CPU interpreter and an asynchronous GPU-readback presenter remain available through `AestraSettings` for conformance and compatibility, while native GPU presentation is the default behind the same `AestraPlugin` / `EffectPlayer` surface.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the product architecture and phased roadmap.

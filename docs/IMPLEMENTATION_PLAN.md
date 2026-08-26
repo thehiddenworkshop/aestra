@@ -13,9 +13,9 @@ architecture vision; this file is the shorter delivery plan.
 - M2 deterministic authoring operations: complete for current editor operations.
 - M3 module registry, compiler frontend, and CPU runtime: complete for the initial module set.
 - M4 first GPU production slice: in progress. The deterministic WESL compute substrate,
-  bounded particle pools, compaction lists, counters, indirect arguments, and preview
-  readback are implemented; native GPU sprite drawing, culling, and image regression
-  remain.
+  bounded particle pools, compaction lists, counters, native indirect alpha/additive
+  sprite drawing, conservative visibility bounds, and explicit CPU/readback fallbacks
+  are implemented. Automated image regression and capability reporting remain.
 
 ## 1. Assessment of the current prototype
 
