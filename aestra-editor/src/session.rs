@@ -3,8 +3,8 @@ use aestra_authoring::{
     Selection,
 };
 use aestra_bevy::{
-    AssetError, BlendMode, EffectAsset, Emitter, ModuleId, ModuleInstance, RendererId,
-    RendererInstance, RendererProperties, ValidationReport, Value,
+    AssetError, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, ModuleId, ModuleInstance,
+    RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::EffectInstance;
@@ -323,6 +323,118 @@ impl EditorSession {
                 module,
                 parameter: parameter.into(),
                 value,
+            },
+            true,
+        );
+    }
+
+    pub fn add_curve_key(
+        &mut self,
+        module: ModuleId,
+        parameter: &str,
+        index: usize,
+        key: CurveKey,
+    ) {
+        let emitter = self.selected_layer().id;
+        self.execute(
+            format!("Added {parameter} curve key"),
+            EffectCommand::AddCurveKey {
+                emitter,
+                module,
+                parameter: parameter.into(),
+                key,
+                index,
+            },
+            true,
+        );
+    }
+
+    pub fn set_curve_key(
+        &mut self,
+        module: ModuleId,
+        parameter: &str,
+        index: usize,
+        key: CurveKey,
+    ) {
+        let emitter = self.selected_layer().id;
+        self.execute(
+            format!("Changed {parameter} curve key"),
+            EffectCommand::SetCurveKey {
+                emitter,
+                module,
+                parameter: parameter.into(),
+                index,
+                key,
+            },
+            true,
+        );
+    }
+
+    pub fn remove_curve_key(&mut self, module: ModuleId, parameter: &str, index: usize) {
+        let emitter = self.selected_layer().id;
+        self.execute(
+            format!("Removed {parameter} curve key"),
+            EffectCommand::RemoveCurveKey {
+                emitter,
+                module,
+                parameter: parameter.into(),
+                index,
+            },
+            true,
+        );
+    }
+
+    pub fn add_gradient_key(
+        &mut self,
+        module: ModuleId,
+        parameter: &str,
+        index: usize,
+        key: ColorKey,
+    ) {
+        let emitter = self.selected_layer().id;
+        self.execute(
+            format!("Added {parameter} gradient key"),
+            EffectCommand::AddGradientKey {
+                emitter,
+                module,
+                parameter: parameter.into(),
+                key,
+                index,
+            },
+            true,
+        );
+    }
+
+    pub fn set_gradient_key(
+        &mut self,
+        module: ModuleId,
+        parameter: &str,
+        index: usize,
+        key: ColorKey,
+    ) {
+        let emitter = self.selected_layer().id;
+        self.execute(
+            format!("Changed {parameter} gradient key"),
+            EffectCommand::SetGradientKey {
+                emitter,
+                module,
+                parameter: parameter.into(),
+                index,
+                key,
+            },
+            true,
+        );
+    }
+
+    pub fn remove_gradient_key(&mut self, module: ModuleId, parameter: &str, index: usize) {
+        let emitter = self.selected_layer().id;
+        self.execute(
+            format!("Removed {parameter} gradient key"),
+            EffectCommand::RemoveGradientKey {
+                emitter,
+                module,
+                parameter: parameter.into(),
+                index,
             },
             true,
         );
@@ -682,6 +794,25 @@ mod tests {
         assert!(!session.diagnostics.is_valid());
         session.undo();
         assert_eq!(session.selected_layer().modules.len(), 5);
+        assert!(session.preview.is_some());
+    }
+
+    #[test]
+    fn curve_key_edits_recompile_and_undo() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        let module = session.effect.emitters[0]
+            .module_by_type(aestra_bevy::MODULE_APPEARANCE)
+            .unwrap()
+            .id;
+        let original = session.effect.emitters[0].size_curve().keys[1];
+        session.set_curve_key(module, "size", 1, CurveKey::new(original.time, 18.0));
+        assert_eq!(session.effect.emitters[0].size_curve().keys[1].value, 18.0);
+        assert!(session.preview.is_some());
+        session.undo();
+        assert_eq!(session.effect.emitters[0].size_curve().keys[1], original);
         assert!(session.preview.is_some());
     }
 

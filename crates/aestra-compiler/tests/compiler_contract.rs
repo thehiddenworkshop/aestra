@@ -24,6 +24,11 @@ fn builtin_registry_exposes_authoring_and_runtime_metadata() {
     assert!(motion.reads.contains(&ParticleAttribute::Velocity));
     assert!(motion.writes.contains(&ParticleAttribute::Position));
     assert!(motion.approximate_cost > 0);
+    let gravity = &motion.inputs[0];
+    assert_eq!(gravity.display_name, "Gravity");
+    assert_eq!(gravity.unit, Some("units/s²"));
+    assert_eq!(gravity.default_value, Value::Vec2([0.0, -18.0]));
+    assert!(!gravity.description.is_empty());
 }
 
 #[test]
@@ -39,6 +44,23 @@ fn builtin_registry_instantiates_every_catalog_module() {
             assert_eq!(instance.parameter_type(input.name), Some(input.value_type));
         }
     }
+}
+
+#[test]
+fn complex_metadata_defaults_receive_fresh_semantic_ids() {
+    let registry = ModuleRegistry::builtin();
+    let appearance = registry
+        .iter()
+        .find(|metadata| metadata.type_id.0.ends_with("appearance"))
+        .unwrap();
+    let Value::Curve(first) = appearance.inputs[0].instantiate_default() else {
+        panic!("size default must be a curve");
+    };
+    let Value::Curve(second) = appearance.inputs[0].instantiate_default() else {
+        panic!("size default must be a curve");
+    };
+    assert!(!first.id.is_nil());
+    assert_ne!(first.id, second.id);
 }
 
 #[test]

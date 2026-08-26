@@ -1,6 +1,6 @@
 use aestra_core::{
-    BlendMode, EffectParameter, Emitter, EmitterId, EventId, EventLink, ModuleId, ModuleInstance,
-    RendererId, RendererInstance, RendererProperties, Value,
+    BlendMode, ColorKey, CurveKey, EffectParameter, Emitter, EmitterId, EventId, EventLink,
+    ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -90,6 +90,46 @@ pub enum EffectCommand {
         emitter: EmitterId,
         module: ModuleId,
         parameter: String,
+    },
+    AddCurveKey {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        key: CurveKey,
+        index: usize,
+    },
+    RemoveCurveKey {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        index: usize,
+    },
+    SetCurveKey {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        index: usize,
+        key: CurveKey,
+    },
+    AddGradientKey {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        key: ColorKey,
+        index: usize,
+    },
+    RemoveGradientKey {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        index: usize,
+    },
+    SetGradientKey {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        index: usize,
+        key: ColorKey,
     },
     AddRenderer {
         emitter: EmitterId,

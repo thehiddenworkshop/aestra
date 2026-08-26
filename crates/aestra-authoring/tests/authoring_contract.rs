@@ -3,8 +3,8 @@ use aestra_authoring::{
     Selection, SemanticTarget,
 };
 use aestra_core::{
-    EffectAsset, EffectParameter, Emitter, EventId, EventLink, EventTrigger, MODULE_EMISSION,
-    MODULE_INITIALIZE, ParameterId, ScalarRange, Value,
+    ColorKey, CurveKey, EffectAsset, EffectParameter, Emitter, EventId, EventLink, EventTrigger,
+    MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, ParameterId, ScalarRange, Value,
 };
 
 fn test_effect() -> EffectAsset {
@@ -83,6 +83,62 @@ fn module_stack_duplicate_delete_and_undo_are_semantic_commands() {
             .iter()
             .any(|diagnostic| diagnostic.code == aestra_core::DiagnosticCode::MissingModule)
     );
+}
+
+#[test]
+fn curve_and_gradient_key_commands_are_atomic_and_reversible() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let module = effect.emitters[0]
+        .module_by_type(MODULE_APPEARANCE)
+        .unwrap()
+        .id;
+    let curve_before = effect.emitters[0].size_curve().clone();
+    let gradient_before = effect.emitters[0].color_gradient().clone();
+    let transaction = EffectTransaction::new(
+        "Edit appearance keys",
+        vec![
+            EffectCommand::SetCurveKey {
+                emitter,
+                module,
+                parameter: "size".into(),
+                index: 1,
+                key: CurveKey::new(0.4, 14.0),
+            },
+            EffectCommand::SetGradientKey {
+                emitter,
+                module,
+                parameter: "color".into(),
+                index: 1,
+                key: ColorKey::new(0.6, [1.0, 0.2, 0.5, 1.0]),
+            },
+        ],
+    );
+    let outcome = CommandExecutor::execute(&mut effect, &LockState::default(), &transaction)
+        .expect("valid key edits must execute");
+    assert_eq!(effect.emitters[0].size_curve().keys[1].value, 14.0);
+    assert_eq!(effect.emitters[0].color_gradient().keys[1].time, 0.6);
+
+    CommandExecutor::execute(&mut effect, &LockState::default(), &outcome.inverse).unwrap();
+    assert_eq!(effect.emitters[0].size_curve(), &curve_before);
+    assert_eq!(effect.emitters[0].color_gradient(), &gradient_before);
+
+    let invalid = EffectTransaction::single(
+        "Break key ordering",
+        EffectCommand::SetCurveKey {
+            emitter,
+            module,
+            parameter: "size".into(),
+            index: 1,
+            key: CurveKey::new(1.1, 4.0),
+        },
+    );
+    let before = effect.clone();
+    assert!(matches!(
+        CommandExecutor::execute(&mut effect, &LockState::default(), &invalid),
+        Err(CommandError::Validation(_))
+    ));
+    assert_eq!(effect, before);
 }
 
 #[test]

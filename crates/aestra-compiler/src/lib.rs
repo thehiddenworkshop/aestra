@@ -3,10 +3,10 @@
 pub use aestra_core::ValueType;
 
 use aestra_core::{
-    ColorKey, Curve, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
-    EmitterShape, Gradient, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION,
-    MODULE_SHAPE, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_SPRITE,
-    RendererProperties, ScalarRange, StageKind, ValidationReport,
+    ColorKey, Curve, CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
+    EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
+    MODULE_MOTION, MODULE_SHAPE, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
+    RENDERER_SPRITE, RendererProperties, ScalarRange, StageKind, ValidationReport,
 };
 use aestra_runtime::{
     CompiledCurve, CompiledEffect, CompiledEmitter, CompiledGradient, CompiledParameter,
@@ -17,10 +17,43 @@ use aestra_runtime::{
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InputMetadata {
     pub name: &'static str,
+    pub display_name: &'static str,
+    pub description: &'static str,
     pub value_type: ValueType,
+    pub default_value: aestra_core::Value,
+    pub unit: Option<&'static str>,
+    pub control: InputControl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InputControl {
+    Toggle,
+    Number {
+        step: f32,
+        min: Option<f32>,
+        max: Option<f32>,
+    },
+    Vector {
+        step: f32,
+        min: Option<f32>,
+        max: Option<f32>,
+    },
+    Range {
+        step: f32,
+        min: Option<f32>,
+        max: Option<f32>,
+    },
+    Choice,
+    Curve {
+        step: f32,
+        min: f32,
+        max: f32,
+    },
+    Gradient,
+    Reference,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -29,7 +62,7 @@ pub enum Capability {
     ParticleSimulation,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModuleMetadata {
     pub type_id: ModuleTypeId,
     pub display_name: &'static str,
@@ -683,8 +716,40 @@ fn push_unique(report: &mut ValidationReport, diagnostic: Diagnostic) {
     }
 }
 
-fn input(name: &'static str, value_type: ValueType) -> InputMetadata {
-    InputMetadata { name, value_type }
+fn input(
+    name: &'static str,
+    display_name: &'static str,
+    description: &'static str,
+    default_value: aestra_core::Value,
+    control: InputControl,
+) -> InputMetadata {
+    InputMetadata {
+        name,
+        display_name,
+        description,
+        value_type: default_value.value_type(),
+        default_value,
+        unit: None,
+        control,
+    }
+}
+
+impl InputMetadata {
+    /// Clones the catalog default while assigning fresh IDs to nested authored data.
+    pub fn instantiate_default(&self) -> aestra_core::Value {
+        let mut value = self.default_value.clone();
+        match &mut value {
+            aestra_core::Value::Curve(curve) => curve.id = CurveId::new(),
+            aestra_core::Value::Gradient(gradient) => gradient.id = GradientId::new(),
+            _ => {}
+        }
+        value
+    }
+
+    fn with_unit(mut self, unit: &'static str) -> Self {
+        self.unit = Some(unit);
+        self
+    }
 }
 
 fn metadata(
@@ -740,14 +805,41 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
             StageKind::EmitterUpdate,
         )
         .with_inputs(vec![
-            input("spawn_rate", ValueType::Scalar),
-            input("burst_count", ValueType::U32),
+            input(
+                "spawn_rate",
+                "Spawn Rate",
+                "Particles emitted per second.",
+                aestra_core::Value::Scalar(24.0),
+                InputControl::Number {
+                    step: 5.0,
+                    min: Some(0.0),
+                    max: None,
+                },
+            )
+            .with_unit("particles/s"),
+            input(
+                "burst_count",
+                "Burst Count",
+                "Particles emitted when the emitter starts.",
+                aestra_core::Value::U32(0),
+                InputControl::Number {
+                    step: 4.0,
+                    min: Some(0.0),
+                    max: None,
+                },
+            ),
         ])
         .with_flow(vec![], vec![])
         .with_tags(vec!["spawn", "rate", "burst"])
         .with_cost(1),
         metadata(MODULE_SHAPE, "Shape", "Spawn", StageKind::ParticleSpawn)
-            .with_inputs(vec![input("shape", ValueType::Shape)])
+            .with_inputs(vec![input(
+                "shape",
+                "Shape",
+                "Volume used to place newly spawned particles.",
+                aestra_core::Value::Shape(EmitterShape::Point),
+                InputControl::Choice,
+            )])
             .with_flow(vec![], vec![A::Position])
             .with_tags(vec!["spawn", "position"])
             .with_cost(2),
@@ -758,11 +850,66 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
             StageKind::ParticleSpawn,
         )
         .with_inputs(vec![
-            input("lifetime", ValueType::Range),
-            input("speed", ValueType::Range),
-            input("direction_degrees", ValueType::Scalar),
-            input("spread_degrees", ValueType::Scalar),
-            input("angular_velocity", ValueType::Range),
+            input(
+                "lifetime",
+                "Lifetime",
+                "Minimum and maximum particle lifetime.",
+                aestra_core::Value::Range(ScalarRange::new(0.8, 1.4)),
+                InputControl::Range {
+                    step: 0.1,
+                    min: Some(0.05),
+                    max: None,
+                },
+            )
+            .with_unit("s"),
+            input(
+                "speed",
+                "Speed",
+                "Minimum and maximum initial particle speed.",
+                aestra_core::Value::Range(ScalarRange::new(35.0, 70.0)),
+                InputControl::Range {
+                    step: 5.0,
+                    min: Some(0.0),
+                    max: None,
+                },
+            )
+            .with_unit("units/s"),
+            input(
+                "direction_degrees",
+                "Direction",
+                "Central launch direction.",
+                aestra_core::Value::Scalar(90.0),
+                InputControl::Number {
+                    step: 5.0,
+                    min: None,
+                    max: None,
+                },
+            )
+            .with_unit("°"),
+            input(
+                "spread_degrees",
+                "Spread",
+                "Angular launch cone around the central direction.",
+                aestra_core::Value::Scalar(30.0),
+                InputControl::Number {
+                    step: 5.0,
+                    min: Some(0.0),
+                    max: Some(360.0),
+                },
+            )
+            .with_unit("°"),
+            input(
+                "angular_velocity",
+                "Angular Velocity",
+                "Minimum and maximum particle spin.",
+                aestra_core::Value::Range(ScalarRange::new(-1.0, 1.0)),
+                InputControl::Range {
+                    step: 0.1,
+                    min: None,
+                    max: None,
+                },
+            )
+            .with_unit("rad/s"),
         ])
         .with_flow(
             vec![],
@@ -772,9 +919,40 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
         .with_cost(4),
         metadata(MODULE_MOTION, "Motion", "Forces", StageKind::ParticleUpdate)
             .with_inputs(vec![
-                input("gravity", ValueType::Vec2),
-                input("drag", ValueType::Scalar),
-                input("turbulence", ValueType::Scalar),
+                input(
+                    "gravity",
+                    "Gravity",
+                    "Constant acceleration applied to particle velocity.",
+                    aestra_core::Value::Vec2([0.0, -18.0]),
+                    InputControl::Vector {
+                        step: 5.0,
+                        min: None,
+                        max: None,
+                    },
+                )
+                .with_unit("units/s²"),
+                input(
+                    "drag",
+                    "Drag",
+                    "Velocity damping applied over time.",
+                    aestra_core::Value::Scalar(0.6),
+                    InputControl::Number {
+                        step: 0.1,
+                        min: Some(0.0),
+                        max: None,
+                    },
+                ),
+                input(
+                    "turbulence",
+                    "Turbulence",
+                    "Strength of deterministic procedural motion.",
+                    aestra_core::Value::Scalar(4.0),
+                    InputControl::Number {
+                        step: 0.5,
+                        min: None,
+                        max: None,
+                    },
+                ),
             ])
             .with_flow(
                 vec![A::Position, A::Velocity, A::Age],
@@ -789,9 +967,56 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
             StageKind::ParticleUpdate,
         )
         .with_inputs(vec![
-            input("size", ValueType::Curve),
-            input("opacity", ValueType::Curve),
-            input("color", ValueType::Gradient),
+            input(
+                "size",
+                "Size Over Life",
+                "Particle size over normalized lifetime.",
+                aestra_core::Value::Curve(Curve {
+                    id: CurveId::from_u128(0),
+                    keys: vec![
+                        CurveKey::new(0.0, 4.0),
+                        CurveKey::new(0.35, 10.0),
+                        CurveKey::new(1.0, 1.0),
+                    ],
+                }),
+                InputControl::Curve {
+                    step: 0.5,
+                    min: 0.0,
+                    max: 32.0,
+                },
+            ),
+            input(
+                "opacity",
+                "Opacity Over Life",
+                "Particle opacity over normalized lifetime.",
+                aestra_core::Value::Curve(Curve {
+                    id: CurveId::from_u128(0),
+                    keys: vec![
+                        CurveKey::new(0.0, 0.0),
+                        CurveKey::new(0.12, 1.0),
+                        CurveKey::new(1.0, 0.0),
+                    ],
+                }),
+                InputControl::Curve {
+                    step: 0.05,
+                    min: 0.0,
+                    max: 1.0,
+                },
+            ),
+            input(
+                "color",
+                "Color Over Life",
+                "Particle color and alpha over normalized lifetime.",
+                aestra_core::Value::Gradient(Gradient {
+                    id: GradientId::from_u128(0),
+                    keys: vec![
+                        ColorKey::new(0.0, [0.35, 0.75, 1.0, 1.0]),
+                        ColorKey::new(0.5, [0.62, 0.3, 1.0, 1.0]),
+                        ColorKey::new(1.0, [0.15, 0.05, 0.4, 0.0]),
+                    ],
+                }),
+                InputControl::Gradient,
+            ),
         ])
         .with_flow(vec![A::NormalizedAge], vec![A::Size, A::Color])
         .with_tags(vec!["update", "color", "size"])

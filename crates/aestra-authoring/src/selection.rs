@@ -162,6 +162,68 @@ impl LockState {
             }
         }
 
+        let nested_edit = match command {
+            EffectCommand::AddCurveKey {
+                emitter,
+                module,
+                parameter,
+                ..
+            }
+            | EffectCommand::RemoveCurveKey {
+                emitter,
+                module,
+                parameter,
+                ..
+            }
+            | EffectCommand::SetCurveKey {
+                emitter,
+                module,
+                parameter,
+                ..
+            }
+            | EffectCommand::AddGradientKey {
+                emitter,
+                module,
+                parameter,
+                ..
+            }
+            | EffectCommand::RemoveGradientKey {
+                emitter,
+                module,
+                parameter,
+                ..
+            }
+            | EffectCommand::SetGradientKey {
+                emitter,
+                module,
+                parameter,
+                ..
+            } => Some((*emitter, *module, parameter.as_str())),
+            _ => None,
+        };
+        if let Some((emitter, module, parameter)) = nested_edit
+            && let Some(module) = effect
+                .emitters
+                .iter()
+                .find(|item| item.id == emitter)
+                .and_then(|item| item.modules.iter().find(|item| item.id == module))
+            && let ModuleParameters::Appearance {
+                size,
+                opacity,
+                color,
+            } = &module.parameters
+        {
+            let target = match parameter {
+                "size" => Some(SemanticTarget::Curve(size.id)),
+                "opacity" => Some(SemanticTarget::Curve(opacity.id)),
+                "color" => Some(SemanticTarget::Gradient(color.id)),
+                _ => None,
+            };
+            if target.is_some_and(|target| self.is_locked(target)) {
+                return target;
+            }
+        }
+
         if let EffectCommand::RemoveModule { emitter, module } = command
             && let Some(module) = effect
                 .emitters
@@ -243,6 +305,24 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
             emitter, module, ..
         }
         | EffectCommand::UnbindModuleParameter {
+            emitter, module, ..
+        }
+        | EffectCommand::AddCurveKey {
+            emitter, module, ..
+        }
+        | EffectCommand::RemoveCurveKey {
+            emitter, module, ..
+        }
+        | EffectCommand::SetCurveKey {
+            emitter, module, ..
+        }
+        | EffectCommand::AddGradientKey {
+            emitter, module, ..
+        }
+        | EffectCommand::RemoveGradientKey {
+            emitter, module, ..
+        }
+        | EffectCommand::SetGradientKey {
             emitter, module, ..
         } => (Some(*emitter), Some(SemanticTarget::Module(*module))),
         EffectCommand::RemoveRenderer {

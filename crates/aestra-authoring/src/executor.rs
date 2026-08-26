@@ -333,6 +333,104 @@ fn apply_command(
                 source,
             }]
         }
+        EffectCommand::AddCurveKey {
+            emitter,
+            module,
+            parameter,
+            key,
+            index,
+        } => {
+            let curve = module_curve_mut(effect, *emitter, *module, parameter)?;
+            checked_insert(&mut curve.keys, *index, *key, "curve keys")?;
+            vec![EffectCommand::RemoveCurveKey {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                index: *index,
+            }]
+        }
+        EffectCommand::RemoveCurveKey {
+            emitter,
+            module,
+            parameter,
+            index,
+        } => {
+            let curve = module_curve_mut(effect, *emitter, *module, parameter)?;
+            let key = checked_remove(&mut curve.keys, *index, "curve keys")?;
+            vec![EffectCommand::AddCurveKey {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                key,
+                index: *index,
+            }]
+        }
+        EffectCommand::SetCurveKey {
+            emitter,
+            module,
+            parameter,
+            index,
+            key,
+        } => {
+            let curve = module_curve_mut(effect, *emitter, *module, parameter)?;
+            let previous = checked_replace(&mut curve.keys, *index, *key, "curve keys")?;
+            vec![EffectCommand::SetCurveKey {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                index: *index,
+                key: previous,
+            }]
+        }
+        EffectCommand::AddGradientKey {
+            emitter,
+            module,
+            parameter,
+            key,
+            index,
+        } => {
+            let gradient = module_gradient_mut(effect, *emitter, *module, parameter)?;
+            checked_insert(&mut gradient.keys, *index, *key, "gradient keys")?;
+            vec![EffectCommand::RemoveGradientKey {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                index: *index,
+            }]
+        }
+        EffectCommand::RemoveGradientKey {
+            emitter,
+            module,
+            parameter,
+            index,
+        } => {
+            let gradient = module_gradient_mut(effect, *emitter, *module, parameter)?;
+            let key = checked_remove(&mut gradient.keys, *index, "gradient keys")?;
+            vec![EffectCommand::AddGradientKey {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                key,
+                index: *index,
+            }]
+        }
+        EffectCommand::SetGradientKey {
+            emitter,
+            module,
+            parameter,
+            index,
+            key,
+        } => {
+            let gradient = module_gradient_mut(effect, *emitter, *module, parameter)?;
+            let previous = checked_replace(&mut gradient.keys, *index, *key, "gradient keys")?;
+            vec![EffectCommand::SetGradientKey {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                index: *index,
+                key: previous,
+            }]
+        }
         EffectCommand::AddRenderer {
             emitter,
             renderer,
@@ -622,6 +720,59 @@ fn renderer_mut(
         .ok_or_else(|| not_found("renderer", &renderer))
 }
 
+fn module_curve_mut<'a>(
+    effect: &'a mut EffectAsset,
+    emitter: EmitterId,
+    module: ModuleId,
+    parameter: &str,
+) -> Result<&'a mut aestra_core::Curve, CommandError> {
+    let module = module_mut(effect, emitter, module)?;
+    match (&mut module.parameters, parameter) {
+        (ModuleParameters::Appearance { size, .. }, "size") => Ok(size),
+        (ModuleParameters::Appearance { opacity, .. }, "opacity") => Ok(opacity),
+        (ModuleParameters::Custom(values), parameter) => match values.get_mut(parameter) {
+            Some(Value::Curve(curve)) => Ok(curve),
+            Some(value) => Err(CommandError::ParameterType {
+                parameter: parameter.into(),
+                expected: "curve",
+                actual: value_type(value),
+            }),
+            None => Err(CommandError::UnknownParameter {
+                parameter: parameter.into(),
+            }),
+        },
+        _ => Err(CommandError::UnknownParameter {
+            parameter: parameter.into(),
+        }),
+    }
+}
+
+fn module_gradient_mut<'a>(
+    effect: &'a mut EffectAsset,
+    emitter: EmitterId,
+    module: ModuleId,
+    parameter: &str,
+) -> Result<&'a mut aestra_core::Gradient, CommandError> {
+    let module = module_mut(effect, emitter, module)?;
+    match (&mut module.parameters, parameter) {
+        (ModuleParameters::Appearance { color, .. }, "color") => Ok(color),
+        (ModuleParameters::Custom(values), parameter) => match values.get_mut(parameter) {
+            Some(Value::Gradient(gradient)) => Ok(gradient),
+            Some(value) => Err(CommandError::ParameterType {
+                parameter: parameter.into(),
+                expected: "gradient",
+                actual: value_type(value),
+            }),
+            None => Err(CommandError::UnknownParameter {
+                parameter: parameter.into(),
+            }),
+        },
+        _ => Err(CommandError::UnknownParameter {
+            parameter: parameter.into(),
+        }),
+    }
+}
+
 fn checked_insert<T>(
     items: &mut Vec<T>,
     index: usize,
@@ -637,6 +788,38 @@ fn checked_insert<T>(
     }
     items.insert(index, value);
     Ok(())
+}
+
+fn checked_remove<T>(
+    items: &mut Vec<T>,
+    index: usize,
+    collection: &'static str,
+) -> Result<T, CommandError> {
+    if index >= items.len() {
+        return Err(CommandError::IndexOutOfBounds {
+            collection,
+            index,
+            len: items.len(),
+        });
+    }
+    Ok(items.remove(index))
+}
+
+fn checked_replace<T: Copy>(
+    items: &mut [T],
+    index: usize,
+    value: T,
+    collection: &'static str,
+) -> Result<T, CommandError> {
+    let len = items.len();
+    let Some(item) = items.get_mut(index) else {
+        return Err(CommandError::IndexOutOfBounds {
+            collection,
+            index,
+            len,
+        });
+    };
+    Ok(std::mem::replace(item, value))
 }
 
 fn checked_move<T>(

@@ -18,6 +18,12 @@ architecture vision; this file is the shorter delivery plan.
   are implemented. Deterministic image regression with approved references, tolerant
   metrics, and diff reports is implemented. Adapter capability reporting, automatic
   backend selection, particle budgets, and per-effect fallback diagnostics close the milestone.
+- M5 professional authoring workflow: in progress. The editor has a searchable,
+  registry-driven stage/module stack, metadata-defined typed property controls,
+  undoable module and renderer structure edits, inline compiler diagnostics, and
+  dedicated curve/gradient authoring with draggable keys and fine-grained semantic
+  commands. The remaining M5 work is the broader tab set, semantic diff review,
+  viewport gizmos, recovery, and deterministic frame-step/scrubbing infrastructure.
 
 ## 1. Assessment of the current prototype
 

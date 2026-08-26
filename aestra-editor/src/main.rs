@@ -2,13 +2,13 @@ mod session;
 mod theme;
 
 use aestra_bevy::{
-    DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterShape, ModuleId, ModuleInstance,
-    ModuleParameters, RendererId, RendererProperties, StageKind, Value,
+    ColorKey, CurveKey, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterShape, ModuleId,
+    ModuleInstance, ModuleParameters, RendererId, RendererProperties, StageKind, Value,
 };
-use aestra_compiler::{ModuleMetadata, ModuleRegistry};
+use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use bevy::{
     input::{ButtonState, keyboard::KeyboardInput, mouse::MouseScrollUnit},
-    picking::events::{Pointer, Scroll},
+    picking::events::{Click, Drag, DragEnd, Pointer, Scroll},
     prelude::*,
     ui::RelativeCursorPosition,
     window::WindowResolution,
@@ -34,6 +34,7 @@ fn main() {
         .init_resource::<MenuState>()
         .init_resource::<EditorModuleRegistry>()
         .init_resource::<ModulePaletteState>()
+        .init_resource::<WorkspaceState>()
         .init_resource::<RenderedUiRevision>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -91,8 +92,16 @@ enum EditorAction {
     AdjustModuleInput {
         module: ModuleId,
         input: u8,
+        component: u8,
         direction: i8,
     },
+    EditComplexInput(ModuleId, u8),
+    SelectWorkspace(WorkspaceTab),
+    AddComplexKey,
+    DeleteComplexKey,
+    AdjustComplexTime(i8),
+    AdjustCurveValue(i8),
+    AdjustGradientChannel(u8, i8),
     ToggleModule(ModuleId),
     MoveModule(ModuleId, i8),
     DuplicateModule(ModuleId),
@@ -106,6 +115,34 @@ enum EditorAction {
     ToggleGrid,
     ShowAbout,
     CloseAbout,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkspaceTab {
+    Timeline,
+    Curves,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ComplexSelection {
+    module: ModuleId,
+    input: u8,
+    key: usize,
+}
+
+#[derive(Resource)]
+struct WorkspaceState {
+    tab: WorkspaceTab,
+    complex: Option<ComplexSelection>,
+}
+
+impl Default for WorkspaceState {
+    fn default() -> Self {
+        Self {
+            tab: WorkspaceTab::Timeline,
+            complex: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,6 +249,9 @@ struct AboutOverlay;
 #[derive(Component)]
 struct TimelineCanvas;
 
+#[derive(Component)]
+struct CurveGraph;
+
 struct CatalogEntry {
     name: String,
     path: PathBuf,
@@ -272,10 +312,14 @@ fn setup_editor(
     session: Res<EditorSession>,
     menu: Res<MenuState>,
     catalog: Res<EffectCatalog>,
-    registry: Res<EditorModuleRegistry>,
-    palette: Res<ModulePaletteState>,
+    editor_resources: (
+        Res<EditorModuleRegistry>,
+        Res<ModulePaletteState>,
+        Res<WorkspaceState>,
+    ),
     mut rendered: ResMut<RenderedUiRevision>,
 ) {
+    let (registry, palette, workspace) = editor_resources;
     commands.spawn(Camera2d);
     spawn_editor_ui(
         &mut commands,
@@ -284,6 +328,7 @@ fn setup_editor(
         &catalog,
         &registry,
         &palette,
+        &workspace,
     );
     rendered.0 = session.ui_revision;
 }
@@ -295,6 +340,7 @@ fn spawn_editor_ui(
     catalog: &EffectCatalog,
     registry: &EditorModuleRegistry,
     palette: &ModulePaletteState,
+    workspace: &WorkspaceState,
 ) {
     commands
         .spawn((
@@ -324,7 +370,7 @@ fn spawn_editor_ui(
                 spawn_preview(main);
                 spawn_inspector(main, session, registry, palette);
             });
-            spawn_timeline(root, session);
+            spawn_workspace(root, session, registry, workspace);
             spawn_status_bar(root);
             spawn_about_overlay(root, menu.show_about);
         });
@@ -1196,26 +1242,151 @@ fn spawn_module_card(
             ));
             if let Some(metadata) = metadata {
                 for (input_index, input) in metadata.inputs.iter().enumerate() {
-                    let value = module_parameter(module, input.name)
-                        .map_or_else(|| "missing".into(), format_value);
-                    property_stepper(
-                        card,
-                        &format!("{}  {value}", pretty_name(input.name)),
-                        EditorAction::AdjustModuleInput {
-                            module: module.id,
-                            input: input_index as u8,
-                            direction: -1,
-                        },
-                        EditorAction::AdjustModuleInput {
-                            module: module.id,
-                            input: input_index as u8,
-                            direction: 1,
-                        },
-                    );
+                    spawn_input_control(card, module, input, input_index as u8);
                 }
             }
             spawn_inline_diagnostics(card, diagnostic_path, session);
         });
+}
+
+fn spawn_input_control(
+    parent: &mut ChildSpawnerCommands,
+    module: &ModuleInstance,
+    input: &InputMetadata,
+    input_index: u8,
+) {
+    let Some(value) = module_parameter(module, input.name) else {
+        property_stepper(
+            parent,
+            &format!("{}  missing", input.display_name),
+            EditorAction::AdjustModuleInput {
+                module: module.id,
+                input: input_index,
+                component: 0,
+                direction: -1,
+            },
+            EditorAction::AdjustModuleInput {
+                module: module.id,
+                input: input_index,
+                component: 0,
+                direction: 1,
+            },
+        );
+        return;
+    };
+    match (&input.control, &value) {
+        (InputControl::Curve { .. }, Value::Curve(curve)) => inspector_action_button(
+            parent,
+            &format!("{}  ·  {} keys  →", input.display_name, curve.keys.len()),
+            EditorAction::EditComplexInput(module.id, input_index),
+        ),
+        (InputControl::Gradient, Value::Gradient(gradient)) => inspector_action_button(
+            parent,
+            &format!(
+                "{}  ·  {} color keys  →",
+                input.display_name,
+                gradient.keys.len()
+            ),
+            EditorAction::EditComplexInput(module.id, input_index),
+        ),
+        (InputControl::Vector { .. }, Value::Vec2(vector)) => {
+            for (component, axis) in ["X", "Y"].into_iter().enumerate() {
+                metadata_stepper(
+                    parent,
+                    module.id,
+                    input_index,
+                    component as u8,
+                    &format!(
+                        "{} {axis}  {:.2}{}",
+                        input.display_name,
+                        vector[component],
+                        unit_suffix(input)
+                    ),
+                );
+            }
+        }
+        (InputControl::Range { .. }, Value::Range(range)) => {
+            metadata_stepper(
+                parent,
+                module.id,
+                input_index,
+                0,
+                &format!(
+                    "{} Min  {:.2}{}",
+                    input.display_name,
+                    range.min,
+                    unit_suffix(input)
+                ),
+            );
+            metadata_stepper(
+                parent,
+                module.id,
+                input_index,
+                1,
+                &format!(
+                    "{} Max  {:.2}{}",
+                    input.display_name,
+                    range.max,
+                    unit_suffix(input)
+                ),
+            );
+        }
+        _ => metadata_stepper(
+            parent,
+            module.id,
+            input_index,
+            0,
+            &format!(
+                "{}  {}{}",
+                input.display_name,
+                format_value(value),
+                unit_suffix(input)
+            ),
+        ),
+    }
+    parent.spawn((
+        Text::new(input.description),
+        TextFont {
+            font_size: FontSize::Px(7.0),
+            ..default()
+        },
+        TextColor(theme::TEXT_FAINT),
+        Node {
+            margin: UiRect::horizontal(Val::Px(12.0)),
+            ..default()
+        },
+    ));
+}
+
+fn metadata_stepper(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: u8,
+    component: u8,
+    label: &str,
+) {
+    property_stepper(
+        parent,
+        label,
+        EditorAction::AdjustModuleInput {
+            module,
+            input,
+            component,
+            direction: -1,
+        },
+        EditorAction::AdjustModuleInput {
+            module,
+            input,
+            component,
+            direction: 1,
+        },
+    );
+}
+
+fn unit_suffix(input: &InputMetadata) -> String {
+    input
+        .unit
+        .map_or_else(String::new, |unit| format!(" {unit}"))
 }
 
 fn spawn_renderer_card(
@@ -1628,79 +1799,52 @@ fn format_value(value: Value) -> String {
     }
 }
 
-fn pretty_name(name: &str) -> String {
-    let mut result = name.replace('_', " ");
-    if let Some(first) = result.get_mut(0..1) {
-        first.make_ascii_uppercase();
-    }
-    result
-}
-
-fn adjusted_module_value(module: &ModuleInstance, name: &str, direction: i8) -> Option<Value> {
+fn adjusted_module_value(
+    module: &ModuleInstance,
+    input: &InputMetadata,
+    component: u8,
+    direction: i8,
+) -> Option<Value> {
     let direction = direction as f32;
-    let value = module_parameter(module, name)?;
-    Some(match value {
-        Value::Bool(value) => Value::Bool(!value),
-        Value::U32(value) => Value::U32(if direction < 0.0 {
-            value.saturating_sub(if name == "burst_count" { 4 } else { 1 })
-        } else {
-            value.saturating_add(if name == "burst_count" { 4 } else { 1 })
-        }),
-        Value::Scalar(value) => {
-            let step = match name {
-                "spawn_rate" | "direction_degrees" | "spread_degrees" => 5.0,
-                "drag" => 0.1,
-                _ => 0.5,
+    let value = module_parameter(module, input.name)?;
+    Some(match (&input.control, value) {
+        (InputControl::Toggle, Value::Bool(value)) => Value::Bool(!value),
+        (InputControl::Number { step, min, max }, Value::U32(value)) => {
+            let delta = (*step).round().max(1.0) as u32;
+            let value = if direction < 0.0 {
+                value.saturating_sub(delta)
+            } else {
+                value.saturating_add(delta)
             };
-            let mut value = value + direction * step;
-            if matches!(name, "spawn_rate" | "spread_degrees" | "drag") {
-                value = value.max(0.0);
-            }
-            Value::Scalar(value)
+            Value::U32(clamp_number(value as f32, *min, *max).round() as u32)
         }
-        Value::Vec2(mut value) => {
-            value[1] += direction * 5.0;
+        (InputControl::Number { step, min, max }, Value::Scalar(value)) => {
+            Value::Scalar(clamp_number(value + direction * step, *min, *max))
+        }
+        (InputControl::Vector { step, min, max }, Value::Vec2(mut value)) => {
+            let target = value.get_mut(component as usize)?;
+            *target = clamp_number(*target + direction * step, *min, *max);
             Value::Vec2(value)
         }
-        Value::Vec3(mut value) => {
-            for component in &mut value {
-                *component += direction * 0.1;
-            }
+        (InputControl::Vector { step, min, max }, Value::Vec3(mut value)) => {
+            let target = value.get_mut(component as usize)?;
+            *target = clamp_number(*target + direction * step, *min, *max);
             Value::Vec3(value)
         }
-        Value::Vec4(mut value) => {
-            for component in &mut value {
-                *component += direction * 0.1;
-            }
+        (InputControl::Vector { step, min, max }, Value::Vec4(mut value)) => {
+            let target = value.get_mut(component as usize)?;
+            *target = clamp_number(*target + direction * step, *min, *max);
             Value::Vec4(value)
         }
-        Value::Range(mut value) => {
-            let step = if name == "speed" { 5.0 } else { 0.1 };
-            value.min += direction * step;
-            value.max += direction * step;
-            if name == "lifetime" {
-                value.min = value.min.max(0.05);
-                value.max = value.max.max(value.min);
+        (InputControl::Range { step, min, max }, Value::Range(mut value)) => {
+            if component == 0 {
+                value.min = clamp_number(value.min + direction * step, *min, *max).min(value.max);
+            } else {
+                value.max = clamp_number(value.max + direction * step, *min, *max).max(value.min);
             }
             Value::Range(value)
         }
-        Value::Curve(mut curve) => {
-            let index = curve.keys.len() / 2;
-            let key = curve.keys.get_mut(index)?;
-            let step = if name == "opacity" { 0.1 } else { 1.0 };
-            key.value = (key.value + direction * step).max(0.0);
-            if name == "opacity" {
-                key.value = key.value.min(1.0);
-            }
-            Value::Curve(curve)
-        }
-        Value::Gradient(mut gradient) => {
-            for key in &mut gradient.keys {
-                key.color.rotate_left(if direction < 0.0 { 3 } else { 1 });
-            }
-            Value::Gradient(gradient)
-        }
-        Value::Shape(shape) => {
+        (InputControl::Choice, Value::Shape(shape)) => {
             let index = match shape {
                 EmitterShape::Point => 0,
                 EmitterShape::Circle { .. } => 1,
@@ -1718,8 +1862,30 @@ fn adjusted_module_value(module: &ModuleInstance, name: &str, direction: i8) -> 
                 },
             })
         }
-        Value::Text(_) | Value::Parameter(_) | Value::Asset(_) | Value::Material(_) => return None,
+        _ => return None,
     })
+}
+
+fn clamp_number(mut value: f32, min: Option<f32>, max: Option<f32>) -> f32 {
+    if let Some(min) = min {
+        value = value.max(min);
+    }
+    if let Some(max) = max {
+        value = value.min(max);
+    }
+    value
+}
+
+fn spawn_workspace(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    registry: &EditorModuleRegistry,
+    workspace: &WorkspaceState,
+) {
+    match workspace.tab {
+        WorkspaceTab::Timeline => spawn_timeline(parent, session),
+        WorkspaceTab::Curves => spawn_curves_workspace(parent, session, registry, workspace),
+    }
 }
 
 fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
@@ -1749,18 +1915,8 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                     BackgroundColor(theme::PANEL_LIGHT),
                 ))
                 .with_children(|header| {
-                    header.spawn((
-                        Text::new("TIMELINE"),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT_MUTED),
-                        Node {
-                            width: Val::Px(190.0),
-                            ..default()
-                        },
-                    ));
+                    workspace_tab_button(header, "TIMELINE", WorkspaceTab::Timeline, true);
+                    workspace_tab_button(header, "CURVES", WorkspaceTab::Curves, false);
                     header.spawn((
                         Text::new("00:00.000  /  00:02.800"),
                         TimeLabel,
@@ -1880,6 +2036,632 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                         ));
                     });
                 });
+        });
+}
+
+fn workspace_tab_button(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    tab: WorkspaceTab,
+    selected: bool,
+) {
+    parent
+        .spawn((
+            Button,
+            EditorAction::SelectWorkspace(tab),
+            Node {
+                width: Val::Px(82.0),
+                height: Val::Px(28.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(if selected {
+                theme::SELECTION
+            } else {
+                theme::PANEL_LIGHT
+            }),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(if selected {
+                    theme::ACCENT
+                } else {
+                    theme::TEXT_MUTED
+                }),
+            ));
+        });
+}
+
+fn spawn_curves_workspace(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    registry: &EditorModuleRegistry,
+    workspace: &WorkspaceState,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(226.0),
+                flex_direction: FlexDirection::Column,
+                border: UiRect::top(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|workspace_panel| {
+            workspace_panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(38.0),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(Val::Px(14.0)),
+                        column_gap: Val::Px(8.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL_LIGHT),
+                ))
+                .with_children(|header| {
+                    workspace_tab_button(header, "TIMELINE", WorkspaceTab::Timeline, false);
+                    workspace_tab_button(header, "CURVES", WorkspaceTab::Curves, true);
+                    header.spawn(Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    });
+                    header.spawn((
+                        Text::new("NORMALIZED LIFETIME  ·  DRAG KEYS TO EDIT"),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_FAINT),
+                    ));
+                });
+            workspace_panel
+                .spawn(Node {
+                    flex_grow: 1.0,
+                    width: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Row,
+                    ..default()
+                })
+                .with_children(|body| {
+                    spawn_complex_input_list(body, session, registry, workspace);
+                    let Some(selection) = workspace.complex else {
+                        body.spawn((
+                            Text::new("Choose a curve or gradient from the list."),
+                            TextFont {
+                                font_size: FontSize::Px(12.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT_MUTED),
+                            Node {
+                                margin: UiRect::all(Val::Px(28.0)),
+                                ..default()
+                            },
+                        ));
+                        return;
+                    };
+                    let Some((module, input, value)) =
+                        resolve_complex_input(session, registry, selection)
+                    else {
+                        body.spawn((
+                            Text::new("The selected property no longer exists."),
+                            TextFont {
+                                font_size: FontSize::Px(12.0),
+                                ..default()
+                            },
+                            TextColor(Color::srgb(1.0, 0.38, 0.32)),
+                            Node {
+                                margin: UiRect::all(Val::Px(28.0)),
+                                ..default()
+                            },
+                        ));
+                        return;
+                    };
+                    body.spawn(Node {
+                        flex_grow: 1.0,
+                        height: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(Val::Px(8.0)),
+                        row_gap: Val::Px(6.0),
+                        ..default()
+                    })
+                    .with_children(|editor| match value {
+                        Value::Curve(curve) => spawn_curve_graph(
+                            editor,
+                            module.id,
+                            selection.input,
+                            input,
+                            &curve,
+                            selection.key,
+                        ),
+                        Value::Gradient(gradient) => spawn_gradient_graph(
+                            editor,
+                            module.id,
+                            selection.input,
+                            input,
+                            &gradient,
+                            selection.key,
+                        ),
+                        _ => {}
+                    });
+                });
+        });
+}
+
+fn spawn_complex_input_list(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    registry: &EditorModuleRegistry,
+    workspace: &WorkspaceState,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(224.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(7.0)),
+                row_gap: Val::Px(4.0),
+                border: UiRect::right(Val::Px(1.0)),
+                overflow: Overflow::scroll_y(),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+            BorderColor::all(theme::BORDER),
+            ScrollPosition::default(),
+        ))
+        .with_children(|list| {
+            for module in &session.selected_layer().modules {
+                let Some(metadata) = registry.0.get(&module.module_type) else {
+                    continue;
+                };
+                for (input_index, input) in metadata.inputs.iter().enumerate() {
+                    if !matches!(
+                        input.control,
+                        InputControl::Curve { .. } | InputControl::Gradient
+                    ) {
+                        continue;
+                    }
+                    let selected = workspace.complex.is_some_and(|selection| {
+                        selection.module == module.id && selection.input == input_index as u8
+                    });
+                    parent_list_button(
+                        list,
+                        &format!("{} / {}", metadata.display_name, input.display_name),
+                        EditorAction::EditComplexInput(module.id, input_index as u8),
+                        selected,
+                    );
+                }
+            }
+        });
+}
+
+fn parent_list_button(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    action: EditorAction,
+    selected: bool,
+) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(28.0),
+                padding: UiRect::horizontal(Val::Px(7.0)),
+                align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(if selected {
+                theme::SELECTION
+            } else {
+                theme::BUTTON
+            }),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(if selected {
+                    theme::ACCENT
+                } else {
+                    theme::TEXT_MUTED
+                }),
+            ));
+        });
+}
+
+fn resolve_complex_input<'a>(
+    session: &'a EditorSession,
+    registry: &'a EditorModuleRegistry,
+    selection: ComplexSelection,
+) -> Option<(&'a ModuleInstance, &'a InputMetadata, Value)> {
+    let module = session
+        .selected_layer()
+        .modules
+        .iter()
+        .find(|module| module.id == selection.module)?;
+    let input = registry
+        .0
+        .get(&module.module_type)?
+        .inputs
+        .get(selection.input as usize)?;
+    let value = module_parameter(module, input.name)?;
+    Some((module, input, value))
+}
+
+fn spawn_curve_graph(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input_index: u8,
+    input: &InputMetadata,
+    curve: &aestra_bevy::Curve,
+    selected_key: usize,
+) {
+    let InputControl::Curve { step, min, max } = input.control else {
+        return;
+    };
+    parent.spawn((
+        Text::new(format!("{}  ·  {}", input.display_name, input.description)),
+        TextFont {
+            font_size: FontSize::Px(10.0),
+            ..default()
+        },
+        TextColor(theme::TEXT_MUTED),
+    ));
+    parent
+        .spawn((
+            CurveGraph,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(112.0),
+                position_type: PositionType::Relative,
+                overflow: Overflow::clip(),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::TIMELINE_BG),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|graph| {
+            for index in 0..64 {
+                let time = index as f32 / 63.0;
+                let normalized = ((curve.sample(time) - min) / (max - min)).clamp(0.0, 1.0);
+                graph.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Percent(time * 100.0),
+                        top: Val::Percent((1.0 - normalized) * 100.0),
+                        width: Val::Px(2.0),
+                        height: Val::Px(2.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme::ACCENT_DIM),
+                ));
+            }
+            for (key_index, key) in curve.keys.iter().enumerate() {
+                let normalized = ((key.value - min) / (max - min)).clamp(0.0, 1.0);
+                let parameter = input.name;
+                graph
+                    .spawn((
+                        Button,
+                        UiTransform::default(),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(key.time * 100.0),
+                            top: Val::Percent((1.0 - normalized) * 100.0),
+                            width: Val::Px(11.0),
+                            height: Val::Px(11.0),
+                            border: UiRect::all(Val::Px(if key_index == selected_key {
+                                2.0
+                            } else {
+                                1.0
+                            })),
+                            border_radius: BorderRadius::MAX,
+                            ..default()
+                        },
+                        BackgroundColor(theme::ACCENT),
+                        BorderColor::all(if key_index == selected_key {
+                            Color::WHITE
+                        } else {
+                            theme::ACCENT_DIM
+                        }),
+                    ))
+                    .observe(
+                        move |click: On<Pointer<Click>>,
+                              mut session: ResMut<EditorSession>,
+                              mut workspace: ResMut<WorkspaceState>| {
+                            if click.button == PointerButton::Primary {
+                                workspace.complex = Some(ComplexSelection {
+                                    module,
+                                    input: input_index,
+                                    key: key_index,
+                                });
+                                session.ui_revision += 1;
+                            }
+                        },
+                    )
+                    .observe(
+                        |drag: On<Pointer<Drag>>, mut transforms: Query<&mut UiTransform>| {
+                            if drag.button == PointerButton::Primary
+                                && let Ok(mut transform) = transforms.get_mut(drag.entity)
+                            {
+                                transform.translation = Val2::px(drag.distance.x, drag.distance.y);
+                            }
+                        },
+                    )
+                    .observe(
+                        move |drag: On<Pointer<DragEnd>>,
+                              graph: Single<&ComputedNode, With<CurveGraph>>,
+                              mut transforms: Query<&mut UiTransform>,
+                              mut session: ResMut<EditorSession>,
+                              mut workspace: ResMut<WorkspaceState>| {
+                            if drag.button != PointerButton::Primary {
+                                return;
+                            }
+                            if let Ok(mut transform) = transforms.get_mut(drag.entity) {
+                                transform.translation = Val2::ZERO;
+                            }
+                            let graph_size = graph.size() * graph.inverse_scale_factor;
+                            let Some(Value::Curve(curve)) = session
+                                .selected_layer()
+                                .modules
+                                .iter()
+                                .find(|item| item.id == module)
+                                .and_then(|item| module_parameter(item, parameter))
+                            else {
+                                return;
+                            };
+                            let Some(mut key) = curve.keys.get(key_index).copied() else {
+                                return;
+                            };
+                            let previous = key_index
+                                .checked_sub(1)
+                                .and_then(|index| curve.keys.get(index))
+                                .map_or(0.0, |key| key.time + 0.001);
+                            let next = curve
+                                .keys
+                                .get(key_index + 1)
+                                .map_or(1.0, |key| key.time - 0.001);
+                            key.time =
+                                (key.time + drag.distance.x / graph_size.x).clamp(previous, next);
+                            key.value = (key.value - drag.distance.y / graph_size.y * (max - min))
+                                .clamp(min, max);
+                            session.set_curve_key(module, parameter, key_index, key);
+                            workspace.complex = Some(ComplexSelection {
+                                module,
+                                input: input_index,
+                                key: key_index,
+                            });
+                        },
+                    );
+            }
+        });
+    spawn_complex_controls(parent, curve.keys.get(selected_key).copied(), None, step);
+}
+
+fn spawn_gradient_graph(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input_index: u8,
+    input: &InputMetadata,
+    gradient: &aestra_bevy::Gradient,
+    selected_key: usize,
+) {
+    parent.spawn((
+        Text::new(format!("{}  ·  {}", input.display_name, input.description)),
+        TextFont {
+            font_size: FontSize::Px(10.0),
+            ..default()
+        },
+        TextColor(theme::TEXT_MUTED),
+    ));
+    parent
+        .spawn((
+            CurveGraph,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(82.0),
+                position_type: PositionType::Relative,
+                overflow: Overflow::clip(),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::TIMELINE_BG),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|graph| {
+            for index in 0..64 {
+                let time = index as f32 / 63.0;
+                let color = gradient.sample(time);
+                graph.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Percent(time * 100.0),
+                        top: Val::Px(0.0),
+                        width: Val::Percent(100.0 / 64.0 + 0.1),
+                        height: Val::Percent(100.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(color[0], color[1], color[2], color[3])),
+                ));
+            }
+            for (key_index, key) in gradient.keys.iter().enumerate() {
+                let parameter = input.name;
+                graph
+                    .spawn((
+                        Button,
+                        UiTransform::default(),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(key.time * 100.0),
+                            bottom: Val::Px(4.0),
+                            width: Val::Px(13.0),
+                            height: Val::Px(20.0),
+                            border: UiRect::all(Val::Px(if key_index == selected_key {
+                                2.0
+                            } else {
+                                1.0
+                            })),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(
+                            key.color[0],
+                            key.color[1],
+                            key.color[2],
+                            key.color[3],
+                        )),
+                        BorderColor::all(if key_index == selected_key {
+                            Color::WHITE
+                        } else {
+                            theme::BORDER_BRIGHT
+                        }),
+                    ))
+                    .observe(
+                        move |click: On<Pointer<Click>>,
+                              mut session: ResMut<EditorSession>,
+                              mut workspace: ResMut<WorkspaceState>| {
+                            if click.button == PointerButton::Primary {
+                                workspace.complex = Some(ComplexSelection {
+                                    module,
+                                    input: input_index,
+                                    key: key_index,
+                                });
+                                session.ui_revision += 1;
+                            }
+                        },
+                    )
+                    .observe(
+                        |drag: On<Pointer<Drag>>, mut transforms: Query<&mut UiTransform>| {
+                            if drag.button == PointerButton::Primary
+                                && let Ok(mut transform) = transforms.get_mut(drag.entity)
+                            {
+                                transform.translation = Val2::px(drag.distance.x, 0.0);
+                            }
+                        },
+                    )
+                    .observe(
+                        move |drag: On<Pointer<DragEnd>>,
+                              graph: Single<&ComputedNode, With<CurveGraph>>,
+                              mut transforms: Query<&mut UiTransform>,
+                              mut session: ResMut<EditorSession>| {
+                            if drag.button != PointerButton::Primary {
+                                return;
+                            }
+                            if let Ok(mut transform) = transforms.get_mut(drag.entity) {
+                                transform.translation = Val2::ZERO;
+                            }
+                            let width = graph.size().x * graph.inverse_scale_factor;
+                            let Some(Value::Gradient(gradient)) = session
+                                .selected_layer()
+                                .modules
+                                .iter()
+                                .find(|item| item.id == module)
+                                .and_then(|item| module_parameter(item, parameter))
+                            else {
+                                return;
+                            };
+                            let Some(mut key) = gradient.keys.get(key_index).copied() else {
+                                return;
+                            };
+                            let previous = key_index
+                                .checked_sub(1)
+                                .and_then(|index| gradient.keys.get(index))
+                                .map_or(0.0, |key| key.time + 0.001);
+                            let next = gradient
+                                .keys
+                                .get(key_index + 1)
+                                .map_or(1.0, |key| key.time - 0.001);
+                            key.time = (key.time + drag.distance.x / width).clamp(previous, next);
+                            session.set_gradient_key(module, parameter, key_index, key);
+                        },
+                    );
+            }
+        });
+    spawn_complex_controls(parent, None, gradient.keys.get(selected_key).copied(), 0.05);
+}
+
+fn spawn_complex_controls(
+    parent: &mut ChildSpawnerCommands,
+    curve_key: Option<CurveKey>,
+    color_key: Option<ColorKey>,
+    value_step: f32,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Px(34.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(5.0),
+            ..default()
+        })
+        .with_children(|controls| {
+            stack_button(controls, "+ KEY", EditorAction::AddComplexKey, 48.0);
+            stack_button(controls, "− KEY", EditorAction::DeleteComplexKey, 48.0);
+            let time = curve_key
+                .map(|key| key.time)
+                .or_else(|| color_key.map(|key| key.time));
+            if let Some(time) = time {
+                controls.spawn((
+                    Text::new(format!("Time {time:.3}")),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_MUTED),
+                ));
+                mini_button(controls, "−", EditorAction::AdjustComplexTime(-1));
+                mini_button(controls, "+", EditorAction::AdjustComplexTime(1));
+            }
+            if let Some(key) = curve_key {
+                controls.spawn((
+                    Text::new(format!("Value {:.3}  step {value_step:.2}", key.value)),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_MUTED),
+                ));
+                mini_button(controls, "−", EditorAction::AdjustCurveValue(-1));
+                mini_button(controls, "+", EditorAction::AdjustCurveValue(1));
+            }
+            if let Some(key) = color_key {
+                for (channel, label) in ["R", "G", "B", "A"].into_iter().enumerate() {
+                    controls.spawn((
+                        Text::new(format!("{label}{:.2}", key.color[channel])),
+                        TextFont {
+                            font_size: FontSize::Px(8.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                    ));
+                    mini_button(
+                        controls,
+                        "−",
+                        EditorAction::AdjustGradientChannel(channel as u8, -1),
+                    );
+                    mini_button(
+                        controls,
+                        "+",
+                        EditorAction::AdjustGradientChannel(channel as u8, 1),
+                    );
+                }
+            }
         });
 }
 
@@ -2109,6 +2891,7 @@ fn keyboard_shortcuts(
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     palette: Res<ModulePaletteState>,
+    mut workspace: ResMut<WorkspaceState>,
 ) {
     if palette.open {
         return;
@@ -2122,9 +2905,11 @@ fn keyboard_shortcuts(
     }
     if control && keys.just_pressed(KeyCode::KeyN) && confirm_discard(&session) {
         session.new_effect();
+        workspace.complex = None;
     }
     if control && keys.just_pressed(KeyCode::KeyO) {
         open_effect_dialog(&mut session);
+        workspace.complex = None;
     }
     if control && keys.just_pressed(KeyCode::KeyS) {
         save_session(&mut session, shift);
@@ -2171,6 +2956,7 @@ fn handle_buttons(
     catalog: Res<EffectCatalog>,
     registry: Res<EditorModuleRegistry>,
     mut palette: ResMut<ModulePaletteState>,
+    mut workspace: ResMut<WorkspaceState>,
 ) {
     for (interaction, action, layer_row, mut background) in &mut buttons {
         match *interaction {
@@ -2199,9 +2985,13 @@ fn handle_buttons(
                     EditorAction::NewEffect => {
                         if confirm_discard(&session) {
                             session.new_effect();
+                            workspace.complex = None;
                         }
                     }
-                    EditorAction::OpenEffect => open_effect_dialog(&mut session),
+                    EditorAction::OpenEffect => {
+                        open_effect_dialog(&mut session);
+                        workspace.complex = None;
+                    }
                     EditorAction::OpenCatalog(index) => {
                         if confirm_discard(&session) {
                             if let Some(entry) = catalog.entries.get(index)
@@ -2209,6 +2999,7 @@ fn handle_buttons(
                             {
                                 session.status = format!("Open failed: {error}");
                             }
+                            workspace.complex = None;
                         } else {
                             session.status = "Open cancelled".into();
                         }
@@ -2220,9 +3011,18 @@ fn handle_buttons(
                     EditorAction::Undo => session.undo(),
                     EditorAction::Redo => session.redo(),
                     EditorAction::AddLayer => session.add_layer(),
-                    EditorAction::DuplicateLayer => session.duplicate_selected_layer(),
-                    EditorAction::DeleteLayer => session.delete_selected_layer(),
-                    EditorAction::SelectLayer(index) => session.select_layer(index),
+                    EditorAction::DuplicateLayer => {
+                        session.duplicate_selected_layer();
+                        workspace.complex = None;
+                    }
+                    EditorAction::DeleteLayer => {
+                        session.delete_selected_layer();
+                        workspace.complex = None;
+                    }
+                    EditorAction::SelectLayer(index) => {
+                        session.select_layer(index);
+                        workspace.complex = None;
+                    }
                     EditorAction::LayerStart(delta) => session.adjust_selected_start(delta),
                     EditorAction::LayerDuration(delta) => {
                         session.adjust_selected_duration(delta);
@@ -2260,14 +3060,73 @@ fn handle_buttons(
                     EditorAction::AdjustModuleInput {
                         module,
                         input,
+                        component,
                         direction,
-                    } => adjust_module_input(&mut session, &registry.0, module, input, direction),
+                    } => adjust_module_input(
+                        &mut session,
+                        &registry.0,
+                        module,
+                        input,
+                        component,
+                        direction,
+                    ),
+                    EditorAction::EditComplexInput(module, input) => {
+                        workspace.tab = WorkspaceTab::Curves;
+                        workspace.complex = Some(ComplexSelection {
+                            module,
+                            input,
+                            key: 0,
+                        });
+                        session.ui_revision += 1;
+                    }
+                    EditorAction::SelectWorkspace(tab) => {
+                        workspace.tab = tab;
+                        session.ui_revision += 1;
+                    }
+                    EditorAction::AddComplexKey => edit_complex_key(
+                        &mut session,
+                        &registry.0,
+                        &mut workspace,
+                        ComplexKeyEdit::Add,
+                    ),
+                    EditorAction::DeleteComplexKey => edit_complex_key(
+                        &mut session,
+                        &registry.0,
+                        &mut workspace,
+                        ComplexKeyEdit::Delete,
+                    ),
+                    EditorAction::AdjustComplexTime(direction) => edit_complex_key(
+                        &mut session,
+                        &registry.0,
+                        &mut workspace,
+                        ComplexKeyEdit::Time(direction),
+                    ),
+                    EditorAction::AdjustCurveValue(direction) => edit_complex_key(
+                        &mut session,
+                        &registry.0,
+                        &mut workspace,
+                        ComplexKeyEdit::CurveValue(direction),
+                    ),
+                    EditorAction::AdjustGradientChannel(channel, direction) => edit_complex_key(
+                        &mut session,
+                        &registry.0,
+                        &mut workspace,
+                        ComplexKeyEdit::GradientChannel(channel, direction),
+                    ),
                     EditorAction::ToggleModule(id) => session.toggle_module(id),
                     EditorAction::MoveModule(id, direction) => {
                         session.move_module(id, direction);
                     }
                     EditorAction::DuplicateModule(id) => session.duplicate_module(id),
-                    EditorAction::DeleteModule(id) => session.delete_module(id),
+                    EditorAction::DeleteModule(id) => {
+                        session.delete_module(id);
+                        if workspace
+                            .complex
+                            .is_some_and(|selection| selection.module == id)
+                        {
+                            workspace.complex = None;
+                        }
+                    }
                     EditorAction::ToggleRenderer(id) => session.toggle_renderer(id),
                     EditorAction::CycleRendererBlend(id) => session.cycle_renderer_blend(id),
                     EditorAction::AdjustRendererSoftness(id, direction) => {
@@ -2290,6 +3149,7 @@ fn adjust_module_input(
     registry: &ModuleRegistry,
     module_id: ModuleId,
     input_index: u8,
+    component: u8,
     direction: i8,
 ) {
     let Some(module) = session
@@ -2309,11 +3169,181 @@ fn adjust_module_input(
         return;
     };
     let parameter = input.name;
-    let Some(value) = adjusted_module_value(module, parameter, direction) else {
-        session.status = format!("{parameter} needs a dedicated editor");
+    let Some(value) = adjusted_module_value(module, input, component, direction) else {
+        session.status = format!("{} needs a dedicated editor", input.display_name);
         return;
     };
     session.set_module_parameter(module_id, parameter, value);
+}
+
+#[derive(Clone, Copy)]
+enum ComplexKeyEdit {
+    Add,
+    Delete,
+    Time(i8),
+    CurveValue(i8),
+    GradientChannel(u8, i8),
+}
+
+fn edit_complex_key(
+    session: &mut EditorSession,
+    registry: &ModuleRegistry,
+    workspace: &mut WorkspaceState,
+    edit: ComplexKeyEdit,
+) {
+    let Some(selection) = workspace.complex else {
+        session.status = "Select a curve or gradient first".into();
+        return;
+    };
+    let Some(module) = session
+        .selected_layer()
+        .modules
+        .iter()
+        .find(|module| module.id == selection.module)
+    else {
+        session.status = "The selected module no longer exists".into();
+        return;
+    };
+    let Some(input) = registry
+        .get(&module.module_type)
+        .and_then(|metadata| metadata.inputs.get(selection.input as usize))
+    else {
+        session.status = "The selected input metadata no longer exists".into();
+        return;
+    };
+    let parameter = input.name;
+    let control = input.control;
+    let Some(value) = module_parameter(module, parameter) else {
+        session.status = "The selected authored value no longer exists".into();
+        return;
+    };
+
+    match (value, edit) {
+        (Value::Curve(curve), ComplexKeyEdit::Add) => {
+            let (index, time) = insertion_time(
+                &curve.keys.iter().map(|key| key.time).collect::<Vec<_>>(),
+                selection.key,
+            );
+            let value = curve.sample(time);
+            session.add_curve_key(
+                selection.module,
+                parameter,
+                index,
+                CurveKey::new(time, value),
+            );
+            workspace.complex = Some(ComplexSelection {
+                key: index,
+                ..selection
+            });
+        }
+        (Value::Gradient(gradient), ComplexKeyEdit::Add) => {
+            let (index, time) = insertion_time(
+                &gradient.keys.iter().map(|key| key.time).collect::<Vec<_>>(),
+                selection.key,
+            );
+            let color = gradient.sample(time);
+            session.add_gradient_key(
+                selection.module,
+                parameter,
+                index,
+                ColorKey::new(time, color),
+            );
+            workspace.complex = Some(ComplexSelection {
+                key: index,
+                ..selection
+            });
+        }
+        (Value::Curve(curve), ComplexKeyEdit::Delete) => {
+            if curve.keys.len() <= 2 {
+                session.status = "A curve must keep at least two keys".into();
+                return;
+            }
+            let index = selection.key.min(curve.keys.len() - 1);
+            session.remove_curve_key(selection.module, parameter, index);
+            workspace.complex = Some(ComplexSelection {
+                key: index.min(curve.keys.len() - 2),
+                ..selection
+            });
+        }
+        (Value::Gradient(gradient), ComplexKeyEdit::Delete) => {
+            if gradient.keys.len() <= 2 {
+                session.status = "A gradient must keep at least two keys".into();
+                return;
+            }
+            let index = selection.key.min(gradient.keys.len() - 1);
+            session.remove_gradient_key(selection.module, parameter, index);
+            workspace.complex = Some(ComplexSelection {
+                key: index.min(gradient.keys.len() - 2),
+                ..selection
+            });
+        }
+        (Value::Curve(curve), ComplexKeyEdit::Time(direction)) => {
+            let Some(mut key) = curve.keys.get(selection.key).copied() else {
+                return;
+            };
+            key.time = bounded_key_time(
+                &curve.keys.iter().map(|key| key.time).collect::<Vec<_>>(),
+                selection.key,
+                key.time + direction as f32 * 0.01,
+            );
+            session.set_curve_key(selection.module, parameter, selection.key, key);
+        }
+        (Value::Gradient(gradient), ComplexKeyEdit::Time(direction)) => {
+            let Some(mut key) = gradient.keys.get(selection.key).copied() else {
+                return;
+            };
+            key.time = bounded_key_time(
+                &gradient.keys.iter().map(|key| key.time).collect::<Vec<_>>(),
+                selection.key,
+                key.time + direction as f32 * 0.01,
+            );
+            session.set_gradient_key(selection.module, parameter, selection.key, key);
+        }
+        (Value::Curve(curve), ComplexKeyEdit::CurveValue(direction)) => {
+            let Some(mut key) = curve.keys.get(selection.key).copied() else {
+                return;
+            };
+            let InputControl::Curve { step, min, max } = control else {
+                return;
+            };
+            key.value = (key.value + direction as f32 * step).clamp(min, max);
+            session.set_curve_key(selection.module, parameter, selection.key, key);
+        }
+        (Value::Gradient(gradient), ComplexKeyEdit::GradientChannel(channel, direction)) => {
+            let Some(mut key) = gradient.keys.get(selection.key).copied() else {
+                return;
+            };
+            let Some(value) = key.color.get_mut(channel as usize) else {
+                return;
+            };
+            *value = (*value + direction as f32 * 0.05).clamp(0.0, 1.0);
+            session.set_gradient_key(selection.module, parameter, selection.key, key);
+        }
+        _ => session.status = "This edit does not apply to the selected property".into(),
+    }
+}
+
+fn insertion_time(times: &[f32], selected: usize) -> (usize, f32) {
+    if times.is_empty() {
+        return (0, 0.5);
+    }
+    let selected = selected.min(times.len() - 1);
+    if let Some(next) = times.get(selected + 1) {
+        (selected + 1, (times[selected] + next) * 0.5)
+    } else if selected > 0 {
+        (selected, (times[selected - 1] + times[selected]) * 0.5)
+    } else {
+        (1, (times[0] + 1.0) * 0.5)
+    }
+}
+
+fn bounded_key_time(times: &[f32], index: usize, value: f32) -> f32 {
+    let previous = index
+        .checked_sub(1)
+        .and_then(|index| times.get(index))
+        .map_or(0.0, |time| time + 0.001);
+    let next = times.get(index + 1).map_or(1.0, |time| time - 0.001);
+    value.clamp(previous, next)
 }
 
 fn open_effect_dialog(session: &mut EditorSession) {
@@ -2435,11 +3465,15 @@ fn rebuild_editor_ui(
     session: Res<EditorSession>,
     menu: Res<MenuState>,
     mut catalog: ResMut<EffectCatalog>,
-    registry_and_palette: (Res<EditorModuleRegistry>, Res<ModulePaletteState>),
+    editor_resources: (
+        Res<EditorModuleRegistry>,
+        Res<ModulePaletteState>,
+        Res<WorkspaceState>,
+    ),
     mut rendered: ResMut<RenderedUiRevision>,
     roots: Query<Entity, With<EditorRoot>>,
 ) {
-    let (registry, palette) = registry_and_palette;
+    let (registry, palette, workspace) = editor_resources;
     if rendered.0 == session.ui_revision {
         return;
     }
@@ -2454,6 +3488,7 @@ fn rebuild_editor_ui(
         &catalog,
         &registry,
         &palette,
+        &workspace,
     );
     rendered.0 = session.ui_revision;
 }
@@ -2606,13 +3641,23 @@ mod tests {
     #[test]
     fn metadata_control_adjusts_builtin_values() {
         let module = ModuleInstance::emission(20.0, 4);
+        let registry = ModuleRegistry::builtin();
+        let metadata = registry.get(&module.module_type).unwrap();
         assert_eq!(
-            adjusted_module_value(&module, "spawn_rate", 1),
+            adjusted_module_value(&module, &metadata.inputs[0], 0, 1),
             Some(Value::Scalar(25.0))
         );
         assert_eq!(
-            adjusted_module_value(&module, "burst_count", -1),
+            adjusted_module_value(&module, &metadata.inputs[1], 0, -1),
             Some(Value::U32(0))
         );
+    }
+
+    #[test]
+    fn complex_key_helpers_preserve_ordering() {
+        assert_eq!(insertion_time(&[0.0, 0.4, 1.0], 1), (2, 0.7));
+        assert_eq!(insertion_time(&[0.0, 1.0], 1), (1, 0.5));
+        assert_eq!(bounded_key_time(&[0.0, 0.4, 1.0], 1, 2.0), 0.999);
+        assert_eq!(bounded_key_time(&[0.0, 0.4, 1.0], 1, -1.0), 0.001);
     }
 }
