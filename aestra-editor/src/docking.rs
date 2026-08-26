@@ -10,16 +10,18 @@ pub(crate) enum DockPanel {
     Inspector,
     Timeline,
     Curves,
+    Diagnostics,
     Changes,
 }
 
 impl DockPanel {
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::Viewport,
         Self::Assets,
         Self::Inspector,
         Self::Timeline,
         Self::Curves,
+        Self::Diagnostics,
         Self::Changes,
     ];
 
@@ -30,6 +32,7 @@ impl DockPanel {
             Self::Inspector => "INSPECTOR",
             Self::Timeline => "TIMELINE",
             Self::Curves => "CURVES",
+            Self::Diagnostics => "DIAGNOSTICS",
             Self::Changes => "CHANGES",
         }
     }
@@ -261,7 +264,12 @@ impl Default for WorkspaceLayout {
         let inspector = DockNode::tabs(3, &[DockPanel::Inspector], DockPanel::Inspector);
         let bottom = DockNode::tabs(
             4,
-            &[DockPanel::Timeline, DockPanel::Curves, DockPanel::Changes],
+            &[
+                DockPanel::Timeline,
+                DockPanel::Curves,
+                DockPanel::Diagnostics,
+                DockPanel::Changes,
+            ],
             DockPanel::Timeline,
         );
         let center_right = DockNode::split(5, DockAxis::Horizontal, 0.68, viewport, inspector);
@@ -390,6 +398,10 @@ impl WorkspaceLayout {
         visit(&self.root, panel)
     }
 
+    pub(crate) fn is_visible(&self, panel: DockPanel) -> bool {
+        self.contains(panel)
+    }
+
     pub(crate) fn close(&mut self, panel: DockPanel) -> bool {
         if !panel.closable() || !self.contains(panel) {
             return false;
@@ -407,7 +419,12 @@ impl WorkspaceLayout {
         if self.root.contains(panel) {
             return self.root.activate(panel);
         }
-        let bottom_group = [DockPanel::Timeline, DockPanel::Curves, DockPanel::Changes];
+        let bottom_group = [
+            DockPanel::Timeline,
+            DockPanel::Curves,
+            DockPanel::Diagnostics,
+            DockPanel::Changes,
+        ];
         let target_and_drop = if bottom_group.contains(&panel) {
             bottom_group
                 .into_iter()
@@ -548,7 +565,9 @@ impl WorkspaceLayout {
 
 fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2] {
     let preferred: [f32; 2] = match panel {
-        DockPanel::Timeline | DockPanel::Curves | DockPanel::Changes => [720.0, 320.0],
+        DockPanel::Timeline | DockPanel::Curves | DockPanel::Diagnostics | DockPanel::Changes => {
+            [720.0, 320.0]
+        }
         DockPanel::Assets | DockPanel::Inspector => [420.0, 520.0],
         DockPanel::Viewport => [760.0, 540.0],
     };
@@ -664,12 +683,34 @@ mod tests {
         };
         assert_eq!(
             stack.tabs,
-            vec![DockPanel::Changes, DockPanel::Timeline, DockPanel::Curves]
+            vec![
+                DockPanel::Changes,
+                DockPanel::Timeline,
+                DockPanel::Curves,
+                DockPanel::Diagnostics,
+            ]
         );
 
         assert!(layout.reorder_tab(DockPanel::Assets, DockPanel::Curves, false));
         assert_eq!(layout.root.node_containing(DockPanel::Assets), Some(bottom));
         assert!(layout.is_active(DockPanel::Assets));
+    }
+
+    #[test]
+    fn diagnostics_restores_to_the_bottom_tab_stack() {
+        let mut layout = WorkspaceLayout::default();
+        let bottom = layout.root.node_containing(DockPanel::Timeline).unwrap();
+        assert_eq!(
+            layout.root.node_containing(DockPanel::Diagnostics),
+            Some(bottom)
+        );
+        assert!(layout.close(DockPanel::Diagnostics));
+        assert!(layout.show(DockPanel::Diagnostics));
+        assert_eq!(
+            layout.root.node_containing(DockPanel::Diagnostics),
+            Some(bottom)
+        );
+        assert!(layout.is_active(DockPanel::Diagnostics));
     }
 
     #[test]

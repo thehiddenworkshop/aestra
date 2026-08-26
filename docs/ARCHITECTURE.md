@@ -78,6 +78,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   persisted native secondary windows for multi-monitor panels, draggable splitter
   gutters, and directional resize cursors.
 - Keeps window chrome stable while rebuilding only effect-dependent workspace content.
+- Projects structured validation reports into a dockable diagnostics workspace with
+  severity filtering and semantic-path navigation; the persistent footer exposes
+  compile health and opens that workspace directly.
 - Consumes `aestra-bevy` through an explicit session resource.
 - Must not add game-only concepts to the semantic asset schema.
 

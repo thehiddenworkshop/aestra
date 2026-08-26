@@ -11,7 +11,7 @@ The first vertical slice already includes:
 - immutable compiled effects and seeded deterministic runtime instances;
 - typed effect-parameter bindings with zero-recompile runtime overrides;
 - compiled curves/gradients, constant folding, and particle-attribute liveness;
-- an effect library, layer stack, viewport, inspector, interactive timeline, transport, and status bar;
+- an effect library, layer stack, viewport, inspector, interactive timeline, diagnostics workspace, transport, and status bar;
 - a BSN-composed editor shell with a persistent recursive dock tree, tab insertion,
   directional splitting, floating panel windows, and visible draggable splitter gutters;
 - deterministic emitter evaluation with point, circle, ring, and cone shapes;
@@ -45,7 +45,9 @@ Controls:
 - drag beside another tab to join its stack and insert before or after it; use the trailing strip to append
 - right-click a docked tab and choose `Float Panel` to create a native OS window that can move to another monitor
 - close the secondary OS window to return its panel to the main workspace
-- `View > Show ...`: restore a closed Assets, Inspector, Timeline, Curves, or Changes panel
+- diagnostics: filter by severity and click an issue to reveal its owning emitter, module, or renderer
+- footer compile state: click to open or reveal Diagnostics
+- `View > Panels`: use checkboxes to show or hide every authoring panel
 - empty dock branches collapse completely; drop targets appear only while dragging a tab
 - `View > Reset Workspace`: restore the default panel placement and sizes
 - inspector `-` / `+`: tune emission, timing, size, opacity, and duration

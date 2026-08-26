@@ -35,8 +35,10 @@ architecture vision; this file is the shorter delivery plan.
   through tab strips or split through directional panel-content drop regions; empty branches collapse automatically,
   splitters expose directional cursors, closed panels can be restored from View, and
   docked tabs can become persisted native secondary windows through an explicit
-  context action, enabling multi-monitor layouts. The remaining M5 work is the broader
-  diagnostics/generated-code/profiler tab set, viewport gizmos, and recovery.
+  context action, enabling multi-monitor layouts. Structured diagnostics now have a
+  dedicated severity-filtered dock panel with navigation to owning semantic objects,
+  a persistent compile-state footer shortcut, and panel visibility controls under View.
+  The remaining M5 work is the generated-code/profiler tab set, viewport gizmos, and recovery.
 
 ## 1. Assessment of the current prototype
 

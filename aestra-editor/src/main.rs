@@ -3,10 +3,11 @@ mod session;
 mod theme;
 mod ui_shell;
 
-use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction};
+use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    ColorKey, CurveKey, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterShape, ModuleId,
-    ModuleInstance, ModuleParameters, RendererId, RendererProperties, StageKind, Value,
+    ColorKey, CurveKey, Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterShape,
+    ModuleId, ModuleInstance, ModuleParameters, RendererId, RendererProperties, StageKind,
+    ValidationReport, Value,
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use bevy::{
@@ -42,6 +43,7 @@ fn main() {
         .init_resource::<MenuState>()
         .init_resource::<EditorModuleRegistry>()
         .init_resource::<ModulePaletteState>()
+        .init_resource::<DiagnosticsPanelState>()
         .init_resource::<WorkspaceState>()
         .init_resource::<DockDragState>()
         .init_resource::<ResizeState>()
@@ -72,6 +74,7 @@ fn main() {
                     advance_playback,
                     update_preview,
                     update_editor_labels,
+                    update_compile_status,
                     update_history_actions,
                 )
                     .chain(),
@@ -79,6 +82,7 @@ fn main() {
                     update_playhead,
                     update_layer_selection,
                     update_menu_visibility,
+                    update_panel_visibility_labels,
                     update_preview_grid_visibility,
                     clear_finished_dock_drag,
                     sync_dock_drop_hints,
@@ -142,11 +146,18 @@ enum EditorAction {
     DeleteRenderer(RendererId),
     ApplyPendingChange,
     DiscardPendingChange,
+    SetDiagnosticsFilter(DiagnosticsFilter),
+    SelectDiagnostic {
+        source: DiagnosticSource,
+        index: usize,
+    },
     SelectDockPanel(DockPanel),
     CloseDockPanel(DockPanel),
     ShowDockPanel(DockPanel),
+    ToggleDockPanel(DockPanel),
     FloatDockPanel(DockPanel, [f32; 2]),
     ToggleMenu(MenuKind),
+    TogglePanelsSubmenu,
     ToggleGrid,
     ResetWorkspaceLayout,
     ShowAbout,
@@ -226,6 +237,48 @@ impl Default for ModulePaletteState {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum DiagnosticsFilter {
+    #[default]
+    All,
+    Errors,
+    Warnings,
+    Info,
+}
+
+impl DiagnosticsFilter {
+    const ALL: [Self; 4] = [Self::All, Self::Errors, Self::Warnings, Self::Info];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::All => "ALL",
+            Self::Errors => "ERRORS",
+            Self::Warnings => "WARNINGS",
+            Self::Info => "INFO",
+        }
+    }
+
+    fn matches(self, severity: DiagnosticSeverity) -> bool {
+        match self {
+            Self::All => true,
+            Self::Errors => severity == DiagnosticSeverity::Error,
+            Self::Warnings => severity == DiagnosticSeverity::Warning,
+            Self::Info => severity == DiagnosticSeverity::Info,
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+struct DiagnosticsPanelState {
+    filter: DiagnosticsFilter,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiagnosticSource {
+    Current,
+    Pending,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MenuKind {
     File,
@@ -237,6 +290,7 @@ enum MenuKind {
 #[derive(Resource)]
 struct MenuState {
     open: Option<MenuKind>,
+    panels_open: bool,
     tab_context: Option<TabContextMenu>,
     show_grid: bool,
     show_about: bool,
@@ -246,6 +300,7 @@ impl Default for MenuState {
     fn default() -> Self {
         Self {
             open: None,
+            panels_open: false,
             tab_context: None,
             show_grid: true,
             show_about: false,
@@ -291,6 +346,18 @@ struct DockTabAppendZone(DockNodeId);
 
 #[derive(Component)]
 struct DockTabAppendIndicator(DockNodeId);
+
+#[derive(Component)]
+struct DiagnosticsFilterButton(DiagnosticsFilter);
+
+#[derive(Component)]
+struct DiagnosticRow;
+
+#[derive(Component)]
+struct PanelsSubmenu;
+
+#[derive(Component)]
+struct PanelVisibilityLabel(DockPanel);
 
 #[derive(Component)]
 struct NativeFloatingWindow(DockPanel);
@@ -397,13 +464,19 @@ struct PlaybackLabel;
 struct TimeLabel;
 
 #[derive(Component)]
-struct StatusLabel;
-
-#[derive(Component)]
 struct InspectorTitle;
 
 #[derive(Component)]
 struct ParticleCountLabel;
+
+#[derive(Component)]
+struct CompileStatusLabel;
+
+#[derive(Component)]
+struct CompileStatusButton;
+
+#[derive(Component)]
+struct CompileStatusDot;
 
 #[derive(Component)]
 struct Playhead;
@@ -417,6 +490,7 @@ struct PanelSources<'a> {
     catalog: &'a EffectCatalog,
     registry: &'a EditorModuleRegistry,
     palette: &'a ModulePaletteState,
+    diagnostics_panel: &'a DiagnosticsPanelState,
 }
 
 #[derive(SystemParam)]
@@ -426,6 +500,7 @@ struct UiBuildResources<'w> {
     menu: Res<'w, MenuState>,
     registry: Res<'w, EditorModuleRegistry>,
     palette: Res<'w, ModulePaletteState>,
+    diagnostics_panel: Res<'w, DiagnosticsPanelState>,
     workspace: Res<'w, WorkspaceState>,
 }
 
@@ -455,16 +530,18 @@ fn setup_editor(
         Res<EditorModuleRegistry>,
         Res<ModulePaletteState>,
         Res<WorkspaceState>,
+        Res<DiagnosticsPanelState>,
     ),
     mut rendered: ResMut<RenderedUiRevision>,
 ) {
-    let (registry, palette, workspace) = editor_resources;
+    let (registry, palette, workspace, diagnostics_panel) = editor_resources;
     commands.spawn(Camera2d);
     let sources = PanelSources {
         session: &session,
         catalog: &catalog,
         registry: &registry,
         palette: &palette,
+        diagnostics_panel: &diagnostics_panel,
     };
     spawn_editor_ui(&mut commands, &menu, &workspace, &layout, sources);
     rendered.0 = session.ui_revision;
@@ -485,10 +562,10 @@ fn spawn_editor_ui(
         .spawn(EditorRoot)
         .apply_scene(ui_shell::editor_root())
         .with_children(|root| {
-            spawn_menu_bar(root, sources.session);
+            spawn_menu_bar(root, sources.session, layout);
             spawn_toolbar(root, sources.session);
             spawn_editor_content(root, menu, workspace, layout, sources);
-            spawn_status_bar(root);
+            spawn_status_bar(root, sources.session);
             spawn_about_overlay(root, menu.show_about);
         });
 }
@@ -558,7 +635,11 @@ fn spawn_editor_content(
         });
 }
 
-fn spawn_menu_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_menu_bar(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    layout: &WorkspaceLayout,
+) {
     parent
         .spawn((
             Node {
@@ -626,41 +707,7 @@ fn spawn_menu_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                     ("Delete Emitter", "Delete", EditorAction::DeleteLayer),
                 ],
             );
-            spawn_dropdown(
-                bar,
-                MenuKind::View,
-                104.0,
-                &[
-                    ("Toggle Grid", "G", EditorAction::ToggleGrid),
-                    ("Restart Preview", "R", EditorAction::Restart),
-                    (
-                        "Show Assets",
-                        "",
-                        EditorAction::ShowDockPanel(DockPanel::Assets),
-                    ),
-                    (
-                        "Show Inspector",
-                        "",
-                        EditorAction::ShowDockPanel(DockPanel::Inspector),
-                    ),
-                    (
-                        "Show Timeline",
-                        "",
-                        EditorAction::ShowDockPanel(DockPanel::Timeline),
-                    ),
-                    (
-                        "Show Curves",
-                        "",
-                        EditorAction::ShowDockPanel(DockPanel::Curves),
-                    ),
-                    (
-                        "Show Changes",
-                        "",
-                        EditorAction::ShowDockPanel(DockPanel::Changes),
-                    ),
-                    ("Reset Workspace", "", EditorAction::ResetWorkspaceLayout),
-                ],
-            );
+            spawn_view_dropdown(bar, layout);
             spawn_dropdown(
                 bar,
                 MenuKind::Help,
@@ -770,6 +817,146 @@ fn spawn_dropdown(
                 });
             }
         });
+}
+
+fn spawn_view_dropdown(parent: &mut ChildSpawnerCommands, layout: &WorkspaceLayout) {
+    parent
+        .spawn((
+            MenuDropdown(MenuKind::View),
+            GlobalZIndex(100),
+            Node {
+                display: Display::None,
+                position_type: PositionType::Absolute,
+                left: Val::Px(104.0),
+                top: Val::Px(29.0),
+                width: Val::Px(218.0),
+                padding: UiRect::all(Val::Px(5.0)),
+                flex_direction: FlexDirection::Column,
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(5.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|dropdown| {
+            spawn_view_menu_item(dropdown, "Toggle Grid", "G", EditorAction::ToggleGrid);
+            spawn_view_menu_item(dropdown, "Restart Preview", "R", EditorAction::Restart);
+            spawn_view_menu_item(dropdown, "Panels", ">", EditorAction::TogglePanelsSubmenu);
+            spawn_view_menu_item(
+                dropdown,
+                "Reset Workspace",
+                "",
+                EditorAction::ResetWorkspaceLayout,
+            );
+
+            dropdown
+                .spawn((
+                    PanelsSubmenu,
+                    GlobalZIndex(101),
+                    Node {
+                        display: Display::None,
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(212.0),
+                        top: Val::Px(63.0),
+                        width: Val::Px(206.0),
+                        padding: UiRect::all(Val::Px(5.0)),
+                        flex_direction: FlexDirection::Column,
+                        border: UiRect::all(Val::Px(1.0)),
+                        border_radius: BorderRadius::all(Val::Px(5.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL),
+                    BorderColor::all(theme::BORDER_BRIGHT),
+                ))
+                .with_children(|submenu| {
+                    for panel in DockPanel::ALL {
+                        let visible = layout.is_visible(panel);
+                        let mut item = submenu.spawn((
+                            Button,
+                            EditorAction::ToggleDockPanel(panel),
+                            Node {
+                                width: Val::Percent(100.0),
+                                height: Val::Px(29.0),
+                                padding: UiRect::horizontal(Val::Px(9.0)),
+                                align_items: AlignItems::Center,
+                                border_radius: BorderRadius::all(Val::Px(3.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme::PANEL),
+                        ));
+                        if !panel.closable() {
+                            item.insert(InteractionDisabled);
+                        }
+                        item.with_children(|row| {
+                            row.spawn((
+                                PanelVisibilityLabel(panel),
+                                Text::new(panel_visibility_label(panel, visible)),
+                                TextFont {
+                                    font_size: FontSize::Px(11.0),
+                                    ..default()
+                                },
+                                TextColor(if panel.closable() {
+                                    theme::TEXT
+                                } else {
+                                    theme::TEXT_FAINT
+                                }),
+                                Pickable::IGNORE,
+                            ));
+                        });
+                    }
+                });
+        });
+}
+
+fn spawn_view_menu_item(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    shortcut: &str,
+    action: EditorAction,
+) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(29.0),
+                padding: UiRect::horizontal(Val::Px(9.0)),
+                align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+        ))
+        .with_children(|item| {
+            item.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+            item.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            item.spawn((
+                Text::new(shortcut),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+fn panel_visibility_label(panel: DockPanel, visible: bool) -> String {
+    format!("[{}]  {}", if visible { "x" } else { " " }, panel.title())
 }
 
 fn spawn_about_overlay(parent: &mut ChildSpawnerCommands, visible: bool) {
@@ -1051,6 +1238,9 @@ fn spawn_panel_content(
         DockPanel::Timeline => spawn_timeline(parent, sources.session),
         DockPanel::Curves => {
             spawn_curves_workspace(parent, sources.session, sources.registry, workspace);
+        }
+        DockPanel::Diagnostics => {
+            spawn_diagnostics_workspace(parent, sources.session, sources.diagnostics_panel);
         }
         DockPanel::Changes => spawn_changes_workspace(parent, sources.session),
     }
@@ -3229,6 +3419,392 @@ fn spawn_curves_workspace(
         });
 }
 
+fn spawn_diagnostics_workspace(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    state: &DiagnosticsPanelState,
+) {
+    let current = &session.diagnostics.diagnostics;
+    let pending = session
+        .pending_change
+        .as_ref()
+        .map(|pending| pending.diagnostics.diagnostics.as_slice())
+        .unwrap_or_default();
+    let all = current.iter().chain(pending.iter());
+    let errors = all
+        .clone()
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        .count();
+    let warnings = all
+        .clone()
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Warning)
+        .count();
+    let info = all
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Info)
+        .count();
+    let visible = current
+        .iter()
+        .chain(pending.iter())
+        .filter(|diagnostic| state.filter.matches(diagnostic.severity))
+        .count();
+
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
+        .with_children(|panel| {
+            panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(38.0),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(Val::Px(14.0)),
+                        column_gap: Val::Px(10.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL_LIGHT),
+                ))
+                .with_children(|header| {
+                    header.spawn((
+                        Text::new("VALIDATION"),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                    ));
+                    header.spawn(Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    });
+                    spawn_diagnostic_count(header, errors, "ERRORS", Color::srgb(1.0, 0.38, 0.32));
+                    spawn_diagnostic_count(
+                        header,
+                        warnings,
+                        "WARNINGS",
+                        Color::srgb(1.0, 0.74, 0.30),
+                    );
+                    spawn_diagnostic_count(header, info, "INFO", Color::srgb(0.45, 0.70, 1.0));
+                });
+            panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(36.0),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(Val::Px(10.0)),
+                        column_gap: Val::Px(6.0),
+                        border: UiRect::bottom(Val::Px(1.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL),
+                    BorderColor::all(theme::BORDER),
+                ))
+                .with_children(|filters| {
+                    for filter in DiagnosticsFilter::ALL {
+                        let count = match filter {
+                            DiagnosticsFilter::All => errors + warnings + info,
+                            DiagnosticsFilter::Errors => errors,
+                            DiagnosticsFilter::Warnings => warnings,
+                            DiagnosticsFilter::Info => info,
+                        };
+                        spawn_diagnostics_filter_button(
+                            filters,
+                            filter,
+                            state.filter == filter,
+                            count,
+                        );
+                    }
+                });
+
+            if errors + warnings + info == 0 {
+                spawn_diagnostics_empty_state(
+                    panel,
+                    "NO ISSUES",
+                    "The working effect passes semantic and compiler validation.",
+                    Color::srgb(0.35, 0.88, 0.57),
+                );
+                return;
+            }
+            if visible == 0 {
+                spawn_diagnostics_empty_state(
+                    panel,
+                    "NO MATCHES",
+                    "No diagnostics match the selected severity filter.",
+                    theme::TEXT_MUTED,
+                );
+                return;
+            }
+
+            panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        min_height: Val::Px(0.0),
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(Val::Px(8.0)),
+                        row_gap: Val::Px(6.0),
+                        overflow: Overflow::scroll_y(),
+                        scrollbar_width: 8.0,
+                        ..default()
+                    },
+                    ScrollPosition::default(),
+                ))
+                .observe(
+                    |scroll: On<Pointer<Scroll>>,
+                     mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
+                        if let Ok((mut position, computed)) = nodes.get_mut(scroll.entity) {
+                            let delta = match scroll.unit {
+                                MouseScrollUnit::Line => scroll.y * 24.0,
+                                MouseScrollUnit::Pixel => scroll.y,
+                            };
+                            let range = (computed.content_size().y - computed.size().y).max(0.0)
+                                * computed.inverse_scale_factor;
+                            position.y = (position.y - delta).clamp(0.0, range);
+                        }
+                    },
+                )
+                .with_children(|list| {
+                    spawn_diagnostic_section(
+                        list,
+                        "WORKING EFFECT",
+                        &session.diagnostics,
+                        DiagnosticSource::Current,
+                        state.filter,
+                    );
+                    if let Some(pending) = &session.pending_change {
+                        spawn_diagnostic_section(
+                            list,
+                            "PENDING TRANSACTION",
+                            &pending.diagnostics,
+                            DiagnosticSource::Pending,
+                            state.filter,
+                        );
+                    }
+                });
+        });
+}
+
+fn spawn_diagnostics_filter_button(
+    parent: &mut ChildSpawnerCommands,
+    filter: DiagnosticsFilter,
+    selected: bool,
+    count: usize,
+) {
+    parent
+        .spawn((
+            Button,
+            EditorAction::SetDiagnosticsFilter(filter),
+            DiagnosticsFilterButton(filter),
+            Node {
+                height: Val::Px(24.0),
+                padding: UiRect::horizontal(Val::Px(8.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(if selected {
+                theme::SELECTION
+            } else {
+                theme::BUTTON
+            }),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(format!("{} {count}", filter.label())),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(match filter {
+                    DiagnosticsFilter::Errors => Color::srgb(1.0, 0.38, 0.32),
+                    DiagnosticsFilter::Warnings => Color::srgb(1.0, 0.74, 0.30),
+                    DiagnosticsFilter::All | DiagnosticsFilter::Info => theme::TEXT_MUTED,
+                }),
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+fn spawn_diagnostic_section(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    report: &ValidationReport,
+    source: DiagnosticSource,
+    filter: DiagnosticsFilter,
+) {
+    if !report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| filter.matches(diagnostic.severity))
+    {
+        return;
+    }
+    parent.spawn((
+        Text::new(title),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(theme::TEXT_FAINT),
+        Node {
+            margin: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
+            ..default()
+        },
+    ));
+    for (index, diagnostic) in report.diagnostics.iter().enumerate() {
+        if !filter.matches(diagnostic.severity) {
+            continue;
+        }
+        spawn_diagnostic_row(parent, diagnostic, source, index);
+    }
+}
+
+fn spawn_diagnostic_row(
+    parent: &mut ChildSpawnerCommands,
+    diagnostic: &Diagnostic,
+    source: DiagnosticSource,
+    index: usize,
+) {
+    let (label, color) = diagnostic_severity_style(diagnostic.severity);
+    parent
+        .spawn((
+            Button,
+            EditorAction::SelectDiagnostic { source, index },
+            DiagnosticRow,
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(64.0),
+                padding: UiRect::all(Val::Px(8.0)),
+                column_gap: Val::Px(9.0),
+                align_items: AlignItems::Stretch,
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Node {
+                    width: Val::Px(4.0),
+                    min_height: Val::Px(48.0),
+                    border_radius: BorderRadius::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(color),
+                Pickable::IGNORE,
+            ));
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                ..default()
+            })
+            .with_children(|content| {
+                content.spawn((
+                    Text::new(format!("{label}  ·  {:?}", diagnostic.code)),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(color),
+                    Pickable::IGNORE,
+                ));
+                content.spawn((
+                    Text::new(&diagnostic.message),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
+                content.spawn((
+                    Text::new(&diagnostic.path),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_FAINT),
+                    Pickable::IGNORE,
+                ));
+            });
+        });
+}
+
+fn spawn_diagnostics_empty_state(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    message: &str,
+    color: Color,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_grow: 1.0,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(8.0),
+            ..default()
+        })
+        .with_children(|empty| {
+            empty.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                TextColor(color),
+            ));
+            empty.spawn((
+                Text::new(message),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+            ));
+        });
+}
+
+fn diagnostic_severity_style(severity: DiagnosticSeverity) -> (&'static str, Color) {
+    match severity {
+        DiagnosticSeverity::Error => ("ERROR", Color::srgb(1.0, 0.38, 0.32)),
+        DiagnosticSeverity::Warning => ("WARNING", Color::srgb(1.0, 0.74, 0.30)),
+        DiagnosticSeverity::Info => ("INFO", Color::srgb(0.45, 0.70, 1.0)),
+    }
+}
+
+fn spawn_diagnostic_count(
+    parent: &mut ChildSpawnerCommands,
+    count: usize,
+    label: &str,
+    active_color: Color,
+) {
+    parent.spawn((
+        Text::new(format!("{count} {label}")),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(if count == 0 {
+            theme::TEXT_FAINT
+        } else {
+            active_color
+        }),
+    ));
+}
+
 fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
     parent
         .spawn(Node {
@@ -3949,7 +4525,7 @@ fn spawn_ruler(parent: &mut ChildSpawnerCommands, duration: f32) {
     }
 }
 
-fn spawn_status_bar(parent: &mut ChildSpawnerCommands) {
+fn spawn_status_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
     parent
         .spawn((
             Node {
@@ -3963,28 +4539,88 @@ fn spawn_status_bar(parent: &mut ChildSpawnerCommands) {
             BackgroundColor(theme::PANEL_DARK),
         ))
         .with_children(|bar| {
+            let (compile_status, compile_color) = compile_status(session);
             bar.spawn((
-                Text::new("READY"),
-                StatusLabel,
-                TextFont {
-                    font_size: FontSize::Px(9.0),
+                Button,
+                CompileStatusButton,
+                EditorAction::ShowDockPanel(DockPanel::Diagnostics),
+                Node {
+                    height: Val::Px(20.0),
+                    padding: UiRect::horizontal(Val::Px(8.0)),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    border_radius: BorderRadius::all(Val::Px(3.0)),
                     ..default()
                 },
-                TextColor(theme::TEXT_FAINT),
-            ));
-            bar.spawn(Node {
-                flex_grow: 1.0,
-                ..default()
+                BackgroundColor(theme::PANEL_DARK),
+            ))
+            .with_children(|button| {
+                button.spawn((
+                    CompileStatusDot,
+                    Node {
+                        width: Val::Px(6.0),
+                        height: Val::Px(6.0),
+                        margin: UiRect::right(Val::Px(7.0)),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BackgroundColor(compile_color),
+                    Pickable::IGNORE,
+                ));
+                button.spawn((
+                    CompileStatusLabel,
+                    Text::new(compile_status),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(compile_color),
+                    Pickable::IGNORE,
+                ));
             });
-            bar.spawn((
-                Text::new("SPACE Play/Pause   |   CTRL+S Save   |   R Restart"),
-                TextFont {
-                    font_size: FontSize::Px(9.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-            ));
         });
+}
+
+fn compile_status(session: &EditorSession) -> (String, Color) {
+    let current_errors = session
+        .diagnostics
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        .count();
+    let pending_errors = session.pending_change.as_ref().map_or(0, |pending| {
+        pending
+            .diagnostics
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+            .count()
+    });
+    let warnings = session
+        .diagnostics
+        .diagnostics
+        .iter()
+        .chain(
+            session
+                .pending_change
+                .iter()
+                .flat_map(|pending| pending.diagnostics.diagnostics.iter()),
+        )
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Warning)
+        .count();
+
+    if current_errors > 0 {
+        ("COMPILE FAILED".into(), Color::srgb(1.0, 0.38, 0.32))
+    } else if pending_errors > 0 {
+        ("PREVIEW BLOCKED".into(), Color::srgb(1.0, 0.74, 0.30))
+    } else if warnings > 0 {
+        (
+            "COMPILED WITH WARNINGS".into(),
+            Color::srgb(1.0, 0.74, 0.30),
+        )
+    } else {
+        ("COMPILED".into(), Color::srgb(0.35, 0.88, 0.57))
+    }
 }
 
 fn panel_heading(parent: &mut ChildSpawnerCommands, title: &str, meta: &str) {
@@ -4169,6 +4805,7 @@ fn keyboard_shortcuts(
     if keys.just_pressed(KeyCode::Escape) {
         let context_was_open = menu.tab_context.take().is_some();
         menu.open = None;
+        menu.panels_open = false;
         menu.show_about = false;
         if context_was_open {
             session.ui_revision += 1;
@@ -4227,6 +4864,8 @@ fn handle_buttons(
             Option<&LayerRow>,
             Option<&DockTab>,
             Option<&DockCloseButton>,
+            Option<&DiagnosticsFilterButton>,
+            Option<&CompileStatusButton>,
             Option<&InteractionDisabled>,
             &mut BackgroundColor,
         ),
@@ -4240,12 +4879,23 @@ fn handle_buttons(
         ResMut<ModulePaletteState>,
         ResMut<WorkspaceState>,
         ResMut<WorkspaceLayout>,
+        ResMut<DiagnosticsPanelState>,
     ),
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
-    let (catalog, registry, mut palette, mut workspace, mut layout) = editor_resources;
-    for (interaction, action, layer_row, dock_tab, dock_close, disabled, mut background) in
-        &mut buttons
+    let (catalog, registry, mut palette, mut workspace, mut layout, mut diagnostics_panel) =
+        editor_resources;
+    for (
+        interaction,
+        action,
+        layer_row,
+        dock_tab,
+        dock_close,
+        diagnostics_filter,
+        compile_status,
+        disabled,
+        mut background,
+    ) in &mut buttons
     {
         if disabled.is_some() {
             background.0 = theme::PANEL_DARK;
@@ -4269,6 +4919,14 @@ fn handle_buttons(
                     }
                 } else if dock_close.is_some() {
                     Color::NONE
+                } else if let Some(filter) = diagnostics_filter {
+                    if diagnostics_panel.filter == filter.0 {
+                        theme::SELECTION
+                    } else {
+                        theme::BUTTON
+                    }
+                } else if compile_status.is_some() {
+                    theme::PANEL_DARK
                 } else {
                     theme::BUTTON
                 };
@@ -4279,6 +4937,7 @@ fn handle_buttons(
                     if menu.tab_context.take().is_some() {
                         session.ui_revision += 1;
                     }
+                    menu.panels_open = false;
                     menu.open = if menu.open == Some(kind) {
                         None
                     } else {
@@ -4286,7 +4945,15 @@ fn handle_buttons(
                     };
                     continue;
                 }
-                menu.open = None;
+                if matches!(*action, EditorAction::TogglePanelsSubmenu) {
+                    menu.panels_open = !menu.panels_open;
+                    continue;
+                }
+                let keep_view_menu_open = matches!(*action, EditorAction::ToggleDockPanel(_));
+                if !keep_view_menu_open {
+                    menu.open = None;
+                    menu.panels_open = false;
+                }
                 if menu.tab_context.take().is_some() {
                     session.ui_revision += 1;
                 }
@@ -4453,6 +5120,18 @@ fn handle_buttons(
                     EditorAction::DiscardPendingChange => {
                         session.discard_pending_change();
                     }
+                    EditorAction::SetDiagnosticsFilter(filter) => {
+                        if diagnostics_panel.filter != filter {
+                            diagnostics_panel.filter = filter;
+                            session.ui_revision += 1;
+                        }
+                    }
+                    EditorAction::SelectDiagnostic { source, index } => {
+                        if navigate_to_diagnostic(&mut session, source, index) {
+                            workspace.complex = None;
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Inspector);
+                        }
+                    }
                     EditorAction::SelectDockPanel(panel) => {
                         if layout.activate(panel) {
                             session.ui_revision += 1;
@@ -4478,6 +5157,25 @@ fn handle_buttons(
                             session.ui_revision += 1;
                             session.status =
                                 format!("Showing {} panel", panel.title().to_ascii_lowercase());
+                            if let Err(error) = layout.save() {
+                                warn!("failed to save editor workspace layout: {error}");
+                            }
+                        }
+                    }
+                    EditorAction::ToggleDockPanel(panel) => {
+                        let was_visible = layout.is_visible(panel);
+                        let changed = if was_visible {
+                            layout.close(panel)
+                        } else {
+                            layout.show(panel)
+                        };
+                        if changed {
+                            session.ui_revision += 1;
+                            session.status = format!(
+                                "{} {} panel",
+                                if was_visible { "Hid" } else { "Showing" },
+                                panel.title().to_ascii_lowercase()
+                            );
                             if let Err(error) = layout.save() {
                                 warn!("failed to save editor workspace layout: {error}");
                             }
@@ -4515,10 +5213,84 @@ fn handle_buttons(
                     EditorAction::ShowAbout => menu.show_about = true,
                     EditorAction::CloseAbout => menu.show_about = false,
                     EditorAction::ToggleMenu(_) => unreachable!(),
+                    EditorAction::TogglePanelsSubmenu => unreachable!(),
                 }
             }
         }
     }
+}
+
+fn navigate_to_diagnostic(
+    session: &mut EditorSession,
+    source: DiagnosticSource,
+    index: usize,
+) -> bool {
+    let diagnostic = match source {
+        DiagnosticSource::Current => session.diagnostics.diagnostics.get(index),
+        DiagnosticSource::Pending => session
+            .pending_change
+            .as_ref()
+            .and_then(|pending| pending.diagnostics.diagnostics.get(index)),
+    };
+    let Some(diagnostic) = diagnostic else {
+        session.status = "Diagnostic no longer exists".into();
+        return false;
+    };
+    let path = diagnostic.path.clone();
+    let code = diagnostic.code;
+    let Some(target) = semantic_target_for_diagnostic_path(&session.effect, &path) else {
+        session.status = format!("Diagnostic target no longer exists · {path}");
+        return false;
+    };
+    if matches!(
+        target,
+        SemanticTarget::Emitter(_) | SemanticTarget::Module(_) | SemanticTarget::Renderer(_)
+    ) {
+        session.selection.primary = target;
+    }
+    session.status = format!("Selected {code:?} diagnostic · {path}");
+    session.ui_revision += 1;
+    true
+}
+
+fn semantic_target_for_diagnostic_path(effect: &EffectAsset, path: &str) -> Option<SemanticTarget> {
+    if let Some(emitter_index) = diagnostic_collection_index(path, "emitters") {
+        let emitter = effect.emitters.get(emitter_index)?;
+        if let Some(module_index) = diagnostic_collection_index(path, "modules") {
+            return emitter
+                .modules
+                .get(module_index)
+                .map(|module| SemanticTarget::Module(module.id));
+        }
+        if let Some(renderer_index) = diagnostic_collection_index(path, "renderers") {
+            return emitter
+                .renderers
+                .get(renderer_index)
+                .map(|renderer| SemanticTarget::Renderer(renderer.id));
+        }
+        return Some(SemanticTarget::Emitter(emitter.id));
+    }
+    if let Some(parameter_index) = diagnostic_collection_index(path, "parameters") {
+        return effect
+            .parameters
+            .get(parameter_index)
+            .map(|parameter| SemanticTarget::Parameter(parameter.id));
+    }
+    if let Some(event_index) = diagnostic_collection_index(path, "events") {
+        return effect
+            .events
+            .get(event_index)
+            .map(|event| SemanticTarget::Event(event.id));
+    }
+    path.starts_with("effect")
+        .then_some(SemanticTarget::Effect(effect.id))
+}
+
+fn diagnostic_collection_index(path: &str, collection: &str) -> Option<usize> {
+    let marker = format!("{collection}[");
+    let start = path.find(&marker)? + marker.len();
+    let end = start + path[start..].find(']')?;
+    path[start..end].parse().ok()
 }
 
 fn reveal_dock_panel(layout: &mut WorkspaceLayout, session: &mut EditorSession, panel: DockPanel) {
@@ -4844,10 +5616,26 @@ fn scrub_timeline(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn update_menu_visibility(
     menu: Res<MenuState>,
     mut dropdowns: Query<(&MenuDropdown, &mut Node)>,
-    mut about: Query<&mut Node, (With<AboutOverlay>, Without<MenuDropdown>)>,
+    mut panels_submenus: Query<
+        &mut Node,
+        (
+            With<PanelsSubmenu>,
+            Without<MenuDropdown>,
+            Without<AboutOverlay>,
+        ),
+    >,
+    mut about: Query<
+        &mut Node,
+        (
+            With<AboutOverlay>,
+            Without<MenuDropdown>,
+            Without<PanelsSubmenu>,
+        ),
+    >,
 ) {
     if !menu.is_changed() {
         return;
@@ -4859,12 +5647,31 @@ fn update_menu_visibility(
             Display::None
         };
     }
+    for mut node in &mut panels_submenus {
+        node.display = if menu.open == Some(MenuKind::View) && menu.panels_open {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
     for mut node in &mut about {
         node.display = if menu.show_about {
             Display::Flex
         } else {
             Display::None
         };
+    }
+}
+
+fn update_panel_visibility_labels(
+    layout: Res<WorkspaceLayout>,
+    mut labels: Query<(&PanelVisibilityLabel, &mut Text)>,
+) {
+    if !layout.is_changed() {
+        return;
+    }
+    for (label, mut text) in &mut labels {
+        text.0 = panel_visibility_label(label.0, layout.is_visible(label.0));
     }
 }
 
@@ -4976,6 +5783,7 @@ fn sync_native_floating_windows(
         catalog: &editor_resources.catalog,
         registry: &editor_resources.registry,
         palette: &editor_resources.palette,
+        diagnostics_panel: &editor_resources.diagnostics_panel,
     };
     for floating in &editor_resources.layout.floating {
         if windows.iter().any(|(_, native)| native.0 == floating.panel) {
@@ -5043,6 +5851,7 @@ fn rebuild_editor_ui(
         catalog: &editor_resources.catalog,
         registry: &editor_resources.registry,
         palette: &editor_resources.palette,
+        diagnostics_panel: &editor_resources.diagnostics_panel,
     };
     commands.entity(*root).with_children(|root| {
         spawn_editor_content(
@@ -5114,7 +5923,6 @@ fn update_editor_labels(
         &mut Text,
         Option<&PlaybackLabel>,
         Option<&TimeLabel>,
-        Option<&StatusLabel>,
         Option<&InspectorTitle>,
         Option<&ParticleCountLabel>,
         Option<&DocumentMenuLabel>,
@@ -5125,9 +5933,7 @@ fn update_editor_labels(
         return;
     }
     let layer = session.selected_layer();
-    for (mut text, playback, time, status, title, count, document_menu, document_toolbar) in
-        &mut labels
-    {
+    for (mut text, playback, time, title, count, document_menu, document_toolbar) in &mut labels {
         if playback.is_some() {
             text.0 = if session.playing { "Pause" } else { "Play" }.into();
         } else if time.is_some() {
@@ -5138,12 +5944,6 @@ fn update_editor_labels(
                 session.time(),
                 session.playback_duration(),
                 session.seek_status()
-            );
-        } else if status.is_some() {
-            text.0 = format!(
-                "{}{}",
-                if session.dirty { "*  " } else { "" },
-                session.status
             );
         } else if title.is_some() {
             text.0 = layer.name.clone();
@@ -5168,6 +5968,24 @@ fn update_editor_labels(
                 session.effect.name.to_uppercase()
             );
         }
+    }
+}
+
+fn update_compile_status(
+    session: Res<EditorSession>,
+    mut labels: Query<(&mut Text, &mut TextColor), With<CompileStatusLabel>>,
+    mut dots: Query<&mut BackgroundColor, With<CompileStatusDot>>,
+) {
+    if !session.is_changed() {
+        return;
+    }
+    let (label, color) = compile_status(&session);
+    for (mut text, mut text_color) in &mut labels {
+        text.0 = label.clone();
+        text_color.0 = color;
+    }
+    for mut background in &mut dots {
+        background.0 = color;
     }
 }
 
@@ -5349,5 +6167,86 @@ mod tests {
         assert_eq!(insertion_time(&[0.0, 1.0], 1), (1, 0.5));
         assert_eq!(bounded_key_time(&[0.0, 0.4, 1.0], 1, 2.0), 0.999);
         assert_eq!(bounded_key_time(&[0.0, 0.4, 1.0], 1, -1.0), 0.001);
+    }
+
+    #[test]
+    fn diagnostic_filters_match_only_the_selected_severity() {
+        assert!(DiagnosticsFilter::All.matches(DiagnosticSeverity::Warning));
+        assert!(DiagnosticsFilter::Errors.matches(DiagnosticSeverity::Error));
+        assert!(!DiagnosticsFilter::Errors.matches(DiagnosticSeverity::Info));
+        assert!(DiagnosticsFilter::Warnings.matches(DiagnosticSeverity::Warning));
+        assert!(DiagnosticsFilter::Info.matches(DiagnosticSeverity::Info));
+    }
+
+    #[test]
+    fn diagnostic_paths_resolve_to_semantic_targets() {
+        let effect = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let emitter = &effect.emitters[1];
+        assert_eq!(
+            semantic_target_for_diagnostic_path(&effect, "effect.emitters[1].duration"),
+            Some(SemanticTarget::Emitter(emitter.id))
+        );
+        assert_eq!(
+            semantic_target_for_diagnostic_path(
+                &effect,
+                "effect.emitters[1].modules[2].parameters.drag",
+            ),
+            Some(SemanticTarget::Module(emitter.modules[2].id))
+        );
+        assert_eq!(
+            semantic_target_for_diagnostic_path(
+                &effect,
+                "effect.emitters[1].renderers[0].renderer_type",
+            ),
+            Some(SemanticTarget::Renderer(emitter.renderers[0].id))
+        );
+        assert_eq!(
+            semantic_target_for_diagnostic_path(&effect, "not-a-semantic-path"),
+            None
+        );
+    }
+
+    #[test]
+    fn diagnostic_navigation_selects_the_owning_module() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let expected = session.effect.emitters[2].modules[1].id;
+        session.diagnostics.push(Diagnostic::error(
+            DiagnosticCode::InvalidValue,
+            "effect.emitters[2].modules[1].parameters",
+            "invalid test value",
+        ));
+
+        assert!(navigate_to_diagnostic(
+            &mut session,
+            DiagnosticSource::Current,
+            0,
+        ));
+        assert_eq!(session.selection.primary, SemanticTarget::Module(expected));
+        assert_eq!(session.selected_layer_index(), 2);
+    }
+
+    #[test]
+    fn compile_footer_reports_success_and_failure() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        assert_eq!(compile_status(&session).0, "COMPILED");
+
+        session.diagnostics.push(Diagnostic::error(
+            DiagnosticCode::InvalidDuration,
+            "effect.duration",
+            "invalid test duration",
+        ));
+        assert_eq!(compile_status(&session).0, "COMPILE FAILED");
+    }
+
+    #[test]
+    fn panel_visibility_labels_use_checkbox_notation() {
+        assert_eq!(
+            panel_visibility_label(DockPanel::Diagnostics, true),
+            "[x]  DIAGNOSTICS"
+        );
+        assert_eq!(
+            panel_visibility_label(DockPanel::Diagnostics, false),
+            "[ ]  DIAGNOSTICS"
+        );
     }
 }
