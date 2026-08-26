@@ -62,20 +62,22 @@ The current file format is versioned from its first commit. Future schema change
 
 ## Roadmap
 
-### Phase 1 — foundation (current)
+### Phase 1 — foundation (complete)
 
 - Bevy UI workspace and professional editor layout
 - deterministic CPU reference evaluator
 - layer/timeline playback and basic inspector editing
 - versioned RON effects, validation, save, and sample content
 
-### Phase 2 — real authoring
+### Phase 2 — real authoring (in progress)
 
-- command-based undo/redo and change history
-- curve and gradient editors
-- timeline scrubbing, trimming, moving, zooming, and snapping
+- [x] command-based undo/redo and change history
+- [x] curve previews, key-value editing, and gradient presets
+- [x] timeline scrubbing, trimming, moving, and effect-duration editing
+- [x] native file dialogs, project asset discovery, and unsaved-change protection
+- [ ] timeline zooming and snapping
 - node/module stack for spawn, initialize, update, renderer, and events
-- file dialogs, asset discovery, autosave/recovery, and migrations
+- autosave/recovery and asset migrations
 - reusable, dockable Bevy UI panels
 
 ### Phase 3 — production renderer

@@ -87,6 +87,9 @@ impl EffectLayer {
         }
         self.emitter.lifetime.validate(&self.id, "lifetime")?;
         self.emitter.speed.validate(&self.id, "speed")?;
+        self.emitter.size.validate(&self.id, "size")?;
+        self.emitter.opacity.validate(&self.id, "opacity")?;
+        self.emitter.color.validate(&self.id)?;
         Ok(())
     }
 }
@@ -197,6 +200,21 @@ impl Curve {
         }
         self.keys.last().map_or(0.0, |key| key.value)
     }
+
+    fn validate(&self, layer: &str, field: &'static str) -> Result<(), ValidationError> {
+        if self.keys.is_empty()
+            || self.keys.iter().any(|key| {
+                !key.time.is_finite() || !key.value.is_finite() || !(0.0..=1.0).contains(&key.time)
+            })
+            || self.keys.windows(2).any(|pair| pair[0].time > pair[1].time)
+        {
+            return Err(ValidationError::InvalidCurve {
+                layer: layer.to_owned(),
+                field,
+            });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -227,6 +245,20 @@ impl Gradient {
             }
         }
         self.keys.last().map_or([1.0; 4], |key| key.color)
+    }
+
+    fn validate(&self, layer: &str) -> Result<(), ValidationError> {
+        if self.keys.is_empty()
+            || self.keys.iter().any(|key| {
+                !key.time.is_finite()
+                    || !(0.0..=1.0).contains(&key.time)
+                    || key.color.iter().any(|channel| !channel.is_finite())
+            })
+            || self.keys.windows(2).any(|pair| pair[0].time > pair[1].time)
+        {
+            return Err(ValidationError::InvalidGradient(layer.to_owned()));
+        }
+        Ok(())
     }
 }
 
@@ -512,6 +544,10 @@ pub enum ValidationError {
     InvalidEmitter(String),
     #[error("layer '{layer}' has an invalid {field} range")]
     InvalidRange { layer: String, field: &'static str },
+    #[error("layer '{layer}' has an invalid or empty {field} curve")]
+    InvalidCurve { layer: String, field: &'static str },
+    #[error("layer '{0}' has an invalid or empty color gradient")]
+    InvalidGradient(String),
 }
 
 #[cfg(test)]
@@ -593,5 +629,18 @@ mod tests {
         let mut asset = test_asset();
         asset.duration = 0.0;
         assert_eq!(asset.validate(), Err(ValidationError::InvalidDuration(0.0)));
+    }
+
+    #[test]
+    fn empty_curves_are_rejected_at_the_asset_boundary() {
+        let mut asset = test_asset();
+        asset.layers[0].emitter.size.keys.clear();
+        assert_eq!(
+            asset.validate(),
+            Err(ValidationError::InvalidCurve {
+                layer: "sparks".into(),
+                field: "size",
+            })
+        );
     }
 }

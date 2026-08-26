@@ -1,0 +1,22 @@
+use bevy::prelude::Color;
+
+pub const APP_BG: Color = Color::srgb(0.027, 0.031, 0.047);
+pub const MENU: Color = Color::srgb(0.032, 0.037, 0.055);
+pub const PANEL_DARK: Color = Color::srgb(0.039, 0.045, 0.066);
+pub const PANEL: Color = Color::srgb(0.055, 0.062, 0.087);
+pub const PANEL_LIGHT: Color = Color::srgb(0.070, 0.078, 0.105);
+pub const VIEWPORT_FRAME: Color = Color::srgb(0.020, 0.024, 0.038);
+pub const VIEWPORT: Color = Color::srgb(0.013, 0.017, 0.030);
+pub const TIMELINE_BG: Color = Color::srgb(0.030, 0.035, 0.052);
+pub const BORDER: Color = Color::srgb(0.105, 0.116, 0.151);
+pub const BORDER_BRIGHT: Color = Color::srgb(0.148, 0.164, 0.211);
+pub const GRID: Color = Color::srgba(0.20, 0.23, 0.31, 0.18);
+pub const BUTTON: Color = Color::srgb(0.085, 0.095, 0.128);
+pub const BUTTON_HOVER: Color = Color::srgb(0.135, 0.143, 0.190);
+pub const SELECTION: Color = Color::srgb(0.100, 0.089, 0.173);
+pub const ACCENT: Color = Color::srgb(0.61, 0.47, 1.0);
+pub const ACCENT_DIM: Color = Color::srgb(0.31, 0.23, 0.53);
+pub const PLAYHEAD: Color = Color::srgb(0.95, 0.44, 0.78);
+pub const TEXT: Color = Color::srgb(0.88, 0.90, 0.96);
+pub const TEXT_MUTED: Color = Color::srgb(0.59, 0.62, 0.70);
+pub const TEXT_FAINT: Color = Color::srgb(0.36, 0.39, 0.47);

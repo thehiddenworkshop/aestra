@@ -1,6 +1,12 @@
-use aestra_bevy::{EffectAsset, ParticleSample, evaluate};
-use bevy::{prelude::*, window::WindowResolution};
-use std::path::PathBuf;
+mod session;
+mod theme;
+
+use aestra_bevy::EffectAsset;
+use aestra_bevy::evaluate;
+use bevy::{prelude::*, ui::RelativeCursorPosition, window::WindowResolution};
+use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+use session::EditorSession;
+use std::{fs, path::PathBuf};
 
 const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
@@ -11,7 +17,13 @@ const PREVIEW_HEIGHT: f32 = 430.0;
 fn main() {
     App::new()
         .insert_resource(ClearColor(theme::APP_BG))
-        .insert_resource(EditorSession::from_embedded_sample())
+        .insert_resource(EditorSession::from_embedded_sample(
+            EFFECT_SOURCE,
+            EFFECT_PATH,
+        ))
+        .insert_resource(EffectCatalog::scan())
+        .init_resource::<MenuState>()
+        .init_resource::<RenderedUiRevision>()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Aestra — VFX Choreography Editor".into(),
@@ -27,74 +39,133 @@ fn main() {
             (
                 keyboard_shortcuts,
                 handle_buttons,
+                scrub_timeline,
                 advance_playback,
                 update_preview,
                 update_editor_labels,
                 update_playhead,
                 update_layer_selection,
+                update_menu_visibility,
+                update_preview_grid_visibility,
+                rebuild_editor_ui,
             )
                 .chain(),
         )
         .run();
 }
 
-#[derive(Resource)]
-struct EditorSession {
-    effect: EffectAsset,
-    source_path: PathBuf,
-    selected_layer: usize,
-    time: f32,
-    playing: bool,
-    speed: f32,
-    dirty: bool,
-    status: String,
-    samples: Vec<ParticleSample>,
-}
-
-impl EditorSession {
-    fn from_embedded_sample() -> Self {
-        let effect = EffectAsset::from_ron(EFFECT_SOURCE)
-            .expect("the bundled Prism Bloom sample must always be valid");
-        Self {
-            effect,
-            source_path: EFFECT_PATH.into(),
-            selected_layer: 0,
-            time: 0.0,
-            playing: true,
-            speed: 1.0,
-            dirty: false,
-            status: "Previewing embedded Prism Bloom".into(),
-            samples: Vec::with_capacity(PARTICLE_POOL_SIZE),
-        }
-    }
-
-    fn restart(&mut self) {
-        self.time = 0.0;
-        self.playing = true;
-        self.status = "Choreography restarted".into();
-    }
-
-    fn save(&mut self) {
-        match self.effect.save_ron(&self.source_path) {
-            Ok(()) => {
-                self.dirty = false;
-                self.status = format!("Saved {}", self.source_path.display());
-            }
-            Err(error) => self.status = format!("Save failed: {error}"),
-        }
-    }
-}
-
 #[derive(Component, Clone, Copy)]
 enum EditorAction {
+    NewEffect,
+    OpenEffect,
+    OpenCatalog(usize),
     TogglePlayback,
     Restart,
     Save,
+    SaveAs,
+    Undo,
+    Redo,
+    AddLayer,
+    DuplicateLayer,
+    DeleteLayer,
     SelectLayer(usize),
     SpawnRate(f32),
     Burst(i32),
     Lifetime(f32),
+    LayerStart(f32),
+    LayerDuration(f32),
+    EffectDuration(f32),
+    CurveValue {
+        curve: CurveTarget,
+        key: usize,
+        delta: f32,
+    },
+    ColorPreset,
     ToggleLayer,
+    ToggleMenu(MenuKind),
+    ToggleGrid,
+    ShowAbout,
+    CloseAbout,
+}
+
+#[derive(Clone, Copy)]
+enum CurveTarget {
+    Size,
+    Opacity,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MenuKind {
+    File,
+    Edit,
+    View,
+    Help,
+}
+
+#[derive(Resource)]
+struct MenuState {
+    open: Option<MenuKind>,
+    show_grid: bool,
+    show_about: bool,
+}
+
+impl Default for MenuState {
+    fn default() -> Self {
+        Self {
+            open: None,
+            show_grid: true,
+            show_about: false,
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+struct RenderedUiRevision(u64);
+
+#[derive(Component)]
+struct EditorRoot;
+
+#[derive(Component)]
+struct MenuDropdown(MenuKind);
+
+#[derive(Component)]
+struct PreviewGrid;
+
+#[derive(Component)]
+struct AboutOverlay;
+
+#[derive(Component)]
+struct TimelineCanvas;
+
+struct CatalogEntry {
+    name: String,
+    path: PathBuf,
+}
+
+#[derive(Resource, Default)]
+struct EffectCatalog {
+    entries: Vec<CatalogEntry>,
+}
+
+impl EffectCatalog {
+    fn scan() -> Self {
+        let mut entries = fs::read_dir("assets/effects")
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "ron"))
+            .filter_map(|path| {
+                let effect = EffectAsset::load_ron(&path).ok()?;
+                Some(CatalogEntry {
+                    name: effect.name,
+                    path,
+                })
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        Self { entries }
+    }
 }
 
 #[derive(Component)]
@@ -124,11 +195,27 @@ struct Playhead;
 #[derive(Component)]
 struct LayerRow(usize);
 
-fn setup_editor(mut commands: Commands, session: Res<EditorSession>) {
+fn setup_editor(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    menu: Res<MenuState>,
+    catalog: Res<EffectCatalog>,
+    mut rendered: ResMut<RenderedUiRevision>,
+) {
     commands.spawn(Camera2d);
+    spawn_editor_ui(&mut commands, &session, &menu, &catalog);
+    rendered.0 = session.ui_revision;
+}
 
+fn spawn_editor_ui(
+    commands: &mut Commands,
+    session: &EditorSession,
+    menu: &MenuState,
+    catalog: &EffectCatalog,
+) {
     commands
         .spawn((
+            EditorRoot,
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
@@ -138,7 +225,8 @@ fn setup_editor(mut commands: Commands, session: Res<EditorSession>) {
             BackgroundColor(theme::APP_BG),
         ))
         .with_children(|root| {
-            spawn_toolbar(root);
+            spawn_menu_bar(root, session);
+            spawn_toolbar(root, session);
             root.spawn((
                 Node {
                     width: Val::Percent(100.0),
@@ -149,16 +237,266 @@ fn setup_editor(mut commands: Commands, session: Res<EditorSession>) {
                 BackgroundColor(theme::APP_BG),
             ))
             .with_children(|main| {
-                spawn_asset_browser(main, &session);
+                spawn_asset_browser(main, &session, catalog);
                 spawn_preview(main);
                 spawn_inspector(main, &session);
             });
             spawn_timeline(root, &session);
             spawn_status_bar(root);
+            spawn_about_overlay(root, menu.show_about);
         });
 }
 
-fn spawn_toolbar(parent: &mut ChildSpawnerCommands) {
+fn spawn_menu_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(30.0),
+                align_items: AlignItems::Center,
+                padding: UiRect::horizontal(Val::Px(8.0)),
+                border: UiRect::bottom(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::MENU),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|bar| {
+            menu_button(bar, "File", MenuKind::File);
+            menu_button(bar, "Edit", MenuKind::Edit);
+            menu_button(bar, "View", MenuKind::View);
+            menu_button(bar, "Help", MenuKind::Help);
+            bar.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            let file = session
+                .source_path
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or("Untitled");
+            bar.spawn((
+                Text::new(format!(
+                    "{}{}  |  {}",
+                    if session.dirty { "* " } else { "" },
+                    session.effect.name,
+                    file
+                )),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+
+            spawn_dropdown(
+                bar,
+                MenuKind::File,
+                0.0,
+                &[
+                    ("New Effect", "Ctrl+N", EditorAction::NewEffect),
+                    ("Open...", "Ctrl+O", EditorAction::OpenEffect),
+                    ("Save", "Ctrl+S", EditorAction::Save),
+                    ("Save As...", "Ctrl+Shift+S", EditorAction::SaveAs),
+                ],
+            );
+            let undo_label = if session.can_undo() {
+                "Undo"
+            } else {
+                "Undo (empty)"
+            };
+            let redo_label = if session.can_redo() {
+                "Redo"
+            } else {
+                "Redo (empty)"
+            };
+            spawn_dropdown(
+                bar,
+                MenuKind::Edit,
+                52.0,
+                &[
+                    (undo_label, "Ctrl+Z", EditorAction::Undo),
+                    (redo_label, "Ctrl+Y", EditorAction::Redo),
+                    ("Add Emitter", "Ctrl+Enter", EditorAction::AddLayer),
+                    ("Duplicate Emitter", "Ctrl+D", EditorAction::DuplicateLayer),
+                    ("Delete Emitter", "Delete", EditorAction::DeleteLayer),
+                ],
+            );
+            spawn_dropdown(
+                bar,
+                MenuKind::View,
+                104.0,
+                &[
+                    ("Toggle Grid", "G", EditorAction::ToggleGrid),
+                    ("Restart Preview", "R", EditorAction::Restart),
+                ],
+            );
+            spawn_dropdown(
+                bar,
+                MenuKind::Help,
+                164.0,
+                &[("About Aestra", "", EditorAction::ShowAbout)],
+            );
+        });
+}
+
+fn menu_button(parent: &mut ChildSpawnerCommands, label: &str, menu: MenuKind) {
+    parent
+        .spawn((
+            Button,
+            EditorAction::ToggleMenu(menu),
+            Node {
+                width: Val::Px(52.0),
+                height: Val::Px(28.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(theme::MENU),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+            ));
+        });
+}
+
+fn spawn_dropdown(
+    parent: &mut ChildSpawnerCommands,
+    menu: MenuKind,
+    left: f32,
+    items: &[(&str, &str, EditorAction)],
+) {
+    parent
+        .spawn((
+            MenuDropdown(menu),
+            GlobalZIndex(100),
+            Node {
+                display: Display::None,
+                position_type: PositionType::Absolute,
+                left: Val::Px(left),
+                top: Val::Px(29.0),
+                width: Val::Px(218.0),
+                padding: UiRect::all(Val::Px(5.0)),
+                flex_direction: FlexDirection::Column,
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(5.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|dropdown| {
+            for (label, shortcut, action) in items {
+                dropdown
+                    .spawn((
+                        Button,
+                        *action,
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(29.0),
+                            padding: UiRect::horizontal(Val::Px(9.0)),
+                            align_items: AlignItems::Center,
+                            border_radius: BorderRadius::all(Val::Px(3.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme::PANEL),
+                    ))
+                    .with_children(|item| {
+                        item.spawn((
+                            Text::new(*label),
+                            TextFont {
+                                font_size: FontSize::Px(11.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT),
+                        ));
+                        item.spawn(Node {
+                            flex_grow: 1.0,
+                            ..default()
+                        });
+                        item.spawn((
+                            Text::new(*shortcut),
+                            TextFont {
+                                font_size: FontSize::Px(9.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT_FAINT),
+                        ));
+                    });
+            }
+        });
+}
+
+fn spawn_about_overlay(parent: &mut ChildSpawnerCommands, visible: bool) {
+    parent
+        .spawn((
+            AboutOverlay,
+            GlobalZIndex(200),
+            Node {
+                display: if visible {
+                    Display::Flex
+                } else {
+                    Display::None
+                },
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.005, 0.007, 0.014, 0.82)),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        width: Val::Px(430.0),
+                        padding: UiRect::all(Val::Px(24.0)),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: Val::Px(12.0),
+                        border: UiRect::all(Val::Px(1.0)),
+                        border_radius: BorderRadius::all(Val::Px(8.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL),
+                    BorderColor::all(theme::ACCENT_DIM),
+                ))
+                .with_children(|dialog| {
+                    dialog.spawn((
+                        Text::new("AESTRA"),
+                        TextFont {
+                            font_size: FontSize::Px(24.0),
+                            ..default()
+                        },
+                        TextColor(theme::ACCENT),
+                    ));
+                    dialog.spawn((
+                        Text::new("Bevy-native VFX choreography toolkit\nVersion 0.1.0"),
+                        TextFont {
+                            font_size: FontSize::Px(12.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                        TextLayout::justify(Justify::Center),
+                    ));
+                    inspector_action_button(dialog, "Close", EditorAction::CloseAbout);
+                });
+        });
+}
+
+fn spawn_toolbar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
     parent
         .spawn((
             Node {
@@ -199,7 +537,10 @@ fn spawn_toolbar(parent: &mut ChildSpawnerCommands) {
                 BackgroundColor(theme::BORDER),
             ));
             bar.spawn((
-                Text::new("PRISM BLOOM  /  VFX CHOREOGRAPHY"),
+                Text::new(format!(
+                    "{}  /  VFX CHOREOGRAPHY",
+                    session.effect.name.to_uppercase()
+                )),
                 TextFont {
                     font_size: FontSize::Px(12.0),
                     ..default()
@@ -260,7 +601,11 @@ fn toolbar_button<M: Component>(
         });
 }
 
-fn spawn_asset_browser(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_asset_browser(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    catalog: &EffectCatalog,
+) {
     parent
         .spawn((
             Node {
@@ -274,7 +619,11 @@ fn spawn_asset_browser(parent: &mut ChildSpawnerCommands, session: &EditorSessio
             BorderColor::all(theme::BORDER),
         ))
         .with_children(|panel| {
-            panel_heading(panel, "EFFECT LIBRARY", "1 ASSET");
+            panel_heading(
+                panel,
+                "CURRENT EFFECT",
+                if session.dirty { "MODIFIED" } else { "SAVED" },
+            );
             panel
                 .spawn((
                     Node {
@@ -299,7 +648,7 @@ fn spawn_asset_browser(parent: &mut ChildSpawnerCommands, session: &EditorSessio
                         TextColor(theme::TEXT),
                     ));
                     asset.spawn((
-                        Text::new("example / energy"),
+                        Text::new(&session.effect.id),
                         TextFont {
                             font_size: FontSize::Px(10.0),
                             ..default()
@@ -310,9 +659,42 @@ fn spawn_asset_browser(parent: &mut ChildSpawnerCommands, session: &EditorSessio
 
             panel_heading(
                 panel,
+                "PROJECT EFFECTS",
+                &format!("{} FOUND", catalog.entries.len()),
+            );
+            for (index, entry) in catalog.entries.iter().enumerate() {
+                panel
+                    .spawn((
+                        Button,
+                        EditorAction::OpenCatalog(index),
+                        Node {
+                            height: Val::Px(31.0),
+                            margin: UiRect::horizontal(Val::Px(8.0)),
+                            padding: UiRect::horizontal(Val::Px(9.0)),
+                            align_items: AlignItems::Center,
+                            border_radius: BorderRadius::all(Val::Px(3.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme::PANEL_DARK),
+                    ))
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new(&entry.name),
+                            TextFont {
+                                font_size: FontSize::Px(11.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT_MUTED),
+                        ));
+                    });
+            }
+
+            panel_heading(
+                panel,
                 "LAYERS",
                 &format!("{} ACTIVE", session.effect.layers.len()),
             );
+            toolbar_button(panel, "+ Add Emitter", EditorAction::AddLayer, PlainMarker);
             for (index, layer) in session.effect.layers.iter().enumerate() {
                 let selected = index == session.selected_layer;
                 panel
@@ -452,6 +834,7 @@ fn spawn_preview(parent: &mut ChildSpawnerCommands) {
 fn spawn_preview_grid(parent: &mut ChildSpawnerCommands) {
     for i in 1..8 {
         parent.spawn((
+            PreviewGrid,
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Percent(i as f32 * 12.5),
@@ -465,6 +848,7 @@ fn spawn_preview_grid(parent: &mut ChildSpawnerCommands) {
     }
     for i in 1..6 {
         parent.spawn((
+            PreviewGrid,
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(0.0),
@@ -503,72 +887,124 @@ fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                 },
                 TextColor(theme::TEXT),
                 Node {
-                    margin: UiRect::axes(Val::Px(14.0), Val::Px(12.0)),
+                    margin: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
                     ..default()
                 },
             ));
             inspector_section(panel, "EMISSION");
             property_stepper(
                 panel,
-                "Spawn rate",
+                &format!("Spawn rate  {:.1}/s", layer.emitter.spawn_rate),
                 EditorAction::SpawnRate(-5.0),
                 EditorAction::SpawnRate(5.0),
             );
             property_stepper(
                 panel,
-                "Burst",
+                &format!("Burst  {}", layer.emitter.burst_count),
                 EditorAction::Burst(-4),
                 EditorAction::Burst(4),
             );
             property_stepper(
                 panel,
-                "Lifetime",
+                &format!(
+                    "Lifetime  {:.2}-{:.2}s",
+                    layer.emitter.lifetime.min, layer.emitter.lifetime.max
+                ),
                 EditorAction::Lifetime(-0.1),
                 EditorAction::Lifetime(0.1),
             );
-            panel.spawn((
-                Text::new(inspector_text(layer)),
-                InspectorValues,
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
+            inspector_section(panel, "CHOREOGRAPHY");
+            property_stepper(
+                panel,
+                &format!("Start  {:.2}s", layer.start_time),
+                EditorAction::LayerStart(-0.05),
+                EditorAction::LayerStart(0.05),
+            );
+            property_stepper(
+                panel,
+                &format!("Duration  {:.2}s", layer.duration),
+                EditorAction::LayerDuration(-0.05),
+                EditorAction::LayerDuration(0.05),
+            );
+
+            inspector_section(panel, "CURVES & COLOR");
+            spawn_curve_preview(panel, &layer.emitter.size);
+            spawn_gradient_preview(panel, &layer.emitter.color);
+            let size_middle = layer.emitter.size.keys.len() / 2;
+            let size_end = layer.emitter.size.keys.len().saturating_sub(1);
+            let opacity_middle = layer.emitter.opacity.keys.len() / 2;
+            property_stepper(
+                panel,
+                &format!("Size start  {:.1}", layer.emitter.size.keys[0].value),
+                EditorAction::CurveValue {
+                    curve: CurveTarget::Size,
+                    key: 0,
+                    delta: -1.0,
                 },
-                TextColor(theme::TEXT_MUTED),
-                Node {
-                    margin: UiRect::all(Val::Px(14.0)),
-                    ..default()
+                EditorAction::CurveValue {
+                    curve: CurveTarget::Size,
+                    key: 0,
+                    delta: 1.0,
                 },
-            ));
-            inspector_section(panel, "RENDERER");
-            info_row(panel, "Blend", &format!("{:?}", layer.blend));
-            info_row(panel, "Facing", "Camera billboard");
-            inspector_section(panel, "LAYER");
-            panel
-                .spawn((
-                    Button,
-                    EditorAction::ToggleLayer,
-                    Node {
-                        height: Val::Px(32.0),
-                        margin: UiRect::all(Val::Px(12.0)),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(4.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::BUTTON),
-                    BorderColor::all(theme::BORDER_BRIGHT),
-                ))
-                .with_children(|button| {
-                    button.spawn((
-                        Text::new("Toggle visibility"),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT),
-                    ));
-                });
+            );
+            property_stepper(
+                panel,
+                &format!(
+                    "Size peak  {:.1}",
+                    layer.emitter.size.keys[size_middle].value
+                ),
+                EditorAction::CurveValue {
+                    curve: CurveTarget::Size,
+                    key: size_middle,
+                    delta: -1.0,
+                },
+                EditorAction::CurveValue {
+                    curve: CurveTarget::Size,
+                    key: size_middle,
+                    delta: 1.0,
+                },
+            );
+            property_stepper(
+                panel,
+                &format!("Size end  {:.1}", layer.emitter.size.keys[size_end].value),
+                EditorAction::CurveValue {
+                    curve: CurveTarget::Size,
+                    key: size_end,
+                    delta: -1.0,
+                },
+                EditorAction::CurveValue {
+                    curve: CurveTarget::Size,
+                    key: size_end,
+                    delta: 1.0,
+                },
+            );
+            property_stepper(
+                panel,
+                &format!(
+                    "Opacity peak  {:.2}",
+                    layer.emitter.opacity.keys[opacity_middle].value
+                ),
+                EditorAction::CurveValue {
+                    curve: CurveTarget::Opacity,
+                    key: opacity_middle,
+                    delta: -0.1,
+                },
+                EditorAction::CurveValue {
+                    curve: CurveTarget::Opacity,
+                    key: opacity_middle,
+                    delta: 0.1,
+                },
+            );
+            inspector_action_button(panel, "Cycle color gradient", EditorAction::ColorPreset);
+            inspector_action_button(
+                panel,
+                if layer.enabled {
+                    "Layer visible"
+                } else {
+                    "Layer hidden"
+                },
+                EditorAction::ToggleLayer,
+            );
         });
 }
 
@@ -620,6 +1056,20 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                         },
                         TextColor(theme::ACCENT),
                     ));
+                    header.spawn(Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    });
+                    header.spawn((
+                        Text::new(format!("Duration {:.2}s", session.effect.duration)),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                    ));
+                    mini_button(header, "-", EditorAction::EffectDuration(-0.25));
+                    mini_button(header, "+", EditorAction::EffectDuration(0.25));
                 });
             timeline
                 .spawn(Node {
@@ -659,6 +1109,9 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                         }
                     });
                     body.spawn((
+                        Button,
+                        TimelineCanvas,
+                        RelativeCursorPosition::default(),
                         Node {
                             flex_grow: 1.0,
                             height: Val::Percent(100.0),
@@ -670,7 +1123,7 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                         BackgroundColor(theme::TIMELINE_BG),
                     ))
                     .with_children(|tracks| {
-                        spawn_ruler(tracks);
+                        spawn_ruler(tracks, session.effect.duration);
                         for (index, layer) in session.effect.layers.iter().enumerate() {
                             tracks
                                 .spawn(Node {
@@ -716,10 +1169,10 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
         });
 }
 
-fn spawn_ruler(parent: &mut ChildSpawnerCommands) {
+fn spawn_ruler(parent: &mut ChildSpawnerCommands, duration: f32) {
     for index in 0..=7 {
         parent.spawn((
-            Text::new(format!("{:.1}", index as f32 * 0.4)),
+            Text::new(format!("{:.1}", index as f32 / 7.0 * duration)),
             TextFont {
                 font_size: FontSize::Px(9.0),
                 ..default()
@@ -889,30 +1342,28 @@ fn mini_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAct
         });
 }
 
-fn info_row(parent: &mut ChildSpawnerCommands, label: &str, value: &str) {
+fn inspector_action_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAction) {
     parent
-        .spawn(Node {
-            height: Val::Px(30.0),
-            width: Val::Percent(100.0),
-            padding: UiRect::horizontal(Val::Px(12.0)),
-            align_items: AlignItems::Center,
-            ..default()
-        })
-        .with_children(|row| {
-            row.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_MUTED),
-            ));
-            row.spawn(Node {
-                flex_grow: 1.0,
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: Val::Auto,
+                height: Val::Px(28.0),
+                margin: UiRect::horizontal(Val::Px(12.0)),
+                padding: UiRect::horizontal(Val::Px(10.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(3.0)),
                 ..default()
-            });
-            row.spawn((
-                Text::new(value),
+            },
+            BackgroundColor(theme::BUTTON),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label),
                 TextFont {
                     font_size: FontSize::Px(10.0),
                     ..default()
@@ -922,17 +1373,115 @@ fn info_row(parent: &mut ChildSpawnerCommands, label: &str, value: &str) {
         });
 }
 
-fn keyboard_shortcuts(keys: Res<ButtonInput<KeyCode>>, mut session: ResMut<EditorSession>) {
+fn spawn_curve_preview(parent: &mut ChildSpawnerCommands, curve: &aestra_bevy::Curve) {
+    let maximum = curve
+        .keys
+        .iter()
+        .map(|key| key.value)
+        .fold(0.001_f32, f32::max);
+    parent
+        .spawn((
+            Node {
+                width: Val::Auto,
+                height: Val::Px(26.0),
+                margin: UiRect::horizontal(Val::Px(12.0)),
+                padding: UiRect::all(Val::Px(2.0)),
+                align_items: AlignItems::End,
+                column_gap: Val::Px(1.0),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::TIMELINE_BG),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|preview| {
+            for index in 0..24 {
+                let value = curve.sample(index as f32 / 23.0) / maximum;
+                preview.spawn((
+                    Node {
+                        flex_grow: 1.0,
+                        height: Val::Percent((value * 100.0).clamp(2.0, 100.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::ACCENT_DIM),
+                ));
+            }
+        });
+}
+
+fn spawn_gradient_preview(parent: &mut ChildSpawnerCommands, gradient: &aestra_bevy::Gradient) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Auto,
+                height: Val::Px(14.0),
+                margin: UiRect::horizontal(Val::Px(12.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|preview| {
+            for index in 0..24 {
+                let color = gradient.sample(index as f32 / 23.0);
+                preview.spawn((
+                    Node {
+                        flex_grow: 1.0,
+                        height: Val::Percent(100.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(color[0], color[1], color[2], color[3])),
+                ));
+            }
+        });
+}
+
+fn keyboard_shortcuts(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut session: ResMut<EditorSession>,
+    mut menu: ResMut<MenuState>,
+) {
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+
+    if keys.just_pressed(KeyCode::Escape) {
+        menu.open = None;
+        menu.show_about = false;
+    }
+    if control && keys.just_pressed(KeyCode::KeyN) {
+        if confirm_discard(&session) {
+            session.new_effect();
+        }
+    }
+    if control && keys.just_pressed(KeyCode::KeyO) {
+        open_effect_dialog(&mut session);
+    }
+    if control && keys.just_pressed(KeyCode::KeyS) {
+        save_session(&mut session, shift);
+    }
+    if control && keys.just_pressed(KeyCode::KeyZ) {
+        session.undo();
+    }
+    if control && keys.just_pressed(KeyCode::KeyY) {
+        session.redo();
+    }
+    if control && keys.just_pressed(KeyCode::KeyD) {
+        session.duplicate_selected_layer();
+    }
+    if control && keys.just_pressed(KeyCode::Enter) {
+        session.add_layer();
+    }
+    if keys.just_pressed(KeyCode::Delete) {
+        session.delete_selected_layer();
+    }
     if keys.just_pressed(KeyCode::Space) {
         session.playing = !session.playing;
     }
     if keys.just_pressed(KeyCode::KeyR) {
         session.restart();
     }
-    if keys.just_pressed(KeyCode::KeyS)
-        && (keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight))
-    {
-        session.save();
+    if keys.just_pressed(KeyCode::KeyG) && !control {
+        menu.show_grid = !menu.show_grid;
     }
 }
 
@@ -947,6 +1496,8 @@ fn handle_buttons(
         (Changed<Interaction>, With<Button>),
     >,
     mut session: ResMut<EditorSession>,
+    mut menu: ResMut<MenuState>,
+    catalog: Res<EffectCatalog>,
 ) {
     for (interaction, action, layer_row, mut background) in &mut buttons {
         match *interaction {
@@ -962,48 +1513,316 @@ fn handle_buttons(
             }
             Interaction::Pressed => {
                 background.0 = theme::ACCENT_DIM;
+                if let EditorAction::ToggleMenu(kind) = *action {
+                    menu.open = if menu.open == Some(kind) {
+                        None
+                    } else {
+                        Some(kind)
+                    };
+                    continue;
+                }
+                menu.open = None;
                 match *action {
+                    EditorAction::NewEffect => {
+                        if confirm_discard(&session) {
+                            session.new_effect();
+                        }
+                    }
+                    EditorAction::OpenEffect => open_effect_dialog(&mut session),
+                    EditorAction::OpenCatalog(index) => {
+                        if confirm_discard(&session) {
+                            if let Some(entry) = catalog.entries.get(index)
+                                && let Err(error) = session.open(&entry.path)
+                            {
+                                session.status = format!("Open failed: {error}");
+                            }
+                        } else {
+                            session.status = "Open cancelled".into();
+                        }
+                    }
                     EditorAction::TogglePlayback => session.playing = !session.playing,
                     EditorAction::Restart => session.restart(),
-                    EditorAction::Save => session.save(),
-                    EditorAction::SelectLayer(index) => session.selected_layer = index,
+                    EditorAction::Save => save_session(&mut session, false),
+                    EditorAction::SaveAs => save_session(&mut session, true),
+                    EditorAction::Undo => session.undo(),
+                    EditorAction::Redo => session.redo(),
+                    EditorAction::AddLayer => session.add_layer(),
+                    EditorAction::DuplicateLayer => session.duplicate_selected_layer(),
+                    EditorAction::DeleteLayer => session.delete_selected_layer(),
+                    EditorAction::SelectLayer(index) => {
+                        session.selected_layer = index;
+                        session.status = format!("Selected {}", session.selected_layer().name);
+                        session.ui_revision += 1;
+                    }
                     EditorAction::SpawnRate(delta) => {
-                        let selected = session.selected_layer;
-                        let layer = &mut session.effect.layers[selected];
-                        layer.emitter.spawn_rate = (layer.emitter.spawn_rate + delta).max(0.0);
-                        session.dirty = true;
+                        session.edit("Changed spawn rate", true, |session| {
+                            let layer = session.selected_layer_mut();
+                            layer.emitter.spawn_rate = (layer.emitter.spawn_rate + delta).max(0.0);
+                        });
                     }
                     EditorAction::Burst(delta) => {
-                        let selected = session.selected_layer;
-                        let layer = &mut session.effect.layers[selected];
-                        layer.emitter.burst_count = if delta.is_negative() {
-                            layer
-                                .emitter
-                                .burst_count
-                                .saturating_sub(delta.unsigned_abs())
-                        } else {
-                            layer.emitter.burst_count.saturating_add(delta as u32)
-                        };
-                        session.dirty = true;
+                        session.edit("Changed burst count", true, |session| {
+                            let layer = session.selected_layer_mut();
+                            layer.emitter.burst_count = if delta.is_negative() {
+                                layer
+                                    .emitter
+                                    .burst_count
+                                    .saturating_sub(delta.unsigned_abs())
+                            } else {
+                                layer.emitter.burst_count.saturating_add(delta as u32)
+                            };
+                        });
                     }
                     EditorAction::Lifetime(delta) => {
-                        let selected = session.selected_layer;
-                        let layer = &mut session.effect.layers[selected];
-                        layer.emitter.lifetime.min = (layer.emitter.lifetime.min + delta).max(0.05);
-                        layer.emitter.lifetime.max =
-                            (layer.emitter.lifetime.max + delta).max(layer.emitter.lifetime.min);
-                        session.dirty = true;
+                        session.edit("Changed lifetime", true, |session| {
+                            let layer = session.selected_layer_mut();
+                            layer.emitter.lifetime.min =
+                                (layer.emitter.lifetime.min + delta).max(0.05);
+                            layer.emitter.lifetime.max = (layer.emitter.lifetime.max + delta)
+                                .max(layer.emitter.lifetime.min);
+                        });
+                    }
+                    EditorAction::LayerStart(delta) => {
+                        session.edit("Moved layer", true, |session| {
+                            let duration = session.effect.duration;
+                            let layer = session.selected_layer_mut();
+                            layer.start_time =
+                                (layer.start_time + delta).clamp(0.0, (duration - 0.05).max(0.0));
+                            layer.duration = layer.duration.min(duration - layer.start_time);
+                        });
+                    }
+                    EditorAction::LayerDuration(delta) => {
+                        session.edit("Trimmed layer", true, |session| {
+                            let effect_duration = session.effect.duration;
+                            let layer = session.selected_layer_mut();
+                            layer.duration = (layer.duration + delta)
+                                .clamp(0.05, effect_duration - layer.start_time);
+                        });
+                    }
+                    EditorAction::EffectDuration(delta) => {
+                        session.edit("Changed effect duration", true, |session| {
+                            session.effect.duration = (session.effect.duration + delta).max(0.25);
+                            let effect_duration = session.effect.duration;
+                            for layer in &mut session.effect.layers {
+                                layer.start_time =
+                                    layer.start_time.min((effect_duration - 0.05).max(0.0));
+                                layer.duration = layer
+                                    .duration
+                                    .min(effect_duration - layer.start_time)
+                                    .max(0.05);
+                            }
+                            session.time = session.time.min(effect_duration);
+                        });
+                    }
+                    EditorAction::CurveValue { curve, key, delta } => {
+                        session.edit("Edited curve", true, |session| {
+                            let layer = session.selected_layer_mut();
+                            let keys = match curve {
+                                CurveTarget::Size => &mut layer.emitter.size.keys,
+                                CurveTarget::Opacity => &mut layer.emitter.opacity.keys,
+                            };
+                            if let Some(curve_key) = keys.get_mut(key) {
+                                curve_key.value = match curve {
+                                    CurveTarget::Size => (curve_key.value + delta).max(0.0),
+                                    CurveTarget::Opacity => {
+                                        (curve_key.value + delta).clamp(0.0, 1.0)
+                                    }
+                                };
+                            }
+                        });
+                    }
+                    EditorAction::ColorPreset => {
+                        session.edit("Changed color gradient", true, |session| {
+                            cycle_color_gradient(session.selected_layer_mut());
+                        });
                     }
                     EditorAction::ToggleLayer => {
-                        let selected = session.selected_layer;
-                        let layer = &mut session.effect.layers[selected];
-                        layer.enabled = !layer.enabled;
-                        session.dirty = true;
+                        session.edit("Toggled layer visibility", true, |session| {
+                            let layer = session.selected_layer_mut();
+                            layer.enabled = !layer.enabled;
+                        });
                     }
+                    EditorAction::ToggleGrid => menu.show_grid = !menu.show_grid,
+                    EditorAction::ShowAbout => menu.show_about = true,
+                    EditorAction::CloseAbout => menu.show_about = false,
+                    EditorAction::ToggleMenu(_) => unreachable!(),
                 }
             }
         }
     }
+}
+
+fn open_effect_dialog(session: &mut EditorSession) {
+    if !confirm_discard(session) {
+        session.status = "Open cancelled".into();
+        return;
+    }
+    let mut dialog = FileDialog::new().add_filter("Aestra effect", &["ron"]);
+    if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
+        dialog = dialog.set_directory(directory);
+    }
+    let Some(path) = dialog.pick_file() else {
+        session.status = "Open cancelled".into();
+        return;
+    };
+    if let Err(error) = session.open(&path) {
+        session.status = format!("Open failed: {error}");
+    }
+}
+
+fn confirm_discard(session: &EditorSession) -> bool {
+    if !session.dirty {
+        return true;
+    }
+    matches!(
+        MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title("Unsaved changes")
+            .set_description("Discard the unsaved changes to the current effect?")
+            .set_buttons(MessageButtons::YesNo)
+            .show(),
+        MessageDialogResult::Yes
+    )
+}
+
+fn save_session(session: &mut EditorSession, save_as: bool) {
+    if !save_as && session.source_path.is_some() {
+        if let Err(error) = session.save() {
+            session.status = format!("Save failed: {error}");
+        }
+        return;
+    }
+
+    let file_name = format!(
+        "{}.aestra.ron",
+        session.effect.id.replace([' ', '/'], "_").to_lowercase()
+    );
+    let mut dialog = FileDialog::new()
+        .add_filter("Aestra effect", &["ron"])
+        .set_file_name(file_name);
+    if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
+        dialog = dialog.set_directory(directory);
+    }
+    let Some(path) = dialog.save_file() else {
+        session.status = "Save cancelled".into();
+        return;
+    };
+    if let Err(error) = session.save_as(path) {
+        session.status = format!("Save failed: {error}");
+    }
+}
+
+fn cycle_color_gradient(layer: &mut aestra_bevy::EffectLayer) {
+    let first = layer
+        .emitter
+        .color
+        .keys
+        .first()
+        .map_or([0.4, 0.4, 1.0, 1.0], |key| key.color);
+    let palette = if first[0] > 0.72 {
+        [
+            [0.25, 1.0, 0.68, 1.0],
+            [0.10, 0.62, 0.82, 1.0],
+            [0.02, 0.18, 0.28, 0.0],
+        ]
+    } else if first[1] > 0.85 {
+        [
+            [0.38, 0.72, 1.0, 1.0],
+            [0.68, 0.28, 1.0, 1.0],
+            [0.18, 0.05, 0.42, 0.0],
+        ]
+    } else {
+        [
+            [1.0, 0.82, 0.28, 1.0],
+            [1.0, 0.24, 0.08, 1.0],
+            [0.35, 0.02, 0.01, 0.0],
+        ]
+    };
+    let key_count = layer.emitter.color.keys.len();
+    for (index, key) in layer.emitter.color.keys.iter_mut().enumerate() {
+        let palette_index = if key_count <= 1 {
+            0
+        } else {
+            (index * 2 / (key_count - 1)).min(2)
+        };
+        key.color = palette[palette_index];
+    }
+}
+
+fn scrub_timeline(
+    timeline: Query<(&Interaction, &RelativeCursorPosition), With<TimelineCanvas>>,
+    mut session: ResMut<EditorSession>,
+) {
+    for (interaction, cursor) in &timeline {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let Some(position) = cursor.normalized else {
+            continue;
+        };
+        session.time = position.x.clamp(0.0, 1.0) * session.effect.duration;
+        session.playing = false;
+        session.status = format!("Scrubbed to {:.3}s", session.time);
+    }
+}
+
+fn update_menu_visibility(
+    menu: Res<MenuState>,
+    mut dropdowns: Query<(&MenuDropdown, &mut Node)>,
+    mut about: Query<&mut Node, (With<AboutOverlay>, Without<MenuDropdown>)>,
+) {
+    if !menu.is_changed() {
+        return;
+    }
+    for (dropdown, mut node) in &mut dropdowns {
+        node.display = if menu.open == Some(dropdown.0) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for mut node in &mut about {
+        node.display = if menu.show_about {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+}
+
+fn update_preview_grid_visibility(
+    menu: Res<MenuState>,
+    mut grid: Query<&mut Visibility, With<PreviewGrid>>,
+) {
+    if !menu.is_changed() {
+        return;
+    }
+    for mut visibility in &mut grid {
+        *visibility = if menu.show_grid {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+fn rebuild_editor_ui(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    menu: Res<MenuState>,
+    mut catalog: ResMut<EffectCatalog>,
+    mut rendered: ResMut<RenderedUiRevision>,
+    roots: Query<Entity, With<EditorRoot>>,
+) {
+    if rendered.0 == session.ui_revision {
+        return;
+    }
+    for root in &roots {
+        commands.entity(root).despawn();
+    }
+    *catalog = EffectCatalog::scan();
+    spawn_editor_ui(&mut commands, &session, &menu, &catalog);
+    rendered.0 = session.ui_revision;
 }
 
 fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
@@ -1134,30 +1953,6 @@ fn layer_color(index: usize) -> Color {
 
 fn layer_color_alpha(index: usize, alpha: f32) -> Color {
     layer_color(index).with_alpha(alpha)
-}
-
-mod theme {
-    use bevy::prelude::Color;
-
-    pub const APP_BG: Color = Color::srgb(0.027, 0.031, 0.047);
-    pub const PANEL_DARK: Color = Color::srgb(0.039, 0.045, 0.066);
-    pub const PANEL: Color = Color::srgb(0.055, 0.062, 0.087);
-    pub const PANEL_LIGHT: Color = Color::srgb(0.070, 0.078, 0.105);
-    pub const VIEWPORT_FRAME: Color = Color::srgb(0.020, 0.024, 0.038);
-    pub const VIEWPORT: Color = Color::srgb(0.013, 0.017, 0.030);
-    pub const TIMELINE_BG: Color = Color::srgb(0.030, 0.035, 0.052);
-    pub const BORDER: Color = Color::srgb(0.105, 0.116, 0.151);
-    pub const BORDER_BRIGHT: Color = Color::srgb(0.148, 0.164, 0.211);
-    pub const GRID: Color = Color::srgba(0.20, 0.23, 0.31, 0.18);
-    pub const BUTTON: Color = Color::srgb(0.085, 0.095, 0.128);
-    pub const BUTTON_HOVER: Color = Color::srgb(0.135, 0.143, 0.190);
-    pub const SELECTION: Color = Color::srgb(0.100, 0.089, 0.173);
-    pub const ACCENT: Color = Color::srgb(0.61, 0.47, 1.0);
-    pub const ACCENT_DIM: Color = Color::srgb(0.31, 0.23, 0.53);
-    pub const PLAYHEAD: Color = Color::srgb(0.95, 0.44, 0.78);
-    pub const TEXT: Color = Color::srgb(0.88, 0.90, 0.96);
-    pub const TEXT_MUTED: Color = Color::srgb(0.59, 0.62, 0.70);
-    pub const TEXT_FAINT: Color = Color::srgb(0.36, 0.39, 0.47);
 }
 
 #[cfg(test)]

@@ -4,15 +4,17 @@
 
 The first vertical slice already includes:
 
-- a complete editor shell built with Bevy UI;
-- an effect library, layer stack, viewport, inspector, timeline, transport, and status bar;
+- a complete editor shell built with Bevy UI, including File/Edit/View/Help menus;
+- project effect discovery, native New/Open/Save/Save As workflows, and unsaved-change protection;
+- command-based undo/redo for emitter, timing, curve, gradient, and layer edits;
+- an effect library, layer stack, viewport, inspector, interactive timeline, transport, and status bar;
 - deterministic emitter evaluation with point, circle, ring, and cone shapes;
 - ranges, smooth curves, color gradients, drag, gravity, turbulence, and layer timing;
 - renderer declarations for billboards, ribbons, and meshes;
 - event-link data for spawn, death, and collision choreography;
 - RON asset validation, loading, and saving;
 - an authored four-layer `Prism Bloom` sample;
-- interactive playback and emitter tuning.
+- interactive timeline scrubbing, playback, emitter tuning, curve previews, and gradient presets.
 
 ## Run
 
@@ -24,9 +26,15 @@ Controls:
 
 - `Space`: play or pause
 - `R`: restart the effect
-- `Ctrl+S`: save the current effect
+- `G`: toggle the preview grid
+- `Ctrl+N` / `Ctrl+O`: create or open an effect
+- `Ctrl+S` / `Ctrl+Shift+S`: save or save as
+- `Ctrl+Z` / `Ctrl+Y`: undo or redo
+- `Ctrl+Enter`: add an emitter
+- `Ctrl+D` / `Delete`: duplicate or delete the selected emitter
 - layer rows: select an emitter
-- inspector `−` / `+`: tune emission, burst, and lifetime
+- timeline: click or drag to scrub
+- inspector `-` / `+`: tune emission, timing, size, opacity, and duration
 
 The sample asset lives at [`assets/effects/prism_bloom.aestra.ron`](assets/effects/prism_bloom.aestra.ron).
 
@@ -91,6 +99,8 @@ cargo fmt --all -- --check
 cargo check --workspace
 cargo test --workspace
 ```
+
+The editor round-trip tests create a new multi-layer effect, save it, and load it again through `aestra-bevy`, which is the same asset path used by the viewer and game plugin.
 
 The current runtime is a deterministic CPU reference using pooled Bevy sprites. It establishes authoring semantics and makes the plugin usable immediately. A future GPU backend can preserve the same `AestraPlugin` / `EffectPlayer` integration surface.
 

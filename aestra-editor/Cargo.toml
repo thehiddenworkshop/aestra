@@ -10,3 +10,4 @@ repository.workspace = true
 [dependencies]
 aestra-bevy = { path = "../aestra-bevy" }
 bevy.workspace = true
+rfd = "0.15"
