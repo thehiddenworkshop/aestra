@@ -43,13 +43,13 @@ The sample asset lives at [`assets/effects/prism_bloom.aestra.ron`](assets/effec
 ```text
 aestra/
 ├── aestra-editor/           Bevy UI choreography editor
-├── aestra-bevy/             Reusable effect schema and Bevy playback plugin
+├── aestra-bevy/             Bevy playback and rendering integration
 ├── aestra-viewer/           Viewer, frame capture, and contact-sheet binary
 ├── assets/effects/          Authored `.aestra.ron` choreography assets
-└── crates/                  Reserved for extracted internal shared crates
+└── crates/aestra-core/      Engine-independent semantic effect model
 ```
 
-The workspace deliberately has three top-level product modules. `aestra-bevy` owns the shared effect format and playback contract; both binaries consume it. Following the common large-Rust-workspace convention, `crates/` is reserved for smaller internal libraries if shared concerns are extracted later.
+The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns the format-v2 semantic model, typed IDs, persistence, and structured validation. `aestra-bevy` adapts that model to Bevy playback, and both binaries use the same integration path.
 
 ## Viewer and visual analysis
 
@@ -100,7 +100,7 @@ cargo check --workspace
 cargo test --workspace
 ```
 
-The editor round-trip tests create a new multi-layer effect, save it, and load it again through `aestra-bevy`, which is the same asset path used by the viewer and game plugin.
+The editor round-trip tests create a new multi-emitter effect, save it, and load it through the shared semantic model used by the viewer and game plugin.
 
 The current runtime is a deterministic CPU reference using pooled Bevy sprites. It establishes authoring semantics and makes the plugin usable immediately. A future GPU backend can preserve the same `AestraPlugin` / `EffectPlayer` integration surface.
 

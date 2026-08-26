@@ -136,7 +136,7 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
         .as_ref()
         .map_or_else(
             || EffectAsset::from_ron(SAMPLE_SOURCE),
-            |path| EffectAsset::load_ron(path),
+            EffectAsset::load_ron,
         )
         .unwrap_or_else(|error| panic!("could not load viewer effect: {error}"));
     let effect_name = effect.name.clone();

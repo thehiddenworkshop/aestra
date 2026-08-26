@@ -237,11 +237,11 @@ fn spawn_editor_ui(
                 BackgroundColor(theme::APP_BG),
             ))
             .with_children(|main| {
-                spawn_asset_browser(main, &session, catalog);
+                spawn_asset_browser(main, session, catalog);
                 spawn_preview(main);
-                spawn_inspector(main, &session);
+                spawn_inspector(main, session);
             });
-            spawn_timeline(root, &session);
+            spawn_timeline(root, session);
             spawn_status_bar(root);
             spawn_about_overlay(root, menu.show_about);
         });
@@ -648,7 +648,7 @@ fn spawn_asset_browser(
                         TextColor(theme::TEXT),
                     ));
                     asset.spawn((
-                        Text::new(&session.effect.id),
+                        Text::new(session.effect.id.to_string()),
                         TextFont {
                             font_size: FontSize::Px(10.0),
                             ..default()
@@ -692,10 +692,10 @@ fn spawn_asset_browser(
             panel_heading(
                 panel,
                 "LAYERS",
-                &format!("{} ACTIVE", session.effect.layers.len()),
+                &format!("{} ACTIVE", session.effect.emitters.len()),
             );
             toolbar_button(panel, "+ Add Emitter", EditorAction::AddLayer, PlainMarker);
-            for (index, layer) in session.effect.layers.iter().enumerate() {
+            for (index, layer) in session.effect.emitters.iter().enumerate() {
                 let selected = index == session.selected_layer;
                 panel
                     .spawn((
@@ -863,7 +863,7 @@ fn spawn_preview_grid(parent: &mut ChildSpawnerCommands) {
 }
 
 fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
-    let layer = &session.effect.layers[session.selected_layer];
+    let layer = &session.effect.emitters[session.selected_layer];
     parent
         .spawn((
             Node {
@@ -894,13 +894,13 @@ fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
             inspector_section(panel, "EMISSION");
             property_stepper(
                 panel,
-                &format!("Spawn rate  {:.1}/s", layer.emitter.spawn_rate),
+                &format!("Spawn rate  {:.1}/s", layer.spawn_rate()),
                 EditorAction::SpawnRate(-5.0),
                 EditorAction::SpawnRate(5.0),
             );
             property_stepper(
                 panel,
-                &format!("Burst  {}", layer.emitter.burst_count),
+                &format!("Burst  {}", layer.burst_count()),
                 EditorAction::Burst(-4),
                 EditorAction::Burst(4),
             );
@@ -908,7 +908,8 @@ fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                 panel,
                 &format!(
                     "Lifetime  {:.2}-{:.2}s",
-                    layer.emitter.lifetime.min, layer.emitter.lifetime.max
+                    layer.lifetime().min,
+                    layer.lifetime().max
                 ),
                 EditorAction::Lifetime(-0.1),
                 EditorAction::Lifetime(0.1),
@@ -928,14 +929,14 @@ fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
             );
 
             inspector_section(panel, "CURVES & COLOR");
-            spawn_curve_preview(panel, &layer.emitter.size);
-            spawn_gradient_preview(panel, &layer.emitter.color);
-            let size_middle = layer.emitter.size.keys.len() / 2;
-            let size_end = layer.emitter.size.keys.len().saturating_sub(1);
-            let opacity_middle = layer.emitter.opacity.keys.len() / 2;
+            spawn_curve_preview(panel, layer.size_curve());
+            spawn_gradient_preview(panel, layer.color_gradient());
+            let size_middle = layer.size_curve().keys.len() / 2;
+            let size_end = layer.size_curve().keys.len().saturating_sub(1);
+            let opacity_middle = layer.opacity_curve().keys.len() / 2;
             property_stepper(
                 panel,
-                &format!("Size start  {:.1}", layer.emitter.size.keys[0].value),
+                &format!("Size start  {:.1}", layer.size_curve().keys[0].value),
                 EditorAction::CurveValue {
                     curve: CurveTarget::Size,
                     key: 0,
@@ -951,7 +952,7 @@ fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                 panel,
                 &format!(
                     "Size peak  {:.1}",
-                    layer.emitter.size.keys[size_middle].value
+                    layer.size_curve().keys[size_middle].value
                 ),
                 EditorAction::CurveValue {
                     curve: CurveTarget::Size,
@@ -966,7 +967,7 @@ fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
             );
             property_stepper(
                 panel,
-                &format!("Size end  {:.1}", layer.emitter.size.keys[size_end].value),
+                &format!("Size end  {:.1}", layer.size_curve().keys[size_end].value),
                 EditorAction::CurveValue {
                     curve: CurveTarget::Size,
                     key: size_end,
@@ -982,7 +983,7 @@ fn spawn_inspector(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                 panel,
                 &format!(
                     "Opacity peak  {:.2}",
-                    layer.emitter.opacity.keys[opacity_middle].value
+                    layer.opacity_curve().keys[opacity_middle].value
                 ),
                 EditorAction::CurveValue {
                     curve: CurveTarget::Opacity,
@@ -1092,7 +1093,7 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                         BorderColor::all(theme::BORDER),
                     ))
                     .with_children(|labels| {
-                        for (index, layer) in session.effect.layers.iter().enumerate() {
+                        for (index, layer) in session.effect.emitters.iter().enumerate() {
                             labels.spawn((
                                 Text::new(format!("  {:02}   {}", index + 1, layer.name)),
                                 TextFont {
@@ -1124,7 +1125,7 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                     ))
                     .with_children(|tracks| {
                         spawn_ruler(tracks, session.effect.duration);
-                        for (index, layer) in session.effect.layers.iter().enumerate() {
+                        for (index, layer) in session.effect.emitters.iter().enumerate() {
                             tracks
                                 .spawn(Node {
                                     width: Val::Percent(100.0),
@@ -1448,10 +1449,8 @@ fn keyboard_shortcuts(
         menu.open = None;
         menu.show_about = false;
     }
-    if control && keys.just_pressed(KeyCode::KeyN) {
-        if confirm_discard(&session) {
-            session.new_effect();
-        }
+    if control && keys.just_pressed(KeyCode::KeyN) && confirm_discard(&session) {
+        session.new_effect();
     }
     if control && keys.just_pressed(KeyCode::KeyO) {
         open_effect_dialog(&mut session);
@@ -1485,6 +1484,7 @@ fn keyboard_shortcuts(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn handle_buttons(
     mut buttons: Query<
         (
@@ -1557,29 +1557,26 @@ fn handle_buttons(
                     EditorAction::SpawnRate(delta) => {
                         session.edit("Changed spawn rate", true, |session| {
                             let layer = session.selected_layer_mut();
-                            layer.emitter.spawn_rate = (layer.emitter.spawn_rate + delta).max(0.0);
+                            *layer.spawn_rate_mut() = (layer.spawn_rate() + delta).max(0.0);
                         });
                     }
                     EditorAction::Burst(delta) => {
                         session.edit("Changed burst count", true, |session| {
                             let layer = session.selected_layer_mut();
-                            layer.emitter.burst_count = if delta.is_negative() {
-                                layer
-                                    .emitter
-                                    .burst_count
-                                    .saturating_sub(delta.unsigned_abs())
+                            let burst_count = layer.burst_count();
+                            *layer.burst_count_mut() = if delta.is_negative() {
+                                burst_count.saturating_sub(delta.unsigned_abs())
                             } else {
-                                layer.emitter.burst_count.saturating_add(delta as u32)
+                                burst_count.saturating_add(delta as u32)
                             };
                         });
                     }
                     EditorAction::Lifetime(delta) => {
                         session.edit("Changed lifetime", true, |session| {
                             let layer = session.selected_layer_mut();
-                            layer.emitter.lifetime.min =
-                                (layer.emitter.lifetime.min + delta).max(0.05);
-                            layer.emitter.lifetime.max = (layer.emitter.lifetime.max + delta)
-                                .max(layer.emitter.lifetime.min);
+                            let lifetime = layer.lifetime_mut();
+                            lifetime.min = (lifetime.min + delta).max(0.05);
+                            lifetime.max = (lifetime.max + delta).max(lifetime.min);
                         });
                     }
                     EditorAction::LayerStart(delta) => {
@@ -1603,7 +1600,7 @@ fn handle_buttons(
                         session.edit("Changed effect duration", true, |session| {
                             session.effect.duration = (session.effect.duration + delta).max(0.25);
                             let effect_duration = session.effect.duration;
-                            for layer in &mut session.effect.layers {
+                            for layer in &mut session.effect.emitters {
                                 layer.start_time =
                                     layer.start_time.min((effect_duration - 0.05).max(0.0));
                                 layer.duration = layer
@@ -1618,8 +1615,8 @@ fn handle_buttons(
                         session.edit("Edited curve", true, |session| {
                             let layer = session.selected_layer_mut();
                             let keys = match curve {
-                                CurveTarget::Size => &mut layer.emitter.size.keys,
-                                CurveTarget::Opacity => &mut layer.emitter.opacity.keys,
+                                CurveTarget::Size => &mut layer.size_curve_mut().keys,
+                                CurveTarget::Opacity => &mut layer.opacity_curve_mut().keys,
                             };
                             if let Some(curve_key) = keys.get_mut(key) {
                                 curve_key.value = match curve {
@@ -1693,10 +1690,7 @@ fn save_session(session: &mut EditorSession, save_as: bool) {
         return;
     }
 
-    let file_name = format!(
-        "{}.aestra.ron",
-        session.effect.id.replace([' ', '/'], "_").to_lowercase()
-    );
+    let file_name = format!("{}.aestra.ron", session.effect.id);
     let mut dialog = FileDialog::new()
         .add_filter("Aestra effect", &["ron"])
         .set_file_name(file_name);
@@ -1712,10 +1706,9 @@ fn save_session(session: &mut EditorSession, save_as: bool) {
     }
 }
 
-fn cycle_color_gradient(layer: &mut aestra_bevy::EffectLayer) {
+fn cycle_color_gradient(layer: &mut aestra_bevy::Emitter) {
     let first = layer
-        .emitter
-        .color
+        .color_gradient()
         .keys
         .first()
         .map_or([0.4, 0.4, 1.0, 1.0], |key| key.color);
@@ -1738,8 +1731,8 @@ fn cycle_color_gradient(layer: &mut aestra_bevy::EffectLayer) {
             [0.35, 0.02, 0.01, 0.0],
         ]
     };
-    let key_count = layer.emitter.color.keys.len();
-    for (index, key) in layer.emitter.color.keys.iter_mut().enumerate() {
+    let key_count = layer.color_gradient().keys.len();
+    for (index, key) in layer.color_gradient_mut().keys.iter_mut().enumerate() {
         let palette_index = if key_count <= 1 {
             0
         } else {
@@ -1868,6 +1861,7 @@ fn update_preview(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn update_editor_labels(
     session: Res<EditorSession>,
     mut labels: Query<(
@@ -1883,7 +1877,7 @@ fn update_editor_labels(
     if !session.is_changed() {
         return;
     }
-    let layer = &session.effect.layers[session.selected_layer];
+    let layer = &session.effect.emitters[session.selected_layer];
     for (mut text, playback, time, status, title, values, count) in &mut labels {
         if playback.is_some() {
             text.0 = if session.playing { "Pause" } else { "Play" }.into();
@@ -1930,15 +1924,15 @@ fn update_layer_selection(
     }
 }
 
-fn inspector_text(layer: &aestra_bevy::EffectLayer) -> String {
+fn inspector_text(layer: &aestra_bevy::Emitter) -> String {
     format!(
         "Spawn rate       {:>7.1} /s\nBurst            {:>7}\nLifetime      {:>4.2}-{:>4.2} s\nMax particles    {:>7}\nTurbulence       {:>7.1}",
-        layer.emitter.spawn_rate,
-        layer.emitter.burst_count,
-        layer.emitter.lifetime.min,
-        layer.emitter.lifetime.max,
-        layer.emitter.max_particles,
-        layer.emitter.turbulence,
+        layer.spawn_rate(),
+        layer.burst_count(),
+        layer.lifetime().min,
+        layer.lifetime().max,
+        layer.max_particles,
+        layer.turbulence(),
     )
 }
 
@@ -1962,7 +1956,7 @@ mod tests {
     #[test]
     fn bundled_effect_is_valid() {
         let effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("bundled effect should parse");
-        assert_eq!(effect.id, "aestra.example.prism_bloom");
-        assert_eq!(effect.layers.len(), 4);
+        assert_eq!(effect.format_version, 2);
+        assert_eq!(effect.emitters.len(), 4);
     }
 }

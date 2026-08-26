@@ -1,6 +1,6 @@
 [package]
 name = "aestra-bevy"
-description = "Aestra effect assets, deterministic evaluation, and Bevy playback plugin"
+description = "Bevy integration and reference playback runtime for Aestra effects"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,5 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+aestra-core = { path = "../crates/aestra-core" }
 bevy.workspace = true
-ron.workspace = true
-serde.workspace = true
-thiserror.workspace = true

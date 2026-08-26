@@ -12,18 +12,23 @@ The UI is built directly with Bevy UI. Reusable editor widgets remain independen
 Authoring UI (Bevy UI)
               │ edits
               ▼
-EffectAsset + validation (aestra-bevy)
+EffectAsset + validation (aestra-core)
               │ compiles
               ▼
 Runtime IR (planned) ──► CPU reference runtime
               └────────► GPU compute runtime + Bevy renderer
 ```
 
-### `aestra-bevy`
+### `aestra-core`
 
 - Owns stable serialized authoring data and format versions.
 - Validates assets at import/save boundaries.
-- Provides deterministic reference evaluation for previews and tests.
+- Has no dependency on Bevy, editor UI, or an AI provider.
+
+### `aestra-bevy`
+
+- Re-exports the public semantic types for convenient Bevy integration.
+- Provides deterministic reference evaluation for previews and tests until `aestra-runtime` is extracted.
 - Exposes `AestraPlugin` and `EffectPlayer` for direct integration in Bevy applications.
 - Owns no editor or viewer state.
 
@@ -32,7 +37,7 @@ Runtime IR (planned) ──► CPU reference runtime
 - Owns selection, undo/redo, panels, viewport controls, and timeline state.
 - Presents Bevy-native UI and editor interactions.
 - Consumes `aestra-bevy` through an explicit session resource.
-- Must not add game-only concepts to the stable asset schema without a migration path.
+- Must not add game-only concepts to the semantic asset schema.
 
 ### `aestra-viewer`
 
@@ -50,15 +55,15 @@ Runtime IR (planned) ──► CPU reference runtime
 
 ## Choreography model
 
-The format begins with effect-level duration and looping, then layers with independent start/duration windows. Each layer combines:
+The format begins with effect-level duration and looping, then emitters with independent start/duration windows. Each emitter contains:
 
-- an emitter (where and when particles are born);
-- update behavior (forces, drag, turbulence, curves);
-- a renderer declaration (billboard, ribbon, or mesh);
-- blend behavior;
-- event links between layers.
+- an explicit simulation domain;
+- ordered modules assigned to explicit execution stages;
+- stable IDs for modules, curves, gradients, and renderer instances;
+- one or more renderers with independent blend behavior;
+- typed event links between emitters.
 
-The current file format is versioned from its first commit. Future schema changes require either backward-compatible defaults or an explicit migration pass.
+The current file format is version 2. Prototype version 1 is intentionally unsupported and has no legacy loader. A compatibility policy will be defined before the asset format is declared stable.
 
 ## Roadmap
 

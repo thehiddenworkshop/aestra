@@ -39,16 +39,15 @@ Dependency rules:
   canonical effect program;
 - AI and scripts submit the same commands and transactions as the editor.
 
-## Compatibility strategy
+## Format reset
 
-The current CPU evaluator and format-v1 example are frozen as a reference
-contract. Format v2 will be introduced with an explicit v1-to-v2 migration.
-During the transition, loading may accept both versions, but saving produces the
-current version. Existing format meaning must not change silently.
+The current CPU evaluator is frozen as a behavioral reference while the authored
+example moves directly to format v2. Format v1 is intentionally unsupported and
+has no parser or migration layer. This is an early-project schema reset, before
+external compatibility commitments exist.
 
 ## Consequences
 
-This introduces additional crates and a migration boundary before GPU work. It
-also gives compiler, runtime, editor, viewer, automation, and future AI clients a
-single semantic contract that can be tested without UI input.
-
+This introduces additional crates and intentionally invalidates format-v1 files.
+It also gives compiler, runtime, editor, viewer, automation, and future AI clients
+a single semantic contract that can be tested without UI input.

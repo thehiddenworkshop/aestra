@@ -33,8 +33,8 @@ document:
 - renderer declarations exist, but simulation, assets, materials, and renderer
   instances do not yet have independent models.
 
-The prototype should be preserved as a reference implementation and migration
-source, not expanded into the final architecture in place.
+The prototype's visual behavior should be preserved as a conformance reference,
+but its format-v1 schema is not retained.
 
 ## 2. Build-order decisions
 
@@ -48,8 +48,8 @@ source, not expanded into the final architecture in place.
    boundary is needed and tested.
 5. Keep the CPU evaluator as the conformance oracle while introducing a compiler
    and GPU backend.
-6. Introduce format v2 beside a tested v1-to-v2 migration. Do not silently change
-   the meaning of existing assets.
+6. Replace prototype format v1 with format v2. Only v2 is supported; no legacy
+   parser or migration layer is maintained.
 7. Implement commands immediately after the v2 semantic foundation. Although the
    source document lists commands later in one revised priority list, commands do
    not depend on the GPU runtime and are necessary to make subsequent editor
@@ -95,10 +95,10 @@ Goal: make the current prototype a safe baseline for refactoring.
 
 Deliverables:
 
-- architecture decisions for terminology, IDs, format migration, and crate
+- architecture decisions for terminology, IDs, the format reset, and crate
   boundaries;
-- golden v1 assets and deterministic evaluator snapshots at selected times;
-- save/load, migration, evaluator determinism, and viewer capture smoke tests;
+- a golden v2 asset and deterministic evaluator snapshots at selected times;
+- save/load, evaluator determinism, and viewer capture smoke tests;
 - performance baseline for the bundled example;
 - explicit statement that `EffectAsset`, `CompiledEffect`, and `EffectInstance`
   are different types with different lifecycles.
@@ -124,7 +124,7 @@ Start `crates/aestra-core` with:
 - typed values, parameter bindings, curves, gradients, and custom particle
   attributes;
 - editor layout metadata in a separate document keyed by semantic IDs;
-- deterministic serialization, format versioning, and v1-to-v2 migration;
+- deterministic serialization and explicit format-version rejection;
 - structured diagnostics with severity, code, message, semantic path, and optional
   remediation.
 
@@ -138,8 +138,7 @@ Renderer:        SpriteRenderer
 ```
 
 Exit gate: a v2 effect can be created, validated, serialized deterministically,
-loaded without Bevy, and can represent the current bundled example after
-migration.
+loaded without Bevy, and can represent the current bundled example.
 
 ### M2 — Deterministic authoring operations
 
@@ -184,7 +183,7 @@ Start `crates/aestra-compiler` and `crates/aestra-runtime` with:
   emitters, and runtime allocation handles;
 - a deterministic CPU interpreter for the initial IR.
 
-Exit gate: migrated v1 examples compile and match the frozen CPU reference within
+Exit gate: format-v2 examples compile and match the frozen CPU reference within
 defined tolerances; editor and viewer preview only through compile/instantiate/
 update APIs.
 
@@ -291,18 +290,17 @@ still function; rejected or invalid AI proposals never modify the working asset.
 The first build slice should end after M2 and be delivered in small, reviewable
 changes:
 
-1. Add architecture decisions and golden v1 behavior tests.
+1. Add architecture decisions and golden reference-behavior tests.
 2. Create `aestra-core` with typed IDs, diagnostic types, and deterministic value
    primitives.
 3. Add the minimal v2 `EffectAsset`, stage, module instance, and sprite renderer
    model.
-4. Implement v1-to-v2 migration and golden serialization tests.
+4. Replace the example with format v2 and add golden serialization tests.
 5. Create `aestra-authoring` with commands, atomic transactions, selection, locks,
    history, and semantic diff.
 6. Refactor `EditorSession` to submit commands while retaining the existing UI.
 7. Move persistence and semantic validation out of `aestra-bevy`.
-8. Update editor/viewer loading so both accept v1 assets through migration and
-   save v2 assets.
+8. Update editor/viewer loading so both accept and save only v2 assets.
 
 This slice intentionally does not redesign the UI, generate WGSL, add an LLM, or
 implement every future module.
@@ -312,7 +310,7 @@ implement every future module.
 - `cargo fmt --all -- --check`
 - `cargo check --workspace`
 - `cargo test --workspace`
-- stable serialization and migration fixtures
+- stable serialization fixtures and unsupported-version tests
 - structured validation snapshots
 - deterministic seed/time tests
 - CPU/compiler conformance tests once the IR exists

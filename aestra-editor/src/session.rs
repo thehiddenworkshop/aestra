@@ -1,7 +1,4 @@
-use aestra_bevy::{
-    BlendMode, CURRENT_FORMAT_VERSION, ColorKey, Curve, CurveKey, EffectAsset, EffectLayer,
-    Emitter, EmitterShape, Gradient, Renderer, ScalarRange,
-};
+use aestra_bevy::{EffectAsset, Emitter};
 use bevy::prelude::Resource;
 use std::path::{Path, PathBuf};
 
@@ -163,43 +160,42 @@ impl EditorSession {
         !self.history.redo.is_empty()
     }
 
-    pub fn selected_layer(&self) -> &EffectLayer {
-        &self.effect.layers[self.selected_layer]
+    pub fn selected_layer(&self) -> &Emitter {
+        &self.effect.emitters[self.selected_layer]
     }
 
-    pub fn selected_layer_mut(&mut self) -> &mut EffectLayer {
-        &mut self.effect.layers[self.selected_layer]
+    pub fn selected_layer_mut(&mut self) -> &mut Emitter {
+        &mut self.effect.emitters[self.selected_layer]
     }
 
     pub fn add_layer(&mut self) {
         self.edit("Added emitter layer", true, |session| {
-            let index = session.effect.layers.len();
-            session.effect.layers.push(default_layer(index));
+            let index = session.effect.emitters.len();
+            session.effect.emitters.push(default_layer(index));
             session.selected_layer = index;
         });
     }
 
     pub fn duplicate_selected_layer(&mut self) {
         self.edit("Duplicated emitter layer", true, |session| {
-            let mut layer = session.effect.layers[session.selected_layer].clone();
-            let suffix = session.effect.layers.len() + 1;
-            layer.id = format!("emitter_{suffix}");
+            let mut layer = session.effect.emitters[session.selected_layer].clone();
+            layer.regenerate_ids();
             layer.name = format!("{} Copy", layer.name);
             session
                 .effect
-                .layers
+                .emitters
                 .insert(session.selected_layer + 1, layer);
             session.selected_layer += 1;
         });
     }
 
     pub fn delete_selected_layer(&mut self) {
-        if self.effect.layers.len() <= 1 {
+        if self.effect.emitters.len() <= 1 {
             self.status = "An effect must keep at least one layer".into();
             return;
         }
         self.edit("Deleted emitter layer", true, |session| {
-            session.effect.layers.remove(session.selected_layer);
+            session.effect.emitters.remove(session.selected_layer);
         });
     }
 
@@ -221,95 +217,19 @@ impl EditorSession {
     fn clamp_selection(&mut self) {
         self.selected_layer = self
             .selected_layer
-            .min(self.effect.layers.len().saturating_sub(1));
+            .min(self.effect.emitters.len().saturating_sub(1));
         self.time = self.time.clamp(0.0, self.effect.duration);
     }
 }
 
 pub(crate) fn blank_effect() -> EffectAsset {
-    EffectAsset {
-        format_version: CURRENT_FORMAT_VERSION,
-        id: "untitled_effect".into(),
-        name: "Untitled Effect".into(),
-        duration: 2.0,
-        looping: true,
-        layers: vec![default_layer(0)],
-        events: vec![],
-    }
+    let mut effect = EffectAsset::new("Untitled Effect", 2.0);
+    effect.emitters.push(default_layer(0));
+    effect
 }
 
-fn default_layer(index: usize) -> EffectLayer {
-    EffectLayer {
-        id: format!("emitter_{}", index + 1),
-        name: format!("Emitter {}", index + 1),
-        enabled: true,
-        start_time: 0.0,
-        duration: 2.0,
-        blend: BlendMode::Additive,
-        emitter: Emitter {
-            shape: EmitterShape::Circle { radius: 12.0 },
-            spawn_rate: 24.0,
-            burst_count: 12,
-            max_particles: 128,
-            lifetime: ScalarRange::new(0.6, 1.2),
-            speed: ScalarRange::new(35.0, 90.0),
-            direction_degrees: 90.0,
-            spread_degrees: 360.0,
-            gravity: [0.0, -18.0],
-            drag: 0.6,
-            turbulence: 4.0,
-            angular_velocity: ScalarRange::new(-2.0, 2.0),
-            size: Curve {
-                keys: vec![
-                    CurveKey {
-                        time: 0.0,
-                        value: 4.0,
-                    },
-                    CurveKey {
-                        time: 0.35,
-                        value: 10.0,
-                    },
-                    CurveKey {
-                        time: 1.0,
-                        value: 1.0,
-                    },
-                ],
-            },
-            opacity: Curve {
-                keys: vec![
-                    CurveKey {
-                        time: 0.0,
-                        value: 0.0,
-                    },
-                    CurveKey {
-                        time: 0.12,
-                        value: 1.0,
-                    },
-                    CurveKey {
-                        time: 1.0,
-                        value: 0.0,
-                    },
-                ],
-            },
-            color: Gradient {
-                keys: vec![
-                    ColorKey {
-                        time: 0.0,
-                        color: [0.35, 0.75, 1.0, 1.0],
-                    },
-                    ColorKey {
-                        time: 0.5,
-                        color: [0.62, 0.3, 1.0, 1.0],
-                    },
-                    ColorKey {
-                        time: 1.0,
-                        color: [0.15, 0.05, 0.4, 0.0],
-                    },
-                ],
-            },
-        },
-        renderer: Renderer::Billboard { softness: 0.5 },
-    }
+fn default_layer(index: usize) -> Emitter {
+    Emitter::basic_sprite(format!("Emitter {}", index + 1), 2.0)
 }
 
 #[cfg(test)]
@@ -327,15 +247,15 @@ mod tests {
             include_str!("../../assets/effects/prism_bloom.aestra.ron"),
             "sample.ron",
         );
-        let original = session.effect.layers[0].emitter.spawn_rate;
+        let original = session.effect.emitters[0].spawn_rate();
         session.edit("Changed rate", false, |session| {
-            session.selected_layer_mut().emitter.spawn_rate = 77.0;
+            *session.selected_layer_mut().spawn_rate_mut() = 77.0;
         });
-        assert_eq!(session.effect.layers[0].emitter.spawn_rate, 77.0);
+        assert_eq!(session.effect.emitters[0].spawn_rate(), 77.0);
         session.undo();
-        assert_eq!(session.effect.layers[0].emitter.spawn_rate, original);
+        assert_eq!(session.effect.emitters[0].spawn_rate(), original);
         session.redo();
-        assert_eq!(session.effect.layers[0].emitter.spawn_rate, 77.0);
+        assert_eq!(session.effect.emitters[0].spawn_rate(), 77.0);
     }
 
     #[test]
@@ -352,7 +272,7 @@ mod tests {
         ));
         session.save_as(&path).unwrap();
         let loaded = EffectAsset::load_ron(&path).unwrap();
-        assert_eq!(loaded.layers.len(), 2);
+        assert_eq!(loaded.emitters.len(), 2);
         assert_eq!(loaded.name, "Untitled Effect");
         std::fs::remove_file(path).unwrap();
     }
@@ -365,14 +285,14 @@ mod tests {
         );
         session.new_effect();
         session.add_layer();
-        assert_eq!(session.effect.layers.len(), 2);
+        assert_eq!(session.effect.emitters.len(), 2);
         session.undo();
-        assert_eq!(session.effect.layers.len(), 1);
+        assert_eq!(session.effect.emitters.len(), 1);
         session.redo();
-        assert_eq!(session.effect.layers.len(), 2);
+        assert_eq!(session.effect.emitters.len(), 2);
         session.delete_selected_layer();
-        assert_eq!(session.effect.layers.len(), 1);
+        assert_eq!(session.effect.emitters.len(), 1);
         session.undo();
-        assert_eq!(session.effect.layers.len(), 2);
+        assert_eq!(session.effect.emitters.len(), 2);
     }
 }
