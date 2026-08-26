@@ -81,7 +81,7 @@ fn main() {
                     handle_buttons,
                     handle_window_close_requests,
                     persist_native_window_geometry,
-                    dismiss_tab_context_menu,
+                    dismiss_open_menus,
                     scrub_timeline,
                     advance_playback,
                     update_preview,
@@ -336,7 +336,7 @@ enum DiagnosticSource {
     Pending,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MenuKind {
     File,
     Edit,
@@ -515,6 +515,12 @@ struct ResizeState(Option<DockSplitter>);
 
 #[derive(Component)]
 struct MenuDropdown(MenuKind);
+
+#[derive(Component)]
+struct MenuButton;
+
+#[derive(Component)]
+struct MenuSurface;
 
 #[derive(Component)]
 struct PreviewGrid;
@@ -841,6 +847,7 @@ fn menu_button(parent: &mut ChildSpawnerCommands, label: &str, menu: MenuKind) {
     parent
         .spawn((
             Button,
+            MenuButton,
             EditorAction::ToggleMenu(menu),
             Node {
                 width: Val::Px(52.0),
@@ -873,6 +880,8 @@ fn spawn_dropdown(
     parent
         .spawn((
             MenuDropdown(menu),
+            MenuSurface,
+            RelativeCursorPosition::default(),
             GlobalZIndex(100),
             Node {
                 display: Display::None,
@@ -943,6 +952,8 @@ fn spawn_view_dropdown(parent: &mut ChildSpawnerCommands, layout: &WorkspaceLayo
     parent
         .spawn((
             MenuDropdown(MenuKind::View),
+            MenuSurface,
+            RelativeCursorPosition::default(),
             GlobalZIndex(100),
             Node {
                 display: Display::None,
@@ -973,6 +984,8 @@ fn spawn_view_dropdown(parent: &mut ChildSpawnerCommands, layout: &WorkspaceLayo
             dropdown
                 .spawn((
                     PanelsSubmenu,
+                    MenuSurface,
+                    RelativeCursorPosition::default(),
                     GlobalZIndex(101),
                     Node {
                         display: Display::None,
@@ -6293,7 +6306,16 @@ fn handle_buttons(
             continue;
         }
         match *interaction {
-            Interaction::Hovered => background.0 = theme::BUTTON_HOVER,
+            Interaction::Hovered => {
+                background.0 = theme::BUTTON_HOVER;
+                if let EditorAction::ToggleMenu(kind) = *action
+                    && let Some(next) = menu_after_hover(menu.open, kind)
+                    && menu.open != Some(next)
+                {
+                    menu.open = Some(next);
+                    menu.panels_open = false;
+                }
+            }
             Interaction::None => {
                 background.0 = if let Some(row) = layer_row {
                     if row.0 == session.selected_layer_index() {
@@ -6762,14 +6784,40 @@ fn reveal_dock_panel(layout: &mut WorkspaceLayout, session: &mut EditorSession, 
     }
 }
 
-fn dismiss_tab_context_menu(
+fn dismiss_open_menus(
     buttons: Res<ButtonInput<MouseButton>>,
     mut menu: ResMut<MenuState>,
     mut session: ResMut<EditorSession>,
+    menu_surfaces: Query<&RelativeCursorPosition, With<MenuSurface>>,
+    menu_buttons: Query<&Interaction, With<MenuButton>>,
 ) {
-    if buttons.just_pressed(MouseButton::Left) && menu.tab_context.take().is_some() {
+    if !buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+    if menu.tab_context.take().is_some() {
         session.ui_revision += 1;
     }
+    if menu.open.is_none() {
+        return;
+    }
+    let pointer_over_menu = menu_surfaces
+        .iter()
+        .any(RelativeCursorPosition::cursor_over);
+    let menu_button_pressed = menu_buttons
+        .iter()
+        .any(|interaction| *interaction == Interaction::Pressed);
+    if should_dismiss_open_menu(pointer_over_menu, menu_button_pressed) {
+        menu.open = None;
+        menu.panels_open = false;
+    }
+}
+
+fn should_dismiss_open_menu(pointer_over_menu: bool, menu_button_pressed: bool) -> bool {
+    !pointer_over_menu && !menu_button_pressed
+}
+
+fn menu_after_hover(open: Option<MenuKind>, hovered: MenuKind) -> Option<MenuKind> {
+    open.map(|_| hovered)
 }
 
 fn preview_selected_layer_deletion(session: &mut EditorSession) -> bool {
@@ -7936,6 +7984,26 @@ mod tests {
         assert!(!vertical_scrollbar_needed(320.0, 320.0));
         assert!(!vertical_scrollbar_needed(320.0, 320.4));
         assert!(vertical_scrollbar_needed(320.0, 321.0));
+    }
+
+    #[test]
+    fn open_menu_only_dismisses_for_clicks_outside_its_surfaces() {
+        assert!(should_dismiss_open_menu(false, false));
+        assert!(!should_dismiss_open_menu(true, false));
+        assert!(!should_dismiss_open_menu(false, true));
+    }
+
+    #[test]
+    fn hovering_switches_between_open_top_level_menus() {
+        assert_eq!(menu_after_hover(None, MenuKind::Edit), None);
+        assert_eq!(
+            menu_after_hover(Some(MenuKind::File), MenuKind::Edit),
+            Some(MenuKind::Edit)
+        );
+        assert_eq!(
+            menu_after_hover(Some(MenuKind::View), MenuKind::View),
+            Some(MenuKind::View)
+        );
     }
 
     #[test]
