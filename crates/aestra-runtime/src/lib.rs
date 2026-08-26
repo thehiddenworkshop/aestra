@@ -1,10 +1,14 @@
 //! Engine-independent compiled effect contracts and deterministic CPU execution.
 
 use aestra_core::{
-    BlendMode, Curve, EffectId, EmitterId, EmitterShape, Gradient, ModuleId, ParameterId,
-    RendererId, ScalarRange, Value,
+    AssetId, BlendMode, Curve, EffectId, EmitterId, EmitterShape, Gradient, MaterialId, ModuleId,
+    ParameterId, RendererId, ScalarRange, Value, ValueType,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
+use thiserror::Error;
 
 /// A logical particle field retained by the compiler for this effect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -24,39 +28,280 @@ pub enum ParticleAttribute {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParticleLayout {
     pub attributes: Vec<ParticleAttribute>,
+    pub transient_attributes: Vec<ParticleAttribute>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ParameterSlot(pub usize);
+
+/// A constant-folded value or an indexed runtime parameter read.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expression<T> {
+    Constant(T),
+    Parameter(ParameterSlot),
+}
+
+impl<T> Expression<T> {
+    pub fn constant(value: T) -> Self {
+        Self::Constant(value)
+    }
+
+    pub fn parameter(slot: ParameterSlot) -> Self {
+        Self::Parameter(slot)
+    }
+
+    pub fn constant_value(&self) -> Option<&T> {
+        match self {
+            Self::Constant(value) => Some(value),
+            Self::Parameter(_) => None,
+        }
+    }
+}
+
+impl<T: RuntimeParameterValue> Expression<T> {
+    fn resolve<'a>(&'a self, parameters: &'a [RuntimeValue]) -> &'a T {
+        match self {
+            Self::Constant(value) => value,
+            Self::Parameter(slot) => T::from_runtime(
+                parameters
+                    .get(slot.0)
+                    .expect("compiled parameter slot must exist"),
+            )
+            .expect("compiler guarantees expression parameter types"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurveSegment {
+    pub start_time: f32,
+    pub end_time: f32,
+    pub start_value: f32,
+    pub end_value: f32,
+}
+
+/// Curve data stripped of authoring IDs and lowered into interpolation segments.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledCurve {
+    first: Option<(f32, f32)>,
+    last_value: f32,
+    segments: Vec<CurveSegment>,
+}
+
+impl CompiledCurve {
+    pub fn compile(curve: &Curve) -> Self {
+        Self {
+            first: curve.keys.first().map(|key| (key.time, key.value)),
+            last_value: curve.keys.last().map_or(0.0, |key| key.value),
+            segments: curve
+                .keys
+                .windows(2)
+                .map(|pair| CurveSegment {
+                    start_time: pair[0].time,
+                    end_time: pair[1].time,
+                    start_value: pair[0].value,
+                    end_value: pair[1].value,
+                })
+                .collect(),
+        }
+    }
+
+    pub fn sample(&self, time: f32) -> f32 {
+        let Some((first_time, first_value)) = self.first else {
+            return 0.0;
+        };
+        let time = time.clamp(0.0, 1.0);
+        if time <= first_time {
+            return first_value;
+        }
+        for segment in &self.segments {
+            if time <= segment.end_time {
+                let span = (segment.end_time - segment.start_time).max(f32::EPSILON);
+                let x = ((time - segment.start_time) / span).clamp(0.0, 1.0);
+                let smooth = x * x * (3.0 - 2.0 * x);
+                return segment.start_value + (segment.end_value - segment.start_value) * smooth;
+            }
+        }
+        self.last_value
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GradientSegment {
+    pub start_time: f32,
+    pub end_time: f32,
+    pub start_color: [f32; 4],
+    pub end_color: [f32; 4],
+}
+
+/// Gradient data stripped of authoring IDs and lowered into interpolation segments.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledGradient {
+    first: Option<(f32, [f32; 4])>,
+    last_color: [f32; 4],
+    segments: Vec<GradientSegment>,
+}
+
+impl CompiledGradient {
+    pub fn compile(gradient: &Gradient) -> Self {
+        Self {
+            first: gradient.keys.first().map(|key| (key.time, key.color)),
+            last_color: gradient.keys.last().map_or([1.0; 4], |key| key.color),
+            segments: gradient
+                .keys
+                .windows(2)
+                .map(|pair| GradientSegment {
+                    start_time: pair[0].time,
+                    end_time: pair[1].time,
+                    start_color: pair[0].color,
+                    end_color: pair[1].color,
+                })
+                .collect(),
+        }
+    }
+
+    pub fn sample(&self, time: f32) -> [f32; 4] {
+        let Some((first_time, first_color)) = self.first else {
+            return [1.0; 4];
+        };
+        let time = time.clamp(0.0, 1.0);
+        if time <= first_time {
+            return first_color;
+        }
+        for segment in &self.segments {
+            if time <= segment.end_time {
+                let x = ((time - segment.start_time)
+                    / (segment.end_time - segment.start_time).max(f32::EPSILON))
+                .clamp(0.0, 1.0);
+                return std::array::from_fn(|index| {
+                    segment.start_color[index]
+                        + (segment.end_color[index] - segment.start_color[index]) * x
+                });
+            }
+        }
+        self.last_color
+    }
+}
+
+/// Runtime-ready parameter value. Curves and gradients are compiled on ingress.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RuntimeValue {
+    Bool(bool),
+    U32(u32),
+    Scalar(f32),
+    Vec2([f32; 2]),
+    Vec3([f32; 3]),
+    Vec4([f32; 4]),
+    Text(String),
+    Range(ScalarRange),
+    Curve(CompiledCurve),
+    Gradient(CompiledGradient),
+    Shape(EmitterShape),
+    Asset(AssetId),
+    Material(MaterialId),
+}
+
+impl RuntimeValue {
+    pub fn compile(value: &Value) -> Option<Self> {
+        Some(match value {
+            Value::Bool(value) => Self::Bool(*value),
+            Value::U32(value) => Self::U32(*value),
+            Value::Scalar(value) => Self::Scalar(*value),
+            Value::Vec2(value) => Self::Vec2(*value),
+            Value::Vec3(value) => Self::Vec3(*value),
+            Value::Vec4(value) => Self::Vec4(*value),
+            Value::Text(value) => Self::Text(value.clone()),
+            Value::Range(value) => Self::Range(*value),
+            Value::Curve(value) => Self::Curve(CompiledCurve::compile(value)),
+            Value::Gradient(value) => Self::Gradient(CompiledGradient::compile(value)),
+            Value::Shape(value) => Self::Shape(*value),
+            Value::Parameter(_) => return None,
+            Value::Asset(value) => Self::Asset(*value),
+            Value::Material(value) => Self::Material(*value),
+        })
+    }
+
+    pub fn value_type(&self) -> ValueType {
+        match self {
+            Self::Bool(_) => ValueType::Bool,
+            Self::U32(_) => ValueType::U32,
+            Self::Scalar(_) => ValueType::Scalar,
+            Self::Vec2(_) => ValueType::Vec2,
+            Self::Vec3(_) => ValueType::Vec3,
+            Self::Vec4(_) => ValueType::Vec4,
+            Self::Text(_) => ValueType::Text,
+            Self::Range(_) => ValueType::Range,
+            Self::Curve(_) => ValueType::Curve,
+            Self::Gradient(_) => ValueType::Gradient,
+            Self::Shape(_) => ValueType::Shape,
+            Self::Asset(_) => ValueType::Asset,
+            Self::Material(_) => ValueType::Material,
+        }
+    }
+}
+
+pub trait RuntimeParameterValue: Sized {
+    fn from_runtime(value: &RuntimeValue) -> Option<&Self>;
+}
+
+macro_rules! runtime_parameter_value {
+    ($type:ty, $variant:ident) => {
+        impl RuntimeParameterValue for $type {
+            fn from_runtime(value: &RuntimeValue) -> Option<&Self> {
+                match value {
+                    RuntimeValue::$variant(value) => Some(value),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+runtime_parameter_value!(bool, Bool);
+runtime_parameter_value!(u32, U32);
+runtime_parameter_value!(f32, Scalar);
+runtime_parameter_value!([f32; 2], Vec2);
+runtime_parameter_value!([f32; 3], Vec3);
+runtime_parameter_value!([f32; 4], Vec4);
+runtime_parameter_value!(String, Text);
+runtime_parameter_value!(ScalarRange, Range);
+runtime_parameter_value!(CompiledCurve, Curve);
+runtime_parameter_value!(CompiledGradient, Gradient);
+runtime_parameter_value!(EmitterShape, Shape);
+runtime_parameter_value!(AssetId, Asset);
+runtime_parameter_value!(MaterialId, Material);
 
 /// A typed operation in a compiled emitter execution plan.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     Emit {
         source: ModuleId,
-        spawn_rate: f32,
-        burst_count: u32,
+        spawn_rate: Expression<f32>,
+        burst_count: Expression<u32>,
     },
     SampleShape {
         source: ModuleId,
-        shape: EmitterShape,
+        shape: Expression<EmitterShape>,
     },
     Initialize {
         source: ModuleId,
-        lifetime: ScalarRange,
-        speed: ScalarRange,
-        direction_degrees: f32,
-        spread_degrees: f32,
-        angular_velocity: ScalarRange,
+        lifetime: Expression<ScalarRange>,
+        speed: Expression<ScalarRange>,
+        direction_degrees: Expression<f32>,
+        spread_degrees: Expression<f32>,
+        angular_velocity: Expression<ScalarRange>,
     },
     Motion {
         source: ModuleId,
-        gravity: [f32; 2],
-        drag: f32,
-        turbulence: f32,
+        gravity: Expression<[f32; 2]>,
+        drag: Expression<f32>,
+        turbulence: Expression<f32>,
     },
     Appearance {
         source: ModuleId,
-        size: Curve,
-        opacity: Curve,
-        color: Gradient,
+        size: Expression<CompiledCurve>,
+        opacity: Expression<CompiledCurve>,
+        color: Expression<CompiledGradient>,
     },
 }
 
@@ -113,6 +358,21 @@ pub struct CompiledEmitter {
     pub renderers: Vec<RendererPlan>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledParameter {
+    pub source: ParameterId,
+    pub name: String,
+    pub value_type: ValueType,
+    pub default: RuntimeValue,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OptimizationStats {
+    pub constant_expressions: usize,
+    pub runtime_parameter_reads: usize,
+    pub eliminated_attributes: usize,
+}
+
 /// Immutable, engine-independent output of the Aestra compiler.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledEffect {
@@ -120,10 +380,13 @@ pub struct CompiledEffect {
     pub name: String,
     pub duration: f32,
     pub looping: bool,
+    pub parameters: Vec<CompiledParameter>,
+    pub parameter_slots: BTreeMap<ParameterId, ParameterSlot>,
     pub particle_layout: ParticleLayout,
     pub emitters: Vec<CompiledEmitter>,
     pub max_particles: usize,
     pub source_map: BTreeMap<ModuleId, IrLocation>,
+    pub optimizations: OptimizationStats,
 }
 
 /// A renderer-neutral particle sample produced by the reference interpreter.
@@ -137,22 +400,41 @@ pub struct ParticleSample {
     pub normalized_age: f32,
 }
 
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ParameterError {
+    #[error("compiled effect has no runtime parameter {0}")]
+    Unknown(ParameterId),
+    #[error("parameter {id} expected {expected:?}, got {actual:?}")]
+    TypeMismatch {
+        id: ParameterId,
+        expected: ValueType,
+        actual: ValueType,
+    },
+}
+
 /// Mutable playback state for one immutable compiled effect.
 #[derive(Debug, Clone)]
 pub struct EffectInstance {
     effect: Arc<CompiledEffect>,
     time: f32,
     seed: u64,
-    parameter_overrides: BTreeMap<ParameterId, Value>,
+    parameters: Vec<RuntimeValue>,
+    overridden: BTreeSet<ParameterSlot>,
 }
 
 impl EffectInstance {
     pub fn new(effect: Arc<CompiledEffect>) -> Self {
+        let parameters = effect
+            .parameters
+            .iter()
+            .map(|parameter| parameter.default.clone())
+            .collect();
         Self {
             effect,
             time: 0.0,
             seed: 0,
-            parameter_overrides: BTreeMap::new(),
+            parameters,
+            overridden: BTreeSet::new(),
         }
     }
 
@@ -179,16 +461,51 @@ impl EffectInstance {
         self.seed = seed;
     }
 
-    pub fn parameter_overrides(&self) -> &BTreeMap<ParameterId, Value> {
-        &self.parameter_overrides
+    pub fn set_parameter(&mut self, id: ParameterId, value: Value) -> Result<(), ParameterError> {
+        let Some(slot) = self.effect.parameter_slots.get(&id).copied() else {
+            return Err(ParameterError::Unknown(id));
+        };
+        let expected = self.effect.parameters[slot.0].value_type;
+        let actual = value.value_type();
+        if actual != expected {
+            return Err(ParameterError::TypeMismatch {
+                id,
+                expected,
+                actual,
+            });
+        }
+        let compiled = RuntimeValue::compile(&value).ok_or(ParameterError::TypeMismatch {
+            id,
+            expected,
+            actual,
+        })?;
+        self.parameters[slot.0] = compiled;
+        self.overridden.insert(slot);
+        Ok(())
     }
 
-    pub fn set_parameter(&mut self, id: ParameterId, value: Value) -> Option<Value> {
-        self.parameter_overrides.insert(id, value)
+    pub fn clear_parameter(&mut self, id: ParameterId) -> Result<(), ParameterError> {
+        let Some(slot) = self.effect.parameter_slots.get(&id).copied() else {
+            return Err(ParameterError::Unknown(id));
+        };
+        self.parameters[slot.0] = self.effect.parameters[slot.0].default.clone();
+        self.overridden.remove(&slot);
+        Ok(())
     }
 
-    pub fn clear_parameter(&mut self, id: ParameterId) -> Option<Value> {
-        self.parameter_overrides.remove(&id)
+    pub fn parameter(&self, id: ParameterId) -> Option<&RuntimeValue> {
+        self.effect
+            .parameter_slots
+            .get(&id)
+            .and_then(|slot| self.parameters.get(slot.0))
+    }
+
+    pub fn overridden_parameters(
+        &self,
+    ) -> impl Iterator<Item = (&CompiledParameter, &RuntimeValue)> {
+        self.overridden
+            .iter()
+            .map(|slot| (&self.effect.parameters[slot.0], &self.parameters[slot.0]))
     }
 
     pub fn seek(&mut self, time: f32) {
@@ -209,12 +526,27 @@ impl EffectInstance {
     }
 
     pub fn evaluate(&self, output: &mut Vec<ParticleSample>) {
-        evaluate(&self.effect, self.time, self.seed, output);
+        evaluate_with_parameters(&self.effect, self.time, self.seed, &self.parameters, output);
     }
 }
 
-/// Executes a compiled effect at an arbitrary time using the deterministic CPU backend.
+/// Executes a compiled effect with its default parameter values.
 pub fn evaluate(effect: &CompiledEffect, time: f32, seed: u64, output: &mut Vec<ParticleSample>) {
+    let parameters = effect
+        .parameters
+        .iter()
+        .map(|parameter| parameter.default.clone())
+        .collect::<Vec<_>>();
+    evaluate_with_parameters(effect, time, seed, &parameters, output);
+}
+
+fn evaluate_with_parameters(
+    effect: &CompiledEffect,
+    time: f32,
+    seed: u64,
+    parameters: &[RuntimeValue],
+    output: &mut Vec<ParticleSample>,
+) {
     output.clear();
     let effect_time = if effect.looping {
         time.rem_euclid(effect.duration)
@@ -231,21 +563,21 @@ pub fn evaluate(effect: &CompiledEffect, time: f32, seed: u64, output: &mut Vec<
             continue;
         }
 
-        let Some((spawn_rate, burst_count)) = emission(&emitter.execution) else {
+        let Some((spawn_rate, burst_count)) = emission(&emitter.execution, parameters) else {
             continue;
         };
-        let Some(shape) = shape(&emitter.execution) else {
+        let Some(shape) = shape(&emitter.execution, parameters) else {
             continue;
         };
-        let Some(initializer) = initializer(&emitter.execution) else {
+        let Some(initializer) = initializer(&emitter.execution, parameters) else {
             continue;
         };
-        let motion = motion(&emitter.execution).unwrap_or(Motion {
+        let motion = motion(&emitter.execution, parameters).unwrap_or(Motion {
             gravity: [0.0, 0.0],
             drag: 0.0,
             turbulence: 0.0,
         });
-        let Some(appearance) = appearance(&emitter.execution) else {
+        let Some(appearance) = appearance(&emitter.execution, parameters) else {
             continue;
         };
 
@@ -301,7 +633,7 @@ pub fn evaluate(effect: &CompiledEffect, time: f32, seed: u64, output: &mut Vec<
     }
 }
 
-fn emission(plan: &ExecutionPlan) -> Option<(f32, u32)> {
+fn emission(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<(f32, u32)> {
     plan.emitter_update
         .iter()
         .find_map(|instruction| match instruction {
@@ -309,16 +641,19 @@ fn emission(plan: &ExecutionPlan) -> Option<(f32, u32)> {
                 spawn_rate,
                 burst_count,
                 ..
-            } => Some((*spawn_rate, *burst_count)),
+            } => Some((
+                *spawn_rate.resolve(parameters),
+                *burst_count.resolve(parameters),
+            )),
             _ => None,
         })
 }
 
-fn shape(plan: &ExecutionPlan) -> Option<EmitterShape> {
+fn shape(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<EmitterShape> {
     plan.particle_spawn
         .iter()
         .find_map(|instruction| match instruction {
-            Instruction::SampleShape { shape, .. } => Some(*shape),
+            Instruction::SampleShape { shape, .. } => Some(*shape.resolve(parameters)),
             _ => None,
         })
 }
@@ -331,7 +666,7 @@ struct Initializer {
     angular_velocity: ScalarRange,
 }
 
-fn initializer(plan: &ExecutionPlan) -> Option<Initializer> {
+fn initializer(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Initializer> {
     plan.particle_spawn
         .iter()
         .find_map(|instruction| match instruction {
@@ -343,11 +678,11 @@ fn initializer(plan: &ExecutionPlan) -> Option<Initializer> {
                 angular_velocity,
                 ..
             } => Some(Initializer {
-                lifetime: *lifetime,
-                speed: *speed,
-                direction_degrees: *direction_degrees,
-                spread_degrees: *spread_degrees,
-                angular_velocity: *angular_velocity,
+                lifetime: *lifetime.resolve(parameters),
+                speed: *speed.resolve(parameters),
+                direction_degrees: *direction_degrees.resolve(parameters),
+                spread_degrees: *spread_degrees.resolve(parameters),
+                angular_velocity: *angular_velocity.resolve(parameters),
             }),
             _ => None,
         })
@@ -359,7 +694,7 @@ struct Motion {
     turbulence: f32,
 }
 
-fn motion(plan: &ExecutionPlan) -> Option<Motion> {
+fn motion(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Motion> {
     plan.particle_update
         .iter()
         .find_map(|instruction| match instruction {
@@ -369,21 +704,24 @@ fn motion(plan: &ExecutionPlan) -> Option<Motion> {
                 turbulence,
                 ..
             } => Some(Motion {
-                gravity: *gravity,
-                drag: *drag,
-                turbulence: *turbulence,
+                gravity: *gravity.resolve(parameters),
+                drag: *drag.resolve(parameters),
+                turbulence: *turbulence.resolve(parameters),
             }),
             _ => None,
         })
 }
 
 struct Appearance<'a> {
-    size: &'a Curve,
-    opacity: &'a Curve,
-    color: &'a Gradient,
+    size: &'a CompiledCurve,
+    opacity: &'a CompiledCurve,
+    color: &'a CompiledGradient,
 }
 
-fn appearance(plan: &ExecutionPlan) -> Option<Appearance<'_>> {
+fn appearance<'a>(
+    plan: &'a ExecutionPlan,
+    parameters: &'a [RuntimeValue],
+) -> Option<Appearance<'a>> {
     plan.particle_update
         .iter()
         .find_map(|instruction| match instruction {
@@ -393,9 +731,9 @@ fn appearance(plan: &ExecutionPlan) -> Option<Appearance<'_>> {
                 color,
                 ..
             } => Some(Appearance {
-                size,
-                opacity,
-                color,
+                size: size.resolve(parameters),
+                opacity: opacity.resolve(parameters),
+                color: color.resolve(parameters),
             }),
             _ => None,
         })

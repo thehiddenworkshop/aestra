@@ -9,6 +9,8 @@ The first vertical slice already includes:
 - command-based undo/redo for emitter, timing, curve, gradient, and layer edits;
 - a discoverable built-in module registry and typed compiler execution plans;
 - immutable compiled effects and seeded deterministic runtime instances;
+- typed effect-parameter bindings with zero-recompile runtime overrides;
+- compiled curves/gradients, constant folding, and particle-attribute liveness;
 - an effect library, layer stack, viewport, inspector, interactive timeline, transport, and status bar;
 - deterministic emitter evaluation with point, circle, ring, and cone shapes;
 - ranges, smooth curves, color gradients, drag, gravity, turbulence, and layer timing;

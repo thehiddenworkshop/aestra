@@ -80,6 +80,17 @@ pub enum EffectCommand {
         module: ModuleId,
         parameter: String,
     },
+    BindModuleParameter {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        source: aestra_core::ParameterId,
+    },
+    UnbindModuleParameter {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+    },
     AddRenderer {
         emitter: EmitterId,
         renderer: RendererInstance,

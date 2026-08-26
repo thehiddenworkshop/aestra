@@ -1,4 +1,7 @@
-use aestra_core::{DiagnosticCode, EffectAsset, Emitter, EmitterId, RendererInstance, ScalarRange};
+use aestra_core::{
+    DiagnosticCode, EffectAsset, EffectParameter, Emitter, EmitterId, MODULE_EMISSION, ParameterId,
+    RendererInstance, ScalarRange, Value,
+};
 
 #[test]
 fn semantic_ids_survive_round_trip() {
@@ -87,4 +90,60 @@ fn one_emitter_supports_multiple_renderers() {
 
     effect.validate().unwrap();
     assert_eq!(effect.emitters[0].renderers.len(), 2);
+}
+
+#[test]
+fn module_parameter_bindings_survive_round_trip() {
+    let mut effect = EffectAsset::new("Bound", 1.0);
+    let parameter = EffectParameter {
+        id: ParameterId::new(),
+        name: "Spawn Rate".into(),
+        default: Value::Scalar(24.0),
+        exposed: true,
+    };
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
+    emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_EMISSION)
+        .unwrap()
+        .bindings
+        .insert("spawn_rate".into(), parameter.id);
+    effect.parameters.push(parameter);
+    effect.emitters.push(emitter);
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+
+    assert_eq!(decoded, effect);
+    assert!(encoded.contains("bindings"));
+}
+
+#[test]
+fn binding_types_are_validated_in_the_semantic_model() {
+    let mut effect = EffectAsset::new("Bad binding", 1.0);
+    let parameter = EffectParameter {
+        id: ParameterId::new(),
+        name: "Wrong Type".into(),
+        default: Value::Vec2([1.0, 2.0]),
+        exposed: true,
+    };
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
+    emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_EMISSION)
+        .unwrap()
+        .bindings
+        .insert("spawn_rate".into(), parameter.id);
+    effect.parameters.push(parameter);
+    effect.emitters.push(emitter);
+
+    let report = effect.validation_report();
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == DiagnosticCode::ParameterTypeMismatch)
+    );
 }

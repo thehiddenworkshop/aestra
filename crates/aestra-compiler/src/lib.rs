@@ -1,27 +1,20 @@
-//! Module discovery, compiler validation, and lowering into Aestra runtime plans.
+//! Module discovery, compiler validation, optimization, and typed lowering.
+
+pub use aestra_core::ValueType;
 
 use aestra_core::{
-    Diagnostic, DiagnosticCode, EffectAsset, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
-    MODULE_MOTION, MODULE_SHAPE, ModuleInstance, ModuleParameters, ModuleTypeId, RENDERER_SPRITE,
-    RendererProperties, StageKind, ValidationReport,
+    Diagnostic, DiagnosticCode, EffectAsset, EffectParameter, MODULE_APPEARANCE, MODULE_EMISSION,
+    MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, ModuleInstance, ModuleParameters, ModuleTypeId,
+    ParameterId, RENDERER_SPRITE, RendererProperties, StageKind, ValidationReport,
 };
 use aestra_runtime::{
-    CompiledEffect, CompiledEmitter, ExecutionPlan, Instruction, IrLocation, ParticleAttribute,
-    ParticleLayout, RendererPlan, RuntimeStage,
+    CompiledCurve, CompiledEffect, CompiledEmitter, CompiledGradient, CompiledParameter,
+    ExecutionPlan, Expression, Instruction, IrLocation, OptimizationStats, ParameterSlot,
+    ParticleAttribute, ParticleLayout, RendererPlan, RuntimeParameterValue, RuntimeStage,
+    RuntimeValue,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ValueType {
-    U32,
-    Scalar,
-    Vec2,
-    Range,
-    Curve,
-    Gradient,
-    Shape,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InputMetadata {
@@ -127,13 +120,60 @@ impl EffectCompiler {
             return Err(CompileError::Validation(report));
         }
 
+        let parameter_lookup = asset
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.id, parameter))
+            .collect::<BTreeMap<_, _>>();
+        let referenced_parameters = asset
+            .emitters
+            .iter()
+            .flat_map(|emitter| emitter.modules.iter())
+            .filter(|module| module.enabled)
+            .flat_map(|module| module.bindings.values().copied())
+            .collect::<BTreeSet<_>>();
+        let mut parameters = Vec::new();
+        let mut parameter_slots = BTreeMap::new();
+        for parameter in asset
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.exposed && referenced_parameters.contains(&parameter.id))
+        {
+            let slot = ParameterSlot(parameters.len());
+            parameter_slots.insert(parameter.id, slot);
+            parameters.push(CompiledParameter {
+                source: parameter.id,
+                name: parameter.name.clone(),
+                value_type: parameter.default.value_type(),
+                default: RuntimeValue::compile(&parameter.default)
+                    .expect("validated runtime parameter has a concrete default"),
+            });
+        }
+        let context = LoweringContext {
+            parameters: &parameter_lookup,
+            slots: &parameter_slots,
+        };
+
         let mut source_map = BTreeMap::new();
-        let mut live_attributes = BTreeSet::new();
+        let mut stored_attributes = BTreeSet::new();
+        let mut transient_attributes = BTreeSet::new();
+        let mut discovered_attributes = BTreeSet::new();
         let mut emitters = Vec::with_capacity(asset.emitters.len());
+        let mut optimizations = OptimizationStats::default();
+
         for (emitter_index, emitter) in asset.emitters.iter().enumerate() {
+            let liveness = self.analyze_liveness(&emitter.modules);
+            stored_attributes.extend(liveness.stored);
+            transient_attributes.extend(liveness.transient);
+            discovered_attributes.extend(liveness.discovered);
+
             let mut execution = ExecutionPlan::default();
             for module in emitter.modules.iter().filter(|module| module.enabled) {
-                let instruction = lower_module(module).expect("validated built-in module");
+                let instruction = lower_module(module, &context)
+                    .expect("validated built-in module must have a lowering");
+                let (constants, parameters) = expression_counts(&instruction);
+                optimizations.constant_expressions += constants;
+                optimizations.runtime_parameter_reads += parameters;
                 let (stage, instructions) = match module.stage {
                     StageKind::EmitterUpdate => {
                         (RuntimeStage::EmitterUpdate, &mut execution.emitter_update)
@@ -156,20 +196,8 @@ impl EffectCompiler {
                         instruction_index,
                     },
                 );
-                let metadata = self
-                    .registry
-                    .get(&module.module_type)
-                    .expect("validated module is registered");
-                live_attributes.extend(metadata.reads.iter().copied());
-                live_attributes.extend(metadata.writes.iter().copied());
             }
 
-            live_attributes.extend([
-                ParticleAttribute::Position,
-                ParticleAttribute::Rotation,
-                ParticleAttribute::Size,
-                ParticleAttribute::Color,
-            ]);
             let renderers = emitter
                 .renderers
                 .iter()
@@ -195,13 +223,19 @@ impl EffectCompiler {
             });
         }
 
+        optimizations.eliminated_attributes =
+            discovered_attributes.difference(&stored_attributes).count();
+
         Ok(CompiledEffect {
             source: asset.id,
             name: asset.name.clone(),
             duration: asset.duration,
             looping: asset.looping,
+            parameters,
+            parameter_slots,
             particle_layout: ParticleLayout {
-                attributes: live_attributes.into_iter().collect(),
+                attributes: stored_attributes.into_iter().collect(),
+                transient_attributes: transient_attributes.into_iter().collect(),
             },
             max_particles: asset
                 .emitters
@@ -210,6 +244,7 @@ impl EffectCompiler {
                 .sum(),
             emitters,
             source_map,
+            optimizations,
         })
     }
 
@@ -219,32 +254,82 @@ impl EffectCompiler {
             for (module_index, module) in emitter.modules.iter().enumerate() {
                 let path = format!("{emitter_path}.modules[{module_index}]");
                 let Some(metadata) = self.registry.get(&module.module_type) else {
-                    report.push(Diagnostic::error(
-                        DiagnosticCode::UnknownModule,
-                        format!("{path}.module_type"),
-                        format!("module '{}' is not registered", module.module_type.0),
-                    ));
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::UnknownModule,
+                            format!("{path}.module_type"),
+                            format!("module '{}' is not registered", module.module_type.0),
+                        ),
+                    );
                     continue;
                 };
                 if !metadata.stages.contains(&module.stage) {
-                    report.push(Diagnostic::error(
-                        DiagnosticCode::StageMismatch,
-                        format!("{path}.stage"),
-                        format!(
-                            "module '{}' cannot execute in stage {:?}",
-                            module.module_type.0, module.stage
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::StageMismatch,
+                            format!("{path}.stage"),
+                            format!(
+                                "module '{}' cannot execute in stage {:?}",
+                                module.module_type.0, module.stage
+                            ),
                         ),
-                    ));
+                    );
                 }
                 if module.enabled && !parameters_match(module) {
-                    report.push(Diagnostic::error(
-                        DiagnosticCode::InvalidValue,
-                        format!("{path}.parameters"),
-                        format!(
-                            "module '{}' has parameters that its compiler lowering does not support",
-                            module.module_type.0
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::InvalidValue,
+                            format!("{path}.parameters"),
+                            format!(
+                                "module '{}' has parameters that its compiler lowering does not support",
+                                module.module_type.0
+                            ),
                         ),
-                    ));
+                    );
+                }
+                for (input_name, parameter_id) in &module.bindings {
+                    let binding_path = format!("{path}.bindings.{input_name}");
+                    let Some(input) = metadata
+                        .inputs
+                        .iter()
+                        .find(|input| input.name == input_name)
+                    else {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::UnknownParameter,
+                                binding_path,
+                                format!(
+                                    "module '{}' has no registered input named '{input_name}'",
+                                    module.module_type.0
+                                ),
+                            ),
+                        );
+                        continue;
+                    };
+                    if let Some(parameter) = asset
+                        .parameters
+                        .iter()
+                        .find(|parameter| parameter.id == *parameter_id)
+                    {
+                        let actual = parameter.default.value_type();
+                        if actual != input.value_type {
+                            push_unique(
+                                report,
+                                Diagnostic::error(
+                                    DiagnosticCode::ParameterTypeMismatch,
+                                    binding_path,
+                                    format!(
+                                        "input '{input_name}' expects {:?}, but parameter '{}' is {actual:?}",
+                                        input.value_type, parameter.name
+                                    ),
+                                ),
+                            );
+                        }
+                    }
                 }
             }
 
@@ -256,25 +341,31 @@ impl EffectCompiler {
                 .filter(|renderer| renderer.enabled)
                 .count();
             if enabled_renderers == 0 {
-                report.push(Diagnostic::error(
-                    DiagnosticCode::MissingRenderer,
-                    format!("{emitter_path}.renderers"),
-                    "emitter must have at least one enabled renderer",
-                ));
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::MissingRenderer,
+                        format!("{emitter_path}.renderers"),
+                        "emitter must have at least one enabled renderer",
+                    ),
+                );
             }
             for (renderer_index, renderer) in emitter.renderers.iter().enumerate() {
                 if renderer.enabled
                     && (renderer.renderer_type.0 != RENDERER_SPRITE
                         || !matches!(renderer.properties, RendererProperties::Sprite { .. }))
                 {
-                    report.push(Diagnostic::error(
-                        DiagnosticCode::UnsupportedRenderer,
-                        format!("{emitter_path}.renderers[{renderer_index}].renderer_type"),
-                        format!(
-                            "renderer '{}' is not supported by the current runtime",
-                            renderer.renderer_type.0
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::UnsupportedRenderer,
+                            format!("{emitter_path}.renderers[{renderer_index}].renderer_type"),
+                            format!(
+                                "renderer '{}' is not supported by the current runtime",
+                                renderer.renderer_type.0
+                            ),
                         ),
-                    ));
+                    );
                 }
             }
         }
@@ -298,49 +389,118 @@ impl EffectCompiler {
                 };
                 for attribute in &metadata.reads {
                     if !available.contains(attribute) {
-                        report.push(Diagnostic::error(
-                            DiagnosticCode::MissingAttribute,
-                            format!("effect.emitters[{emitter_index}].modules[{module_index}]"),
-                            format!(
-                                "module '{}' reads unavailable attribute {attribute:?}",
-                                module.module_type.0
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::MissingAttribute,
+                                format!("effect.emitters[{emitter_index}].modules[{module_index}]"),
+                                format!(
+                                    "module '{}' reads unavailable attribute {attribute:?}",
+                                    module.module_type.0
+                                ),
                             ),
-                        ));
+                        );
                     }
                 }
                 available.extend(metadata.writes.iter().copied());
             }
         }
-        for required in [
+        for required in renderer_attributes() {
+            if !available.contains(&required) {
+                push_unique(
+                    report,
+                    Diagnostic::error(
+                        DiagnosticCode::MissingAttribute,
+                        format!("effect.emitters[{emitter_index}].renderers"),
+                        format!("sprite rendering requires attribute {required:?}"),
+                    ),
+                );
+            }
+        }
+    }
+
+    fn analyze_liveness(&self, modules: &[ModuleInstance]) -> Liveness {
+        let mut live = BTreeSet::from([
             ParticleAttribute::Position,
             ParticleAttribute::Rotation,
             ParticleAttribute::Size,
             ParticleAttribute::Color,
-        ] {
-            if !available.contains(&required) {
-                report.push(Diagnostic::error(
-                    DiagnosticCode::MissingAttribute,
-                    format!("effect.emitters[{emitter_index}].renderers"),
-                    format!("sprite rendering requires attribute {required:?}"),
-                ));
+            ParticleAttribute::Age,
+            ParticleAttribute::Lifetime,
+            ParticleAttribute::AngularVelocity,
+        ]);
+        let mut stored = live.clone();
+        let mut discovered = live.clone();
+
+        for module in modules.iter().filter(|module| module.enabled) {
+            if let Some(metadata) = self.registry.get(&module.module_type) {
+                discovered.extend(metadata.reads.iter().copied());
+                discovered.extend(metadata.writes.iter().copied());
             }
+        }
+
+        for stage in [StageKind::ParticleUpdate, StageKind::ParticleSpawn] {
+            for module in modules.iter().rev() {
+                if !module.enabled || module.stage != stage {
+                    continue;
+                }
+                let Some(metadata) = self.registry.get(&module.module_type) else {
+                    continue;
+                };
+                if metadata
+                    .writes
+                    .iter()
+                    .any(|attribute| live.contains(attribute))
+                {
+                    for attribute in &metadata.writes {
+                        live.remove(attribute);
+                    }
+                    live.extend(metadata.reads.iter().copied());
+                    stored.extend(live.iter().copied());
+                }
+            }
+        }
+
+        let transient = stored
+            .iter()
+            .copied()
+            .filter(|attribute| matches!(attribute, ParticleAttribute::NormalizedAge))
+            .collect::<BTreeSet<_>>();
+        for attribute in &transient {
+            stored.remove(attribute);
+        }
+        Liveness {
+            stored,
+            transient,
+            discovered,
         }
     }
 }
 
-fn lower_module(module: &ModuleInstance) -> Option<Instruction> {
+struct Liveness {
+    stored: BTreeSet<ParticleAttribute>,
+    transient: BTreeSet<ParticleAttribute>,
+    discovered: BTreeSet<ParticleAttribute>,
+}
+
+struct LoweringContext<'a> {
+    parameters: &'a BTreeMap<ParameterId, &'a EffectParameter>,
+    slots: &'a BTreeMap<ParameterId, ParameterSlot>,
+}
+
+fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Option<Instruction> {
     let instruction = match &module.parameters {
         ModuleParameters::Emission {
             spawn_rate,
             burst_count,
         } => Instruction::Emit {
             source: module.id,
-            spawn_rate: *spawn_rate,
-            burst_count: *burst_count,
+            spawn_rate: expression(module, "spawn_rate", *spawn_rate, context),
+            burst_count: expression(module, "burst_count", *burst_count, context),
         },
         ModuleParameters::Shape { shape } => Instruction::SampleShape {
             source: module.id,
-            shape: *shape,
+            shape: expression(module, "shape", *shape, context),
         },
         ModuleParameters::Initialize {
             lifetime,
@@ -350,11 +510,11 @@ fn lower_module(module: &ModuleInstance) -> Option<Instruction> {
             angular_velocity,
         } => Instruction::Initialize {
             source: module.id,
-            lifetime: *lifetime,
-            speed: *speed,
-            direction_degrees: *direction_degrees,
-            spread_degrees: *spread_degrees,
-            angular_velocity: *angular_velocity,
+            lifetime: expression(module, "lifetime", *lifetime, context),
+            speed: expression(module, "speed", *speed, context),
+            direction_degrees: expression(module, "direction_degrees", *direction_degrees, context),
+            spread_degrees: expression(module, "spread_degrees", *spread_degrees, context),
+            angular_velocity: expression(module, "angular_velocity", *angular_velocity, context),
         },
         ModuleParameters::Motion {
             gravity,
@@ -362,9 +522,9 @@ fn lower_module(module: &ModuleInstance) -> Option<Instruction> {
             turbulence,
         } => Instruction::Motion {
             source: module.id,
-            gravity: *gravity,
-            drag: *drag,
-            turbulence: *turbulence,
+            gravity: expression(module, "gravity", *gravity, context),
+            drag: expression(module, "drag", *drag, context),
+            turbulence: expression(module, "turbulence", *turbulence, context),
         },
         ModuleParameters::Appearance {
             size,
@@ -372,13 +532,89 @@ fn lower_module(module: &ModuleInstance) -> Option<Instruction> {
             color,
         } => Instruction::Appearance {
             source: module.id,
-            size: size.clone(),
-            opacity: opacity.clone(),
-            color: color.clone(),
+            size: expression(module, "size", CompiledCurve::compile(size), context),
+            opacity: expression(module, "opacity", CompiledCurve::compile(opacity), context),
+            color: expression(module, "color", CompiledGradient::compile(color), context),
         },
         ModuleParameters::Custom(_) => return None,
     };
     Some(instruction)
+}
+
+fn expression<T>(
+    module: &ModuleInstance,
+    input: &str,
+    fallback: T,
+    context: &LoweringContext<'_>,
+) -> Expression<T>
+where
+    T: RuntimeParameterValue + Clone,
+{
+    let Some(parameter_id) = module.bindings.get(input) else {
+        return Expression::constant(fallback);
+    };
+    if let Some(slot) = context.slots.get(parameter_id) {
+        return Expression::parameter(*slot);
+    }
+    let parameter = context
+        .parameters
+        .get(parameter_id)
+        .expect("validated binding references an existing parameter");
+    let runtime = RuntimeValue::compile(&parameter.default)
+        .expect("validated bound parameter has a concrete default");
+    Expression::constant(
+        T::from_runtime(&runtime)
+            .expect("validated binding type matches its module input")
+            .clone(),
+    )
+}
+
+fn expression_counts(instruction: &Instruction) -> (usize, usize) {
+    fn one<T>(expression: &Expression<T>) -> (usize, usize) {
+        match expression {
+            Expression::Constant(_) => (1, 0),
+            Expression::Parameter(_) => (0, 1),
+        }
+    }
+    fn sum(values: impl IntoIterator<Item = (usize, usize)>) -> (usize, usize) {
+        values.into_iter().fold((0, 0), |total, value| {
+            (total.0 + value.0, total.1 + value.1)
+        })
+    }
+    match instruction {
+        Instruction::Emit {
+            spawn_rate,
+            burst_count,
+            ..
+        } => sum([one(spawn_rate), one(burst_count)]),
+        Instruction::SampleShape { shape, .. } => one(shape),
+        Instruction::Initialize {
+            lifetime,
+            speed,
+            direction_degrees,
+            spread_degrees,
+            angular_velocity,
+            ..
+        } => sum([
+            one(lifetime),
+            one(speed),
+            one(direction_degrees),
+            one(spread_degrees),
+            one(angular_velocity),
+        ]),
+        Instruction::Motion {
+            gravity,
+            drag,
+            turbulence,
+            ..
+        } => sum([one(gravity), one(drag), one(turbulence)]),
+        Instruction::Appearance {
+            size,
+            opacity,
+            color,
+            ..
+        } => sum([one(size), one(opacity), one(color)]),
+    }
 }
 
 fn parameters_match(module: &ModuleInstance) -> bool {
@@ -390,6 +626,25 @@ fn parameters_match(module: &ModuleInstance) -> bool {
             | (MODULE_MOTION, ModuleParameters::Motion { .. })
             | (MODULE_APPEARANCE, ModuleParameters::Appearance { .. })
     )
+}
+
+fn renderer_attributes() -> [ParticleAttribute; 4] {
+    [
+        ParticleAttribute::Position,
+        ParticleAttribute::Rotation,
+        ParticleAttribute::Size,
+        ParticleAttribute::Color,
+    ]
+}
+
+fn push_unique(report: &mut ValidationReport, diagnostic: Diagnostic) {
+    if !report
+        .diagnostics
+        .iter()
+        .any(|existing| existing.code == diagnostic.code && existing.path == diagnostic.path)
+    {
+        report.push(diagnostic);
+    }
 }
 
 fn input(name: &'static str, value_type: ValueType) -> InputMetadata {

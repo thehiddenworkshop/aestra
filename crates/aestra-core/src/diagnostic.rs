@@ -25,6 +25,8 @@ pub enum DiagnosticCode {
     UnknownModule,
     UnsupportedRenderer,
     MissingAttribute,
+    UnknownParameter,
+    ParameterTypeMismatch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

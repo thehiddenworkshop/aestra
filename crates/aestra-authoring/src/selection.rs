@@ -238,6 +238,12 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         }
         | EffectCommand::RemoveModuleParameter {
             emitter, module, ..
+        }
+        | EffectCommand::BindModuleParameter {
+            emitter, module, ..
+        }
+        | EffectCommand::UnbindModuleParameter {
+            emitter, module, ..
         } => (Some(*emitter), Some(SemanticTarget::Module(*module))),
         EffectCommand::RemoveRenderer {
             emitter, renderer, ..

@@ -3,8 +3,8 @@ use aestra_authoring::{
     Selection, SemanticTarget,
 };
 use aestra_core::{
-    EffectAsset, Emitter, EventId, EventLink, EventTrigger, MODULE_EMISSION, MODULE_INITIALIZE,
-    ScalarRange, Value,
+    EffectAsset, EffectParameter, Emitter, EventId, EventLink, EventTrigger, MODULE_EMISSION,
+    MODULE_INITIALIZE, ParameterId, ScalarRange, Value,
 };
 
 fn test_effect() -> EffectAsset {
@@ -227,4 +227,99 @@ fn semantic_selection_repairs_after_deletion() {
     selection.repair(&effect);
 
     assert_eq!(selection.emitter(&effect), Some(remaining));
+}
+
+#[test]
+fn parameter_bindings_are_transactional_and_reversible() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let module = effect.emitters[0]
+        .module_by_type(MODULE_EMISSION)
+        .unwrap()
+        .id;
+    let parameter = EffectParameter {
+        id: ParameterId::new(),
+        name: "Spawn Rate".into(),
+        default: Value::Scalar(30.0),
+        exposed: true,
+    };
+    let parameter_id = parameter.id;
+    let mut history = CommandHistory::default();
+    let transaction = EffectTransaction::new(
+        "Expose spawn rate",
+        vec![
+            EffectCommand::AddParameter {
+                parameter,
+                index: 0,
+            },
+            EffectCommand::BindModuleParameter {
+                emitter,
+                module,
+                parameter: "spawn_rate".into(),
+                source: parameter_id,
+            },
+        ],
+    );
+
+    history
+        .execute(&mut effect, &LockState::default(), transaction)
+        .unwrap();
+    assert_eq!(
+        effect.emitters[0].module_by_id(module).unwrap().bindings["spawn_rate"],
+        parameter_id
+    );
+
+    history.undo(&mut effect).unwrap().unwrap();
+    assert!(effect.parameters.is_empty());
+    assert!(
+        effect.emitters[0]
+            .module_by_id(module)
+            .unwrap()
+            .bindings
+            .is_empty()
+    );
+
+    history.redo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect.parameters[0].id, parameter_id);
+    assert_eq!(
+        effect.emitters[0].module_by_id(module).unwrap().bindings["spawn_rate"],
+        parameter_id
+    );
+}
+
+#[test]
+fn invalid_binding_type_leaves_the_document_unchanged() {
+    let mut effect = test_effect();
+    let parameter = EffectParameter {
+        id: ParameterId::new(),
+        name: "Gravity".into(),
+        default: Value::Vec2([0.0, -9.8]),
+        exposed: true,
+    };
+    let parameter_id = parameter.id;
+    effect.parameters.push(parameter);
+    let emitter = effect.emitters[0].id;
+    let module = effect.emitters[0]
+        .module_by_type(MODULE_EMISSION)
+        .unwrap()
+        .id;
+    let before = effect.clone();
+
+    let error = CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::single(
+            "Bind wrong type",
+            EffectCommand::BindModuleParameter {
+                emitter,
+                module,
+                parameter: "spawn_rate".into(),
+                source: parameter_id,
+            },
+        ),
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, CommandError::Validation(_)));
+    assert_eq!(effect, before);
 }

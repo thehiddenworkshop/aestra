@@ -42,12 +42,14 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Owns the extensible module registry and metadata used for discovery and validation.
 - Validates stages, supported renderer capabilities, and particle attribute flow.
-- Lowers authored module stacks into immutable, typed execution plans with source mapping.
+- Lowers authored constants and parameter bindings into immutable typed expressions.
+- Compiles curves and gradients, folds constants, removes dead particle storage, and retains source mapping.
 
 ### `aestra-runtime`
 
 - Owns `CompiledEffect`, `EffectInstance`, particle layouts, and execution instructions.
 - Interprets compiled effects deterministically for a seed and time without Bevy.
+- Resolves indexed, type-checked parameter overrides without recompiling an effect.
 - Defines the engine-independent contract that future CPU and GPU backends must preserve.
 
 ### `aestra-authoring`
@@ -84,6 +86,7 @@ The format begins with effect-level duration and looping, then emitters with ind
 
 - an explicit simulation domain;
 - ordered modules assigned to explicit execution stages;
+- module inputs with authored fallback values and optional typed effect-parameter bindings;
 - stable IDs for modules, curves, gradients, and renderer instances;
 - one or more renderers with independent blend behavior;
 - typed event links between emitters.
@@ -106,6 +109,7 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [x] timeline scrubbing, trimming, moving, and effect-duration editing
 - [x] native file dialogs, project asset discovery, and unsaved-change protection
 - [x] module registry, typed compiler plan, runtime instances, and CPU extraction
+- [x] runtime parameter slots, compiled curves, constant folding, and attribute liveness
 - [ ] timeline zooming and snapping
 - node/module stack for spawn, initialize, update, renderer, and events
 - autosave/recovery and asset migrations

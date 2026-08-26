@@ -2,7 +2,9 @@
 
 pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
 pub use aestra_core::*;
-pub use aestra_runtime::{CompiledEffect, EffectInstance, ParticleSample};
+pub use aestra_runtime::{
+    CompiledEffect, EffectInstance, ParameterError, ParticleSample, RuntimeValue,
+};
 
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{
@@ -65,6 +67,14 @@ impl EffectPlayer {
 
     pub fn seek(&mut self, time: f32) {
         self.instance.seek(time);
+    }
+
+    pub fn set_parameter(&mut self, id: ParameterId, value: Value) -> Result<(), ParameterError> {
+        self.instance.set_parameter(id, value)
+    }
+
+    pub fn clear_parameter(&mut self, id: ParameterId) -> Result<(), ParameterError> {
+        self.instance.clear_parameter(id)
     }
 }
 
@@ -148,5 +158,36 @@ mod tests {
         let player = EffectPlayer::try_new(&effect).unwrap();
         assert_eq!(player.effect().source, effect.id);
         assert_eq!(player.effect().emitters.len(), 1);
+    }
+
+    #[test]
+    fn player_forwards_runtime_parameter_overrides() {
+        let mut effect = EffectAsset::new("Parameterized", 2.0);
+        let parameter = EffectParameter {
+            id: ParameterId::new(),
+            name: "Spawn Rate".into(),
+            default: Value::Scalar(4.0),
+            exposed: true,
+        };
+        let parameter_id = parameter.id;
+        let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
+        emitter
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == MODULE_EMISSION)
+            .unwrap()
+            .bindings
+            .insert("spawn_rate".into(), parameter_id);
+        effect.parameters.push(parameter);
+        effect.emitters.push(emitter);
+
+        let mut player = EffectPlayer::try_new(&effect).unwrap();
+        player
+            .set_parameter(parameter_id, Value::Scalar(40.0))
+            .unwrap();
+        assert!(matches!(
+            player.instance.parameter(parameter_id),
+            Some(RuntimeValue::Scalar(40.0))
+        ));
     }
 }

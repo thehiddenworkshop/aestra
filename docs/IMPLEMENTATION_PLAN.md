@@ -11,9 +11,8 @@ architecture vision; this file is the shorter delivery plan.
 - M0 reference behavior and architecture decisions: complete.
 - M1 semantic core and format v2 foundation: complete for the initial module set.
 - M2 deterministic authoring operations: complete for current editor operations.
-- M3 module registry, compiler frontend, and CPU runtime: initial vertical slice complete.
-- Next: expand M3 with parameter bindings, general typed expressions, curve compilation,
-  constant folding, and dead-attribute elimination before the first GPU backend.
+- M3 module registry, compiler frontend, and CPU runtime: complete for the initial module set.
+- Next: M4 first GPU production slice using the compiled particle layout and execution plans.
 
 ## 1. Assessment of the current prototype
 

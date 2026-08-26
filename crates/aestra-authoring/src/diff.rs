@@ -184,8 +184,14 @@ fn diff_modules(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticCha
                 kind: ChangeKind::Modified,
                 target,
                 path: format!("module.{}", module.module_type.0),
-                before: Some(format!("{:?}", module.parameters)),
-                after: Some(format!("{:?}", after_module.parameters)),
+                before: Some(format!(
+                    "{:?} bindings={:?}",
+                    module.parameters, module.bindings
+                )),
+                after: Some(format!(
+                    "{:?} bindings={:?}",
+                    after_module.parameters, after_module.bindings
+                )),
             });
         }
     }

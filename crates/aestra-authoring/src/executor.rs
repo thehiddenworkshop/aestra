@@ -27,6 +27,8 @@ pub enum CommandError {
     },
     #[error("module parameter '{parameter}' cannot be removed from a built-in module")]
     RequiredParameter { parameter: String },
+    #[error("module parameter '{parameter}' is not bound")]
+    MissingBinding { parameter: String },
     #[error("transaction validation failed: {0}")]
     Validation(#[from] ValidationReport),
 }
@@ -282,6 +284,46 @@ fn apply_command(
                 module: *module,
                 parameter: parameter.clone(),
                 value,
+            }]
+        }
+        EffectCommand::BindModuleParameter {
+            emitter,
+            module,
+            parameter,
+            source,
+        } => {
+            let module_instance = module_mut(effect, *emitter, *module)?;
+            let previous = module_instance.bindings.insert(parameter.clone(), *source);
+            match previous {
+                Some(source) => vec![EffectCommand::BindModuleParameter {
+                    emitter: *emitter,
+                    module: *module,
+                    parameter: parameter.clone(),
+                    source,
+                }],
+                None => vec![EffectCommand::UnbindModuleParameter {
+                    emitter: *emitter,
+                    module: *module,
+                    parameter: parameter.clone(),
+                }],
+            }
+        }
+        EffectCommand::UnbindModuleParameter {
+            emitter,
+            module,
+            parameter,
+        } => {
+            let module_instance = module_mut(effect, *emitter, *module)?;
+            let source = module_instance.bindings.remove(parameter).ok_or_else(|| {
+                CommandError::MissingBinding {
+                    parameter: parameter.clone(),
+                }
+            })?;
+            vec![EffectCommand::BindModuleParameter {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                source,
             }]
         }
         EffectCommand::AddRenderer {

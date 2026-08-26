@@ -102,14 +102,56 @@ impl EffectAsset {
                 &mut report,
                 &mut semantic_ids,
             );
+            if matches!(parameter.default, Value::Parameter(_)) {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.default"),
+                    "effect parameter defaults must be concrete values",
+                ));
+            }
         }
         for (index, emitter) in self.emitters.iter().enumerate() {
-            emitter.validate(
-                &format!("effect.emitters[{index}]"),
-                self.duration,
-                &mut report,
-                &mut semantic_ids,
-            );
+            let emitter_path = format!("effect.emitters[{index}]");
+            emitter.validate(&emitter_path, self.duration, &mut report, &mut semantic_ids);
+            for (module_index, module) in emitter.modules.iter().enumerate() {
+                for (input, parameter_id) in &module.bindings {
+                    let path = format!("{emitter_path}.modules[{module_index}].bindings.{input}");
+                    let Some(expected) = module.parameter_type(input) else {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::UnknownParameter,
+                            path,
+                            format!(
+                                "module '{}' has no input named '{input}'",
+                                module.module_type.0
+                            ),
+                        ));
+                        continue;
+                    };
+                    let Some(parameter) = self
+                        .parameters
+                        .iter()
+                        .find(|parameter| parameter.id == *parameter_id)
+                    else {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::InvalidReference,
+                            path,
+                            format!("binding references missing parameter {parameter_id}"),
+                        ));
+                        continue;
+                    };
+                    let actual = parameter.default.value_type();
+                    if actual != expected {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::ParameterTypeMismatch,
+                            path,
+                            format!(
+                                "input '{input}' expects {expected:?}, but parameter '{}' is {actual:?}",
+                                parameter.name
+                            ),
+                        ));
+                    }
+                }
+            }
         }
         for (index, event) in self.events.iter().enumerate() {
             let path = format!("effect.events[{index}]");
@@ -547,6 +589,8 @@ pub struct ModuleInstance {
     pub stage: StageKind,
     pub enabled: bool,
     pub parameters: ModuleParameters,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bindings: BTreeMap<String, ParameterId>,
 }
 
 impl ModuleInstance {
@@ -560,6 +604,7 @@ impl ModuleInstance {
                 spawn_rate,
                 burst_count,
             },
+            bindings: BTreeMap::new(),
         }
     }
 
@@ -570,6 +615,7 @@ impl ModuleInstance {
             stage: StageKind::ParticleSpawn,
             enabled: true,
             parameters: ModuleParameters::Shape { shape },
+            bindings: BTreeMap::new(),
         }
     }
 
@@ -592,6 +638,7 @@ impl ModuleInstance {
                 spread_degrees,
                 angular_velocity,
             },
+            bindings: BTreeMap::new(),
         }
     }
 
@@ -606,6 +653,7 @@ impl ModuleInstance {
                 drag,
                 turbulence,
             },
+            bindings: BTreeMap::new(),
         }
     }
 
@@ -620,6 +668,27 @@ impl ModuleInstance {
                 opacity,
                 color,
             },
+            bindings: BTreeMap::new(),
+        }
+    }
+
+    pub fn parameter_type(&self, parameter: &str) -> Option<ValueType> {
+        match (&self.parameters, parameter) {
+            (ModuleParameters::Emission { .. }, "spawn_rate") => Some(ValueType::Scalar),
+            (ModuleParameters::Emission { .. }, "burst_count") => Some(ValueType::U32),
+            (ModuleParameters::Shape { .. }, "shape") => Some(ValueType::Shape),
+            (ModuleParameters::Initialize { .. }, "lifetime" | "speed" | "angular_velocity") => {
+                Some(ValueType::Range)
+            }
+            (ModuleParameters::Initialize { .. }, "direction_degrees" | "spread_degrees") => {
+                Some(ValueType::Scalar)
+            }
+            (ModuleParameters::Motion { .. }, "gravity") => Some(ValueType::Vec2),
+            (ModuleParameters::Motion { .. }, "drag" | "turbulence") => Some(ValueType::Scalar),
+            (ModuleParameters::Appearance { .. }, "size" | "opacity") => Some(ValueType::Curve),
+            (ModuleParameters::Appearance { .. }, "color") => Some(ValueType::Gradient),
+            (ModuleParameters::Custom(values), name) => values.get(name).map(Value::value_type),
+            _ => None,
         }
     }
 
@@ -793,7 +862,44 @@ pub enum Value {
     Material(MaterialId),
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ValueType {
+    Bool,
+    U32,
+    Scalar,
+    Vec2,
+    Vec3,
+    Vec4,
+    Text,
+    Range,
+    Curve,
+    Gradient,
+    Shape,
+    Parameter,
+    Asset,
+    Material,
+}
+
 impl Value {
+    pub fn value_type(&self) -> ValueType {
+        match self {
+            Self::Bool(_) => ValueType::Bool,
+            Self::U32(_) => ValueType::U32,
+            Self::Scalar(_) => ValueType::Scalar,
+            Self::Vec2(_) => ValueType::Vec2,
+            Self::Vec3(_) => ValueType::Vec3,
+            Self::Vec4(_) => ValueType::Vec4,
+            Self::Text(_) => ValueType::Text,
+            Self::Range(_) => ValueType::Range,
+            Self::Curve(_) => ValueType::Curve,
+            Self::Gradient(_) => ValueType::Gradient,
+            Self::Shape(_) => ValueType::Shape,
+            Self::Parameter(_) => ValueType::Parameter,
+            Self::Asset(_) => ValueType::Asset,
+            Self::Material(_) => ValueType::Material,
+        }
+    }
+
     fn regenerate_ids(&mut self) {
         match self {
             Value::Curve(curve) => curve.id = CurveId::new(),

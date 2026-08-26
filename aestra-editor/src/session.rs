@@ -583,7 +583,9 @@ mod tests {
             .execution
             .emitter_update[0];
         match instruction {
-            aestra_runtime::Instruction::Emit { spawn_rate, .. } => *spawn_rate,
+            aestra_runtime::Instruction::Emit { spawn_rate, .. } => *spawn_rate
+                .constant_value()
+                .expect("editor-authored spawn rate is constant"),
             _ => panic!("first emitter instruction must be emission"),
         }
     }
