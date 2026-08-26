@@ -46,6 +46,21 @@ impl DockPanel {
         }
     }
 
+    pub(crate) fn message_id(self) -> &'static str {
+        match self {
+            Self::Viewport => "panel-viewport",
+            Self::Assets => "panel-assets",
+            Self::Inspector => "panel-inspector",
+            Self::Timeline => "panel-timeline",
+            Self::Curves => "panel-curves",
+            Self::Diagnostics => "panel-diagnostics",
+            Self::GeneratedCode => "panel-generated-code",
+            Self::Profiler => "panel-profiler",
+            Self::Changes => "panel-changes",
+            Self::Settings => "panel-settings",
+        }
+    }
+
     pub(crate) fn closable(self) -> bool {
         self != Self::Viewport
     }

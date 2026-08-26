@@ -166,7 +166,8 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - node/module stack for spawn, initialize, update, renderer, and events
 - autosave/recovery and asset migrations
 - [x] versioned persistent editor settings and a dockable Settings workspace
-- [ ] Fluent localization with catalog validation, fallback, and live locale switching
+- [x] Fluent editor-shell localization with catalog validation, fallback, and live locale switching
+- [ ] localized Inspector, diagnostics, profiler, and authoring workspace content
 - [x] persistent recursive pane resizing and dockable authoring-panel tab stacks
 - [x] persisted native floating panel windows with redocking
 

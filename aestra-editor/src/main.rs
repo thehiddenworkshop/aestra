@@ -1,4 +1,5 @@
 mod docking;
+mod localization;
 mod session;
 mod settings;
 mod theme;
@@ -28,6 +29,8 @@ use bevy::{
     },
 };
 use docking::{DockAxis, DockDrop, DockNode, DockNodeId, DockPanel, DockStack, WorkspaceLayout};
+use fluent_bundle::FluentArgs;
+use localization::Localizer;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use session::EditorSession;
 use settings::{EditorSettings, SettingsPersistence};
@@ -45,7 +48,10 @@ const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
 const PROFILER_HISTORY_SAMPLES: usize = 96;
 
 fn main() {
-    let (settings, persistence) = SettingsPersistence::load();
+    let (mut settings, persistence) = SettingsPersistence::load();
+    let localizer =
+        Localizer::new(&settings.language.locale).expect("embedded Fluent catalogs must be valid");
+    settings.language.locale = localizer.locale().into();
     let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
     session.playing = settings.preview.play_on_open;
     if let Some(diagnostic) = persistence.diagnostic() {
@@ -61,6 +67,7 @@ fn main() {
         .insert_resource(session)
         .insert_resource(settings)
         .insert_resource(persistence)
+        .insert_resource(localizer)
         .insert_resource(UiScale(ui_scale))
         .insert_resource(EffectCatalog::scan())
         .insert_resource(menu)
@@ -100,6 +107,7 @@ fn main() {
                     advance_playback,
                     update_preview,
                     update_profiler_labels,
+                    update_localized_text,
                     update_editor_labels,
                     update_compile_status,
                     update_history_actions,
@@ -110,6 +118,7 @@ fn main() {
                     update_layer_selection,
                     update_menu_visibility,
                     update_panel_visibility_labels,
+                    update_floating_window_titles,
                     update_preview_grid_visibility,
                     clear_finished_dock_drag,
                     sync_dock_drop_hints,
@@ -196,6 +205,7 @@ enum EditorAction {
     SelectSettingsCategory(SettingsCategory),
     ToggleSetting(SettingsToggle),
     AdjustSetting(SettingsNumber, i8),
+    CycleLocale(i8),
     ResetEditorSettings,
     ShowAbout,
     CloseAbout,
@@ -386,15 +396,15 @@ impl SettingsCategory {
         Self::Keybindings,
     ];
 
-    fn title(self) -> &'static str {
+    fn message_id(self) -> &'static str {
         match self {
-            Self::General => "GENERAL",
-            Self::Preview => "PREVIEW",
-            Self::Performance => "PERFORMANCE",
-            Self::Capture => "CAPTURE",
-            Self::Appearance => "APPEARANCE",
-            Self::Language => "LANGUAGE",
-            Self::Keybindings => "KEYBINDINGS",
+            Self::General => "settings-general",
+            Self::Preview => "settings-preview",
+            Self::Performance => "settings-performance",
+            Self::Capture => "settings-capture",
+            Self::Appearance => "settings-appearance",
+            Self::Language => "settings-language",
+            Self::Keybindings => "settings-keybindings",
         }
     }
 }
@@ -484,6 +494,12 @@ struct DiagnosticsFilterButton(DiagnosticsFilter);
 
 #[derive(Component)]
 struct SettingsCategoryButton(SettingsCategory);
+
+#[derive(Component)]
+struct LocalizedText(&'static str);
+
+#[derive(Component)]
+struct AboutDescription;
 
 #[derive(Component)]
 struct DiagnosticRow;
@@ -687,6 +703,7 @@ struct PanelSources<'a> {
     settings: &'a EditorSettings,
     settings_panel: &'a SettingsPanelState,
     settings_persistence: &'a SettingsPersistence,
+    localizer: &'a Localizer,
 }
 
 #[derive(SystemParam)]
@@ -701,6 +718,7 @@ struct UiBuildResources<'w> {
     settings: Res<'w, EditorSettings>,
     settings_panel: Res<'w, SettingsPanelState>,
     settings_persistence: Res<'w, SettingsPersistence>,
+    localizer: Res<'w, Localizer>,
     workspace: Res<'w, WorkspaceState>,
 }
 
@@ -714,6 +732,7 @@ struct SetupUiResources<'w> {
     settings: Res<'w, EditorSettings>,
     settings_panel: Res<'w, SettingsPanelState>,
     settings_persistence: Res<'w, SettingsPersistence>,
+    localizer: Res<'w, Localizer>,
 }
 
 #[derive(SystemParam)]
@@ -752,6 +771,7 @@ fn setup_editor(
         settings: &editor_resources.settings,
         settings_panel: &editor_resources.settings_panel,
         settings_persistence: &editor_resources.settings_persistence,
+        localizer: &editor_resources.localizer,
     };
     spawn_editor_ui(
         &mut commands,
@@ -778,15 +798,19 @@ fn spawn_editor_ui(
         .spawn(EditorRoot)
         .apply_scene(ui_shell::editor_root())
         .with_children(|root| {
-            spawn_menu_bar(root, sources.session, layout);
-            spawn_toolbar(root, sources.session);
+            spawn_menu_bar(root, sources.session, layout, sources.localizer);
+            spawn_toolbar(root, sources.session, sources.localizer);
             spawn_editor_content(root, menu, workspace, layout, sources);
-            spawn_status_bar(root, sources.session);
-            spawn_about_overlay(root, menu.show_about);
+            spawn_status_bar(root, sources.session, sources.localizer);
+            spawn_about_overlay(root, menu.show_about, sources.localizer);
         });
 }
 
-fn spawn_tab_context_menu(parent: &mut ChildSpawnerCommands, context: Option<TabContextMenu>) {
+fn spawn_tab_context_menu(
+    parent: &mut ChildSpawnerCommands,
+    context: Option<TabContextMenu>,
+    localizer: &Localizer,
+) {
     let Some(context) = context else {
         return;
     };
@@ -823,7 +847,8 @@ fn spawn_tab_context_menu(parent: &mut ChildSpawnerCommands, context: Option<Tab
             ))
             .with_children(|item| {
                 item.spawn((
-                    Text::new("Float Panel"),
+                    LocalizedText("dock-float-panel"),
+                    Text::new(localizer.text("dock-float-panel")),
                     TextFont {
                         font_size: FontSize::Px(11.0),
                         ..default()
@@ -847,7 +872,7 @@ fn spawn_editor_content(
         .apply_scene(ui_shell::editor_content())
         .with_children(|content| {
             spawn_dock_node(content, &layout.root, workspace, sources);
-            spawn_tab_context_menu(content, menu.tab_context);
+            spawn_tab_context_menu(content, menu.tab_context, sources.localizer);
         });
 }
 
@@ -855,6 +880,7 @@ fn spawn_menu_bar(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     layout: &WorkspaceLayout,
+    localizer: &Localizer,
 ) {
     parent
         .spawn((
@@ -871,10 +897,10 @@ fn spawn_menu_bar(
             BorderColor::all(theme::BORDER),
         ))
         .with_children(|bar| {
-            menu_button(bar, "File", MenuKind::File);
-            menu_button(bar, "Edit", MenuKind::Edit);
-            menu_button(bar, "View", MenuKind::View);
-            menu_button(bar, "Help", MenuKind::Help);
+            menu_button(bar, "menu-file", MenuKind::File, localizer);
+            menu_button(bar, "menu-edit", MenuKind::Edit, localizer);
+            menu_button(bar, "menu-view", MenuKind::View, localizer);
+            menu_button(bar, "menu-help", MenuKind::Help, localizer);
             bar.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
@@ -905,48 +931,60 @@ fn spawn_menu_bar(
                 MenuKind::File,
                 0.0,
                 &[
-                    ("New Effect", "Ctrl+N", EditorAction::NewEffect),
-                    ("Open...", "Ctrl+O", EditorAction::OpenEffect),
-                    ("Save", "Ctrl+S", EditorAction::Save),
-                    ("Save As...", "Ctrl+Shift+S", EditorAction::SaveAs),
+                    ("file-new-effect", "Ctrl+N", EditorAction::NewEffect),
+                    ("file-open", "Ctrl+O", EditorAction::OpenEffect),
+                    ("file-save", "Ctrl+S", EditorAction::Save),
+                    ("file-save-as", "Ctrl+Shift+S", EditorAction::SaveAs),
                     (
-                        "Settings",
+                        "file-settings",
                         "",
                         EditorAction::ShowDockPanel(DockPanel::Settings),
                     ),
-                    ("Exit", "Alt+F4", EditorAction::Exit),
+                    ("file-exit", "Alt+F4", EditorAction::Exit),
                 ],
+                localizer,
             );
             spawn_dropdown(
                 bar,
                 MenuKind::Edit,
-                52.0,
+                68.0,
                 &[
-                    ("Undo", "Ctrl+Z", EditorAction::Undo),
-                    ("Redo", "Ctrl+Y", EditorAction::Redo),
-                    ("Add Emitter", "Ctrl+Enter", EditorAction::AddLayer),
-                    ("Duplicate Emitter", "Ctrl+D", EditorAction::DuplicateLayer),
-                    ("Delete Emitter", "Delete", EditorAction::DeleteLayer),
+                    ("edit-undo", "Ctrl+Z", EditorAction::Undo),
+                    ("edit-redo", "Ctrl+Y", EditorAction::Redo),
+                    ("edit-add-emitter", "Ctrl+Enter", EditorAction::AddLayer),
+                    (
+                        "edit-duplicate-emitter",
+                        "Ctrl+D",
+                        EditorAction::DuplicateLayer,
+                    ),
+                    ("edit-delete-emitter", "Delete", EditorAction::DeleteLayer),
                 ],
+                localizer,
             );
-            spawn_view_dropdown(bar, layout);
+            spawn_view_dropdown(bar, layout, localizer);
             spawn_dropdown(
                 bar,
                 MenuKind::Help,
-                164.0,
-                &[("About Aestra", "", EditorAction::ShowAbout)],
+                204.0,
+                &[("help-about", "", EditorAction::ShowAbout)],
+                localizer,
             );
         });
 }
 
-fn menu_button(parent: &mut ChildSpawnerCommands, label: &str, menu: MenuKind) {
+fn menu_button(
+    parent: &mut ChildSpawnerCommands,
+    message_id: &'static str,
+    menu: MenuKind,
+    localizer: &Localizer,
+) {
     parent
         .spawn((
             Button,
             MenuButton,
             EditorAction::ToggleMenu(menu),
             Node {
-                width: Val::Px(52.0),
+                width: Val::Px(68.0),
                 height: Val::Px(28.0),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
@@ -957,7 +995,8 @@ fn menu_button(parent: &mut ChildSpawnerCommands, label: &str, menu: MenuKind) {
         ))
         .with_children(|button| {
             button.spawn((
-                Text::new(label),
+                LocalizedText(message_id),
+                Text::new(localizer.text(message_id)),
                 TextFont {
                     font_size: FontSize::Px(11.0),
                     ..default()
@@ -971,7 +1010,8 @@ fn spawn_dropdown(
     parent: &mut ChildSpawnerCommands,
     menu: MenuKind,
     left: f32,
-    items: &[(&str, &str, EditorAction)],
+    items: &[(&'static str, &str, EditorAction)],
+    localizer: &Localizer,
 ) {
     parent
         .spawn((
@@ -995,7 +1035,7 @@ fn spawn_dropdown(
             BorderColor::all(theme::BORDER_BRIGHT),
         ))
         .with_children(|dropdown| {
-            for (label, shortcut, action) in items {
+            for (message_id, shortcut, action) in items {
                 if matches!(
                     action,
                     EditorAction::ShowDockPanel(DockPanel::Settings) | EditorAction::Exit
@@ -1034,7 +1074,8 @@ fn spawn_dropdown(
                 }
                 item.with_children(|item| {
                     item.spawn((
-                        Text::new(*label),
+                        LocalizedText(message_id),
+                        Text::new(localizer.text(message_id)),
                         TextFont {
                             font_size: FontSize::Px(11.0),
                             ..default()
@@ -1058,7 +1099,11 @@ fn spawn_dropdown(
         });
 }
 
-fn spawn_view_dropdown(parent: &mut ChildSpawnerCommands, layout: &WorkspaceLayout) {
+fn spawn_view_dropdown(
+    parent: &mut ChildSpawnerCommands,
+    layout: &WorkspaceLayout,
+    localizer: &Localizer,
+) {
     parent
         .spawn((
             MenuDropdown(MenuKind::View),
@@ -1068,7 +1113,7 @@ fn spawn_view_dropdown(parent: &mut ChildSpawnerCommands, layout: &WorkspaceLayo
             Node {
                 display: Display::None,
                 position_type: PositionType::Absolute,
-                left: Val::Px(104.0),
+                left: Val::Px(136.0),
                 top: Val::Px(29.0),
                 width: Val::Px(218.0),
                 padding: UiRect::all(Val::Px(5.0)),
@@ -1081,14 +1126,33 @@ fn spawn_view_dropdown(parent: &mut ChildSpawnerCommands, layout: &WorkspaceLayo
             BorderColor::all(theme::BORDER_BRIGHT),
         ))
         .with_children(|dropdown| {
-            spawn_view_menu_item(dropdown, "Toggle Grid", "G", EditorAction::ToggleGrid);
-            spawn_view_menu_item(dropdown, "Restart Preview", "R", EditorAction::Restart);
-            spawn_view_menu_item(dropdown, "Panels", ">", EditorAction::TogglePanelsSubmenu);
             spawn_view_menu_item(
                 dropdown,
-                "Reset Workspace",
+                "view-toggle-grid",
+                "G",
+                EditorAction::ToggleGrid,
+                localizer,
+            );
+            spawn_view_menu_item(
+                dropdown,
+                "view-restart-preview",
+                "R",
+                EditorAction::Restart,
+                localizer,
+            );
+            spawn_view_menu_item(
+                dropdown,
+                "view-panels",
+                ">",
+                EditorAction::TogglePanelsSubmenu,
+                localizer,
+            );
+            spawn_view_menu_item(
+                dropdown,
+                "view-reset-workspace",
                 "",
                 EditorAction::ResetWorkspaceLayout,
+                localizer,
             );
 
             dropdown
@@ -1134,7 +1198,7 @@ fn spawn_view_dropdown(parent: &mut ChildSpawnerCommands, layout: &WorkspaceLayo
                         item.with_children(|row| {
                             row.spawn((
                                 PanelVisibilityLabel(panel),
-                                Text::new(panel_visibility_label(panel, visible)),
+                                Text::new(panel_visibility_label(localizer, panel, visible)),
                                 TextFont {
                                     font_size: FontSize::Px(11.0),
                                     ..default()
@@ -1154,9 +1218,10 @@ fn spawn_view_dropdown(parent: &mut ChildSpawnerCommands, layout: &WorkspaceLayo
 
 fn spawn_view_menu_item(
     parent: &mut ChildSpawnerCommands,
-    label: &str,
+    message_id: &'static str,
     shortcut: &str,
     action: EditorAction,
+    localizer: &Localizer,
 ) {
     parent
         .spawn((
@@ -1174,7 +1239,8 @@ fn spawn_view_menu_item(
         ))
         .with_children(|item| {
             item.spawn((
-                Text::new(label),
+                LocalizedText(message_id),
+                Text::new(localizer.text(message_id)),
                 TextFont {
                     font_size: FontSize::Px(11.0),
                     ..default()
@@ -1198,11 +1264,15 @@ fn spawn_view_menu_item(
         });
 }
 
-fn panel_visibility_label(panel: DockPanel, visible: bool) -> String {
-    format!("[{}]  {}", if visible { "x" } else { " " }, panel.title())
+fn panel_visibility_label(localizer: &Localizer, panel: DockPanel, visible: bool) -> String {
+    format!(
+        "[{}]  {}",
+        if visible { "x" } else { " " },
+        localizer.text(panel.message_id())
+    )
 }
 
-fn spawn_about_overlay(parent: &mut ChildSpawnerCommands, visible: bool) {
+fn spawn_about_overlay(parent: &mut ChildSpawnerCommands, visible: bool, localizer: &Localizer) {
     parent
         .spawn((
             AboutOverlay,
@@ -1249,8 +1319,11 @@ fn spawn_about_overlay(parent: &mut ChildSpawnerCommands, visible: bool) {
                         },
                         TextColor(theme::ACCENT),
                     ));
+                    let mut args = FluentArgs::new();
+                    args.set("version", env!("CARGO_PKG_VERSION"));
                     dialog.spawn((
-                        Text::new("Bevy-native VFX choreography toolkit\nVersion 0.1.0"),
+                        AboutDescription,
+                        Text::new(localizer.text_with("about-description", &args)),
                         TextFont {
                             font_size: FontSize::Px(12.0),
                             ..default()
@@ -1258,12 +1331,21 @@ fn spawn_about_overlay(parent: &mut ChildSpawnerCommands, visible: bool) {
                         TextColor(theme::TEXT_MUTED),
                         TextLayout::justify(Justify::Center),
                     ));
-                    inspector_action_button(dialog, "Close", EditorAction::CloseAbout);
+                    localized_action_button(
+                        dialog,
+                        "common-close",
+                        EditorAction::CloseAbout,
+                        localizer,
+                    );
                 });
         });
 }
 
-fn spawn_toolbar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_toolbar(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
     parent
         .spawn((
             Node {
@@ -1292,9 +1374,27 @@ fn spawn_toolbar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                     ..default()
                 },
             ));
-            toolbar_button(bar, "Play", EditorAction::TogglePlayback, PlaybackLabel);
-            toolbar_button(bar, "Restart", EditorAction::Restart, PlainMarker);
-            toolbar_button(bar, "Save", EditorAction::Save, PlainMarker);
+            toolbar_button(
+                bar,
+                "toolbar-play",
+                EditorAction::TogglePlayback,
+                PlaybackLabel,
+                localizer,
+            );
+            toolbar_button(
+                bar,
+                "toolbar-restart",
+                EditorAction::Restart,
+                PlainMarker,
+                localizer,
+            );
+            toolbar_button(
+                bar,
+                "toolbar-save",
+                EditorAction::Save,
+                PlainMarker,
+                localizer,
+            );
             bar.spawn((
                 Node {
                     width: Val::Px(1.0),
@@ -1307,8 +1407,9 @@ fn spawn_toolbar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
             bar.spawn((
                 DocumentToolbarLabel,
                 Text::new(format!(
-                    "{}  /  VFX CHOREOGRAPHY",
-                    session.effect.name.to_uppercase()
+                    "{}  /  {}",
+                    session.effect.name.to_uppercase(),
+                    localizer.text("toolbar-choreography")
                 )),
                 TextFont {
                     font_size: FontSize::Px(12.0),
@@ -1321,7 +1422,8 @@ fn spawn_toolbar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                 ..default()
             });
             bar.spawn((
-                Text::new("BEVY 0.19  |  CPU REFERENCE"),
+                LocalizedText("toolbar-runtime"),
+                Text::new(localizer.text("toolbar-runtime")),
                 TextFont {
                     font_size: FontSize::Px(10.0),
                     ..default()
@@ -1335,6 +1437,44 @@ fn spawn_toolbar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
 struct PlainMarker;
 
 fn toolbar_button<M: Component>(
+    parent: &mut ChildSpawnerCommands,
+    message_id: &'static str,
+    action: EditorAction,
+    marker: M,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                height: Val::Px(32.0),
+                min_width: Val::Px(78.0),
+                padding: UiRect::horizontal(Val::Px(12.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                LocalizedText(message_id),
+                Text::new(localizer.text(message_id)),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                marker,
+            ));
+        });
+}
+
+fn plain_toolbar_button<M: Component>(
     parent: &mut ChildSpawnerCommands,
     label: &str,
     action: EditorAction,
@@ -1458,7 +1598,7 @@ fn spawn_dock_stack(
         ))
         .apply_scene(ui_shell::dock_pane())
         .with_children(|pane| {
-            spawn_dock_tab_bar(pane, node, stack);
+            spawn_dock_tab_bar(pane, node, stack, sources.localizer);
             if let Some(panel) = stack.active {
                 spawn_panel_content(pane, panel, workspace, sources);
             }
@@ -1493,6 +1633,7 @@ fn spawn_panel_content(
             sources.settings,
             sources.settings_panel,
             sources.settings_persistence,
+            sources.localizer,
         ),
     }
 }
@@ -1670,7 +1811,12 @@ fn spawn_tree_splitter(parent: &mut ChildSpawnerCommands, node: DockNodeId, axis
         });
 }
 
-fn spawn_dock_tab_bar(parent: &mut ChildSpawnerCommands, node: DockNodeId, stack: &DockStack) {
+fn spawn_dock_tab_bar(
+    parent: &mut ChildSpawnerCommands,
+    node: DockNodeId,
+    stack: &DockStack,
+    localizer: &Localizer,
+) {
     parent
         .spawn((
             Node {
@@ -1688,7 +1834,7 @@ fn spawn_dock_tab_bar(parent: &mut ChildSpawnerCommands, node: DockNodeId, stack
         ))
         .with_children(|bar| {
             for panel in &stack.tabs {
-                spawn_dock_tab(bar, *panel, stack.active == Some(*panel));
+                spawn_dock_tab(bar, *panel, stack.active == Some(*panel), localizer);
             }
             bar.spawn((
                 DockTabAppendZone(node),
@@ -1721,7 +1867,12 @@ fn spawn_dock_tab_bar(parent: &mut ChildSpawnerCommands, node: DockNodeId, stack
         });
 }
 
-fn spawn_dock_tab(parent: &mut ChildSpawnerCommands, panel: DockPanel, selected: bool) {
+fn spawn_dock_tab(
+    parent: &mut ChildSpawnerCommands,
+    panel: DockPanel,
+    selected: bool,
+    localizer: &Localizer,
+) {
     parent
         .spawn((
             Button,
@@ -1764,7 +1915,8 @@ fn spawn_dock_tab(parent: &mut ChildSpawnerCommands, panel: DockPanel, selected:
         .observe(open_dock_tab_context_menu)
         .with_children(|tab| {
             tab.spawn((
-                Text::new(panel.title()),
+                LocalizedText(panel.message_id()),
+                Text::new(localizer.text(panel.message_id())),
                 TextFont {
                     font_size: FontSize::Px(10.0),
                     ..default()
@@ -2355,7 +2507,7 @@ fn spawn_asset_browser(
                 "LAYERS",
                 &format!("{} ACTIVE", session.effect.emitters.len()),
             );
-            toolbar_button(panel, "+ Add Emitter", EditorAction::AddLayer, PlainMarker);
+            plain_toolbar_button(panel, "+ Add Emitter", EditorAction::AddLayer, PlainMarker);
             for (index, layer) in session.effect.emitters.iter().enumerate() {
                 let selected = index == session.selected_layer_index();
                 panel
@@ -4303,6 +4455,7 @@ fn spawn_settings_workspace(
     settings: &EditorSettings,
     state: &SettingsPanelState,
     persistence: &SettingsPersistence,
+    localizer: &Localizer,
 ) {
     parent
         .spawn(Node {
@@ -4330,7 +4483,7 @@ fn spawn_settings_workspace(
                 ))
                 .with_children(|header| {
                     header.spawn((
-                        Text::new("EDITOR SETTINGS"),
+                        Text::new(localizer.text("settings-editor-settings")),
                         TextFont {
                             font_size: FontSize::Px(11.0),
                             ..default()
@@ -4355,7 +4508,7 @@ fn spawn_settings_workspace(
                     });
                     stack_button(
                         header,
-                        "RESET SETTINGS",
+                        &localizer.text("common-reset-settings"),
                         EditorAction::ResetEditorSettings,
                         104.0,
                     );
@@ -4405,6 +4558,7 @@ fn spawn_settings_workspace(
                                 categories,
                                 category,
                                 state.category == category,
+                                localizer,
                             );
                         }
                     });
@@ -4428,7 +4582,12 @@ fn spawn_settings_workspace(
                                 ..default()
                             },
                             |settings_body| {
-                                spawn_settings_category(settings_body, settings, state.category);
+                                spawn_settings_category(
+                                    settings_body,
+                                    settings,
+                                    state.category,
+                                    localizer,
+                                );
                             },
                         );
                     });
@@ -4440,6 +4599,7 @@ fn spawn_settings_category_button(
     parent: &mut ChildSpawnerCommands,
     category: SettingsCategory,
     selected: bool,
+    localizer: &Localizer,
 ) {
     parent
         .spawn((
@@ -4462,7 +4622,7 @@ fn spawn_settings_category_button(
         ))
         .with_children(|button| {
             button.spawn((
-                Text::new(category.title()),
+                Text::new(localizer.text(category.message_id())),
                 TextFont {
                     font_size: FontSize::Px(10.0),
                     ..default()
@@ -4481,39 +4641,43 @@ fn spawn_settings_category(
     parent: &mut ChildSpawnerCommands,
     settings: &EditorSettings,
     category: SettingsCategory,
+    localizer: &Localizer,
 ) {
-    spawn_settings_heading(parent, category.title());
+    spawn_settings_heading(parent, &localizer.text(category.message_id()));
     match category {
         SettingsCategory::General => {
             spawn_settings_toggle(
                 parent,
-                "Confirm unsaved changes",
-                "Ask before closing or replacing a modified effect.",
+                &localizer.text("settings-confirm-unsaved"),
+                &localizer.text("settings-confirm-unsaved-description"),
                 settings.general.confirm_unsaved_changes,
                 SettingsToggle::ConfirmUnsavedChanges,
+                localizer,
             );
         }
         SettingsCategory::Preview => {
             spawn_settings_toggle(
                 parent,
-                "Viewport grid",
-                "Show the reference grid behind the effect preview.",
+                &localizer.text("settings-viewport-grid"),
+                &localizer.text("settings-viewport-grid-description"),
                 settings.preview.show_grid,
                 SettingsToggle::ShowGrid,
+                localizer,
             );
             spawn_settings_toggle(
                 parent,
-                "Play on open",
-                "Start playback when the editor launches.",
+                &localizer.text("settings-play-on-open"),
+                &localizer.text("settings-play-on-open-description"),
                 settings.preview.play_on_open,
                 SettingsToggle::PlayOnOpen,
+                localizer,
             );
         }
         SettingsCategory::Performance => {
             spawn_settings_number(
                 parent,
-                "Preview particle limit",
-                "Limit how many CPU-reference particles the editor presents.",
+                &localizer.text("settings-preview-particle-limit"),
+                &localizer.text("settings-preview-particle-limit-description"),
                 settings.performance.preview_particle_limit.to_string(),
                 SettingsNumber::PreviewParticleLimit,
             );
@@ -4521,15 +4685,15 @@ fn spawn_settings_category(
         SettingsCategory::Capture => {
             spawn_settings_number(
                 parent,
-                "Capture frame rate",
-                "Default deterministic sampling frequency for future editor captures.",
+                &localizer.text("settings-capture-frame-rate"),
+                &localizer.text("settings-capture-frame-rate-description"),
                 format!("{} FPS", settings.capture.frame_rate),
                 SettingsNumber::CaptureFrameRate,
             );
             spawn_settings_number(
                 parent,
-                "Contact sheet columns",
-                "Default number of frames per row in generated contact sheets.",
+                &localizer.text("settings-contact-sheet-columns"),
+                &localizer.text("settings-contact-sheet-columns-description"),
                 settings.capture.contact_sheet_columns.to_string(),
                 SettingsNumber::ContactSheetColumns,
             );
@@ -4537,34 +4701,34 @@ fn spawn_settings_category(
         SettingsCategory::Appearance => {
             spawn_settings_number(
                 parent,
-                "Interface scale",
-                "Scale all Bevy UI elements immediately.",
+                &localizer.text("settings-interface-scale"),
+                &localizer.text("settings-interface-scale-description"),
                 format!("{:.0}%", settings.appearance.ui_scale * 100.0),
                 SettingsNumber::UiScale,
             );
         }
         SettingsCategory::Language => {
-            spawn_settings_read_only(
+            spawn_settings_locale(
                 parent,
-                "Editor language",
-                "English (United States)",
-                "Stored as en-US. Additional Fluent catalogs and live language switching are the next localization slice.",
+                &localizer.text("settings-editor-language"),
+                &localizer.locale_name(localizer.locale()),
+                &localizer.text("settings-language-description"),
             );
         }
         SettingsCategory::Keybindings => {
             for (command, binding) in [
-                ("Play / Pause", "Space"),
-                ("Restart preview", "R"),
-                ("Save", "Ctrl+S"),
-                ("Undo", "Ctrl+Z"),
-                ("Redo", "Ctrl+Y"),
-                ("Add emitter", "Ctrl+Enter"),
+                ("settings-binding-play-pause", "Space"),
+                ("settings-binding-restart", "R"),
+                ("settings-binding-save", "Ctrl+S"),
+                ("settings-binding-undo", "Ctrl+Z"),
+                ("settings-binding-redo", "Ctrl+Y"),
+                ("settings-binding-add-emitter", "Ctrl+Enter"),
             ] {
                 spawn_settings_read_only(
                     parent,
-                    command,
+                    &localizer.text(command),
                     binding,
-                    "Editable bindings will use the command registry rather than hard-coded UI shortcuts.",
+                    &localizer.text("settings-keybinding-description"),
                 );
             }
         }
@@ -4643,15 +4807,42 @@ fn spawn_settings_toggle(
     description: &str,
     enabled: bool,
     setting: SettingsToggle,
+    localizer: &Localizer,
 ) {
     settings_row(parent, |row| {
         spawn_settings_description(row, title, description);
         stack_button(
             row,
-            if enabled { "ON" } else { "OFF" },
+            &localizer.text(if enabled { "common-on" } else { "common-off" }),
             EditorAction::ToggleSetting(setting),
             54.0,
         );
+    });
+}
+
+fn spawn_settings_locale(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    value: &str,
+    description: &str,
+) {
+    settings_row(parent, |row| {
+        spawn_settings_description(row, title, description);
+        mini_button(row, "−", EditorAction::CycleLocale(-1));
+        row.spawn((
+            Text::new(value),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_MUTED),
+            Node {
+                min_width: Val::Px(132.0),
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+        ));
+        mini_button(row, "+", EditorAction::CycleLocale(1));
     });
 }
 
@@ -6436,7 +6627,11 @@ fn spawn_ruler(parent: &mut ChildSpawnerCommands, duration: f32) {
     }
 }
 
-fn spawn_status_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_status_bar(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
     parent
         .spawn((
             Node {
@@ -6480,7 +6675,7 @@ fn spawn_status_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) 
                 ));
                 button.spawn((
                     CompileStatusLabel,
-                    Text::new(compile_status),
+                    Text::new(localizer.text(compile_status)),
                     TextFont {
                         font_size: FontSize::Px(9.0),
                         ..default()
@@ -6492,7 +6687,7 @@ fn spawn_status_bar(parent: &mut ChildSpawnerCommands, session: &EditorSession) 
         });
 }
 
-fn compile_status(session: &EditorSession) -> (String, Color) {
+fn compile_status(session: &EditorSession) -> (&'static str, Color) {
     let current_errors = session
         .diagnostics
         .diagnostics
@@ -6521,16 +6716,13 @@ fn compile_status(session: &EditorSession) -> (String, Color) {
         .count();
 
     if current_errors > 0 {
-        ("COMPILE FAILED".into(), Color::srgb(1.0, 0.38, 0.32))
+        ("compile-failed", Color::srgb(1.0, 0.38, 0.32))
     } else if pending_errors > 0 {
-        ("PREVIEW BLOCKED".into(), Color::srgb(1.0, 0.74, 0.30))
+        ("compile-preview-blocked", Color::srgb(1.0, 0.74, 0.30))
     } else if warnings > 0 {
-        (
-            "COMPILED WITH WARNINGS".into(),
-            Color::srgb(1.0, 0.74, 0.30),
-        )
+        ("compile-with-warnings", Color::srgb(1.0, 0.74, 0.30))
     } else {
-        ("COMPILED".into(), Color::srgb(0.35, 0.88, 0.57))
+        ("compile-compiled", Color::srgb(0.35, 0.88, 0.57))
     }
 }
 
@@ -6654,6 +6846,43 @@ fn inspector_action_button(parent: &mut ChildSpawnerCommands, label: &str, actio
         .with_children(|button| {
             button.spawn((
                 Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+            ));
+        });
+}
+
+fn localized_action_button(
+    parent: &mut ChildSpawnerCommands,
+    message_id: &'static str,
+    action: EditorAction,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                width: Val::Auto,
+                height: Val::Px(28.0),
+                margin: UiRect::horizontal(Val::Px(12.0)),
+                padding: UiRect::horizontal(Val::Px(10.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                LocalizedText(message_id),
+                Text::new(localizer.text(message_id)),
                 TextFont {
                     font_size: FontSize::Px(10.0),
                     ..default()
@@ -6805,6 +7034,7 @@ fn handle_buttons(
         ResMut<EditorSettings>,
         ResMut<SettingsPersistence>,
         ResMut<UiScale>,
+        ResMut<Localizer>,
     ),
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
@@ -6821,6 +7051,7 @@ fn handle_buttons(
         mut settings,
         mut settings_persistence,
         mut ui_scale,
+        mut localizer,
     ) = editor_resources;
     for (
         interaction,
@@ -7257,12 +7488,24 @@ fn handle_buttons(
                         session.ui_revision += 1;
                         persist_editor_settings(&settings, &mut settings_persistence, &mut session);
                     }
+                    EditorAction::CycleLocale(direction) => {
+                        if localizer.cycle_locale(direction) {
+                            settings.language.locale = localizer.locale().into();
+                            session.ui_revision += 1;
+                            persist_editor_settings(
+                                &settings,
+                                &mut settings_persistence,
+                                &mut session,
+                            );
+                        }
+                    }
                     EditorAction::ResetEditorSettings => {
                         match settings_persistence.replace_with_defaults() {
                             Ok(defaults) => {
                                 *settings = defaults;
                                 menu.show_grid = settings.preview.show_grid;
                                 ui_scale.0 = settings.appearance.ui_scale;
+                                localizer.set_locale(&settings.language.locale);
                                 session.ui_revision += 1;
                                 session.status = "Editor settings reset".into();
                             }
@@ -7849,13 +8092,26 @@ fn update_inspector_highlight(
 
 fn update_panel_visibility_labels(
     layout: Res<WorkspaceLayout>,
+    localizer: Res<Localizer>,
     mut labels: Query<(&PanelVisibilityLabel, &mut Text)>,
 ) {
-    if !layout.is_changed() {
+    if !layout.is_changed() && !localizer.is_changed() {
         return;
     }
     for (label, mut text) in &mut labels {
-        text.0 = panel_visibility_label(label.0, layout.is_visible(label.0));
+        text.0 = panel_visibility_label(&localizer, label.0, layout.is_visible(label.0));
+    }
+}
+
+fn update_floating_window_titles(
+    localizer: Res<Localizer>,
+    mut windows: Query<(&NativeFloatingWindow, &mut Window)>,
+) {
+    if !localizer.is_changed() {
+        return;
+    }
+    for (floating, mut window) in &mut windows {
+        window.title = format!("{} — Aestra", localizer.text(floating.0.message_id()));
     }
 }
 
@@ -7977,6 +8233,7 @@ fn sync_native_floating_windows(
         settings: &editor_resources.settings,
         settings_panel: &editor_resources.settings_panel,
         settings_persistence: &editor_resources.settings_persistence,
+        localizer: &editor_resources.localizer,
     };
     for floating in &editor_resources.layout.floating {
         if windows.iter().any(|(_, native)| native.0 == floating.panel) {
@@ -7985,7 +8242,10 @@ fn sync_native_floating_windows(
         let window = commands
             .spawn((
                 Window {
-                    title: format!("{} — Aestra", floating.panel.title()),
+                    title: format!(
+                        "{} — Aestra",
+                        editor_resources.localizer.text(floating.panel.message_id())
+                    ),
                     resolution: WindowResolution::new(
                         floating.size[0].round() as u32,
                         floating.size[1].round() as u32,
@@ -8049,6 +8309,7 @@ fn rebuild_editor_ui(
         settings: &editor_resources.settings,
         settings_panel: &editor_resources.settings_panel,
         settings_persistence: &editor_resources.settings_persistence,
+        localizer: &editor_resources.localizer,
     };
     commands.entity(*root).with_children(|root| {
         spawn_editor_content(
@@ -8206,10 +8467,29 @@ fn update_profiler_labels(
     }
 }
 
+fn update_localized_text(
+    localizer: Res<Localizer>,
+    mut labels: Query<(&LocalizedText, &mut Text), Without<AboutDescription>>,
+    mut about: Query<&mut Text, (With<AboutDescription>, Without<LocalizedText>)>,
+) {
+    if !localizer.is_changed() {
+        return;
+    }
+    for (message, mut text) in &mut labels {
+        text.0 = localizer.text(message.0);
+    }
+    let mut args = FluentArgs::new();
+    args.set("version", env!("CARGO_PKG_VERSION"));
+    for mut text in &mut about {
+        text.0 = localizer.text_with("about-description", &args);
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn update_editor_labels(
     session: Res<EditorSession>,
     settings: Res<EditorSettings>,
+    localizer: Res<Localizer>,
     mut labels: Query<(
         &mut Text,
         Option<&PlaybackLabel>,
@@ -8220,13 +8500,17 @@ fn update_editor_labels(
         Option<&DocumentToolbarLabel>,
     )>,
 ) {
-    if !session.is_changed() {
+    if !session.is_changed() && !localizer.is_changed() {
         return;
     }
     let layer = session.selected_layer();
     for (mut text, playback, time, title, count, document_menu, document_toolbar) in &mut labels {
         if playback.is_some() {
-            text.0 = if session.playing { "Pause" } else { "Play" }.into();
+            text.0 = localizer.text(if session.playing {
+                "toolbar-pause"
+            } else {
+                "toolbar-play"
+            });
         } else if time.is_some() {
             text.0 = format!(
                 "F{:05}  ·  {:02}:{:06.3}  /  00:{:06.3}  ·  {}",
@@ -8261,8 +8545,9 @@ fn update_editor_labels(
             );
         } else if document_toolbar.is_some() {
             text.0 = format!(
-                "{}  /  VFX CHOREOGRAPHY",
-                session.effect.name.to_uppercase()
+                "{}  /  {}",
+                session.effect.name.to_uppercase(),
+                localizer.text("toolbar-choreography")
             );
         }
     }
@@ -8270,15 +8555,16 @@ fn update_editor_labels(
 
 fn update_compile_status(
     session: Res<EditorSession>,
+    localizer: Res<Localizer>,
     mut labels: Query<(&mut Text, &mut TextColor), With<CompileStatusLabel>>,
     mut dots: Query<&mut BackgroundColor, With<CompileStatusDot>>,
 ) {
-    if !session.is_changed() {
+    if !session.is_changed() && !localizer.is_changed() {
         return;
     }
     let (label, color) = compile_status(&session);
     for (mut text, mut text_color) in &mut labels {
-        text.0 = label.clone();
+        text.0 = localizer.text(label);
         text_color.0 = color;
     }
     for mut background in &mut dots {
@@ -8525,14 +8811,15 @@ mod tests {
     #[test]
     fn compile_footer_reports_success_and_failure() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        assert_eq!(compile_status(&session).0, "COMPILED");
+        let localizer = Localizer::new("en-US").unwrap();
+        assert_eq!(localizer.text(compile_status(&session).0), "COMPILED");
 
         session.diagnostics.push(Diagnostic::error(
             DiagnosticCode::InvalidDuration,
             "effect.duration",
             "invalid test duration",
         ));
-        assert_eq!(compile_status(&session).0, "COMPILE FAILED");
+        assert_eq!(localizer.text(compile_status(&session).0), "COMPILE FAILED");
     }
 
     #[test]
@@ -8665,21 +8952,41 @@ mod tests {
 
     #[test]
     fn panel_visibility_labels_use_checkbox_notation() {
+        let localizer = Localizer::new("en-US").unwrap();
         assert_eq!(
-            panel_visibility_label(DockPanel::Diagnostics, true),
+            panel_visibility_label(&localizer, DockPanel::Diagnostics, true),
             "[x]  DIAGNOSTICS"
         );
         assert_eq!(
-            panel_visibility_label(DockPanel::Diagnostics, false),
+            panel_visibility_label(&localizer, DockPanel::Diagnostics, false),
             "[ ]  DIAGNOSTICS"
         );
         assert_eq!(
-            panel_visibility_label(DockPanel::GeneratedCode, true),
+            panel_visibility_label(&localizer, DockPanel::GeneratedCode, true),
             "[x]  GENERATED CODE"
         );
         assert_eq!(
-            panel_visibility_label(DockPanel::Profiler, true),
+            panel_visibility_label(&localizer, DockPanel::Profiler, true),
             "[x]  PROFILER"
         );
+    }
+
+    #[test]
+    fn localized_text_updates_when_the_locale_changes() {
+        let mut app = App::new();
+        app.insert_resource(Localizer::new("en-US").unwrap());
+        app.add_systems(Update, update_localized_text);
+        let label = app
+            .world_mut()
+            .spawn((LocalizedText("menu-file"), Text::new("stale")))
+            .id();
+        app.update();
+        assert_eq!(app.world().get::<Text>(label).unwrap().0, "File");
+
+        app.world_mut()
+            .resource_mut::<Localizer>()
+            .set_locale("fr-FR");
+        app.update();
+        assert_eq!(app.world().get::<Text>(label).unwrap().0, "Fichier");
     }
 }

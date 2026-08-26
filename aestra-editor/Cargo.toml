@@ -13,7 +13,9 @@ aestra-bevy = { path = "../aestra-bevy" }
 aestra-compiler = { path = "../crates/aestra-compiler" }
 aestra-runtime = { path = "../crates/aestra-runtime" }
 bevy.workspace = true
+fluent-bundle.workspace = true
 rfd = "0.15"
 ron.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+unic-langid.workspace = true

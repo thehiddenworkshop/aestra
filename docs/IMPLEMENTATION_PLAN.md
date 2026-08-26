@@ -46,8 +46,10 @@ architecture vision; this file is the shorter delivery plan.
   timestamps remain a capability-dependent extension. A dockable Settings workspace
   now owns versioned `settings.ron` persistence, live grid, particle-limit, and UI-scale
   controls, capture defaults, protected recovery from malformed or newer files, and a
-  stored locale ready for Fluent catalogs. The remaining M5 work is viewport gizmos,
-  Fluent localization, and recovery.
+  persisted locale. Embedded `en-US` and `fr-FR` Fluent catalogs now localize the editor
+  shell live with English fallback, semantic message IDs, interpolation, and catalog
+  coverage tests. The remaining M5 work is viewport gizmos, localization of the deeper
+  authoring workspaces, and recovery.
 
 ## 1. Assessment of the current prototype
 
@@ -304,6 +306,11 @@ Localization slice:
    variable interpolation while leaving user-authored names, paths, and code untouched.
 5. Add catalog validation and tests for missing or malformed messages, fallback,
    interpolation, and coverage of every registered editor command and panel title.
+
+The Fluent runtime, English fallback, French catalog, live persisted switching, and
+editor-shell coverage are complete. Inspector metadata, validation messages, profiler
+details, generated-plan descriptions, and remaining authoring content migrate next;
+user-authored names, file paths, semantic IDs, and generated code stay untranslated.
 
 ### M6 — Renderer, material, and asset breadth
 

@@ -335,6 +335,7 @@ mod tests {
         let mut settings = EditorSettings::default();
         settings.preview.show_grid = false;
         settings.appearance.ui_scale = 8.0;
+        settings.language.locale = "fr-FR".into();
         let mut persistence = SettingsPersistence {
             path: path.clone(),
             writable: true,
@@ -345,6 +346,7 @@ mod tests {
         let (loaded, state) = SettingsPersistence::load_from(path.clone());
         assert!(!loaded.preview.show_grid);
         assert_eq!(loaded.appearance.ui_scale, 1.5);
+        assert_eq!(loaded.language.locale, "fr-FR");
         assert!(state.diagnostic().is_none());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
