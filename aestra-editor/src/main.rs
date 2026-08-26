@@ -10,14 +10,16 @@ use aestra_bevy::{
     ValidationReport, Value,
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
+use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
 use bevy::{
     camera::RenderTarget,
     ecs::system::SystemParam,
-    input::{ButtonState, keyboard::KeyboardInput, mouse::MouseScrollUnit},
-    picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer, Scroll},
+    input::{ButtonState, keyboard::KeyboardInput},
+    picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer},
     picking::pointer::PointerButton,
     prelude::*,
     ui::{InteractionDisabled, RelativeCursorPosition},
+    ui_widgets::{ControlOrientation, ScrollArea, ScrollIntoView, Scrollbar, ScrollbarThumb},
     window::{
         CursorIcon, PrimaryWindow, SystemCursorIcon, WindowCloseRequested, WindowMoved,
         WindowPosition, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
@@ -31,6 +33,7 @@ use std::{fs, path::PathBuf};
 const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
 const PARTICLE_POOL_SIZE: usize = 384;
+const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
 
 fn main() {
     App::new()
@@ -44,6 +47,7 @@ fn main() {
         .init_resource::<EditorModuleRegistry>()
         .init_resource::<ModulePaletteState>()
         .init_resource::<DiagnosticsPanelState>()
+        .init_resource::<InspectorFocus>()
         .init_resource::<WorkspaceState>()
         .init_resource::<DockDragState>()
         .init_resource::<ResizeState>()
@@ -91,6 +95,9 @@ fn main() {
                     update_dock_zone_style,
                     rebuild_editor_ui,
                     sync_native_floating_windows,
+                    scroll_inspector_to_focus,
+                    update_scrollbar_visibility,
+                    update_inspector_highlight,
                 )
                     .chain(),
             )
@@ -151,6 +158,7 @@ enum EditorAction {
         source: DiagnosticSource,
         index: usize,
     },
+    SelectCompiledTarget(SemanticTarget),
     SelectDockPanel(DockPanel),
     CloseDockPanel(DockPanel),
     ShowDockPanel(DockPanel),
@@ -352,6 +360,23 @@ struct DiagnosticsFilterButton(DiagnosticsFilter);
 
 #[derive(Component)]
 struct DiagnosticRow;
+
+#[derive(Component)]
+struct CompiledPlanRow;
+
+#[derive(Component)]
+struct InspectorSemanticTarget {
+    target: SemanticTarget,
+    base_border: Color,
+}
+
+#[derive(Resource, Default)]
+struct InspectorFocus {
+    target: Option<SemanticTarget>,
+    wait_frames: u8,
+    highlight: Option<SemanticTarget>,
+    highlight_remaining: f32,
+}
 
 #[derive(Component)]
 struct PanelsSubmenu;
@@ -1242,6 +1267,7 @@ fn spawn_panel_content(
         DockPanel::Diagnostics => {
             spawn_diagnostics_workspace(parent, sources.session, sources.diagnostics_panel);
         }
+        DockPanel::GeneratedCode => spawn_generated_code_workspace(parent, sources.session),
         DockPanel::Changes => spawn_changes_workspace(parent, sources.session),
     }
 }
@@ -2293,33 +2319,37 @@ fn spawn_inspector(
                 },
             ));
             panel
-                .spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        flex_grow: 1.0,
-                        flex_direction: FlexDirection::Column,
-                        overflow: Overflow::scroll_y(),
-                        scrollbar_width: 8.0,
-                        padding: UiRect::bottom(Val::Px(12.0)),
-                        ..default()
-                    },
-                    ScrollPosition::default(),
-                ))
-                .observe(
-                    |scroll: On<Pointer<Scroll>>,
-                     mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
-                        if let Ok((mut position, computed)) = nodes.get_mut(scroll.entity) {
-                            let delta = match scroll.unit {
-                                MouseScrollUnit::Line => scroll.y * 24.0,
-                                MouseScrollUnit::Pixel => scroll.y,
-                            };
-                            let range = (computed.content_size().y - computed.size().y).max(0.0)
-                                * computed.inverse_scale_factor;
-                            position.y = (position.y - delta).clamp(0.0, range);
-                        }
-                    },
-                )
-                .with_children(|stack| {
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_height: Val::Px(0.0),
+                    min_width: Val::Px(0.0),
+                    ..default()
+                })
+                .with_children(|body| {
+                    spawn_vertical_scroll_area(
+                        body,
+                        Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::bottom(Val::Px(12.0)),
+                            ..default()
+                        },
+                        |stack| {
+                    spawn_inspector_parameters(stack, session);
+                    stack.spawn((
+                        InspectorSemanticTarget {
+                            target: SemanticTarget::Emitter(layer.id),
+                            base_border: theme::BORDER_BRIGHT,
+                        },
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(1.0),
+                            ..default()
+                        },
+                    ));
                     property_stepper(
                         stack,
                         &format!("Start  {:.2}s", layer.start_time),
@@ -2377,6 +2407,8 @@ fn spawn_inspector(
                             registry,
                         );
                     }
+                        },
+                    );
                 });
             if palette.open {
                 spawn_module_palette(panel, registry, palette);
@@ -2416,6 +2448,68 @@ fn spawn_stage_header(parent: &mut ChildSpawnerCommands, stage: StackStage) {
         });
 }
 
+fn spawn_inspector_parameters(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+    if session.effect.parameters.is_empty() {
+        return;
+    }
+    parent.spawn((
+        Text::new("EFFECT PARAMETERS"),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(theme::ACCENT),
+        Node {
+            margin: UiRect::axes(Val::Px(10.0), Val::Px(7.0)),
+            ..default()
+        },
+    ));
+    for parameter in &session.effect.parameters {
+        parent
+            .spawn((
+                InspectorSemanticTarget {
+                    target: SemanticTarget::Parameter(parameter.id),
+                    base_border: theme::BORDER_BRIGHT,
+                },
+                Node {
+                    width: Val::Auto,
+                    min_height: Val::Px(34.0),
+                    margin: UiRect::axes(Val::Px(9.0), Val::Px(3.0)),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(8.0),
+                    border: UiRect::all(Val::Px(1.0)),
+                    border_radius: BorderRadius::all(Val::Px(4.0)),
+                    ..default()
+                },
+                BackgroundColor(theme::PANEL_LIGHT),
+                BorderColor::all(theme::BORDER_BRIGHT),
+            ))
+            .with_children(|row| {
+                row.spawn((
+                    Text::new(&parameter.name),
+                    TextFont {
+                        font_size: FontSize::Px(10.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT),
+                    Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    },
+                ));
+                row.spawn((
+                    Text::new(format_value(parameter.default.clone())),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_MUTED),
+                ));
+            });
+    }
+}
+
 fn spawn_module_card(
     parent: &mut ChildSpawnerCommands,
     module: &ModuleInstance,
@@ -2428,8 +2522,22 @@ fn spawn_module_card(
         || "Unknown module".to_string(),
         |item| format!("{}  ·  cost {}", item.category, item.approximate_cost),
     );
+    let base_border = if session
+        .diagnostics
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.path.starts_with(diagnostic_path))
+    {
+        Color::srgb(0.82, 0.28, 0.24)
+    } else {
+        theme::BORDER_BRIGHT
+    };
     parent
         .spawn((
+            InspectorSemanticTarget {
+                target: SemanticTarget::Module(module.id),
+                base_border,
+            },
             Node {
                 width: Val::Auto,
                 margin: UiRect::axes(Val::Px(9.0), Val::Px(3.0)),
@@ -2445,18 +2553,7 @@ fn spawn_module_card(
             } else {
                 theme::PANEL_DARK
             }),
-            BorderColor::all(
-                if session
-                    .diagnostics
-                    .diagnostics
-                    .iter()
-                    .any(|diagnostic| diagnostic.path.starts_with(diagnostic_path))
-                {
-                    Color::srgb(0.82, 0.28, 0.24)
-                } else {
-                    theme::BORDER_BRIGHT
-                },
-            ),
+            BorderColor::all(base_border),
         ))
         .with_children(|card| {
             card.spawn(Node {
@@ -2663,6 +2760,10 @@ fn spawn_renderer_card(
 ) {
     parent
         .spawn((
+            InspectorSemanticTarget {
+                target: SemanticTarget::Renderer(renderer.id),
+                base_border: theme::BORDER_BRIGHT,
+            },
             Node {
                 width: Val::Auto,
                 margin: UiRect::axes(Val::Px(9.0), Val::Px(3.0)),
@@ -3419,6 +3520,722 @@ fn spawn_curves_workspace(
         });
 }
 
+fn spawn_generated_code_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+    let compiled = session
+        .preview
+        .as_ref()
+        .map(|preview| preview.effect().as_ref());
+    let (state_label, state_color) = generated_code_status(session, compiled.is_some());
+
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
+        .with_children(|panel| {
+            panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(38.0),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(Val::Px(14.0)),
+                        column_gap: Val::Px(9.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL_LIGHT),
+                ))
+                .with_children(|header| {
+                    header.spawn((
+                        Text::new("COMPILED PLAN"),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                    ));
+                    header.spawn(Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    });
+                    header.spawn((
+                        Node {
+                            width: Val::Px(6.0),
+                            height: Val::Px(6.0),
+                            border_radius: BorderRadius::MAX,
+                            ..default()
+                        },
+                        BackgroundColor(state_color),
+                    ));
+                    header.spawn((
+                        Text::new(state_label),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(state_color),
+                    ));
+                });
+
+            let Some(compiled) = compiled else {
+                spawn_diagnostics_empty_state(
+                    panel,
+                    "NO COMPILED ARTIFACT",
+                    "Resolve compiler diagnostics to inspect the executable plan.",
+                    Color::srgb(1.0, 0.38, 0.32),
+                );
+                return;
+            };
+
+            spawn_compiled_summary(panel, compiled);
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_height: Val::Px(0.0),
+                    min_width: Val::Px(0.0),
+                    ..default()
+                })
+                .with_children(|body| {
+                    spawn_vertical_scroll_area(
+                        body,
+                        Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(Val::Px(10.0)),
+                            row_gap: Val::Px(10.0),
+                            ..default()
+                        },
+                        |content| {
+                            spawn_compiled_layout(content, compiled);
+                            spawn_compiled_parameters(content, compiled, session);
+                            for (emitter_index, emitter) in compiled.emitters.iter().enumerate() {
+                                spawn_compiled_emitter(
+                                    content,
+                                    compiled,
+                                    emitter,
+                                    emitter_index,
+                                    session,
+                                );
+                            }
+                            spawn_wesl_backend(content);
+                        },
+                    );
+                });
+        });
+}
+
+fn spawn_vertical_scroll_area(
+    parent: &mut ChildSpawnerCommands,
+    mut viewport: Node,
+    content: impl FnOnce(&mut ChildSpawnerCommands),
+) -> Entity {
+    viewport.overflow = Overflow::scroll_y();
+    viewport.scrollbar_width = 0.0;
+    let target = parent
+        .spawn((viewport, ScrollArea))
+        .with_children(content)
+        .id();
+    spawn_vertical_scrollbar(parent, target);
+    target
+}
+
+fn spawn_vertical_scrollbar(parent: &mut ChildSpawnerCommands, target: Entity) {
+    parent
+        .spawn((
+            Scrollbar::new(target, ControlOrientation::Vertical, 28.0),
+            Node {
+                width: Val::Px(10.0),
+                height: Val::Percent(100.0),
+                display: Display::None,
+                padding: UiRect::horizontal(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+        ))
+        .with_children(|track| {
+            track.spawn((
+                ScrollbarThumb {
+                    border_radius: BorderRadius::all(Val::Px(3.0)),
+                    ..default()
+                },
+                BackgroundColor(theme::TEXT_FAINT),
+            ));
+        });
+}
+
+fn vertical_scrollbar_needed(viewport_height: f32, content_height: f32) -> bool {
+    content_height > viewport_height + 0.5
+}
+
+fn update_scrollbar_visibility(
+    scroll_areas: Query<&ComputedNode, With<ScrollArea>>,
+    mut scrollbars: Query<(&Scrollbar, &mut Node), Without<ScrollArea>>,
+) {
+    for (scrollbar, mut node) in &mut scrollbars {
+        let Ok(viewport) = scroll_areas.get(scrollbar.target) else {
+            continue;
+        };
+        node.display = if vertical_scrollbar_needed(viewport.size().y, viewport.content_size().y) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+}
+
+fn generated_code_status(session: &EditorSession, has_artifact: bool) -> (&'static str, Color) {
+    if session
+        .pending_change
+        .as_ref()
+        .is_some_and(|pending| !pending.can_apply)
+        && has_artifact
+    {
+        (
+            "PREVIEW BLOCKED  ·  LAST VALID COMPILE",
+            Color::srgb(1.0, 0.74, 0.30),
+        )
+    } else if session.pending_change.is_some() && has_artifact {
+        ("PENDING PREVIEW  ·  LIVE", theme::ACCENT)
+    } else if has_artifact {
+        ("WORKING EFFECT  ·  LIVE", Color::srgb(0.35, 0.88, 0.57))
+    } else {
+        ("COMPILE UNAVAILABLE", Color::srgb(1.0, 0.38, 0.32))
+    }
+}
+
+fn spawn_compiled_summary(parent: &mut ChildSpawnerCommands, compiled: &CompiledEffect) {
+    let instruction_count = compiled
+        .emitters
+        .iter()
+        .map(|emitter| {
+            emitter.execution.emitter_update.len()
+                + emitter.execution.particle_spawn.len()
+                + emitter.execution.particle_update.len()
+        })
+        .sum::<usize>();
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(42.0),
+                padding: UiRect::axes(Val::Px(12.0), Val::Px(7.0)),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(18.0),
+                border: UiRect::bottom(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|summary| {
+            spawn_compiled_metric(summary, "EMITTERS", compiled.emitters.len());
+            spawn_compiled_metric(summary, "OPS", instruction_count);
+            spawn_compiled_metric(
+                summary,
+                "ATTRIBUTES",
+                compiled.particle_layout.attributes.len(),
+            );
+            spawn_compiled_metric(summary, "PARAMETERS", compiled.parameters.len());
+            spawn_compiled_metric(summary, "CAPACITY", compiled.max_particles);
+            summary.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            summary.spawn((
+                Text::new(format!(
+                    "{}  ·  {:.2}s  ·  {:?}",
+                    compiled.name.to_uppercase(),
+                    compiled.duration,
+                    compiled.seek_mode
+                )),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+        });
+}
+
+fn spawn_compiled_metric(parent: &mut ChildSpawnerCommands, label: &str, value: usize) {
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(1.0),
+            ..default()
+        })
+        .with_children(|metric| {
+            metric.spawn((
+                Text::new(value.to_string()),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+            ));
+            metric.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+        });
+}
+
+fn spawn_compiled_layout(parent: &mut ChildSpawnerCommands, compiled: &CompiledEffect) {
+    spawn_compiled_section(parent, "PARTICLE LAYOUT", |section| {
+        spawn_compiled_label_value(
+            section,
+            "STORED",
+            &format_particle_attributes(&compiled.particle_layout.attributes),
+        );
+        spawn_compiled_label_value(
+            section,
+            "TRANSIENT",
+            &format_particle_attributes(&compiled.particle_layout.transient_attributes),
+        );
+        spawn_compiled_label_value(
+            section,
+            "OPTIMIZED",
+            &format!(
+                "{} constants  ·  {} runtime reads  ·  {} attributes removed",
+                compiled.optimizations.constant_expressions,
+                compiled.optimizations.runtime_parameter_reads,
+                compiled.optimizations.eliminated_attributes
+            ),
+        );
+    });
+}
+
+fn spawn_compiled_parameters(
+    parent: &mut ChildSpawnerCommands,
+    compiled: &CompiledEffect,
+    session: &EditorSession,
+) {
+    spawn_compiled_section(parent, "PARAMETER TABLE", |section| {
+        if compiled.parameters.is_empty() {
+            spawn_compiled_muted_line(section, "No runtime parameter slots retained.");
+            return;
+        }
+        for (index, parameter) in compiled.parameters.iter().enumerate() {
+            spawn_compiled_target_row(
+                section,
+                SemanticTarget::Parameter(parameter.source),
+                session.selection.primary == SemanticTarget::Parameter(parameter.source),
+                &format!("P{index:03}"),
+                &parameter.name,
+                &format!("{:?}  ·  {:?}", parameter.value_type, parameter.default),
+            );
+        }
+    });
+}
+
+fn spawn_compiled_emitter(
+    parent: &mut ChildSpawnerCommands,
+    compiled: &CompiledEffect,
+    emitter: &CompiledEmitter,
+    emitter_index: usize,
+    session: &EditorSession,
+) {
+    spawn_compiled_section(
+        parent,
+        &format!(
+            "EMITTER {emitter_index:02}  ·  {}",
+            emitter.name.to_uppercase()
+        ),
+        |section| {
+            spawn_compiled_target_row(
+                section,
+                SemanticTarget::Emitter(emitter.source),
+                session.selection.primary == SemanticTarget::Emitter(emitter.source),
+                &format!("E{emitter_index:02}"),
+                if emitter.enabled {
+                    "ENABLED"
+                } else {
+                    "DISABLED"
+                },
+                &format!(
+                    "start {:.2}s  ·  duration {:.2}s  ·  capacity {}  ·  {}",
+                    emitter.start_time, emitter.duration, emitter.max_particles, emitter.source
+                ),
+            );
+            spawn_compiled_stage(
+                section,
+                compiled,
+                emitter,
+                emitter_index,
+                RuntimeStage::EmitterUpdate,
+                &emitter.execution.emitter_update,
+                session,
+            );
+            spawn_compiled_stage(
+                section,
+                compiled,
+                emitter,
+                emitter_index,
+                RuntimeStage::ParticleSpawn,
+                &emitter.execution.particle_spawn,
+                session,
+            );
+            spawn_compiled_stage(
+                section,
+                compiled,
+                emitter,
+                emitter_index,
+                RuntimeStage::ParticleUpdate,
+                &emitter.execution.particle_update,
+                session,
+            );
+            if emitter.renderers.is_empty() {
+                spawn_compiled_stage_heading(section, "RENDERERS", 0);
+            } else {
+                spawn_compiled_stage_heading(section, "RENDERERS", emitter.renderers.len());
+                for (index, renderer) in emitter.renderers.iter().enumerate() {
+                    spawn_compiled_target_row(
+                        section,
+                        SemanticTarget::Renderer(renderer.source),
+                        session.selection.primary == SemanticTarget::Renderer(renderer.source),
+                        &format!("R{index:03}"),
+                        "SPRITE DRAW",
+                        &format!(
+                            "{:?} blend  ·  softness {:.2}  ·  {}",
+                            renderer.blend, renderer.softness, renderer.source
+                        ),
+                    );
+                }
+            }
+        },
+    );
+}
+
+fn spawn_compiled_stage(
+    parent: &mut ChildSpawnerCommands,
+    compiled: &CompiledEffect,
+    _emitter: &CompiledEmitter,
+    emitter_index: usize,
+    stage: RuntimeStage,
+    instructions: &[Instruction],
+    session: &EditorSession,
+) {
+    spawn_compiled_stage_heading(parent, runtime_stage_label(stage), instructions.len());
+    for (instruction_index, instruction) in instructions.iter().enumerate() {
+        let module = instruction.source();
+        let source_name = authored_module_name(compiled_source_effect(session), module);
+        let location =
+            compiled
+                .source_map
+                .get(&module)
+                .copied()
+                .unwrap_or(aestra_runtime::IrLocation {
+                    emitter_index,
+                    stage,
+                    instruction_index,
+                });
+        spawn_compiled_target_row(
+            parent,
+            SemanticTarget::Module(module),
+            session.selection.primary == SemanticTarget::Module(module),
+            &format!(
+                "E{:02}/{}{:03}",
+                location.emitter_index,
+                runtime_stage_code(location.stage),
+                location.instruction_index
+            ),
+            &format!("{}  ·  {source_name}", instruction_opcode(instruction)),
+            &instruction_summary(instruction),
+        );
+    }
+}
+
+fn spawn_compiled_stage_heading(parent: &mut ChildSpawnerCommands, title: &str, count: usize) {
+    parent.spawn((
+        Text::new(format!("{title}  ·  {count} OPS")),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(theme::ACCENT),
+        Node {
+            margin: UiRect::new(Val::Px(4.0), Val::Px(4.0), Val::Px(8.0), Val::Px(2.0)),
+            ..default()
+        },
+    ));
+}
+
+fn spawn_wesl_backend(parent: &mut ChildSpawnerCommands) {
+    spawn_compiled_section(parent, "WESL BACKEND", |section| {
+        spawn_compiled_label_value(
+            section,
+            "SIMULATION",
+            "aestra_simulation.wesl  ·  reset @compute(1)  ·  simulate @compute(64)",
+        );
+        spawn_compiled_label_value(
+            section,
+            "SPRITE",
+            "aestra_sprite_render.wesl  ·  vertex  ·  fragment_alpha  ·  fragment_additive",
+        );
+        spawn_compiled_muted_line(
+            section,
+            "The effect plan supplies typed buffers to these WESL entry points; Aestra does not store generated WGSL.",
+        );
+    });
+}
+
+fn spawn_compiled_section(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    content: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(8.0)),
+                row_gap: Val::Px(4.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|section| {
+            section.spawn((
+                Text::new(title),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+                Node {
+                    margin: UiRect::bottom(Val::Px(3.0)),
+                    ..default()
+                },
+            ));
+            content(section);
+        });
+}
+
+fn spawn_compiled_target_row(
+    parent: &mut ChildSpawnerCommands,
+    target: SemanticTarget,
+    selected: bool,
+    address: &str,
+    opcode: &str,
+    detail: &str,
+) {
+    parent
+        .spawn((
+            Button,
+            CompiledPlanRow,
+            EditorAction::SelectCompiledTarget(target),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(31.0),
+                padding: UiRect::axes(Val::Px(7.0), Val::Px(5.0)),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(9.0),
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(if selected {
+                theme::SELECTION
+            } else {
+                theme::PANEL
+            }),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(address),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::ACCENT),
+                Node {
+                    width: Val::Px(80.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            row.spawn((
+                Text::new(opcode),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Node {
+                    width: Val::Px(190.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            row.spawn((
+                Text::new(detail),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+                Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+fn spawn_compiled_label_value(parent: &mut ChildSpawnerCommands, label: &str, value: &str) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(24.0),
+            padding: UiRect::horizontal(Val::Px(5.0)),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(10.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::ACCENT),
+                Node {
+                    width: Val::Px(82.0),
+                    ..default()
+                },
+            ));
+            row.spawn((
+                Text::new(value),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+            ));
+        });
+}
+
+fn spawn_compiled_muted_line(parent: &mut ChildSpawnerCommands, value: &str) {
+    parent.spawn((
+        Text::new(value),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(theme::TEXT_FAINT),
+        Node {
+            margin: UiRect::horizontal(Val::Px(5.0)),
+            ..default()
+        },
+    ));
+}
+
+fn format_particle_attributes(attributes: &[aestra_runtime::ParticleAttribute]) -> String {
+    if attributes.is_empty() {
+        return "none".into();
+    }
+    attributes
+        .iter()
+        .map(|attribute| format!("{attribute:?}").to_ascii_uppercase())
+        .collect::<Vec<_>>()
+        .join("  ·  ")
+}
+
+fn authored_module_name(effect: &EffectAsset, module: ModuleId) -> String {
+    effect
+        .emitters
+        .iter()
+        .flat_map(|emitter| emitter.modules.iter())
+        .find(|candidate| candidate.id == module)
+        .map(|module| module.module_type.0.to_ascii_uppercase())
+        .unwrap_or_else(|| "UNKNOWN MODULE".into())
+}
+
+fn compiled_source_effect(session: &EditorSession) -> &EffectAsset {
+    session
+        .pending_change
+        .as_ref()
+        .filter(|pending| pending.can_apply)
+        .map(|pending| pending.preview.candidate())
+        .unwrap_or(&session.effect)
+}
+
+fn runtime_stage_label(stage: RuntimeStage) -> &'static str {
+    match stage {
+        RuntimeStage::EmitterUpdate => "EMITTER UPDATE",
+        RuntimeStage::ParticleSpawn => "PARTICLE SPAWN",
+        RuntimeStage::ParticleUpdate => "PARTICLE UPDATE",
+    }
+}
+
+fn runtime_stage_code(stage: RuntimeStage) -> &'static str {
+    match stage {
+        RuntimeStage::EmitterUpdate => "EU",
+        RuntimeStage::ParticleSpawn => "PS",
+        RuntimeStage::ParticleUpdate => "PU",
+    }
+}
+
+fn instruction_opcode(instruction: &Instruction) -> &'static str {
+    match instruction {
+        Instruction::Emit { .. } => "EMIT",
+        Instruction::SampleShape { .. } => "SAMPLE SHAPE",
+        Instruction::Initialize { .. } => "INITIALIZE",
+        Instruction::Motion { .. } => "MOTION",
+        Instruction::Appearance { .. } => "APPEARANCE",
+    }
+}
+
+fn instruction_summary(instruction: &Instruction) -> String {
+    match instruction {
+        Instruction::Emit {
+            spawn_rate,
+            burst_count,
+            ..
+        } => format!("rate {spawn_rate:?}  ·  burst {burst_count:?}"),
+        Instruction::SampleShape { shape, .. } => format!("shape {shape:?}"),
+        Instruction::Initialize {
+            lifetime,
+            speed,
+            direction_degrees,
+            spread_degrees,
+            angular_velocity,
+            ..
+        } => format!(
+            "life {lifetime:?}  ·  speed {speed:?}  ·  direction {direction_degrees:?}  ·  spread {spread_degrees:?}  ·  angular {angular_velocity:?}"
+        ),
+        Instruction::Motion {
+            gravity,
+            drag,
+            turbulence,
+            ..
+        } => format!("gravity {gravity:?}  ·  drag {drag:?}  ·  turbulence {turbulence:?}"),
+        Instruction::Appearance {
+            size,
+            opacity,
+            color,
+            ..
+        } => format!("size {size:?}  ·  opacity {opacity:?}  ·  color {color:?}"),
+    }
+}
+
 fn spawn_diagnostics_workspace(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -3543,51 +4360,44 @@ fn spawn_diagnostics_workspace(
             }
 
             panel
-                .spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        flex_grow: 1.0,
-                        min_height: Val::Px(0.0),
-                        flex_direction: FlexDirection::Column,
-                        padding: UiRect::all(Val::Px(8.0)),
-                        row_gap: Val::Px(6.0),
-                        overflow: Overflow::scroll_y(),
-                        scrollbar_width: 8.0,
-                        ..default()
-                    },
-                    ScrollPosition::default(),
-                ))
-                .observe(
-                    |scroll: On<Pointer<Scroll>>,
-                     mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
-                        if let Ok((mut position, computed)) = nodes.get_mut(scroll.entity) {
-                            let delta = match scroll.unit {
-                                MouseScrollUnit::Line => scroll.y * 24.0,
-                                MouseScrollUnit::Pixel => scroll.y,
-                            };
-                            let range = (computed.content_size().y - computed.size().y).max(0.0)
-                                * computed.inverse_scale_factor;
-                            position.y = (position.y - delta).clamp(0.0, range);
-                        }
-                    },
-                )
-                .with_children(|list| {
-                    spawn_diagnostic_section(
-                        list,
-                        "WORKING EFFECT",
-                        &session.diagnostics,
-                        DiagnosticSource::Current,
-                        state.filter,
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_height: Val::Px(0.0),
+                    min_width: Val::Px(0.0),
+                    ..default()
+                })
+                .with_children(|body| {
+                    spawn_vertical_scroll_area(
+                        body,
+                        Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(Val::Px(8.0)),
+                            row_gap: Val::Px(6.0),
+                            ..default()
+                        },
+                        |list| {
+                            spawn_diagnostic_section(
+                                list,
+                                "WORKING EFFECT",
+                                &session.diagnostics,
+                                DiagnosticSource::Current,
+                                state.filter,
+                            );
+                            if let Some(pending) = &session.pending_change {
+                                spawn_diagnostic_section(
+                                    list,
+                                    "PENDING TRANSACTION",
+                                    &pending.diagnostics,
+                                    DiagnosticSource::Pending,
+                                    state.filter,
+                                );
+                            }
+                        },
                     );
-                    if let Some(pending) = &session.pending_change {
-                        spawn_diagnostic_section(
-                            list,
-                            "PENDING TRANSACTION",
-                            &pending.diagnostics,
-                            DiagnosticSource::Pending,
-                            state.filter,
-                        );
-                    }
                 });
         });
 }
@@ -3883,18 +4693,26 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
                         Node {
                             width: Val::Percent(66.0),
                             height: Val::Percent(100.0),
-                            flex_direction: FlexDirection::Column,
-                            padding: UiRect::all(Val::Px(8.0)),
-                            row_gap: Val::Px(4.0),
-                            overflow: Overflow::scroll_y(),
+                            min_width: Val::Px(0.0),
                             border: UiRect::right(Val::Px(1.0)),
                             ..default()
                         },
                         BackgroundColor(theme::PANEL_DARK),
                         BorderColor::all(theme::BORDER),
-                        ScrollPosition::default(),
                     ))
-                    .with_children(|changes| {
+                    .with_children(|column| {
+                        spawn_vertical_scroll_area(
+                            column,
+                            Node {
+                                flex_grow: 1.0,
+                                min_width: Val::Px(0.0),
+                                min_height: Val::Px(0.0),
+                                flex_direction: FlexDirection::Column,
+                                padding: UiRect::all(Val::Px(8.0)),
+                                row_gap: Val::Px(4.0),
+                                ..default()
+                            },
+                            |changes| {
                         for change in &pending.preview.diff().changes {
                             let (kind, color) = change_kind_style(change.kind);
                             let values = match (&change.before, &change.after) {
@@ -3951,17 +4769,28 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
                                     ));
                                 });
                         }
+                            },
+                        );
                     });
                     body.spawn(Node {
                         flex_grow: 1.0,
                         height: Val::Percent(100.0),
-                        flex_direction: FlexDirection::Column,
-                        padding: UiRect::all(Val::Px(10.0)),
-                        row_gap: Val::Px(6.0),
-                        overflow: Overflow::scroll_y(),
+                        min_width: Val::Px(0.0),
                         ..default()
                     })
-                    .with_children(|review| {
+                    .with_children(|column| {
+                        spawn_vertical_scroll_area(
+                            column,
+                            Node {
+                                flex_grow: 1.0,
+                                min_width: Val::Px(0.0),
+                                min_height: Val::Px(0.0),
+                                flex_direction: FlexDirection::Column,
+                                padding: UiRect::all(Val::Px(10.0)),
+                                row_gap: Val::Px(6.0),
+                                ..default()
+                            },
+                            |review| {
                         let errors = pending
                             .diagnostics
                             .diagnostics
@@ -4025,6 +4854,8 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
                                     EditorAction::ApplyPendingChange,
                                 );
                             });
+                            },
+                        );
                     });
                 });
         });
@@ -4050,40 +4881,50 @@ fn spawn_complex_input_list(
             Node {
                 width: Val::Px(224.0),
                 height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(7.0)),
-                row_gap: Val::Px(4.0),
                 border: UiRect::right(Val::Px(1.0)),
-                overflow: Overflow::scroll_y(),
                 ..default()
             },
             BackgroundColor(theme::PANEL_DARK),
             BorderColor::all(theme::BORDER),
-            ScrollPosition::default(),
         ))
-        .with_children(|list| {
-            for module in &session.selected_layer().modules {
-                let Some(metadata) = registry.0.get(&module.module_type) else {
-                    continue;
-                };
-                for (input_index, input) in metadata.inputs.iter().enumerate() {
-                    if !matches!(
-                        input.control,
-                        InputControl::Curve { .. } | InputControl::Gradient
-                    ) {
-                        continue;
+        .with_children(|column| {
+            spawn_vertical_scroll_area(
+                column,
+                Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    min_height: Val::Px(0.0),
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(7.0)),
+                    row_gap: Val::Px(4.0),
+                    ..default()
+                },
+                |list| {
+                    for module in &session.selected_layer().modules {
+                        let Some(metadata) = registry.0.get(&module.module_type) else {
+                            continue;
+                        };
+                        for (input_index, input) in metadata.inputs.iter().enumerate() {
+                            if !matches!(
+                                input.control,
+                                InputControl::Curve { .. } | InputControl::Gradient
+                            ) {
+                                continue;
+                            }
+                            let selected = workspace.complex.is_some_and(|selection| {
+                                selection.module == module.id
+                                    && selection.input == input_index as u8
+                            });
+                            parent_list_button(
+                                list,
+                                &format!("{} / {}", metadata.display_name, input.display_name),
+                                EditorAction::EditComplexInput(module.id, input_index as u8),
+                                selected,
+                            );
+                        }
                     }
-                    let selected = workspace.complex.is_some_and(|selection| {
-                        selection.module == module.id && selection.input == input_index as u8
-                    });
-                    parent_list_button(
-                        list,
-                        &format!("{} / {}", metadata.display_name, input.display_name),
-                        EditorAction::EditComplexInput(module.id, input_index as u8),
-                        selected,
-                    );
-                }
-            }
+                },
+            );
         });
 }
 
@@ -4865,6 +5706,7 @@ fn handle_buttons(
             Option<&DockTab>,
             Option<&DockCloseButton>,
             Option<&DiagnosticsFilterButton>,
+            Option<&CompiledPlanRow>,
             Option<&CompileStatusButton>,
             Option<&InteractionDisabled>,
             &mut BackgroundColor,
@@ -4880,11 +5722,19 @@ fn handle_buttons(
         ResMut<WorkspaceState>,
         ResMut<WorkspaceLayout>,
         ResMut<DiagnosticsPanelState>,
+        ResMut<InspectorFocus>,
     ),
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
-    let (catalog, registry, mut palette, mut workspace, mut layout, mut diagnostics_panel) =
-        editor_resources;
+    let (
+        catalog,
+        registry,
+        mut palette,
+        mut workspace,
+        mut layout,
+        mut diagnostics_panel,
+        mut inspector_focus,
+    ) = editor_resources;
     for (
         interaction,
         action,
@@ -4892,6 +5742,7 @@ fn handle_buttons(
         dock_tab,
         dock_close,
         diagnostics_filter,
+        compiled_plan_row,
         compile_status,
         disabled,
         mut background,
@@ -4924,6 +5775,16 @@ fn handle_buttons(
                         theme::SELECTION
                     } else {
                         theme::BUTTON
+                    }
+                } else if compiled_plan_row.is_some() {
+                    if matches!(
+                        *action,
+                        EditorAction::SelectCompiledTarget(target)
+                            if target == session.selection.primary
+                    ) {
+                        theme::SELECTION
+                    } else {
+                        theme::PANEL
                     }
                 } else if compile_status.is_some() {
                     theme::PANEL_DARK
@@ -5132,6 +5993,17 @@ fn handle_buttons(
                             reveal_dock_panel(&mut layout, &mut session, DockPanel::Inspector);
                         }
                     }
+                    EditorAction::SelectCompiledTarget(target) => {
+                        workspace.complex = None;
+                        if focus_compiled_target(&mut session, &mut inspector_focus, target) {
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Inspector);
+                        } else {
+                            session.status =
+                                "Compiled target exists only in the pending transaction".into();
+                            session.ui_revision += 1;
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
+                        }
+                    }
                     EditorAction::SelectDockPanel(panel) => {
                         if layout.activate(panel) {
                             session.ui_revision += 1;
@@ -5249,6 +6121,49 @@ fn navigate_to_diagnostic(
         session.selection.primary = target;
     }
     session.status = format!("Selected {code:?} diagnostic · {path}");
+    session.ui_revision += 1;
+    true
+}
+
+fn semantic_target_exists(effect: &EffectAsset, target: SemanticTarget) -> bool {
+    match target {
+        SemanticTarget::Effect(id) => effect.id == id,
+        SemanticTarget::Parameter(id) => effect.parameters.iter().any(|value| value.id == id),
+        SemanticTarget::Emitter(id) => effect.emitters.iter().any(|emitter| emitter.id == id),
+        SemanticTarget::Module(id) => effect
+            .emitters
+            .iter()
+            .flat_map(|emitter| emitter.modules.iter())
+            .any(|module| module.id == id),
+        SemanticTarget::Renderer(id) => effect
+            .emitters
+            .iter()
+            .flat_map(|emitter| emitter.renderers.iter())
+            .any(|renderer| renderer.id == id),
+        SemanticTarget::Event(id) => effect.events.iter().any(|event| event.id == id),
+        SemanticTarget::Curve(_) | SemanticTarget::Gradient(_) => false,
+    }
+}
+
+fn focus_compiled_target(
+    session: &mut EditorSession,
+    focus: &mut InspectorFocus,
+    target: SemanticTarget,
+) -> bool {
+    if !semantic_target_exists(&session.effect, target) {
+        return false;
+    }
+    if matches!(
+        target,
+        SemanticTarget::Emitter(_) | SemanticTarget::Module(_) | SemanticTarget::Renderer(_)
+    ) {
+        session.selection.primary = target;
+    }
+    focus.target = Some(target);
+    focus.wait_frames = 2;
+    focus.highlight = Some(target);
+    focus.highlight_remaining = INSPECTOR_HIGHLIGHT_DURATION;
+    session.status = format!("Selected compiled {target}");
     session.ui_revision += 1;
     true
 }
@@ -5660,6 +6575,49 @@ fn update_menu_visibility(
         } else {
             Display::None
         };
+    }
+}
+
+fn scroll_inspector_to_focus(
+    mut commands: Commands,
+    mut focus: ResMut<InspectorFocus>,
+    targets: Query<(Entity, &InspectorSemanticTarget)>,
+) {
+    let Some(target) = focus.target else {
+        return;
+    };
+    if focus.wait_frames > 0 {
+        focus.wait_frames -= 1;
+        return;
+    }
+    if let Some((entity, _)) = targets
+        .iter()
+        .find(|(_, candidate)| candidate.target == target)
+    {
+        commands.trigger(ScrollIntoView { entity });
+    }
+    focus.target = None;
+}
+
+fn update_inspector_highlight(
+    time: Res<Time>,
+    mut focus: ResMut<InspectorFocus>,
+    mut targets: Query<(&InspectorSemanticTarget, &mut BorderColor)>,
+) {
+    let Some(highlight) = focus.highlight else {
+        return;
+    };
+    focus.highlight_remaining = (focus.highlight_remaining - time.delta_secs()).max(0.0);
+    let strength = (focus.highlight_remaining / INSPECTOR_HIGHLIGHT_DURATION)
+        .clamp(0.0, 1.0)
+        .powi(2);
+    for (target, mut border) in &mut targets {
+        if target.target == highlight {
+            *border = BorderColor::all(target.base_border.mix(&theme::ACCENT, strength));
+        }
+    }
+    if focus.highlight_remaining == 0.0 {
+        focus.highlight = None;
     }
 }
 
@@ -6239,6 +7197,58 @@ mod tests {
     }
 
     #[test]
+    fn generated_code_uses_the_live_compiler_artifact() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let compiled = session.preview.as_ref().unwrap().effect();
+        let instruction_count = compiled
+            .emitters
+            .iter()
+            .flat_map(|emitter| {
+                emitter
+                    .execution
+                    .emitter_update
+                    .iter()
+                    .chain(emitter.execution.particle_spawn.iter())
+                    .chain(emitter.execution.particle_update.iter())
+            })
+            .count();
+
+        assert_eq!(
+            generated_code_status(&session, true).0,
+            "WORKING EFFECT  ·  LIVE"
+        );
+        assert_eq!(compiled.emitters.len(), session.effect.emitters.len());
+        assert_eq!(instruction_count, compiled.source_map.len());
+        assert!(!compiled.particle_layout.attributes.is_empty());
+        assert_eq!(
+            instruction_opcode(&compiled.emitters[0].execution.emitter_update[0]),
+            "EMIT"
+        );
+    }
+
+    #[test]
+    fn compiled_navigation_focuses_the_exact_inspector_target() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let target = SemanticTarget::Module(session.effect.emitters[3].modules[2].id);
+        let mut focus = InspectorFocus::default();
+
+        assert!(focus_compiled_target(&mut session, &mut focus, target));
+        assert_eq!(session.selection.primary, target);
+        assert_eq!(focus.target, Some(target));
+        assert_eq!(focus.wait_frames, 2);
+        assert_eq!(focus.highlight, Some(target));
+        assert_eq!(focus.highlight_remaining, INSPECTOR_HIGHLIGHT_DURATION);
+        assert_eq!(session.selected_layer_index(), 3);
+    }
+
+    #[test]
+    fn scrollbar_only_appears_for_overflowing_content() {
+        assert!(!vertical_scrollbar_needed(320.0, 320.0));
+        assert!(!vertical_scrollbar_needed(320.0, 320.4));
+        assert!(vertical_scrollbar_needed(320.0, 321.0));
+    }
+
+    #[test]
     fn panel_visibility_labels_use_checkbox_notation() {
         assert_eq!(
             panel_visibility_label(DockPanel::Diagnostics, true),
@@ -6247,6 +7257,10 @@ mod tests {
         assert_eq!(
             panel_visibility_label(DockPanel::Diagnostics, false),
             "[ ]  DIAGNOSTICS"
+        );
+        assert_eq!(
+            panel_visibility_label(DockPanel::GeneratedCode, true),
+            "[x]  GENERATED CODE"
         );
     }
 }

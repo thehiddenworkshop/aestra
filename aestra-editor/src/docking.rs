@@ -11,17 +11,19 @@ pub(crate) enum DockPanel {
     Timeline,
     Curves,
     Diagnostics,
+    GeneratedCode,
     Changes,
 }
 
 impl DockPanel {
-    pub(crate) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::Viewport,
         Self::Assets,
         Self::Inspector,
         Self::Timeline,
         Self::Curves,
         Self::Diagnostics,
+        Self::GeneratedCode,
         Self::Changes,
     ];
 
@@ -33,6 +35,7 @@ impl DockPanel {
             Self::Timeline => "TIMELINE",
             Self::Curves => "CURVES",
             Self::Diagnostics => "DIAGNOSTICS",
+            Self::GeneratedCode => "GENERATED CODE",
             Self::Changes => "CHANGES",
         }
     }
@@ -268,6 +271,7 @@ impl Default for WorkspaceLayout {
                 DockPanel::Timeline,
                 DockPanel::Curves,
                 DockPanel::Diagnostics,
+                DockPanel::GeneratedCode,
                 DockPanel::Changes,
             ],
             DockPanel::Timeline,
@@ -423,6 +427,7 @@ impl WorkspaceLayout {
             DockPanel::Timeline,
             DockPanel::Curves,
             DockPanel::Diagnostics,
+            DockPanel::GeneratedCode,
             DockPanel::Changes,
         ];
         let target_and_drop = if bottom_group.contains(&panel) {
@@ -565,9 +570,11 @@ impl WorkspaceLayout {
 
 fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2] {
     let preferred: [f32; 2] = match panel {
-        DockPanel::Timeline | DockPanel::Curves | DockPanel::Diagnostics | DockPanel::Changes => {
-            [720.0, 320.0]
-        }
+        DockPanel::Timeline
+        | DockPanel::Curves
+        | DockPanel::Diagnostics
+        | DockPanel::GeneratedCode
+        | DockPanel::Changes => [720.0, 320.0],
         DockPanel::Assets | DockPanel::Inspector => [420.0, 520.0],
         DockPanel::Viewport => [760.0, 540.0],
     };
@@ -688,6 +695,7 @@ mod tests {
                 DockPanel::Timeline,
                 DockPanel::Curves,
                 DockPanel::Diagnostics,
+                DockPanel::GeneratedCode,
             ]
         );
 
@@ -711,6 +719,23 @@ mod tests {
             Some(bottom)
         );
         assert!(layout.is_active(DockPanel::Diagnostics));
+    }
+
+    #[test]
+    fn generated_code_restores_to_the_bottom_tab_stack() {
+        let mut layout = WorkspaceLayout::default();
+        let bottom = layout.root.node_containing(DockPanel::Timeline).unwrap();
+        assert_eq!(
+            layout.root.node_containing(DockPanel::GeneratedCode),
+            Some(bottom)
+        );
+        assert!(layout.close(DockPanel::GeneratedCode));
+        assert!(layout.show(DockPanel::GeneratedCode));
+        assert_eq!(
+            layout.root.node_containing(DockPanel::GeneratedCode),
+            Some(bottom)
+        );
+        assert!(layout.is_active(DockPanel::GeneratedCode));
     }
 
     #[test]

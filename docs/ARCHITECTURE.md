@@ -81,6 +81,15 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Projects structured validation reports into a dockable diagnostics workspace with
   severity filtering and semantic-path navigation; the persistent footer exposes
   compile health and opens that workspace directly.
+- Projects the immutable compiler artifact into a dockable Generated Code workspace:
+  execution stages, source-mapped instructions, particle layout, runtime parameter
+  slots, renderer plans, optimization statistics, and the WESL backend entry points.
+  Compiled rows navigate back to their semantic emitter, module, renderer, or parameter.
+- Uses one native Bevy scroll-area/scrollbar composition across Inspector, Diagnostics,
+  Generated Code, Changes, and curve lists. Scrollbars only participate in layout while
+  their content overflows. Semantic Inspector anchors support exact scroll-to-source
+  navigation from compiled instructions with a transient highlight that fades back to
+  the normal or diagnostic border.
 - Consumes `aestra-bevy` through an explicit session resource.
 - Must not add game-only concepts to the semantic asset schema.
 

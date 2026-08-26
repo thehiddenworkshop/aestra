@@ -38,7 +38,10 @@ architecture vision; this file is the shorter delivery plan.
   context action, enabling multi-monitor layouts. Structured diagnostics now have a
   dedicated severity-filtered dock panel with navigation to owning semantic objects,
   a persistent compile-state footer shortcut, and panel visibility controls under View.
-  The remaining M5 work is the generated-code/profiler tab set, viewport gizmos, and recovery.
+  The live compiler artifact is now exposed through a source-mapped Generated Code
+  panel covering execution stages, particle layout, parameter slots, renderer plans,
+  optimizations, and WESL entry points. The remaining M5 work is the profiler tab,
+  viewport gizmos, and recovery.
 
 ## 1. Assessment of the current prototype
 
