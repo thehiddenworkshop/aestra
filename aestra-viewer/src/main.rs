@@ -1,6 +1,9 @@
 mod visual_regression;
 
-use aestra_bevy::{AestraPlugin, EffectAsset, EffectPlayer};
+use aestra_bevy::{
+    ActiveBackend, AestraPlugin, AestraRuntimeStatus, AestraSettings, DEFAULT_GPU_PARTICLE_BUDGET,
+    EffectAsset, EffectPlayer, EffectRuntimeStatus, GpuCapabilities, PresentationMode,
+};
 use bevy::{
     app::AppExit,
     prelude::*,
@@ -20,7 +23,7 @@ const REGRESSION_SEED: u64 = 0xa357_2a11_5eed_0001;
 fn main() {
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--backend auto|gpu|gpu-readback|cpu] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir]");
         std::process::exit(2);
     });
     let capture = config
@@ -30,6 +33,10 @@ fn main() {
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.009, 0.012, 0.024)))
+        .insert_resource(AestraSettings {
+            presentation: config.presentation,
+            max_gpu_particles: config.max_gpu_particles,
+        })
         .insert_resource(config)
         .add_plugins((
             DefaultPlugins.set(WindowPlugin {
@@ -61,6 +68,8 @@ struct ViewerConfig {
     effect_path: Option<PathBuf>,
     capture_mode: Option<CaptureMode>,
     capture_frames: usize,
+    presentation: PresentationMode,
+    max_gpu_particles: u32,
 }
 
 #[derive(Clone)]
@@ -88,6 +97,8 @@ impl ViewerConfig {
         let mut effect_path = None;
         let mut capture_mode = None;
         let mut capture_frames = 8usize;
+        let mut presentation = PresentationMode::Auto;
+        let mut max_gpu_particles = DEFAULT_GPU_PARTICLE_BUDGET;
         let mut args = env::args().skip(1);
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -142,6 +153,29 @@ impl ViewerConfig {
                         return Err("--frames must be between 1 and 64".into());
                     }
                 }
+                "--backend" => {
+                    presentation = match args
+                        .next()
+                        .ok_or("--backend requires auto, gpu, gpu-readback, or cpu")?
+                        .as_str()
+                    {
+                        "auto" => PresentationMode::Auto,
+                        "gpu" => PresentationMode::Gpu,
+                        "gpu-readback" => PresentationMode::GpuReadback,
+                        "cpu" => PresentationMode::CpuReference,
+                        value => return Err(format!("unknown backend '{value}'")),
+                    };
+                }
+                "--max-gpu-particles" => {
+                    max_gpu_particles = args
+                        .next()
+                        .ok_or("--max-gpu-particles requires a count")?
+                        .parse::<u32>()
+                        .map_err(|_| "--max-gpu-particles must be a positive integer")?;
+                    if max_gpu_particles == 0 {
+                        return Err("--max-gpu-particles must be greater than zero".into());
+                    }
+                }
                 "--help" | "-h" => {
                     return Err("help requested".into());
                 }
@@ -152,6 +186,8 @@ impl ViewerConfig {
             effect_path,
             capture_mode,
             capture_frames,
+            presentation,
+            max_gpu_particles,
         })
     }
 }
@@ -290,15 +326,19 @@ fn viewer_controls(
     }
 }
 
-fn update_hud(players: Query<&EffectPlayer>, mut hud: Query<&mut Text, With<ViewerHud>>) {
-    let (Ok(player), Ok(mut text)) = (players.single(), hud.single_mut()) else {
+fn update_hud(
+    players: Query<(&EffectPlayer, &EffectRuntimeStatus)>,
+    mut hud: Query<&mut Text, With<ViewerHud>>,
+) {
+    let (Ok((player, runtime)), Ok(mut text)) = (players.single(), hud.single_mut()) else {
         return;
     };
     text.0 = format!(
-        "{:06.3} / {:06.3}  |  {}  |  SPACE Pause  |  R Restart  |  S Screenshot",
+        "{:06.3} / {:06.3}  |  {}  |  {}  |  SPACE Pause  |  R Restart  |  S Screenshot",
         player.elapsed(),
         player.effect().duration,
-        if player.playing { "PLAYING" } else { "PAUSED" }
+        if player.playing { "PLAYING" } else { "PAUSED" },
+        runtime.active,
     );
 }
 
@@ -340,6 +380,10 @@ fn drive_capture(
 fn receive_capture(
     event: On<ScreenshotCaptured>,
     mut capture: ResMut<CapturePlan>,
+    runtime: Res<AestraRuntimeStatus>,
+    settings: Res<AestraSettings>,
+    capabilities: Res<GpuCapabilities>,
+    effects: Query<&EffectRuntimeStatus>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let output_directory = capture.mode.output_directory().clone();
@@ -361,8 +405,9 @@ fn receive_capture(
     capture.settle_frames = 1;
 
     if capture.next_frame == capture.frame_count {
-        write_contact_sheet(&capture);
-        let result = finish_capture(&capture);
+        let effect_runtime = effects.single().ok();
+        write_contact_sheet(&capture, &runtime, effect_runtime, &settings, &capabilities);
+        let result = finish_capture(&capture, &runtime, effect_runtime, &capabilities);
         exit.write(if result.is_ok() {
             AppExit::Success
         } else {
@@ -375,7 +420,13 @@ fn receive_capture(
     }
 }
 
-fn write_contact_sheet(capture: &CapturePlan) {
+fn write_contact_sheet(
+    capture: &CapturePlan,
+    runtime: &AestraRuntimeStatus,
+    effect_runtime: Option<&EffectRuntimeStatus>,
+    settings: &AestraSettings,
+    capabilities: &GpuCapabilities,
+) {
     let columns = (capture.frame_count as f32).sqrt().ceil() as u32;
     let rows = (capture.frame_count as u32).div_ceil(columns);
     let mut sheet = RgbaImage::from_pixel(
@@ -394,15 +445,42 @@ fn write_contact_sheet(capture: &CapturePlan) {
         .save(&path)
         .unwrap_or_else(|error| panic!("could not save {}: {error}", path.display()));
 
+    let active = effect_runtime.map_or(runtime.active, |status| status.active);
+    let reason = effect_runtime.map_or(runtime.reason.as_str(), |status| status.reason.as_str());
     let manifest = format!(
-        "# Aestra visual capture\n\n- Frames: {}\n- Frame size: {} x {}\n- Contact sheet: {} columns x {} rows\n- Sampling: evenly spaced at frame centers across the effect duration\n",
-        capture.frame_count, VIEW_WIDTH, VIEW_HEIGHT, columns, rows
+        "# Aestra visual capture\n\n- Frames: {}\n- Frame size: {} x {}\n- Contact sheet: {} columns x {} rows\n- Sampling: evenly spaced at frame centers across the effect duration\n- Requested backend: {:?}\n- Active backend: {}\n- Selection reason: {}\n- Adapter: {} ({}, {})\n- Driver: {}\n- Physical GPU particle capacity: {}\n- Configured GPU particle budget: {}\n- Effective GPU particle budget: {}\n",
+        capture.frame_count,
+        VIEW_WIDTH,
+        VIEW_HEIGHT,
+        columns,
+        rows,
+        runtime.requested,
+        active,
+        reason,
+        capabilities.adapter_name,
+        capabilities.backend,
+        capabilities.device_type,
+        capabilities.driver,
+        capabilities.max_particles,
+        settings.max_gpu_particles,
+        capabilities.max_particles.min(settings.max_gpu_particles),
     );
     fs::write(output_directory.join("capture-manifest.md"), manifest)
         .expect("capture manifest should be writable");
 }
 
-fn finish_capture(capture: &CapturePlan) -> Result<(), String> {
+fn finish_capture(
+    capture: &CapturePlan,
+    runtime: &AestraRuntimeStatus,
+    effect_runtime: Option<&EffectRuntimeStatus>,
+    capabilities: &GpuCapabilities,
+) -> Result<(), String> {
+    let active = effect_runtime.map_or(runtime.active, |status| status.active);
+    if capture.mode.is_regression() && active != ActiveBackend::Gpu {
+        return Err(format!(
+            "visual regression requires the native GPU backend, but {active} was selected"
+        ));
+    }
     match &capture.mode {
         CaptureMode::Standard { output } => {
             println!("capture written to {}", output.display());
@@ -412,8 +490,14 @@ fn finish_capture(capture: &CapturePlan) -> Result<(), String> {
             fs::write(
                 reference.join("visual-reference.md"),
                 format!(
-                    "# Aestra visual reference\n\n- Frames: {}\n- Frame size: {} x {}\n- Seed: `{:#018x}`\n- Scene: effect only, fixed camera and background\n- Sampling: evenly spaced frame centers\n",
-                    capture.frame_count, VIEW_WIDTH, VIEW_HEIGHT, REGRESSION_SEED
+                    "# Aestra visual reference\n\n- Frames: {}\n- Frame size: {} x {}\n- Seed: `{:#018x}`\n- Scene: effect only, fixed camera and background\n- Sampling: evenly spaced frame centers\n- Backend: {}\n- Adapter: {} ({})\n",
+                    capture.frame_count,
+                    VIEW_WIDTH,
+                    VIEW_HEIGHT,
+                    REGRESSION_SEED,
+                    active,
+                    capabilities.adapter_name,
+                    capabilities.backend,
                 ),
             )
             .map_err(|error| format!("could not write visual reference metadata: {error}"))?;

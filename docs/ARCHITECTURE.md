@@ -79,11 +79,16 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Resolves asset references and compiles curves/gradients into GPU-friendly tables.
 - Authors compute shaders in WESL and lets Bevy lower them at the wgpu boundary.
-- Applies platform budgets and capability fallbacks.
+- Detects adapter downlevel flags and device limits, then resolves native GPU,
+  GPU-readback, or CPU presentation without attempting unsupported allocation.
+- Applies both physical storage/dispatch limits and an application particle budget;
+  oversized or unsupported effects fall back independently with a public reason.
 - Runs compute simulation, live-particle compaction, alpha/additive sprite presentation,
   visibility culling, and indirect drawing without a per-frame CPU readback.
 - Retains deterministic CPU and GPU-readback presentation modes as explicit
   reference and compatibility paths.
+- Publishes global adapter capabilities and per-effect active-backend diagnostics
+  for games, editor status UI, viewer HUD, and capture manifests.
 - Preserves the public Bevy plugin contract: spawn, stop, parameter overrides, and events.
 
 ## Choreography model

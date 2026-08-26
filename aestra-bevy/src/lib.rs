@@ -1,5 +1,6 @@
 //! Bevy integration for compiled Aestra effects.
 
+mod capabilities;
 pub mod gpu;
 
 pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
@@ -7,19 +8,25 @@ pub use aestra_core::*;
 pub use aestra_runtime::{
     CompiledEffect, EffectInstance, ParameterError, ParticleSample, RuntimeValue,
 };
+pub use capabilities::{
+    ActiveBackend, AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRuntimeStatus,
+    GpuCapabilities,
+};
 
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{
-    Added, App, Children, Color, Commands, Component, Entity, Plugin, Quat, Query, Res, Resource,
-    Sprite, Time, Transform, Update, Vec2, Vec3, Visibility,
+    App, Children, Color, Commands, Component, Entity, Plugin, Quat, Query, Res, Resource, Sprite,
+    Time, Transform, Update, Vec2, Vec3, Visibility, Without,
 };
 use std::sync::Arc;
 
 /// Selects the presentation path used by [`AestraPlugin`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PresentationMode {
-    /// Simulate and render particles entirely on the GPU.
+    /// Select the best supported backend and fall back without panicking.
     #[default]
+    Auto,
+    /// Simulate and render particles entirely on the GPU.
     Gpu,
     /// Use the deterministic CPU interpreter and pooled Bevy sprites.
     CpuReference,
@@ -27,9 +34,20 @@ pub enum PresentationMode {
     GpuReadback,
 }
 
-#[derive(Resource, Debug, Clone, Copy, Default)]
+#[derive(Resource, Debug, Clone, Copy)]
 pub struct AestraSettings {
     pub presentation: PresentationMode,
+    /// Application budget applied in addition to physical device limits.
+    pub max_gpu_particles: u32,
+}
+
+impl Default for AestraSettings {
+    fn default() -> Self {
+        Self {
+            presentation: PresentationMode::Auto,
+            max_gpu_particles: DEFAULT_GPU_PARTICLE_BUDGET,
+        }
+    }
 }
 
 /// Installs Aestra's compiled effect playback into a Bevy application.
@@ -39,9 +57,20 @@ pub struct AestraPlugin;
 impl Plugin for AestraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AestraSettings>()
-            .add_systems(Update, (prepare_effect_players, play_effects).chain())
+            .init_resource::<GpuCapabilities>()
+            .init_resource::<AestraRuntimeStatus>()
             .add_observer(gpu::receive_readback);
         gpu::install(app);
+        app.add_systems(
+            Update,
+            (
+                assign_effect_backends,
+                prepare_effect_players,
+                gpu::prepare_gpu_players,
+                play_effects,
+            )
+                .chain(),
+        );
     }
 }
 
@@ -105,33 +134,68 @@ impl EffectPlayer {
 #[derive(Component)]
 struct RuntimeParticle(usize);
 
-fn prepare_effect_players(
+#[derive(Component)]
+struct CpuPresentationPrepared;
+
+#[derive(Component)]
+pub(crate) struct GpuPresentationPrepared;
+
+fn assign_effect_backends(
     mut commands: Commands,
     settings: Res<AestraSettings>,
-    players: Query<(Entity, &EffectPlayer), Added<EffectPlayer>>,
+    runtime: Res<AestraRuntimeStatus>,
+    capabilities: Res<GpuCapabilities>,
+    players: Query<(Entity, &EffectPlayer), Without<EffectRuntimeStatus>>,
 ) {
-    if settings.presentation == PresentationMode::Gpu {
+    if runtime.active == ActiveBackend::Pending {
         return;
     }
+    let particle_budget = capabilities.max_particles.min(settings.max_gpu_particles) as usize;
     for (entity, player) in &players {
+        commands
+            .entity(entity)
+            .insert(capabilities::select_effect_backend(
+                &runtime,
+                player.effect().max_particles,
+                particle_budget,
+            ));
+    }
+}
+
+fn prepare_effect_players(
+    mut commands: Commands,
+    players: Query<
+        (Entity, &EffectPlayer, &EffectRuntimeStatus),
+        (Without<CpuPresentationPrepared>,),
+    >,
+) {
+    for (entity, player, runtime) in &players {
+        if !matches!(
+            runtime.active,
+            ActiveBackend::CpuReference | ActiveBackend::GpuReadback
+        ) {
+            continue;
+        }
         let capacity = player.effect().max_particles.min(4096);
-        commands.entity(entity).with_children(|parent| {
-            for slot in 0..capacity {
-                parent.spawn((
-                    RuntimeParticle(slot),
-                    Sprite::from_color(Color::WHITE, Vec2::ONE),
-                    Transform::default(),
-                    Visibility::Hidden,
-                ));
-            }
-        });
+        commands
+            .entity(entity)
+            .insert(CpuPresentationPrepared)
+            .with_children(|parent| {
+                for slot in 0..capacity {
+                    parent.spawn((
+                        RuntimeParticle(slot),
+                        Sprite::from_color(Color::WHITE, Vec2::ONE),
+                        Transform::default(),
+                        Visibility::Hidden,
+                    ));
+                }
+            });
     }
 }
 
 fn play_effects(
     time: Res<Time>,
-    settings: Res<AestraSettings>,
-    mut players: Query<(&mut EffectPlayer, &Children)>,
+    mut players: Query<(&mut EffectPlayer, Option<&Children>, &EffectRuntimeStatus)>,
     mut particles: Query<(
         &RuntimeParticle,
         &mut Sprite,
@@ -139,7 +203,7 @@ fn play_effects(
         &mut Visibility,
     )>,
 ) {
-    for (mut player, children) in &mut players {
+    for (mut player, children, runtime) in &mut players {
         if player.playing {
             let delta = time.delta_secs() * player.speed;
             player.instance.advance(delta);
@@ -148,12 +212,12 @@ fn play_effects(
             }
         }
 
-        if settings.presentation == PresentationMode::Gpu {
+        if runtime.active == ActiveBackend::Gpu {
             continue;
         }
 
-        let uses_gpu_readback = settings.presentation == PresentationMode::GpuReadback
-            && !player.gpu_samples.is_empty();
+        let uses_gpu_readback =
+            runtime.active == ActiveBackend::GpuReadback && !player.gpu_samples.is_empty();
         let samples = if uses_gpu_readback {
             std::mem::take(&mut player.gpu_samples)
         } else {
@@ -162,6 +226,9 @@ fn play_effects(
             samples
         };
 
+        let Some(children) = children else {
+            continue;
+        };
         for child in children.iter() {
             let Ok((slot, mut sprite, mut transform, mut visibility)) = particles.get_mut(*child)
             else {
@@ -205,10 +272,10 @@ mod tests {
     }
 
     #[test]
-    fn native_gpu_presentation_is_the_default() {
+    fn automatic_presentation_is_the_default() {
         assert_eq!(
             AestraSettings::default().presentation,
-            PresentationMode::Gpu
+            PresentationMode::Auto
         );
     }
 

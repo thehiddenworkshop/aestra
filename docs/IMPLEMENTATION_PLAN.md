@@ -12,11 +12,12 @@ architecture vision; this file is the shorter delivery plan.
 - M1 semantic core and format v2 foundation: complete for the initial module set.
 - M2 deterministic authoring operations: complete for current editor operations.
 - M3 module registry, compiler frontend, and CPU runtime: complete for the initial module set.
-- M4 first GPU production slice: in progress. The deterministic WESL compute substrate,
+- M4 first GPU production slice: complete. The deterministic WESL compute substrate,
   bounded particle pools, compaction lists, counters, native indirect alpha/additive
   sprite drawing, conservative visibility bounds, and explicit CPU/readback fallbacks
   are implemented. Deterministic image regression with approved references, tolerant
-  metrics, and diff reports is implemented; capability reporting remains.
+  metrics, and diff reports is implemented. Adapter capability reporting, automatic
+  backend selection, particle budgets, and per-effect fallback diagnostics close the milestone.
 
 ## 1. Assessment of the current prototype
 

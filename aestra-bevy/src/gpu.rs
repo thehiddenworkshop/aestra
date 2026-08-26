@@ -15,23 +15,26 @@ use bevy::{
     ecs::schedule::IntoScheduleConfigs,
     prelude::*,
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems,
+        ExtractSchedule, MainWorld, Render, RenderApp, RenderStartup, RenderSystems,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         gpu_readback::{Readback, ReadbackComplete},
         render_asset::RenderAssets,
         render_resource::{
             BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
             BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
-            ComputePipelineDescriptor, PipelineCache, ShaderStages, ShaderType,
+            ComputePipelineDescriptor, DownlevelFlags, PipelineCache, ShaderStages, ShaderType,
             binding_types::{storage_buffer, storage_buffer_read_only},
         },
-        renderer::{RenderContext, RenderDevice, RenderGraph},
+        renderer::{RenderAdapter, RenderAdapterInfo, RenderContext, RenderDevice, RenderGraph},
         storage::{GpuShaderBuffer, ShaderBuffer},
     },
 };
 use thiserror::Error;
 
-use crate::{AestraSettings, EffectPlayer, PresentationMode};
+use crate::{
+    ActiveBackend, AestraRuntimeStatus, AestraSettings, EffectPlayer, EffectRuntimeStatus,
+    GpuCapabilities, GpuPresentationPrepared, capabilities::select_backend,
+};
 
 pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy/shaders/aestra_simulation.wesl";
 pub const WESL_RENDER_SHADER_PATH: &str =
@@ -218,7 +221,7 @@ enum GpuBlend {
 }
 
 #[derive(Component, Clone, ExtractComponent)]
-struct GpuEffectBuffers {
+pub(crate) struct GpuEffectBuffers {
     emitters: Handle<ShaderBuffer>,
     particles: Handle<ShaderBuffer>,
     alive: Handle<ShaderBuffer>,
@@ -252,8 +255,8 @@ struct GpuBindGroup(BindGroup);
 type UnpreparedPlayers<'w, 's> = Query<
     'w,
     's,
-    (Entity, &'static EffectPlayer),
-    (Added<EffectPlayer>, Without<GpuEffectBuffers>),
+    (Entity, &'static EffectPlayer, &'static EffectRuntimeStatus),
+    (Without<GpuEffectBuffers>, Without<GpuPresentationPrepared>),
 >;
 
 #[derive(Resource)]
@@ -270,18 +273,16 @@ pub(crate) fn install(app: &mut App) {
         ExtractComponentPlugin::<GpuEffectBuffers>::default(),
         ExtractComponentPlugin::<GpuDrawInstance>::default(),
     ))
-    .add_systems(
-        Update,
-        (
-            prepare_gpu_players,
-            update_gpu_inputs.after(crate::play_effects),
-        )
-            .chain(),
-    );
+    .add_systems(Update, update_gpu_inputs.after(crate::play_effects));
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+        let capabilities = GpuCapabilities::unavailable("Bevy has no render sub-application");
+        let requested = app.world().resource::<AestraSettings>().presentation;
+        let status = select_backend(requested, &capabilities);
+        app.insert_resource(capabilities).insert_resource(status);
         return;
     };
     render_app
+        .add_systems(ExtractSchedule, publish_gpu_capabilities)
         .add_systems(RenderStartup, init_pipeline)
         .add_systems(
             Render,
@@ -291,20 +292,32 @@ pub(crate) fn install(app: &mut App) {
     render::install(render_app);
 }
 
-fn prepare_gpu_players(
+pub(crate) fn prepare_gpu_players(
     mut commands: Commands,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    settings: Res<AestraSettings>,
     players: UnpreparedPlayers,
 ) {
-    if settings.presentation == PresentationMode::CpuReference {
-        return;
-    }
-    for (entity, player) in &players {
-        let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance) else {
+    for (entity, player, runtime) in &players {
+        if !matches!(
+            runtime.active,
+            ActiveBackend::Gpu | ActiveBackend::GpuReadback
+        ) {
             continue;
+        }
+        let artifact = match GpuEffectArtifact::from_instance(&player.instance) {
+            Ok(artifact) => artifact,
+            Err(error) => {
+                commands.entity(entity).insert(EffectRuntimeStatus {
+                    active: ActiveBackend::CpuReference,
+                    reason: format!(
+                        "GPU artifact is unsupported ({error}); using the CPU reference"
+                    ),
+                });
+                continue;
+            }
         };
         if artifact.total_slots == 0 {
+            commands.entity(entity).insert(GpuPresentationPrepared);
             continue;
         }
         let blends = artifact
@@ -339,22 +352,25 @@ fn prepare_gpu_players(
         let render_globals = buffers.add(ShaderBuffer::from(GpuRenderGlobals {
             world_from_effect: Mat4::IDENTITY,
         }));
-        commands.entity(entity).insert(GpuEffectBuffers {
-            emitters: emitters.clone(),
-            particles: particles.clone(),
-            alive: alive.clone(),
-            dead,
-            counters,
-            indirect: indirect.clone(),
-            globals,
-            render_globals: render_globals.clone(),
-            workgroups: artifact.total_slots.div_ceil(WORKGROUP_SIZE),
-            total_slots: artifact.total_slots,
-        });
+        commands.entity(entity).insert((
+            GpuEffectBuffers {
+                emitters: emitters.clone(),
+                particles: particles.clone(),
+                alive: alive.clone(),
+                dead,
+                counters,
+                indirect: indirect.clone(),
+                globals,
+                render_globals: render_globals.clone(),
+                workgroups: artifact.total_slots.div_ceil(WORKGROUP_SIZE),
+                total_slots: artifact.total_slots,
+            },
+            GpuPresentationPrepared,
+        ));
         commands
             .entity(entity)
-            .with_children(|parent| match settings.presentation {
-                PresentationMode::Gpu => {
+            .with_children(|parent| match runtime.active {
+                ActiveBackend::Gpu => {
                     for blend in blends {
                         parent.spawn((
                             GpuDrawInstance {
@@ -375,16 +391,132 @@ fn prepare_gpu_players(
                         ));
                     }
                 }
-                PresentationMode::GpuReadback => {
+                ActiveBackend::GpuReadback => {
                     parent.spawn((
                         Readback::buffer(particles.clone()),
                         GpuReadbackOwner(entity),
                     ));
                 }
-                PresentationMode::CpuReference => {
-                    unreachable!("CPU reference players do not allocate GPU buffers")
+                ActiveBackend::Pending | ActiveBackend::CpuReference => {
+                    unreachable!("non-GPU players do not allocate GPU buffers")
                 }
             });
+    }
+}
+
+fn publish_gpu_capabilities(
+    render_device: Res<RenderDevice>,
+    adapter: Res<RenderAdapter>,
+    adapter_info: Res<RenderAdapterInfo>,
+    mut main_world: ResMut<MainWorld>,
+) {
+    let capabilities = detect_gpu_capabilities(&render_device, &adapter, &adapter_info);
+    let requested = main_world.resource::<AestraSettings>().presentation;
+    let status = select_backend(requested, &capabilities);
+    let changed = main_world.resource::<AestraRuntimeStatus>() != &status
+        || main_world.resource::<GpuCapabilities>() != &capabilities;
+    if changed {
+        info!(
+            "Aestra backend: {} on {} ({}); {}",
+            status.active, capabilities.adapter_name, capabilities.backend, status.reason
+        );
+        main_world.insert_resource(capabilities);
+        main_world.insert_resource(status);
+    }
+}
+
+fn detect_gpu_capabilities(
+    render_device: &RenderDevice,
+    adapter: &RenderAdapter,
+    adapter_info: &RenderAdapterInfo,
+) -> GpuCapabilities {
+    let limits = render_device.limits();
+    let flags = adapter.get_downlevel_capabilities().flags;
+    let compute_shaders = flags.contains(DownlevelFlags::COMPUTE_SHADERS);
+    let indirect_execution = flags.contains(DownlevelFlags::INDIRECT_EXECUTION);
+    let vertex_storage = flags.contains(DownlevelFlags::VERTEX_STORAGE);
+    let binding_capacity = limits
+        .max_storage_buffer_binding_size
+        .min(limits.max_buffer_size)
+        / std::mem::size_of::<GpuParticle>() as u64;
+    let dispatch_capacity =
+        u64::from(limits.max_compute_workgroups_per_dimension) * u64::from(WORKGROUP_SIZE);
+    let max_particles = binding_capacity
+        .min(dispatch_capacity)
+        .min(u64::from(u32::MAX)) as u32;
+
+    let mut limitations = Vec::new();
+    if !compute_shaders {
+        limitations.push("compute shaders are unavailable".into());
+    }
+    if limits.max_compute_invocations_per_workgroup < WORKGROUP_SIZE
+        || limits.max_compute_workgroup_size_x < WORKGROUP_SIZE
+    {
+        limitations.push(format!(
+            "compute workgroups cannot run {WORKGROUP_SIZE} invocations"
+        ));
+    }
+    if limits.max_storage_buffers_per_shader_stage < 7 {
+        limitations.push(format!(
+            "{} storage buffers per shader stage are available; 7 are required",
+            limits.max_storage_buffers_per_shader_stage
+        ));
+    }
+    if limits.max_bindings_per_bind_group < 7 {
+        limitations.push(format!(
+            "{} bindings per group are available; 7 are required",
+            limits.max_bindings_per_bind_group
+        ));
+    }
+    if max_particles == 0 {
+        limitations.push("storage or dispatch limits allow no particles".into());
+    }
+    let compute_pipeline_supported = compute_shaders
+        && limits.max_compute_invocations_per_workgroup >= WORKGROUP_SIZE
+        && limits.max_compute_workgroup_size_x >= WORKGROUP_SIZE
+        && limits.max_storage_buffers_per_shader_stage >= 7
+        && limits.max_bindings_per_bind_group >= 7
+        && max_particles > 0;
+    if !indirect_execution {
+        limitations.push("indirect execution is unavailable".into());
+    }
+    if !vertex_storage {
+        limitations.push("vertex-stage storage buffers are unavailable".into());
+    }
+    if limits.max_bind_groups < 2 {
+        limitations.push(format!(
+            "{} bind group is available; native rendering requires 2",
+            limits.max_bind_groups
+        ));
+    }
+    let native_render_supported = compute_pipeline_supported
+        && indirect_execution
+        && vertex_storage
+        && limits.max_bind_groups >= 2;
+
+    GpuCapabilities {
+        detected: true,
+        adapter_name: adapter_info.name.clone(),
+        backend: format!("{:?}", adapter_info.backend),
+        device_type: format!("{:?}", adapter_info.device_type),
+        driver: if adapter_info.driver.is_empty() {
+            "unknown".into()
+        } else {
+            adapter_info.driver.clone()
+        },
+        compute_shaders,
+        indirect_execution,
+        vertex_storage,
+        compute_pipeline_supported,
+        native_render_supported,
+        max_bind_groups: limits.max_bind_groups,
+        max_bindings_per_bind_group: limits.max_bindings_per_bind_group,
+        max_storage_buffers_per_shader_stage: limits.max_storage_buffers_per_shader_stage,
+        max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
+        max_buffer_size: limits.max_buffer_size,
+        max_compute_workgroups_per_dimension: limits.max_compute_workgroups_per_dimension,
+        max_particles,
+        limitations,
     }
 }
 

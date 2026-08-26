@@ -80,6 +80,10 @@ cargo run -p aestra-viewer -- --capture captures/prism-bloom --frames 9
 ```
 
 The capture directory receives numbered PNG frames, `contact-sheet.png`, and `capture-manifest.md`. In interactive mode, press `S` for a single screenshot.
+The manifest records the requested and selected backend, fallback reason, adapter,
+driver, physical capacity, and configured particle budget. Use `--backend
+auto|gpu|gpu-readback|cpu` to exercise a specific policy, or
+`--max-gpu-particles <count>` to test budget fallback.
 
 Run the native-GPU visual regression against the approved, effect-only reference:
 
@@ -125,6 +129,6 @@ cargo test --workspace
 
 The editor round-trip tests create a new multi-emitter effect, save it, and load it through the shared semantic model used by the viewer and game plugin.
 
-The runtime packs immutable compiled plans into bounded GPU buffers, evaluates them with embedded WESL compute shaders, compacts the live set, and presents alpha/additive sprites through GPU indirect draws. Conservative authored bounds participate in Bevy visibility culling. The deterministic CPU interpreter and an asynchronous GPU-readback presenter remain available through `AestraSettings` for conformance and compatibility, while native GPU presentation is the default behind the same `AestraPlugin` / `EffectPlayer` surface.
+The runtime packs immutable compiled plans into bounded GPU buffers, evaluates them with embedded WESL compute shaders, compacts the live set, and presents alpha/additive sprites through GPU indirect draws. Conservative authored bounds participate in Bevy visibility culling. `AestraSettings` defaults to `PresentationMode::Auto`: native GPU is preferred, GPU readback is used when compute works without native indirect presentation, and the deterministic CPU interpreter is the final fallback. `GpuCapabilities`, `AestraRuntimeStatus`, and per-effect `EffectRuntimeStatus` expose the decision and its reason through the same `AestraPlugin` / `EffectPlayer` surface.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the product architecture and phased roadmap.
