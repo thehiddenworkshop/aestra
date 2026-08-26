@@ -40,8 +40,11 @@ architecture vision; this file is the shorter delivery plan.
   a persistent compile-state footer shortcut, and panel visibility controls under View.
   The live compiler artifact is now exposed through a source-mapped Generated Code
   panel covering execution stages, particle layout, parameter slots, renderer plans,
-  optimizations, and WESL entry points. The remaining M5 work is the profiler tab,
-  viewport gizmos, and recovery.
+  optimizations, and WESL entry points. A dockable Profiler now consumes public,
+  machine-readable runtime snapshots with measured CPU/live-particle data, rolling
+  history, per-emitter peaks, and explicitly labeled compiler estimates; native GPU
+  timestamps remain a capability-dependent extension. The remaining M5 work is
+  viewport gizmos and recovery.
 
 ## 1. Assessment of the current prototype
 

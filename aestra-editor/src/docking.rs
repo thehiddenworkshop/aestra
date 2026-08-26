@@ -12,11 +12,12 @@ pub(crate) enum DockPanel {
     Curves,
     Diagnostics,
     GeneratedCode,
+    Profiler,
     Changes,
 }
 
 impl DockPanel {
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::Viewport,
         Self::Assets,
         Self::Inspector,
@@ -24,6 +25,7 @@ impl DockPanel {
         Self::Curves,
         Self::Diagnostics,
         Self::GeneratedCode,
+        Self::Profiler,
         Self::Changes,
     ];
 
@@ -36,6 +38,7 @@ impl DockPanel {
             Self::Curves => "CURVES",
             Self::Diagnostics => "DIAGNOSTICS",
             Self::GeneratedCode => "GENERATED CODE",
+            Self::Profiler => "PROFILER",
             Self::Changes => "CHANGES",
         }
     }
@@ -272,6 +275,7 @@ impl Default for WorkspaceLayout {
                 DockPanel::Curves,
                 DockPanel::Diagnostics,
                 DockPanel::GeneratedCode,
+                DockPanel::Profiler,
                 DockPanel::Changes,
             ],
             DockPanel::Timeline,
@@ -428,6 +432,7 @@ impl WorkspaceLayout {
             DockPanel::Curves,
             DockPanel::Diagnostics,
             DockPanel::GeneratedCode,
+            DockPanel::Profiler,
             DockPanel::Changes,
         ];
         let target_and_drop = if bottom_group.contains(&panel) {
@@ -574,6 +579,7 @@ fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2]
         | DockPanel::Curves
         | DockPanel::Diagnostics
         | DockPanel::GeneratedCode
+        | DockPanel::Profiler
         | DockPanel::Changes => [720.0, 320.0],
         DockPanel::Assets | DockPanel::Inspector => [420.0, 520.0],
         DockPanel::Viewport => [760.0, 540.0],
@@ -696,6 +702,7 @@ mod tests {
                 DockPanel::Curves,
                 DockPanel::Diagnostics,
                 DockPanel::GeneratedCode,
+                DockPanel::Profiler,
             ]
         );
 
@@ -736,6 +743,23 @@ mod tests {
             Some(bottom)
         );
         assert!(layout.is_active(DockPanel::GeneratedCode));
+    }
+
+    #[test]
+    fn profiler_restores_to_the_bottom_tab_stack() {
+        let mut layout = WorkspaceLayout::default();
+        let bottom = layout.root.node_containing(DockPanel::Timeline).unwrap();
+        assert_eq!(
+            layout.root.node_containing(DockPanel::Profiler),
+            Some(bottom)
+        );
+        assert!(layout.close(DockPanel::Profiler));
+        assert!(layout.show(DockPanel::Profiler));
+        assert_eq!(
+            layout.root.node_containing(DockPanel::Profiler),
+            Some(bottom)
+        );
+        assert!(layout.is_active(DockPanel::Profiler));
     }
 
     #[test]

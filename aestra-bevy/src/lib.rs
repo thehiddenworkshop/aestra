@@ -7,8 +7,9 @@ pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
 pub use aestra_core::*;
 pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
-    CompiledEffect, DEFAULT_PLAYBACK_TICK_RATE, EffectInstance, ParameterError, ParticleSample,
-    PlaybackCheckpoint, PlaybackClock, RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
+    CompiledEffect, DEFAULT_PLAYBACK_TICK_RATE, EffectInstance, EffectProfile, EmitterProfile,
+    ParameterError, ParticleSample, PlaybackCheckpoint, PlaybackClock, ProfileValue,
+    ProfileValueSource, RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 pub use capabilities::{
     ActiveBackend, AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRuntimeStatus,
@@ -20,7 +21,7 @@ use bevy::prelude::{
     App, Children, Color, Commands, Component, Entity, Plugin, Quat, Query, Res, Resource, Sprite,
     Time, Transform, Update, Vec2, Vec3, Visibility, Without,
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 /// Selects the presentation path used by [`AestraPlugin`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -67,6 +68,7 @@ impl Plugin for AestraPlugin {
             Update,
             (
                 assign_effect_backends,
+                prepare_effect_profiles,
                 prepare_effect_players,
                 gpu::prepare_gpu_players,
                 play_effects,
@@ -234,6 +236,10 @@ struct CpuPresentationPrepared;
 #[derive(Component)]
 pub(crate) struct GpuPresentationPrepared;
 
+/// Live machine-readable profile for an [`EffectPlayer`].
+#[derive(Component, Debug, Clone)]
+pub struct EffectProfiler(pub EffectProfile);
+
 fn assign_effect_backends(
     mut commands: Commands,
     settings: Res<AestraSettings>,
@@ -287,9 +293,32 @@ fn prepare_effect_players(
     }
 }
 
+fn prepare_effect_profiles(
+    mut commands: Commands,
+    capabilities: Res<GpuCapabilities>,
+    players: Query<(Entity, &EffectPlayer, &EffectRuntimeStatus), Without<EffectProfiler>>,
+) {
+    for (entity, player, runtime) in &players {
+        let mut profile = EffectProfile::from_compiled(player.effect());
+        profile.platform_warnings = capabilities.limitations.clone();
+        if runtime.active == ActiveBackend::CpuReference
+            && runtime.reason.contains("fallback")
+            && !profile.platform_warnings.contains(&runtime.reason)
+        {
+            profile.platform_warnings.push(runtime.reason.clone());
+        }
+        commands.entity(entity).insert(EffectProfiler(profile));
+    }
+}
+
 fn play_effects(
     time: Res<Time>,
-    mut players: Query<(&mut EffectPlayer, Option<&Children>, &EffectRuntimeStatus)>,
+    mut players: Query<(
+        &mut EffectPlayer,
+        &mut EffectProfiler,
+        Option<&Children>,
+        &EffectRuntimeStatus,
+    )>,
     mut particles: Query<(
         &RuntimeParticle,
         &mut Sprite,
@@ -297,7 +326,10 @@ fn play_effects(
         &mut Visibility,
     )>,
 ) {
-    for (mut player, children, runtime) in &mut players {
+    for (mut player, mut profiler, children, runtime) in &mut players {
+        if !profiler.0.matches_compiled(player.effect()) {
+            profiler.0 = EffectProfile::from_compiled(player.effect());
+        }
         if player.playing {
             let advance = player.advance_clock(time.delta_secs());
             if advance.reached_end {
@@ -315,9 +347,14 @@ fn play_effects(
             std::mem::take(&mut player.gpu_samples)
         } else {
             let mut samples = std::mem::take(&mut player.samples);
+            let started = Instant::now();
             player.instance.evaluate(&mut samples);
+            profiler.0.record_cpu_frame(started.elapsed(), &samples);
             samples
         };
+        if uses_gpu_readback {
+            profiler.0.record_particle_frame(&samples);
+        }
 
         let Some(children) = children else {
             continue;
@@ -370,6 +407,35 @@ mod tests {
             AestraSettings::default().presentation,
             PresentationMode::Auto
         );
+    }
+
+    #[test]
+    fn players_receive_a_machine_readable_profile() {
+        let mut effect = EffectAsset::new("Profiled", 2.0);
+        effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+        let mut app = App::new();
+        app.insert_resource(GpuCapabilities::default())
+            .add_systems(Update, prepare_effect_profiles);
+        let entity = app
+            .world_mut()
+            .spawn((
+                EffectPlayer::new(&effect),
+                EffectRuntimeStatus {
+                    active: ActiveBackend::CpuReference,
+                    reason: "CPU reference requested".into(),
+                },
+            ))
+            .id();
+
+        app.update();
+
+        let profile = &app.world().get::<EffectProfiler>(entity).unwrap().0;
+        assert_eq!(profile.emitter_count, ProfileValue::Measured(1));
+        assert_eq!(profile.gpu_time_ns, ProfileValue::Unavailable);
+        assert!(matches!(
+            profile.buffer_memory_bytes,
+            ProfileValue::Estimated(bytes) if bytes > 0
+        ));
     }
 
     #[test]

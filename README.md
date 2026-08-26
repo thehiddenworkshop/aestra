@@ -90,6 +90,10 @@ fn main() {
 }
 ```
 
+Each player receives an `EffectProfiler` component. It exposes measured CPU and
+particle statistics alongside compiler-estimated draw, dispatch, and buffer costs;
+unsupported measurements such as GPU time remain explicitly unavailable.
+
 ## Development
 
 ```powershell

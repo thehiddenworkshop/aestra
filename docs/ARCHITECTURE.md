@@ -86,10 +86,14 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   slots, renderer plans, optimization statistics, and the WESL backend entry points.
   Compiled rows navigate back to their semantic emitter, module, renderer, or parameter.
 - Uses one native Bevy scroll-area/scrollbar composition across Inspector, Diagnostics,
-  Generated Code, Changes, and curve lists. Scrollbars only participate in layout while
-  their content overflows. Semantic Inspector anchors support exact scroll-to-source
-  navigation from compiled instructions with a transient highlight that fades back to
-  the normal or diagnostic border.
+  Generated Code, Profiler, Changes, and curve lists. Scrollbars only participate in
+  layout while their content overflows. Semantic Inspector anchors support exact
+  scroll-to-source navigation from compiled instructions with a transient highlight
+  that fades back to the normal or diagnostic border.
+- Projects machine-readable `EffectProfile` snapshots into a dockable Profiler workspace
+  with measured CPU/live-particle data, resettable peaks, rolling history, per-emitter
+  counts, and clearly marked compiler estimates. Uninstrumented GPU values remain
+  unavailable rather than being synthesized.
 - Consumes `aestra-bevy` through an explicit session resource.
 - Must not add game-only concepts to the semantic asset schema.
 
@@ -116,6 +120,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   reference and compatibility paths.
 - Publishes global adapter capabilities and per-effect active-backend diagnostics
   for games, editor status UI, viewer HUD, and capture manifests.
+- Attaches an `EffectProfiler` component to Bevy players so games and tools consume the
+  same measured/estimated/unavailable profile contract as the editor.
 - Preserves the public Bevy plugin contract: spawn, stop, parameter overrides, and events.
 
 ## Choreography model
@@ -167,7 +173,7 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 
 - sub-effects, collision, decals, lights, audio/event tracks, and camera cues
 - live game preview and remote parameter inspection
-- profiling overlays and per-emitter cost estimates
+- [x] dockable profiling workspace, runtime snapshots, and per-emitter particle costs
 - thumbnails, content browser search/tags, templates, and presets
 - bake/compile pipeline with validation in CI
 

@@ -1,11 +1,13 @@
 //! Engine-independent compiled effect contracts and deterministic CPU execution.
 
 mod checkpoint;
+mod profile;
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
     SeekPlan, SimulationSeekMode, StoredCheckpoint,
 };
+pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource};
 
 use aestra_core::{
     AssetId, BlendMode, Curve, EffectId, EmitterId, EmitterShape, Gradient, MaterialId, ModuleId,

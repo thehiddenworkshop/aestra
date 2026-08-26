@@ -11,6 +11,7 @@ use aestra_bevy::{
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
+use aestra_runtime::{EffectProfile, ProfileValue, ProfileValueSource};
 use bevy::{
     camera::RenderTarget,
     ecs::system::SystemParam,
@@ -28,12 +29,18 @@ use bevy::{
 use docking::{DockAxis, DockDrop, DockNode, DockNodeId, DockPanel, DockStack, WorkspaceLayout};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use session::EditorSession;
-use std::{fs, path::PathBuf};
+use std::{
+    collections::VecDeque,
+    fs,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
 const PARTICLE_POOL_SIZE: usize = 384;
 const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
+const PROFILER_HISTORY_SAMPLES: usize = 96;
 
 fn main() {
     App::new()
@@ -47,6 +54,7 @@ fn main() {
         .init_resource::<EditorModuleRegistry>()
         .init_resource::<ModulePaletteState>()
         .init_resource::<DiagnosticsPanelState>()
+        .init_resource::<ProfilerState>()
         .init_resource::<InspectorFocus>()
         .init_resource::<WorkspaceState>()
         .init_resource::<DockDragState>()
@@ -77,6 +85,7 @@ fn main() {
                     scrub_timeline,
                     advance_playback,
                     update_preview,
+                    update_profiler_labels,
                     update_editor_labels,
                     update_compile_status,
                     update_history_actions,
@@ -159,6 +168,7 @@ enum EditorAction {
         index: usize,
     },
     SelectCompiledTarget(SemanticTarget),
+    ResetProfilerPeaks,
     SelectDockPanel(DockPanel),
     CloseDockPanel(DockPanel),
     ShowDockPanel(DockPanel),
@@ -281,6 +291,45 @@ struct DiagnosticsPanelState {
     filter: DiagnosticsFilter,
 }
 
+#[derive(Resource, Default)]
+struct ProfilerState {
+    profile: Option<EffectProfile>,
+    cpu_history_ns: VecDeque<u64>,
+}
+
+impl ProfilerState {
+    fn record_cpu_frame(
+        &mut self,
+        effect: &CompiledEffect,
+        samples: &[aestra_bevy::ParticleSample],
+        elapsed: Duration,
+    ) -> bool {
+        let rebuilt = self
+            .profile
+            .as_ref()
+            .is_none_or(|profile| !profile.matches_compiled(effect));
+        if rebuilt {
+            self.profile = Some(EffectProfile::from_compiled(effect));
+            self.cpu_history_ns.clear();
+        }
+        let profile = self.profile.as_mut().expect("profile was initialized");
+        profile.record_cpu_frame(elapsed, samples);
+        self.cpu_history_ns
+            .push_back(elapsed.as_nanos().min(u128::from(u64::MAX)) as u64);
+        while self.cpu_history_ns.len() > PROFILER_HISTORY_SAMPLES {
+            self.cpu_history_ns.pop_front();
+        }
+        rebuilt
+    }
+
+    fn reset_peaks(&mut self) {
+        if let Some(profile) = &mut self.profile {
+            profile.reset_peaks();
+        }
+        self.cpu_history_ns.clear();
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DiagnosticSource {
     Current,
@@ -363,6 +412,40 @@ struct DiagnosticRow;
 
 #[derive(Component)]
 struct CompiledPlanRow;
+
+#[derive(Debug, Clone, Copy)]
+enum ProfilerMetric {
+    CpuTime,
+    GpuTime,
+    AliveParticles,
+    PeakParticles,
+    ParticleCapacity,
+    Emitters,
+    DrawCalls,
+    Dispatches,
+    BufferMemory,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ProfilerMetricPart {
+    Value,
+    Source,
+}
+
+#[derive(Component)]
+struct ProfilerMetricText {
+    metric: ProfilerMetric,
+    part: ProfilerMetricPart,
+}
+
+#[derive(Component)]
+struct ProfilerEmitterValue(usize);
+
+#[derive(Component)]
+struct ProfilerHistoryBar(usize);
+
+#[derive(Component)]
+struct ProfilerHistorySummary;
 
 #[derive(Component)]
 struct InspectorSemanticTarget {
@@ -516,6 +599,7 @@ struct PanelSources<'a> {
     registry: &'a EditorModuleRegistry,
     palette: &'a ModulePaletteState,
     diagnostics_panel: &'a DiagnosticsPanelState,
+    profiler: &'a ProfilerState,
 }
 
 #[derive(SystemParam)]
@@ -526,7 +610,17 @@ struct UiBuildResources<'w> {
     registry: Res<'w, EditorModuleRegistry>,
     palette: Res<'w, ModulePaletteState>,
     diagnostics_panel: Res<'w, DiagnosticsPanelState>,
+    profiler: Res<'w, ProfilerState>,
     workspace: Res<'w, WorkspaceState>,
+}
+
+#[derive(SystemParam)]
+struct SetupUiResources<'w> {
+    registry: Res<'w, EditorModuleRegistry>,
+    palette: Res<'w, ModulePaletteState>,
+    workspace: Res<'w, WorkspaceState>,
+    diagnostics_panel: Res<'w, DiagnosticsPanelState>,
+    profiler: Res<'w, ProfilerState>,
 }
 
 #[derive(SystemParam)]
@@ -551,24 +645,25 @@ fn setup_editor(
     menu: Res<MenuState>,
     catalog: Res<EffectCatalog>,
     layout: Res<WorkspaceLayout>,
-    editor_resources: (
-        Res<EditorModuleRegistry>,
-        Res<ModulePaletteState>,
-        Res<WorkspaceState>,
-        Res<DiagnosticsPanelState>,
-    ),
+    editor_resources: SetupUiResources,
     mut rendered: ResMut<RenderedUiRevision>,
 ) {
-    let (registry, palette, workspace, diagnostics_panel) = editor_resources;
     commands.spawn(Camera2d);
     let sources = PanelSources {
         session: &session,
         catalog: &catalog,
-        registry: &registry,
-        palette: &palette,
-        diagnostics_panel: &diagnostics_panel,
+        registry: &editor_resources.registry,
+        palette: &editor_resources.palette,
+        diagnostics_panel: &editor_resources.diagnostics_panel,
+        profiler: &editor_resources.profiler,
     };
-    spawn_editor_ui(&mut commands, &menu, &workspace, &layout, sources);
+    spawn_editor_ui(
+        &mut commands,
+        &menu,
+        &editor_resources.workspace,
+        &layout,
+        sources,
+    );
     rendered.0 = session.ui_revision;
 }
 
@@ -1268,6 +1363,7 @@ fn spawn_panel_content(
             spawn_diagnostics_workspace(parent, sources.session, sources.diagnostics_panel);
         }
         DockPanel::GeneratedCode => spawn_generated_code_workspace(parent, sources.session),
+        DockPanel::Profiler => spawn_profiler_workspace(parent, sources.session, sources.profiler),
         DockPanel::Changes => spawn_changes_workspace(parent, sources.session),
     }
 }
@@ -3631,6 +3727,448 @@ fn spawn_generated_code_workspace(parent: &mut ChildSpawnerCommands, session: &E
         });
 }
 
+fn spawn_profiler_workspace(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    state: &ProfilerState,
+) {
+    let status = if session
+        .pending_change
+        .as_ref()
+        .is_some_and(|pending| !pending.can_apply)
+    {
+        "CPU REFERENCE  ·  LAST VALID EFFECT"
+    } else {
+        "CPU REFERENCE  ·  LIVE"
+    };
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
+        .with_children(|panel| {
+            panel
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(38.0),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(Val::Px(14.0)),
+                        column_gap: Val::Px(9.0),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL_LIGHT),
+                ))
+                .with_children(|header| {
+                    header.spawn((
+                        Text::new("EFFECT PROFILE"),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                    ));
+                    header.spawn(Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    });
+                    header.spawn((
+                        Node {
+                            width: Val::Px(6.0),
+                            height: Val::Px(6.0),
+                            border_radius: BorderRadius::MAX,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.35, 0.88, 0.57)),
+                    ));
+                    header.spawn((
+                        Text::new(status),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_FAINT),
+                    ));
+                    spawn_profiler_reset_button(header);
+                });
+
+            let Some(profile) = &state.profile else {
+                spawn_diagnostics_empty_state(
+                    panel,
+                    "WAITING FOR PREVIEW",
+                    "Profiler data appears after the first evaluated frame.",
+                    theme::TEXT_MUTED,
+                );
+                return;
+            };
+
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    min_height: Val::Px(0.0),
+                    ..default()
+                })
+                .with_children(|body| {
+                    spawn_vertical_scroll_area(
+                        body,
+                        Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            padding: UiRect::all(Val::Px(10.0)),
+                            row_gap: Val::Px(9.0),
+                            ..default()
+                        },
+                        |content| {
+                            spawn_profiler_metric_grid(content, profile);
+                            spawn_profiler_history(content, state);
+                            spawn_profiler_emitters(content, profile);
+                            spawn_profiler_availability(content, profile);
+                        },
+                    );
+                });
+        });
+}
+
+fn spawn_profiler_reset_button(parent: &mut ChildSpawnerCommands) {
+    parent
+        .spawn((
+            Button,
+            EditorAction::ResetProfilerPeaks,
+            Node {
+                height: Val::Px(24.0),
+                padding: UiRect::horizontal(Val::Px(8.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(theme::BUTTON),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new("RESET PEAKS"),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+fn spawn_profiler_metric_grid(parent: &mut ChildSpawnerCommands, profile: &EffectProfile) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_wrap: FlexWrap::Wrap,
+            column_gap: Val::Px(7.0),
+            row_gap: Val::Px(7.0),
+            ..default()
+        })
+        .with_children(|grid| {
+            for metric in [
+                ProfilerMetric::CpuTime,
+                ProfilerMetric::GpuTime,
+                ProfilerMetric::AliveParticles,
+                ProfilerMetric::PeakParticles,
+                ProfilerMetric::ParticleCapacity,
+                ProfilerMetric::Emitters,
+                ProfilerMetric::DrawCalls,
+                ProfilerMetric::Dispatches,
+                ProfilerMetric::BufferMemory,
+            ] {
+                spawn_profiler_metric_card(grid, profile, metric);
+            }
+        });
+}
+
+fn spawn_profiler_metric_card(
+    parent: &mut ChildSpawnerCommands,
+    profile: &EffectProfile,
+    metric: ProfilerMetric,
+) {
+    let (value, source) = profiler_metric_display(profile, metric);
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(132.0),
+                min_height: Val::Px(70.0),
+                flex_grow: 1.0,
+                padding: UiRect::all(Val::Px(9.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                ProfilerMetricText {
+                    metric,
+                    part: ProfilerMetricPart::Value,
+                },
+                Text::new(value),
+                TextFont {
+                    font_size: FontSize::Px(15.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+            ));
+            card.spawn((
+                Text::new(profiler_metric_name(metric)),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+            ));
+            card.spawn((
+                ProfilerMetricText {
+                    metric,
+                    part: ProfilerMetricPart::Source,
+                },
+                Text::new(profile_source_label(source)),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(profile_source_color(source)),
+            ));
+        });
+}
+
+fn spawn_profiler_history(parent: &mut ChildSpawnerCommands, state: &ProfilerState) {
+    spawn_compiled_section(parent, "CPU UPDATE HISTORY", |section| {
+        section.spawn((
+            ProfilerHistorySummary,
+            Text::new(profiler_history_summary(&state.cpu_history_ns)),
+            TextFont {
+                font_size: FontSize::Px(9.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_FAINT),
+        ));
+        section
+            .spawn(Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(82.0),
+                align_items: AlignItems::End,
+                column_gap: Val::Px(1.0),
+                padding: UiRect::top(Val::Px(7.0)),
+                ..default()
+            })
+            .with_children(|graph| {
+                for index in 0..PROFILER_HISTORY_SAMPLES {
+                    graph.spawn((
+                        ProfilerHistoryBar(index),
+                        Node {
+                            height: Val::Px(1.0),
+                            min_width: Val::Px(1.0),
+                            flex_grow: 1.0,
+                            ..default()
+                        },
+                        BackgroundColor(theme::ACCENT_DIM),
+                    ));
+                }
+            });
+    });
+}
+
+fn spawn_profiler_emitters(parent: &mut ChildSpawnerCommands, profile: &EffectProfile) {
+    spawn_compiled_section(parent, "EMITTERS", |section| {
+        for (index, emitter) in profile.emitters.iter().enumerate() {
+            section
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(35.0),
+                        padding: UiRect::horizontal(Val::Px(7.0)),
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(10.0),
+                        border_radius: BorderRadius::all(Val::Px(3.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL),
+                ))
+                .with_children(|row| {
+                    row.spawn((
+                        Text::new(format!("E{index:02}")),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::ACCENT),
+                        Node {
+                            width: Val::Px(38.0),
+                            ..default()
+                        },
+                    ));
+                    row.spawn((
+                        Text::new(&emitter.name),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Node {
+                            flex_grow: 1.0,
+                            ..default()
+                        },
+                    ));
+                    row.spawn((
+                        ProfilerEmitterValue(index),
+                        Text::new(profiler_emitter_value(emitter)),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                    ));
+                });
+        }
+    });
+}
+
+fn spawn_profiler_availability(parent: &mut ChildSpawnerCommands, profile: &EffectProfile) {
+    spawn_compiled_section(parent, "MEASUREMENT AVAILABILITY", |section| {
+        spawn_compiled_label_value(
+            section,
+            "MEASURED",
+            "CPU update time, live particles, and peak particles",
+        );
+        spawn_compiled_label_value(
+            section,
+            "ESTIMATED",
+            "draw calls, dispatches, and runtime buffer memory from the compiled plan",
+        );
+        if profile.gpu_time_ns.source() == ProfileValueSource::Unavailable {
+            spawn_compiled_label_value(
+                section,
+                "UNAVAILABLE",
+                "GPU time, overdraw, and collision timing require backend instrumentation",
+            );
+        }
+    });
+}
+
+fn profiler_metric_name(metric: ProfilerMetric) -> &'static str {
+    match metric {
+        ProfilerMetric::CpuTime => "CPU UPDATE",
+        ProfilerMetric::GpuTime => "GPU TIME",
+        ProfilerMetric::AliveParticles => "LIVE PARTICLES",
+        ProfilerMetric::PeakParticles => "PEAK PARTICLES",
+        ProfilerMetric::ParticleCapacity => "CAPACITY",
+        ProfilerMetric::Emitters => "EMITTERS",
+        ProfilerMetric::DrawCalls => "DRAW CALLS",
+        ProfilerMetric::Dispatches => "DISPATCHES",
+        ProfilerMetric::BufferMemory => "BUFFER MEMORY",
+    }
+}
+
+fn profiler_metric_display(
+    profile: &EffectProfile,
+    metric: ProfilerMetric,
+) -> (String, ProfileValueSource) {
+    match metric {
+        ProfilerMetric::CpuTime => format_profile_duration(profile.cpu_time_ns),
+        ProfilerMetric::GpuTime => format_profile_duration(profile.gpu_time_ns),
+        ProfilerMetric::AliveParticles => format_profile_count(profile.alive_particles),
+        ProfilerMetric::PeakParticles => format_profile_count(profile.peak_particles),
+        ProfilerMetric::ParticleCapacity => format_profile_count(profile.particle_capacity),
+        ProfilerMetric::Emitters => format_profile_count(profile.emitter_count),
+        ProfilerMetric::DrawCalls => format_profile_count(profile.draw_calls),
+        ProfilerMetric::Dispatches => format_profile_count(profile.dispatch_count),
+        ProfilerMetric::BufferMemory => format_profile_memory(profile.buffer_memory_bytes),
+    }
+}
+
+fn format_profile_duration(value: ProfileValue<u64>) -> (String, ProfileValueSource) {
+    let source = value.source();
+    let Some(nanoseconds) = value.value() else {
+        return ("—".into(), source);
+    };
+    let display = if nanoseconds >= 1_000_000 {
+        format!("{:.3} ms", nanoseconds as f64 / 1_000_000.0)
+    } else if nanoseconds >= 1_000 {
+        format!("{:.1} µs", nanoseconds as f64 / 1_000.0)
+    } else {
+        format!("{nanoseconds} ns")
+    };
+    (display, source)
+}
+
+fn format_profile_count(value: ProfileValue<u32>) -> (String, ProfileValueSource) {
+    (
+        value
+            .value()
+            .map_or_else(|| "—".into(), |value| value.to_string()),
+        value.source(),
+    )
+}
+
+fn format_profile_memory(value: ProfileValue<u64>) -> (String, ProfileValueSource) {
+    let source = value.source();
+    let Some(bytes) = value.value() else {
+        return ("—".into(), source);
+    };
+    let display = if bytes >= 1024 * 1024 {
+        format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    };
+    (display, source)
+}
+
+fn profile_source_label(source: ProfileValueSource) -> &'static str {
+    match source {
+        ProfileValueSource::Measured => "MEASURED",
+        ProfileValueSource::Estimated => "ESTIMATED",
+        ProfileValueSource::Unavailable => "UNAVAILABLE",
+    }
+}
+
+fn profile_source_color(source: ProfileValueSource) -> Color {
+    match source {
+        ProfileValueSource::Measured => Color::srgb(0.35, 0.88, 0.57),
+        ProfileValueSource::Estimated => Color::srgb(1.0, 0.74, 0.30),
+        ProfileValueSource::Unavailable => theme::TEXT_FAINT,
+    }
+}
+
+fn profiler_emitter_value(emitter: &aestra_runtime::EmitterProfile) -> String {
+    format!(
+        "{} LIVE  ·  {} PEAK  ·  {} CAP",
+        emitter.alive_particles, emitter.peak_particles, emitter.particle_capacity
+    )
+}
+
+fn profiler_history_summary(history: &VecDeque<u64>) -> String {
+    if history.is_empty() {
+        return "Collecting samples…".into();
+    }
+    let total = history.iter().copied().map(u128::from).sum::<u128>();
+    let average = (total / history.len() as u128).min(u128::from(u64::MAX)) as u64;
+    let maximum = history.iter().copied().max().unwrap_or_default();
+    format!(
+        "{} FRAMES  ·  AVG {}  ·  MAX {}",
+        history.len(),
+        format_profile_duration(ProfileValue::Measured(average)).0,
+        format_profile_duration(ProfileValue::Measured(maximum)).0
+    )
+}
+
 fn spawn_vertical_scroll_area(
     parent: &mut ChildSpawnerCommands,
     mut viewport: Node,
@@ -5723,6 +6261,7 @@ fn handle_buttons(
         ResMut<WorkspaceLayout>,
         ResMut<DiagnosticsPanelState>,
         ResMut<InspectorFocus>,
+        ResMut<ProfilerState>,
     ),
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
@@ -5734,6 +6273,7 @@ fn handle_buttons(
         mut layout,
         mut diagnostics_panel,
         mut inspector_focus,
+        mut profiler,
     ) = editor_resources;
     for (
         interaction,
@@ -6003,6 +6543,10 @@ fn handle_buttons(
                             session.ui_revision += 1;
                             reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                         }
+                    }
+                    EditorAction::ResetProfilerPeaks => {
+                        profiler.reset_peaks();
+                        session.status = "Profiler peaks and history reset".into();
                     }
                     EditorAction::SelectDockPanel(panel) => {
                         if layout.activate(panel) {
@@ -6742,6 +7286,7 @@ fn sync_native_floating_windows(
         registry: &editor_resources.registry,
         palette: &editor_resources.palette,
         diagnostics_panel: &editor_resources.diagnostics_panel,
+        profiler: &editor_resources.profiler,
     };
     for floating in &editor_resources.layout.floating {
         if windows.iter().any(|(_, native)| native.0 == floating.panel) {
@@ -6810,6 +7355,7 @@ fn rebuild_editor_ui(
         registry: &editor_resources.registry,
         palette: &editor_resources.palette,
         diagnostics_panel: &editor_resources.diagnostics_panel,
+        profiler: &editor_resources.profiler,
     };
     commands.entity(*root).with_children(|root| {
         spawn_editor_content(
@@ -6847,12 +7393,24 @@ fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
 
 fn update_preview(
     mut session: ResMut<EditorSession>,
+    mut profiler: ResMut<ProfilerState>,
     mut particles: Query<(&PreviewParticle, &mut Node, &mut BackgroundColor)>,
     canvas: Single<&ComputedNode, With<PreviewCanvas>>,
 ) {
+    let compiled = session
+        .preview
+        .as_ref()
+        .map(|preview| preview.effect().clone());
     let mut samples = std::mem::take(&mut session.samples);
+    let started = Instant::now();
     session.evaluate_preview(&mut samples);
+    let elapsed = started.elapsed();
     session.samples = samples;
+    if let Some(compiled) = compiled
+        && profiler.record_cpu_frame(&compiled, &session.samples, elapsed)
+    {
+        session.ui_revision += 1;
+    }
     let canvas_size = canvas.size() * canvas.inverse_scale_factor;
     for (marker, mut node, mut background) in &mut particles {
         let Some(sample) = session.samples.get(marker.0) else {
@@ -6871,6 +7429,82 @@ fn update_preview(
             sample.color[2],
             sample.color[3],
         );
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn update_profiler_labels(
+    profiler: Res<ProfilerState>,
+    mut labels: Query<
+        (
+            &mut Text,
+            &mut TextColor,
+            Option<&ProfilerMetricText>,
+            Option<&ProfilerEmitterValue>,
+            Option<&ProfilerHistorySummary>,
+        ),
+        Or<(
+            With<ProfilerMetricText>,
+            With<ProfilerEmitterValue>,
+            With<ProfilerHistorySummary>,
+        )>,
+    >,
+    mut bars: Query<(&ProfilerHistoryBar, &mut Node, &mut BackgroundColor)>,
+) {
+    if !profiler.is_changed() {
+        return;
+    }
+    if let Some(profile) = &profiler.profile {
+        for (mut text, mut color, metric, emitter, summary) in &mut labels {
+            if let Some(metric) = metric {
+                let (value, source) = profiler_metric_display(profile, metric.metric);
+                match metric.part {
+                    ProfilerMetricPart::Value => {
+                        text.0 = value;
+                        color.0 = theme::TEXT;
+                    }
+                    ProfilerMetricPart::Source => {
+                        text.0 = profile_source_label(source).into();
+                        color.0 = profile_source_color(source);
+                    }
+                }
+            } else if let Some(emitter) = emitter {
+                if let Some(profile) = profile.emitters.get(emitter.0) {
+                    text.0 = profiler_emitter_value(profile);
+                }
+            } else if summary.is_some() {
+                text.0 = profiler_history_summary(&profiler.cpu_history_ns);
+            }
+        }
+    }
+
+    let history_len = profiler.cpu_history_ns.len().min(PROFILER_HISTORY_SAMPLES);
+    let first_bar = PROFILER_HISTORY_SAMPLES - history_len;
+    let maximum = profiler
+        .cpu_history_ns
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    for (bar, mut node, mut color) in &mut bars {
+        if bar.0 < first_bar {
+            node.height = Val::Px(1.0);
+            color.0 = theme::ACCENT_DIM;
+            continue;
+        }
+        let history_index = bar.0 - first_bar;
+        let value = profiler
+            .cpu_history_ns
+            .get(history_index)
+            .copied()
+            .unwrap_or_default();
+        node.height = Val::Px(2.0 + 72.0 * value as f32 / maximum as f32);
+        color.0 = if bar.0 + 1 == PROFILER_HISTORY_SAMPLES {
+            theme::ACCENT
+        } else {
+            theme::ACCENT_DIM
+        };
     }
 }
 
@@ -7242,6 +7876,62 @@ mod tests {
     }
 
     #[test]
+    fn profile_collection_preserves_deterministic_preview_state() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut baseline = session.preview.as_ref().unwrap().clone();
+        let mut profiled = baseline.clone();
+        baseline.seek(1.25);
+        profiled.seek(1.25);
+        let mut baseline_samples = Vec::new();
+        let mut profiled_samples = Vec::new();
+        baseline.evaluate(&mut baseline_samples);
+        profiled.evaluate(&mut profiled_samples);
+        assert_eq!(profiled_samples, baseline_samples);
+
+        let mut profile = EffectProfile::from_compiled(profiled.effect());
+        let time_before = profiled.time();
+        let seed_before = profiled.seed();
+        profile.record_cpu_frame(Duration::from_micros(125), &profiled_samples);
+        assert_eq!(profiled.time(), time_before);
+        assert_eq!(profiled.seed(), seed_before);
+        assert_eq!(
+            profile.alive_particles,
+            ProfileValue::Measured(profiled_samples.len() as u32)
+        );
+        assert_eq!(
+            profile
+                .emitters
+                .iter()
+                .map(|emitter| emitter.alive_particles)
+                .sum::<u32>(),
+            profiled_samples.len() as u32
+        );
+
+        baseline.advance(1.0 / 60.0);
+        profiled.advance(1.0 / 60.0);
+        baseline.evaluate(&mut baseline_samples);
+        profiled.evaluate(&mut profiled_samples);
+        assert_eq!(profiled_samples, baseline_samples);
+    }
+
+    #[test]
+    fn profiler_history_is_bounded_and_resettable() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let compiled = session.preview.as_ref().unwrap().effect();
+        let mut profiler = ProfilerState::default();
+        for frame in 0..(PROFILER_HISTORY_SAMPLES + 12) {
+            profiler.record_cpu_frame(
+                compiled,
+                &session.samples,
+                Duration::from_micros(frame as u64 + 1),
+            );
+        }
+        assert_eq!(profiler.cpu_history_ns.len(), PROFILER_HISTORY_SAMPLES);
+        profiler.reset_peaks();
+        assert!(profiler.cpu_history_ns.is_empty());
+    }
+
+    #[test]
     fn scrollbar_only_appears_for_overflowing_content() {
         assert!(!vertical_scrollbar_needed(320.0, 320.0));
         assert!(!vertical_scrollbar_needed(320.0, 320.4));
@@ -7261,6 +7951,10 @@ mod tests {
         assert_eq!(
             panel_visibility_label(DockPanel::GeneratedCode, true),
             "[x]  GENERATED CODE"
+        );
+        assert_eq!(
+            panel_visibility_label(DockPanel::Profiler, true),
+            "[x]  PROFILER"
         );
     }
 }
