@@ -1,0 +1,13 @@
+[package]
+name = "aestra-viewer"
+description = "Aestra standalone effect viewer and automated visual capture tool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+aestra-bevy = { path = "../aestra-bevy" }
+bevy.workspace = true
+image.workspace = true

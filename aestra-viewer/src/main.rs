@@ -1,0 +1,318 @@
+use aestra_bevy::{AestraPlugin, EffectAsset, EffectPlayer};
+use bevy::{
+    app::AppExit,
+    prelude::*,
+    render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
+    window::WindowResolution,
+};
+use image::{Rgba, RgbaImage, imageops};
+use std::{env, fs, path::PathBuf};
+
+const SAMPLE_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
+const VIEW_WIDTH: u32 = 960;
+const VIEW_HEIGHT: u32 = 540;
+
+fn main() {
+    let config = ViewerConfig::from_args().unwrap_or_else(|error| {
+        eprintln!("aestra-viewer: {error}");
+        eprintln!(
+            "usage: aestra-viewer [--effect file.aestra.ron] [--capture output-dir] [--frames 8]"
+        );
+        std::process::exit(2);
+    });
+    let capture = config
+        .capture_directory
+        .as_ref()
+        .map(|directory| CapturePlan::new(directory.clone(), config.capture_frames));
+
+    let mut app = App::new();
+    app.insert_resource(ClearColor(Color::srgb(0.009, 0.012, 0.024)))
+        .insert_resource(config)
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Aestra Viewer".into(),
+                    resolution: WindowResolution::new(VIEW_WIDTH, VIEW_HEIGHT),
+                    resizable: true,
+                    ..default()
+                }),
+                ..default()
+            }),
+            AestraPlugin,
+        ))
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (viewer_controls, update_hud, drive_capture.after(update_hud)),
+        );
+    if let Some(capture) = capture {
+        app.insert_resource(capture);
+    }
+    app.run();
+}
+
+#[derive(Resource)]
+struct ViewerConfig {
+    effect_path: Option<PathBuf>,
+    capture_directory: Option<PathBuf>,
+    capture_frames: usize,
+}
+
+impl ViewerConfig {
+    fn from_args() -> Result<Self, String> {
+        let mut effect_path = None;
+        let mut capture_directory = None;
+        let mut capture_frames = 8usize;
+        let mut args = env::args().skip(1);
+        while let Some(argument) = args.next() {
+            match argument.as_str() {
+                "--effect" => {
+                    effect_path = Some(PathBuf::from(
+                        args.next().ok_or("--effect requires a file path")?,
+                    ));
+                }
+                "--capture" => {
+                    capture_directory = Some(PathBuf::from(
+                        args.next().ok_or("--capture requires a directory")?,
+                    ));
+                }
+                "--frames" => {
+                    capture_frames = args
+                        .next()
+                        .ok_or("--frames requires a number")?
+                        .parse::<usize>()
+                        .map_err(|_| "--frames must be a positive integer")?;
+                    if capture_frames == 0 || capture_frames > 64 {
+                        return Err("--frames must be between 1 and 64".into());
+                    }
+                }
+                "--help" | "-h" => {
+                    return Err("help requested".into());
+                }
+                unknown => return Err(format!("unknown argument '{unknown}'")),
+            }
+        }
+        Ok(Self {
+            effect_path,
+            capture_directory,
+            capture_frames,
+        })
+    }
+}
+
+#[derive(Resource)]
+struct CapturePlan {
+    directory: PathBuf,
+    frame_count: usize,
+    next_frame: usize,
+    settle_frames: u8,
+    positioned: bool,
+    pending: bool,
+    images: Vec<RgbaImage>,
+}
+
+impl CapturePlan {
+    fn new(directory: PathBuf, frame_count: usize) -> Self {
+        Self {
+            directory,
+            frame_count,
+            next_frame: 0,
+            // Let the window, glyph atlas, sprite pipelines, and particle pool reach the render
+            // world before the first capture. Later samples only need a short seek settle.
+            settle_frames: 20,
+            positioned: false,
+            pending: false,
+            images: Vec::with_capacity(frame_count),
+        }
+    }
+}
+
+#[derive(Component)]
+struct ViewerHud;
+
+fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
+    let effect = config
+        .effect_path
+        .as_ref()
+        .map_or_else(
+            || EffectAsset::from_ron(SAMPLE_SOURCE),
+            |path| EffectAsset::load_ron(path),
+        )
+        .unwrap_or_else(|error| panic!("could not load viewer effect: {error}"));
+    let effect_name = effect.name.clone();
+
+    commands.spawn(Camera2d);
+    commands.spawn(EffectPlayer::new(effect));
+
+    // A quiet reference grid makes motion and scale legible without becoming part of the effect.
+    for x in (-480..=480).step_by(80) {
+        commands.spawn((
+            Sprite::from_color(Color::srgba(0.25, 0.30, 0.45, 0.10), Vec2::new(1.0, 540.0)),
+            Transform::from_xyz(x as f32, 0.0, -10.0),
+        ));
+    }
+    for y in (-240..=240).step_by(80) {
+        commands.spawn((
+            Sprite::from_color(Color::srgba(0.25, 0.30, 0.45, 0.10), Vec2::new(960.0, 1.0)),
+            Transform::from_xyz(0.0, y as f32, -10.0),
+        ));
+    }
+
+    commands.spawn((
+        Text::new(format!("AESTRA VIEWER  |  {effect_name}")),
+        TextFont {
+            font_size: FontSize::Px(13.0),
+            ..default()
+        },
+        TextColor(Color::srgb(0.75, 0.70, 1.0)),
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(18.0),
+            top: Val::Px(16.0),
+            ..default()
+        },
+    ));
+    commands.spawn((
+        ViewerHud,
+        Text::new("00.000 / 00.000  |  SPACE Pause  |  R Restart  |  S Screenshot"),
+        TextFont {
+            font_size: FontSize::Px(11.0),
+            ..default()
+        },
+        TextColor(Color::srgb(0.47, 0.50, 0.61)),
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(18.0),
+            bottom: Val::Px(16.0),
+            ..default()
+        },
+    ));
+}
+
+fn viewer_controls(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut players: Query<&mut EffectPlayer>,
+    mut commands: Commands,
+    mut screenshot_index: Local<u32>,
+) {
+    if keys.just_pressed(KeyCode::Space) {
+        for mut player in &mut players {
+            player.playing = !player.playing;
+        }
+    }
+    if keys.just_pressed(KeyCode::KeyR) {
+        for mut player in &mut players {
+            player.restart();
+        }
+    }
+    if keys.just_pressed(KeyCode::KeyS) {
+        let path = format!("aestra-viewer-{:03}.png", *screenshot_index);
+        *screenshot_index += 1;
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(path));
+    }
+}
+
+fn update_hud(players: Query<&EffectPlayer>, mut hud: Query<&mut Text, With<ViewerHud>>) {
+    let (Ok(player), Ok(mut text)) = (players.single(), hud.single_mut()) else {
+        return;
+    };
+    text.0 = format!(
+        "{:06.3} / {:06.3}  |  {}  |  SPACE Pause  |  R Restart  |  S Screenshot",
+        player.elapsed,
+        player.effect.duration,
+        if player.playing { "PLAYING" } else { "PAUSED" }
+    );
+}
+
+fn drive_capture(
+    capture: Option<ResMut<CapturePlan>>,
+    mut players: Query<&mut EffectPlayer>,
+    mut commands: Commands,
+) {
+    let Some(mut capture) = capture else {
+        return;
+    };
+    if capture.pending || capture.next_frame >= capture.frame_count {
+        return;
+    }
+    if capture.settle_frames > 0 {
+        capture.settle_frames -= 1;
+        return;
+    }
+
+    if !capture.positioned {
+        for mut player in &mut players {
+            let sample_time = player.effect.duration * (capture.next_frame as f32 + 0.5)
+                / capture.frame_count as f32;
+            player.seek(sample_time);
+            player.playing = false;
+        }
+        capture.positioned = true;
+        capture.settle_frames = 2;
+        return;
+    }
+
+    capture.pending = true;
+    capture.positioned = false;
+    commands
+        .spawn(Screenshot::primary_window())
+        .observe(receive_capture);
+}
+
+fn receive_capture(
+    event: On<ScreenshotCaptured>,
+    mut capture: ResMut<CapturePlan>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    fs::create_dir_all(&capture.directory)
+        .unwrap_or_else(|error| panic!("could not create capture directory: {error}"));
+    let frame = event
+        .image
+        .clone()
+        .try_into_dynamic()
+        .expect("the primary-window screenshot must use a convertible pixel format")
+        .to_rgba8();
+    let frame_path = capture
+        .directory
+        .join(format!("frame-{:03}.png", capture.next_frame));
+    frame
+        .save(&frame_path)
+        .unwrap_or_else(|error| panic!("could not save {}: {error}", frame_path.display()));
+    capture.images.push(frame);
+    capture.next_frame += 1;
+    capture.pending = false;
+    capture.settle_frames = 1;
+
+    if capture.next_frame == capture.frame_count {
+        write_contact_sheet(&capture);
+        exit.write(AppExit::Success);
+    }
+}
+
+fn write_contact_sheet(capture: &CapturePlan) {
+    let columns = (capture.frame_count as f32).sqrt().ceil() as u32;
+    let rows = (capture.frame_count as u32).div_ceil(columns);
+    let mut sheet = RgbaImage::from_pixel(
+        VIEW_WIDTH * columns,
+        VIEW_HEIGHT * rows,
+        Rgba([3, 4, 9, 255]),
+    );
+    for (index, frame) in capture.images.iter().enumerate() {
+        let x = index as u32 % columns * VIEW_WIDTH;
+        let y = index as u32 / columns * VIEW_HEIGHT;
+        imageops::replace(&mut sheet, frame, i64::from(x), i64::from(y));
+    }
+    let path = capture.directory.join("contact-sheet.png");
+    sheet
+        .save(&path)
+        .unwrap_or_else(|error| panic!("could not save {}: {error}", path.display()));
+
+    let manifest = format!(
+        "# Aestra visual capture\n\n- Frames: {}\n- Frame size: {} x {}\n- Contact sheet: {} columns x {} rows\n- Sampling: evenly spaced at frame centers across the effect duration\n",
+        capture.frame_count, VIEW_WIDTH, VIEW_HEIGHT, columns, rows
+    );
+    fs::write(capture.directory.join("capture-manifest.md"), manifest)
+        .expect("capture manifest should be writable");
+}
