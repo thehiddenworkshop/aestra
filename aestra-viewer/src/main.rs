@@ -2,7 +2,8 @@ mod visual_regression;
 
 use aestra_bevy::{
     ActiveBackend, AestraPlugin, AestraRuntimeStatus, AestraSettings, DEFAULT_GPU_PARTICLE_BUDGET,
-    EffectAsset, EffectPlayer, EffectRuntimeStatus, GpuCapabilities, PresentationMode,
+    DEFAULT_PLAYBACK_TICK_RATE, EffectAsset, EffectPlayer, EffectRuntimeStatus, GpuCapabilities,
+    PlaybackClock, PresentationMode,
 };
 use bevy::{
     app::AppExit,
@@ -23,13 +24,14 @@ const REGRESSION_SEED: u64 = 0xa357_2a11_5eed_0001;
 fn main() {
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--backend auto|gpu|gpu-readback|cpu] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir]");
         std::process::exit(2);
     });
+    let preview_seed = config.resolved_seed();
     let capture = config
         .capture_mode
         .clone()
-        .map(|mode| CapturePlan::new(mode, config.capture_frames));
+        .map(|mode| CapturePlan::new(mode, config.capture_frames, preview_seed));
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.009, 0.012, 0.024)))
@@ -70,6 +72,7 @@ struct ViewerConfig {
     capture_frames: usize,
     presentation: PresentationMode,
     max_gpu_particles: u32,
+    preview_seed: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -99,6 +102,7 @@ impl ViewerConfig {
         let mut capture_frames = 8usize;
         let mut presentation = PresentationMode::Auto;
         let mut max_gpu_particles = DEFAULT_GPU_PARTICLE_BUDGET;
+        let mut preview_seed = None;
         let mut args = env::args().skip(1);
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -176,6 +180,10 @@ impl ViewerConfig {
                         return Err("--max-gpu-particles must be greater than zero".into());
                     }
                 }
+                "--seed" => {
+                    let value = args.next().ok_or("--seed requires an integer")?;
+                    preview_seed = Some(parse_seed(&value)?);
+                }
                 "--help" | "-h" => {
                     return Err("help requested".into());
                 }
@@ -188,8 +196,30 @@ impl ViewerConfig {
             capture_frames,
             presentation,
             max_gpu_particles,
+            preview_seed,
         })
     }
+
+    fn resolved_seed(&self) -> u64 {
+        self.preview_seed.unwrap_or_else(|| {
+            if self
+                .capture_mode
+                .as_ref()
+                .is_some_and(CaptureMode::is_regression)
+            {
+                REGRESSION_SEED
+            } else {
+                0
+            }
+        })
+    }
+}
+
+fn parse_seed(value: &str) -> Result<u64, String> {
+    value
+        .strip_prefix("0x")
+        .map_or_else(|| value.parse::<u64>(), |hex| u64::from_str_radix(hex, 16))
+        .map_err(|_| "--seed must be a decimal or 0x-prefixed integer".into())
 }
 
 fn set_capture_mode(target: &mut Option<CaptureMode>, mode: CaptureMode) -> Result<(), String> {
@@ -209,10 +239,12 @@ struct CapturePlan {
     positioned: bool,
     pending: bool,
     images: Vec<RgbaImage>,
+    seed: u64,
+    sampled_frames: Vec<u64>,
 }
 
 impl CapturePlan {
-    fn new(mode: CaptureMode, frame_count: usize) -> Self {
+    fn new(mode: CaptureMode, frame_count: usize, seed: u64) -> Self {
         Self {
             mode,
             frame_count,
@@ -223,6 +255,8 @@ impl CapturePlan {
             positioned: false,
             pending: false,
             images: Vec::with_capacity(frame_count),
+            seed,
+            sampled_frames: Vec::with_capacity(frame_count),
         }
     }
 }
@@ -247,9 +281,7 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
 
     commands.spawn(Camera2d);
     let mut player = EffectPlayer::new(&effect);
-    if regression_scene {
-        player.instance.set_seed(REGRESSION_SEED);
-    }
+    player.set_seed(config.resolved_seed());
     commands.spawn(player);
 
     if regression_scene {
@@ -317,6 +349,28 @@ fn viewer_controls(
             player.restart();
         }
     }
+    if keys.just_pressed(KeyCode::ArrowLeft) {
+        for mut player in &mut players {
+            player.step_back();
+        }
+    }
+    if keys.just_pressed(KeyCode::ArrowRight) {
+        for mut player in &mut players {
+            player.step_forward();
+        }
+    }
+    if keys.just_pressed(KeyCode::BracketLeft) {
+        for mut player in &mut players {
+            let seed = player.instance.seed().wrapping_sub(1);
+            player.set_seed(seed);
+        }
+    }
+    if keys.just_pressed(KeyCode::BracketRight) {
+        for mut player in &mut players {
+            let seed = player.instance.seed().wrapping_add(1);
+            player.set_seed(seed);
+        }
+    }
     if keys.just_pressed(KeyCode::KeyS) {
         let path = format!("aestra-viewer-{:03}.png", *screenshot_index);
         *screenshot_index += 1;
@@ -334,9 +388,12 @@ fn update_hud(
         return;
     };
     text.0 = format!(
-        "{:06.3} / {:06.3}  |  {}  |  {}  |  SPACE Pause  |  R Restart  |  S Screenshot",
+        "F{:05} @ {} Hz  |  {:06.3} / {:06.3}  |  seed {:016x}  |  {}  |  {}  |  ←/→ Step  |  [/] Seed",
+        player.frame(),
+        player.tick_rate(),
         player.elapsed(),
         player.effect().duration,
+        player.instance.seed(),
         if player.playing { "PLAYING" } else { "PAUSED" },
         runtime.active,
     );
@@ -360,10 +417,11 @@ fn drive_capture(
 
     if !capture.positioned {
         for mut player in &mut players {
-            let sample_time = player.effect().duration * (capture.next_frame as f32 + 0.5)
-                / capture.frame_count as f32;
-            player.seek(sample_time);
+            let maximum = PlaybackClock::default().maximum_frame(player.effect().duration);
+            let sample_frame = capture_frame(maximum, capture.next_frame, capture.frame_count);
+            player.seek_frame(sample_frame);
             player.playing = false;
+            capture.sampled_frames.push(sample_frame);
         }
         capture.positioned = true;
         capture.settle_frames = 2;
@@ -375,6 +433,12 @@ fn drive_capture(
     commands
         .spawn(Screenshot::primary_window())
         .observe(receive_capture);
+}
+
+fn capture_frame(maximum_frame: u64, index: usize, frame_count: usize) -> u64 {
+    let numerator = u128::from(maximum_frame) * (2 * index as u128 + 1);
+    let denominator = 2 * frame_count.max(1) as u128;
+    ((numerator + denominator / 2) / denominator) as u64
 }
 
 fn receive_capture(
@@ -448,12 +512,15 @@ fn write_contact_sheet(
     let active = effect_runtime.map_or(runtime.active, |status| status.active);
     let reason = effect_runtime.map_or(runtime.reason.as_str(), |status| status.reason.as_str());
     let manifest = format!(
-        "# Aestra visual capture\n\n- Frames: {}\n- Frame size: {} x {}\n- Contact sheet: {} columns x {} rows\n- Sampling: evenly spaced at frame centers across the effect duration\n- Requested backend: {:?}\n- Active backend: {}\n- Selection reason: {}\n- Adapter: {} ({}, {})\n- Driver: {}\n- Physical GPU particle capacity: {}\n- Configured GPU particle budget: {}\n- Effective GPU particle budget: {}\n",
+        "# Aestra visual capture\n\n- Frames: {}\n- Frame size: {} x {}\n- Contact sheet: {} columns x {} rows\n- Seed: `{:#018x}`\n- Sampling: exact {} Hz simulation frames {:?}\n- Requested backend: {:?}\n- Active backend: {}\n- Selection reason: {}\n- Adapter: {} ({}, {})\n- Driver: {}\n- Physical GPU particle capacity: {}\n- Configured GPU particle budget: {}\n- Effective GPU particle budget: {}\n",
         capture.frame_count,
         VIEW_WIDTH,
         VIEW_HEIGHT,
         columns,
         rows,
+        capture.seed,
+        DEFAULT_PLAYBACK_TICK_RATE,
+        capture.sampled_frames,
         runtime.requested,
         active,
         reason,
@@ -490,11 +557,13 @@ fn finish_capture(
             fs::write(
                 reference.join("visual-reference.md"),
                 format!(
-                    "# Aestra visual reference\n\n- Frames: {}\n- Frame size: {} x {}\n- Seed: `{:#018x}`\n- Scene: effect only, fixed camera and background\n- Sampling: evenly spaced frame centers\n- Backend: {}\n- Adapter: {} ({})\n",
+                    "# Aestra visual reference\n\n- Frames: {}\n- Frame size: {} x {}\n- Seed: `{:#018x}`\n- Scene: effect only, fixed camera and background\n- Sampling: exact {} Hz simulation frames {:?}\n- Backend: {}\n- Adapter: {} ({})\n",
                     capture.frame_count,
                     VIEW_WIDTH,
                     VIEW_HEIGHT,
-                    REGRESSION_SEED,
+                    capture.seed,
+                    DEFAULT_PLAYBACK_TICK_RATE,
+                    capture.sampled_frames,
                     active,
                     capabilities.adapter_name,
                     capabilities.backend,
@@ -517,5 +586,25 @@ fn finish_capture(
             );
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_sampling_selects_exact_evenly_spaced_frames() {
+        let frames = (0..4)
+            .map(|index| capture_frame(120, index, 4))
+            .collect::<Vec<_>>();
+        assert_eq!(frames, vec![15, 45, 75, 105]);
+    }
+
+    #[test]
+    fn viewer_seed_parser_supports_decimal_and_hex() {
+        assert_eq!(parse_seed("42").unwrap(), 42);
+        assert_eq!(parse_seed("0x2a").unwrap(), 42);
+        assert!(parse_seed("seed").is_err());
     }
 }

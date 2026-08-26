@@ -73,13 +73,13 @@ Open another effect:
 cargo run -p aestra-viewer -- --effect path/to/effect.aestra.ron
 ```
 
-Capture evenly spaced frames plus a single AI-friendly contact sheet:
+Capture evenly spaced, exact 60 Hz simulation frames plus a single AI-friendly contact sheet:
 
 ```powershell
 cargo run -p aestra-viewer -- --capture captures/prism-bloom --frames 9
 ```
 
-The capture directory receives numbered PNG frames, `contact-sheet.png`, and `capture-manifest.md`. In interactive mode, press `S` for a single screenshot.
+The capture directory receives numbered PNG frames, `contact-sheet.png`, and `capture-manifest.md`. The manifest records every sampled frame index and seed. In interactive mode, use Left/Right to step exact frames, `[`/`]` to change the seed, and `S` for a single screenshot. Pass `--seed <decimal-or-hex>` to reproduce a particular run.
 The manifest records the requested and selected backend, fallback reason, adapter,
 driver, physical capacity, and configured particle budget. Use `--backend
 auto|gpu|gpu-readback|cpu` to exercise a specific policy, or

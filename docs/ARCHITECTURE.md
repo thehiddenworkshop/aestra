@@ -49,6 +49,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Owns `CompiledEffect`, `EffectInstance`, particle layouts, and execution instructions.
 - Interprets compiled effects deterministically for a seed and time without Bevy.
+- Owns the fixed-step playback clock and frame checkpoint contract shared by games,
+  editor preview, viewer playback, and visual capture.
 - Resolves indexed, type-checked parameter overrides without recompiling an effect.
 - Defines the engine-independent contract that future CPU and GPU backends must preserve.
 
@@ -69,7 +71,7 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 ### `aestra-viewer`
 
 - Plays any valid `.aestra.ron` effect without opening the editor.
-- Captures evenly sampled frames across an effect lifetime.
+- Captures exact, evenly sampled 60 Hz frame indices across an effect lifetime.
 - Produces individual PNGs, a contact sheet, and a capture manifest for visual or AI review.
 - Runs deterministic, effect-only GPU regression captures against approved references,
   with tolerant foreground metrics and amplified difference images.

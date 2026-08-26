@@ -6,7 +6,8 @@ pub mod gpu;
 pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
 pub use aestra_core::*;
 pub use aestra_runtime::{
-    CompiledEffect, EffectInstance, ParameterError, ParticleSample, RuntimeValue,
+    ClockAdvance, CompiledEffect, DEFAULT_PLAYBACK_TICK_RATE, EffectInstance, ParameterError,
+    ParticleSample, PlaybackCheckpoint, PlaybackClock, RuntimeValue,
 };
 pub use capabilities::{
     ActiveBackend, AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRuntimeStatus,
@@ -81,6 +82,7 @@ pub struct EffectPlayer {
     pub instance: EffectInstance,
     pub speed: f32,
     pub playing: bool,
+    clock: PlaybackClock,
     samples: Vec<ParticleSample>,
     gpu_samples: Vec<ParticleSample>,
 }
@@ -100,6 +102,7 @@ impl EffectPlayer {
             instance: EffectInstance::new(effect),
             speed: 1.0,
             playing: true,
+            clock: PlaybackClock::default(),
             samples: Vec::new(),
             gpu_samples: Vec::new(),
         }
@@ -113,13 +116,59 @@ impl EffectPlayer {
         self.instance.time()
     }
 
+    pub fn frame(&self) -> u64 {
+        self.clock.frame()
+    }
+
+    pub fn tick_rate(&self) -> u32 {
+        self.clock.tick_rate()
+    }
+
     pub fn restart(&mut self) {
+        self.clock.restart();
         self.instance.restart();
         self.playing = true;
     }
 
     pub fn seek(&mut self, time: f32) {
-        self.instance.seek(time);
+        let duration = self.effect().duration;
+        self.clock.seek_seconds(time, duration);
+        self.sync_instance_time();
+    }
+
+    pub fn seek_frame(&mut self, frame: u64) {
+        let duration = self.effect().duration;
+        self.clock.seek_frame(frame, duration);
+        self.sync_instance_time();
+    }
+
+    pub fn step_forward(&mut self) {
+        let duration = self.effect().duration;
+        self.clock.step_forward(duration);
+        self.sync_instance_time();
+        self.playing = false;
+    }
+
+    pub fn step_back(&mut self) {
+        let duration = self.effect().duration;
+        self.clock.step_back(duration);
+        self.sync_instance_time();
+        self.playing = false;
+    }
+
+    pub fn set_seed(&mut self, seed: u64) {
+        self.instance.set_seed(seed);
+    }
+
+    pub fn checkpoint(&self) -> PlaybackCheckpoint {
+        self.clock.checkpoint()
+    }
+
+    pub fn restore_checkpoint(&mut self, checkpoint: PlaybackCheckpoint) {
+        let duration = self.effect().duration;
+        self.clock.restore(checkpoint, duration);
+        self.sync_instance_time();
+        self.playing = false;
     }
 
     pub fn set_parameter(&mut self, id: ParameterId, value: Value) -> Result<(), ParameterError> {
@@ -128,6 +177,21 @@ impl EffectPlayer {
 
     pub fn clear_parameter(&mut self, id: ParameterId) -> Result<(), ParameterError> {
         self.instance.clear_parameter(id)
+    }
+
+    fn advance_clock(&mut self, delta_seconds: f32) -> ClockAdvance {
+        let duration = self.effect().duration;
+        let looping = self.effect().looping;
+        let result = self
+            .clock
+            .advance(delta_seconds, self.speed, duration, looping);
+        self.sync_instance_time();
+        result
+    }
+
+    fn sync_instance_time(&mut self) {
+        let duration = self.instance.effect().duration;
+        self.instance.seek(self.clock.time(duration));
     }
 }
 
@@ -205,9 +269,8 @@ fn play_effects(
 ) {
     for (mut player, children, runtime) in &mut players {
         if player.playing {
-            let delta = time.delta_secs() * player.speed;
-            player.instance.advance(delta);
-            if !player.effect().looping && player.elapsed() >= player.effect().duration {
+            let advance = player.advance_clock(time.delta_secs());
+            if advance.reached_end {
                 player.playing = false;
             }
         }
@@ -308,5 +371,51 @@ mod tests {
             player.instance.parameter(parameter_id),
             Some(RuntimeValue::Scalar(40.0))
         ));
+    }
+
+    #[test]
+    fn fixed_step_players_match_across_render_delta_sequences() {
+        let mut effect = EffectAsset::new("Deterministic", 2.0);
+        effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+        let mut fine = EffectPlayer::new(&effect);
+        let mut coarse = EffectPlayer::new(&effect);
+        fine.set_seed(42);
+        coarse.set_seed(42);
+
+        for _ in 0..120 {
+            fine.advance_clock(1.0 / 120.0);
+        }
+        for _ in 0..10 {
+            coarse.advance_clock(0.1);
+        }
+
+        assert_eq!(fine.frame(), 60);
+        assert_eq!(fine.frame(), coarse.frame());
+        assert_eq!(fine.elapsed(), coarse.elapsed());
+        let mut fine_samples = Vec::new();
+        let mut coarse_samples = Vec::new();
+        fine.instance.evaluate(&mut fine_samples);
+        coarse.instance.evaluate(&mut coarse_samples);
+        assert_eq!(fine_samples, coarse_samples);
+    }
+
+    #[test]
+    fn frame_controls_pause_and_reproduce_exact_time() {
+        let mut effect = EffectAsset::new("Frame Controls", 2.0);
+        effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+        let mut player = EffectPlayer::new(&effect);
+        player.seek_frame(30);
+        assert_eq!(player.elapsed(), 0.5);
+        player.step_forward();
+        assert_eq!(player.frame(), 31);
+        assert!(!player.playing);
+        let checkpoint = player.checkpoint();
+        player.step_back();
+        assert_eq!(player.frame(), 30);
+        player.restore_checkpoint(checkpoint);
+        assert_eq!(player.frame(), 31);
+        player.restart();
+        assert_eq!(player.frame(), 0);
+        assert_eq!(player.elapsed(), 0.0);
     }
 }

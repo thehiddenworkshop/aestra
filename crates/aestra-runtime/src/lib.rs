@@ -425,6 +425,140 @@ pub struct ParticleSample {
     pub normalized_age: f32,
 }
 
+pub const DEFAULT_PLAYBACK_TICK_RATE: u32 = 60;
+
+/// Exact timeline position shared by editor, viewer, and game playback.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlaybackClock {
+    tick_rate: u32,
+    frame: u64,
+    accumulator: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlaybackCheckpoint {
+    pub tick_rate: u32,
+    pub frame: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ClockAdvance {
+    pub ticks: u64,
+    pub reached_end: bool,
+}
+
+impl Default for PlaybackClock {
+    fn default() -> Self {
+        Self::new(DEFAULT_PLAYBACK_TICK_RATE)
+    }
+}
+
+impl PlaybackClock {
+    pub fn new(tick_rate: u32) -> Self {
+        Self {
+            tick_rate: tick_rate.max(1),
+            frame: 0,
+            accumulator: 0.0,
+        }
+    }
+
+    pub fn tick_rate(&self) -> u32 {
+        self.tick_rate
+    }
+
+    pub fn frame(&self) -> u64 {
+        self.frame
+    }
+
+    pub fn maximum_frame(&self, duration: f32) -> u64 {
+        (f64::from(duration.max(0.0)) * f64::from(self.tick_rate)).ceil() as u64
+    }
+
+    pub fn time(&self, duration: f32) -> f32 {
+        self.time_for_frame(self.frame, duration)
+    }
+
+    pub fn time_for_frame(&self, frame: u64, duration: f32) -> f32 {
+        (frame as f64 / f64::from(self.tick_rate)).min(f64::from(duration.max(0.0))) as f32
+    }
+
+    pub fn restart(&mut self) {
+        self.frame = 0;
+        self.accumulator = 0.0;
+    }
+
+    pub fn seek_frame(&mut self, frame: u64, duration: f32) {
+        self.frame = frame.min(self.maximum_frame(duration));
+        self.accumulator = 0.0;
+    }
+
+    pub fn seek_seconds(&mut self, time: f32, duration: f32) {
+        let time = time.clamp(0.0, duration.max(0.0));
+        let frame = (f64::from(time) * f64::from(self.tick_rate)).round() as u64;
+        self.seek_frame(frame, duration);
+    }
+
+    pub fn step_forward(&mut self, duration: f32) {
+        self.seek_frame(self.frame.saturating_add(1), duration);
+    }
+
+    pub fn step_back(&mut self, duration: f32) {
+        self.seek_frame(self.frame.saturating_sub(1), duration);
+    }
+
+    pub fn advance(
+        &mut self,
+        delta_seconds: f32,
+        speed: f32,
+        duration: f32,
+        looping: bool,
+    ) -> ClockAdvance {
+        let scaled_delta = f64::from(delta_seconds.max(0.0)) * f64::from(speed.max(0.0));
+        if !scaled_delta.is_finite() || scaled_delta == 0.0 {
+            return ClockAdvance::default();
+        }
+        let tick_duration = 1.0 / f64::from(self.tick_rate);
+        self.accumulator += scaled_delta;
+        let ticks = ((self.accumulator + tick_duration * 1.0e-9) / tick_duration).floor() as u64;
+        if ticks == 0 {
+            return ClockAdvance::default();
+        }
+        self.accumulator = (self.accumulator - ticks as f64 * tick_duration).max(0.0);
+        let maximum = self.maximum_frame(duration);
+        if looping {
+            self.frame = if maximum == 0 {
+                0
+            } else {
+                self.frame.wrapping_add(ticks) % maximum
+            };
+            ClockAdvance {
+                ticks,
+                reached_end: false,
+            }
+        } else {
+            let next = self.frame.saturating_add(ticks);
+            self.frame = next.min(maximum);
+            let reached_end = next >= maximum;
+            if reached_end {
+                self.accumulator = 0.0;
+            }
+            ClockAdvance { ticks, reached_end }
+        }
+    }
+
+    pub fn checkpoint(&self) -> PlaybackCheckpoint {
+        PlaybackCheckpoint {
+            tick_rate: self.tick_rate,
+            frame: self.frame,
+        }
+    }
+
+    pub fn restore(&mut self, checkpoint: PlaybackCheckpoint, duration: f32) {
+        self.tick_rate = checkpoint.tick_rate.max(1);
+        self.seek_frame(checkpoint.frame, duration);
+    }
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ParameterError {
     #[error("compiled effect has no runtime parameter {0}")]
@@ -795,4 +929,52 @@ fn hash01(index: u32, channel: u32, seed: u64) -> f32 {
     value = value.wrapping_mul(0x846C_A68B);
     value ^= value >> 16;
     (value as f64 / u32::MAX as f64) as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixed_clock_is_independent_of_render_delta_partitioning() {
+        let mut fine = PlaybackClock::default();
+        let mut coarse = PlaybackClock::default();
+        for _ in 0..120 {
+            fine.advance(1.0 / 120.0, 1.0, 4.0, false);
+        }
+        for _ in 0..10 {
+            coarse.advance(0.1, 1.0, 4.0, false);
+        }
+        assert_eq!(fine.frame(), 60);
+        assert_eq!(fine.frame(), coarse.frame());
+        assert_eq!(fine.time(4.0), 1.0);
+    }
+
+    #[test]
+    fn clock_steps_seeks_and_restores_exact_frames() {
+        let mut clock = PlaybackClock::default();
+        clock.seek_seconds(0.126, 2.0);
+        assert_eq!(clock.frame(), 8);
+        assert_eq!(clock.time(2.0), 8.0 / 60.0);
+        let checkpoint = clock.checkpoint();
+        clock.step_forward(2.0);
+        clock.step_back(2.0);
+        assert_eq!(clock.frame(), checkpoint.frame);
+        clock.restart();
+        clock.restore(checkpoint, 2.0);
+        assert_eq!(clock.frame(), 8);
+    }
+
+    #[test]
+    fn non_looping_clock_stops_while_looping_clock_wraps() {
+        let mut stopped = PlaybackClock::default();
+        let result = stopped.advance(2.0, 1.0, 1.0, false);
+        assert_eq!(stopped.frame(), 60);
+        assert!(result.reached_end);
+
+        let mut looping = PlaybackClock::default();
+        let result = looping.advance(1.25, 1.0, 1.0, true);
+        assert_eq!(looping.frame(), 15);
+        assert!(!result.reached_end);
+    }
 }

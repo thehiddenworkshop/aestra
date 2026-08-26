@@ -24,9 +24,11 @@ architecture vision; this file is the shorter delivery plan.
   dedicated curve/gradient authoring with draggable keys and fine-grained semantic
   commands. Transactions can now be executed against a temporary document, previewed,
   reviewed as semantic changes with compiler diagnostics, and applied or discarded as
-  one history entry. The remaining M5 work is the broader diagnostics/generated-code/
-  profiler tab set, viewport gizmos, recovery, and deterministic frame-step/scrubbing
-  infrastructure.
+  one history entry. A shared fixed-step playback clock now gives the runtime, editor,
+  and viewer exact 60 Hz frame addressing, deterministic seed controls, restart/frame
+  stepping, tick-snapped scrubbing, and frame-addressed visual captures. The remaining
+  M5 work is checkpoint/re-simulation for future stateful effects, the broader
+  diagnostics/generated-code/profiler tab set, viewport gizmos, and recovery.
 
 ## 1. Assessment of the current prototype
 

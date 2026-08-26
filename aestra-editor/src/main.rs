@@ -75,6 +75,8 @@ enum EditorAction {
     OpenCatalog(usize),
     TogglePlayback,
     Restart,
+    StepFrame(i8),
+    AdjustPreviewSeed(i8),
     Save,
     SaveAs,
     Undo,
@@ -1932,12 +1934,28 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                         },
                         TextColor(theme::ACCENT),
                     ));
+                    mini_button(header, "<", EditorAction::StepFrame(-1));
+                    mini_button(header, ">", EditorAction::StepFrame(1));
                     header.spawn(Node {
                         flex_grow: 1.0,
                         ..default()
                     });
                     header.spawn((
-                        Text::new(format!("Duration {:.2}s", session.effect.duration)),
+                        Text::new(format!(
+                            "{} Hz  ·  Seed {:016x}",
+                            session.clock.tick_rate(),
+                            session.preview_seed
+                        )),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_FAINT),
+                    ));
+                    mini_button(header, "-", EditorAction::AdjustPreviewSeed(-1));
+                    mini_button(header, "+", EditorAction::AdjustPreviewSeed(1));
+                    header.spawn((
+                        Text::new(format!("Duration {:.2}s", session.playback_duration())),
                         TextFont {
                             font_size: FontSize::Px(10.0),
                             ..default()
@@ -1999,7 +2017,7 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                         BackgroundColor(theme::TIMELINE_BG),
                     ))
                     .with_children(|tracks| {
-                        spawn_ruler(tracks, session.effect.duration);
+                        spawn_ruler(tracks, session.playback_duration());
                         for (index, layer) in session.effect.emitters.iter().enumerate() {
                             tracks
                                 .spawn(Node {
@@ -2010,8 +2028,9 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                                     ..default()
                                 })
                                 .with_children(|track| {
-                                    let start = layer.start_time / session.effect.duration * 100.0;
-                                    let width = layer.duration / session.effect.duration * 100.0;
+                                    let duration = session.playback_duration();
+                                    let start = layer.start_time / duration * 100.0;
+                                    let width = layer.duration / duration * 100.0;
                                     track.spawn((
                                         Node {
                                             position_type: PositionType::Absolute,
@@ -3183,6 +3202,12 @@ fn keyboard_shortcuts(
     if keys.just_pressed(KeyCode::KeyR) {
         session.restart();
     }
+    if keys.just_pressed(KeyCode::ArrowLeft) {
+        session.step_frame(-1);
+    }
+    if keys.just_pressed(KeyCode::ArrowRight) {
+        session.step_frame(1);
+    }
     if keys.just_pressed(KeyCode::KeyG) && !control {
         menu.show_grid = !menu.show_grid;
     }
@@ -3254,6 +3279,10 @@ fn handle_buttons(
                     }
                     EditorAction::TogglePlayback => session.playing = !session.playing,
                     EditorAction::Restart => session.restart(),
+                    EditorAction::StepFrame(direction) => session.step_frame(direction),
+                    EditorAction::AdjustPreviewSeed(direction) => {
+                        session.adjust_preview_seed(direction);
+                    }
                     EditorAction::Save => save_session(&mut session, false),
                     EditorAction::SaveAs => save_session(&mut session, true),
                     EditorAction::Undo => session.undo(),
@@ -3700,9 +3729,8 @@ fn scrub_timeline(
         let Some(position) = cursor.normalized else {
             continue;
         };
-        session.time = position.x.clamp(0.0, 1.0) * session.effect.duration;
-        session.playing = false;
-        session.status = format!("Scrubbed to {:.3}s", session.time);
+        let time = position.x.clamp(0.0, 1.0) * session.playback_duration();
+        session.seek_time(time);
     }
 }
 
@@ -3780,25 +3808,14 @@ fn rebuild_editor_ui(
 }
 
 fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
-    if !session.playing {
-        return;
-    }
-    session.time += time.delta_secs() * session.speed;
-    if session.time > session.effect.duration {
-        if session.effect.looping {
-            session.time = session.time.rem_euclid(session.effect.duration);
-        } else {
-            session.time = session.effect.duration;
-            session.playing = false;
-        }
-    }
+    session.advance_playback(time.delta_secs());
 }
 
 fn update_preview(
     mut session: ResMut<EditorSession>,
     mut particles: Query<(&PreviewParticle, &mut Node, &mut BackgroundColor)>,
 ) {
-    let time = session.time;
+    let time = session.time();
     let mut samples = std::mem::take(&mut session.samples);
     if let Some(preview) = &mut session.preview {
         preview.seek(time);
@@ -3848,8 +3865,11 @@ fn update_editor_labels(
             text.0 = if session.playing { "Pause" } else { "Play" }.into();
         } else if time.is_some() {
             text.0 = format!(
-                "{:02}:{:06.3}  /  00:{:06.3}",
-                0, session.time, session.effect.duration
+                "F{:05}  ·  {:02}:{:06.3}  /  00:{:06.3}",
+                session.frame(),
+                0,
+                session.time(),
+                session.playback_duration()
             );
         } else if status.is_some() {
             text.0 = format!(
@@ -3867,7 +3887,7 @@ fn update_editor_labels(
 
 fn update_playhead(session: Res<EditorSession>, mut playhead: Query<&mut Node, With<Playhead>>) {
     if let Ok(mut node) = playhead.single_mut() {
-        node.left = Val::Percent(session.time / session.effect.duration * 100.0);
+        node.left = Val::Percent(session.time() / session.playback_duration() * 100.0);
     }
 }
 

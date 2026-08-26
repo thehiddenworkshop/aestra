@@ -7,7 +7,7 @@ use aestra_bevy::{
     RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
-use aestra_runtime::EffectInstance;
+use aestra_runtime::{EffectInstance, PlaybackClock};
 use bevy::prelude::Resource;
 use std::{
     path::{Path, PathBuf},
@@ -38,7 +38,8 @@ pub(crate) struct EditorSession {
     pub diagnostics: ValidationReport,
     pub last_diff: EffectDiff,
     pub pending_change: Option<PendingChange>,
-    pub time: f32,
+    pub clock: PlaybackClock,
+    pub preview_seed: u64,
     pub playing: bool,
     pub speed: f32,
     pub dirty: bool,
@@ -55,8 +56,9 @@ impl EditorSession {
             .expect("the bundled Prism Bloom sample must always be valid");
         let selection = Selection::for_effect(&effect);
         let diagnostics = effect.validation_report();
-        let preview =
-            compile_preview(&effect).expect("the bundled Prism Bloom sample must always compile");
+        let preview_seed = 0;
+        let preview = compile_preview(&effect, preview_seed)
+            .expect("the bundled Prism Bloom sample must always compile");
         Self {
             effect,
             source_path: Some(path.into()),
@@ -65,7 +67,8 @@ impl EditorSession {
             diagnostics,
             last_diff: EffectDiff::default(),
             pending_change: None,
-            time: 0.0,
+            clock: PlaybackClock::default(),
+            preview_seed,
             playing: true,
             speed: 1.0,
             dirty: false,
@@ -78,24 +81,98 @@ impl EditorSession {
     }
 
     pub fn restart(&mut self) {
-        self.time = 0.0;
+        self.clock.restart();
         if let Some(preview) = &mut self.preview {
             preview.restart();
+            preview.set_seed(self.preview_seed);
         }
         self.playing = true;
         self.status = "Choreography restarted".into();
     }
 
+    pub fn time(&self) -> f32 {
+        self.clock.time(self.playback_duration())
+    }
+
+    pub fn frame(&self) -> u64 {
+        self.clock.frame()
+    }
+
+    pub fn playback_duration(&self) -> f32 {
+        self.pending_change
+            .as_ref()
+            .filter(|pending| pending.can_apply)
+            .map_or(self.effect.duration, |pending| {
+                pending.preview.candidate().duration
+            })
+    }
+
+    fn playback_looping(&self) -> bool {
+        self.pending_change
+            .as_ref()
+            .filter(|pending| pending.can_apply)
+            .map_or(self.effect.looping, |pending| {
+                pending.preview.candidate().looping
+            })
+    }
+
+    pub fn seek_time(&mut self, time: f32) {
+        let duration = self.playback_duration();
+        self.clock.seek_seconds(time, duration);
+        self.playing = false;
+        self.status = format!("Scrubbed to frame {} ({:.3}s)", self.frame(), self.time());
+    }
+
+    pub fn step_frame(&mut self, direction: i8) {
+        let duration = self.playback_duration();
+        if direction < 0 {
+            self.clock.step_back(duration);
+        } else {
+            self.clock.step_forward(duration);
+        }
+        self.playing = false;
+        self.status = format!("Frame {} · {:.3}s", self.frame(), self.time());
+    }
+
+    pub fn adjust_preview_seed(&mut self, direction: i8) {
+        self.preview_seed = if direction < 0 {
+            self.preview_seed.wrapping_sub(1)
+        } else {
+            self.preview_seed.wrapping_add(1)
+        };
+        if let Some(preview) = &mut self.preview {
+            preview.set_seed(self.preview_seed);
+        }
+        self.status = format!("Preview seed {:#018x}", self.preview_seed);
+        self.ui_revision += 1;
+    }
+
+    pub fn advance_playback(&mut self, delta_seconds: f32) {
+        if !self.playing {
+            return;
+        }
+        let duration = self.playback_duration();
+        let looping = self.playback_looping();
+        let result = self
+            .clock
+            .advance(delta_seconds, self.speed, duration, looping);
+        if result.reached_end {
+            self.playing = false;
+        }
+    }
+
     pub fn new_effect(&mut self) {
         self.effect = blank_effect();
-        self.preview = Some(compile_preview(&self.effect).expect("blank effect must compile"));
+        self.preview = Some(
+            compile_preview(&self.effect, self.preview_seed).expect("blank effect must compile"),
+        );
         self.source_path = None;
         self.selection = Selection::for_effect(&self.effect);
         self.locks = LockState::default();
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
         self.pending_change = None;
-        self.time = 0.0;
+        self.clock.restart();
         self.playing = false;
         self.dirty = true;
         self.history.clear();
@@ -106,7 +183,7 @@ impl EditorSession {
     pub fn open(&mut self, path: impl AsRef<Path>) -> Result<(), SessionError> {
         let path = path.as_ref();
         let effect = EffectAsset::load_ron(path)?;
-        let preview = compile_preview(&effect)?;
+        let preview = compile_preview(&effect, self.preview_seed)?;
         self.effect = effect;
         self.preview = Some(preview);
         self.source_path = Some(path.to_owned());
@@ -115,7 +192,7 @@ impl EditorSession {
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
         self.pending_change = None;
-        self.time = 0.0;
+        self.clock.restart();
         self.playing = false;
         self.dirty = false;
         self.history.clear();
@@ -166,7 +243,7 @@ impl EditorSession {
                 self.last_diff = diff;
                 self.refresh_preview();
                 self.selection.repair(&self.effect);
-                self.time = self.time.clamp(0.0, self.effect.duration);
+                self.clamp_clock();
                 self.dirty = true;
                 self.status = label;
                 if rebuild_ui {
@@ -193,15 +270,16 @@ impl EditorSession {
                 return false;
             }
         };
-        let (diagnostics, can_apply) = match compile_preview(preview.candidate()) {
+        let (diagnostics, can_apply) = match compile_preview(preview.candidate(), self.preview_seed)
+        {
             Ok(runtime_preview) => {
                 self.preview = Some(runtime_preview);
                 self.samples.clear();
-                self.time = 0.0;
+                self.clock.restart();
                 (preview.candidate().validation_report(), true)
             }
             Err(error) => {
-                self.preview = compile_preview(&self.effect).ok();
+                self.preview = compile_preview(&self.effect, self.preview_seed).ok();
                 (error.report().clone(), false)
             }
         };
@@ -240,7 +318,7 @@ impl EditorSession {
                 self.last_diff = diff;
                 self.selection.repair(&self.effect);
                 self.refresh_preview();
-                self.time = self.time.clamp(0.0, self.effect.duration);
+                self.clamp_clock();
                 self.dirty = true;
                 self.status = format!("Applied {label}");
                 self.ui_revision += 1;
@@ -261,7 +339,7 @@ impl EditorSession {
         };
         let label = pending.preview.transaction().label.clone();
         self.refresh_preview();
-        self.time = self.time.clamp(0.0, self.effect.duration);
+        self.clamp_clock();
         self.status = format!("Discarded {label}");
         self.ui_revision += 1;
         true
@@ -276,7 +354,7 @@ impl EditorSession {
                 self.selection.repair(&self.effect);
                 self.refresh_preview();
                 self.last_diff = result.diff;
-                self.time = self.time.clamp(0.0, self.effect.duration);
+                self.clamp_clock();
                 self.status = format!("Undid {}", result.label);
                 self.dirty = true;
                 self.ui_revision += 1;
@@ -295,7 +373,7 @@ impl EditorSession {
                 self.selection.repair(&self.effect);
                 self.refresh_preview();
                 self.last_diff = result.diff;
-                self.time = self.time.clamp(0.0, self.effect.duration);
+                self.clamp_clock();
                 self.status = format!("Redid {}", result.label);
                 self.dirty = true;
                 self.ui_revision += 1;
@@ -725,8 +803,13 @@ impl EditorSession {
         self.ui_revision += 1;
     }
 
+    fn clamp_clock(&mut self) {
+        self.clock
+            .seek_frame(self.clock.frame(), self.effect.duration);
+    }
+
     fn refresh_preview(&mut self) {
-        match compile_preview(&self.effect) {
+        match compile_preview(&self.effect, self.preview_seed) {
             Ok(preview) => {
                 self.preview = Some(preview);
                 self.diagnostics = self.effect.validation_report();
@@ -740,9 +823,9 @@ impl EditorSession {
     }
 }
 
-fn compile_preview(effect: &EffectAsset) -> Result<EffectInstance, CompileError> {
+fn compile_preview(effect: &EffectAsset, seed: u64) -> Result<EffectInstance, CompileError> {
     let compiled = EffectCompiler::default().compile(effect)?;
-    Ok(EffectInstance::new(Arc::new(compiled)))
+    Ok(EffectInstance::with_seed(Arc::new(compiled), seed))
 }
 
 pub(crate) fn blank_effect() -> EffectAsset {
@@ -964,6 +1047,35 @@ mod tests {
     }
 
     #[test]
+    fn editor_frame_controls_are_seeded_and_reproducible() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        session.restart();
+        for _ in 0..120 {
+            session.advance_playback(1.0 / 120.0);
+        }
+        assert_eq!(session.frame(), 60);
+        assert_eq!(session.time(), 1.0);
+        let first = preview_samples(&mut session);
+
+        session.restart();
+        session.seek_time(1.0);
+        assert_eq!(session.frame(), 60);
+        assert_eq!(preview_samples(&mut session), first);
+
+        session.step_frame(-1);
+        assert_eq!(session.frame(), 59);
+        assert!(!session.playing);
+        let before_seed_change = preview_samples(&mut session);
+        let seed = session.preview_seed;
+        session.adjust_preview_seed(1);
+        assert_eq!(session.preview_seed, seed + 1);
+        assert_ne!(preview_samples(&mut session), before_seed_change);
+    }
+
+    #[test]
     fn selection_uses_semantic_emitter_id() {
         let mut session = EditorSession::from_embedded_sample(
             include_str!("../../assets/effects/prism_bloom.aestra.ron"),
@@ -989,5 +1101,14 @@ mod tests {
                 .expect("editor-authored spawn rate is constant"),
             _ => panic!("first emitter instruction must be emission"),
         }
+    }
+
+    fn preview_samples(session: &mut EditorSession) -> Vec<aestra_bevy::ParticleSample> {
+        let time = session.time();
+        let preview = session.preview.as_mut().unwrap();
+        preview.seek(time);
+        let mut samples = Vec::new();
+        preview.evaluate(&mut samples);
+        samples
     }
 }
