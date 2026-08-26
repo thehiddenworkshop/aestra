@@ -107,8 +107,19 @@ dependencies = [
 name = "aestra-bevy"
 version = "0.1.0"
 dependencies = [
+ "aestra-compiler",
  "aestra-core",
+ "aestra-runtime",
  "bevy",
+]
+
+[[package]]
+name = "aestra-compiler"
+version = "0.1.0"
+dependencies = [
+ "aestra-core",
+ "aestra-runtime",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -127,8 +138,18 @@ version = "0.1.0"
 dependencies = [
  "aestra-authoring",
  "aestra-bevy",
+ "aestra-compiler",
+ "aestra-runtime",
  "bevy",
  "rfd",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "aestra-runtime"
+version = "0.1.0"
+dependencies = [
+ "aestra-core",
 ]
 
 [[package]]

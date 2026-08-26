@@ -10,5 +10,8 @@ repository.workspace = true
 [dependencies]
 aestra-authoring = { path = "../crates/aestra-authoring" }
 aestra-bevy = { path = "../aestra-bevy" }
+aestra-compiler = { path = "../crates/aestra-compiler" }
+aestra-runtime = { path = "../crates/aestra-runtime" }
 bevy.workspace = true
 rfd = "0.15"
+thiserror.workspace = true

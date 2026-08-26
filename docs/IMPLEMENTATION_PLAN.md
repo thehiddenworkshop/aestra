@@ -11,7 +11,9 @@ architecture vision; this file is the shorter delivery plan.
 - M0 reference behavior and architecture decisions: complete.
 - M1 semantic core and format v2 foundation: complete for the initial module set.
 - M2 deterministic authoring operations: complete for current editor operations.
-- Next: M3 module registry, compiler frontend, and CPU runtime extraction.
+- M3 module registry, compiler frontend, and CPU runtime: initial vertical slice complete.
+- Next: expand M3 with parameter bindings, general typed expressions, curve compilation,
+  constant folding, and dead-attribute elimination before the first GPU backend.
 
 ## 1. Assessment of the current prototype
 

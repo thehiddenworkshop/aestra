@@ -6,6 +6,8 @@ members = [
     "aestra-viewer",
     "crates/aestra-core",
     "crates/aestra-authoring",
+    "crates/aestra-compiler",
+    "crates/aestra-runtime",
 ]
 
 [workspace.package]

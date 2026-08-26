@@ -7,6 +7,8 @@ The first vertical slice already includes:
 - a complete editor shell built with Bevy UI, including File/Edit/View/Help menus;
 - project effect discovery, native New/Open/Save/Save As workflows, and unsaved-change protection;
 - command-based undo/redo for emitter, timing, curve, gradient, and layer edits;
+- a discoverable built-in module registry and typed compiler execution plans;
+- immutable compiled effects and seeded deterministic runtime instances;
 - an effect library, layer stack, viewport, inspector, interactive timeline, transport, and status bar;
 - deterministic emitter evaluation with point, circle, ring, and cone shapes;
 - ranges, smooth curves, color gradients, drag, gravity, turbulence, and layer timing;
@@ -48,10 +50,12 @@ aestra/
 ├── assets/effects/          Authored `.aestra.ron` choreography assets
 └── crates/
     ├── aestra-core/         Engine-independent semantic effect model
-    └── aestra-authoring/    Commands, transactions, history, locks, and diffs
+    ├── aestra-authoring/    Commands, transactions, history, locks, and diffs
+    ├── aestra-compiler/     Module registry, validation, and typed lowering
+    └── aestra-runtime/      Compiled artifacts and deterministic CPU execution
 ```
 
-The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns the format-v2 semantic model, typed IDs, persistence, and structured validation. `aestra-authoring` owns UI-independent commands, atomic transactions, inverse-command history, semantic selection, locks, and diffs. `aestra-bevy` adapts the model to Bevy playback, and both binaries use the same integration path.
+The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v2, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, and `aestra-runtime` owns immutable execution plans and instance state. `aestra-bevy` adapts compiled instances to Bevy playback, and both binaries use the same compile/runtime path.
 
 ## Viewer and visual analysis
 
@@ -87,7 +91,7 @@ fn main() {
         .add_systems(Startup, |mut commands: Commands| {
             let effect = EffectAsset::load_ron("assets/effects/prism_bloom.aestra.ron")
                 .expect("valid effect");
-            commands.spawn(EffectPlayer::new(effect));
+            commands.spawn(EffectPlayer::new(&effect));
             commands.spawn(Camera2d);
         })
         .run();
@@ -104,6 +108,6 @@ cargo test --workspace
 
 The editor round-trip tests create a new multi-emitter effect, save it, and load it through the shared semantic model used by the viewer and game plugin.
 
-The current runtime is a deterministic CPU reference using pooled Bevy sprites. It establishes authoring semantics and makes the plugin usable immediately. A future GPU backend can preserve the same `AestraPlugin` / `EffectPlayer` integration surface.
+The current runtime interprets immutable compiled plans deterministically on the CPU and presents samples through pooled Bevy sprites. It is the conformance oracle for the future GPU backend, which can preserve the same `AestraPlugin` / `EffectPlayer` integration surface.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the product architecture and phased roadmap.

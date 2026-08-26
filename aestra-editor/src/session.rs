@@ -6,8 +6,22 @@ use aestra_bevy::{
     AssetError, EffectAsset, Emitter, Gradient, MODULE_APPEARANCE, MODULE_EMISSION,
     MODULE_INITIALIZE, ScalarRange, ValidationReport, Value,
 };
+use aestra_compiler::{CompileError, EffectCompiler};
+use aestra_runtime::EffectInstance;
 use bevy::prelude::Resource;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub(crate) enum SessionError {
+    #[error(transparent)]
+    Asset(#[from] AssetError),
+    #[error(transparent)]
+    Compile(#[from] CompileError),
+}
 
 #[derive(Resource)]
 pub(crate) struct EditorSession {
@@ -23,6 +37,7 @@ pub(crate) struct EditorSession {
     pub dirty: bool,
     pub status: String,
     pub samples: Vec<aestra_bevy::ParticleSample>,
+    pub preview: Option<EffectInstance>,
     pub ui_revision: u64,
     history: CommandHistory,
 }
@@ -33,6 +48,8 @@ impl EditorSession {
             .expect("the bundled Prism Bloom sample must always be valid");
         let selection = Selection::for_effect(&effect);
         let diagnostics = effect.validation_report();
+        let preview =
+            compile_preview(&effect).expect("the bundled Prism Bloom sample must always compile");
         Self {
             effect,
             source_path: Some(path.into()),
@@ -46,6 +63,7 @@ impl EditorSession {
             dirty: false,
             status: "Previewing embedded Prism Bloom".into(),
             samples: Vec::with_capacity(384),
+            preview: Some(preview),
             ui_revision: 0,
             history: CommandHistory::default(),
         }
@@ -53,12 +71,16 @@ impl EditorSession {
 
     pub fn restart(&mut self) {
         self.time = 0.0;
+        if let Some(preview) = &mut self.preview {
+            preview.restart();
+        }
         self.playing = true;
         self.status = "Choreography restarted".into();
     }
 
     pub fn new_effect(&mut self) {
         self.effect = blank_effect();
+        self.preview = Some(compile_preview(&self.effect).expect("blank effect must compile"));
         self.source_path = None;
         self.selection = Selection::for_effect(&self.effect);
         self.locks = LockState::default();
@@ -72,9 +94,12 @@ impl EditorSession {
         self.ui_revision += 1;
     }
 
-    pub fn open(&mut self, path: impl AsRef<Path>) -> Result<(), AssetError> {
+    pub fn open(&mut self, path: impl AsRef<Path>) -> Result<(), SessionError> {
         let path = path.as_ref();
-        self.effect = EffectAsset::load_ron(path)?;
+        let effect = EffectAsset::load_ron(path)?;
+        let preview = compile_preview(&effect)?;
+        self.effect = effect;
+        self.preview = Some(preview);
         self.source_path = Some(path.to_owned());
         self.selection = Selection::for_effect(&self.effect);
         self.locks = LockState::default();
@@ -128,7 +153,7 @@ impl EditorSession {
         {
             Ok(diff) => {
                 self.last_diff = diff;
-                self.diagnostics = self.effect.validation_report();
+                self.refresh_preview();
                 self.selection.repair(&self.effect);
                 self.time = self.time.clamp(0.0, self.effect.duration);
                 self.dirty = true;
@@ -149,7 +174,7 @@ impl EditorSession {
         match self.history.undo(&mut self.effect) {
             Ok(Some(result)) => {
                 self.selection.repair(&self.effect);
-                self.diagnostics = self.effect.validation_report();
+                self.refresh_preview();
                 self.last_diff = result.diff;
                 self.time = self.time.clamp(0.0, self.effect.duration);
                 self.status = format!("Undid {}", result.label);
@@ -165,7 +190,7 @@ impl EditorSession {
         match self.history.redo(&mut self.effect) {
             Ok(Some(result)) => {
                 self.selection.repair(&self.effect);
-                self.diagnostics = self.effect.validation_report();
+                self.refresh_preview();
                 self.last_diff = result.diff;
                 self.time = self.time.clamp(0.0, self.effect.duration);
                 self.status = format!("Redid {}", result.label);
@@ -433,6 +458,25 @@ impl EditorSession {
         self.status = format!("{prefix}: {error}");
         self.ui_revision += 1;
     }
+
+    fn refresh_preview(&mut self) {
+        match compile_preview(&self.effect) {
+            Ok(preview) => {
+                self.preview = Some(preview);
+                self.diagnostics = self.effect.validation_report();
+            }
+            Err(error) => {
+                self.preview = None;
+                self.diagnostics = error.report().clone();
+                self.samples.clear();
+            }
+        }
+    }
+}
+
+fn compile_preview(effect: &EffectAsset) -> Result<EffectInstance, CompileError> {
+    let compiled = EffectCompiler::default().compile(effect)?;
+    Ok(EffectInstance::new(Arc::new(compiled)))
 }
 
 pub(crate) fn blank_effect() -> EffectAsset {
@@ -468,10 +512,13 @@ mod tests {
             Value::Scalar(77.0),
         );
         assert_eq!(session.effect.emitters[0].spawn_rate(), 77.0);
+        assert_eq!(preview_spawn_rate(&session), 77.0);
         session.undo();
         assert_eq!(session.effect.emitters[0].spawn_rate(), original);
+        assert_eq!(preview_spawn_rate(&session), original);
         session.redo();
         assert_eq!(session.effect.emitters[0].spawn_rate(), 77.0);
+        assert_eq!(preview_spawn_rate(&session), 77.0);
     }
 
     #[test]
@@ -524,5 +571,20 @@ mod tests {
         let id = session.effect.emitters[2].id;
         session.select_layer(2);
         assert_eq!(session.selection.emitter(&session.effect), Some(id));
+    }
+
+    fn preview_spawn_rate(session: &EditorSession) -> f32 {
+        let instruction = &session
+            .preview
+            .as_ref()
+            .expect("valid editor effect has a compiled preview")
+            .effect()
+            .emitters[0]
+            .execution
+            .emitter_update[0];
+        match instruction {
+            aestra_runtime::Instruction::Emit { spawn_rate, .. } => *spawn_rate,
+            _ => panic!("first emitter instruction must be emission"),
+        }
     }
 }

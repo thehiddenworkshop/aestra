@@ -18,8 +18,11 @@ Semantic commands + transactions (aestra-authoring)
 EffectAsset + validation (aestra-core)
               │ compiles
               ▼
-Runtime IR (planned) ──► CPU reference runtime
-              └────────► GPU compute runtime + Bevy renderer
+Typed execution plan (aestra-compiler)
+              │ instantiates
+              ▼
+EffectInstance (aestra-runtime) ──► CPU reference interpreter
+                            └─────► GPU compute runtime + Bevy renderer (next)
 ```
 
 ### `aestra-core`
@@ -31,9 +34,21 @@ Runtime IR (planned) ──► CPU reference runtime
 ### `aestra-bevy`
 
 - Re-exports the public semantic types for convenient Bevy integration.
-- Provides deterministic reference evaluation for previews and tests until `aestra-runtime` is extracted.
+- Adapts compiled runtime instances and particle samples to Bevy ECS and rendering.
 - Exposes `AestraPlugin` and `EffectPlayer` for direct integration in Bevy applications.
 - Owns no editor or viewer state.
+
+### `aestra-compiler`
+
+- Owns the extensible module registry and metadata used for discovery and validation.
+- Validates stages, supported renderer capabilities, and particle attribute flow.
+- Lowers authored module stacks into immutable, typed execution plans with source mapping.
+
+### `aestra-runtime`
+
+- Owns `CompiledEffect`, `EffectInstance`, particle layouts, and execution instructions.
+- Interprets compiled effects deterministically for a seed and time without Bevy.
+- Defines the engine-independent contract that future CPU and GPU backends must preserve.
 
 ### `aestra-authoring`
 
@@ -56,7 +71,7 @@ Runtime IR (planned) ──► CPU reference runtime
 - Produces individual PNGs, a contact sheet, and a capture manifest for visual or AI review.
 - Shares runtime behavior with games by using `AestraPlugin` directly.
 
-### GPU compiler/runtime (next)
+### GPU runtime (next)
 
 - Resolves asset references and compiles curves/gradients into GPU-friendly tables.
 - Applies platform budgets and capability fallbacks.
@@ -90,6 +105,7 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [x] curve previews, key-value editing, and gradient presets
 - [x] timeline scrubbing, trimming, moving, and effect-duration editing
 - [x] native file dialogs, project asset discovery, and unsaved-change protection
+- [x] module registry, typed compiler plan, runtime instances, and CPU extraction
 - [ ] timeline zooming and snapping
 - node/module stack for spawn, initialize, update, renderer, and events
 - autosave/recovery and asset migrations

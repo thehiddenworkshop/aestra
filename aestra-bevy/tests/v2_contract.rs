@@ -1,4 +1,5 @@
-use aestra_bevy::{AssetError, EffectAsset, ParticleSample, evaluate};
+use aestra_bevy::{AssetError, EffectAsset, EffectCompiler, EffectInstance, ParticleSample};
+use std::sync::Arc;
 
 const V2_REFERENCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 
@@ -67,11 +68,16 @@ fn bundled_v2_asset_has_stable_pretty_serialization() {
 #[test]
 fn bundled_v2_evaluation_matches_golden_moments() {
     let effect = EffectAsset::from_ron(V2_REFERENCE).expect("v2 reference asset must load");
+    let compiled = EffectCompiler::default()
+        .compile(&effect)
+        .expect("v2 reference asset must compile");
+    let mut instance = EffectInstance::new(Arc::new(compiled));
     let mut samples = Vec::new();
     let mut actual = String::new();
 
     for time in [0.0_f32, 0.125, 0.5, 1.0, 2.0, 2.75] {
-        evaluate(&effect, time, &mut samples);
+        instance.seek(time);
+        instance.evaluate(&mut samples);
         actual.push_str(&snapshot_line(time, effect.emitters.len(), &samples));
     }
 

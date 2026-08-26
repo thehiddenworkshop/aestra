@@ -142,7 +142,7 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
     let effect_name = effect.name.clone();
 
     commands.spawn(Camera2d);
-    commands.spawn(EffectPlayer::new(effect));
+    commands.spawn(EffectPlayer::new(&effect));
 
     // A quiet reference grid makes motion and scale legible without becoming part of the effect.
     for x in (-480..=480).step_by(80) {
@@ -220,8 +220,8 @@ fn update_hud(players: Query<&EffectPlayer>, mut hud: Query<&mut Text, With<View
     };
     text.0 = format!(
         "{:06.3} / {:06.3}  |  {}  |  SPACE Pause  |  R Restart  |  S Screenshot",
-        player.elapsed,
-        player.effect.duration,
+        player.elapsed(),
+        player.effect().duration,
         if player.playing { "PLAYING" } else { "PAUSED" }
     );
 }
@@ -244,7 +244,7 @@ fn drive_capture(
 
     if !capture.positioned {
         for mut player in &mut players {
-            let sample_time = player.effect.duration * (capture.next_frame as f32 + 0.5)
+            let sample_time = player.effect().duration * (capture.next_frame as f32 + 0.5)
                 / capture.frame_count as f32;
             player.seek(sample_time);
             player.playing = false;

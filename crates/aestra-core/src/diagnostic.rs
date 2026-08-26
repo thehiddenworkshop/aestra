@@ -22,6 +22,9 @@ pub enum DiagnosticCode {
     InvalidValue,
     MissingRenderer,
     InvalidReference,
+    UnknownModule,
+    UnsupportedRenderer,
+    MissingAttribute,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

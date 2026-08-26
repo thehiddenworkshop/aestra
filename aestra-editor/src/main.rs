@@ -2,7 +2,6 @@ mod session;
 mod theme;
 
 use aestra_bevy::EffectAsset;
-use aestra_bevy::evaluate;
 use bevy::{prelude::*, ui::RelativeCursorPosition, window::WindowResolution};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use session::EditorSession;
@@ -1774,7 +1773,12 @@ fn update_preview(
 ) {
     let time = session.time;
     let mut samples = std::mem::take(&mut session.samples);
-    evaluate(&session.effect, time, &mut samples);
+    if let Some(preview) = &mut session.preview {
+        preview.seek(time);
+        preview.evaluate(&mut samples);
+    } else {
+        samples.clear();
+    }
     session.samples = samples;
     for (marker, mut node, mut background) in &mut particles {
         let Some(sample) = session.samples.get(marker.0) else {

@@ -1,0 +1,12 @@
+[package]
+name = "aestra-runtime"
+description = "Engine-independent compiled effect contracts and deterministic CPU runtime for Aestra"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+aestra-core = { path = "../aestra-core" }
+
