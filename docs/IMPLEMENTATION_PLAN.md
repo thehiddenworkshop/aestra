@@ -15,7 +15,8 @@ architecture vision; this file is the shorter delivery plan.
 - M4 first GPU production slice: in progress. The deterministic WESL compute substrate,
   bounded particle pools, compaction lists, counters, native indirect alpha/additive
   sprite drawing, conservative visibility bounds, and explicit CPU/readback fallbacks
-  are implemented. Automated image regression and capability reporting remain.
+  are implemented. Deterministic image regression with approved references, tolerant
+  metrics, and diff reports is implemented; capability reporting remains.
 
 ## 1. Assessment of the current prototype
 

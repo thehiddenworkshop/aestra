@@ -81,6 +81,21 @@ cargo run -p aestra-viewer -- --capture captures/prism-bloom --frames 9
 
 The capture directory receives numbered PNG frames, `contact-sheet.png`, and `capture-manifest.md`. In interactive mode, press `S` for a single screenshot.
 
+Run the native-GPU visual regression against the approved, effect-only reference:
+
+```powershell
+cargo run -p aestra-viewer -- --visual-test aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom --frames 8
+```
+
+The command exits with an error when a frame exceeds the tolerant foreground RMSE,
+coverage, changed-pixel, or centroid limits. It writes amplified `diff-*.png` images
+and `regression-report.md` to the output directory. After intentionally approving a
+visual change, regenerate the reference with:
+
+```powershell
+cargo run -p aestra-viewer -- --approve-visual-reference aestra-viewer/tests/references/prism_bloom --frames 8
+```
+
 ## Bevy plugin
 
 ```rust

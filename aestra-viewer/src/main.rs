@@ -1,3 +1,5 @@
+mod visual_regression;
+
 use aestra_bevy::{AestraPlugin, EffectAsset, EffectPlayer};
 use bevy::{
     app::AppExit,
@@ -8,22 +10,23 @@ use bevy::{
 use image::{Rgba, RgbaImage, imageops};
 use std::{env, fs, path::PathBuf};
 
+use visual_regression::compare_capture;
+
 const SAMPLE_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 const VIEW_WIDTH: u32 = 960;
 const VIEW_HEIGHT: u32 = 540;
+const REGRESSION_SEED: u64 = 0xa357_2a11_5eed_0001;
 
 fn main() {
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!(
-            "usage: aestra-viewer [--effect file.aestra.ron] [--capture output-dir] [--frames 8]"
-        );
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir]");
         std::process::exit(2);
     });
     let capture = config
-        .capture_directory
-        .as_ref()
-        .map(|directory| CapturePlan::new(directory.clone(), config.capture_frames));
+        .capture_mode
+        .clone()
+        .map(|mode| CapturePlan::new(mode, config.capture_frames));
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.009, 0.012, 0.024)))
@@ -48,20 +51,42 @@ fn main() {
     if let Some(capture) = capture {
         app.insert_resource(capture);
     }
-    app.run();
+    if let AppExit::Error(code) = app.run() {
+        std::process::exit(i32::from(code.get()));
+    }
 }
 
 #[derive(Resource)]
 struct ViewerConfig {
     effect_path: Option<PathBuf>,
-    capture_directory: Option<PathBuf>,
+    capture_mode: Option<CaptureMode>,
     capture_frames: usize,
+}
+
+#[derive(Clone)]
+enum CaptureMode {
+    Standard { output: PathBuf },
+    Approve { reference: PathBuf },
+    Compare { reference: PathBuf, output: PathBuf },
+}
+
+impl CaptureMode {
+    fn output_directory(&self) -> &PathBuf {
+        match self {
+            Self::Standard { output } | Self::Compare { output, .. } => output,
+            Self::Approve { reference } => reference,
+        }
+    }
+
+    fn is_regression(&self) -> bool {
+        !matches!(self, Self::Standard { .. })
+    }
 }
 
 impl ViewerConfig {
     fn from_args() -> Result<Self, String> {
         let mut effect_path = None;
-        let mut capture_directory = None;
+        let mut capture_mode = None;
         let mut capture_frames = 8usize;
         let mut args = env::args().skip(1);
         while let Some(argument) = args.next() {
@@ -72,9 +97,40 @@ impl ViewerConfig {
                     ));
                 }
                 "--capture" => {
-                    capture_directory = Some(PathBuf::from(
-                        args.next().ok_or("--capture requires a directory")?,
-                    ));
+                    set_capture_mode(
+                        &mut capture_mode,
+                        CaptureMode::Standard {
+                            output: PathBuf::from(
+                                args.next().ok_or("--capture requires a directory")?,
+                            ),
+                        },
+                    )?;
+                }
+                "--approve-visual-reference" => {
+                    set_capture_mode(
+                        &mut capture_mode,
+                        CaptureMode::Approve {
+                            reference: PathBuf::from(
+                                args.next()
+                                    .ok_or("--approve-visual-reference requires a directory")?,
+                            ),
+                        },
+                    )?;
+                }
+                "--visual-test" => {
+                    set_capture_mode(
+                        &mut capture_mode,
+                        CaptureMode::Compare {
+                            reference: PathBuf::from(
+                                args.next()
+                                    .ok_or("--visual-test requires a reference directory")?,
+                            ),
+                            output: PathBuf::from(
+                                args.next()
+                                    .ok_or("--visual-test requires an output directory")?,
+                            ),
+                        },
+                    )?;
                 }
                 "--frames" => {
                     capture_frames = args
@@ -94,15 +150,23 @@ impl ViewerConfig {
         }
         Ok(Self {
             effect_path,
-            capture_directory,
+            capture_mode,
             capture_frames,
         })
     }
 }
 
+fn set_capture_mode(target: &mut Option<CaptureMode>, mode: CaptureMode) -> Result<(), String> {
+    if target.is_some() {
+        return Err("capture, approval, and visual-test modes are mutually exclusive".into());
+    }
+    *target = Some(mode);
+    Ok(())
+}
+
 #[derive(Resource)]
 struct CapturePlan {
-    directory: PathBuf,
+    mode: CaptureMode,
     frame_count: usize,
     next_frame: usize,
     settle_frames: u8,
@@ -112,9 +176,9 @@ struct CapturePlan {
 }
 
 impl CapturePlan {
-    fn new(directory: PathBuf, frame_count: usize) -> Self {
+    fn new(mode: CaptureMode, frame_count: usize) -> Self {
         Self {
-            directory,
+            mode,
             frame_count,
             next_frame: 0,
             // Let the window, glyph atlas, sprite pipelines, and particle pool reach the render
@@ -140,9 +204,21 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
         )
         .unwrap_or_else(|error| panic!("could not load viewer effect: {error}"));
     let effect_name = effect.name.clone();
+    let regression_scene = config
+        .capture_mode
+        .as_ref()
+        .is_some_and(CaptureMode::is_regression);
 
     commands.spawn(Camera2d);
-    commands.spawn(EffectPlayer::new(&effect));
+    let mut player = EffectPlayer::new(&effect);
+    if regression_scene {
+        player.instance.set_seed(REGRESSION_SEED);
+    }
+    commands.spawn(player);
+
+    if regression_scene {
+        return;
+    }
 
     // A quiet reference grid makes motion and scale legible without becoming part of the effect.
     for x in (-480..=480).step_by(80) {
@@ -266,7 +342,8 @@ fn receive_capture(
     mut capture: ResMut<CapturePlan>,
     mut exit: MessageWriter<AppExit>,
 ) {
-    fs::create_dir_all(&capture.directory)
+    let output_directory = capture.mode.output_directory().clone();
+    fs::create_dir_all(&output_directory)
         .unwrap_or_else(|error| panic!("could not create capture directory: {error}"));
     let frame = event
         .image
@@ -274,9 +351,7 @@ fn receive_capture(
         .try_into_dynamic()
         .expect("the primary-window screenshot must use a convertible pixel format")
         .to_rgba8();
-    let frame_path = capture
-        .directory
-        .join(format!("frame-{:03}.png", capture.next_frame));
+    let frame_path = output_directory.join(format!("frame-{:03}.png", capture.next_frame));
     frame
         .save(&frame_path)
         .unwrap_or_else(|error| panic!("could not save {}: {error}", frame_path.display()));
@@ -287,7 +362,16 @@ fn receive_capture(
 
     if capture.next_frame == capture.frame_count {
         write_contact_sheet(&capture);
-        exit.write(AppExit::Success);
+        let result = finish_capture(&capture);
+        exit.write(if result.is_ok() {
+            AppExit::Success
+        } else {
+            eprintln!(
+                "aestra-viewer: {}",
+                result.expect_err("failed regression must contain a reason")
+            );
+            AppExit::error()
+        });
     }
 }
 
@@ -304,7 +388,8 @@ fn write_contact_sheet(capture: &CapturePlan) {
         let y = index as u32 / columns * VIEW_HEIGHT;
         imageops::replace(&mut sheet, frame, i64::from(x), i64::from(y));
     }
-    let path = capture.directory.join("contact-sheet.png");
+    let output_directory = capture.mode.output_directory();
+    let path = output_directory.join("contact-sheet.png");
     sheet
         .save(&path)
         .unwrap_or_else(|error| panic!("could not save {}: {error}", path.display()));
@@ -313,6 +398,40 @@ fn write_contact_sheet(capture: &CapturePlan) {
         "# Aestra visual capture\n\n- Frames: {}\n- Frame size: {} x {}\n- Contact sheet: {} columns x {} rows\n- Sampling: evenly spaced at frame centers across the effect duration\n",
         capture.frame_count, VIEW_WIDTH, VIEW_HEIGHT, columns, rows
     );
-    fs::write(capture.directory.join("capture-manifest.md"), manifest)
+    fs::write(output_directory.join("capture-manifest.md"), manifest)
         .expect("capture manifest should be writable");
+}
+
+fn finish_capture(capture: &CapturePlan) -> Result<(), String> {
+    match &capture.mode {
+        CaptureMode::Standard { output } => {
+            println!("capture written to {}", output.display());
+            Ok(())
+        }
+        CaptureMode::Approve { reference } => {
+            fs::write(
+                reference.join("visual-reference.md"),
+                format!(
+                    "# Aestra visual reference\n\n- Frames: {}\n- Frame size: {} x {}\n- Seed: `{:#018x}`\n- Scene: effect only, fixed camera and background\n- Sampling: evenly spaced frame centers\n",
+                    capture.frame_count, VIEW_WIDTH, VIEW_HEIGHT, REGRESSION_SEED
+                ),
+            )
+            .map_err(|error| format!("could not write visual reference metadata: {error}"))?;
+            println!("visual reference approved at {}", reference.display());
+            Ok(())
+        }
+        CaptureMode::Compare { reference, output } => {
+            let report = compare_capture(reference, output, capture.frame_count)?;
+            println!(
+                "visual regression passed: {} frames, worst RMSE {:.4}",
+                report.frames.len(),
+                report
+                    .frames
+                    .iter()
+                    .map(|frame| frame.foreground_rmse)
+                    .fold(0.0, f32::max)
+            );
+            Ok(())
+        }
+    }
 }

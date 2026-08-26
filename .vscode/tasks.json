@@ -19,6 +19,32 @@
         "panel": "dedicated",
         "clear": true
       }
+    },
+    {
+      "label": "Aestra: Visual Regression",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "run",
+        "-p",
+        "aestra-viewer",
+        "--",
+        "--visual-test",
+        "aestra-viewer/tests/references/prism_bloom",
+        "target/visual-regression/prism-bloom",
+        "--frames",
+        "8"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
     }
   ]
 }
