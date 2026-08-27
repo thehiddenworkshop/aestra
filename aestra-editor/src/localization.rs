@@ -151,16 +151,6 @@ impl Localizer {
         true
     }
 
-    pub(crate) fn cycle_locale(&mut self, direction: i8) -> bool {
-        let current = SUPPORTED_LOCALES
-            .iter()
-            .position(|locale| *locale == self.locale)
-            .unwrap_or_default();
-        let next =
-            (current as i8 + direction.signum()).rem_euclid(SUPPORTED_LOCALES.len() as i8) as usize;
-        self.set_locale(SUPPORTED_LOCALES[next])
-    }
-
     pub(crate) fn text(&self, id: &str) -> String {
         self.format(id, None)
     }

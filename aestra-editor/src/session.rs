@@ -3,10 +3,10 @@ use aestra_authoring::{
     LockState, Selection, TransactionPreview,
 };
 use aestra_bevy::{
-    AssetError, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, FlipbookDefinition,
-    FlipbookPlaybackMode, FlipbookTimeSource, MaterialDefinition, MaterialInput,
-    MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties,
-    ValidationReport, Value,
+    AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter,
+    FlipbookDefinition, FlipbookPlaybackMode, FlipbookTimeSource, MaterialDefinition, MaterialId,
+    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance,
+    RendererProperties, ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
@@ -920,46 +920,18 @@ impl EditorSession {
         }
     }
 
-    pub fn cycle_renderer_flipbook(&mut self, id: RendererId) {
-        let emitter = self.selected_layer();
-        let emitter_id = emitter.id;
-        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
-            return;
-        };
-        let RendererProperties::Flipbook { flipbook, .. } = renderer.properties else {
-            return;
-        };
-        let flipbooks = self
-            .effect
-            .flipbooks
-            .iter()
-            .map(|item| item.id)
-            .collect::<Vec<_>>();
-        let Some(next) = flipbooks
-            .iter()
-            .position(|item| *item == flipbook)
-            .map(|index| flipbooks[(index + 1) % flipbooks.len()])
-            .or_else(|| flipbooks.first().copied())
-        else {
-            self.status = "This effect has no flipbooks".into();
-            return;
-        };
-        let mut properties = renderer.properties.clone();
-        if let RendererProperties::Flipbook { flipbook, .. } = &mut properties {
-            *flipbook = next;
-        }
-        self.execute(
-            "Changed renderer flipbook",
-            EffectCommand::SetRendererProperties {
-                emitter: emitter_id,
-                renderer: id,
-                properties,
-            },
-            true,
-        );
+    pub fn set_renderer_flipbook(&mut self, id: RendererId, flipbook: AssetId) {
+        self.update_flipbook_renderer(id, "Changed renderer flipbook", |properties| {
+            if let RendererProperties::Flipbook {
+                flipbook: current, ..
+            } = properties
+            {
+                *current = flipbook;
+            }
+        });
     }
 
-    pub fn adjust_flipbook_frame_rate(&mut self, id: RendererId, delta: f32) {
+    pub fn set_flipbook_frame_rate(&mut self, id: RendererId, value: f32) {
         let Some(renderer) = self
             .selected_layer()
             .renderers
@@ -980,7 +952,11 @@ impl EditorSession {
         else {
             return;
         };
-        definition.frame_rate = (definition.frame_rate + delta).clamp(1.0, 120.0);
+        let value = value.clamp(1.0, 120.0);
+        if definition.frame_rate == value {
+            return;
+        }
+        definition.frame_rate = value;
         self.execute(
             "Changed flipbook frame rate",
             EffectCommand::SetFlipbook {
@@ -1023,25 +999,18 @@ impl EditorSession {
         );
     }
 
-    pub fn cycle_flipbook_time_source(&mut self, id: RendererId) {
+    pub fn set_flipbook_time_source(&mut self, id: RendererId, value: FlipbookTimeSource) {
         self.update_flipbook_renderer(id, "Changed flipbook time source", |properties| {
             if let RendererProperties::Flipbook { time_source, .. } = properties {
-                *time_source = match time_source {
-                    FlipbookTimeSource::ParticleAge => FlipbookTimeSource::EffectTime,
-                    FlipbookTimeSource::EffectTime => FlipbookTimeSource::ParticleAge,
-                };
+                *time_source = value;
             }
         });
     }
 
-    pub fn cycle_flipbook_playback(&mut self, id: RendererId) {
+    pub fn set_flipbook_playback(&mut self, id: RendererId, value: FlipbookPlaybackMode) {
         self.update_flipbook_renderer(id, "Changed flipbook playback", |properties| {
             if let RendererProperties::Flipbook { playback, .. } = properties {
-                *playback = match playback {
-                    FlipbookPlaybackMode::Forward => FlipbookPlaybackMode::Reverse,
-                    FlipbookPlaybackMode::Reverse => FlipbookPlaybackMode::PingPong,
-                    FlipbookPlaybackMode::PingPong => FlipbookPlaybackMode::Forward,
-                };
+                *playback = value;
             }
         });
     }
@@ -1118,133 +1087,86 @@ impl EditorSession {
         );
     }
 
-    pub fn cycle_renderer_material(&mut self, id: RendererId) {
-        let emitter = self.selected_layer();
-        let emitter_id = emitter.id;
-        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
+    pub fn set_renderer_material(&mut self, id: RendererId, material: MaterialId) {
+        let emitter = self.selected_layer().id;
+        let Some(renderer) = self
+            .selected_layer()
+            .renderers
+            .iter()
+            .find(|renderer| renderer.id == id)
+        else {
             self.status = "Renderer no longer exists".into();
             return;
         };
-        let materials = self
-            .effect
-            .materials
-            .iter()
-            .map(|material| material.id)
-            .collect::<Vec<_>>();
-        let Some(next) = materials
-            .iter()
-            .position(|material| *material == renderer.material)
-            .map(|index| materials[(index + 1) % materials.len()])
-            .or_else(|| materials.first().copied())
-        else {
-            self.status = "This effect has no sprite material".into();
+        if renderer.material == material {
             return;
-        };
+        }
         self.execute(
             "Changed renderer material",
             EffectCommand::SetRendererMaterial {
-                emitter: emitter_id,
+                emitter,
                 renderer: id,
-                material: next,
+                material,
             },
             true,
         );
     }
 
-    pub fn cycle_renderer_blend(&mut self, id: RendererId) {
+    pub fn set_renderer_blend(&mut self, id: RendererId, blend: BlendMode) {
         let Some(mut material) = self.renderer_material(id).cloned() else {
             self.status = "Renderer material no longer exists".into();
             return;
         };
-        material.blend = match material.blend {
-            BlendMode::Alpha => BlendMode::Additive,
-            BlendMode::Additive => BlendMode::Multiply,
-            BlendMode::Multiply => BlendMode::Alpha,
-        };
+        if material.blend == blend {
+            return;
+        }
+        material.blend = blend;
         self.update_material("Changed material blend", material);
     }
 
-    pub fn adjust_renderer_softness(&mut self, id: RendererId, delta: f32) {
+    pub fn set_renderer_softness(&mut self, id: RendererId, value: f32) {
         let Some(mut material) = self.renderer_material(id).cloned() else {
             self.status = "Renderer material no longer exists".into();
             return;
         };
-        match &mut material.properties {
-            MaterialProperties::Sprite {
-                softness: MaterialInput::Constant(softness),
-                ..
-            } => *softness = (*softness + delta).max(0.0),
-            MaterialProperties::Sprite {
-                softness: MaterialInput::Parameter(_),
-                ..
-            } => {
-                self.status = "Material softness is bound to an effect parameter".into();
-                return;
-            }
+        let MaterialProperties::Sprite { softness, .. } = &mut material.properties;
+        let MaterialInput::Constant(current) = softness else {
+            self.status = "Material softness is bound to an effect parameter".into();
+            return;
+        };
+        let value = value.max(0.0);
+        if *current == value {
+            return;
         }
+        *current = value;
         self.update_material("Changed material softness", material);
     }
 
-    pub fn cycle_renderer_texture(&mut self, id: RendererId) {
+    pub fn set_renderer_texture(&mut self, id: RendererId, value: Option<AssetId>) {
         let Some(mut material) = self.renderer_material(id).cloned() else {
             self.status = "Renderer material no longer exists".into();
             return;
         };
-        let current = match &material.properties {
-            MaterialProperties::Sprite { texture, .. } => *texture,
-        };
-        let textures = self
-            .effect
-            .assets
-            .iter()
-            .filter(|asset| asset.kind == AssetKind::Texture)
-            .map(|asset| asset.id)
-            .collect::<Vec<_>>();
-        let Some(next) = textures
-            .iter()
-            .position(|asset| Some(*asset) == current)
-            .map(|index| textures[(index + 1) % textures.len()])
-            .or_else(|| textures.first().copied())
-        else {
-            self.status = "This effect has no registered texture assets".into();
+        let MaterialProperties::Sprite { texture, .. } = &mut material.properties;
+        if *texture == value {
             return;
-        };
-        match &mut material.properties {
-            MaterialProperties::Sprite { texture, .. } => {
-                *texture = Some(next);
-            }
         }
-        self.update_material("Assigned material texture", material);
+        *texture = value;
+        self.update_material("Changed material texture", material);
     }
 
-    pub fn clear_renderer_texture(&mut self, id: RendererId) {
-        let Some(mut material) = self.renderer_material(id).cloned() else {
-            self.status = "Renderer material no longer exists".into();
-            return;
-        };
-        match &mut material.properties {
-            MaterialProperties::Sprite { texture, .. } => {
-                if texture.is_none() {
-                    self.status = "Material already uses the procedural sprite".into();
-                    return;
-                }
-                *texture = None;
-            }
-        }
-        self.update_material("Cleared material texture", material);
-    }
-
-    pub fn adjust_renderer_uv(&mut self, id: RendererId, component: u8, delta: f32) {
+    pub fn set_renderer_uv(&mut self, id: RendererId, component: u8, value: f32) {
         let Some(mut material) = self.renderer_material(id).cloned() else {
             self.status = "Renderer material no longer exists".into();
             return;
         };
         let MaterialProperties::Sprite { uv, .. } = &mut material.properties;
+        let value = value.clamp(0.0, 1.0);
         match component {
-            0 => uv.min[0] = (uv.min[0] + delta).clamp(0.0, uv.max[0] - 0.01),
-            1 => uv.min[1] = (uv.min[1] + delta).clamp(0.0, uv.max[1] - 0.01),
-            2 => uv.max[0] = (uv.max[0] + delta).clamp(uv.min[0] + 0.01, 1.0),
-            3 => uv.max[1] = (uv.max[1] + delta).clamp(uv.min[1] + 0.01, 1.0),
+            0 => uv.min[0] = value.min(uv.max[0]),
+            1 => uv.min[1] = value.min(uv.max[1]),
+            2 => uv.max[0] = value.max(uv.min[0]),
+            3 => uv.max[1] = value.max(uv.min[1]),
             _ => {
                 self.status = "Unknown UV component".into();
                 return;
@@ -1525,8 +1447,16 @@ mod tests {
         );
         let renderer = session.effect.emitters[0].renderers[0].id;
         let material = session.effect.emitters[0].renderers[0].material;
+        let MaterialProperties::Sprite { texture, .. } = &session
+            .effect
+            .materials
+            .iter()
+            .find(|candidate| candidate.id == material)
+            .unwrap()
+            .properties;
+        let texture_asset = texture.expect("ember material should use a texture");
 
-        session.clear_renderer_texture(renderer);
+        session.set_renderer_texture(renderer, None);
         let MaterialProperties::Sprite { texture, .. } = &session
             .effect
             .materials
@@ -1536,7 +1466,7 @@ mod tests {
             .properties;
         assert!(texture.is_none());
 
-        session.cycle_renderer_texture(renderer);
+        session.set_renderer_texture(renderer, Some(texture_asset));
         let compiled = session.preview.as_ref().unwrap().effect();
         assert!(compiled.material(material).unwrap().texture.is_some());
 
@@ -1559,7 +1489,7 @@ mod tests {
             .properties;
         assert!(texture.is_some());
 
-        session.adjust_renderer_uv(renderer, 0, 0.1);
+        session.set_renderer_uv(renderer, 0, 0.1);
         let MaterialProperties::Sprite { uv, .. } = &session
             .effect
             .materials
@@ -1591,7 +1521,8 @@ mod tests {
 
         session.add_sprite_material();
         assert_eq!(session.effect.materials.len(), original_count + 1);
-        session.cycle_renderer_material(renderer);
+        let added_material = session.effect.materials.last().unwrap().id;
+        session.set_renderer_material(renderer, added_material);
         assert_ne!(
             session.effect.emitters[0].renderers[0].material,
             original_material
@@ -1855,7 +1786,7 @@ mod tests {
                 .properties,
             RendererProperties::Flipbook { .. }
         ));
-        session.adjust_flipbook_frame_rate(renderer, 3.0);
+        session.set_flipbook_frame_rate(renderer, 15.0);
         assert_eq!(session.effect.flipbooks[0].frame_rate, 15.0);
         assert!(session.preview.is_some());
         session.undo();

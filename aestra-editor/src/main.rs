@@ -7,10 +7,11 @@ mod ui_shell;
 
 use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    ActiveBackend, AestraPlugin, AestraSet, ColorKey, CurveKey, Diagnostic, DiagnosticCode,
-    DiagnosticSeverity, EffectAsset, EffectPlayer, EffectRuntimeStatus, EmitterShape,
-    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, ModuleParameters, RendererId,
-    RendererProperties, StageKind, ValidationReport, Value,
+    ActiveBackend, AestraPlugin, AestraSet, BlendMode, ColorKey, CurveKey, Diagnostic,
+    DiagnosticCode, DiagnosticSeverity, EffectAsset, EffectPlayer, EffectRuntimeStatus,
+    EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, MaterialInput, MaterialProperties,
+    ModuleId, ModuleInstance, ModuleParameters, RendererId, RendererProperties, StageKind,
+    ValidationReport, Value,
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
@@ -21,10 +22,10 @@ use bevy::{
     ecs::system::SystemParam,
     feathers::{
         FeathersPlugins,
-        constants::fonts,
+        constants::{fonts, icons},
         containers::{group, group_body, group_header, pane_header},
         controls::{NumberInputValue, UpdateNumberInput},
-        display::{label, label_dim},
+        display::{icon, label, label_dim},
         theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText},
         tokens,
     },
@@ -43,12 +44,12 @@ use bevy::{
 };
 use docking::{DockAxis, DockDrop, DockNode, DockNodeId, DockPanel, DockStack, WorkspaceLayout};
 use fluent_bundle::FluentArgs;
-use localization::Localizer;
+use localization::{Localizer, SUPPORTED_LOCALES};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use session::EditorSession;
 use settings::{EditorSettings, SettingsPersistence};
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     fs,
     path::PathBuf,
     time::{Duration, Instant},
@@ -91,6 +92,7 @@ fn main() {
         .init_resource::<ProfilerState>()
         .init_resource::<SettingsPanelState>()
         .init_resource::<InspectorFocus>()
+        .init_resource::<ScrollMemoryState>()
         .init_resource::<WorkspaceState>()
         .init_resource::<DockDragState>()
         .init_resource::<ResizeState>()
@@ -120,6 +122,10 @@ fn main() {
         .add_observer(handle_settings_integer_change)
         .add_observer(handle_settings_scalar_change)
         .add_observer(handle_inspector_toggle_change)
+        .add_observer(handle_module_enabled_change)
+        .add_observer(handle_renderer_enabled_change)
+        .add_observer(handle_renderer_scalar_change)
+        .add_observer(handle_renderer_toggle_change)
         .add_observer(handle_inspector_integer_change)
         .add_observer(handle_inspector_scalar_change)
         .add_observer(queue_feathers_action_activation)
@@ -162,9 +168,15 @@ fn main() {
                     sync_tab_reorder_hints,
                     sync_tab_append_hint,
                     update_dock_zone_style,
+                    remember_scroll_positions,
                     rebuild_editor_ui,
-                    sync_settings_number_inputs,
-                    sync_inspector_number_inputs,
+                    restore_scroll_positions,
+                    (
+                        sync_settings_number_inputs,
+                        sync_inspector_number_inputs,
+                        sync_renderer_number_inputs,
+                    )
+                        .chain(),
                     sync_native_floating_windows,
                     scroll_inspector_to_focus,
                     update_scrollbar_visibility,
@@ -206,35 +218,15 @@ enum EditorAction {
     AddGridFlipbook,
     AddSpriteRenderer,
     AddFlipbookRenderer,
-    AdjustModuleInput {
-        module: ModuleId,
-        input: u8,
-        component: u8,
-        direction: i8,
-    },
     EditComplexInput(ModuleId, u8),
     AddComplexKey,
     DeleteComplexKey,
     AdjustComplexTime(i8),
     AdjustCurveValue(i8),
     AdjustGradientChannel(u8, i8),
-    ToggleModule(ModuleId),
     MoveModule(ModuleId, i8),
     DuplicateModule(ModuleId),
     DeleteModule(ModuleId),
-    ToggleRenderer(RendererId),
-    CycleRendererMaterial(RendererId),
-    CycleRendererBlend(RendererId),
-    AdjustRendererSoftness(RendererId, i8),
-    CycleRendererTexture(RendererId),
-    ClearRendererTexture(RendererId),
-    AdjustRendererUv(RendererId, u8, i8),
-    CycleRendererFlipbook(RendererId),
-    AdjustFlipbookFrameRate(RendererId, i8),
-    ToggleFlipbookLooping(RendererId),
-    CycleFlipbookTimeSource(RendererId),
-    CycleFlipbookPlayback(RendererId),
-    ToggleFlipbookRandomStart(RendererId),
     DuplicateRenderer(RendererId),
     DeleteRenderer(RendererId),
     ApplyPendingChange,
@@ -256,7 +248,18 @@ enum EditorAction {
     ToggleGrid,
     ResetWorkspaceLayout,
     SelectSettingsCategory(SettingsCategory),
-    CycleLocale(i8),
+    SetLocale(usize),
+    SetModuleChoice {
+        module: ModuleId,
+        input: u8,
+        choice: u8,
+    },
+    SetRendererMaterial(RendererId, usize),
+    SetRendererBlend(RendererId, BlendMode),
+    SetRendererTexture(RendererId, Option<usize>),
+    SetRendererFlipbook(RendererId, usize),
+    SetFlipbookTimeSource(RendererId, FlipbookTimeSource),
+    SetFlipbookPlayback(RendererId, FlipbookPlaybackMode),
     ResetEditorSettings,
     ShowAbout,
     CloseAbout,
@@ -273,6 +276,21 @@ struct ComplexSelection {
 struct WorkspaceState {
     complex: Option<ComplexSelection>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ScrollMemoryKey {
+    Inspector,
+    GeneratedCode,
+    Profiler,
+    Settings,
+    Diagnostics,
+    ChangesList,
+    ChangesReview,
+    Curves,
+}
+
+#[derive(Resource, Default)]
+struct ScrollMemoryState(HashMap<ScrollMemoryKey, Vec2>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StackStage {
@@ -598,6 +616,28 @@ struct InspectorToggleControl {
     module: ModuleId,
     parameter: &'static str,
 }
+
+#[derive(Component, Debug, Clone, Copy)]
+struct ModuleEnabledControl(ModuleId);
+
+#[derive(Component, Debug, Clone, Copy)]
+struct RendererEnabledControl(RendererId);
+
+#[derive(Component, Debug, Clone, Copy)]
+enum RendererNumberControl {
+    Softness(RendererId),
+    Uv(RendererId, u8),
+    FlipbookFrameRate(RendererId),
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+enum RendererToggleControl {
+    FlipbookLooping(RendererId),
+    FlipbookRandomStart(RendererId),
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct PersistedScroll(ScrollMemoryKey);
 
 #[derive(Component)]
 struct LocalizedText(&'static str);
@@ -2926,6 +2966,7 @@ fn spawn_inspector(
                 .with_children(|body| {
                     spawn_vertical_scroll_area(
                         body,
+                        ScrollMemoryKey::Inspector,
                         Node {
                             flex_grow: 1.0,
                             min_width: Val::Px(0.0),
@@ -3178,21 +3219,40 @@ fn spawn_module_card(
                         ..default()
                     },
                 ));
-                stack_button(
+                let mut enabled = header.spawn_empty();
+                enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
+                    ModuleEnabledControl(module.id),
+                    AccessibleLabel(format!("Enable {display_name}")),
+                ));
+                if module.enabled {
+                    enabled.insert(Checked);
+                }
+                spawn_action_menu(
                     header,
-                    if module.enabled { "ON" } else { "OFF" },
-                    EditorAction::ToggleModule(module.id),
-                    34.0,
+                    &format!("{display_name} actions"),
+                    &[
+                        ComboOption {
+                            label: "Move up".into(),
+                            selected: false,
+                            action: EditorAction::MoveModule(module.id, -1),
+                        },
+                        ComboOption {
+                            label: "Move down".into(),
+                            selected: false,
+                            action: EditorAction::MoveModule(module.id, 1),
+                        },
+                        ComboOption {
+                            label: "Duplicate".into(),
+                            selected: false,
+                            action: EditorAction::DuplicateModule(module.id),
+                        },
+                        ComboOption {
+                            label: "Delete…".into(),
+                            selected: false,
+                            action: EditorAction::DeleteModule(module.id),
+                        },
+                    ],
                 );
-                stack_button(header, "↑", EditorAction::MoveModule(module.id, -1), 24.0);
-                stack_button(header, "↓", EditorAction::MoveModule(module.id, 1), 24.0);
-                stack_button(
-                    header,
-                    "DUP",
-                    EditorAction::DuplicateModule(module.id),
-                    34.0,
-                );
-                stack_button(header, "×", EditorAction::DeleteModule(module.id), 24.0);
             });
             card.spawn((
                 Text::new(meta),
@@ -3334,27 +3394,9 @@ fn spawn_input_control(
                 &[("MIN", value.min, 0), ("MAX", value.max, 1)],
             );
         }
-        (InputControl::Choice, value) => property_stepper(
-            parent,
-            &format!(
-                "{}  {}{}",
-                display_name,
-                format_value(value),
-                unit_suffix(input)
-            ),
-            EditorAction::AdjustModuleInput {
-                module: module.id,
-                input: input_index,
-                component: 0,
-                direction: -1,
-            },
-            EditorAction::AdjustModuleInput {
-                module: module.id,
-                input: input_index,
-                component: 0,
-                direction: 1,
-            },
-        ),
+        (InputControl::Choice, value) => {
+            spawn_inspector_choice_control(parent, module.id, input_index, &display_name, &value)
+        }
         (_, value) => spawn_inspector_read_only_control(
             parent,
             &display_name,
@@ -3560,6 +3602,152 @@ fn spawn_inspector_toggle_control(
         });
 }
 
+fn spawn_inspector_choice_control(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: u8,
+    title: &str,
+    value: &Value,
+) {
+    let Value::Shape(shape) = value else {
+        spawn_inspector_read_only_control(parent, title, &format_value(value.clone()));
+        return;
+    };
+    let current = shape_label(*shape);
+    let selected = shape_index(*shape);
+    let options = ["Point", "Circle", "Ring", "Cone"]
+        .into_iter()
+        .enumerate()
+        .map(|(choice, label)| ComboOption {
+            label: label.to_owned(),
+            selected: choice == selected,
+            action: EditorAction::SetModuleChoice {
+                module,
+                input,
+                choice: choice as u8,
+            },
+        })
+        .collect::<Vec<_>>();
+    spawn_inspector_combo_row(parent, title, current, &options);
+}
+
+fn spawn_inspector_combo_row(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    current: &str,
+    options: &[ComboOption],
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(30.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(8.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                Text::new(title),
+                ThemedText,
+                Node {
+                    flex_grow: 1.0,
+                    ..default()
+                },
+            ));
+            spawn_combo_control(row, current, title, options, 150.0);
+        });
+}
+
+fn spawn_renderer_scalar_control(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    unit: Option<&str>,
+    control: RendererNumberControl,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(30.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(8.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                Text::new(title),
+                ThemedText,
+                Node {
+                    flex_grow: 1.0,
+                    ..default()
+                },
+            ));
+            row.spawn(Node {
+                width: Val::Px(112.0),
+                ..default()
+            })
+            .with_children(|input| {
+                input
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_scalar_input())
+                    .insert((control, AccessibleLabel(title.to_owned())));
+            });
+            if let Some(unit) = unit {
+                row.spawn_empty().apply_scene(label_dim(unit.to_owned()));
+            }
+        });
+}
+
+fn spawn_renderer_toggle_control(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    enabled: bool,
+    control: RendererToggleControl,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(30.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(8.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                Text::new(title),
+                ThemedText,
+                Node {
+                    flex_grow: 1.0,
+                    ..default()
+                },
+            ));
+            let mut checkbox = row.spawn_empty();
+            checkbox
+                .apply_scene(ui_shell::feathers_checkbox())
+                .insert((control, AccessibleLabel(title.to_owned())));
+            if enabled {
+                checkbox.insert(Checked);
+            }
+        });
+}
+
+fn shape_index(shape: EmitterShape) -> usize {
+    match shape {
+        EmitterShape::Point => 0,
+        EmitterShape::Circle { .. } => 1,
+        EmitterShape::Ring { .. } => 2,
+        EmitterShape::Cone { .. } => 3,
+    }
+}
+
+fn shape_label(shape: EmitterShape) -> &'static str {
+    match shape {
+        EmitterShape::Point => "Point",
+        EmitterShape::Circle { .. } => "Circle",
+        EmitterShape::Ring { .. } => "Ring",
+        EmitterShape::Cone { .. } => "Cone",
+    }
+}
+
 fn spawn_inspector_read_only_control(parent: &mut ChildSpawnerCommands, title: &str, value: &str) {
     parent
         .spawn(Node {
@@ -3634,19 +3822,30 @@ fn spawn_renderer_card(
                         ..default()
                     },
                 ));
-                stack_button(
+                let mut enabled = header.spawn_empty();
+                enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
+                    RendererEnabledControl(renderer.id),
+                    AccessibleLabel("Enable renderer".into()),
+                ));
+                if renderer.enabled {
+                    enabled.insert(Checked);
+                }
+                spawn_action_menu(
                     header,
-                    if renderer.enabled { "ON" } else { "OFF" },
-                    EditorAction::ToggleRenderer(renderer.id),
-                    34.0,
+                    "Renderer actions",
+                    &[
+                        ComboOption {
+                            label: "Duplicate".into(),
+                            selected: false,
+                            action: EditorAction::DuplicateRenderer(renderer.id),
+                        },
+                        ComboOption {
+                            label: "Delete…".into(),
+                            selected: false,
+                            action: EditorAction::DeleteRenderer(renderer.id),
+                        },
+                    ],
                 );
-                stack_button(
-                    header,
-                    "DUP",
-                    EditorAction::DuplicateRenderer(renderer.id),
-                    34.0,
-                );
-                stack_button(header, "×", EditorAction::DeleteRenderer(renderer.id), 24.0);
             });
             let Some(material) = session
                 .effect
@@ -3658,59 +3857,84 @@ fn spawn_renderer_card(
                 spawn_inline_diagnostics(card, diagnostic_path, session);
                 return;
             };
-            inspector_action_button(
+            let material_options = session
+                .effect
+                .materials
+                .iter()
+                .enumerate()
+                .map(|(index, candidate)| ComboOption {
+                    label: candidate.name.clone(),
+                    selected: candidate.id == material.id,
+                    action: EditorAction::SetRendererMaterial(renderer.id, index),
+                })
+                .collect::<Vec<_>>();
+            spawn_inspector_combo_row(card, "Material", &material.name, &material_options);
+            let blend_options = [BlendMode::Alpha, BlendMode::Additive, BlendMode::Multiply]
+                .into_iter()
+                .map(|blend| ComboOption {
+                    label: format!("{blend:?}"),
+                    selected: blend == material.blend,
+                    action: EditorAction::SetRendererBlend(renderer.id, blend),
+                })
+                .collect::<Vec<_>>();
+            spawn_inspector_combo_row(
                 card,
-                &format!("Material  {}", material.name),
-                EditorAction::CycleRendererMaterial(renderer.id),
-            );
-            inspector_action_button(
-                card,
-                &format!("Blend  {:?}", material.blend),
-                EditorAction::CycleRendererBlend(renderer.id),
+                "Blend",
+                &format!("{:?}", material.blend),
+                &blend_options,
             );
             let MaterialProperties::Sprite {
-                softness,
-                texture,
-                uv,
-                ..
+                softness, texture, ..
             } = &material.properties;
-            let softness_label = match softness {
-                MaterialInput::Constant(value) => format!("Softness  {value:.2}"),
-                MaterialInput::Parameter(parameter) => format!("Softness  Parameter {parameter}"),
-            };
-            property_stepper(
-                card,
-                &softness_label,
-                EditorAction::AdjustRendererSoftness(renderer.id, -1),
-                EditorAction::AdjustRendererSoftness(renderer.id, 1),
-            );
+            match softness {
+                MaterialInput::Constant(_) => spawn_renderer_scalar_control(
+                    card,
+                    "Softness",
+                    None,
+                    RendererNumberControl::Softness(renderer.id),
+                ),
+                MaterialInput::Parameter(parameter) => spawn_inspector_read_only_control(
+                    card,
+                    "Softness",
+                    &format!("Parameter {parameter}"),
+                ),
+            }
             match &renderer.properties {
                 RendererProperties::Sprite => {
                     let texture_name = texture
                         .and_then(|id| session.effect.assets.iter().find(|asset| asset.id == id))
                         .map_or("Procedural", |asset| asset.name.as_str());
-                    inspector_action_button(
-                        card,
-                        &format!("Texture  {texture_name}"),
-                        EditorAction::CycleRendererTexture(renderer.id),
+                    let mut texture_options = vec![ComboOption {
+                        label: "Procedural".into(),
+                        selected: texture.is_none(),
+                        action: EditorAction::SetRendererTexture(renderer.id, None),
+                    }];
+                    texture_options.extend(
+                        session
+                            .effect
+                            .assets
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, asset)| asset.kind == aestra_bevy::AssetKind::Texture)
+                            .map(|(index, asset)| ComboOption {
+                                label: asset.name.clone(),
+                                selected: Some(asset.id) == *texture,
+                                action: EditorAction::SetRendererTexture(renderer.id, Some(index)),
+                            }),
                     );
+                    spawn_inspector_combo_row(card, "Texture", texture_name, &texture_options);
                     if texture.is_some() {
-                        inspector_action_button(
-                            card,
-                            "Clear texture",
-                            EditorAction::ClearRendererTexture(renderer.id),
-                        );
-                        for (label, value, component) in [
-                            ("UV Min X", uv.min[0], 0),
-                            ("UV Min Y", uv.min[1], 1),
-                            ("UV Max X", uv.max[0], 2),
-                            ("UV Max Y", uv.max[1], 3),
+                        for (label, component) in [
+                            ("UV Min X", 0),
+                            ("UV Min Y", 1),
+                            ("UV Max X", 2),
+                            ("UV Max Y", 3),
                         ] {
-                            property_stepper(
+                            spawn_renderer_scalar_control(
                                 card,
-                                &format!("{label}  {value:.2}"),
-                                EditorAction::AdjustRendererUv(renderer.id, component, -1),
-                                EditorAction::AdjustRendererUv(renderer.id, component, 1),
+                                label,
+                                None,
+                                RendererNumberControl::Uv(renderer.id, component),
                             );
                         }
                     }
@@ -3726,49 +3950,77 @@ fn spawn_renderer_card(
                         .flipbooks
                         .iter()
                         .find(|item| item.id == *flipbook);
-                    inspector_action_button(
+                    let flipbook_options = session
+                        .effect
+                        .flipbooks
+                        .iter()
+                        .enumerate()
+                        .map(|(index, candidate)| ComboOption {
+                            label: candidate.name.clone(),
+                            selected: candidate.id == *flipbook,
+                            action: EditorAction::SetRendererFlipbook(renderer.id, index),
+                        })
+                        .collect::<Vec<_>>();
+                    spawn_inspector_combo_row(
                         card,
-                        &format!(
-                            "Flipbook  {}",
-                            definition.map_or("Missing", |item| item.name.as_str())
-                        ),
-                        EditorAction::CycleRendererFlipbook(renderer.id),
+                        "Flipbook",
+                        definition.map_or("Missing", |item| item.name.as_str()),
+                        &flipbook_options,
                     );
                     if let Some(definition) = definition {
-                        property_stepper(
+                        spawn_renderer_scalar_control(
                             card,
-                            &format!("Frame Rate  {:.0} FPS", definition.frame_rate),
-                            EditorAction::AdjustFlipbookFrameRate(renderer.id, -1),
-                            EditorAction::AdjustFlipbookFrameRate(renderer.id, 1),
+                            "Frame Rate",
+                            Some("FPS"),
+                            RendererNumberControl::FlipbookFrameRate(renderer.id),
                         );
-                        inspector_action_button(
+                        spawn_renderer_toggle_control(
                             card,
-                            if definition.looping {
-                                "Looping  On"
-                            } else {
-                                "Looping  Off"
-                            },
-                            EditorAction::ToggleFlipbookLooping(renderer.id),
+                            "Looping",
+                            definition.looping,
+                            RendererToggleControl::FlipbookLooping(renderer.id),
                         );
                     }
-                    inspector_action_button(
+                    let time_source_options = [
+                        FlipbookTimeSource::ParticleAge,
+                        FlipbookTimeSource::EffectTime,
+                    ]
+                    .into_iter()
+                    .map(|candidate| ComboOption {
+                        label: format!("{candidate:?}"),
+                        selected: candidate == *time_source,
+                        action: EditorAction::SetFlipbookTimeSource(renderer.id, candidate),
+                    })
+                    .collect::<Vec<_>>();
+                    spawn_inspector_combo_row(
                         card,
-                        &format!("Time Source  {time_source:?}"),
-                        EditorAction::CycleFlipbookTimeSource(renderer.id),
+                        "Time Source",
+                        &format!("{time_source:?}"),
+                        &time_source_options,
                     );
-                    inspector_action_button(
+                    let playback_options = [
+                        FlipbookPlaybackMode::Forward,
+                        FlipbookPlaybackMode::Reverse,
+                        FlipbookPlaybackMode::PingPong,
+                    ]
+                    .into_iter()
+                    .map(|candidate| ComboOption {
+                        label: format!("{candidate:?}"),
+                        selected: candidate == *playback,
+                        action: EditorAction::SetFlipbookPlayback(renderer.id, candidate),
+                    })
+                    .collect::<Vec<_>>();
+                    spawn_inspector_combo_row(
                         card,
-                        &format!("Playback  {playback:?}"),
-                        EditorAction::CycleFlipbookPlayback(renderer.id),
+                        "Playback",
+                        &format!("{playback:?}"),
+                        &playback_options,
                     );
-                    inspector_action_button(
+                    spawn_renderer_toggle_control(
                         card,
-                        if *random_start {
-                            "Random Start  On"
-                        } else {
-                            "Random Start  Off"
-                        },
-                        EditorAction::ToggleFlipbookRandomStart(renderer.id),
+                        "Random Start",
+                        *random_start,
+                        RendererToggleControl::FlipbookRandomStart(renderer.id),
                     );
                 }
                 _ => {}
@@ -4120,83 +4372,6 @@ fn format_value(value: Value) -> String {
         Value::Asset(id) => format!("Asset {id}"),
         Value::Material(id) => format!("Material {id}"),
     }
-}
-
-fn adjusted_module_value(
-    module: &ModuleInstance,
-    input: &InputMetadata,
-    component: u8,
-    direction: i8,
-) -> Option<Value> {
-    let direction = direction as f32;
-    let value = module_parameter(module, input.name)?;
-    Some(match (&input.control, value) {
-        (InputControl::Toggle, Value::Bool(value)) => Value::Bool(!value),
-        (InputControl::Number { step, min, max }, Value::U32(value)) => {
-            let delta = (*step).round().max(1.0) as u32;
-            let value = if direction < 0.0 {
-                value.saturating_sub(delta)
-            } else {
-                value.saturating_add(delta)
-            };
-            Value::U32(clamp_number(value as f32, *min, *max).round() as u32)
-        }
-        (InputControl::Number { step, min, max }, Value::Scalar(value)) => {
-            Value::Scalar(clamp_number(value + direction * step, *min, *max))
-        }
-        (InputControl::Vector { step, min, max }, Value::Vec2(mut value)) => {
-            let target = value.get_mut(component as usize)?;
-            *target = clamp_number(*target + direction * step, *min, *max);
-            Value::Vec2(value)
-        }
-        (InputControl::Vector { step, min, max }, Value::Vec3(mut value)) => {
-            let target = value.get_mut(component as usize)?;
-            *target = clamp_number(*target + direction * step, *min, *max);
-            Value::Vec3(value)
-        }
-        (InputControl::Vector { step, min, max }, Value::Vec4(mut value)) => {
-            let target = value.get_mut(component as usize)?;
-            *target = clamp_number(*target + direction * step, *min, *max);
-            Value::Vec4(value)
-        }
-        (InputControl::Range { step, min, max }, Value::Range(mut value)) => {
-            if component == 0 {
-                value.min = clamp_number(value.min + direction * step, *min, *max).min(value.max);
-            } else {
-                value.max = clamp_number(value.max + direction * step, *min, *max).max(value.min);
-            }
-            Value::Range(value)
-        }
-        (InputControl::Choice, Value::Shape(shape)) => {
-            let index = match shape {
-                EmitterShape::Point => 0,
-                EmitterShape::Circle { .. } => 1,
-                EmitterShape::Ring { .. } => 2,
-                EmitterShape::Cone { .. } => 3,
-            };
-            let next = (index as i8 + direction.signum() as i8).rem_euclid(4);
-            Value::Shape(match next {
-                0 => EmitterShape::Point,
-                1 => EmitterShape::Circle { radius: 12.0 },
-                2 => EmitterShape::Ring { radius: 12.0 },
-                _ => EmitterShape::Cone {
-                    radius: 12.0,
-                    depth: 24.0,
-                },
-            })
-        }
-        _ => return None,
-    })
-}
-
-fn clamp_number(mut value: f32, min: Option<f32>, max: Option<f32>) -> f32 {
-    if let Some(min) = min {
-        value = value.max(min);
-    }
-    if let Some(max) = max {
-        value = value.min(max);
-    }
-    value
 }
 
 fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
@@ -4560,6 +4735,7 @@ fn spawn_generated_code_workspace(parent: &mut ChildSpawnerCommands, session: &E
                 .with_children(|body| {
                     spawn_vertical_scroll_area(
                         body,
+                        ScrollMemoryKey::GeneratedCode,
                         Node {
                             flex_grow: 1.0,
                             min_width: Val::Px(0.0),
@@ -4678,6 +4854,7 @@ fn spawn_profiler_workspace(
                 .with_children(|body| {
                     spawn_vertical_scroll_area(
                         body,
+                        ScrollMemoryKey::Profiler,
                         Node {
                             flex_grow: 1.0,
                             min_width: Val::Px(0.0),
@@ -5131,6 +5308,7 @@ fn spawn_settings_workspace(
                     .with_children(|content| {
                         spawn_vertical_scroll_area(
                             content,
+                            ScrollMemoryKey::Settings,
                             Node {
                                 flex_grow: 1.0,
                                 min_width: Val::Px(0.0),
@@ -5256,8 +5434,8 @@ fn spawn_settings_category(
             spawn_settings_locale(
                 parent,
                 &localizer.text("settings-editor-language"),
-                &localizer.locale_name(localizer.locale()),
                 &localizer.text("settings-language-description"),
+                localizer,
             );
         }
         SettingsCategory::Keybindings => {
@@ -5345,23 +5523,26 @@ fn spawn_settings_toggle(
 fn spawn_settings_locale(
     parent: &mut ChildSpawnerCommands,
     title: &str,
-    value: &str,
     description: &str,
+    localizer: &Localizer,
 ) {
     settings_row(parent, title, description, |controls| {
-        spawn_feathers_tool_button(controls, "−", EditorAction::CycleLocale(-1));
-        controls
-            .spawn(Node {
-                min_width: Val::Px(132.0),
-                justify_content: JustifyContent::Center,
-                ..default()
+        let options = SUPPORTED_LOCALES
+            .iter()
+            .enumerate()
+            .map(|(index, locale)| ComboOption {
+                label: localizer.locale_name(locale),
+                selected: *locale == localizer.locale(),
+                action: EditorAction::SetLocale(index),
             })
-            .with_children(|value_container| {
-                value_container
-                    .spawn_empty()
-                    .apply_scene(label_dim(value.to_owned()));
-            });
-        spawn_feathers_tool_button(controls, "+", EditorAction::CycleLocale(1));
+            .collect::<Vec<_>>();
+        spawn_combo_control(
+            controls,
+            &localizer.locale_name(localizer.locale()),
+            title,
+            &options,
+            180.0,
+        );
     });
 }
 
@@ -5461,21 +5642,167 @@ fn spawn_feathers_action_button(
         });
 }
 
-fn spawn_feathers_tool_button(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
+struct ComboOption {
+    label: String,
+    selected: bool,
     action: EditorAction,
+}
+
+fn spawn_combo_control(
+    parent: &mut ChildSpawnerCommands,
+    value: &str,
+    accessible_label: &str,
+    options: &[ComboOption],
+    width: f32,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Px(width),
+            min_width: Val::Px(112.0),
+            ..default()
+        })
+        .with_children(|wrapper| {
+            wrapper
+                .spawn_empty()
+                .apply_scene(ui_shell::feathers_menu())
+                .with_children(|menu| {
+                    menu.spawn_empty()
+                        .apply_scene(ui_shell::feathers_menu_button())
+                        .insert((
+                            AccessibleLabel(accessible_label.to_owned()),
+                            Node {
+                                width: Val::Percent(100.0),
+                                height: Val::Px(28.0),
+                                align_items: AlignItems::Center,
+                                padding: UiRect::horizontal(Val::Px(8.0)),
+                                ..default()
+                            },
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new(value),
+                                ThemedText,
+                                Pickable::IGNORE,
+                                Node {
+                                    flex_grow: 1.0,
+                                    ..default()
+                                },
+                            ));
+                            button
+                                .spawn_empty()
+                                .apply_scene(icon(icons::CHEVRON_DOWN))
+                                .insert(Pickable::IGNORE);
+                        });
+                    menu.spawn_empty()
+                        .apply_scene(ui_shell::feathers_menu_popup())
+                        .with_children(|popup| {
+                            for option in options {
+                                spawn_combo_option(popup, option);
+                            }
+                        });
+                });
+        });
+}
+
+fn spawn_combo_option(parent: &mut ChildSpawnerCommands, option: &ComboOption) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu_item())
+        .insert((
+            Interaction::None,
+            option.action,
+            FeathersActionButton,
+            AccessibleLabel(option.label.clone()),
+        ))
+        .with_children(|item| {
+            item.spawn((
+                Node {
+                    width: Val::Px(18.0),
+                    height: Val::Percent(100.0),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ))
+            .with_children(|indicator| {
+                if option.selected {
+                    indicator.spawn((
+                        Node {
+                            width: Val::Px(6.0),
+                            height: Val::Px(6.0),
+                            border_radius: BorderRadius::all(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme::ACCENT),
+                        Pickable::IGNORE,
+                    ));
+                }
+            });
+            item.spawn((
+                Text::new(option.label.clone()),
+                ThemedText,
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+fn spawn_action_menu(
+    parent: &mut ChildSpawnerCommands,
+    accessible_label: &str,
+    options: &[ComboOption],
 ) {
     parent
         .spawn_empty()
-        .apply_scene(ui_shell::feathers_tool_button())
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.to_owned()),
-        ))
-        .with_children(|button| {
-            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
+        .apply_scene(ui_shell::feathers_menu())
+        .with_children(|menu| {
+            menu.spawn_empty()
+                .apply_scene(ui_shell::feathers_menu_button())
+                .insert((
+                    AccessibleLabel(accessible_label.to_owned()),
+                    Node {
+                        width: Val::Px(28.0),
+                        height: Val::Px(28.0),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                ))
+                .with_children(|button| {
+                    button
+                        .spawn((
+                            Node {
+                                width: Val::Px(4.0),
+                                height: Val::Px(16.0),
+                                flex_direction: FlexDirection::Column,
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::SpaceBetween,
+                                ..default()
+                            },
+                            Pickable::IGNORE,
+                        ))
+                        .with_children(|dots| {
+                            for _ in 0..3 {
+                                dots.spawn((
+                                    Node {
+                                        width: Val::Px(3.0),
+                                        height: Val::Px(3.0),
+                                        border_radius: BorderRadius::all(Val::Px(2.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(theme::TEXT_MUTED),
+                                    Pickable::IGNORE,
+                                ));
+                            }
+                        });
+                });
+            menu.spawn_empty()
+                .apply_scene(ui_shell::feathers_menu_popup())
+                .with_children(|popup| {
+                    for option in options {
+                        spawn_combo_option(popup, option);
+                    }
+                });
         });
 }
 
@@ -5626,6 +5953,137 @@ fn handle_inspector_toggle_change(
     let value = Value::Bool(change.value);
     if current != value {
         session.set_module_parameter(control.module, control.parameter, value);
+    }
+}
+
+fn handle_module_enabled_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&ModuleEnabledControl>,
+    mut commands: Commands,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    let enabled = session
+        .selected_layer()
+        .modules
+        .iter()
+        .find(|module| module.id == control.0)
+        .map(|module| module.enabled);
+    if enabled.is_some_and(|enabled| enabled != change.value) {
+        session.toggle_module(control.0);
+    }
+}
+
+fn handle_renderer_enabled_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&RendererEnabledControl>,
+    mut commands: Commands,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    let enabled = session
+        .selected_layer()
+        .renderers
+        .iter()
+        .find(|renderer| renderer.id == control.0)
+        .map(|renderer| renderer.enabled);
+    if enabled.is_some_and(|enabled| enabled != change.value) {
+        session.toggle_renderer(control.0);
+    }
+}
+
+fn handle_renderer_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&RendererNumberControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    match *control {
+        RendererNumberControl::Softness(renderer) => {
+            session.set_renderer_softness(renderer, change.value)
+        }
+        RendererNumberControl::Uv(renderer, component) => {
+            session.set_renderer_uv(renderer, component, change.value)
+        }
+        RendererNumberControl::FlipbookFrameRate(renderer) => {
+            session.set_flipbook_frame_rate(renderer, change.value)
+        }
+    }
+}
+
+fn handle_renderer_toggle_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&RendererToggleControl>,
+    mut commands: Commands,
+    mut session: ResMut<EditorSession>,
+) {
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    match *control {
+        RendererToggleControl::FlipbookLooping(renderer_id) => {
+            let current = session
+                .selected_layer()
+                .renderers
+                .iter()
+                .find(|renderer| renderer.id == renderer_id)
+                .and_then(|renderer| match renderer.properties {
+                    RendererProperties::Flipbook { flipbook, .. } => session
+                        .effect
+                        .flipbooks
+                        .iter()
+                        .find(|definition| definition.id == flipbook)
+                        .map(|definition| definition.looping),
+                    _ => None,
+                });
+            if current.is_some_and(|current| current != change.value) {
+                session.toggle_flipbook_looping(renderer_id);
+            }
+        }
+        RendererToggleControl::FlipbookRandomStart(renderer_id) => {
+            let current = session
+                .selected_layer()
+                .renderers
+                .iter()
+                .find(|renderer| renderer.id == renderer_id)
+                .and_then(|renderer| match renderer.properties {
+                    RendererProperties::Flipbook { random_start, .. } => Some(random_start),
+                    _ => None,
+                });
+            if current.is_some_and(|current| current != change.value) {
+                session.toggle_flipbook_random_start(renderer_id);
+            }
+        }
     }
 }
 
@@ -5782,6 +6240,78 @@ fn sync_inspector_number_inputs(
     }
 }
 
+fn sync_renderer_number_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &RendererNumberControl), Added<RendererNumberControl>>,
+) {
+    for (entity, control) in &controls {
+        let Some(value) = renderer_number_input_value(&session, *control) else {
+            continue;
+        };
+        commands.trigger(UpdateNumberInput {
+            entity,
+            value: NumberInputValue::F32(value),
+        });
+    }
+}
+
+fn renderer_number_input_value(
+    session: &EditorSession,
+    control: RendererNumberControl,
+) -> Option<f32> {
+    let renderer_id = match control {
+        RendererNumberControl::Softness(renderer)
+        | RendererNumberControl::Uv(renderer, _)
+        | RendererNumberControl::FlipbookFrameRate(renderer) => renderer,
+    };
+    let renderer = session
+        .selected_layer()
+        .renderers
+        .iter()
+        .find(|renderer| renderer.id == renderer_id)?;
+    match control {
+        RendererNumberControl::Softness(_) => {
+            let material = session
+                .effect
+                .materials
+                .iter()
+                .find(|material| material.id == renderer.material)?;
+            let MaterialProperties::Sprite { softness, .. } = &material.properties;
+            match softness {
+                MaterialInput::Constant(value) => Some(*value),
+                MaterialInput::Parameter(_) => None,
+            }
+        }
+        RendererNumberControl::Uv(_, component) => {
+            let material = session
+                .effect
+                .materials
+                .iter()
+                .find(|material| material.id == renderer.material)?;
+            let MaterialProperties::Sprite { uv, .. } = &material.properties;
+            match component {
+                0 => Some(uv.min[0]),
+                1 => Some(uv.min[1]),
+                2 => Some(uv.max[0]),
+                3 => Some(uv.max[1]),
+                _ => None,
+            }
+        }
+        RendererNumberControl::FlipbookFrameRate(_) => {
+            let RendererProperties::Flipbook { flipbook, .. } = renderer.properties else {
+                return None;
+            };
+            session
+                .effect
+                .flipbooks
+                .iter()
+                .find(|definition| definition.id == flipbook)
+                .map(|definition| definition.frame_rate)
+        }
+    }
+}
+
 fn inspector_number_input_value(
     session: &EditorSession,
     control: InspectorNumberControl,
@@ -5835,13 +6365,14 @@ fn settings_number_input_value(
 
 fn spawn_vertical_scroll_area(
     parent: &mut ChildSpawnerCommands,
+    memory: ScrollMemoryKey,
     mut viewport: Node,
     content: impl FnOnce(&mut ChildSpawnerCommands),
 ) -> Entity {
     viewport.overflow = Overflow::scroll_y();
     viewport.scrollbar_width = 0.0;
     let target = parent
-        .spawn((viewport, ScrollArea))
+        .spawn((viewport, ScrollArea, PersistedScroll(memory)))
         .with_children(content)
         .id();
     spawn_vertical_scrollbar(parent, target);
@@ -5859,6 +6390,26 @@ fn spawn_vertical_scrollbar(parent: &mut ChildSpawnerCommands, target: Entity) {
             padding: UiRect::horizontal(Val::Px(3.0)),
             ..default()
         });
+}
+
+fn remember_scroll_positions(
+    mut memory: ResMut<ScrollMemoryState>,
+    scroll_areas: Query<(&PersistedScroll, &ScrollPosition)>,
+) {
+    for (marker, position) in &scroll_areas {
+        memory.0.insert(marker.0, position.0);
+    }
+}
+
+fn restore_scroll_positions(
+    memory: Res<ScrollMemoryState>,
+    mut scroll_areas: Query<(&PersistedScroll, &mut ScrollPosition), Added<PersistedScroll>>,
+) {
+    for (marker, mut position) in &mut scroll_areas {
+        if let Some(saved) = memory.0.get(&marker.0) {
+            position.0 = *saved;
+        }
+    }
 }
 
 fn vertical_scrollbar_needed(viewport_height: f32, content_height: f32) -> bool {
@@ -6571,6 +7122,7 @@ fn spawn_diagnostics_workspace(
                 .with_children(|body| {
                     spawn_vertical_scroll_area(
                         body,
+                        ScrollMemoryKey::Diagnostics,
                         Node {
                             flex_grow: 1.0,
                             min_width: Val::Px(0.0),
@@ -6907,6 +7459,7 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
                     .with_children(|column| {
                         spawn_vertical_scroll_area(
                             column,
+                            ScrollMemoryKey::ChangesList,
                             Node {
                                 flex_grow: 1.0,
                                 min_width: Val::Px(0.0),
@@ -6985,6 +7538,7 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
                     .with_children(|column| {
                         spawn_vertical_scroll_area(
                             column,
+                            ScrollMemoryKey::ChangesReview,
                             Node {
                                 flex_grow: 1.0,
                                 min_width: Val::Px(0.0),
@@ -7094,6 +7648,7 @@ fn spawn_complex_input_list(
         .with_children(|column| {
             spawn_vertical_scroll_area(
                 column,
+                ScrollMemoryKey::Curves,
                 Node {
                     flex_grow: 1.0,
                     min_width: Val::Px(0.0),
@@ -8230,19 +8785,11 @@ fn handle_buttons(
                         session.add_flipbook_renderer();
                         palette.open = false;
                     }
-                    EditorAction::AdjustModuleInput {
+                    EditorAction::SetModuleChoice {
                         module,
                         input,
-                        component,
-                        direction,
-                    } => adjust_module_input(
-                        &mut session,
-                        &registry.0,
-                        module,
-                        input,
-                        component,
-                        direction,
-                    ),
+                        choice,
+                    } => set_module_choice(&mut session, &registry.0, module, input, choice),
                     EditorAction::EditComplexInput(module, input) => {
                         reveal_dock_panel(&mut layout, &mut session, DockPanel::Curves);
                         workspace.complex = Some(ComplexSelection {
@@ -8282,7 +8829,6 @@ fn handle_buttons(
                         &mut workspace,
                         ComplexKeyEdit::GradientChannel(channel, direction),
                     ),
-                    EditorAction::ToggleModule(id) => session.toggle_module(id),
                     EditorAction::MoveModule(id, direction) => {
                         session.move_module(id, direction);
                     }
@@ -8293,34 +8839,41 @@ fn handle_buttons(
                             workspace.complex = None;
                         }
                     }
-                    EditorAction::ToggleRenderer(id) => session.toggle_renderer(id),
-                    EditorAction::CycleRendererMaterial(id) => {
-                        session.cycle_renderer_material(id);
+                    EditorAction::SetRendererMaterial(id, index) => {
+                        if let Some(material) = session
+                            .effect
+                            .materials
+                            .get(index)
+                            .map(|material| material.id)
+                        {
+                            session.set_renderer_material(id, material);
+                        }
                     }
-                    EditorAction::CycleRendererBlend(id) => session.cycle_renderer_blend(id),
-                    EditorAction::AdjustRendererSoftness(id, direction) => {
-                        session.adjust_renderer_softness(id, direction as f32 * 0.1);
+                    EditorAction::SetRendererBlend(id, blend) => {
+                        session.set_renderer_blend(id, blend);
                     }
-                    EditorAction::CycleRendererTexture(id) => {
-                        session.cycle_renderer_texture(id);
+                    EditorAction::SetRendererTexture(id, index) => {
+                        let texture = index
+                            .and_then(|index| session.effect.assets.get(index))
+                            .filter(|asset| asset.kind == aestra_bevy::AssetKind::Texture)
+                            .map(|asset| asset.id);
+                        session.set_renderer_texture(id, texture);
                     }
-                    EditorAction::ClearRendererTexture(id) => {
-                        session.clear_renderer_texture(id);
+                    EditorAction::SetRendererFlipbook(id, index) => {
+                        if let Some(flipbook) = session
+                            .effect
+                            .flipbooks
+                            .get(index)
+                            .map(|flipbook| flipbook.id)
+                        {
+                            session.set_renderer_flipbook(id, flipbook);
+                        }
                     }
-                    EditorAction::AdjustRendererUv(id, component, direction) => {
-                        session.adjust_renderer_uv(id, component, direction as f32 * 0.05);
+                    EditorAction::SetFlipbookTimeSource(id, value) => {
+                        session.set_flipbook_time_source(id, value);
                     }
-                    EditorAction::CycleRendererFlipbook(id) => session.cycle_renderer_flipbook(id),
-                    EditorAction::AdjustFlipbookFrameRate(id, direction) => {
-                        session.adjust_flipbook_frame_rate(id, direction as f32);
-                    }
-                    EditorAction::ToggleFlipbookLooping(id) => session.toggle_flipbook_looping(id),
-                    EditorAction::CycleFlipbookTimeSource(id) => {
-                        session.cycle_flipbook_time_source(id)
-                    }
-                    EditorAction::CycleFlipbookPlayback(id) => session.cycle_flipbook_playback(id),
-                    EditorAction::ToggleFlipbookRandomStart(id) => {
-                        session.toggle_flipbook_random_start(id)
+                    EditorAction::SetFlipbookPlayback(id, value) => {
+                        session.set_flipbook_playback(id, value);
                     }
                     EditorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     EditorAction::DeleteRenderer(id) => {
@@ -8450,8 +9003,10 @@ fn handle_buttons(
                             session.ui_revision += 1;
                         }
                     }
-                    EditorAction::CycleLocale(direction) => {
-                        if localizer.cycle_locale(direction) {
+                    EditorAction::SetLocale(index) => {
+                        if let Some(locale) = SUPPORTED_LOCALES.get(index)
+                            && localizer.set_locale(locale)
+                        {
                             settings.language.locale = localizer.locale().into();
                             session.ui_revision += 1;
                             persist_editor_settings(
@@ -8676,13 +9231,12 @@ fn preview_renderer_deletion(session: &mut EditorSession, renderer: RendererId) 
     ))
 }
 
-fn adjust_module_input(
+fn set_module_choice(
     session: &mut EditorSession,
     registry: &ModuleRegistry,
     module_id: ModuleId,
     input_index: u8,
-    component: u8,
-    direction: i8,
+    choice: u8,
 ) {
     let Some(module) = session
         .selected_layer()
@@ -8700,12 +9254,36 @@ fn adjust_module_input(
         session.status = "Module input metadata is unavailable".into();
         return;
     };
-    let parameter = input.name;
-    let Some(value) = adjusted_module_value(module, input, component, direction) else {
-        session.status = format!("{} needs a dedicated editor", input.display_name);
+    if !matches!(input.control, InputControl::Choice) {
+        session.status = format!("{} is not a choice input", input.display_name);
         return;
+    }
+    let current = module_parameter(module, input.name);
+    let shape = match choice {
+        0 => EmitterShape::Point,
+        1 => match current {
+            Some(Value::Shape(EmitterShape::Circle { radius })) => EmitterShape::Circle { radius },
+            _ => EmitterShape::Circle { radius: 12.0 },
+        },
+        2 => match current {
+            Some(Value::Shape(EmitterShape::Ring { radius })) => EmitterShape::Ring { radius },
+            _ => EmitterShape::Ring { radius: 12.0 },
+        },
+        3 => match current {
+            Some(Value::Shape(EmitterShape::Cone { radius, depth })) => {
+                EmitterShape::Cone { radius, depth }
+            }
+            _ => EmitterShape::Cone {
+                radius: 12.0,
+                depth: 24.0,
+            },
+        },
+        _ => {
+            session.status = "Choice is no longer available".into();
+            return;
+        }
     };
-    session.set_module_parameter(module_id, parameter, value);
+    session.set_module_parameter(module_id, input.name, Value::Shape(shape));
 }
 
 #[derive(Clone, Copy)]
@@ -9684,6 +10262,27 @@ mod tests {
     }
 
     #[test]
+    fn panel_scroll_position_is_restored_after_a_rebuild() {
+        let saved = Vec2::new(0.0, 184.0);
+        let mut memory = ScrollMemoryState::default();
+        memory.0.insert(ScrollMemoryKey::Inspector, saved);
+        let mut app = App::new();
+        app.insert_resource(memory);
+        app.add_systems(Update, restore_scroll_positions);
+        let rebuilt = app
+            .world_mut()
+            .spawn((
+                PersistedScroll(ScrollMemoryKey::Inspector),
+                ScrollPosition::default(),
+            ))
+            .id();
+
+        app.update();
+
+        assert_eq!(app.world().get::<ScrollPosition>(rebuilt).unwrap().0, saved);
+    }
+
+    #[test]
     fn bundled_effect_is_valid() {
         let effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("bundled effect should parse");
         assert_eq!(effect.format_version, 2);
@@ -9739,17 +10338,25 @@ mod tests {
     }
 
     #[test]
-    fn metadata_control_adjusts_builtin_values() {
-        let module = ModuleInstance::emission(20.0, 4);
+    fn inspector_choice_selects_the_requested_shape_directly() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "shape").is_some())
+            .unwrap()
+            .id;
         let registry = ModuleRegistry::builtin();
-        let metadata = registry.get(&module.module_type).unwrap();
+
+        set_module_choice(&mut session, &registry, module, 0, 3);
+
         assert_eq!(
-            adjusted_module_value(&module, &metadata.inputs[0], 0, 1),
-            Some(Value::Scalar(25.0))
-        );
-        assert_eq!(
-            adjusted_module_value(&module, &metadata.inputs[1], 0, -1),
-            Some(Value::U32(0))
+            inspector_module_parameter(&session, module, "shape"),
+            Some(Value::Shape(EmitterShape::Cone {
+                radius: 12.0,
+                depth: 24.0,
+            }))
         );
     }
 
