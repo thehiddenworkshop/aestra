@@ -43,7 +43,9 @@ use bevy::{
     },
     mesh::MeshVertexBufferLayoutRef,
     pbr::{MaterialPipeline, MaterialPipelineKey},
-    picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer, Scroll},
+    picking::events::{
+        Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer, Press, Scroll,
+    },
     picking::pointer::PointerButton,
     prelude::*,
     reflect::TypePath,
@@ -196,7 +198,7 @@ fn main() {
                     handle_window_close_requests,
                     persist_native_window_geometry,
                     dismiss_open_menus,
-                    (navigate_timeline, scrub_timeline).chain(),
+                    navigate_timeline,
                     advance_playback,
                     sync_rendered_preview,
                     update_preview,
@@ -6966,6 +6968,8 @@ fn spawn_timeline(
                         },
                         BackgroundColor(theme::TIMELINE_BG),
                     ))
+                    .observe(seek_timeline_on_press)
+                    .observe(seek_timeline_on_drag)
                     .with_children(|tracks| {
                         spawn_ruler(tracks);
                         for (index, layer) in session.effect.emitters.iter().enumerate() {
@@ -7017,7 +7021,8 @@ fn spawn_timeline(
                                             .observe(begin_timeline_clip_drag)
                                             .observe(move_timeline_clip_drag)
                                             .observe(finish_timeline_clip_drag)
-                                            .observe(select_timeline_clip);
+                                            .observe(select_timeline_clip)
+                                            .observe(stop_timeline_control_press);
                                             for (kind, left, right) in [
                                                 (
                                                     TimelineDragKind::TrimStart,
@@ -7057,6 +7062,7 @@ fn spawn_timeline(
                                                 .observe(move_timeline_clip_drag)
                                                 .observe(finish_timeline_clip_drag)
                                                 .observe(select_timeline_clip)
+                                                .observe(stop_timeline_control_press)
                                                 .with_child((
                                                     Node {
                                                         width: Val::Px(2.0),
@@ -7135,7 +7141,8 @@ fn spawn_timeline(
                             ))
                             .observe(begin_timeline_scrollbar_drag)
                             .observe(move_timeline_scrollbar_drag)
-                            .observe(finish_timeline_scrollbar_drag);
+                            .observe(finish_timeline_scrollbar_drag)
+                            .observe(stop_timeline_control_press);
                     });
                 });
         });
@@ -12543,7 +12550,7 @@ fn navigate_timeline(
         let span = state.view.span();
         state.pan_by(-amount * span * 0.08, session.playback_duration());
     } else if let Some(position) = cursor.normalized {
-        let anchor = state.view.time_at(position.x);
+        let anchor = state.view.time_at(timeline_cursor_fraction(position.x));
         state.zoom_at(
             anchor,
             0.82_f32.powf(scroll.y),
@@ -12551,6 +12558,51 @@ fn navigate_timeline(
             session.clock.tick_rate(),
         );
     }
+}
+
+fn seek_timeline_on_press(
+    press: On<Pointer<Press>>,
+    timelines: Query<&RelativeCursorPosition, With<TimelineCanvas>>,
+    state: Res<TimelineState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if press.button == PointerButton::Primary {
+        seek_timeline_to_pointer(press.event_target(), &timelines, &state, &mut session);
+    }
+}
+
+fn seek_timeline_on_drag(
+    drag: On<Pointer<Drag>>,
+    timelines: Query<&RelativeCursorPosition, With<TimelineCanvas>>,
+    state: Res<TimelineState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if drag.button == PointerButton::Primary {
+        seek_timeline_to_pointer(drag.event_target(), &timelines, &state, &mut session);
+    }
+}
+
+fn seek_timeline_to_pointer(
+    entity: Entity,
+    timelines: &Query<&RelativeCursorPosition, With<TimelineCanvas>>,
+    state: &TimelineState,
+    session: &mut EditorSession,
+) {
+    let Ok(cursor) = timelines.get(entity) else {
+        return;
+    };
+    let Some(position) = cursor.normalized else {
+        return;
+    };
+    session.seek_time(state.view.time_at(timeline_cursor_fraction(position.x)));
+}
+
+fn timeline_cursor_fraction(relative_x: f32) -> f32 {
+    (relative_x + 0.5).clamp(0.0, 1.0)
+}
+
+fn stop_timeline_control_press(mut press: On<Pointer<Press>>) {
+    press.propagate(false);
 }
 
 fn begin_timeline_clip_drag(
@@ -12589,7 +12641,7 @@ fn begin_timeline_clip_drag(
 }
 
 fn move_timeline_clip_drag(
-    drag_event: On<Pointer<Drag>>,
+    mut drag_event: On<Pointer<Drag>>,
     targets: Query<&TimelineClipInteraction>,
     canvases: Query<&ComputedNode, With<TimelineCanvas>>,
     session: Res<EditorSession>,
@@ -12598,6 +12650,7 @@ fn move_timeline_clip_drag(
     let Ok(target) = targets.get(drag_event.event_target()) else {
         return;
     };
+    drag_event.propagate(false);
     let Some(mut drag) = state.drag else {
         return;
     };
@@ -12725,7 +12778,7 @@ fn begin_timeline_scrollbar_drag(
 }
 
 fn move_timeline_scrollbar_drag(
-    drag: On<Pointer<Drag>>,
+    mut drag: On<Pointer<Drag>>,
     thumbs: Query<(), With<TimelineScrollbarThumb>>,
     tracks: Query<&ComputedNode, With<TimelineScrollbarTrack>>,
     session: Res<EditorSession>,
@@ -12734,6 +12787,7 @@ fn move_timeline_scrollbar_drag(
     if !thumbs.contains(drag.event_target()) {
         return;
     }
+    drag.propagate(false);
     let Some(active) = state.scrollbar_drag else {
         return;
     };
@@ -12814,26 +12868,6 @@ fn update_timeline_drag(
             drag.current_duration = end - drag.original_start;
             *snap_guide = guide;
         }
-    }
-}
-
-fn scrub_timeline(
-    timeline: Query<(&Interaction, &RelativeCursorPosition), With<TimelineCanvas>>,
-    state: Res<TimelineState>,
-    mut session: ResMut<EditorSession>,
-) {
-    if state.drag.is_some() || state.scrollbar_drag.is_some() || state.panning {
-        return;
-    }
-    for (interaction, cursor) in &timeline {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        let Some(position) = cursor.normalized else {
-            continue;
-        };
-        let time = state.view.time_at(position.x);
-        session.seek_time(time);
     }
 }
 
@@ -15042,6 +15076,13 @@ mod tests {
             .set_locale("fr-FR");
         app.update();
         assert_eq!(app.world().get::<Text>(label).unwrap().0, "Fichier");
+    }
+
+    #[test]
+    fn timeline_cursor_coordinates_cover_the_full_canvas() {
+        assert_eq!(timeline_cursor_fraction(-0.5), 0.0);
+        assert_eq!(timeline_cursor_fraction(0.0), 0.5);
+        assert_eq!(timeline_cursor_fraction(0.5), 1.0);
     }
 
     #[test]
