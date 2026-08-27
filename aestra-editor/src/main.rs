@@ -19,6 +19,7 @@ use bevy::{
     ecs::system::SystemParam,
     feathers::{
         FeathersPlugins,
+        constants::fonts,
         containers::{group, group_body, group_header, pane_header},
         controls::{NumberInputValue, UpdateNumberInput},
         display::{label, label_dim},
@@ -29,6 +30,7 @@ use bevy::{
     picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer},
     picking::pointer::PointerButton,
     prelude::*,
+    text::FontSource,
     ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition},
     ui_widgets::{Activate, ScrollArea, ScrollIntoView, Scrollbar, ValueChange},
     window::{
@@ -109,11 +111,15 @@ fn main() {
         .add_observer(handle_inspector_integer_change)
         .add_observer(handle_inspector_scalar_change)
         .add_observer(queue_feathers_action_activation)
-        .add_systems(Startup, (setup_window_cursor, setup_editor))
+        .add_systems(
+            Startup,
+            (setup_window_cursor, setup_editor_fonts, setup_editor),
+        )
         .add_systems(
             Update,
             (
                 (
+                    apply_editor_fonts,
                     module_palette_keyboard,
                     keyboard_shortcuts,
                     audit_editor_action_controls,
@@ -483,6 +489,11 @@ struct EditorRoot;
 #[derive(Component)]
 struct EditorContent;
 
+#[derive(Resource)]
+struct EditorFonts {
+    mono: Handle<Font>,
+}
+
 #[derive(Component)]
 struct DocumentMenuLabel;
 
@@ -847,6 +858,26 @@ fn setup_editor(
         sources,
     );
     rendered.0 = session.ui_revision;
+}
+
+fn setup_editor_fonts(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.insert_resource(EditorFonts {
+        mono: asset_server.load(fonts::MONO),
+    });
+}
+
+/// Replaces Bevy's ASCII-only default font with Feathers' complete Fira Mono face.
+/// Explicit Feathers font choices are preserved, so standard widgets can continue to use their
+/// regular and bold faces while editor-native labels gain the glyphs required by localization.
+fn apply_editor_fonts(fonts: Res<EditorFonts>, mut text_fonts: Query<&mut TextFont, Added<Text>>) {
+    for mut text_font in &mut text_fonts {
+        if matches!(
+            &text_font.font,
+            FontSource::Handle(handle) if handle == &Handle::<Font>::default()
+        ) {
+            text_font.font = fonts.mono.clone().into();
+        }
+    }
 }
 
 fn setup_window_cursor(mut commands: Commands, window: Single<Entity, With<PrimaryWindow>>) {
