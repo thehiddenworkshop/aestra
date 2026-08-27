@@ -17,6 +17,7 @@ edit-duplicate-emitter = Dupliquer l’émetteur
 edit-delete-emitter = Supprimer l’émetteur
 
 view-toggle-grid = Afficher ou masquer la grille
+view-frame-effect = Centrer l’effet
 view-restart-preview = Relancer l’aperçu
 view-panels = Panneaux
 view-reset-workspace = Réinitialiser l’espace de travail
@@ -39,6 +40,13 @@ panel-generated-code = CODE GÉNÉRÉ
 panel-profiler = PROFILEUR
 panel-changes = MODIFICATIONS
 panel-settings = PARAMÈTRES
+
+viewport-frame-effect = Centrer l’effet
+viewport-frame-effect-description = Centrer la caméra de l’aperçu sur l’effet.
+viewport-wireframe = Fil de fer
+viewport-wireframe-description = Afficher les maillages des particules animées sous forme de contours non remplis.
+viewport-rendered = Rendu
+viewport-rendered-description = Afficher le rendu complet de l’effet de particules.
 
 dock-float-panel = Détacher le panneau
 common-close = Fermer

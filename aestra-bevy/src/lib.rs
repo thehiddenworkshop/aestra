@@ -42,6 +42,16 @@ pub enum PresentationMode {
     GpuReadback,
 }
 
+/// Selects how an effect's presentation geometry is shaded.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EffectRenderMode {
+    /// Use authored materials, textures, and blending.
+    #[default]
+    Rendered,
+    /// Draw the particle sprite quads as unfilled outlines for editor inspection.
+    Wireframe,
+}
+
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct AestraSettings {
     pub presentation: PresentationMode,
@@ -117,6 +127,7 @@ pub struct EffectPlayer {
     pub instance: EffectInstance,
     pub speed: f32,
     pub playing: bool,
+    render_mode: EffectRenderMode,
     clock: PlaybackClock,
     samples: Vec<ParticleSample>,
     gpu_samples: Vec<ParticleSample>,
@@ -137,6 +148,7 @@ impl EffectPlayer {
             instance: EffectInstance::new(effect),
             speed: 1.0,
             playing: true,
+            render_mode: EffectRenderMode::Rendered,
             clock: PlaybackClock::default(),
             samples: Vec::new(),
             gpu_samples: Vec::new(),
@@ -145,6 +157,14 @@ impl EffectPlayer {
 
     pub fn effect(&self) -> &Arc<CompiledEffect> {
         self.instance.effect()
+    }
+
+    pub fn render_mode(&self) -> EffectRenderMode {
+        self.render_mode
+    }
+
+    pub fn set_render_mode(&mut self, mode: EffectRenderMode) {
+        self.render_mode = mode;
     }
 
     pub fn elapsed(&self) -> f32 {
@@ -603,6 +623,17 @@ mod tests {
         let player = EffectPlayer::try_new(&effect).unwrap();
         assert_eq!(player.effect().source, effect.id);
         assert_eq!(player.effect().emitters.len(), 1);
+    }
+
+    #[test]
+    fn player_render_mode_can_switch_to_wireframe() {
+        let mut effect = EffectAsset::new("Wireframe", 2.0);
+        effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+        let mut player = EffectPlayer::new(&effect);
+
+        assert_eq!(player.render_mode(), EffectRenderMode::Rendered);
+        player.set_render_mode(EffectRenderMode::Wireframe);
+        assert_eq!(player.render_mode(), EffectRenderMode::Wireframe);
     }
 
     #[test]

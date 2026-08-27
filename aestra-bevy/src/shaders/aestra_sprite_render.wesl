@@ -1,5 +1,8 @@
 struct View {
     clip_from_world: mat4x4<f32>,
+    unjittered_clip_from_world: mat4x4<f32>,
+    world_from_clip: mat4x4<f32>,
+    world_from_view: mat4x4<f32>,
 }
 
 // Native particle presentation. The vertex shader expands one compacted alive
@@ -133,8 +136,17 @@ fn vertex(
         corner.x * cosine - corner.y * sine,
         corner.x * sine + corner.y * cosine,
     ) * particle.size * 0.5;
-    let world_position = globals.world_from_effect
-        * vec4<f32>(particle.position + rotated, 0.0, 1.0);
+    let world_center = globals.world_from_effect * vec4<f32>(particle.position, 0.0, 1.0);
+    let effect_scale_x = length(globals.world_from_effect[0].xyz);
+    let effect_scale_y = length(globals.world_from_effect[1].xyz);
+    let camera_right = normalize(view.world_from_view[0].xyz);
+    let camera_up = normalize(view.world_from_view[1].xyz);
+    let world_position = world_center
+        + vec4<f32>(
+            camera_right * rotated.x * effect_scale_x
+                + camera_up * rotated.y * effect_scale_y,
+            0.0,
+        );
 
     var output: VertexOutput;
     output.clip_position = view.clip_from_world * world_position;
@@ -189,4 +201,19 @@ fn fragment_multiply(input: VertexOutput) -> @location(0) vec4<f32> {
     }
     let color = particle_color(input);
     return vec4<f32>(mix(vec3<f32>(1.0), color.rgb, color.a), color.a);
+}
+
+@fragment
+fn fragment_wireframe(input: VertexOutput) -> @location(0) vec4<f32> {
+    if input.visible == 0u {
+        discard;
+    }
+    let edge_distance = max(abs(input.quad_position.x), abs(input.quad_position.y));
+    let line_width = max(fwidth(edge_distance) * 1.35, 0.012);
+    let coverage = smoothstep(1.0 - line_width, 1.0, edge_distance);
+    if coverage <= 0.01 {
+        discard;
+    }
+    let wire_color = mix(input.color.rgb, vec3<f32>(0.72, 0.56, 1.0), 0.65);
+    return vec4<f32>(wire_color, coverage * 0.92);
 }

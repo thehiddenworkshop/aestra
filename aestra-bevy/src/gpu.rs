@@ -35,8 +35,9 @@ use bevy::{
 use thiserror::Error;
 
 use crate::{
-    ActiveBackend, AestraRuntimeStatus, AestraSettings, EffectPlayer, EffectRuntimeStatus,
-    GpuCapabilities, GpuPresentationPrepared, TextureAssetCache, capabilities::select_backend,
+    ActiveBackend, AestraRuntimeStatus, AestraSettings, EffectPlayer, EffectRenderMode,
+    EffectRuntimeStatus, GpuCapabilities, GpuPresentationPrepared, TextureAssetCache,
+    capabilities::select_backend,
 };
 
 pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy/shaders/aestra_simulation.wesl";
@@ -348,6 +349,13 @@ enum GpuBlend {
     Multiply = 2,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+enum GpuRenderMode {
+    #[default]
+    Rendered,
+    Wireframe,
+}
+
 #[derive(Component, Clone, ExtractComponent)]
 pub(crate) struct GpuEffectBuffers {
     emitters: Handle<ShaderBuffer>,
@@ -377,6 +385,7 @@ struct GpuDrawInstance {
     fallback_texture: Handle<Image>,
     renderer_order: u32,
     blend: GpuBlend,
+    render_mode: GpuRenderMode,
 }
 
 impl SyncComponent for GpuDrawInstance {
@@ -612,6 +621,7 @@ pub(crate) fn prepare_gpu_players(
             },
             GpuPresentationPrepared,
         ));
+        let render_mode = gpu_render_mode(player.render_mode());
         commands
             .entity(entity)
             .with_children(|parent| match runtime.active {
@@ -633,6 +643,7 @@ pub(crate) fn prepare_gpu_players(
                                 fallback_texture,
                                 renderer_order: renderer_index,
                                 blend,
+                                render_mode,
                             },
                             bounds,
                             Transform::default(),
@@ -771,9 +782,15 @@ fn detect_gpu_capabilities(
 
 fn update_gpu_inputs(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    players: Query<(&EffectPlayer, &GlobalTransform, &GpuEffectBuffers)>,
+    players: Query<(
+        &EffectPlayer,
+        &GlobalTransform,
+        &GpuEffectBuffers,
+        Option<&Children>,
+    )>,
+    mut draw_instances: Query<&mut GpuDrawInstance>,
 ) {
-    for (player, transform, gpu) in &players {
+    for (player, transform, gpu, children) in &players {
         if let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance) {
             if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
                 buffer.set_data(artifact.emitters);
@@ -797,6 +814,14 @@ fn update_gpu_inputs(
                 seed: fold_seed(player.instance.seed()),
                 _padding: Vec2::ZERO,
             });
+        }
+        if let Some(children) = children {
+            let render_mode = gpu_render_mode(player.render_mode());
+            for child in children.iter() {
+                if let Ok(mut draw) = draw_instances.get_mut(child) {
+                    draw.render_mode = render_mode;
+                }
+            }
         }
     }
 }
@@ -949,6 +974,13 @@ fn run_simulation(
 
 fn fold_seed(seed: u64) -> u32 {
     seed as u32 ^ (seed >> 32) as u32
+}
+
+fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
+    match mode {
+        EffectRenderMode::Rendered => GpuRenderMode::Rendered,
+        EffectRenderMode::Wireframe => GpuRenderMode::Wireframe,
+    }
 }
 
 fn emitter_bounds(

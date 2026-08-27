@@ -8,10 +8,10 @@ mod ui_shell;
 use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
     ActiveBackend, AestraPlugin, AestraSet, BlendMode, ColorKey, CurveKey, Diagnostic,
-    DiagnosticCode, DiagnosticSeverity, EffectAsset, EffectPlayer, EffectRuntimeStatus,
-    EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, MaterialInput, MaterialProperties,
-    ModuleId, ModuleInstance, ModuleParameters, RendererId, RendererProperties, StageKind,
-    ValidationReport, Value,
+    DiagnosticCode, DiagnosticSeverity, EffectAsset, EffectPlayer, EffectRenderMode,
+    EffectRuntimeStatus, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, MaterialInput,
+    MaterialProperties, ModuleId, ModuleInstance, ModuleParameters, RendererId, RendererProperties,
+    StageKind, ValidationReport, Value,
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
@@ -109,6 +109,8 @@ fn main() {
         .init_resource::<DockDragState>()
         .init_resource::<ResizeState>()
         .init_resource::<PreviewCameraController>()
+        .init_resource::<PreviewNavigationState>()
+        .init_resource::<PreviewDisplayState>()
         .insert_resource(WorkspaceLayout::load())
         .init_resource::<RenderedUiRevision>()
         .add_plugins(
@@ -131,6 +133,7 @@ fn main() {
         .add_plugins(FeathersPlugins)
         .add_plugins(TransformGizmoPlugin)
         .add_plugins(AestraPlugin)
+        .init_gizmo_group::<PreviewSceneGizmos>()
         .insert_resource(theme::feathers_theme())
         .add_observer(handle_settings_toggle_change)
         .add_observer(handle_settings_integer_change)
@@ -149,7 +152,12 @@ fn main() {
         .add_observer(queue_feathers_action_activation)
         .add_systems(
             Startup,
-            (setup_window_cursor, setup_editor_fonts, setup_editor),
+            (
+                setup_window_cursor,
+                setup_editor_fonts,
+                configure_preview_scene_gizmos,
+                setup_editor,
+            ),
         )
         .add_systems(
             Update,
@@ -172,9 +180,14 @@ fn main() {
                     update_editor_labels,
                     update_compile_status,
                     update_history_actions,
-                    navigate_preview_camera,
-                    update_transform_gizmo_controls,
-                    draw_preview_scene_gizmos,
+                    (
+                        navigate_preview_camera,
+                        sync_preview_display_mode,
+                        update_preview_display_controls,
+                        update_transform_gizmo_controls,
+                        draw_preview_scene_gizmos,
+                    )
+                        .chain(),
                 )
                     .chain(),
                 (
@@ -272,6 +285,8 @@ enum EditorAction {
     ToggleMenu(MenuKind),
     TogglePanelsSubmenu,
     ToggleGrid,
+    FramePreview,
+    SetPreviewDisplayMode(PreviewDisplayMode),
     ResetWorkspaceLayout,
     SelectSettingsCategory(SettingsCategory),
     ToggleInspectorSection(InspectorSection),
@@ -868,6 +883,7 @@ struct PreviewCameraController {
     distance: f32,
     yaw: f32,
     pitch: f32,
+    frame_requested: bool,
 }
 
 impl Default for PreviewCameraController {
@@ -877,9 +893,43 @@ impl Default for PreviewCameraController {
             distance: 140.0,
             yaw: 0.0,
             pitch: 0.0,
+            frame_requested: false,
         }
     }
 }
+
+impl PreviewCameraController {
+    fn frame_effect(&mut self, position: Vec3) {
+        self.focus = position;
+        self.distance = 140.0;
+        self.yaw = 0.0;
+        self.pitch = 0.0;
+        self.frame_requested = false;
+    }
+}
+
+#[derive(Resource, Default)]
+struct PreviewNavigationState {
+    dragging: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum PreviewDisplayMode {
+    Wireframe,
+    #[default]
+    Rendered,
+}
+
+#[derive(Default, Reflect, GizmoConfigGroup)]
+struct PreviewSceneGizmos;
+
+#[derive(Resource, Default)]
+struct PreviewDisplayState {
+    mode: PreviewDisplayMode,
+}
+
+#[derive(Component)]
+struct PreviewDisplayModeIcon(PreviewDisplayMode);
 
 #[derive(Component)]
 struct PreviewEffectPlayer;
@@ -1071,6 +1121,8 @@ fn navigate_preview_camera(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
+    player: Query<&GlobalTransform, With<PreviewEffectPlayer>>,
+    mut navigation: ResMut<PreviewNavigationState>,
     mut controller: ResMut<PreviewCameraController>,
     mut camera: Single<&mut Transform, With<PreviewRenderCamera>>,
 ) {
@@ -1085,13 +1137,29 @@ fn navigate_preview_camera(
         };
         sum + event.y * scale
     });
-    if !cursor_over {
-        return;
+    if buttons.just_pressed(MouseButton::Middle) && cursor_over {
+        navigation.dragging = true;
+    }
+    if buttons.just_released(MouseButton::Middle) {
+        navigation.dragging = false;
+    }
+    if cursor_over && (keys.just_pressed(KeyCode::KeyF) || keys.just_pressed(KeyCode::Home)) {
+        controller.frame_requested = true;
     }
 
     let mut changed = false;
-    if buttons.pressed(MouseButton::Middle) && pointer_delta != Vec2::ZERO {
-        if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
+    if controller.frame_requested {
+        let focus = player
+            .single()
+            .map_or(Vec3::ZERO, GlobalTransform::translation);
+        controller.frame_effect(focus);
+        changed = true;
+    }
+    if navigation.dragging && buttons.pressed(MouseButton::Middle) && pointer_delta != Vec2::ZERO {
+        if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) {
+            controller.distance =
+                (controller.distance * (pointer_delta.y * 0.01).exp()).clamp(1.0, 4_000.0);
+        } else if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
             let right = camera.rotation * Vec3::X;
             let up = camera.rotation * Vec3::Y;
             let units_per_pixel = controller.distance * 0.0018;
@@ -1102,7 +1170,7 @@ fn navigate_preview_camera(
         }
         changed = true;
     }
-    if scroll_delta != 0.0 {
+    if cursor_over && scroll_delta != 0.0 {
         controller.distance =
             (controller.distance * (-scroll_delta * 0.12).exp()).clamp(1.0, 4_000.0);
         changed = true;
@@ -1114,6 +1182,51 @@ fn navigate_preview_camera(
     let orbit = Quat::from_rotation_y(controller.yaw) * Quat::from_rotation_x(controller.pitch);
     camera.translation = controller.focus + orbit * Vec3::Z * controller.distance;
     camera.look_at(controller.focus, Vec3::Y);
+}
+
+fn sync_preview_display_mode(
+    display: Res<PreviewDisplayState>,
+    mut players: Query<(&mut EffectPlayer, &mut Visibility), With<PreviewEffectPlayer>>,
+) {
+    let render_mode = match display.mode {
+        PreviewDisplayMode::Wireframe => EffectRenderMode::Wireframe,
+        PreviewDisplayMode::Rendered => EffectRenderMode::Rendered,
+    };
+    for (mut player, mut visibility) in &mut players {
+        player.set_render_mode(render_mode);
+        *visibility = Visibility::Inherited;
+    }
+}
+
+fn update_preview_display_controls(
+    display: Res<PreviewDisplayState>,
+    mut icons: Query<(
+        &PreviewDisplayModeIcon,
+        &mut BackgroundColor,
+        &mut BorderColor,
+    )>,
+) {
+    for (icon, mut background, mut border) in &mut icons {
+        let active = icon.0 == display.mode;
+        match icon.0 {
+            PreviewDisplayMode::Wireframe => {
+                background.0 = Color::NONE;
+                *border = BorderColor::all(if active {
+                    theme::ACCENT
+                } else {
+                    theme::TEXT_MUTED
+                });
+            }
+            PreviewDisplayMode::Rendered => {
+                background.0 = if active {
+                    theme::ACCENT
+                } else {
+                    theme::TEXT_MUTED
+                };
+                *border = BorderColor::all(Color::NONE);
+            }
+        }
+    }
 }
 
 fn update_transform_gizmo_controls(
@@ -1152,15 +1265,15 @@ fn update_transform_gizmo_controls(
         TransformGizmoSpace::Local => "LOCAL",
     };
     for mut label in &mut labels {
-        **label = format!("1 MOVE  2 ROTATE  3 SCALE  |  {mode} · {space}");
+        **label = format!("{mode} · {space}");
     }
 }
 
 fn draw_preview_scene_gizmos(
     session: Res<EditorSession>,
     menu: Res<MenuState>,
-    player: Single<&GlobalTransform, With<PreviewEffectPlayer>>,
-    mut gizmos: Gizmos,
+    players: Query<&GlobalTransform, With<PreviewEffectPlayer>>,
+    mut gizmos: Gizmos<PreviewSceneGizmos>,
 ) {
     if menu.show_grid {
         gizmos
@@ -1173,57 +1286,69 @@ fn draw_preview_scene_gizmos(
             .outer_edges();
     }
 
-    let Some((_, shape)) = selected_shape_module(&session) else {
+    let Ok(player) = players.single() else {
         return;
     };
+    if let Some((_, shape)) = selected_shape_module(&session) {
+        draw_emitter_shape_gizmo(&mut gizmos, player, shape, theme::ACCENT.with_alpha(0.9));
+    }
+}
+
+fn draw_emitter_shape_gizmo(
+    gizmos: &mut Gizmos<PreviewSceneGizmos>,
+    player: &GlobalTransform,
+    shape: EmitterShape,
+    color: Color,
+) {
     let translation = player.translation();
     let rotation = player.rotation();
     let scale = player.to_scale_rotation_translation().0;
     let axis_scale = scale.x.abs().max(scale.y.abs()).max(0.001);
     let isometry = Isometry3d::new(translation, rotation);
-    let accent = theme::ACCENT.with_alpha(0.9);
     match shape {
         EmitterShape::Point => {
-            gizmos.cross(isometry, 2.0 * axis_scale, accent);
+            gizmos.cross(isometry, 2.0 * axis_scale, color);
         }
         EmitterShape::Circle { radius } => {
             gizmos
-                .circle(isometry, radius * axis_scale, accent)
+                .circle(isometry, radius * axis_scale, color)
                 .resolution(64);
             gizmos.line(
                 player.transform_point(Vec3::ZERO),
                 player.transform_point(Vec3::X * radius),
-                accent,
+                color,
             );
         }
         EmitterShape::Ring { radius } => {
             gizmos
-                .circle(isometry, radius * axis_scale, accent)
+                .circle(isometry, radius * axis_scale, color)
                 .resolution(64);
             gizmos
-                .circle(
-                    isometry,
-                    radius * axis_scale * 0.92,
-                    accent.with_alpha(0.45),
-                )
+                .circle(isometry, radius * axis_scale * 0.92, color.with_alpha(0.45))
                 .resolution(64);
         }
         EmitterShape::Cone { radius, depth } => {
             let origin = player.transform_point(Vec3::ZERO);
             let left = player.transform_point(Vec3::new(-radius, depth, 0.0));
             let right = player.transform_point(Vec3::new(radius, depth, 0.0));
-            gizmos.line(origin, left, accent);
-            gizmos.line(origin, right, accent);
-            gizmos.line(left, right, accent);
+            gizmos.line(origin, left, color);
+            gizmos.line(origin, right, color);
+            gizmos.line(left, right, color);
             gizmos
                 .circle(
                     Isometry3d::new(player.transform_point(Vec3::Y * depth), player.rotation()),
                     radius * axis_scale,
-                    accent.with_alpha(0.62),
+                    color.with_alpha(0.62),
                 )
                 .resolution(64);
         }
     }
+}
+
+fn configure_preview_scene_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
+    let (config, _) = config_store.config_mut::<PreviewSceneGizmos>();
+    config.render_layers = RenderLayers::layer(15);
+    config.line.width = 1.5;
 }
 
 fn configured_preview_player(session: &EditorSession) -> Option<EffectPlayer> {
@@ -1559,6 +1684,7 @@ fn spawn_view_menu(
                 .with_children(|dropdown| {
                     for (message_id, shortcut, action) in [
                         ("view-toggle-grid", "G", EditorAction::ToggleGrid),
+                        ("view-frame-effect", "F", EditorAction::FramePreview),
                         ("view-restart-preview", "R", EditorAction::Restart),
                         ("view-panels", ">", EditorAction::TogglePanelsSubmenu),
                     ] {
@@ -2006,7 +2132,12 @@ fn spawn_panel_content(
     sources: PanelSources<'_>,
 ) {
     match panel {
-        DockPanel::Viewport => spawn_preview(parent, sources.preview_camera, sources.session),
+        DockPanel::Viewport => spawn_preview(
+            parent,
+            sources.preview_camera,
+            sources.session,
+            sources.localizer,
+        ),
         DockPanel::Assets => spawn_asset_browser(parent, sources.session, sources.catalog),
         DockPanel::Inspector => {
             spawn_inspector(
@@ -3128,6 +3259,7 @@ fn spawn_preview(
     parent: &mut ChildSpawnerCommands,
     _preview_camera: Entity,
     _session: &EditorSession,
+    localizer: &Localizer,
 ) {
     parent
         .spawn(())
@@ -3152,7 +3284,7 @@ fn spawn_preview(
                 ))
                 .with_children(|canvas| {
                     canvas.spawn((
-                        Text::new("1 MOVE  2 ROTATE  3 SCALE  |  MOVE · WORLD"),
+                        Text::new("MOVE · WORLD"),
                         GizmoModeLabel,
                         TextFont {
                             font_size: FontSize::Px(9.0),
@@ -3166,20 +3298,59 @@ fn spawn_preview(
                             ..default()
                         },
                     ));
-                    canvas.spawn((
-                        Text::new("MMB ORBIT  |  SHIFT+MMB PAN  |  WHEEL DOLLY"),
-                        TextFont {
-                            font_size: FontSize::Px(9.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT_FAINT),
-                        Node {
-                            position_type: PositionType::Absolute,
-                            right: Val::Px(12.0),
-                            top: Val::Px(10.0),
-                            ..default()
-                        },
-                    ));
+                    canvas
+                        .spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                right: Val::Px(8.0),
+                                top: Val::Px(5.0),
+                                height: Val::Px(28.0),
+                                padding: UiRect::all(Val::Px(2.0)),
+                                column_gap: Val::Px(2.0),
+                                align_items: AlignItems::Center,
+                                border: UiRect::all(Val::Px(1.0)),
+                                border_radius: BorderRadius::all(Val::Px(4.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme::PANEL.with_alpha(0.92)),
+                            BorderColor::all(theme::BORDER),
+                        ))
+                        .with_children(|tools| {
+                            spawn_viewport_tool_button(
+                                tools,
+                                EditorAction::FramePreview,
+                                "viewport-frame-effect",
+                                "viewport-frame-effect-description",
+                                ViewportToolIcon::Frame,
+                                localizer,
+                            );
+                            tools.spawn((
+                                Node {
+                                    width: Val::Px(1.0),
+                                    height: Val::Px(14.0),
+                                    margin: UiRect::horizontal(Val::Px(2.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme::BORDER_BRIGHT),
+                                Pickable::IGNORE,
+                            ));
+                            spawn_viewport_tool_button(
+                                tools,
+                                EditorAction::SetPreviewDisplayMode(PreviewDisplayMode::Wireframe),
+                                "viewport-wireframe",
+                                "viewport-wireframe-description",
+                                ViewportToolIcon::Wireframe,
+                                localizer,
+                            );
+                            spawn_viewport_tool_button(
+                                tools,
+                                EditorAction::SetPreviewDisplayMode(PreviewDisplayMode::Rendered),
+                                "viewport-rendered",
+                                "viewport-rendered-description",
+                                ViewportToolIcon::Rendered,
+                                localizer,
+                            );
+                        });
                 });
             column.spawn((
                 Text::new("0 LIVE PARTICLES  |  60 FPS"),
@@ -3190,6 +3361,92 @@ fn spawn_preview(
                 },
                 TextColor(theme::TEXT_FAINT),
             ));
+        });
+}
+
+#[derive(Clone, Copy)]
+enum ViewportToolIcon {
+    Frame,
+    Wireframe,
+    Rendered,
+}
+
+fn spawn_viewport_tool_button(
+    parent: &mut ChildSpawnerCommands,
+    action: EditorAction,
+    label_id: &'static str,
+    description_id: &'static str,
+    icon: ViewportToolIcon,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_tool_button())
+        .insert((
+            action,
+            FeathersActionButton,
+            AccessibleLabel(localizer.text(label_id)),
+            InspectorHelp(localizer.text(description_id)),
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Px(22.0),
+                min_width: Val::Px(22.0),
+                height: Val::Px(22.0),
+                padding: UiRect::ZERO,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+        ))
+        .with_children(|button| match icon {
+            ViewportToolIcon::Frame => {
+                button
+                    .spawn((
+                        Node {
+                            width: Val::Px(12.0),
+                            height: Val::Px(12.0),
+                            border: UiRect::all(Val::Px(1.0)),
+                            border_radius: BorderRadius::all(Val::Px(2.0)),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            ..default()
+                        },
+                        BorderColor::all(theme::TEXT_MUTED),
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|frame| {
+                        frame.spawn((
+                            Node {
+                                width: Val::Px(3.0),
+                                height: Val::Px(3.0),
+                                border_radius: BorderRadius::MAX,
+                                ..default()
+                            },
+                            BackgroundColor(theme::TEXT_MUTED),
+                            Pickable::IGNORE,
+                        ));
+                    });
+            }
+            ViewportToolIcon::Wireframe | ViewportToolIcon::Rendered => {
+                let mode = if matches!(icon, ViewportToolIcon::Wireframe) {
+                    PreviewDisplayMode::Wireframe
+                } else {
+                    PreviewDisplayMode::Rendered
+                };
+                button.spawn((
+                    PreviewDisplayModeIcon(mode),
+                    Node {
+                        width: Val::Px(12.0),
+                        height: Val::Px(12.0),
+                        border: UiRect::all(Val::Px(1.0)),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BackgroundColor(Color::NONE),
+                    BorderColor::all(theme::TEXT_MUTED),
+                    Pickable::IGNORE,
+                ));
+            }
         });
 }
 
@@ -9188,6 +9445,8 @@ fn handle_buttons(
         ResMut<SettingsPersistence>,
         ResMut<UiScale>,
         ResMut<Localizer>,
+        ResMut<PreviewCameraController>,
+        ResMut<PreviewDisplayState>,
     ),
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
@@ -9205,6 +9464,8 @@ fn handle_buttons(
         mut settings_persistence,
         mut ui_scale,
         mut localizer,
+        mut preview_camera,
+        mut preview_display,
     ) = editor_resources;
     for (
         entity,
@@ -9628,6 +9889,12 @@ fn handle_buttons(
                         menu.show_grid = !menu.show_grid;
                         settings.preview.show_grid = menu.show_grid;
                         persist_editor_settings(&settings, &mut settings_persistence, &mut session);
+                    }
+                    EditorAction::FramePreview => {
+                        preview_camera.frame_requested = true;
+                    }
+                    EditorAction::SetPreviewDisplayMode(mode) => {
+                        preview_display.mode = mode;
                     }
                     EditorAction::ResetWorkspaceLayout => {
                         *layout = WorkspaceLayout::default();
@@ -10936,6 +11203,26 @@ fn layer_color_alpha(index: usize, alpha: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn framing_preview_restores_default_camera_around_effect() {
+        let mut controller = PreviewCameraController {
+            focus: Vec3::new(12.0, -7.0, 3.0),
+            distance: 9.0,
+            yaw: 1.2,
+            pitch: -0.8,
+            frame_requested: true,
+        };
+        let effect_position = Vec3::new(24.0, 6.0, -2.0);
+
+        controller.frame_effect(effect_position);
+
+        assert_eq!(controller.focus, effect_position);
+        assert_eq!(controller.distance, 140.0);
+        assert_eq!(controller.yaw, 0.0);
+        assert_eq!(controller.pitch, 0.0);
+        assert!(!controller.frame_requested);
+    }
 
     #[test]
     fn history_action_refresh_does_not_disable_unrelated_ui() {

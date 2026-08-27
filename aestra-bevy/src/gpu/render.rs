@@ -1,6 +1,6 @@
 use super::{
-    GpuBlend, GpuDrawInstance, GpuParticle, GpuRenderGlobals, GpuRenderParams, GpuRenderer,
-    WESL_RENDER_SHADER_PATH,
+    GpuBlend, GpuDrawInstance, GpuParticle, GpuRenderGlobals, GpuRenderMode, GpuRenderParams,
+    GpuRenderer, WESL_RENDER_SHADER_PATH,
 };
 use bevy::{
     app::SubApp,
@@ -68,6 +68,7 @@ pub(super) fn install(render_app: &mut SubApp) {
 struct GpuSpritePipelineKey {
     view: GpuSpriteViewKey,
     blend: GpuBlend,
+    render_mode: GpuRenderMode,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -131,27 +132,30 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 mesh.msaa_samples(),
             ),
         };
-        let blend = match key.blend {
-            GpuBlend::Alpha => BlendState::ALPHA_BLENDING,
-            GpuBlend::Additive => BlendState {
-                color: BlendComponent {
-                    src_factor: BlendFactor::SrcAlpha,
-                    dst_factor: BlendFactor::One,
-                    operation: BlendOperation::Add,
+        let blend = match key.render_mode {
+            GpuRenderMode::Wireframe => BlendState::ALPHA_BLENDING,
+            GpuRenderMode::Rendered => match key.blend {
+                GpuBlend::Alpha => BlendState::ALPHA_BLENDING,
+                GpuBlend::Additive => BlendState {
+                    color: BlendComponent {
+                        src_factor: BlendFactor::SrcAlpha,
+                        dst_factor: BlendFactor::One,
+                        operation: BlendOperation::Add,
+                    },
+                    alpha: BlendComponent {
+                        src_factor: BlendFactor::One,
+                        dst_factor: BlendFactor::One,
+                        operation: BlendOperation::Add,
+                    },
                 },
-                alpha: BlendComponent {
-                    src_factor: BlendFactor::One,
-                    dst_factor: BlendFactor::One,
-                    operation: BlendOperation::Add,
+                GpuBlend::Multiply => BlendState {
+                    color: BlendComponent {
+                        src_factor: BlendFactor::Dst,
+                        dst_factor: BlendFactor::Zero,
+                        operation: BlendOperation::Add,
+                    },
+                    alpha: BlendComponent::OVER,
                 },
-            },
-            GpuBlend::Multiply => BlendState {
-                color: BlendComponent {
-                    src_factor: BlendFactor::Dst,
-                    dst_factor: BlendFactor::Zero,
-                    operation: BlendOperation::Add,
-                },
-                alpha: BlendComponent::OVER,
             },
         };
         RenderPipelineDescriptor {
@@ -166,10 +170,13 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             fragment: Some(FragmentState {
                 shader: self.shader.clone(),
                 entry_point: Some(
-                    match key.blend {
-                        GpuBlend::Alpha => "fragment_alpha",
-                        GpuBlend::Additive => "fragment_additive",
-                        GpuBlend::Multiply => "fragment_multiply",
+                    match key.render_mode {
+                        GpuRenderMode::Wireframe => "fragment_wireframe",
+                        GpuRenderMode::Rendered => match key.blend {
+                            GpuBlend::Alpha => "fragment_alpha",
+                            GpuBlend::Additive => "fragment_additive",
+                            GpuBlend::Multiply => "fragment_multiply",
+                        },
                     }
                     .into(),
                 ),
@@ -289,6 +296,7 @@ fn queue_gpu_sprites(
                 GpuSpritePipelineKey {
                     view: GpuSpriteViewKey::TwoD(mesh_key),
                     blend: effect.blend,
+                    render_mode: effect.render_mode,
                 },
             );
             phase.add_retained(Transparent2d {
@@ -330,6 +338,7 @@ fn queue_gpu_sprites_3d(
                 GpuSpritePipelineKey {
                     view: GpuSpriteViewKey::ThreeD(mesh_key),
                     blend: effect.blend,
+                    render_mode: effect.render_mode,
                 },
             );
             phase.add_retained(Transparent3d {

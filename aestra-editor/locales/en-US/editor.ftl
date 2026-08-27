@@ -17,6 +17,7 @@ edit-duplicate-emitter = Duplicate Emitter
 edit-delete-emitter = Delete Emitter
 
 view-toggle-grid = Toggle Grid
+view-frame-effect = Frame Effect
 view-restart-preview = Restart Preview
 view-panels = Panels
 view-reset-workspace = Reset Workspace
@@ -39,6 +40,13 @@ panel-generated-code = GENERATED CODE
 panel-profiler = PROFILER
 panel-changes = CHANGES
 panel-settings = SETTINGS
+
+viewport-frame-effect = Frame Effect
+viewport-frame-effect-description = Center the viewport camera on the effect.
+viewport-wireframe = Wireframe
+viewport-wireframe-description = Show the live particle sprite meshes as unfilled outlines.
+viewport-rendered = Rendered
+viewport-rendered-description = Show the fully rendered particle effect.
 
 dock-float-panel = Float Panel
 common-close = Close
