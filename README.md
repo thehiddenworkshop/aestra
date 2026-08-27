@@ -133,3 +133,8 @@ cargo test --workspace
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the product architecture and phased roadmap.
+
+## License
+
+Aestra is dual-licensed under the [MIT License](LICENSE-MIT) or the
+[Apache License 2.0](LICENSE-APACHE), at your option.
