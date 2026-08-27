@@ -21,9 +21,8 @@ use bevy::{
         FeathersPlugins,
         containers::{group, group_body, group_header, pane_header},
         controls::{NumberInputValue, UpdateNumberInput},
-        dark_theme::create_dark_theme,
         display::{label, label_dim},
-        theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText, UiTheme},
+        theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText},
         tokens,
     },
     input::{ButtonState, keyboard::KeyboardInput},
@@ -102,7 +101,7 @@ fn main() {
             ..default()
         }))
         .add_plugins(FeathersPlugins)
-        .insert_resource(UiTheme(create_dark_theme()))
+        .insert_resource(theme::feathers_theme())
         .add_observer(handle_settings_toggle_change)
         .add_observer(handle_settings_integer_change)
         .add_observer(handle_settings_scalar_change)
@@ -117,6 +116,7 @@ fn main() {
                 (
                     module_palette_keyboard,
                     keyboard_shortcuts,
+                    audit_editor_action_controls,
                     handle_buttons,
                     handle_window_close_requests,
                     persist_native_window_geometry,
@@ -516,6 +516,18 @@ struct SettingsCategoryButton(SettingsCategory);
 #[derive(Component)]
 struct FeathersActionButton;
 
+/// Marks an intentional editor-native interaction that has no equivalent Feathers control.
+/// Standard buttons carrying an [`EditorAction`] should use [`FeathersActionButton`] instead.
+#[derive(Component)]
+struct EditorNativeControl;
+
+type UnclassifiedEditorActionControl = (
+    Added<EditorAction>,
+    With<Button>,
+    Without<FeathersActionButton>,
+    Without<EditorNativeControl>,
+);
+
 #[derive(Component)]
 struct PendingFeathersActivation;
 
@@ -886,31 +898,33 @@ fn spawn_tab_context_menu(
             BorderColor::all(theme::BORDER_BRIGHT),
         ))
         .with_children(|menu| {
-            menu.spawn((
-                Button,
-                EditorAction::FloatDockPanel(context.panel, context.position),
-                Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Px(30.0),
-                    padding: UiRect::horizontal(Val::Px(9.0)),
-                    align_items: AlignItems::Center,
-                    border_radius: BorderRadius::all(Val::Px(3.0)),
-                    ..default()
-                },
-                BackgroundColor(theme::PANEL),
-            ))
-            .with_children(|item| {
-                item.spawn((
-                    LocalizedText("dock-float-panel"),
-                    Text::new(localizer.text("dock-float-panel")),
-                    TextFont {
-                        font_size: FontSize::Px(11.0),
+            menu.spawn_empty()
+                .apply_scene(ui_shell::feathers_plain_button())
+                .insert((
+                    EditorAction::FloatDockPanel(context.panel, context.position),
+                    FeathersActionButton,
+                    AccessibleLabel(localizer.text("dock-float-panel")),
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(30.0),
+                        padding: UiRect::horizontal(Val::Px(9.0)),
+                        align_items: AlignItems::Center,
+                        border_radius: BorderRadius::all(Val::Px(3.0)),
                         ..default()
                     },
-                    TextColor(theme::TEXT),
-                    Pickable::IGNORE,
-                ));
-            });
+                ))
+                .with_children(|item| {
+                    item.spawn((
+                        LocalizedText("dock-float-panel"),
+                        Text::new(localizer.text("dock-float-panel")),
+                        TextFont {
+                            font_size: FontSize::Px(11.0),
+                            ..default()
+                        },
+                        ThemedText,
+                        Pickable::IGNORE,
+                    ));
+                });
         });
 }
 
@@ -1435,9 +1449,12 @@ fn plain_toolbar_button<M: Component>(
     marker: M,
 ) {
     parent
-        .spawn((
-            Button,
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_button())
+        .insert((
             action,
+            FeathersActionButton,
+            AccessibleLabel(label.to_owned()),
             Node {
                 height: Val::Px(32.0),
                 min_width: Val::Px(78.0),
@@ -1448,8 +1465,6 @@ fn plain_toolbar_button<M: Component>(
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
-            BackgroundColor(theme::BUTTON),
-            BorderColor::all(theme::BORDER_BRIGHT),
         ))
         .with_children(|button| {
             button.spawn((
@@ -1458,8 +1473,9 @@ fn plain_toolbar_button<M: Component>(
                     font_size: FontSize::Px(12.0),
                     ..default()
                 },
-                TextColor(theme::TEXT),
+                ThemedText,
                 marker,
+                Pickable::IGNORE,
             ));
         });
 }
@@ -1836,6 +1852,7 @@ fn spawn_dock_tab(
     parent
         .spawn((
             Button,
+            EditorNativeControl,
             EditorAction::SelectDockPanel(panel),
             DockTab(panel),
             RelativeCursorPosition::default(),
@@ -1891,6 +1908,7 @@ fn spawn_dock_tab(
             if panel.closable() {
                 tab.spawn((
                     Button,
+                    EditorNativeControl,
                     EditorAction::CloseDockPanel(panel),
                     DockCloseButton,
                     Node {
@@ -2439,6 +2457,7 @@ fn spawn_asset_browser(
                 panel
                     .spawn((
                         Button,
+                        EditorNativeControl,
                         EditorAction::OpenCatalog(index),
                         Node {
                             height: Val::Px(31.0),
@@ -2473,6 +2492,7 @@ fn spawn_asset_browser(
                 panel
                     .spawn((
                         Button,
+                        EditorNativeControl,
                         EditorAction::SelectLayer(index),
                         LayerRow(index),
                         Node {
@@ -3595,9 +3615,12 @@ fn palette_result(
     action: EditorAction,
 ) {
     parent
-        .spawn((
-            Button,
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_plain_button())
+        .insert((
             action,
+            FeathersActionButton,
+            AccessibleLabel(title.to_owned()),
             Node {
                 width: Val::Percent(100.0),
                 padding: UiRect::all(Val::Px(8.0)),
@@ -3607,7 +3630,6 @@ fn palette_result(
                 border_radius: BorderRadius::all(Val::Px(3.0)),
                 ..default()
             },
-            BackgroundColor(theme::BUTTON),
         ))
         .with_children(|button| {
             button.spawn((
@@ -3616,7 +3638,8 @@ fn palette_result(
                     font_size: FontSize::Px(11.0),
                     ..default()
                 },
-                TextColor(theme::TEXT),
+                ThemedText,
+                Pickable::IGNORE,
             ));
             button.spawn((
                 Text::new(subtitle),
@@ -3624,7 +3647,8 @@ fn palette_result(
                     font_size: FontSize::Px(8.0),
                     ..default()
                 },
-                TextColor(theme::TEXT_FAINT),
+                ThemeTextColor(tokens::TEXT_DIM),
+                Pickable::IGNORE,
             ));
         });
 }
@@ -3914,6 +3938,7 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                     });
                     body.spawn((
                         Button,
+                        EditorNativeControl,
                         TimelineCanvas,
                         RelativeCursorPosition::default(),
                         Node {
@@ -4311,9 +4336,12 @@ fn spawn_profiler_workspace(
 
 fn spawn_profiler_reset_button(parent: &mut ChildSpawnerCommands) {
     parent
-        .spawn((
-            Button,
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_button())
+        .insert((
             EditorAction::ResetProfilerPeaks,
+            FeathersActionButton,
+            AccessibleLabel("Reset profiler peaks".into()),
             Node {
                 height: Val::Px(24.0),
                 padding: UiRect::horizontal(Val::Px(8.0)),
@@ -4322,7 +4350,6 @@ fn spawn_profiler_reset_button(parent: &mut ChildSpawnerCommands) {
                 border_radius: BorderRadius::all(Val::Px(3.0)),
                 ..default()
             },
-            BackgroundColor(theme::BUTTON),
         ))
         .with_children(|button| {
             button.spawn((
@@ -4331,7 +4358,7 @@ fn spawn_profiler_reset_button(parent: &mut ChildSpawnerCommands) {
                     font_size: FontSize::Px(9.0),
                     ..default()
                 },
-                TextColor(theme::TEXT),
+                ThemedText,
                 Pickable::IGNORE,
             ));
         });
@@ -5837,6 +5864,7 @@ fn spawn_compiled_target_row(
     parent
         .spawn((
             Button,
+            EditorNativeControl,
             CompiledPlanRow,
             EditorAction::SelectCompiledTarget(target),
             Node {
@@ -6208,11 +6236,18 @@ fn spawn_diagnostics_filter_button(
     selected: bool,
     count: usize,
 ) {
-    parent
-        .spawn((
-            Button,
+    let mut button = parent.spawn_empty();
+    if selected {
+        button.apply_scene(ui_shell::feathers_primary_button());
+    } else {
+        button.apply_scene(ui_shell::feathers_button());
+    }
+    button
+        .insert((
             EditorAction::SetDiagnosticsFilter(filter),
             DiagnosticsFilterButton(filter),
+            FeathersActionButton,
+            AccessibleLabel(format!("{} {count}", filter.label())),
             Node {
                 height: Val::Px(24.0),
                 padding: UiRect::horizontal(Val::Px(8.0)),
@@ -6221,11 +6256,6 @@ fn spawn_diagnostics_filter_button(
                 border_radius: BorderRadius::all(Val::Px(3.0)),
                 ..default()
             },
-            BackgroundColor(if selected {
-                theme::SELECTION
-            } else {
-                theme::BUTTON
-            }),
         ))
         .with_children(|button| {
             button.spawn((
@@ -6288,6 +6318,7 @@ fn spawn_diagnostic_row(
     parent
         .spawn((
             Button,
+            EditorNativeControl,
             EditorAction::SelectDiagnostic { source, index },
             DiagnosticRow,
             Node {
@@ -6737,6 +6768,7 @@ fn parent_list_button(
     parent
         .spawn((
             Button,
+            EditorNativeControl,
             action,
             Node {
                 width: Val::Percent(100.0),
@@ -6842,6 +6874,7 @@ fn spawn_curve_graph(
                 graph
                     .spawn((
                         Button,
+                        EditorNativeControl,
                         UiTransform::default(),
                         Node {
                             position_type: PositionType::Absolute,
@@ -6988,6 +7021,7 @@ fn spawn_gradient_graph(
                 graph
                     .spawn((
                         Button,
+                        EditorNativeControl,
                         UiTransform::default(),
                         Node {
                             position_type: PositionType::Absolute,
@@ -7185,44 +7219,46 @@ fn spawn_status_bar(
         ))
         .with_children(|bar| {
             let (compile_status, compile_color) = compile_status(session);
-            bar.spawn((
-                Button,
-                CompileStatusButton,
-                EditorAction::ShowDockPanel(DockPanel::Diagnostics),
-                Node {
-                    height: Val::Px(20.0),
-                    padding: UiRect::horizontal(Val::Px(8.0)),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    border_radius: BorderRadius::all(Val::Px(3.0)),
-                    ..default()
-                },
-                BackgroundColor(theme::PANEL_DARK),
-            ))
-            .with_children(|button| {
-                button.spawn((
-                    CompileStatusDot,
+            bar.spawn_empty()
+                .apply_scene(ui_shell::feathers_plain_button())
+                .insert((
+                    CompileStatusButton,
+                    EditorAction::ShowDockPanel(DockPanel::Diagnostics),
+                    FeathersActionButton,
+                    AccessibleLabel(localizer.text(compile_status)),
                     Node {
-                        width: Val::Px(6.0),
-                        height: Val::Px(6.0),
-                        margin: UiRect::right(Val::Px(7.0)),
-                        border_radius: BorderRadius::MAX,
+                        height: Val::Px(20.0),
+                        padding: UiRect::horizontal(Val::Px(8.0)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        border_radius: BorderRadius::all(Val::Px(3.0)),
                         ..default()
                     },
-                    BackgroundColor(compile_color),
-                    Pickable::IGNORE,
-                ));
-                button.spawn((
-                    CompileStatusLabel,
-                    Text::new(localizer.text(compile_status)),
-                    TextFont {
-                        font_size: FontSize::Px(9.0),
-                        ..default()
-                    },
-                    TextColor(compile_color),
-                    Pickable::IGNORE,
-                ));
-            });
+                ))
+                .with_children(|button| {
+                    button.spawn((
+                        CompileStatusDot,
+                        Node {
+                            width: Val::Px(6.0),
+                            height: Val::Px(6.0),
+                            margin: UiRect::right(Val::Px(7.0)),
+                            border_radius: BorderRadius::MAX,
+                            ..default()
+                        },
+                        BackgroundColor(compile_color),
+                        Pickable::IGNORE,
+                    ));
+                    button.spawn((
+                        CompileStatusLabel,
+                        Text::new(localizer.text(compile_status)),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(compile_color),
+                        Pickable::IGNORE,
+                    ));
+                });
         });
 }
 
@@ -7387,9 +7423,12 @@ fn localized_action_button(
     localizer: &Localizer,
 ) {
     parent
-        .spawn((
-            Button,
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_button())
+        .insert((
             action,
+            FeathersActionButton,
+            AccessibleLabel(localizer.text(message_id)),
             Node {
                 width: Val::Auto,
                 height: Val::Px(28.0),
@@ -7401,8 +7440,6 @@ fn localized_action_button(
                 border_radius: BorderRadius::all(Val::Px(3.0)),
                 ..default()
             },
-            BackgroundColor(theme::BUTTON),
-            BorderColor::all(theme::BORDER_BRIGHT),
         ))
         .with_children(|button| {
             button.spawn((
@@ -7412,7 +7449,8 @@ fn localized_action_button(
                     font_size: FontSize::Px(10.0),
                     ..default()
                 },
-                TextColor(theme::TEXT),
+                ThemedText,
+                Pickable::IGNORE,
             ));
         });
 }
@@ -7534,6 +7572,16 @@ fn queue_feathers_action_activation(
         commands
             .entity(activate.entity)
             .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+fn audit_editor_action_controls(controls: Query<Entity, UnclassifiedEditorActionControl>) {
+    #[cfg(debug_assertions)]
+    if let Some(entity) = controls.iter().next() {
+        panic!(
+            "editor action control {entity:?} must use FeathersActionButton or be explicitly \
+             marked EditorNativeControl"
+        );
     }
 }
 
