@@ -5,6 +5,7 @@ use bevy::{
         FeathersMenuDivider, FeathersMenuItem, FeathersMenuPopup, FeathersNumberInput,
         FeathersScrollbar, FeathersToolButton, NumberFormat,
     },
+    feathers::theme::ThemeToken,
     prelude::*,
     ui_widgets::ControlOrientation,
 };
@@ -130,6 +131,18 @@ pub(crate) fn feathers_integer_input() -> impl Scene {
 pub(crate) fn feathers_scalar_input() -> impl Scene {
     bsn! {
         @FeathersNumberInput
+    }
+}
+
+pub(crate) fn feathers_labeled_scalar_input(
+    label_text: &'static str,
+    sigil_color: ThemeToken,
+) -> impl Scene {
+    bsn! {
+        @FeathersNumberInput {
+            @label_text: label_text,
+            @sigil_color: sigil_color,
+        }
     }
 }
 

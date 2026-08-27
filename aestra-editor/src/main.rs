@@ -106,6 +106,9 @@ fn main() {
         .add_observer(handle_settings_toggle_change)
         .add_observer(handle_settings_integer_change)
         .add_observer(handle_settings_scalar_change)
+        .add_observer(handle_inspector_toggle_change)
+        .add_observer(handle_inspector_integer_change)
+        .add_observer(handle_inspector_scalar_change)
         .add_observer(queue_feathers_action_activation)
         .add_systems(Startup, (setup_window_cursor, setup_editor))
         .add_systems(
@@ -142,6 +145,7 @@ fn main() {
                     update_dock_zone_style,
                     rebuild_editor_ui,
                     sync_settings_number_inputs,
+                    sync_inspector_number_inputs,
                     sync_native_floating_windows,
                     scroll_inspector_to_focus,
                     update_scrollbar_visibility,
@@ -520,6 +524,30 @@ struct SettingsToggleControl(SettingsToggle);
 
 #[derive(Component)]
 struct SettingsNumberControl(SettingsNumber);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InspectorNumberKind {
+    U32,
+    Scalar,
+    Vector,
+    Range,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct InspectorNumberControl {
+    module: ModuleId,
+    parameter: &'static str,
+    component: u8,
+    kind: InspectorNumberKind,
+    min: Option<f32>,
+    max: Option<f32>,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct InspectorToggleControl {
+    module: ModuleId,
+    parameter: &'static str,
+}
 
 #[derive(Component)]
 struct LocalizedText(&'static str);
@@ -1542,7 +1570,13 @@ fn spawn_panel_content(
         DockPanel::Viewport => spawn_preview(parent),
         DockPanel::Assets => spawn_asset_browser(parent, sources.session, sources.catalog),
         DockPanel::Inspector => {
-            spawn_inspector(parent, sources.session, sources.registry, sources.palette);
+            spawn_inspector(
+                parent,
+                sources.session,
+                sources.registry,
+                sources.palette,
+                sources.localizer,
+            );
         }
         DockPanel::Timeline => spawn_timeline(parent, sources.session),
         DockPanel::Curves => {
@@ -2595,6 +2629,7 @@ fn spawn_inspector(
     session: &EditorSession,
     registry: &EditorModuleRegistry,
     palette: &ModulePaletteState,
+    localizer: &Localizer,
 ) {
     let layer = session.selected_layer();
     let emitter_index = session.selected_layer_index();
@@ -2700,6 +2735,7 @@ fn spawn_inspector(
                                     "effect.emitters[{emitter_index}].modules[{module_index}]"
                                 ),
                                 session,
+                                localizer,
                             );
                         }
                         spawn_stage_diagnostics(
@@ -2819,6 +2855,7 @@ fn spawn_module_card(
     metadata: Option<&ModuleMetadata>,
     diagnostic_path: &str,
     session: &EditorSession,
+    localizer: &Localizer,
 ) {
     let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
     let meta = metadata.map_or_else(
@@ -2908,7 +2945,7 @@ fn spawn_module_card(
             ));
             if let Some(metadata) = metadata {
                 for (input_index, input) in metadata.inputs.iter().enumerate() {
-                    spawn_input_control(card, module, input, input_index as u8);
+                    spawn_input_control(card, module, input, input_index as u8, localizer);
                 }
             }
             spawn_inline_diagnostics(card, diagnostic_path, session);
@@ -2920,11 +2957,132 @@ fn spawn_input_control(
     module: &ModuleInstance,
     input: &InputMetadata,
     input_index: u8,
+    localizer: &Localizer,
 ) {
+    let display_name = localized_inspector_input(localizer, input.name, input.display_name, false);
+    let description = localized_inspector_input(localizer, input.name, input.description, true);
     let Some(value) = module_parameter(module, input.name) else {
-        property_stepper(
+        spawn_inspector_read_only_control(parent, &display_name, "Missing authored value");
+        return;
+    };
+    match (&input.control, value) {
+        (InputControl::Curve { .. }, Value::Curve(curve)) => inspector_action_button(
             parent,
-            &format!("{}  missing", input.display_name),
+            &format!("{}  ·  {} keys  →", display_name, curve.keys.len()),
+            EditorAction::EditComplexInput(module.id, input_index),
+        ),
+        (InputControl::Gradient, Value::Gradient(gradient)) => inspector_action_button(
+            parent,
+            &format!("{}  ·  {} color keys  →", display_name, gradient.keys.len()),
+            EditorAction::EditComplexInput(module.id, input_index),
+        ),
+        (InputControl::Toggle, Value::Bool(value)) => {
+            spawn_inspector_toggle_control(parent, module.id, input, &display_name, value);
+        }
+        (InputControl::Number { min, max, .. }, Value::U32(value)) => {
+            spawn_inspector_integer_control(
+                parent,
+                module.id,
+                input,
+                &display_name,
+                value,
+                *min,
+                *max,
+            );
+        }
+        (InputControl::Number { min, max, .. }, Value::Scalar(value)) => {
+            spawn_inspector_number_controls(
+                parent,
+                input,
+                &display_name,
+                InspectorNumberControl {
+                    module: module.id,
+                    parameter: input.name,
+                    component: 0,
+                    kind: InspectorNumberKind::Scalar,
+                    min: *min,
+                    max: *max,
+                },
+                &[("", value, 0)],
+            );
+        }
+        (InputControl::Vector { min, max, .. }, Value::Vec2(value)) => {
+            spawn_inspector_number_controls(
+                parent,
+                input,
+                &display_name,
+                InspectorNumberControl {
+                    module: module.id,
+                    parameter: input.name,
+                    component: 0,
+                    kind: InspectorNumberKind::Vector,
+                    min: *min,
+                    max: *max,
+                },
+                &[("X", value[0], 0), ("Y", value[1], 1)],
+            );
+        }
+        (InputControl::Vector { min, max, .. }, Value::Vec3(value)) => {
+            spawn_inspector_number_controls(
+                parent,
+                input,
+                &display_name,
+                InspectorNumberControl {
+                    module: module.id,
+                    parameter: input.name,
+                    component: 0,
+                    kind: InspectorNumberKind::Vector,
+                    min: *min,
+                    max: *max,
+                },
+                &[("X", value[0], 0), ("Y", value[1], 1), ("Z", value[2], 2)],
+            );
+        }
+        (InputControl::Vector { min, max, .. }, Value::Vec4(value)) => {
+            spawn_inspector_number_controls(
+                parent,
+                input,
+                &display_name,
+                InspectorNumberControl {
+                    module: module.id,
+                    parameter: input.name,
+                    component: 0,
+                    kind: InspectorNumberKind::Vector,
+                    min: *min,
+                    max: *max,
+                },
+                &[
+                    ("X", value[0], 0),
+                    ("Y", value[1], 1),
+                    ("Z", value[2], 2),
+                    ("W", value[3], 3),
+                ],
+            );
+        }
+        (InputControl::Range { min, max, .. }, Value::Range(value)) => {
+            spawn_inspector_number_controls(
+                parent,
+                input,
+                &display_name,
+                InspectorNumberControl {
+                    module: module.id,
+                    parameter: input.name,
+                    component: 0,
+                    kind: InspectorNumberKind::Range,
+                    min: *min,
+                    max: *max,
+                },
+                &[("MIN", value.min, 0), ("MAX", value.max, 1)],
+            );
+        }
+        (InputControl::Choice, value) => property_stepper(
+            parent,
+            &format!(
+                "{}  {}{}",
+                display_name,
+                format_value(value),
+                unit_suffix(input)
+            ),
             EditorAction::AdjustModuleInput {
                 module: module.id,
                 input: input_index,
@@ -2937,81 +3095,15 @@ fn spawn_input_control(
                 component: 0,
                 direction: 1,
             },
-        );
-        return;
-    };
-    match (&input.control, &value) {
-        (InputControl::Curve { .. }, Value::Curve(curve)) => inspector_action_button(
-            parent,
-            &format!("{}  ·  {} keys  →", input.display_name, curve.keys.len()),
-            EditorAction::EditComplexInput(module.id, input_index),
         ),
-        (InputControl::Gradient, Value::Gradient(gradient)) => inspector_action_button(
+        (_, value) => spawn_inspector_read_only_control(
             parent,
-            &format!(
-                "{}  ·  {} color keys  →",
-                input.display_name,
-                gradient.keys.len()
-            ),
-            EditorAction::EditComplexInput(module.id, input_index),
-        ),
-        (InputControl::Vector { .. }, Value::Vec2(vector)) => {
-            for (component, axis) in ["X", "Y"].into_iter().enumerate() {
-                metadata_stepper(
-                    parent,
-                    module.id,
-                    input_index,
-                    component as u8,
-                    &format!(
-                        "{} {axis}  {:.2}{}",
-                        input.display_name,
-                        vector[component],
-                        unit_suffix(input)
-                    ),
-                );
-            }
-        }
-        (InputControl::Range { .. }, Value::Range(range)) => {
-            metadata_stepper(
-                parent,
-                module.id,
-                input_index,
-                0,
-                &format!(
-                    "{} Min  {:.2}{}",
-                    input.display_name,
-                    range.min,
-                    unit_suffix(input)
-                ),
-            );
-            metadata_stepper(
-                parent,
-                module.id,
-                input_index,
-                1,
-                &format!(
-                    "{} Max  {:.2}{}",
-                    input.display_name,
-                    range.max,
-                    unit_suffix(input)
-                ),
-            );
-        }
-        _ => metadata_stepper(
-            parent,
-            module.id,
-            input_index,
-            0,
-            &format!(
-                "{}  {}{}",
-                input.display_name,
-                format_value(value),
-                unit_suffix(input)
-            ),
+            &display_name,
+            &format!("{}{}", format_value(value), unit_suffix(input)),
         ),
     }
     parent.spawn((
-        Text::new(input.description),
+        Text::new(description),
         TextFont {
             font_size: FontSize::Px(7.0),
             ..default()
@@ -3024,29 +3116,208 @@ fn spawn_input_control(
     ));
 }
 
-fn metadata_stepper(
+fn localized_inspector_input(
+    localizer: &Localizer,
+    input: &str,
+    fallback: &str,
+    description: bool,
+) -> String {
+    let message = match (input, description) {
+        ("spawn_rate", false) => "inspector-input-spawn-rate",
+        ("spawn_rate", true) => "inspector-input-spawn-rate-description",
+        ("burst_count", false) => "inspector-input-burst-count",
+        ("burst_count", true) => "inspector-input-burst-count-description",
+        ("shape", false) => "inspector-input-shape",
+        ("shape", true) => "inspector-input-shape-description",
+        ("lifetime", false) => "inspector-input-lifetime",
+        ("lifetime", true) => "inspector-input-lifetime-description",
+        ("speed", false) => "inspector-input-speed",
+        ("speed", true) => "inspector-input-speed-description",
+        ("direction_degrees", false) => "inspector-input-direction",
+        ("direction_degrees", true) => "inspector-input-direction-description",
+        ("spread_degrees", false) => "inspector-input-spread",
+        ("spread_degrees", true) => "inspector-input-spread-description",
+        ("angular_velocity", false) => "inspector-input-angular-velocity",
+        ("angular_velocity", true) => "inspector-input-angular-velocity-description",
+        ("gravity", false) => "inspector-input-gravity",
+        ("gravity", true) => "inspector-input-gravity-description",
+        ("drag", false) => "inspector-input-drag",
+        ("drag", true) => "inspector-input-drag-description",
+        ("turbulence", false) => "inspector-input-turbulence",
+        ("turbulence", true) => "inspector-input-turbulence-description",
+        ("size", false) => "inspector-input-size-over-life",
+        ("size", true) => "inspector-input-size-over-life-description",
+        ("opacity", false) => "inspector-input-opacity-over-life",
+        ("opacity", true) => "inspector-input-opacity-over-life-description",
+        ("color", false) => "inspector-input-color-over-life",
+        ("color", true) => "inspector-input-color-over-life-description",
+        _ => return fallback.to_owned(),
+    };
+    localizer.text(message)
+}
+
+fn spawn_inspector_control_heading(
+    parent: &mut ChildSpawnerCommands,
+    input: &InputMetadata,
+    title: &str,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(6.0),
+            ..default()
+        })
+        .with_children(|heading| {
+            heading.spawn_empty().apply_scene(label(title.to_owned()));
+            heading.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            if let Some(unit) = input.unit {
+                heading.spawn_empty().apply_scene(label_dim(unit));
+            }
+        });
+}
+
+fn spawn_inspector_integer_control(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
-    input: u8,
-    component: u8,
-    label: &str,
+    input: &InputMetadata,
+    title: &str,
+    _value: u32,
+    min: Option<f32>,
+    max: Option<f32>,
 ) {
-    property_stepper(
-        parent,
-        label,
-        EditorAction::AdjustModuleInput {
-            module,
-            input,
-            component,
-            direction: -1,
-        },
-        EditorAction::AdjustModuleInput {
-            module,
-            input,
-            component,
-            direction: 1,
-        },
-    );
+    spawn_inspector_control_heading(parent, input, title);
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            ..default()
+        })
+        .with_children(|container| {
+            container
+                .spawn_empty()
+                .apply_scene(ui_shell::feathers_integer_input())
+                .insert((
+                    InspectorNumberControl {
+                        module,
+                        parameter: input.name,
+                        component: 0,
+                        kind: InspectorNumberKind::U32,
+                        min,
+                        max,
+                    },
+                    AccessibleLabel(title.to_owned()),
+                ));
+        });
+}
+
+fn spawn_inspector_number_controls(
+    parent: &mut ChildSpawnerCommands,
+    input: &InputMetadata,
+    title: &str,
+    control: InspectorNumberControl,
+    values: &[(&'static str, f32, u8)],
+) {
+    spawn_inspector_control_heading(parent, input, title);
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            column_gap: Val::Px(4.0),
+            ..default()
+        })
+        .with_children(|controls| {
+            for (axis, _value, component) in values {
+                let sigil = match *axis {
+                    "X" => tokens::TEXT_INPUT_X_AXIS,
+                    "Y" => tokens::TEXT_INPUT_Y_AXIS,
+                    "Z" => tokens::TEXT_INPUT_Z_AXIS,
+                    _ => tokens::TEXT_INPUT_BG,
+                };
+                controls
+                    .spawn(Node {
+                        flex_grow: 1.0,
+                        flex_basis: Val::Px(0.0),
+                        min_width: Val::Px(58.0),
+                        ..default()
+                    })
+                    .with_children(|wrapper| {
+                        let mut input_entity = wrapper.spawn_empty();
+                        if axis.is_empty() {
+                            input_entity.apply_scene(ui_shell::feathers_scalar_input());
+                        } else {
+                            input_entity
+                                .apply_scene(ui_shell::feathers_labeled_scalar_input(axis, sigil));
+                        }
+                        input_entity.insert((
+                            InspectorNumberControl {
+                                component: *component,
+                                ..control
+                            },
+                            AccessibleLabel(if axis.is_empty() {
+                                title.to_owned()
+                            } else {
+                                format!("{title} {axis}")
+                            }),
+                        ));
+                    });
+            }
+        });
+}
+
+fn spawn_inspector_toggle_control(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: &InputMetadata,
+    title: &str,
+    value: bool,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(28.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(8.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn_empty().apply_scene(label(title.to_owned()));
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            let mut checkbox = row.spawn_empty();
+            checkbox.apply_scene(ui_shell::feathers_checkbox()).insert((
+                InspectorToggleControl {
+                    module,
+                    parameter: input.name,
+                },
+                AccessibleLabel(title.to_owned()),
+            ));
+            if value {
+                checkbox.insert(Checked);
+            }
+        });
+}
+
+fn spawn_inspector_read_only_control(parent: &mut ChildSpawnerCommands, title: &str, value: &str) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(28.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(8.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn_empty().apply_scene(label(title.to_owned()));
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            row.spawn_empty().apply_scene(label_dim(value.to_owned()));
+        });
 }
 
 fn unit_suffix(input: &InputMetadata) -> String {
@@ -3360,28 +3631,22 @@ fn palette_result(
 
 fn stack_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAction, width: f32) {
     parent
-        .spawn((
-            Button,
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_tool_button())
+        .insert((
             action,
+            FeathersActionButton,
+            AccessibleLabel(label.to_owned()),
             Node {
                 width: Val::Px(width),
                 height: Val::Px(21.0),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
                 ..default()
             },
-            BackgroundColor(theme::BUTTON),
         ))
         .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FontSize::Px(8.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
-            ));
+            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
         });
 }
 
@@ -4945,6 +5210,149 @@ fn handle_settings_scalar_change(
     }
 }
 
+fn handle_inspector_toggle_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&InspectorToggleControl>,
+    mut commands: Commands,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    let Some(current) = inspector_module_parameter(&session, control.module, control.parameter)
+    else {
+        session.status = "Inspector target is no longer available".into();
+        return;
+    };
+    let value = Value::Bool(change.value);
+    if current != value {
+        session.set_module_parameter(control.module, control.parameter, value);
+    }
+}
+
+fn handle_inspector_integer_change(
+    change: On<ValueChange<i32>>,
+    controls: Query<&InspectorNumberControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if control.kind != InspectorNumberKind::U32 {
+        return;
+    }
+    apply_inspector_number(&mut session, *control, change.value as f32);
+}
+
+fn handle_inspector_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&InspectorNumberControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if control.kind == InspectorNumberKind::U32 {
+        return;
+    }
+    apply_inspector_number(&mut session, *control, change.value);
+}
+
+fn inspector_module_parameter(
+    session: &EditorSession,
+    module: ModuleId,
+    parameter: &str,
+) -> Option<Value> {
+    let module = session
+        .selected_layer()
+        .modules
+        .iter()
+        .find(|candidate| candidate.id == module)?;
+    module_parameter(module, parameter)
+}
+
+fn apply_inspector_number(
+    session: &mut EditorSession,
+    control: InspectorNumberControl,
+    raw_value: f32,
+) -> bool {
+    let Some(value) = clamp_inspector_number(raw_value, control.min, control.max) else {
+        session.status = format!("{} requires a finite number", control.parameter);
+        return false;
+    };
+    let Some(current) = inspector_module_parameter(session, control.module, control.parameter)
+    else {
+        session.status = "Inspector target is no longer available".into();
+        return false;
+    };
+    let updated = match (control.kind, current.clone()) {
+        (InspectorNumberKind::U32, Value::U32(_)) => {
+            Value::U32(value.max(0.0).round().min(u32::MAX as f32) as u32)
+        }
+        (InspectorNumberKind::Scalar, Value::Scalar(_)) => Value::Scalar(value),
+        (InspectorNumberKind::Vector, Value::Vec2(mut vector)) => {
+            let Some(component) = vector.get_mut(control.component as usize) else {
+                return false;
+            };
+            *component = value;
+            Value::Vec2(vector)
+        }
+        (InspectorNumberKind::Vector, Value::Vec3(mut vector)) => {
+            let Some(component) = vector.get_mut(control.component as usize) else {
+                return false;
+            };
+            *component = value;
+            Value::Vec3(vector)
+        }
+        (InspectorNumberKind::Vector, Value::Vec4(mut vector)) => {
+            let Some(component) = vector.get_mut(control.component as usize) else {
+                return false;
+            };
+            *component = value;
+            Value::Vec4(vector)
+        }
+        (InspectorNumberKind::Range, Value::Range(mut range)) => {
+            if control.component == 0 {
+                range.min = value.min(range.max);
+            } else {
+                range.max = value.max(range.min);
+            }
+            Value::Range(range)
+        }
+        _ => {
+            session.status = format!("{} has incompatible Inspector metadata", control.parameter);
+            return false;
+        }
+    };
+    if updated == current {
+        return false;
+    }
+    session.set_module_parameter(control.module, control.parameter, updated);
+    true
+}
+
+fn clamp_inspector_number(value: f32, min: Option<f32>, max: Option<f32>) -> Option<f32> {
+    if !value.is_finite() {
+        return None;
+    }
+    let value = min.map_or(value, |min| value.max(min));
+    Some(max.map_or(value, |max| value.min(max)))
+}
+
 fn apply_settings_scalar(
     settings: &mut EditorSettings,
     setting: SettingsNumber,
@@ -4967,6 +5375,52 @@ fn sync_settings_number_inputs(
     for (entity, control) in &controls {
         let value = settings_number_input_value(&settings, control.0);
         commands.trigger(UpdateNumberInput { entity, value });
+    }
+}
+
+fn sync_inspector_number_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &InspectorNumberControl), Added<InspectorNumberControl>>,
+) {
+    for (entity, control) in &controls {
+        let Some(value) = inspector_number_input_value(&session, *control) else {
+            continue;
+        };
+        commands.trigger(UpdateNumberInput { entity, value });
+    }
+}
+
+fn inspector_number_input_value(
+    session: &EditorSession,
+    control: InspectorNumberControl,
+) -> Option<NumberInputValue> {
+    let value = inspector_module_parameter(session, control.module, control.parameter)?;
+    match (control.kind, value) {
+        (InspectorNumberKind::U32, Value::U32(value)) => {
+            Some(NumberInputValue::I32(value.min(i32::MAX as u32) as i32))
+        }
+        (InspectorNumberKind::Scalar, Value::Scalar(value)) => Some(NumberInputValue::F32(value)),
+        (InspectorNumberKind::Vector, Value::Vec2(value)) => value
+            .get(control.component as usize)
+            .copied()
+            .map(NumberInputValue::F32),
+        (InspectorNumberKind::Vector, Value::Vec3(value)) => value
+            .get(control.component as usize)
+            .copied()
+            .map(NumberInputValue::F32),
+        (InspectorNumberKind::Vector, Value::Vec4(value)) => value
+            .get(control.component as usize)
+            .copied()
+            .map(NumberInputValue::F32),
+        (InspectorNumberKind::Range, Value::Range(value)) => {
+            Some(NumberInputValue::F32(if control.component == 0 {
+                value.min
+            } else {
+                value.max
+            }))
+        }
+        _ => None,
     }
 }
 
@@ -6884,36 +7338,33 @@ fn property_stepper(
 
 fn mini_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAction) {
     parent
-        .spawn((
-            Button,
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_tool_button())
+        .insert((
             action,
+            FeathersActionButton,
+            AccessibleLabel(label.to_owned()),
             Node {
                 width: Val::Px(28.0),
                 height: Val::Px(24.0),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
                 ..default()
             },
-            BackgroundColor(theme::BUTTON),
         ))
         .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FontSize::Px(14.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
-            ));
+            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
         });
 }
 
 fn inspector_action_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAction) {
     parent
-        .spawn((
-            Button,
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_button())
+        .insert((
             action,
+            FeathersActionButton,
+            AccessibleLabel(label.to_owned()),
             Node {
                 width: Val::Auto,
                 height: Val::Px(28.0),
@@ -6921,22 +7372,11 @@ fn inspector_action_button(parent: &mut ChildSpawnerCommands, label: &str, actio
                 padding: UiRect::horizontal(Val::Px(10.0)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(3.0)),
                 ..default()
             },
-            BackgroundColor(theme::BUTTON),
-            BorderColor::all(theme::BORDER_BRIGHT),
         ))
         .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
-            ));
+            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
         });
 }
 
@@ -8811,6 +9251,131 @@ mod tests {
         assert_eq!(
             adjusted_module_value(&module, &metadata.inputs[1], 0, -1),
             Some(Value::U32(0))
+        );
+    }
+
+    #[test]
+    fn inspector_number_edit_is_clamped_semantic_and_undoable() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "spawn_rate").is_some())
+            .unwrap()
+            .id;
+        let original = inspector_module_parameter(&session, module, "spawn_rate").unwrap();
+        let control = InspectorNumberControl {
+            module,
+            parameter: "spawn_rate",
+            component: 0,
+            kind: InspectorNumberKind::Scalar,
+            min: Some(0.0),
+            max: Some(30.0),
+        };
+
+        assert!(apply_inspector_number(&mut session, control, 300.0));
+        assert_eq!(
+            inspector_module_parameter(&session, module, "spawn_rate"),
+            Some(Value::Scalar(30.0))
+        );
+        assert!(session.can_undo());
+
+        session.undo();
+        assert_eq!(
+            inspector_module_parameter(&session, module, "spawn_rate"),
+            Some(original)
+        );
+    }
+
+    #[test]
+    fn inspector_range_edit_preserves_ordering() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "lifetime").is_some())
+            .unwrap()
+            .id;
+        let control = InspectorNumberControl {
+            module,
+            parameter: "lifetime",
+            component: 0,
+            kind: InspectorNumberKind::Range,
+            min: Some(0.05),
+            max: None,
+        };
+
+        assert!(apply_inspector_number(&mut session, control, 99.0));
+        let Value::Range(range) = inspector_module_parameter(&session, module, "lifetime").unwrap()
+        else {
+            panic!("lifetime should remain a range");
+        };
+        assert_eq!(range.min, range.max);
+    }
+
+    #[test]
+    fn inspector_typing_does_not_rebuild_or_commit_until_final() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "spawn_rate").is_some())
+            .unwrap()
+            .id;
+        let original = inspector_module_parameter(&session, module, "spawn_rate").unwrap();
+        let revision = session.ui_revision;
+        let mut app = App::new();
+        app.insert_resource(session);
+        app.add_observer(handle_inspector_scalar_change);
+        let control = app
+            .world_mut()
+            .spawn(InspectorNumberControl {
+                module,
+                parameter: "spawn_rate",
+                component: 0,
+                kind: InspectorNumberKind::Scalar,
+                min: Some(0.0),
+                max: None,
+            })
+            .id();
+
+        app.world_mut().trigger(ValueChange {
+            source: control,
+            value: 123.0_f32,
+            is_final: false,
+        });
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(
+            inspector_module_parameter(session, module, "spawn_rate"),
+            Some(original)
+        );
+        assert_eq!(session.ui_revision, revision);
+    }
+
+    #[test]
+    fn inspector_number_rejects_non_finite_values() {
+        assert_eq!(clamp_inspector_number(f32::INFINITY, None, None), None);
+        assert_eq!(
+            clamp_inspector_number(-5.0, Some(0.0), Some(10.0)),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn inspector_input_localization_uses_fluent_and_preserves_custom_metadata() {
+        let localizer = Localizer::new("fr-FR").unwrap();
+        assert_eq!(
+            localized_inspector_input(&localizer, "spawn_rate", "Spawn Rate", false),
+            "Taux d’émission"
+        );
+        assert_eq!(
+            localized_inspector_input(&localizer, "custom_gain", "Custom Gain", false),
+            "Custom Gain"
         );
     }
 

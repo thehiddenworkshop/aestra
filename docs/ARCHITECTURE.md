@@ -76,9 +76,11 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Owns panels, viewport controls, timeline state, and an authoring-backed session.
 - Presents Bevy-native UI and editor interactions.
 - Uses Bevy Feathers for standard tooling controls and theme semantics. The
-  editor menu bar, dropdowns, primary toolbar, and Settings workspace use
-  Feathers menus, buttons, pane/group containers, checkboxes, editable numeric
-  inputs, themed typography, keyboard focus, cursors, and accessibility labels.
+  editor menu bar, dropdowns, primary toolbar, Settings workspace, and
+  metadata-driven Inspector inputs use Feathers menus, buttons, pane/group
+  containers, checkboxes, editable numeric inputs, themed typography, keyboard
+  focus, cursors, and accessibility labels. Inspector edits commit only when an
+  interaction is final and enter the semantic command history as undoable changes.
 - Owns a persisted recursive workspace dock tree with tab-strip insertion and
   directional panel-content splitting,
   closable/recoverable panels, collapsing empty branches, transient drop targets,
@@ -174,7 +176,8 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - autosave/recovery and asset migrations
 - [x] versioned persistent editor settings and a dockable Settings workspace
 - [x] Fluent editor-shell localization with catalog validation, fallback, and live locale switching
-- [ ] localized Inspector, diagnostics, profiler, and authoring workspace content
+- [x] localized built-in Inspector module inputs and descriptions
+- [ ] localized diagnostics, profiler, and remaining authoring workspace content
 - [x] persistent recursive pane resizing and dockable authoring-panel tab stacks
 - [x] persisted native floating panel windows with redocking
 

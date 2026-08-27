@@ -52,9 +52,11 @@ architecture vision; this file is the shorter delivery plan.
   number entry, scrollbars, focus, cursors, and accessibility. Embedded
   `en-US` and `fr-FR` Fluent catalogs now localize the editor
   shell live with English fallback, semantic message IDs, interpolation, and catalog
-  coverage tests. The remaining M5 work is viewport gizmos, localization of the deeper
-  authoring workspaces, migration of remaining Inspector controls to Feathers,
-  and recovery.
+  coverage tests. Metadata-defined Inspector scalars, integers, vectors, ranges,
+  and toggles now use Feathers controls, commit final values through semantic
+  undoable commands, retain in-progress text across live preview frames, and expose
+  localized built-in names and descriptions. The remaining M5 work is viewport
+  gizmos, localization of the other deep authoring workspaces, and recovery.
 
 ## 1. Assessment of the current prototype
 
