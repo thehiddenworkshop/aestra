@@ -5,48 +5,11 @@ struct View {
 // Native particle presentation. The vertex shader expands one compacted alive
 // particle into a camera-space quad without a CPU vertex or instance buffer.
 
-struct Curve {
-    keys: array<vec2<f32>, 8>,
-    count: u32,
-    _padding: vec3<f32>,
-}
-
-struct GradientKey {
-    color: vec4<f32>,
-    time: f32,
-    _padding: vec3<f32>,
-}
-
-struct Gradient {
-    keys: array<GradientKey, 8>,
-    count: u32,
-    _padding: vec3<f32>,
-}
-
-struct Emitter {
-    slot_offset: u32,
-    max_particles: u32,
-    burst_count: u32,
-    shape_kind: u32,
-    start_time: f32,
-    duration: f32,
-    spawn_rate: f32,
-    shape_radius: f32,
-    shape_depth: f32,
-    direction_radians: f32,
-    spread_radians: f32,
-    drag: f32,
-    lifetime: vec2<f32>,
-    speed: vec2<f32>,
-    angular_velocity: vec2<f32>,
-    gravity: vec2<f32>,
-    turbulence: f32,
+struct Renderer {
+    emitter_index: u32,
     blend_mode: u32,
     softness: f32,
     _padding: f32,
-    size: Curve,
-    opacity: Curve,
-    color: Gradient,
 }
 
 struct Particle {
@@ -64,19 +27,25 @@ struct RenderGlobals {
     world_from_effect: mat4x4<f32>,
 }
 
+struct RenderParams {
+    renderer_index: u32,
+    _padding: vec3<u32>,
+}
+
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) quad_position: vec2<f32>,
     @location(2) softness: f32,
-    @location(3) @interpolate(flat) blend_mode: u32,
+    @location(3) @interpolate(flat) visible: u32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
-@group(1) @binding(0) var<storage, read> emitters: array<Emitter>;
+@group(1) @binding(0) var<storage, read> renderers: array<Renderer>;
 @group(1) @binding(1) var<storage, read> particles: array<Particle>;
 @group(1) @binding(2) var<storage, read> alive_indices: array<u32>;
 @group(1) @binding(3) var<storage, read> globals: RenderGlobals;
+@group(1) @binding(4) var<storage, read> params: RenderParams;
 
 @vertex
 fn vertex(
@@ -93,7 +62,7 @@ fn vertex(
     );
     let corner = corners[vertex_index];
     let particle = particles[alive_indices[instance_index]];
-    let emitter = emitters[particle.emitter_index];
+    let renderer = renderers[params.renderer_index];
     let sine = sin(particle.rotation);
     let cosine = cos(particle.rotation);
     let rotated = vec2<f32>(
@@ -107,8 +76,8 @@ fn vertex(
     output.clip_position = view.clip_from_world * world_position;
     output.color = particle.color;
     output.quad_position = corner;
-    output.softness = emitter.softness;
-    output.blend_mode = emitter.blend_mode;
+    output.softness = renderer.softness;
+    output.visible = select(0u, 1u, particle.emitter_index == renderer.emitter_index);
     return output;
 }
 
@@ -121,7 +90,7 @@ fn particle_color(input: VertexOutput) -> vec4<f32> {
 
 @fragment
 fn fragment_alpha(input: VertexOutput) -> @location(0) vec4<f32> {
-    if input.blend_mode != 0u {
+    if input.visible == 0u {
         discard;
     }
     return particle_color(input);
@@ -129,8 +98,17 @@ fn fragment_alpha(input: VertexOutput) -> @location(0) vec4<f32> {
 
 @fragment
 fn fragment_additive(input: VertexOutput) -> @location(0) vec4<f32> {
-    if input.blend_mode != 1u {
+    if input.visible == 0u {
         discard;
     }
     return particle_color(input);
+}
+
+@fragment
+fn fragment_multiply(input: VertexOutput) -> @location(0) vec4<f32> {
+    if input.visible == 0u {
+        discard;
+    }
+    let color = particle_color(input);
+    return vec4<f32>(mix(vec3<f32>(1.0), color.rgb, color.a), color.a);
 }

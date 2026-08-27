@@ -1,5 +1,6 @@
 use super::{
-    GpuBlend, GpuDrawInstance, GpuEmitter, GpuParticle, GpuRenderGlobals, WESL_RENDER_SHADER_PATH,
+    GpuBlend, GpuDrawInstance, GpuParticle, GpuRenderGlobals, GpuRenderParams, GpuRenderer,
+    WESL_RENDER_SHADER_PATH,
 };
 use bevy::{
     app::SubApp,
@@ -75,10 +76,11 @@ fn init_render_pipeline(
         &BindGroupLayoutEntries::sequential(
             ShaderStages::VERTEX,
             (
-                storage_buffer_read_only::<Vec<GpuEmitter>>(false),
+                storage_buffer_read_only::<Vec<GpuRenderer>>(false),
                 storage_buffer_read_only::<Vec<GpuParticle>>(false),
                 storage_buffer_read_only::<Vec<u32>>(false),
                 storage_buffer_read_only::<GpuRenderGlobals>(false),
+                storage_buffer_read_only::<GpuRenderParams>(false),
             ),
         ),
     );
@@ -107,6 +109,14 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                     operation: BlendOperation::Add,
                 },
             },
+            GpuBlend::Multiply => BlendState {
+                color: BlendComponent {
+                    src_factor: BlendFactor::Dst,
+                    dst_factor: BlendFactor::Zero,
+                    operation: BlendOperation::Add,
+                },
+                alpha: BlendComponent::OVER,
+            },
         };
         RenderPipelineDescriptor {
             label: Some("aestra gpu sprite".into()),
@@ -123,6 +133,7 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                     match key.blend {
                         GpuBlend::Alpha => "fragment_alpha",
                         GpuBlend::Additive => "fragment_additive",
+                        GpuBlend::Multiply => "fragment_multiply",
                     }
                     .into(),
                 ),
@@ -172,7 +183,7 @@ fn prepare_render_bind_groups(
     effects: Query<(Entity, &GpuDrawInstance)>,
 ) {
     for (entity, effect) in &effects {
-        let Some(emitters) = buffers.get(&effect.emitters) else {
+        let Some(renderers) = buffers.get(&effect.renderers) else {
             continue;
         };
         let Some(particles) = buffers.get(&effect.particles) else {
@@ -184,14 +195,18 @@ fn prepare_render_bind_groups(
         let Some(globals) = buffers.get(&effect.render_globals) else {
             continue;
         };
+        let Some(params) = buffers.get(&effect.render_params) else {
+            continue;
+        };
         let bind_group = render_device.create_bind_group(
             Some("aestra gpu sprite"),
             &pipeline_cache.get_bind_group_layout(&pipeline.effect_layout),
             &BindGroupEntries::sequential((
-                emitters.buffer.as_entire_buffer_binding(),
+                renderers.buffer.as_entire_buffer_binding(),
                 particles.buffer.as_entire_buffer_binding(),
                 alive.buffer.as_entire_buffer_binding(),
                 globals.buffer.as_entire_buffer_binding(),
+                params.buffer.as_entire_buffer_binding(),
             )),
         );
         commands
@@ -232,7 +247,7 @@ fn queue_gpu_sprites(
                 },
             );
             phase.add_retained(Transparent2d {
-                sort_key: FloatOrd(0.0),
+                sort_key: FloatOrd(effect.renderer_order as f32),
                 entity: (*render_entity, *main_entity),
                 pipeline: pipeline_id,
                 draw_function,

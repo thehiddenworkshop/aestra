@@ -228,7 +228,10 @@ impl EffectPlayer {
 }
 
 #[derive(Component)]
-struct RuntimeParticle(usize);
+struct RuntimeParticle {
+    sample_index: usize,
+    renderer_index: usize,
+}
 
 #[derive(Component)]
 struct CpuPresentationPrepared;
@@ -277,20 +280,36 @@ fn prepare_effect_players(
             continue;
         }
         let capacity = player.effect().max_particles.min(4096);
+        let renderer_capacity = cpu_renderer_capacity(player.effect());
         commands
             .entity(entity)
             .insert(CpuPresentationPrepared)
             .with_children(|parent| {
-                for slot in 0..capacity {
-                    parent.spawn((
-                        RuntimeParticle(slot),
-                        Sprite::from_color(Color::WHITE, Vec2::ONE),
-                        Transform::default(),
-                        Visibility::Hidden,
-                    ));
+                for sample_index in 0..capacity {
+                    for renderer_index in 0..renderer_capacity {
+                        parent.spawn((
+                            RuntimeParticle {
+                                sample_index,
+                                renderer_index,
+                            },
+                            Sprite::from_color(Color::WHITE, Vec2::ONE),
+                            Transform::default(),
+                            Visibility::Hidden,
+                        ));
+                    }
                 }
             });
     }
+}
+
+fn cpu_renderer_capacity(effect: &CompiledEffect) -> usize {
+    effect
+        .emitters
+        .iter()
+        .filter(|emitter| emitter.enabled)
+        .map(|emitter| emitter.renderers.len())
+        .max()
+        .unwrap_or(0)
 }
 
 fn prepare_effect_profiles(
@@ -319,17 +338,6 @@ fn bevy_profile(
         && !profile.platform_warnings.contains(&runtime.reason)
     {
         profile.platform_warnings.push(runtime.reason.clone());
-    }
-    let multi_renderer_emitters = effect
-        .emitters
-        .iter()
-        .filter(|emitter| emitter.renderers.len() > 1)
-        .count();
-    if multi_renderer_emitters > 0 {
-        profile.platform_warnings.push(format!(
-            "{multi_renderer_emitters} emitter(s) use multiple renderers; the current Bevy \
-             presentation displays only the first renderer"
-        ));
     }
     profile
 }
@@ -388,10 +396,18 @@ fn play_effects(
             else {
                 continue;
             };
-            let Some(sample) = samples.get(slot.0) else {
+            let Some(sample) = samples.get(slot.sample_index) else {
                 *visibility = Visibility::Hidden;
                 continue;
             };
+            let Some(emitter) = player.effect().emitters.get(sample.emitter_index) else {
+                *visibility = Visibility::Hidden;
+                continue;
+            };
+            if emitter.renderers.get(slot.renderer_index).is_none() {
+                *visibility = Visibility::Hidden;
+                continue;
+            }
             let size = sample.size.max(0.01);
             sprite.color = Color::srgba(
                 sample.color[0],
@@ -464,12 +480,13 @@ mod tests {
             profile.buffer_memory_bytes,
             ProfileValue::Estimated(bytes) if bytes > 0
         ));
-        assert!(
-            profile
-                .platform_warnings
-                .iter()
-                .any(|warning| warning.contains("displays only the first renderer"))
-        );
+        assert_eq!(profile.draw_calls, ProfileValue::Estimated(2));
+        assert!(profile.platform_warnings.is_empty());
+        assert_eq!(cpu_renderer_capacity(player_effect(&app, entity)), 2);
+    }
+
+    fn player_effect(app: &App, entity: Entity) -> &CompiledEffect {
+        app.world().get::<EffectPlayer>(entity).unwrap().effect()
     }
 
     #[test]

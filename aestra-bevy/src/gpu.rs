@@ -94,12 +94,26 @@ pub struct GpuEmitter {
     pub angular_velocity: Vec2,
     pub gravity: Vec2,
     pub turbulence: f32,
-    pub blend_mode: u32,
-    pub softness: f32,
-    pub _padding: f32,
+    pub _padding: Vec3,
     pub size: GpuCurve,
     pub opacity: GpuCurve,
     pub color: GpuGradient,
+}
+
+/// One authored presentation path for an emitter.
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct GpuRenderer {
+    pub emitter_index: u32,
+    pub blend_mode: u32,
+    pub softness: f32,
+    pub _padding: f32,
+}
+
+/// Selects the renderer record used by one indirect draw.
+#[derive(Debug, Clone, Copy, Default, ShaderType)]
+pub struct GpuRenderParams {
+    pub renderer_index: u32,
+    pub _padding: UVec3,
 }
 
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
@@ -131,6 +145,7 @@ pub struct GpuParticle {
 #[derive(Debug, Clone)]
 pub struct GpuEffectArtifact {
     pub emitters: Vec<GpuEmitter>,
+    pub renderers: Vec<GpuRenderer>,
     pub particles: Vec<GpuParticle>,
     pub total_slots: u32,
     pub bounds_half_extents: Vec3,
@@ -142,7 +157,8 @@ impl GpuEffectArtifact {
         let mut slot_offset = 0_u32;
         let mut bounds_half_extents = Vec2::splat(0.01);
         let mut emitters = Vec::with_capacity(instance.effect().emitters.len());
-        for emitter in &instance.effect().emitters {
+        let mut renderers = Vec::new();
+        for (emitter_index, emitter) in instance.effect().emitters.iter().enumerate() {
             let (spawn_rate, burst_count) =
                 emission(&emitter.execution, parameters).ok_or_else(|| {
                     GpuArtifactError::MissingInstruction(emitter.name.clone(), "Emit")
@@ -163,12 +179,18 @@ impl GpuEffectArtifact {
                 EmitterShape::Ring { radius } => (2, radius, 0.0),
                 EmitterShape::Cone { radius, depth } => (3, radius, depth),
             };
-            let renderer = emitter.renderers.first();
-            let blend_mode = match renderer.map(|renderer| renderer.blend) {
-                Some(BlendMode::Additive) => GpuBlend::Additive,
-                _ => GpuBlend::Alpha,
-            };
-            let softness = renderer.map_or(0.25, |renderer| renderer.softness);
+            if emitter.enabled {
+                renderers.extend(emitter.renderers.iter().map(|renderer| GpuRenderer {
+                    emitter_index: emitter_index as u32,
+                    blend_mode: match renderer.blend {
+                        BlendMode::Alpha => GpuBlend::Alpha as u32,
+                        BlendMode::Additive => GpuBlend::Additive as u32,
+                        BlendMode::Multiply => GpuBlend::Multiply as u32,
+                    },
+                    softness: renderer.softness,
+                    _padding: 0.0,
+                }));
+            }
             bounds_half_extents = bounds_half_extents.max(emitter_bounds(
                 shape,
                 init.lifetime,
@@ -195,17 +217,16 @@ impl GpuEffectArtifact {
                 angular_velocity: Vec2::new(init.angular_velocity.min, init.angular_velocity.max),
                 gravity: Vec2::from_array(motion.gravity),
                 turbulence: motion.turbulence,
-                blend_mode: blend_mode as u32,
-                softness,
                 size: pack_curve(appearance.size)?,
                 opacity: pack_curve(appearance.opacity)?,
                 color: pack_gradient(appearance.color)?,
-                _padding: 0.0,
+                _padding: Vec3::ZERO,
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }
         Ok(Self {
             emitters,
+            renderers,
             particles: vec![GpuParticle::default(); slot_offset as usize],
             total_slots: slot_offset,
             bounds_half_extents: bounds_half_extents.extend(0.1),
@@ -218,11 +239,13 @@ impl GpuEffectArtifact {
 enum GpuBlend {
     Alpha = 0,
     Additive = 1,
+    Multiply = 2,
 }
 
 #[derive(Component, Clone, ExtractComponent)]
 pub(crate) struct GpuEffectBuffers {
     emitters: Handle<ShaderBuffer>,
+    renderers: Handle<ShaderBuffer>,
     particles: Handle<ShaderBuffer>,
     alive: Handle<ShaderBuffer>,
     dead: Handle<ShaderBuffer>,
@@ -238,11 +261,13 @@ pub(crate) struct GpuEffectBuffers {
 #[require(Transform, Visibility, VisibilityClass)]
 #[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
 struct GpuDrawInstance {
-    emitters: Handle<ShaderBuffer>,
+    renderers: Handle<ShaderBuffer>,
     particles: Handle<ShaderBuffer>,
     alive: Handle<ShaderBuffer>,
     indirect: Handle<ShaderBuffer>,
     render_globals: Handle<ShaderBuffer>,
+    render_params: Handle<ShaderBuffer>,
+    renderer_order: u32,
     blend: GpuBlend,
 }
 
@@ -320,16 +345,27 @@ pub(crate) fn prepare_gpu_players(
             commands.entity(entity).insert(GpuPresentationPrepared);
             continue;
         }
-        let blends = artifact
-            .emitters
+        let renderer_draws = artifact
+            .renderers
             .iter()
-            .map(|emitter| emitter.blend_mode)
-            .collect::<std::collections::BTreeSet<_>>();
+            .enumerate()
+            .map(|(index, renderer)| {
+                (
+                    index as u32,
+                    match renderer.blend_mode {
+                        mode if mode == GpuBlend::Additive as u32 => GpuBlend::Additive,
+                        mode if mode == GpuBlend::Multiply as u32 => GpuBlend::Multiply,
+                        _ => GpuBlend::Alpha,
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
         let bounds = Aabb {
             center: Vec3A::ZERO,
             half_extents: Vec3A::from(artifact.bounds_half_extents),
         };
         let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
+        let renderers = buffers.add(ShaderBuffer::from(artifact.renderers));
         let particles = buffers.add(ShaderBuffer::from(artifact.particles));
         let alive = buffers.add(ShaderBuffer::from(vec![
             0_u32;
@@ -355,6 +391,7 @@ pub(crate) fn prepare_gpu_players(
         commands.entity(entity).insert((
             GpuEffectBuffers {
                 emitters: emitters.clone(),
+                renderers: renderers.clone(),
                 particles: particles.clone(),
                 alive: alive.clone(),
                 dead,
@@ -371,19 +408,21 @@ pub(crate) fn prepare_gpu_players(
             .entity(entity)
             .with_children(|parent| match runtime.active {
                 ActiveBackend::Gpu => {
-                    for blend in blends {
+                    for (renderer_index, blend) in renderer_draws {
+                        let render_params = buffers.add(ShaderBuffer::from(GpuRenderParams {
+                            renderer_index,
+                            _padding: UVec3::ZERO,
+                        }));
                         parent.spawn((
                             GpuDrawInstance {
-                                emitters: emitters.clone(),
+                                renderers: renderers.clone(),
                                 particles: particles.clone(),
                                 alive: alive.clone(),
                                 indirect: indirect.clone(),
                                 render_globals: render_globals.clone(),
-                                blend: if blend == GpuBlend::Additive as u32 {
-                                    GpuBlend::Additive
-                                } else {
-                                    GpuBlend::Alpha
-                                },
+                                render_params,
+                                renderer_order: renderer_index,
+                                blend,
                             },
                             bounds,
                             Transform::default(),
@@ -525,10 +564,13 @@ fn update_gpu_inputs(
     players: Query<(&EffectPlayer, &GlobalTransform, &GpuEffectBuffers)>,
 ) {
     for (player, transform, gpu) in &players {
-        if let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance)
-            && let Some(mut buffer) = buffers.get_mut(&gpu.emitters)
-        {
-            buffer.set_data(artifact.emitters);
+        if let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance) {
+            if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
+                buffer.set_data(artifact.emitters);
+            }
+            if let Some(mut buffer) = buffers.get_mut(&gpu.renderers) {
+                buffer.set_data(artifact.renderers);
+            }
         }
         if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
             buffer.set_data(GpuGlobals {
@@ -896,7 +938,7 @@ fn appearance<'a>(
 mod tests {
     use super::*;
     use aestra_compiler::EffectCompiler;
-    use aestra_core::{EffectAsset, Emitter};
+    use aestra_core::{BlendMode, EffectAsset, Emitter, RendererInstance};
     use std::sync::Arc;
 
     #[test]
@@ -913,6 +955,34 @@ mod tests {
         assert_eq!(artifact.emitters[0].slot_offset, 0);
         assert_eq!(artifact.emitters[1].slot_offset, 17);
         assert_eq!(artifact.particles.len(), 40);
+    }
+
+    #[test]
+    fn artifact_preserves_every_enabled_renderer() {
+        let mut effect = EffectAsset::new("GPU renderers", 2.0);
+        let mut first = Emitter::basic_sprite("First", 2.0);
+        first
+            .renderers
+            .push(RendererInstance::sprite(BlendMode::Alpha, 0.65));
+        first
+            .renderers
+            .push(RendererInstance::sprite(BlendMode::Multiply, 0.8));
+        let mut disabled = Emitter::basic_sprite("Disabled", 2.0);
+        disabled.enabled = false;
+        effect.emitters.extend([first, disabled]);
+
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
+
+        assert_eq!(artifact.renderers.len(), 3);
+        assert_eq!(artifact.renderers[0].emitter_index, 0);
+        assert_eq!(artifact.renderers[0].blend_mode, GpuBlend::Additive as u32);
+        assert_eq!(artifact.renderers[1].emitter_index, 0);
+        assert_eq!(artifact.renderers[1].blend_mode, GpuBlend::Alpha as u32);
+        assert_eq!(artifact.renderers[1].softness, 0.65);
+        assert_eq!(artifact.renderers[2].emitter_index, 0);
+        assert_eq!(artifact.renderers[2].blend_mode, GpuBlend::Multiply as u32);
+        assert_eq!(artifact.renderers[2].softness, 0.8);
     }
 
     #[test]
@@ -940,5 +1010,7 @@ mod tests {
         let output = compiler.compile(&module).unwrap().to_string();
         assert!(output.contains("fn fragment_alpha"));
         assert!(output.contains("fn fragment_additive"));
+        assert!(output.contains("fn fragment_multiply"));
+        assert!(output.contains("renderer_index"));
     }
 }
