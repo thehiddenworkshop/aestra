@@ -43,9 +43,7 @@ use bevy::{
     },
     mesh::MeshVertexBufferLayoutRef,
     pbr::{MaterialPipeline, MaterialPipelineKey},
-    picking::events::{
-        Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer, Press, Scroll,
-    },
+    picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer, Press},
     picking::pointer::PointerButton,
     prelude::*,
     reflect::TypePath,
@@ -53,15 +51,16 @@ use bevy::{
         AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
     },
     shader::ShaderRef,
-    text::FontSource,
+    text::{EditableText, FontSource, TextEdit},
     ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition, UiSystems},
     ui_widgets::{
         Activate, ScrollArea, ScrollIntoView, Scrollbar, ValueChange,
         popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
     },
     window::{
-        CursorIcon, PrimaryWindow, SystemCursorIcon, WindowCloseRequested, WindowMoved,
-        WindowPosition, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
+        CursorIcon, CursorOptions, PrimaryWindow, SystemCursorIcon, WindowCloseRequested,
+        WindowMoved, WindowPosition, WindowRef, WindowResizeConstraints, WindowResized,
+        WindowResolution,
     },
 };
 use docking::{DockAxis, DockDrop, DockNode, DockNodeId, DockPanel, DockStack, WorkspaceLayout};
@@ -155,6 +154,7 @@ fn main() {
         .add_plugins(AestraPlugin)
         .init_gizmo_group::<PreviewSceneGizmos>()
         .insert_resource(theme::feathers_theme())
+        .init_resource::<NumericScrubState>()
         .add_observer(handle_settings_toggle_change)
         .add_observer(handle_settings_integer_change)
         .add_observer(handle_settings_scalar_change)
@@ -166,7 +166,9 @@ fn main() {
         .add_observer(handle_emitter_scalar_change)
         .add_observer(handle_inspector_integer_change)
         .add_observer(handle_inspector_scalar_change)
-        .add_observer(handle_inspector_numeric_scroll)
+        .add_observer(begin_numeric_scrub)
+        .add_observer(update_numeric_scrub)
+        .add_observer(finish_numeric_scrub)
         .add_observer(begin_inspector_tooltip)
         .add_observer(select_inspector_header)
         .add_observer(queue_feathers_action_activation)
@@ -248,7 +250,7 @@ fn main() {
                     scroll_inspector_to_focus,
                     update_scrollbar_visibility,
                     update_inspector_highlight,
-                    update_inspector_tooltip,
+                    (update_inspector_tooltip, decorate_numeric_scrub_inputs).chain(),
                 )
                     .chain(),
             )
@@ -726,6 +728,30 @@ enum EmitterNumberControl {
     Translation(u8),
     Rotation(u8),
     Scale(u8),
+}
+
+#[derive(Component)]
+struct NumericScrubInput;
+
+#[derive(Debug, Clone, Copy)]
+enum NumericScrubTarget {
+    Inspector(InspectorNumberControl),
+    Emitter(EmitterNumberControl),
+    Renderer(RendererNumberControl),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActiveNumericScrub {
+    entity: Entity,
+    target: NumericScrubTarget,
+    initial: f32,
+    raw: f32,
+    current: f32,
+}
+
+#[derive(Resource, Default)]
+struct NumericScrubState {
+    active: Option<ActiveNumericScrub>,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -8745,6 +8771,11 @@ fn handle_renderer_scalar_change(
     let Ok(control) = controls.get(change.source) else {
         return;
     };
+    if renderer_number_input_value(&session, *control)
+        .is_some_and(|current| (change.value - current).abs() <= f32::EPSILON)
+    {
+        return;
+    }
     match *control {
         RendererNumberControl::Softness(renderer) => {
             session.set_renderer_softness(renderer, change.value)
@@ -8770,6 +8801,9 @@ fn handle_emitter_scalar_change(
         return;
     };
     let current = emitter_number_input_value(&session, *control);
+    if (change.value - current).abs() <= f32::EPSILON {
+        return;
+    }
     match control {
         EmitterNumberControl::Start => {
             session.adjust_selected_start(change.value.max(0.0) - current);
@@ -8785,75 +8819,231 @@ fn handle_emitter_scalar_change(
     }
 }
 
-fn handle_inspector_numeric_scroll(
-    mut scroll: On<Pointer<Scroll>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    inspector_controls: Query<&InspectorNumberControl>,
-    emitter_controls: Query<&EmitterNumberControl>,
-    renderer_controls: Query<&RendererNumberControl>,
-    mut session: ResMut<EditorSession>,
+fn decorate_numeric_scrub_inputs(
+    mut commands: Commands,
+    children: Query<&Children>,
+    inputs: Query<
+        Entity,
+        (
+            Without<NumericScrubInput>,
+            Or<(
+                With<InspectorNumberControl>,
+                With<EmitterNumberControl>,
+                With<RendererNumberControl>,
+            )>,
+        ),
+    >,
 ) {
-    let direction = scroll.y.signum();
-    if direction == 0.0 {
-        return;
-    }
-    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    let multiplier = numeric_scroll_multiplier(shift, control);
-
-    if let Ok(number) = inspector_controls.get(scroll.entity) {
-        adjust_inspector_number_from_scroll(&mut session, *number, direction, multiplier);
-        scroll.propagate(false);
-        return;
-    }
-    if let Ok(number) = emitter_controls.get(scroll.entity) {
-        let step = match number {
-            EmitterNumberControl::Translation(_) => 0.1,
-            EmitterNumberControl::Rotation(_) => 1.0,
-            EmitterNumberControl::Scale(_) => 0.05,
-            EmitterNumberControl::Start | EmitterNumberControl::Duration => 0.05,
-        } * multiplier
-            * direction;
-        match number {
-            EmitterNumberControl::Start => session.adjust_selected_start(step),
-            EmitterNumberControl::Duration => session.adjust_selected_duration(step),
-            EmitterNumberControl::Translation(_)
-            | EmitterNumberControl::Rotation(_)
-            | EmitterNumberControl::Scale(_) => {
-                let value = emitter_number_input_value(&session, *number) + step;
-                set_emitter_transform_component(&mut session, *number, value, true);
+    for entity in &inputs {
+        commands.entity(entity).insert((
+            NumericScrubInput,
+            EntityCursor::System(SystemCursorIcon::EwResize),
+        ));
+        if let Ok(children) = children.get(entity) {
+            for child in children.iter() {
+                commands
+                    .entity(child)
+                    .insert(EntityCursor::System(SystemCursorIcon::EwResize));
             }
         }
-        scroll.propagate(false);
-        return;
-    }
-    if let Ok(number) = renderer_controls.get(scroll.entity) {
-        let Some(current) = renderer_number_input_value(&session, *number) else {
-            return;
-        };
-        let value = current + renderer_number_step(*number) * multiplier * direction;
-        match number {
-            RendererNumberControl::Softness(renderer) => {
-                session.set_renderer_softness(*renderer, value)
-            }
-            RendererNumberControl::Uv(renderer, component) => {
-                session.set_renderer_uv(*renderer, *component, value)
-            }
-            RendererNumberControl::FlipbookFrameRate(renderer) => {
-                session.set_flipbook_frame_rate(*renderer, value)
-            }
-        }
-        scroll.propagate(false);
     }
 }
 
-fn numeric_scroll_multiplier(shift: bool, control: bool) -> f32 {
+fn begin_numeric_scrub(
+    mut drag: On<Pointer<DragStart>>,
+    inspector_controls: Query<&InspectorNumberControl>,
+    emitter_controls: Query<&EmitterNumberControl>,
+    renderer_controls: Query<&RendererNumberControl>,
+    parents: Query<&ChildOf>,
+    session: Res<EditorSession>,
+    mut state: ResMut<NumericScrubState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<(&mut CursorIcon, &mut CursorOptions), With<PrimaryWindow>>,
+) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
+    let Some((entity, target)) = resolve_numeric_scrub_target(
+        drag.entity,
+        &parents,
+        &inspector_controls,
+        &emitter_controls,
+        &renderer_controls,
+    ) else {
+        return;
+    };
+    let Some(initial) = numeric_scrub_value(&session, target) else {
+        return;
+    };
+    drag.propagate(false);
+    state.active = Some(ActiveNumericScrub {
+        entity,
+        target,
+        initial,
+        raw: initial,
+        current: initial,
+    });
+    override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::EwResize));
+    *cursor.0 = CursorIcon::System(SystemCursorIcon::EwResize);
+    cursor.1.visible = false;
+}
+
+fn update_numeric_scrub(
+    mut drag: On<Pointer<Drag>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<NumericScrubState>,
+    parents: Query<&ChildOf>,
+    children: Query<&Children>,
+    mut text_inputs: Query<&mut EditableText>,
+) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
+    let Some(active) = state.active.as_mut() else {
+        return;
+    };
+    if !numeric_scrub_event_belongs_to(drag.entity, active.entity, &parents) {
+        return;
+    }
+    drag.propagate(false);
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let multiplier = numeric_scrub_multiplier(shift, control);
+    let delta = numeric_scrub_delta(drag.delta.x, numeric_scrub_step(active.target), multiplier);
+    if delta == 0.0 {
+        return;
+    }
+    active.raw += delta;
+    active.current = normalize_numeric_scrub_value_with_multiplier(
+        &session,
+        active.target,
+        active.raw,
+        multiplier,
+    );
+    update_numeric_scrub_text(
+        active.entity,
+        format_numeric_scrub_value(active.target, active.current, multiplier),
+        &children,
+        &mut text_inputs,
+    );
+    preview_numeric_scrub(&mut session, active.target, active.current);
+}
+
+fn update_numeric_scrub_text(
+    entity: Entity,
+    value: String,
+    children: &Query<&Children>,
+    text_inputs: &mut Query<&mut EditableText>,
+) {
+    let Ok(children) = children.get(entity) else {
+        return;
+    };
+    for child in children.iter() {
+        let Ok(mut editable) = text_inputs.get_mut(child) else {
+            continue;
+        };
+        editable.queue_edit(TextEdit::SelectAll);
+        editable.queue_edit(TextEdit::Insert(value.into()));
+        editable.queue_edit(TextEdit::CollapseSelection);
+        break;
+    }
+}
+
+fn finish_numeric_scrub(
+    mut drag: On<Pointer<DragEnd>>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<NumericScrubState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<(&mut CursorIcon, &mut CursorOptions), With<PrimaryWindow>>,
+    parents: Query<&ChildOf>,
+) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
+    let Some(active) = state.active.take() else {
+        return;
+    };
+    if !numeric_scrub_event_belongs_to(drag.entity, active.entity, &parents) {
+        state.active = Some(active);
+        return;
+    }
+    drag.propagate(false);
+    override_cursor.0 = None;
+    *cursor.0 = CursorIcon::System(SystemCursorIcon::EwResize);
+    cursor.1.visible = true;
+    if (active.current - active.initial).abs() <= f32::EPSILON {
+        session.restore_interaction_preview();
+        return;
+    }
+    commit_numeric_scrub(&mut session, active.target, active.current);
+}
+
+fn resolve_numeric_scrub_target(
+    entity: Entity,
+    parents: &Query<&ChildOf>,
+    inspector_controls: &Query<&InspectorNumberControl>,
+    emitter_controls: &Query<&EmitterNumberControl>,
+    renderer_controls: &Query<&RendererNumberControl>,
+) -> Option<(Entity, NumericScrubTarget)> {
+    let mut candidate = entity;
+    for _ in 0..4 {
+        if let Ok(control) = inspector_controls.get(candidate) {
+            return Some((candidate, NumericScrubTarget::Inspector(*control)));
+        }
+        if let Ok(control) = emitter_controls.get(candidate) {
+            return Some((candidate, NumericScrubTarget::Emitter(*control)));
+        }
+        if let Ok(control) = renderer_controls.get(candidate) {
+            return Some((candidate, NumericScrubTarget::Renderer(*control)));
+        }
+        candidate = parents.get(candidate).ok()?.parent();
+    }
+    None
+}
+
+fn numeric_scrub_event_belongs_to(
+    entity: Entity,
+    owner: Entity,
+    parents: &Query<&ChildOf>,
+) -> bool {
+    let mut candidate = entity;
+    for _ in 0..4 {
+        if candidate == owner {
+            return true;
+        }
+        let Ok(parent) = parents.get(candidate) else {
+            return false;
+        };
+        candidate = parent.parent();
+    }
+    false
+}
+
+fn numeric_scrub_multiplier(shift: bool, control: bool) -> f32 {
     if shift {
         0.1
     } else if control {
         10.0
     } else {
         1.0
+    }
+}
+
+fn numeric_scrub_delta(pixel_delta: f32, step: f32, multiplier: f32) -> f32 {
+    pixel_delta * step * multiplier / 8.0
+}
+
+fn numeric_scrub_step(target: NumericScrubTarget) -> f32 {
+    match target {
+        NumericScrubTarget::Inspector(control) => control.step,
+        NumericScrubTarget::Emitter(control) => match control {
+            EmitterNumberControl::Translation(_) => 0.1,
+            EmitterNumberControl::Rotation(_) => 1.0,
+            EmitterNumberControl::Scale(_) => 0.05,
+            EmitterNumberControl::Start | EmitterNumberControl::Duration => 0.05,
+        },
+        NumericScrubTarget::Renderer(control) => renderer_number_step(control),
     }
 }
 
@@ -8865,26 +9055,313 @@ fn renderer_number_step(control: RendererNumberControl) -> f32 {
     }
 }
 
-fn adjust_inspector_number_from_scroll(
-    session: &mut EditorSession,
-    control: InspectorNumberControl,
-    direction: f32,
-    multiplier: f32,
-) -> bool {
-    let Some(current) = inspector_number_input_value(session, control) else {
-        return false;
-    };
-    let current = match current {
+fn numeric_scrub_value(session: &EditorSession, target: NumericScrubTarget) -> Option<f32> {
+    match target {
+        NumericScrubTarget::Inspector(control) => {
+            inspector_number_input_value(session, control).map(number_input_value_as_f32)
+        }
+        NumericScrubTarget::Emitter(control) => Some(emitter_number_input_value(session, control)),
+        NumericScrubTarget::Renderer(control) => renderer_number_input_value(session, control),
+    }
+}
+
+fn number_input_value_as_f32(value: NumberInputValue) -> f32 {
+    match value {
         NumberInputValue::I32(value) => value as f32,
         NumberInputValue::F32(value) => value,
         NumberInputValue::I64(value) => value as f32,
         NumberInputValue::F64(value) => value as f32,
+    }
+}
+
+fn format_numeric_scrub_value(target: NumericScrubTarget, value: f32, multiplier: f32) -> String {
+    if matches!(
+        target,
+        NumericScrubTarget::Inspector(InspectorNumberControl {
+            kind: InspectorNumberKind::U32,
+            ..
+        })
+    ) {
+        return (value.max(0.0).round().min(i32::MAX as f32) as i32).to_string();
+    }
+    let precision = numeric_scrub_precision(target, multiplier);
+    let zero_threshold = 0.5 * 10.0_f32.powi(-(precision as i32));
+    let value = if value.abs() < zero_threshold {
+        0.0
+    } else {
+        value
     };
-    apply_inspector_number(
-        session,
-        control,
-        current + control.step * multiplier * direction,
-    )
+    let mut formatted = format!("{value:.precision$}");
+    if formatted.contains('.') {
+        while formatted.ends_with('0') {
+            formatted.pop();
+        }
+        if formatted.ends_with('.') {
+            formatted.pop();
+        }
+    }
+    formatted
+}
+
+fn numeric_scrub_precision(target: NumericScrubTarget, multiplier: f32) -> usize {
+    let effective_step = (numeric_scrub_step(target) * multiplier).abs();
+    if effective_step >= 1.0 {
+        0
+    } else if effective_step >= 0.1 {
+        1
+    } else if effective_step >= 0.01 {
+        2
+    } else if effective_step >= 0.001 {
+        3
+    } else {
+        4
+    }
+}
+
+fn round_numeric_scrub_value(target: NumericScrubTarget, value: f32, multiplier: f32) -> f32 {
+    if matches!(
+        target,
+        NumericScrubTarget::Inspector(InspectorNumberControl {
+            kind: InspectorNumberKind::U32,
+            ..
+        })
+    ) {
+        return value.round();
+    }
+    let factor = 10.0_f32.powi(numeric_scrub_precision(target, multiplier) as i32);
+    (value * factor).round() / factor
+}
+
+fn normalize_numeric_scrub_value(
+    session: &EditorSession,
+    target: NumericScrubTarget,
+    value: f32,
+) -> f32 {
+    normalize_numeric_scrub_value_with_multiplier(session, target, value, 1.0)
+}
+
+fn normalize_numeric_scrub_value_with_multiplier(
+    session: &EditorSession,
+    target: NumericScrubTarget,
+    value: f32,
+    multiplier: f32,
+) -> f32 {
+    if !value.is_finite() {
+        return numeric_scrub_value(session, target).unwrap_or_default();
+    }
+    let normalized = match target {
+        NumericScrubTarget::Inspector(control) => {
+            let mut value =
+                clamp_inspector_number(value, control.min, control.max).unwrap_or_default();
+            if control.kind == InspectorNumberKind::U32 {
+                value = value.max(0.0).round();
+            } else if control.kind == InspectorNumberKind::Range
+                && let Some(Value::Range(range)) =
+                    inspector_module_parameter(session, control.module, control.parameter)
+            {
+                value = if control.component == 0 {
+                    value.min(range.max)
+                } else {
+                    value.max(range.min)
+                };
+            }
+            value
+        }
+        NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
+            value.clamp(0.0, (session.effect.duration - 0.05).max(0.0))
+        }
+        NumericScrubTarget::Emitter(EmitterNumberControl::Duration) => value.clamp(
+            0.05,
+            (session.effect.duration - session.selected_layer().start_time).max(0.05),
+        ),
+        NumericScrubTarget::Emitter(EmitterNumberControl::Scale(_)) => value.max(0.001),
+        NumericScrubTarget::Emitter(_) => value,
+        NumericScrubTarget::Renderer(RendererNumberControl::Softness(_)) => value.max(0.0),
+        NumericScrubTarget::Renderer(RendererNumberControl::Uv(renderer, component)) => {
+            normalize_renderer_uv_scrub_value(session, renderer, component, value)
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::FlipbookFrameRate(_)) => {
+            value.clamp(1.0, 120.0)
+        }
+    };
+    round_numeric_scrub_value(target, normalized, multiplier)
+}
+
+fn normalize_renderer_uv_scrub_value(
+    session: &EditorSession,
+    renderer: RendererId,
+    component: u8,
+    value: f32,
+) -> f32 {
+    let Some(material) = session
+        .selected_layer()
+        .renderers
+        .iter()
+        .find(|candidate| candidate.id == renderer)
+        .and_then(|renderer| {
+            session
+                .effect
+                .materials
+                .iter()
+                .find(|material| material.id == renderer.material)
+        })
+    else {
+        return value.clamp(0.0, 1.0);
+    };
+    let MaterialProperties::Sprite { uv, .. } = &material.properties;
+    match component {
+        0 => value.clamp(0.0, uv.max[0]),
+        1 => value.clamp(0.0, uv.max[1]),
+        2 => value.clamp(uv.min[0], 1.0),
+        3 => value.clamp(uv.min[1], 1.0),
+        _ => value.clamp(0.0, 1.0),
+    }
+}
+
+fn preview_numeric_scrub(
+    session: &mut EditorSession,
+    target: NumericScrubTarget,
+    value: f32,
+) -> bool {
+    let Some(command) = numeric_scrub_command(session, target, value) else {
+        return false;
+    };
+    session.preview_interaction(EffectTransaction::single("Preview numeric edit", command))
+}
+
+fn numeric_scrub_command(
+    session: &EditorSession,
+    target: NumericScrubTarget,
+    value: f32,
+) -> Option<EffectCommand> {
+    match target {
+        NumericScrubTarget::Inspector(control) => Some(EffectCommand::SetModuleParameter {
+            emitter: session.selected_layer().id,
+            module: control.module,
+            parameter: control.parameter.into(),
+            value: updated_inspector_number_value(session, control, value)?,
+        }),
+        NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
+            let emitter = session.selected_layer();
+            let start_time = normalize_numeric_scrub_value(session, target, value);
+            Some(EffectCommand::SetEmitterTiming {
+                id: emitter.id,
+                start_time,
+                duration: emitter.duration.min(session.effect.duration - start_time),
+            })
+        }
+        NumericScrubTarget::Emitter(EmitterNumberControl::Duration) => {
+            let emitter = session.selected_layer();
+            Some(EffectCommand::SetEmitterTiming {
+                id: emitter.id,
+                start_time: emitter.start_time,
+                duration: normalize_numeric_scrub_value(session, target, value),
+            })
+        }
+        NumericScrubTarget::Emitter(control) => {
+            let mut transform = session.selected_layer().transform;
+            set_emitter_transform_value(&mut transform, control, value)?;
+            Some(EffectCommand::SetEmitterTransform {
+                id: session.selected_layer().id,
+                transform,
+            })
+        }
+        NumericScrubTarget::Renderer(control) => {
+            renderer_numeric_scrub_command(session, control, value)
+        }
+    }
+}
+
+fn renderer_numeric_scrub_command(
+    session: &EditorSession,
+    control: RendererNumberControl,
+    value: f32,
+) -> Option<EffectCommand> {
+    let renderer_id = match control {
+        RendererNumberControl::Softness(id)
+        | RendererNumberControl::Uv(id, _)
+        | RendererNumberControl::FlipbookFrameRate(id) => id,
+    };
+    let renderer = session
+        .selected_layer()
+        .renderers
+        .iter()
+        .find(|renderer| renderer.id == renderer_id)?;
+    match control {
+        RendererNumberControl::Softness(_) | RendererNumberControl::Uv(_, _) => {
+            let mut material = session
+                .effect
+                .materials
+                .iter()
+                .find(|material| material.id == renderer.material)?
+                .clone();
+            let MaterialProperties::Sprite { softness, uv, .. } = &mut material.properties;
+            match control {
+                RendererNumberControl::Softness(_) => {
+                    let MaterialInput::Constant(current) = softness else {
+                        return None;
+                    };
+                    *current = value.max(0.0);
+                }
+                RendererNumberControl::Uv(_, component) => match component {
+                    0 => uv.min[0] = value.clamp(0.0, uv.max[0]),
+                    1 => uv.min[1] = value.clamp(0.0, uv.max[1]),
+                    2 => uv.max[0] = value.clamp(uv.min[0], 1.0),
+                    3 => uv.max[1] = value.clamp(uv.min[1], 1.0),
+                    _ => return None,
+                },
+                RendererNumberControl::FlipbookFrameRate(_) => unreachable!(),
+            }
+            Some(EffectCommand::SetMaterial {
+                id: material.id,
+                material,
+            })
+        }
+        RendererNumberControl::FlipbookFrameRate(_) => {
+            let RendererProperties::Flipbook { flipbook, .. } = renderer.properties else {
+                return None;
+            };
+            let mut definition = session
+                .effect
+                .flipbooks
+                .iter()
+                .find(|definition| definition.id == flipbook)?
+                .clone();
+            definition.frame_rate = value.clamp(1.0, 120.0);
+            Some(EffectCommand::SetFlipbook {
+                id: flipbook,
+                flipbook: definition,
+            })
+        }
+    }
+}
+
+fn commit_numeric_scrub(session: &mut EditorSession, target: NumericScrubTarget, value: f32) {
+    match target {
+        NumericScrubTarget::Inspector(control) => {
+            apply_inspector_number(session, control, value);
+        }
+        NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
+            let current = session.selected_layer().start_time;
+            session.adjust_selected_start(value - current);
+        }
+        NumericScrubTarget::Emitter(EmitterNumberControl::Duration) => {
+            let current = session.selected_layer().duration;
+            session.adjust_selected_duration(value - current);
+        }
+        NumericScrubTarget::Emitter(control) => {
+            set_emitter_transform_component(session, control, value, true);
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::Softness(renderer)) => {
+            session.set_renderer_softness(renderer, value);
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::Uv(renderer, component)) => {
+            session.set_renderer_uv(renderer, component, value);
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::FlipbookFrameRate(renderer)) => {
+            session.set_flipbook_frame_rate(renderer, value);
+        }
+    }
 }
 
 fn handle_renderer_toggle_change(
@@ -8999,31 +9476,43 @@ fn apply_inspector_number(
         session.status = "Inspector target is no longer available".into();
         return false;
     };
-    let updated = match (control.kind, current.clone()) {
-        (InspectorNumberKind::U32, Value::U32(_)) => {
-            Value::U32(value.max(0.0).round().min(u32::MAX as f32) as u32)
-        }
-        (InspectorNumberKind::Scalar, Value::Scalar(_)) => Value::Scalar(value),
+    let Some(updated) = updated_inspector_number_value(session, control, value) else {
+        session.status = format!("{} has incompatible Inspector metadata", control.parameter);
+        return false;
+    };
+    if updated == current {
+        return false;
+    }
+    session.set_module_parameter(control.module, control.parameter, updated);
+    true
+}
+
+fn updated_inspector_number_value(
+    session: &EditorSession,
+    control: InspectorNumberControl,
+    raw_value: f32,
+) -> Option<Value> {
+    let value = clamp_inspector_number(raw_value, control.min, control.max)?;
+    let current = inspector_module_parameter(session, control.module, control.parameter)?;
+    match (control.kind, current) {
+        (InspectorNumberKind::U32, Value::U32(_)) => Some(Value::U32(
+            value.max(0.0).round().min(u32::MAX as f32) as u32,
+        )),
+        (InspectorNumberKind::Scalar, Value::Scalar(_)) => Some(Value::Scalar(value)),
         (InspectorNumberKind::Vector, Value::Vec2(mut vector)) => {
-            let Some(component) = vector.get_mut(control.component as usize) else {
-                return false;
-            };
+            let component = vector.get_mut(control.component as usize)?;
             *component = value;
-            Value::Vec2(vector)
+            Some(Value::Vec2(vector))
         }
         (InspectorNumberKind::Vector, Value::Vec3(mut vector)) => {
-            let Some(component) = vector.get_mut(control.component as usize) else {
-                return false;
-            };
+            let component = vector.get_mut(control.component as usize)?;
             *component = value;
-            Value::Vec3(vector)
+            Some(Value::Vec3(vector))
         }
         (InspectorNumberKind::Vector, Value::Vec4(mut vector)) => {
-            let Some(component) = vector.get_mut(control.component as usize) else {
-                return false;
-            };
+            let component = vector.get_mut(control.component as usize)?;
             *component = value;
-            Value::Vec4(vector)
+            Some(Value::Vec4(vector))
         }
         (InspectorNumberKind::Range, Value::Range(mut range)) => {
             if control.component == 0 {
@@ -9031,24 +9520,13 @@ fn apply_inspector_number(
             } else {
                 range.max = value.max(range.min);
             }
-            Value::Range(range)
+            Some(Value::Range(range))
         }
         (InspectorNumberKind::Shape, Value::Shape(shape)) => {
-            let Some(shape) = shape_with_dimension(shape, control.component, value) else {
-                return false;
-            };
-            Value::Shape(shape)
+            shape_with_dimension(shape, control.component, value).map(Value::Shape)
         }
-        _ => {
-            session.status = format!("{} has incompatible Inspector metadata", control.parameter);
-            return false;
-        }
-    };
-    if updated == current {
-        return false;
+        _ => None,
     }
-    session.set_module_parameter(control.module, control.parameter, updated);
-    true
 }
 
 fn clamp_inspector_number(value: f32, min: Option<f32>, max: Option<f32>) -> Option<f32> {
@@ -9152,6 +9630,20 @@ fn set_emitter_transform_component(
         return false;
     }
     let mut transform = session.selected_layer().transform;
+    if set_emitter_transform_value(&mut transform, control, value).is_none() {
+        return false;
+    }
+    session.set_selected_emitter_transform(transform, rebuild_ui)
+}
+
+fn set_emitter_transform_value(
+    transform: &mut EmitterTransform,
+    control: EmitterNumberControl,
+    value: f32,
+) -> Option<()> {
+    if !value.is_finite() {
+        return None;
+    }
     match control {
         EmitterNumberControl::Translation(component) => {
             transform.translation[component as usize] = value;
@@ -9169,9 +9661,9 @@ fn set_emitter_transform_component(
         EmitterNumberControl::Scale(component) => {
             transform.scale[component as usize] = value.max(0.001);
         }
-        EmitterNumberControl::Start | EmitterNumberControl::Duration => return false,
+        EmitterNumberControl::Start | EmitterNumberControl::Duration => return None,
     }
-    session.set_selected_emitter_transform(transform, rebuild_ui)
+    Some(())
 }
 
 fn sync_inspector_number_inputs(
@@ -14647,8 +15139,8 @@ mod tests {
     }
 
     #[test]
-    fn inspector_wheel_uses_metadata_steps_and_modifier_precision() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+    fn inspector_scrub_uses_metadata_steps_and_modifier_precision() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
             .selected_layer()
             .modules
@@ -14665,34 +15157,76 @@ mod tests {
             min: Some(0.0),
             max: None,
         };
-        let Value::Scalar(initial) =
-            inspector_module_parameter(&session, module, "spawn_rate").unwrap()
-        else {
-            panic!("spawn rate should be a scalar");
-        };
+        let target = NumericScrubTarget::Inspector(control);
+        assert_eq!(numeric_scrub_step(target), 5.0);
+        assert_eq!(numeric_scrub_delta(8.0, 5.0, 1.0), 5.0);
+        assert_eq!(
+            numeric_scrub_delta(8.0, 5.0, numeric_scrub_multiplier(true, false)),
+            0.5
+        );
+        assert_eq!(numeric_scrub_multiplier(false, true), 10.0);
+        assert_eq!(normalize_numeric_scrub_value(&session, target, -100.0), 0.0);
+        assert_eq!(numeric_scrub_precision(target, 1.0), 0);
+        assert_eq!(numeric_scrub_precision(target, 0.1), 1);
+        assert_eq!(numeric_scrub_precision(target, 10.0), 0);
+        assert_eq!(format_numeric_scrub_value(target, 22.499, 1.0), "22");
+        assert_eq!(format_numeric_scrub_value(target, 22.499, 0.1), "22.5");
 
-        assert!(adjust_inspector_number_from_scroll(
-            &mut session,
-            control,
-            1.0,
-            numeric_scroll_multiplier(false, false),
-        ));
+        let translation = NumericScrubTarget::Emitter(EmitterNumberControl::Translation(0));
+        assert_eq!(numeric_scrub_precision(translation, 1.0), 1);
+        assert_eq!(numeric_scrub_precision(translation, 0.1), 2);
+        assert_eq!(numeric_scrub_precision(translation, 10.0), 0);
+        assert_eq!(
+            format_numeric_scrub_value(translation, 13.86246, 1.0),
+            "13.9"
+        );
+        assert_eq!(
+            format_numeric_scrub_value(translation, 13.86246, 0.1),
+            "13.86"
+        );
+        assert_eq!(
+            format_numeric_scrub_value(translation, 13.86246, 10.0),
+            "14"
+        );
+    }
+
+    #[test]
+    fn inspector_scrub_previews_live_and_commits_one_undoable_edit() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "spawn_rate").is_some())
+            .unwrap()
+            .id;
+        let original = inspector_module_parameter(&session, module, "spawn_rate").unwrap();
+        let target = NumericScrubTarget::Inspector(InspectorNumberControl {
+            module,
+            parameter: "spawn_rate",
+            component: 0,
+            kind: InspectorNumberKind::Scalar,
+            step: 5.0,
+            min: Some(0.0),
+            max: None,
+        });
+
+        assert!(preview_numeric_scrub(&mut session, target, 29.0));
         assert_eq!(
             inspector_module_parameter(&session, module, "spawn_rate"),
-            Some(Value::Scalar(initial + 5.0))
+            Some(original.clone()),
+            "drag preview must not mutate the document"
         );
-
-        assert!(adjust_inspector_number_from_scroll(
-            &mut session,
-            control,
-            -1.0,
-            numeric_scroll_multiplier(true, false),
-        ));
+        commit_numeric_scrub(&mut session, target, 29.0);
         assert_eq!(
             inspector_module_parameter(&session, module, "spawn_rate"),
-            Some(Value::Scalar(initial + 4.5))
+            Some(Value::Scalar(29.0))
         );
-        assert_eq!(numeric_scroll_multiplier(false, true), 10.0);
+        session.undo();
+        assert_eq!(
+            inspector_module_parameter(&session, module, "spawn_rate"),
+            Some(original)
+        );
     }
 
     #[test]
