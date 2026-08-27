@@ -445,11 +445,11 @@ impl Emitter {
                 ModuleInstance::initialize(
                     ScalarRange::new(0.6, 1.2),
                     ScalarRange::new(35.0, 90.0),
-                    90.0,
-                    360.0,
+                    [0.0, 1.0, 0.0],
+                    180.0,
                     ScalarRange::new(-2.0, 2.0),
                 ),
-                ModuleInstance::motion([0.0, -18.0], 0.6, 4.0),
+                ModuleInstance::motion([0.0, -18.0, 0.0], 0.6, 4.0),
                 ModuleInstance::appearance(
                     Curve::new(vec![
                         CurveKey::new(0.0, 4.0),
@@ -526,7 +526,7 @@ impl Emitter {
         self.initialize().1
     }
 
-    pub fn direction_degrees(&self) -> f32 {
+    pub fn direction(&self) -> [f32; 3] {
         self.initialize().2
     }
 
@@ -538,7 +538,7 @@ impl Emitter {
         self.initialize().4
     }
 
-    pub fn gravity(&self) -> [f32; 2] {
+    pub fn gravity(&self) -> [f32; 3] {
         self.motion().0
     }
 
@@ -607,18 +607,18 @@ impl Emitter {
         }
     }
 
-    fn initialize(&self) -> (ScalarRange, ScalarRange, f32, f32, ScalarRange) {
+    fn initialize(&self) -> (ScalarRange, ScalarRange, [f32; 3], f32, ScalarRange) {
         match &self.module(MODULE_INITIALIZE).parameters {
             ModuleParameters::Initialize {
                 lifetime,
                 speed,
-                direction_degrees,
+                direction,
                 spread_degrees,
                 angular_velocity,
             } => (
                 *lifetime,
                 *speed,
-                *direction_degrees,
+                *direction,
                 *spread_degrees,
                 *angular_velocity,
             ),
@@ -626,7 +626,7 @@ impl Emitter {
         }
     }
 
-    fn motion(&self) -> ([f32; 2], f32, f32) {
+    fn motion(&self) -> ([f32; 3], f32, f32) {
         match &self.module(MODULE_MOTION).parameters {
             ModuleParameters::Motion {
                 gravity,
@@ -800,7 +800,7 @@ impl ModuleInstance {
     pub fn initialize(
         lifetime: ScalarRange,
         speed: ScalarRange,
-        direction_degrees: f32,
+        direction: [f32; 3],
         spread_degrees: f32,
         angular_velocity: ScalarRange,
     ) -> Self {
@@ -812,7 +812,7 @@ impl ModuleInstance {
             parameters: ModuleParameters::Initialize {
                 lifetime,
                 speed,
-                direction_degrees,
+                direction,
                 spread_degrees,
                 angular_velocity,
             },
@@ -820,7 +820,7 @@ impl ModuleInstance {
         }
     }
 
-    pub fn motion(gravity: [f32; 2], drag: f32, turbulence: f32) -> Self {
+    pub fn motion(gravity: [f32; 3], drag: f32, turbulence: f32) -> Self {
         Self {
             id: ModuleId::new(),
             module_type: ModuleTypeId::new(MODULE_MOTION),
@@ -880,10 +880,9 @@ impl ModuleInstance {
             (ModuleParameters::Initialize { .. }, "lifetime" | "speed" | "angular_velocity") => {
                 Some(ValueType::Range)
             }
-            (ModuleParameters::Initialize { .. }, "direction_degrees" | "spread_degrees") => {
-                Some(ValueType::Scalar)
-            }
-            (ModuleParameters::Motion { .. }, "gravity") => Some(ValueType::Vec2),
+            (ModuleParameters::Initialize { .. }, "direction") => Some(ValueType::Vec3),
+            (ModuleParameters::Initialize { .. }, "spread_degrees") => Some(ValueType::Scalar),
+            (ModuleParameters::Motion { .. }, "gravity") => Some(ValueType::Vec3),
             (ModuleParameters::Motion { .. }, "drag" | "turbulence") => Some(ValueType::Scalar),
             (ModuleParameters::Appearance { .. }, "size" | "opacity") => Some(ValueType::Curve),
             (ModuleParameters::Appearance { .. }, "color") => Some(ValueType::Gradient),
@@ -951,21 +950,34 @@ impl ModuleInstance {
             {
                 invalid_value(report, path, "spawn rate must be finite and non-negative");
             }
+            ModuleParameters::Shape { shape } => {
+                validate_value(
+                    &Value::Shape(*shape),
+                    &format!("{path}.shape"),
+                    report,
+                    semantic_ids,
+                );
+            }
             ModuleParameters::Initialize {
                 lifetime,
                 speed,
-                direction_degrees,
+                direction,
                 spread_degrees,
                 angular_velocity,
             } => {
                 validate_range(*lifetime, path, "lifetime", report);
                 validate_range(*speed, path, "speed", report);
                 validate_range(*angular_velocity, path, "angular_velocity", report);
-                if [*direction_degrees, *spread_degrees]
-                    .iter()
-                    .any(|value| !value.is_finite())
+                if direction.iter().any(|value| !value.is_finite())
+                    || !spread_degrees.is_finite()
+                    || !(0.0..=360.0).contains(spread_degrees)
+                    || direction.iter().all(|value| value.abs() <= f32::EPSILON)
                 {
-                    invalid_value(report, path, "direction and spread must be finite");
+                    invalid_value(
+                        report,
+                        path,
+                        "direction must be finite and non-zero, and spread must be between 0 and 360 degrees",
+                    );
                 }
             }
             ModuleParameters::Motion {
@@ -1027,12 +1039,12 @@ pub enum ModuleParameters {
     Initialize {
         lifetime: ScalarRange,
         speed: ScalarRange,
-        direction_degrees: f32,
+        direction: [f32; 3],
         spread_degrees: f32,
         angular_velocity: ScalarRange,
     },
     Motion {
-        gravity: [f32; 2],
+        gravity: [f32; 3],
         drag: f32,
         turbulence: f32,
     },
@@ -1114,6 +1126,10 @@ pub enum EmitterShape {
     Point,
     Circle { radius: f32 },
     Ring { radius: f32 },
+    Sphere { radius: f32 },
+    Hemisphere { radius: f32 },
+    Box { half_extents: [f32; 3] },
+    Cylinder { radius: f32, depth: f32 },
     Cone { radius: f32, depth: f32 },
 }
 
@@ -1841,19 +1857,29 @@ fn validate_value(
             );
         }
         Value::Shape(shape) => match shape {
-            EmitterShape::Circle { radius } | EmitterShape::Ring { radius }
+            EmitterShape::Circle { radius }
+            | EmitterShape::Ring { radius }
+            | EmitterShape::Sphere { radius }
+            | EmitterShape::Hemisphere { radius }
                 if !radius.is_finite() || *radius < 0.0 =>
             {
                 invalid_value(report, path, "shape radius must be finite and non-negative");
             }
-            EmitterShape::Cone { radius, depth }
+            EmitterShape::Cone { radius, depth } | EmitterShape::Cylinder { radius, depth }
                 if !radius.is_finite() || *radius < 0.0 || !depth.is_finite() || *depth <= 0.0 =>
             {
                 invalid_value(
                     report,
                     path,
-                    "cone radius must be non-negative and depth must be positive",
+                    "shape radius must be non-negative and depth must be positive",
                 );
+            }
+            EmitterShape::Box { half_extents }
+                if half_extents
+                    .iter()
+                    .any(|extent| !extent.is_finite() || *extent <= 0.0) =>
+            {
+                invalid_value(report, path, "box half-extents must be finite and positive");
             }
             _ => {}
         },

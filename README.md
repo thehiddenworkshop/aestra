@@ -29,7 +29,7 @@ aestra/
     └── aestra-runtime/      Compiled artifacts and deterministic CPU execution
 ```
 
-The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v2, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, and `aestra-runtime` owns immutable execution plans and instance state. `aestra-bevy` adapts compiled instances to Bevy playback, and both binaries use the same compile/runtime path.
+The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v3 and its 3D particle model, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, and `aestra-runtime` owns immutable execution plans and instance state. `aestra-bevy` adapts compiled instances to Bevy playback, and both binaries use the same compile/runtime path.
 
 ## Viewer and visual analysis
 

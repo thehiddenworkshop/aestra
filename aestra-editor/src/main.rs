@@ -663,6 +663,7 @@ enum InspectorNumberKind {
     Scalar,
     Vector,
     Range,
+    Shape,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -935,6 +936,9 @@ struct PreviewDisplayState {
 enum ShapeGizmoHandle {
     Radius,
     Depth,
+    ExtentX,
+    ExtentY,
+    ExtentZ,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1259,7 +1263,6 @@ fn update_preview_display_controls(
 fn update_transform_gizmo_controls(
     keys: Res<ButtonInput<KeyCode>>,
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
-    session: Res<EditorSession>,
     mut settings: ResMut<TransformGizmoSettings>,
     mut labels: Query<&mut Text, With<GizmoModeLabel>>,
 ) {
@@ -1280,7 +1283,6 @@ fn update_transform_gizmo_controls(
             };
         }
     }
-    let editing_shape = selected_shape_module(&session).is_some();
     let mode = match settings.mode {
         TransformGizmoMode::Translate => "MOVE",
         TransformGizmoMode::Rotate => "ROTATE",
@@ -1291,24 +1293,16 @@ fn update_transform_gizmo_controls(
         TransformGizmoSpace::Local => "LOCAL",
     };
     for mut label in &mut labels {
-        **label = if editing_shape {
-            "SHAPE".into()
-        } else {
-            format!("{mode} · {space}")
-        };
+        **label = format!("{mode} · {space}");
     }
 }
 
 fn sync_transform_gizmo_focus(
     mut commands: Commands,
-    session: Res<EditorSession>,
     players: Query<(Entity, Has<TransformGizmoFocus>), With<PreviewEffectPlayer>>,
 ) {
-    let editing_shape = selected_shape_module(&session).is_some();
     for (entity, has_focus) in &players {
-        if editing_shape && has_focus {
-            commands.entity(entity).remove::<TransformGizmoFocus>();
-        } else if !editing_shape && !has_focus {
+        if !has_focus {
             commands.entity(entity).insert(TransformGizmoFocus);
         }
     }
@@ -1377,10 +1371,16 @@ fn interact_shape_gizmo(
             return;
         }
         if let Some(cursor_position) = cursor_position
-            && let Some(local_position) =
-                shape_gizmo_local_cursor(camera, camera_transform, player, cursor_position)
+            && let Some(value) = shape_gizmo_drag_value(
+                camera,
+                camera_transform,
+                player,
+                active.original,
+                active.handle,
+                cursor_position,
+            )
         {
-            let next = shape_after_gizmo_drag(active.original, active.handle, local_position);
+            let next = shape_after_gizmo_drag(active.original, active.handle, value);
             if next != active.current {
                 active.current = next;
                 session.preview_interaction(EffectTransaction::single(
@@ -1472,6 +1472,9 @@ fn shape_gizmo_cursor(handle: ShapeGizmoHandle) -> CursorIcon {
     CursorIcon::System(match handle {
         ShapeGizmoHandle::Radius => SystemCursorIcon::EwResize,
         ShapeGizmoHandle::Depth => SystemCursorIcon::NsResize,
+        ShapeGizmoHandle::ExtentX => SystemCursorIcon::EwResize,
+        ShapeGizmoHandle::ExtentY => SystemCursorIcon::NsResize,
+        ShapeGizmoHandle::ExtentZ => SystemCursorIcon::NeswResize,
     })
 }
 
@@ -1481,10 +1484,21 @@ fn shape_handle_local_positions(shape: EmitterShape) -> Vec<(ShapeGizmoHandle, V
         EmitterShape::Circle { radius } | EmitterShape::Ring { radius } => {
             vec![(ShapeGizmoHandle::Radius, Vec3::X * radius)]
         }
+        EmitterShape::Sphere { radius } | EmitterShape::Hemisphere { radius } => {
+            vec![(ShapeGizmoHandle::Radius, Vec3::X * radius)]
+        }
+        EmitterShape::Box { half_extents } => vec![
+            (ShapeGizmoHandle::ExtentX, Vec3::X * half_extents[0]),
+            (ShapeGizmoHandle::ExtentY, Vec3::Y * half_extents[1]),
+            (ShapeGizmoHandle::ExtentZ, Vec3::Z * half_extents[2]),
+        ],
+        EmitterShape::Cylinder { radius, depth } => vec![
+            (ShapeGizmoHandle::Radius, Vec3::X * radius),
+            (ShapeGizmoHandle::Depth, Vec3::Y * depth * 0.5),
+        ],
         EmitterShape::Cone { radius, depth } => vec![
-            (ShapeGizmoHandle::Radius, Vec3::new(-radius, depth, 0.0)),
-            (ShapeGizmoHandle::Depth, Vec3::new(0.0, depth, 0.0)),
             (ShapeGizmoHandle::Radius, Vec3::new(radius, depth, 0.0)),
+            (ShapeGizmoHandle::Depth, Vec3::new(0.0, depth, 0.0)),
         ],
     }
 }
@@ -1509,50 +1523,98 @@ fn hit_test_shape_gizmo(
         .map(|(handle, _)| handle)
 }
 
-fn shape_gizmo_local_cursor(
+fn shape_gizmo_drag_value(
     camera: &Camera,
     camera_transform: &GlobalTransform,
     player: &GlobalTransform,
+    shape: EmitterShape,
+    handle: ShapeGizmoHandle,
     cursor_position: Vec2,
-) -> Option<Vec3> {
-    let ray = camera
-        .viewport_to_world(camera_transform, cursor_position)
+) -> Option<f32> {
+    let (axis, multiplier, anchor) = match handle {
+        ShapeGizmoHandle::Radius => {
+            let anchor = match shape {
+                EmitterShape::Cone { depth, .. } => Vec3::Y * depth,
+                _ => Vec3::ZERO,
+            };
+            (Vec3::X, 1.0, anchor)
+        }
+        ShapeGizmoHandle::Depth => match shape {
+            EmitterShape::Cylinder { .. } => (Vec3::Y, 2.0, Vec3::ZERO),
+            _ => (Vec3::Y, 1.0, Vec3::ZERO),
+        },
+        ShapeGizmoHandle::ExtentX => (Vec3::X, 1.0, Vec3::ZERO),
+        ShapeGizmoHandle::ExtentY => (Vec3::Y, 1.0, Vec3::ZERO),
+        ShapeGizmoHandle::ExtentZ => (Vec3::Z, 1.0, Vec3::ZERO),
+    };
+    let screen_origin = camera
+        .world_to_viewport(camera_transform, player.transform_point(anchor))
         .ok()?;
-    let plane_origin = player.translation();
-    let plane_normal = player.rotation() * Vec3::Z;
-    let direction = *ray.direction;
-    let denominator = direction.dot(plane_normal);
-    if denominator.abs() < 1.0e-5 {
+    let screen_axis = camera
+        .world_to_viewport(camera_transform, player.transform_point(anchor + axis))
+        .ok()?
+        - screen_origin;
+    let pixels_per_unit = screen_axis.length();
+    if pixels_per_unit < 1.0e-4 {
         return None;
     }
-    let distance = (plane_origin - ray.origin).dot(plane_normal) / denominator;
-    if !distance.is_finite() || distance < 0.0 {
-        return None;
-    }
-    let world_position = ray.origin + direction * distance;
-    Some(player.affine().inverse().transform_point3(world_position))
+    Some(
+        ((cursor_position - screen_origin).dot(screen_axis / pixels_per_unit) / pixels_per_unit)
+            .abs()
+            * multiplier,
+    )
 }
 
 fn shape_after_gizmo_drag(
     original: EmitterShape,
     handle: ShapeGizmoHandle,
-    local_position: Vec3,
+    value: f32,
 ) -> EmitterShape {
     const MIN_HANDLE_VALUE: f32 = 0.1;
     match (original, handle) {
         (EmitterShape::Circle { .. }, ShapeGizmoHandle::Radius) => EmitterShape::Circle {
-            radius: local_position.x.abs().max(MIN_HANDLE_VALUE),
+            radius: value.max(MIN_HANDLE_VALUE),
         },
         (EmitterShape::Ring { .. }, ShapeGizmoHandle::Radius) => EmitterShape::Ring {
-            radius: local_position.x.abs().max(MIN_HANDLE_VALUE),
+            radius: value.max(MIN_HANDLE_VALUE),
         },
+        (EmitterShape::Sphere { .. }, ShapeGizmoHandle::Radius) => EmitterShape::Sphere {
+            radius: value.max(MIN_HANDLE_VALUE),
+        },
+        (EmitterShape::Hemisphere { .. }, ShapeGizmoHandle::Radius) => EmitterShape::Hemisphere {
+            radius: value.max(MIN_HANDLE_VALUE),
+        },
+        (EmitterShape::Box { mut half_extents }, ShapeGizmoHandle::ExtentX) => {
+            half_extents[0] = value.max(MIN_HANDLE_VALUE);
+            EmitterShape::Box { half_extents }
+        }
+        (EmitterShape::Box { mut half_extents }, ShapeGizmoHandle::ExtentY) => {
+            half_extents[1] = value.max(MIN_HANDLE_VALUE);
+            EmitterShape::Box { half_extents }
+        }
+        (EmitterShape::Box { mut half_extents }, ShapeGizmoHandle::ExtentZ) => {
+            half_extents[2] = value.max(MIN_HANDLE_VALUE);
+            EmitterShape::Box { half_extents }
+        }
+        (EmitterShape::Cylinder { depth, .. }, ShapeGizmoHandle::Radius) => {
+            EmitterShape::Cylinder {
+                radius: value.max(MIN_HANDLE_VALUE),
+                depth,
+            }
+        }
+        (EmitterShape::Cylinder { radius, .. }, ShapeGizmoHandle::Depth) => {
+            EmitterShape::Cylinder {
+                radius,
+                depth: value.max(MIN_HANDLE_VALUE),
+            }
+        }
         (EmitterShape::Cone { depth, .. }, ShapeGizmoHandle::Radius) => EmitterShape::Cone {
-            radius: local_position.x.abs().max(MIN_HANDLE_VALUE),
+            radius: value.max(MIN_HANDLE_VALUE),
             depth,
         },
         (EmitterShape::Cone { radius, .. }, ShapeGizmoHandle::Depth) => EmitterShape::Cone {
             radius,
-            depth: local_position.y.max(MIN_HANDLE_VALUE),
+            depth: value.max(MIN_HANDLE_VALUE),
         },
         (shape, _) => shape,
     }
@@ -1575,8 +1637,15 @@ fn update_shape_gizmo_label(
     let scalar = match (handle, shape) {
         (ShapeGizmoHandle::Radius, EmitterShape::Circle { radius })
         | (ShapeGizmoHandle::Radius, EmitterShape::Ring { radius })
+        | (ShapeGizmoHandle::Radius, EmitterShape::Sphere { radius })
+        | (ShapeGizmoHandle::Radius, EmitterShape::Hemisphere { radius })
+        | (ShapeGizmoHandle::Radius, EmitterShape::Cylinder { radius, .. })
         | (ShapeGizmoHandle::Radius, EmitterShape::Cone { radius, .. }) => radius,
-        (ShapeGizmoHandle::Depth, EmitterShape::Cone { depth, .. }) => depth,
+        (ShapeGizmoHandle::Depth, EmitterShape::Cone { depth, .. })
+        | (ShapeGizmoHandle::Depth, EmitterShape::Cylinder { depth, .. }) => depth,
+        (ShapeGizmoHandle::ExtentX, EmitterShape::Box { half_extents }) => half_extents[0],
+        (ShapeGizmoHandle::ExtentY, EmitterShape::Box { half_extents }) => half_extents[1],
+        (ShapeGizmoHandle::ExtentZ, EmitterShape::Box { half_extents }) => half_extents[2],
         _ => return,
     };
     let mut args = FluentArgs::new();
@@ -1585,6 +1654,9 @@ fn update_shape_gizmo_label(
         match handle {
             ShapeGizmoHandle::Radius => "viewport-shape-radius",
             ShapeGizmoHandle::Depth => "viewport-shape-depth",
+            ShapeGizmoHandle::ExtentX => "viewport-shape-extent-x",
+            ShapeGizmoHandle::ExtentY => "viewport-shape-extent-y",
+            ShapeGizmoHandle::ExtentZ => "viewport-shape-extent-z",
         },
         &args,
     );
@@ -1601,8 +1673,8 @@ fn update_shape_gizmo_label(
 fn draw_preview_scene_gizmos(
     session: Res<EditorSession>,
     menu: Res<MenuState>,
-    controller: Res<PreviewCameraController>,
     state: Res<ShapeGizmoState>,
+    camera: Single<(&Camera, &GlobalTransform), With<PreviewRenderCamera>>,
     players: Query<&GlobalTransform, With<PreviewEffectPlayer>>,
     mut gizmos: Gizmos<PreviewSceneGizmos>,
 ) {
@@ -1626,13 +1698,19 @@ fn draw_preview_scene_gizmos(
             .filter(|active| active.module == selected.module)
             .map_or(selected.shape, |active| active.current);
         draw_emitter_shape_gizmo(&mut gizmos, player, shape, theme::ACCENT.with_alpha(0.9));
-        let handle_radius = (controller.distance * 0.008).clamp(0.35, 4.0);
         for (handle, local_position) in shape_handle_local_positions(shape) {
             let highlighted = state.active.is_some_and(|active| active.handle == handle)
                 || state.hovered == Some(handle);
+            let world_position = player.transform_point(local_position);
+            let handle_radius = screen_space_gizmo_radius(
+                camera.0,
+                camera.1,
+                world_position,
+                if highlighted { 7.5 } else { 6.0 },
+            );
             gizmos.sphere(
-                player.transform_point(local_position),
-                handle_radius * if highlighted { 1.25 } else { 1.0 },
+                world_position,
+                handle_radius,
                 if highlighted {
                     theme::TEXT
                 } else {
@@ -1641,6 +1719,27 @@ fn draw_preview_scene_gizmos(
             );
         }
     }
+}
+
+fn screen_space_gizmo_radius(
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    world_position: Vec3,
+    radius_pixels: f32,
+) -> f32 {
+    let camera_right = camera_transform.rotation() * Vec3::X;
+    let Ok(center) = camera.world_to_viewport(camera_transform, world_position) else {
+        return 0.01;
+    };
+    let Ok(unit_right) = camera.world_to_viewport(camera_transform, world_position + camera_right)
+    else {
+        return 0.01;
+    };
+    let pixels_per_world_unit = center.distance(unit_right);
+    if !pixels_per_world_unit.is_finite() || pixels_per_world_unit <= 1.0e-4 {
+        return 0.01;
+    }
+    (radius_pixels / pixels_per_world_unit).clamp(0.001, 1_000.0)
 }
 
 fn draw_emitter_shape_gizmo(
@@ -1652,16 +1751,19 @@ fn draw_emitter_shape_gizmo(
     let translation = player.translation();
     let rotation = player.rotation();
     let scale = player.to_scale_rotation_translation().0;
-    let axis_scale = scale.x.abs().max(scale.y.abs()).max(0.001);
+    let axis_scale = scale
+        .x
+        .abs()
+        .max(scale.y.abs())
+        .max(scale.z.abs())
+        .max(0.001);
     let isometry = Isometry3d::new(translation, rotation);
     match shape {
         EmitterShape::Point => {
             gizmos.cross(isometry, 2.0 * axis_scale, color);
         }
         EmitterShape::Circle { radius } => {
-            gizmos
-                .circle(isometry, radius * axis_scale, color)
-                .resolution(64);
+            draw_local_ring(gizmos, player, Vec3::ZERO, radius, RingPlane::Xy, color);
             gizmos.line(
                 player.transform_point(Vec3::ZERO),
                 player.transform_point(Vec3::X * radius),
@@ -1669,28 +1771,164 @@ fn draw_emitter_shape_gizmo(
             );
         }
         EmitterShape::Ring { radius } => {
-            gizmos
-                .circle(isometry, radius * axis_scale, color)
-                .resolution(64);
-            gizmos
-                .circle(isometry, radius * axis_scale * 0.92, color.with_alpha(0.45))
-                .resolution(64);
+            draw_local_ring(gizmos, player, Vec3::ZERO, radius, RingPlane::Xy, color);
+            draw_local_ring(
+                gizmos,
+                player,
+                Vec3::ZERO,
+                radius * 0.92,
+                RingPlane::Xy,
+                color.with_alpha(0.45),
+            );
+        }
+        EmitterShape::Sphere { radius } => {
+            for plane in [RingPlane::Xy, RingPlane::Xz, RingPlane::Yz] {
+                draw_local_ring(gizmos, player, Vec3::ZERO, radius, plane, color);
+            }
+        }
+        EmitterShape::Hemisphere { radius } => {
+            draw_local_ring(gizmos, player, Vec3::ZERO, radius, RingPlane::Xz, color);
+            for latitude in 1..=3 {
+                let angle = latitude as f32 * std::f32::consts::FRAC_PI_2 / 4.0;
+                draw_local_ring(
+                    gizmos,
+                    player,
+                    Vec3::Y * radius * angle.sin(),
+                    radius * angle.cos(),
+                    RingPlane::Xz,
+                    color.with_alpha(0.72),
+                );
+            }
+            for longitude in 0..8 {
+                let angle = longitude as f32 * std::f32::consts::TAU / 8.0;
+                let mut previous = Vec3::new(radius * angle.cos(), 0.0, radius * angle.sin());
+                for segment in 1..=16 {
+                    let elevation = segment as f32 * std::f32::consts::FRAC_PI_2 / 16.0;
+                    let next = Vec3::new(
+                        radius * elevation.cos() * angle.cos(),
+                        radius * elevation.sin(),
+                        radius * elevation.cos() * angle.sin(),
+                    );
+                    gizmos.line(
+                        player.transform_point(previous),
+                        player.transform_point(next),
+                        color.with_alpha(0.72),
+                    );
+                    previous = next;
+                }
+            }
+        }
+        EmitterShape::Box { half_extents } => {
+            let half = Vec3::from_array(half_extents);
+            for x in [-half.x, half.x] {
+                for y in [-half.y, half.y] {
+                    gizmos.line(
+                        player.transform_point(Vec3::new(x, y, -half.z)),
+                        player.transform_point(Vec3::new(x, y, half.z)),
+                        color,
+                    );
+                }
+            }
+            for x in [-half.x, half.x] {
+                for z in [-half.z, half.z] {
+                    gizmos.line(
+                        player.transform_point(Vec3::new(x, -half.y, z)),
+                        player.transform_point(Vec3::new(x, half.y, z)),
+                        color,
+                    );
+                }
+            }
+            for y in [-half.y, half.y] {
+                for z in [-half.z, half.z] {
+                    gizmos.line(
+                        player.transform_point(Vec3::new(-half.x, y, z)),
+                        player.transform_point(Vec3::new(half.x, y, z)),
+                        color,
+                    );
+                }
+            }
+        }
+        EmitterShape::Cylinder { radius, depth } => {
+            let half_depth = depth * 0.5;
+            draw_local_ring(
+                gizmos,
+                player,
+                Vec3::Y * half_depth,
+                radius,
+                RingPlane::Xz,
+                color,
+            );
+            draw_local_ring(
+                gizmos,
+                player,
+                Vec3::Y * -half_depth,
+                radius,
+                RingPlane::Xz,
+                color,
+            );
+            for quarter in 0..4 {
+                let angle = quarter as f32 * std::f32::consts::FRAC_PI_2;
+                let radial = Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius);
+                gizmos.line(
+                    player.transform_point(radial - Vec3::Y * half_depth),
+                    player.transform_point(radial + Vec3::Y * half_depth),
+                    color,
+                );
+            }
         }
         EmitterShape::Cone { radius, depth } => {
             let origin = player.transform_point(Vec3::ZERO);
-            let left = player.transform_point(Vec3::new(-radius, depth, 0.0));
-            let right = player.transform_point(Vec3::new(radius, depth, 0.0));
-            gizmos.line(origin, left, color);
-            gizmos.line(origin, right, color);
-            gizmos.line(left, right, color);
-            gizmos
-                .circle(
-                    Isometry3d::new(player.transform_point(Vec3::Y * depth), player.rotation()),
-                    radius * axis_scale,
-                    color.with_alpha(0.62),
-                )
-                .resolution(64);
+            draw_local_ring(
+                gizmos,
+                player,
+                Vec3::Y * depth,
+                radius,
+                RingPlane::Xz,
+                color.with_alpha(0.72),
+            );
+            for quarter in 0..4 {
+                let angle = quarter as f32 * std::f32::consts::FRAC_PI_2;
+                gizmos.line(
+                    origin,
+                    player.transform_point(Vec3::new(
+                        angle.cos() * radius,
+                        depth,
+                        angle.sin() * radius,
+                    )),
+                    color,
+                );
+            }
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum RingPlane {
+    Xy,
+    Xz,
+    Yz,
+}
+
+fn draw_local_ring(
+    gizmos: &mut Gizmos<PreviewSceneGizmos>,
+    player: &GlobalTransform,
+    center: Vec3,
+    radius: f32,
+    plane: RingPlane,
+    color: Color,
+) {
+    const SEGMENTS: usize = 64;
+    let point = |index: usize| {
+        let angle = index as f32 * std::f32::consts::TAU / SEGMENTS as f32;
+        let radial = match plane {
+            RingPlane::Xy => Vec3::new(angle.cos() * radius, angle.sin() * radius, 0.0),
+            RingPlane::Xz => Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius),
+            RingPlane::Yz => Vec3::new(0.0, angle.cos() * radius, angle.sin() * radius),
+        };
+        player.transform_point(center + radial)
+    };
+    for index in 0..SEGMENTS {
+        gizmos.line(point(index), point((index + 1) % SEGMENTS), color);
     }
 }
 
@@ -4524,8 +4762,8 @@ fn localized_inspector_input(
         ("lifetime", true) => "inspector-input-lifetime-description",
         ("speed", false) => "inspector-input-speed",
         ("speed", true) => "inspector-input-speed-description",
-        ("direction_degrees", false) => "inspector-input-direction",
-        ("direction_degrees", true) => "inspector-input-direction-description",
+        ("direction", false) => "inspector-input-direction",
+        ("direction", true) => "inspector-input-direction-description",
         ("spread_degrees", false) => "inspector-input-spread",
         ("spread_degrees", true) => "inspector-input-spread-description",
         ("angular_velocity", false) => "inspector-input-angular-velocity",
@@ -4742,20 +4980,146 @@ fn spawn_inspector_choice_control(
     };
     let current = shape_label(*shape);
     let selected = shape_index(*shape);
-    let options = ["Point", "Circle", "Ring", "Cone"]
-        .into_iter()
-        .enumerate()
-        .map(|(choice, label)| ComboOption {
-            label: label.to_owned(),
-            selected: choice == selected,
-            action: EditorAction::SetModuleChoice {
-                module,
-                input,
-                choice: choice as u8,
-            },
-        })
-        .collect::<Vec<_>>();
+    let options = [
+        "Point",
+        "Circle",
+        "Ring",
+        "Sphere",
+        "Hemisphere",
+        "Box",
+        "Cylinder",
+        "Cone",
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(choice, label)| ComboOption {
+        label: label.to_owned(),
+        selected: choice == selected,
+        action: EditorAction::SetModuleChoice {
+            module,
+            input,
+            choice: choice as u8,
+        },
+    })
+    .collect::<Vec<_>>();
     spawn_inspector_combo_row(parent, title, current, &options, Some(description));
+    match *shape {
+        EmitterShape::Point => {}
+        EmitterShape::Circle { radius }
+        | EmitterShape::Ring { radius }
+        | EmitterShape::Sphere { radius }
+        | EmitterShape::Hemisphere { radius } => {
+            spawn_shape_number_row(
+                parent,
+                module,
+                "Radius",
+                "Radius of the spawn shape in local units.",
+                &[("", radius, 0)],
+            );
+        }
+        EmitterShape::Box { half_extents } => {
+            spawn_shape_number_row(
+                parent,
+                module,
+                "Half Extents",
+                "Half-size of the box on each local axis.",
+                &[
+                    ("X", half_extents[0], 0),
+                    ("Y", half_extents[1], 1),
+                    ("Z", half_extents[2], 2),
+                ],
+            );
+        }
+        EmitterShape::Cylinder { radius, depth } | EmitterShape::Cone { radius, depth } => {
+            spawn_shape_number_row(
+                parent,
+                module,
+                "Radius",
+                "Radius of the volumetric shape in local units.",
+                &[("", radius, 0)],
+            );
+            spawn_shape_number_row(
+                parent,
+                module,
+                "Depth",
+                "Length of the volumetric shape along its local Y axis.",
+                &[("", depth, 1)],
+            );
+        }
+    }
+}
+
+fn spawn_shape_number_row(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    title: &str,
+    description: &str,
+    values: &[(&'static str, f32, u8)],
+) {
+    parent
+        .spawn((
+            InspectorHelp(description.to_owned()),
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|row| {
+            spawn_inspector_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                column_gap: Val::Px(4.0),
+                ..default()
+            })
+            .with_children(|controls| {
+                for (axis, _value, component) in values {
+                    let sigil = match *axis {
+                        "X" => tokens::TEXT_INPUT_X_AXIS,
+                        "Y" => tokens::TEXT_INPUT_Y_AXIS,
+                        "Z" => tokens::TEXT_INPUT_Z_AXIS,
+                        _ => tokens::TEXT_INPUT_BG,
+                    };
+                    controls
+                        .spawn(Node {
+                            flex_grow: 1.0,
+                            flex_basis: Val::Px(0.0),
+                            min_width: Val::Px(44.0),
+                            ..default()
+                        })
+                        .with_children(|wrapper| {
+                            let mut input = wrapper.spawn_empty();
+                            if axis.is_empty() {
+                                input.apply_scene(ui_shell::feathers_scalar_input());
+                            } else {
+                                input.apply_scene(ui_shell::feathers_labeled_scalar_input(
+                                    axis, sigil,
+                                ));
+                            }
+                            input.insert((
+                                InspectorNumberControl {
+                                    module,
+                                    parameter: "shape",
+                                    component: *component,
+                                    kind: InspectorNumberKind::Shape,
+                                    step: 0.1,
+                                    min: Some(0.1),
+                                    max: None,
+                                },
+                                AccessibleLabel(if axis.is_empty() {
+                                    title.to_owned()
+                                } else {
+                                    format!("{title} {axis}")
+                                }),
+                            ));
+                        });
+                }
+            });
+        });
 }
 
 fn spawn_inspector_combo_row(
@@ -4859,7 +5223,11 @@ fn shape_index(shape: EmitterShape) -> usize {
         EmitterShape::Point => 0,
         EmitterShape::Circle { .. } => 1,
         EmitterShape::Ring { .. } => 2,
-        EmitterShape::Cone { .. } => 3,
+        EmitterShape::Sphere { .. } => 3,
+        EmitterShape::Hemisphere { .. } => 4,
+        EmitterShape::Box { .. } => 5,
+        EmitterShape::Cylinder { .. } => 6,
+        EmitterShape::Cone { .. } => 7,
     }
 }
 
@@ -4868,6 +5236,10 @@ fn shape_label(shape: EmitterShape) -> &'static str {
         EmitterShape::Point => "Point",
         EmitterShape::Circle { .. } => "Circle",
         EmitterShape::Ring { .. } => "Ring",
+        EmitterShape::Sphere { .. } => "Sphere",
+        EmitterShape::Hemisphere { .. } => "Hemisphere",
+        EmitterShape::Box { .. } => "Box",
+        EmitterShape::Cylinder { .. } => "Cylinder",
         EmitterShape::Cone { .. } => "Cone",
     }
 }
@@ -5455,12 +5827,9 @@ fn module_parameter(module: &ModuleInstance, name: &str) -> Option<Value> {
             Some(Value::Range(*lifetime))
         }
         (ModuleParameters::Initialize { speed, .. }, "speed") => Some(Value::Range(*speed)),
-        (
-            ModuleParameters::Initialize {
-                direction_degrees, ..
-            },
-            "direction_degrees",
-        ) => Some(Value::Scalar(*direction_degrees)),
+        (ModuleParameters::Initialize { direction, .. }, "direction") => {
+            Some(Value::Vec3(*direction))
+        }
         (ModuleParameters::Initialize { spread_degrees, .. }, "spread_degrees") => {
             Some(Value::Scalar(*spread_degrees))
         }
@@ -5470,7 +5839,7 @@ fn module_parameter(module: &ModuleInstance, name: &str) -> Option<Value> {
             },
             "angular_velocity",
         ) => Some(Value::Range(*angular_velocity)),
-        (ModuleParameters::Motion { gravity, .. }, "gravity") => Some(Value::Vec2(*gravity)),
+        (ModuleParameters::Motion { gravity, .. }, "gravity") => Some(Value::Vec3(*gravity)),
         (ModuleParameters::Motion { drag, .. }, "drag") => Some(Value::Scalar(*drag)),
         (ModuleParameters::Motion { turbulence, .. }, "turbulence") => {
             Some(Value::Scalar(*turbulence))
@@ -5505,6 +5874,19 @@ fn format_value(value: Value) -> String {
         Value::Shape(EmitterShape::Point) => "Point".into(),
         Value::Shape(EmitterShape::Circle { radius }) => format!("Circle · r {radius:.1}"),
         Value::Shape(EmitterShape::Ring { radius }) => format!("Ring · r {radius:.1}"),
+        Value::Shape(EmitterShape::Sphere { radius }) => format!("Sphere · r {radius:.1}"),
+        Value::Shape(EmitterShape::Hemisphere { radius }) => {
+            format!("Hemisphere · r {radius:.1}")
+        }
+        Value::Shape(EmitterShape::Box { half_extents }) => format!(
+            "Box · {:.1} × {:.1} × {:.1}",
+            half_extents[0] * 2.0,
+            half_extents[1] * 2.0,
+            half_extents[2] * 2.0
+        ),
+        Value::Shape(EmitterShape::Cylinder { radius, depth }) => {
+            format!("Cylinder · r {radius:.1} h {depth:.1}")
+        }
         Value::Shape(EmitterShape::Cone { radius, depth }) => {
             format!("Cone · r {radius:.1} d {depth:.1}")
         }
@@ -7457,6 +7839,12 @@ fn apply_inspector_number(
             }
             Value::Range(range)
         }
+        (InspectorNumberKind::Shape, Value::Shape(shape)) => {
+            let Some(shape) = shape_with_dimension(shape, control.component, value) else {
+                return false;
+            };
+            Value::Shape(shape)
+        }
         _ => {
             session.status = format!("{} has incompatible Inspector metadata", control.parameter);
             return false;
@@ -7636,8 +8024,59 @@ fn inspector_number_input_value(
                 value.max
             }))
         }
+        (InspectorNumberKind::Shape, Value::Shape(shape)) => {
+            shape_dimension(shape, control.component).map(NumberInputValue::F32)
+        }
         _ => None,
     }
+}
+
+fn shape_dimension(shape: EmitterShape, component: u8) -> Option<f32> {
+    match (shape, component) {
+        (EmitterShape::Circle { radius }, 0)
+        | (EmitterShape::Ring { radius }, 0)
+        | (EmitterShape::Sphere { radius }, 0)
+        | (EmitterShape::Hemisphere { radius }, 0)
+        | (EmitterShape::Cylinder { radius, .. }, 0)
+        | (EmitterShape::Cone { radius, .. }, 0) => Some(radius),
+        (EmitterShape::Cylinder { depth, .. }, 1) | (EmitterShape::Cone { depth, .. }, 1) => {
+            Some(depth)
+        }
+        (EmitterShape::Box { half_extents }, component @ 0..=2) => {
+            Some(half_extents[component as usize])
+        }
+        _ => None,
+    }
+}
+
+fn shape_with_dimension(shape: EmitterShape, component: u8, value: f32) -> Option<EmitterShape> {
+    Some(match (shape, component) {
+        (EmitterShape::Circle { .. }, 0) => EmitterShape::Circle { radius: value },
+        (EmitterShape::Ring { .. }, 0) => EmitterShape::Ring { radius: value },
+        (EmitterShape::Sphere { .. }, 0) => EmitterShape::Sphere { radius: value },
+        (EmitterShape::Hemisphere { .. }, 0) => EmitterShape::Hemisphere { radius: value },
+        (EmitterShape::Cylinder { depth, .. }, 0) => EmitterShape::Cylinder {
+            radius: value,
+            depth,
+        },
+        (EmitterShape::Cylinder { radius, .. }, 1) => EmitterShape::Cylinder {
+            radius,
+            depth: value,
+        },
+        (EmitterShape::Cone { depth, .. }, 0) => EmitterShape::Cone {
+            radius: value,
+            depth,
+        },
+        (EmitterShape::Cone { radius, .. }, 1) => EmitterShape::Cone {
+            radius,
+            depth: value,
+        },
+        (EmitterShape::Box { mut half_extents }, component @ 0..=2) => {
+            half_extents[component as usize] = value;
+            EmitterShape::Box { half_extents }
+        }
+        _ => return None,
+    })
 }
 
 fn settings_number_input_value(
@@ -8261,12 +8700,12 @@ fn instruction_summary(instruction: &Instruction) -> String {
         Instruction::Initialize {
             lifetime,
             speed,
-            direction_degrees,
+            direction,
             spread_degrees,
             angular_velocity,
             ..
         } => format!(
-            "life {lifetime:?}  ·  speed {speed:?}  ·  direction {direction_degrees:?}  ·  spread {spread_degrees:?}  ·  angular {angular_velocity:?}"
+            "life {lifetime:?}  ·  speed {speed:?}  ·  direction {direction:?}  ·  spread {spread_degrees:?}  ·  angular {angular_velocity:?}"
         ),
         Instruction::Motion {
             gravity,
@@ -10559,6 +10998,33 @@ fn set_module_choice(
             _ => EmitterShape::Ring { radius: 12.0 },
         },
         3 => match current {
+            Some(Value::Shape(EmitterShape::Sphere { radius })) => EmitterShape::Sphere { radius },
+            _ => EmitterShape::Sphere { radius: 12.0 },
+        },
+        4 => match current {
+            Some(Value::Shape(EmitterShape::Hemisphere { radius })) => {
+                EmitterShape::Hemisphere { radius }
+            }
+            _ => EmitterShape::Hemisphere { radius: 12.0 },
+        },
+        5 => match current {
+            Some(Value::Shape(EmitterShape::Box { half_extents })) => {
+                EmitterShape::Box { half_extents }
+            }
+            _ => EmitterShape::Box {
+                half_extents: [12.0; 3],
+            },
+        },
+        6 => match current {
+            Some(Value::Shape(EmitterShape::Cylinder { radius, depth })) => {
+                EmitterShape::Cylinder { radius, depth }
+            }
+            _ => EmitterShape::Cylinder {
+                radius: 12.0,
+                depth: 24.0,
+            },
+        },
+        7 => match current {
             Some(Value::Shape(EmitterShape::Cone { radius, depth })) => {
                 EmitterShape::Cone { radius, depth }
             }
@@ -11614,14 +12080,14 @@ mod tests {
         };
 
         assert_eq!(
-            shape_after_gizmo_drag(cone, ShapeGizmoHandle::Radius, Vec3::new(-18.0, 90.0, 0.0)),
+            shape_after_gizmo_drag(cone, ShapeGizmoHandle::Radius, 18.0),
             EmitterShape::Cone {
                 radius: 18.0,
                 depth: 24.0,
             }
         );
         assert_eq!(
-            shape_after_gizmo_drag(cone, ShapeGizmoHandle::Depth, Vec3::new(80.0, 31.0, 0.0)),
+            shape_after_gizmo_drag(cone, ShapeGizmoHandle::Depth, 31.0),
             EmitterShape::Cone {
                 radius: 12.0,
                 depth: 31.0,
@@ -11635,7 +12101,7 @@ mod tests {
             shape_after_gizmo_drag(
                 EmitterShape::Circle { radius: 12.0 },
                 ShapeGizmoHandle::Radius,
-                Vec3::ZERO,
+                0.0,
             ),
             EmitterShape::Circle { radius: 0.1 }
         );
@@ -11646,7 +12112,7 @@ mod tests {
                     depth: 24.0,
                 },
                 ShapeGizmoHandle::Depth,
-                Vec3::new(0.0, -10.0, 0.0),
+                0.0,
             ),
             EmitterShape::Cone {
                 radius: 12.0,
@@ -11656,7 +12122,34 @@ mod tests {
     }
 
     #[test]
-    fn selecting_shape_module_hides_root_transform_gizmo() {
+    fn shape_gizmo_edits_volumetric_dimensions_independently() {
+        let box_shape = EmitterShape::Box {
+            half_extents: [2.0, 3.0, 4.0],
+        };
+        assert_eq!(
+            shape_after_gizmo_drag(box_shape, ShapeGizmoHandle::ExtentZ, 9.0),
+            EmitterShape::Box {
+                half_extents: [2.0, 3.0, 9.0],
+            }
+        );
+        assert_eq!(
+            shape_after_gizmo_drag(
+                EmitterShape::Cylinder {
+                    radius: 5.0,
+                    depth: 8.0,
+                },
+                ShapeGizmoHandle::Depth,
+                12.0,
+            ),
+            EmitterShape::Cylinder {
+                radius: 5.0,
+                depth: 12.0,
+            }
+        );
+    }
+
+    #[test]
+    fn selecting_shape_module_keeps_root_transform_gizmo_available() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let shape_module = session
             .selected_layer()
@@ -11667,14 +12160,11 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(session)
             .add_systems(Update, sync_transform_gizmo_focus);
-        let player = app
-            .world_mut()
-            .spawn((PreviewEffectPlayer, TransformGizmoFocus))
-            .id();
+        let player = app.world_mut().spawn(PreviewEffectPlayer).id();
 
         app.update();
 
-        assert!(!app.world().entity(player).contains::<TransformGizmoFocus>());
+        assert!(app.world().entity(player).contains::<TransformGizmoFocus>());
     }
 
     #[test]
@@ -11767,7 +12257,7 @@ mod tests {
     #[test]
     fn bundled_effect_is_valid() {
         let effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("bundled effect should parse");
-        assert_eq!(effect.format_version, 2);
+        assert_eq!(effect.format_version, 3);
         assert_eq!(effect.emitters.len(), 4);
     }
 
@@ -11831,13 +12321,44 @@ mod tests {
             .id;
         let registry = ModuleRegistry::builtin();
 
-        set_module_choice(&mut session, &registry, module, 0, 3);
+        set_module_choice(&mut session, &registry, module, 0, 7);
 
         assert_eq!(
             inspector_module_parameter(&session, module, "shape"),
             Some(Value::Shape(EmitterShape::Cone {
                 radius: 12.0,
                 depth: 24.0,
+            }))
+        );
+    }
+
+    #[test]
+    fn inspector_edits_volumetric_shape_dimensions_semantically() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "shape").is_some())
+            .unwrap()
+            .id;
+        let registry = ModuleRegistry::builtin();
+        set_module_choice(&mut session, &registry, module, 0, 5);
+
+        let control = InspectorNumberControl {
+            module,
+            parameter: "shape",
+            component: 2,
+            kind: InspectorNumberKind::Shape,
+            step: 0.1,
+            min: Some(0.1),
+            max: None,
+        };
+        assert!(apply_inspector_number(&mut session, control, 18.0));
+        assert_eq!(
+            inspector_module_parameter(&session, module, "shape"),
+            Some(Value::Shape(EmitterShape::Box {
+                half_extents: [12.0, 12.0, 18.0],
             }))
         );
     }

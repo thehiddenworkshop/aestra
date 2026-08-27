@@ -123,11 +123,11 @@ impl ModuleRegistry {
             MODULE_INITIALIZE => Some(ModuleInstance::initialize(
                 ScalarRange::new(0.8, 1.4),
                 ScalarRange::new(35.0, 70.0),
-                90.0,
+                [0.0, 1.0, 0.0],
                 30.0,
                 ScalarRange::new(-1.0, 1.0),
             )),
-            MODULE_MOTION => Some(ModuleInstance::motion([0.0, -18.0], 0.6, 4.0)),
+            MODULE_MOTION => Some(ModuleInstance::motion([0.0, -18.0, 0.0], 0.6, 4.0)),
             MODULE_APPEARANCE => Some(ModuleInstance::appearance(
                 Curve::new(vec![
                     CurveKey::new(0.0, 4.0),
@@ -663,14 +663,14 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
         ModuleParameters::Initialize {
             lifetime,
             speed,
-            direction_degrees,
+            direction,
             spread_degrees,
             angular_velocity,
         } => Instruction::Initialize {
             source: module.id,
             lifetime: expression(module, "lifetime", *lifetime, context),
             speed: expression(module, "speed", *speed, context),
-            direction_degrees: expression(module, "direction_degrees", *direction_degrees, context),
+            direction: expression(module, "direction", *direction, context),
             spread_degrees: expression(module, "spread_degrees", *spread_degrees, context),
             angular_velocity: expression(module, "angular_velocity", *angular_velocity, context),
         },
@@ -780,14 +780,14 @@ fn expression_counts(instruction: &Instruction) -> (usize, usize) {
         Instruction::Initialize {
             lifetime,
             speed,
-            direction_degrees,
+            direction,
             spread_degrees,
             angular_velocity,
             ..
         } => sum([
             one(lifetime),
             one(speed),
-            one(direction_degrees),
+            one(direction),
             one(spread_degrees),
             one(angular_velocity),
         ]),
@@ -1016,17 +1016,16 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
             )
             .with_unit("units/s"),
             input(
-                "direction_degrees",
+                "direction",
                 "Direction",
-                "Central launch direction.",
-                aestra_core::Value::Scalar(90.0),
-                InputControl::Number {
-                    step: 5.0,
+                "Central 3D launch direction.",
+                aestra_core::Value::Vec3([0.0, 1.0, 0.0]),
+                InputControl::Vector {
+                    step: 0.1,
                     min: None,
                     max: None,
                 },
-            )
-            .with_unit("°"),
+            ),
             input(
                 "spread_degrees",
                 "Spread",
@@ -1070,7 +1069,7 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
                 "gravity",
                 "Gravity",
                 "Constant acceleration applied to particle velocity.",
-                aestra_core::Value::Vec2([0.0, -18.0]),
+                aestra_core::Value::Vec3([0.0, -18.0, 0.0]),
                 InputControl::Vector {
                     step: 5.0,
                     min: None,

@@ -600,7 +600,7 @@ fn play_effects(
             };
             sprite.color = Color::srgba(color[0], color[1], color[2], color[3]);
             sprite.custom_size = Some(Vec2::splat(size));
-            transform.translation = Vec3::new(sample.position[0], sample.position[1], 0.0);
+            transform.translation = Vec3::from_array(sample.position);
             transform.rotation = Quat::from_rotation_z(sample.rotation);
             *visibility = Visibility::Visible;
         }

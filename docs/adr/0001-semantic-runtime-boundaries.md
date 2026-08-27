@@ -41,10 +41,9 @@ Dependency rules:
 
 ## Format reset
 
-The current CPU evaluator is frozen as a behavioral reference while the authored
-example moves directly to format v2. Format v1 is intentionally unsupported and
-has no parser or migration layer. This is an early-project schema reset, before
-external compatibility commitments exist.
+The CPU evaluator is the behavioral reference for every presentation backend.
+The original format-v2 reset described here was subsequently superseded by the
+3D format-v3 decision in ADR 0006.
 
 ## Consequences
 

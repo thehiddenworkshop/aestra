@@ -28,13 +28,16 @@ struct Renderer {
 
 struct Particle {
     color: vec4<f32>,
-    position: vec2<f32>,
+    position: vec3<f32>,
     size: f32,
     rotation: f32,
     normalized_age: f32,
     emitter_index: u32,
     alive: u32,
     particle_index: u32,
+    _padding_0: u32,
+    _padding_1: u32,
+    _padding_2: u32,
 }
 
 struct RenderGlobals {
@@ -136,7 +139,7 @@ fn vertex(
         corner.x * cosine - corner.y * sine,
         corner.x * sine + corner.y * cosine,
     ) * particle.size * 0.5;
-    let world_center = globals.world_from_effect * vec4<f32>(particle.position, 0.0, 1.0);
+    let world_center = globals.world_from_effect * vec4<f32>(particle.position, 1.0);
     let effect_scale_x = length(globals.world_from_effect[0].xyz);
     let effect_scale_y = length(globals.world_from_effect[1].xyz);
     let camera_right = normalize(view.world_from_view[0].xyz);

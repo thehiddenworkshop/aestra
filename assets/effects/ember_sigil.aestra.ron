@@ -1,5 +1,5 @@
 (
-    format_version: 2,
+    format_version: 3,
     id: "2c4ebbb0-12cf-4e28-83fc-f6f19487fbd0",
     name: "Ember Sigil",
     duration: 2.4,
@@ -44,12 +44,12 @@
                     parameters: Initialize(
                         lifetime: (min: 0.8, max: 1.5),
                         speed: (min: 22.0, max: 58.0),
-                        direction_degrees: 90.0,
+                        direction: (0.0, 1.0, 0.0),
                         spread_degrees: 360.0,
                         angular_velocity: (min: -1.2, max: 1.2),
                     ),
                 ),
-                (id: "55c1470c-09a9-4dd9-91c6-c7861840340e", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 28.0), drag: 0.85, turbulence: 3.5)),
+                (id: "55c1470c-09a9-4dd9-91c6-c7861840340e", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 28.0, 0.0), drag: 0.85, turbulence: 3.5)),
                 (
                     id: "1f877141-f09e-4769-9a4e-c896449a36c7",
                     module_type: "aestra.update.appearance",

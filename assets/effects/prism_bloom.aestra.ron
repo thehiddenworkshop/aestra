@@ -1,5 +1,5 @@
 (
-    format_version: 2,
+    format_version: 3,
     id: "8f245a4d-4c55-4d8b-a404-09a20cf67a01",
     name: "Prism Bloom",
     duration: 2.8,
@@ -21,7 +21,7 @@
             simulation_domain: Particle,
             modules: [
                 (id: "2fdd77d4-3441-4ba1-a49a-84493c8217e3", module_type: "aestra.emission.rate", stage: EmitterUpdate, enabled: true, parameters: Emission(spawn_rate: 22.0, burst_count: 18)),
-                (id: "f514f125-5ac3-4311-993a-91043a1e627b", module_type: "aestra.spawn.shape", stage: ParticleSpawn, enabled: true, parameters: Shape(shape: Circle(radius: 14.0))),
+                (id: "f514f125-5ac3-4311-993a-91043a1e627b", module_type: "aestra.spawn.shape", stage: ParticleSpawn, enabled: true, parameters: Shape(shape: Sphere(radius: 14.0))),
                 (
                     id: "059fa6c1-02e1-4886-867c-927ab7343cfb",
                     module_type: "aestra.spawn.initialize",
@@ -30,12 +30,12 @@
                     parameters: Initialize(
                         lifetime: (min: 0.7, max: 1.25),
                         speed: (min: 8.0, max: 28.0),
-                        direction_degrees: 90.0,
+                        direction: (0.0, 1.0, 0.0),
                         spread_degrees: 360.0,
                         angular_velocity: (min: -2.0, max: 2.0),
                     ),
                 ),
-                (id: "f5814718-83be-45fd-a4ac-a46784252ba8", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 0.0), drag: 1.6, turbulence: 5.0)),
+                (id: "f5814718-83be-45fd-a4ac-a46784252ba8", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 0.0, 0.0), drag: 1.6, turbulence: 5.0)),
                 (
                     id: "f69dc5a1-3907-4c18-834f-a53fb63c0663",
                     module_type: "aestra.update.appearance",
@@ -60,7 +60,7 @@
             simulation_domain: Particle,
             modules: [
                 (id: "060911d8-1601-45f2-a4cd-812b21be7fc3", module_type: "aestra.emission.rate", stage: EmitterUpdate, enabled: true, parameters: Emission(spawn_rate: 8.0, burst_count: 42)),
-                (id: "4abe496b-e7a0-4c60-9d3e-8491b958c5e5", module_type: "aestra.spawn.shape", stage: ParticleSpawn, enabled: true, parameters: Shape(shape: Ring(radius: 8.0))),
+                (id: "4abe496b-e7a0-4c60-9d3e-8491b958c5e5", module_type: "aestra.spawn.shape", stage: ParticleSpawn, enabled: true, parameters: Shape(shape: Sphere(radius: 8.0))),
                 (
                     id: "eacdfe0b-a213-4771-a7cc-fc2cee592c7c",
                     module_type: "aestra.spawn.initialize",
@@ -69,12 +69,12 @@
                     parameters: Initialize(
                         lifetime: (min: 0.42, max: 0.92),
                         speed: (min: 95.0, max: 215.0),
-                        direction_degrees: 90.0,
+                        direction: (0.0, 1.0, 0.0),
                         spread_degrees: 360.0,
                         angular_velocity: (min: -8.0, max: 8.0),
                     ),
                 ),
-                (id: "fa71eae3-24c5-4249-b43e-62896e4e6659", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, -65.0), drag: 0.65, turbulence: 2.0)),
+                (id: "fa71eae3-24c5-4249-b43e-62896e4e6659", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, -65.0, 0.0), drag: 0.65, turbulence: 2.0)),
                 (
                     id: "54e162bf-53a2-46c8-bee7-50c6f14a4964",
                     module_type: "aestra.update.appearance",
@@ -99,7 +99,7 @@
             simulation_domain: Particle,
             modules: [
                 (id: "1f93193b-d7bb-4ed9-90c2-45d1feac568c", module_type: "aestra.emission.rate", stage: EmitterUpdate, enabled: true, parameters: Emission(spawn_rate: 28.0, burst_count: 8)),
-                (id: "7f38bafc-9f46-4dcd-98cb-474b1383abf0", module_type: "aestra.spawn.shape", stage: ParticleSpawn, enabled: true, parameters: Shape(shape: Circle(radius: 62.0))),
+                (id: "7f38bafc-9f46-4dcd-98cb-474b1383abf0", module_type: "aestra.spawn.shape", stage: ParticleSpawn, enabled: true, parameters: Shape(shape: Box(half_extents: (62.0, 20.0, 24.0)))),
                 (
                     id: "8be6081f-ce1e-454f-bcb3-9bd3b1526d80",
                     module_type: "aestra.spawn.initialize",
@@ -108,12 +108,12 @@
                     parameters: Initialize(
                         lifetime: (min: 1.0, max: 1.85),
                         speed: (min: 22.0, max: 58.0),
-                        direction_degrees: 90.0,
+                        direction: (0.0, 1.0, 0.0),
                         spread_degrees: 42.0,
                         angular_velocity: (min: -1.5, max: 1.5),
                     ),
                 ),
-                (id: "a5349a34-d2d5-426f-b3dd-a28008710dc5", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 16.0), drag: 0.3, turbulence: 11.0)),
+                (id: "a5349a34-d2d5-426f-b3dd-a28008710dc5", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 16.0, 0.0), drag: 0.3, turbulence: 11.0)),
                 (
                     id: "d325c6c4-833e-4e7b-89a1-3f65beb40210",
                     module_type: "aestra.update.appearance",
@@ -147,12 +147,12 @@
                     parameters: Initialize(
                         lifetime: (min: 0.48, max: 0.72),
                         speed: (min: 58.0, max: 82.0),
-                        direction_degrees: 0.0,
+                        direction: (1.0, 0.0, 0.0),
                         spread_degrees: 360.0,
                         angular_velocity: (min: 0.0, max: 0.0),
                     ),
                 ),
-                (id: "9625e3ab-471b-4140-89f3-ae8dfb0295a2", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 0.0), drag: 1.0, turbulence: 0.0)),
+                (id: "9625e3ab-471b-4140-89f3-ae8dfb0295a2", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 0.0, 0.0), drag: 1.0, turbulence: 0.0)),
                 (
                     id: "d7008898-262f-40c2-9bad-5535b1b14594",
                     module_type: "aestra.update.appearance",

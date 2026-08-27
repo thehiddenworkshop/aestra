@@ -674,13 +674,10 @@ fn set_module_parameter(
         {
             Some(Value::Range(std::mem::replace(speed, value)))
         }
-        (
-            ModuleParameters::Initialize {
-                direction_degrees, ..
-            },
-            Value::Scalar(value),
-        ) if parameter == "direction_degrees" => {
-            Some(Value::Scalar(std::mem::replace(direction_degrees, value)))
+        (ModuleParameters::Initialize { direction, .. }, Value::Vec3(value))
+            if parameter == "direction" =>
+        {
+            Some(Value::Vec3(std::mem::replace(direction, value)))
         }
         (ModuleParameters::Initialize { spread_degrees, .. }, Value::Scalar(value))
             if parameter == "spread_degrees" =>
@@ -695,10 +692,10 @@ fn set_module_parameter(
         ) if parameter == "angular_velocity" => {
             Some(Value::Range(std::mem::replace(angular_velocity, value)))
         }
-        (ModuleParameters::Motion { gravity, .. }, Value::Vec2(value))
+        (ModuleParameters::Motion { gravity, .. }, Value::Vec3(value))
             if parameter == "gravity" =>
         {
-            Some(Value::Vec2(std::mem::replace(gravity, value)))
+            Some(Value::Vec3(std::mem::replace(gravity, value)))
         }
         (ModuleParameters::Motion { drag, .. }, Value::Scalar(value)) if parameter == "drag" => {
             Some(Value::Scalar(std::mem::replace(drag, value)))
@@ -738,10 +735,9 @@ fn expected_parameter_type(parameters: &ModuleParameters, parameter: &str) -> Op
         (ModuleParameters::Initialize { .. }, "lifetime" | "speed" | "angular_velocity") => {
             Some("range")
         }
-        (ModuleParameters::Initialize { .. }, "direction_degrees" | "spread_degrees") => {
-            Some("scalar")
-        }
-        (ModuleParameters::Motion { .. }, "gravity") => Some("vec2"),
+        (ModuleParameters::Initialize { .. }, "direction") => Some("vec3"),
+        (ModuleParameters::Initialize { .. }, "spread_degrees") => Some("scalar"),
+        (ModuleParameters::Motion { .. }, "gravity") => Some("vec3"),
         (ModuleParameters::Motion { .. }, "drag" | "turbulence") => Some("scalar"),
         (ModuleParameters::Appearance { .. }, "size" | "opacity") => Some("curve"),
         (ModuleParameters::Appearance { .. }, "color") => Some("gradient"),

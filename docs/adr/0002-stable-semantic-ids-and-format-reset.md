@@ -1,6 +1,6 @@
 # ADR 0002: Stable semantic IDs and the format-v2 reset
 
-- Status: accepted
+- Status: superseded by ADR 0006 for the current asset version
 - Date: 2026-08-26
 
 ## Context
@@ -42,4 +42,3 @@ The semantic model adds a UUID dependency with serialization and v4 support.
 Human-authored RON is slightly more verbose, but commands and diffs remain stable
 across renames, reordering, sessions, and UI projections. Prototype v1 assets
 must be recreated as v2 assets.
-

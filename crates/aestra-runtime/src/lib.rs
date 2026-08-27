@@ -322,13 +322,13 @@ pub enum Instruction {
         source: ModuleId,
         lifetime: Expression<ScalarRange>,
         speed: Expression<ScalarRange>,
-        direction_degrees: Expression<f32>,
+        direction: Expression<[f32; 3]>,
         spread_degrees: Expression<f32>,
         angular_velocity: Expression<ScalarRange>,
     },
     Motion {
         source: ModuleId,
-        gravity: Expression<[f32; 2]>,
+        gravity: Expression<[f32; 3]>,
         drag: Expression<f32>,
         turbulence: Expression<f32>,
     },
@@ -491,7 +491,7 @@ impl CompiledEffect {
 pub struct ParticleSample {
     pub emitter_index: usize,
     pub particle_index: u32,
-    pub position: [f32; 2],
+    pub position: [f32; 3],
     pub size: f32,
     pub rotation: f32,
     pub color: [f32; 4],
@@ -810,7 +810,7 @@ fn evaluate_with_parameters(
             continue;
         };
         let motion = motion(&emitter.execution, parameters).unwrap_or(Motion {
-            gravity: [0.0, 0.0],
+            gravity: [0.0, 0.0, 0.0],
             drag: 0.0,
             turbulence: 0.0,
         });
@@ -836,25 +836,41 @@ fn evaluate_with_parameters(
             }
 
             let normalized_age = age / life;
-            let direction = (initializer.direction_degrees
-                + (hash01(index, 1, seed) - 0.5) * initializer.spread_degrees)
-                .to_radians();
+            let direction = sample_direction(
+                initializer.direction,
+                initializer.spread_degrees,
+                index,
+                seed,
+            );
             let speed = initializer.speed.sample(hash01(index, 2, seed));
-            let (origin_x, origin_y) = sample_shape(shape, index, seed);
+            let origin = sample_shape(shape, index, seed);
             let damping = (-motion.drag.max(0.0) * age).exp();
             let travel = if motion.drag.abs() < 0.0001 {
                 speed * age
             } else {
                 speed * (1.0 - damping) / motion.drag.max(0.0001)
             };
-            let turbulence = motion.turbulence
-                * (age * 7.0 + hash01(index, 3, seed) * std::f32::consts::TAU).sin();
+            let turbulence = [
+                motion.turbulence
+                    * (age * 7.0 + hash01(index, 3, seed) * std::f32::consts::TAU).sin(),
+                motion.turbulence
+                    * (age * 6.3 + hash01(index, 8, seed) * std::f32::consts::TAU).sin(),
+                motion.turbulence
+                    * (age * 7.7 + hash01(index, 10, seed) * std::f32::consts::TAU).sin(),
+            ];
             let position = [
-                origin_x + direction.cos() * travel + turbulence,
-                origin_y
-                    + direction.sin() * travel
+                origin[0]
+                    + direction[0] * travel
+                    + motion.gravity[0] * age * age * 0.5
+                    + turbulence[0],
+                origin[1]
+                    + direction[1] * travel
                     + motion.gravity[1] * age * age * 0.5
-                    + motion.gravity[0] * age * 0.1,
+                    + turbulence[1],
+                origin[2]
+                    + direction[2] * travel
+                    + motion.gravity[2] * age * age * 0.5
+                    + turbulence[2],
             ];
             let mut color = appearance.color.sample(normalized_age);
             color[3] *= appearance.opacity.sample(normalized_age);
@@ -948,7 +964,7 @@ fn shape(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<EmitterSha
 struct Initializer {
     lifetime: ScalarRange,
     speed: ScalarRange,
-    direction_degrees: f32,
+    direction: [f32; 3],
     spread_degrees: f32,
     angular_velocity: ScalarRange,
 }
@@ -960,14 +976,14 @@ fn initializer(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Init
             Instruction::Initialize {
                 lifetime,
                 speed,
-                direction_degrees,
+                direction,
                 spread_degrees,
                 angular_velocity,
                 ..
             } => Some(Initializer {
                 lifetime: *lifetime.resolve(parameters),
                 speed: *speed.resolve(parameters),
-                direction_degrees: *direction_degrees.resolve(parameters),
+                direction: *direction.resolve(parameters),
                 spread_degrees: *spread_degrees.resolve(parameters),
                 angular_velocity: *angular_velocity.resolve(parameters),
             }),
@@ -976,7 +992,7 @@ fn initializer(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Init
 }
 
 struct Motion {
-    gravity: [f32; 2],
+    gravity: [f32; 3],
     drag: f32,
     turbulence: f32,
 }
@@ -1026,21 +1042,110 @@ fn appearance<'a>(
         })
 }
 
-fn sample_shape(shape: EmitterShape, index: u32, seed: u64) -> (f32, f32) {
+fn sample_shape(shape: EmitterShape, index: u32, seed: u64) -> [f32; 3] {
     let angle = hash01(index, 5, seed) * std::f32::consts::TAU;
     match shape {
-        EmitterShape::Point => (0.0, 0.0),
+        EmitterShape::Point => [0.0; 3],
         EmitterShape::Circle { radius } => {
             let radius = radius * hash01(index, 6, seed).sqrt();
-            (angle.cos() * radius, angle.sin() * radius)
+            [angle.cos() * radius, angle.sin() * radius, 0.0]
         }
-        EmitterShape::Ring { radius } => (angle.cos() * radius, angle.sin() * radius),
+        EmitterShape::Ring { radius } => [angle.cos() * radius, angle.sin() * radius, 0.0],
+        EmitterShape::Sphere { radius } => {
+            let direction = sample_unit_sphere(index, seed, 6, 5);
+            scale3(direction, radius * hash01(index, 8, seed).cbrt())
+        }
+        EmitterShape::Hemisphere { radius } => {
+            let phi = std::f32::consts::TAU * hash01(index, 5, seed);
+            let y = hash01(index, 6, seed);
+            let radial = (1.0 - y * y).sqrt();
+            scale3(
+                [phi.cos() * radial, y, phi.sin() * radial],
+                radius * hash01(index, 8, seed).cbrt(),
+            )
+        }
+        EmitterShape::Box { half_extents } => [
+            (hash01(index, 5, seed) * 2.0 - 1.0) * half_extents[0],
+            (hash01(index, 6, seed) * 2.0 - 1.0) * half_extents[1],
+            (hash01(index, 7, seed) * 2.0 - 1.0) * half_extents[2],
+        ],
+        EmitterShape::Cylinder { radius, depth } => {
+            let sampled_radius = radius * hash01(index, 6, seed).sqrt();
+            [
+                angle.cos() * sampled_radius,
+                (hash01(index, 7, seed) - 0.5) * depth,
+                angle.sin() * sampled_radius,
+            ]
+        }
         EmitterShape::Cone { radius, depth } => {
             let y = hash01(index, 6, seed) * depth;
-            let x = (hash01(index, 7, seed) * 2.0 - 1.0) * radius * (y / depth.max(0.001));
-            (x, y)
+            let sampled_radius = radius * (y / depth.max(0.001)) * hash01(index, 7, seed).sqrt();
+            [
+                angle.cos() * sampled_radius,
+                y,
+                angle.sin() * sampled_radius,
+            ]
         }
     }
+}
+
+fn sample_direction(direction: [f32; 3], spread_degrees: f32, index: u32, seed: u64) -> [f32; 3] {
+    let forward = normalize3(direction);
+    let half_angle = (spread_degrees.abs() * 0.5)
+        .to_radians()
+        .min(std::f32::consts::PI);
+    if half_angle <= f32::EPSILON {
+        return forward;
+    }
+    let cos_theta = 1.0 - hash01(index, 1, seed) * (1.0 - half_angle.cos());
+    let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
+    let phi = hash01(index, 11, seed) * std::f32::consts::TAU;
+    let helper = if forward[1].abs() < 0.999 {
+        [0.0, 1.0, 0.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    let tangent = normalize3(cross3(helper, forward));
+    let bitangent = cross3(forward, tangent);
+    add3(
+        scale3(forward, cos_theta),
+        add3(
+            scale3(tangent, sin_theta * phi.cos()),
+            scale3(bitangent, sin_theta * phi.sin()),
+        ),
+    )
+}
+
+fn sample_unit_sphere(index: u32, seed: u64, z_channel: u32, angle_channel: u32) -> [f32; 3] {
+    let y = hash01(index, z_channel, seed) * 2.0 - 1.0;
+    let angle = hash01(index, angle_channel, seed) * std::f32::consts::TAU;
+    let radial = (1.0 - y * y).sqrt();
+    [angle.cos() * radial, y, angle.sin() * radial]
+}
+
+fn normalize3(value: [f32; 3]) -> [f32; 3] {
+    let length = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
+    if length <= f32::EPSILON {
+        [0.0, 1.0, 0.0]
+    } else {
+        scale3(value, 1.0 / length)
+    }
+}
+
+fn cross3(left: [f32; 3], right: [f32; 3]) -> [f32; 3] {
+    [
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    ]
+}
+
+fn add3(left: [f32; 3], right: [f32; 3]) -> [f32; 3] {
+    [left[0] + right[0], left[1] + right[1], left[2] + right[2]]
+}
+
+fn scale3(value: [f32; 3], scale: f32) -> [f32; 3] {
+    [value[0] * scale, value[1] * scale, value[2] * scale]
 }
 
 fn hash01(index: u32, channel: u32, seed: u64) -> f32 {
@@ -1057,6 +1162,48 @@ fn hash01(index: u32, channel: u32, seed: u64) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn volumetric_shapes_sample_all_three_axes() {
+        let sphere = (0..32)
+            .map(|index| sample_shape(EmitterShape::Sphere { radius: 4.0 }, index, 42))
+            .collect::<Vec<_>>();
+        assert!(sphere.iter().any(|position| position[2].abs() > 0.01));
+        assert!(sphere.iter().all(|position| {
+            position[0] * position[0] + position[1] * position[1] + position[2] * position[2]
+                <= 16.0001
+        }));
+
+        let box_sample = sample_shape(
+            EmitterShape::Box {
+                half_extents: [2.0, 3.0, 4.0],
+            },
+            7,
+            42,
+        );
+        assert!(box_sample[0].abs() <= 2.0);
+        assert!(box_sample[1].abs() <= 3.0);
+        assert!(box_sample[2].abs() <= 4.0);
+    }
+
+    #[test]
+    fn launch_direction_uses_a_three_dimensional_solid_angle() {
+        assert_eq!(
+            sample_direction([0.0, 2.0, 0.0], 0.0, 0, 42),
+            [0.0, 1.0, 0.0]
+        );
+        let directions = (0..32)
+            .map(|index| sample_direction([0.0, 1.0, 0.0], 180.0, index, 42))
+            .collect::<Vec<_>>();
+        assert!(directions.iter().any(|direction| direction[2].abs() > 0.01));
+        assert!(directions.iter().all(|direction| {
+            let length = (direction[0] * direction[0]
+                + direction[1] * direction[1]
+                + direction[2] * direction[2])
+                .sqrt();
+            (length - 1.0).abs() < 0.0001
+        }));
+    }
 
     #[test]
     fn fixed_clock_is_independent_of_render_delta_partitioning() {

@@ -13,7 +13,8 @@ an exposed gameplay value required recompiling the effect.
 
 Each `ModuleInstance` keeps its authored input values as inspectable fallbacks and
 may bind a named input to a typed `EffectParameter`. Empty binding maps are
-omitted from serialization, keeping existing format-v2 assets stable.
+omitted from serialization. Format v3 retains the same semantic binding model
+while replacing the particle-space schema.
 
 The compiler validates binding names and types against module metadata. Exposed,
 referenced parameters receive deterministic indexed runtime slots. Unbound values

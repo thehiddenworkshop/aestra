@@ -97,15 +97,17 @@ pub struct GpuEmitter {
     pub spawn_rate: f32,
     pub shape_radius: f32,
     pub shape_depth: f32,
-    pub direction_radians: f32,
+    pub shape_extent_z: f32,
     pub spread_radians: f32,
     pub drag: f32,
+    pub direction: Vec3,
+    pub _direction_padding: f32,
     pub lifetime: Vec2,
     pub speed: Vec2,
     pub angular_velocity: Vec2,
-    pub gravity: Vec2,
+    pub _range_padding: Vec2,
+    pub gravity: Vec3,
     pub turbulence: f32,
-    pub _padding: Vec3,
     pub size: GpuCurve,
     pub opacity: GpuCurve,
     pub color: GpuGradient,
@@ -158,13 +160,16 @@ pub struct GpuRenderGlobals {
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
 pub struct GpuParticle {
     pub color: Vec4,
-    pub position: Vec2,
+    pub position: Vec3,
     pub size: f32,
     pub rotation: f32,
     pub normalized_age: f32,
     pub emitter_index: u32,
     pub alive: u32,
     pub particle_index: u32,
+    pub _padding_0: u32,
+    pub _padding_1: u32,
+    pub _padding_2: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -189,7 +194,7 @@ impl GpuEffectArtifact {
         }
         let parameters = instance.parameter_values();
         let mut slot_offset = 0_u32;
-        let mut bounds_half_extents = Vec2::splat(0.01);
+        let mut bounds_half_extents = Vec3::splat(0.01);
         let mut emitters = Vec::with_capacity(instance.effect().emitters.len());
         let mut renderers = Vec::new();
         for (emitter_index, emitter) in instance.effect().emitters.iter().enumerate() {
@@ -207,11 +212,17 @@ impl GpuEffectArtifact {
             let appearance = appearance(&emitter.execution, parameters).ok_or_else(|| {
                 GpuArtifactError::MissingInstruction(emitter.name.clone(), "Appearance")
             })?;
-            let (shape_kind, shape_radius, shape_depth) = match shape {
-                EmitterShape::Point => (0, 0.0, 0.0),
-                EmitterShape::Circle { radius } => (1, radius, 0.0),
-                EmitterShape::Ring { radius } => (2, radius, 0.0),
-                EmitterShape::Cone { radius, depth } => (3, radius, depth),
+            let (shape_kind, shape_radius, shape_depth, shape_extent_z) = match shape {
+                EmitterShape::Point => (0, 0.0, 0.0, 0.0),
+                EmitterShape::Circle { radius } => (1, radius, 0.0, 0.0),
+                EmitterShape::Ring { radius } => (2, radius, 0.0, 0.0),
+                EmitterShape::Sphere { radius } => (3, radius, 0.0, 0.0),
+                EmitterShape::Hemisphere { radius } => (4, radius, 0.0, 0.0),
+                EmitterShape::Box { half_extents } => {
+                    (5, half_extents[0], half_extents[1], half_extents[2])
+                }
+                EmitterShape::Cylinder { radius, depth } => (6, radius, depth, 0.0),
+                EmitterShape::Cone { radius, depth } => (7, radius, depth, 0.0),
             };
             if emitter.enabled {
                 renderers.extend(emitter.renderers.iter().map(|renderer| {
@@ -316,18 +327,20 @@ impl GpuEffectArtifact {
                 spawn_rate: if emitter.enabled { spawn_rate } else { 0.0 },
                 shape_radius,
                 shape_depth,
-                direction_radians: init.direction_degrees.to_radians(),
+                shape_extent_z,
                 spread_radians: init.spread_degrees.to_radians(),
                 drag: motion.drag,
+                direction: Vec3::from_array(init.direction).normalize_or_zero(),
+                _direction_padding: 0.0,
                 lifetime: Vec2::new(init.lifetime.min, init.lifetime.max),
                 speed: Vec2::new(init.speed.min, init.speed.max),
                 angular_velocity: Vec2::new(init.angular_velocity.min, init.angular_velocity.max),
-                gravity: Vec2::from_array(motion.gravity),
+                _range_padding: Vec2::ZERO,
+                gravity: Vec3::from_array(motion.gravity),
                 turbulence: motion.turbulence,
                 size: pack_curve(appearance.size)?,
                 opacity: pack_curve(appearance.opacity)?,
                 color: pack_gradient(appearance.color)?,
-                _padding: Vec3::ZERO,
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }
@@ -336,7 +349,7 @@ impl GpuEffectArtifact {
             renderers,
             particles: vec![GpuParticle::default(); slot_offset as usize],
             total_slots: slot_offset,
-            bounds_half_extents: bounds_half_extents.extend(0.1),
+            bounds_half_extents,
         })
     }
 }
@@ -987,16 +1000,23 @@ fn emitter_bounds(
     shape: EmitterShape,
     lifetime: ScalarRange,
     speed: ScalarRange,
-    gravity: [f32; 2],
+    gravity: [f32; 3],
     turbulence: f32,
     size: &CompiledCurve,
-) -> Vec2 {
+) -> Vec3 {
     let shape_extents = match shape {
-        EmitterShape::Point => Vec2::ZERO,
+        EmitterShape::Point => Vec3::ZERO,
         EmitterShape::Circle { radius } | EmitterShape::Ring { radius } => {
-            Vec2::splat(radius.abs())
+            Vec3::new(radius.abs(), radius.abs(), 0.0)
         }
-        EmitterShape::Cone { radius, depth } => Vec2::new(radius.abs(), depth.abs()),
+        EmitterShape::Sphere { radius } | EmitterShape::Hemisphere { radius } => {
+            Vec3::splat(radius.abs())
+        }
+        EmitterShape::Box { half_extents } => Vec3::from_array(half_extents).abs(),
+        EmitterShape::Cylinder { radius, depth } => {
+            Vec3::new(radius.abs(), depth.abs() * 0.5, radius.abs())
+        }
+        EmitterShape::Cone { radius, depth } => Vec3::new(radius.abs(), depth.abs(), radius.abs()),
     };
     let lifetime = lifetime.min.abs().max(lifetime.max.abs());
     let speed = speed.min.abs().max(speed.max.abs());
@@ -1013,9 +1033,10 @@ fn emitter_bounds(
         )
         * 0.5;
     shape_extents
-        + Vec2::new(
-            travel + turbulence.abs() + gravity[0].abs() * lifetime * 0.1 + size,
-            travel + gravity[1].abs() * lifetime * lifetime * 0.5 + size,
+        + Vec3::new(
+            travel + turbulence.abs() + gravity[0].abs() * lifetime * lifetime * 0.5 + size,
+            travel + turbulence.abs() + gravity[1].abs() * lifetime * lifetime * 0.5 + size,
+            travel + turbulence.abs() + gravity[2].abs() * lifetime * lifetime * 0.5 + size,
         )
 }
 
@@ -1101,7 +1122,7 @@ fn shape(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<EmitterShape> 
 struct GpuInitialize {
     lifetime: ScalarRange,
     speed: ScalarRange,
-    direction_degrees: f32,
+    direction: [f32; 3],
     spread_degrees: f32,
     angular_velocity: ScalarRange,
 }
@@ -1113,14 +1134,14 @@ fn initialize(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuInitia
             Instruction::Initialize {
                 lifetime,
                 speed,
-                direction_degrees,
+                direction,
                 spread_degrees,
                 angular_velocity,
                 ..
             } => Some(GpuInitialize {
                 lifetime: *lifetime.resolve(values),
                 speed: *speed.resolve(values),
-                direction_degrees: *direction_degrees.resolve(values),
+                direction: *direction.resolve(values),
                 spread_degrees: *spread_degrees.resolve(values),
                 angular_velocity: *angular_velocity.resolve(values),
             }),
@@ -1130,7 +1151,7 @@ fn initialize(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuInitia
 
 #[derive(Default)]
 struct GpuMotion {
-    gravity: [f32; 2],
+    gravity: [f32; 3],
     drag: f32,
     turbulence: f32,
 }
@@ -1204,6 +1225,68 @@ mod tests {
         assert_eq!(artifact.emitters[0].slot_offset, 0);
         assert_eq!(artifact.emitters[1].slot_offset, 17);
         assert_eq!(artifact.particles.len(), 40);
+    }
+
+    #[test]
+    fn artifact_packs_native_3d_shape_motion_and_bounds() {
+        let mut effect = EffectAsset::new("3D GPU", 2.0);
+        let mut emitter = Emitter::basic_sprite("Volume", 2.0);
+        let shape = emitter
+            .modules
+            .iter_mut()
+            .find(|module| {
+                matches!(
+                    &module.parameters,
+                    aestra_core::ModuleParameters::Shape { .. }
+                )
+            })
+            .unwrap();
+        shape.parameters = aestra_core::ModuleParameters::Shape {
+            shape: EmitterShape::Box {
+                half_extents: [2.0, 3.0, 4.0],
+            },
+        };
+        let initialize = emitter
+            .modules
+            .iter_mut()
+            .find(|module| {
+                matches!(
+                    &module.parameters,
+                    aestra_core::ModuleParameters::Initialize { .. }
+                )
+            })
+            .unwrap();
+        if let aestra_core::ModuleParameters::Initialize { direction, .. } =
+            &mut initialize.parameters
+        {
+            *direction = [1.0, 2.0, 3.0];
+        }
+        let motion = emitter
+            .modules
+            .iter_mut()
+            .find(|module| {
+                matches!(
+                    &module.parameters,
+                    aestra_core::ModuleParameters::Motion { .. }
+                )
+            })
+            .unwrap();
+        if let aestra_core::ModuleParameters::Motion { gravity, .. } = &mut motion.parameters {
+            *gravity = [4.0, 5.0, 6.0];
+        }
+        effect.emitters.push(emitter);
+
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
+        let emitter = artifact.emitters[0];
+
+        assert_eq!(emitter.shape_kind, 5);
+        assert_eq!(emitter.shape_radius, 2.0);
+        assert_eq!(emitter.shape_depth, 3.0);
+        assert_eq!(emitter.shape_extent_z, 4.0);
+        assert_eq!(emitter.gravity, Vec3::new(4.0, 5.0, 6.0));
+        assert!((emitter.direction.length() - 1.0).abs() < 0.0001);
+        assert!(artifact.bounds_half_extents.z > 4.0);
     }
 
     #[test]

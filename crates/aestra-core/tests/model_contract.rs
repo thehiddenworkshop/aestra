@@ -1,7 +1,7 @@
 use aestra_core::{
     AssetDefinition, DiagnosticCode, EffectAsset, EffectParameter, Emitter, EmitterId,
-    FlipbookDefinition, MODULE_EMISSION, MaterialProperties, ParameterId, RendererInstance,
-    ScalarRange, Value,
+    EmitterShape, FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE, MaterialProperties,
+    ModuleParameters, ParameterId, RendererInstance, ScalarRange, Value,
 };
 
 #[test]
@@ -220,4 +220,26 @@ fn binding_types_are_validated_in_the_semantic_model() {
             .iter()
             .any(|diagnostic| diagnostic.code == DiagnosticCode::ParameterTypeMismatch)
     );
+}
+
+#[test]
+fn volumetric_shape_dimensions_are_validated() {
+    let mut effect = EffectAsset::new("Invalid volume", 1.0);
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
+    emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_SHAPE)
+        .unwrap()
+        .parameters = ModuleParameters::Shape {
+        shape: EmitterShape::Box {
+            half_extents: [2.0, 0.0, 4.0],
+        },
+    };
+    effect.emitters.push(emitter);
+
+    let report = effect.validation_report();
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidValue && diagnostic.path.ends_with("shape")
+    }));
 }

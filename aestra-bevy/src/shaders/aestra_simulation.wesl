@@ -32,15 +32,17 @@ struct Emitter {
     spawn_rate: f32,
     shape_radius: f32,
     shape_depth: f32,
-    direction_radians: f32,
+    shape_extent_z: f32,
     spread_radians: f32,
     drag: f32,
+    direction: vec3<f32>,
+    _direction_padding: f32,
     lifetime: vec2<f32>,
     speed: vec2<f32>,
     angular_velocity: vec2<f32>,
-    gravity: vec2<f32>,
+    _range_padding: vec2<f32>,
+    gravity: vec3<f32>,
     turbulence: f32,
-    _padding: vec3<f32>,
     size: Curve,
     opacity: Curve,
     color: Gradient,
@@ -48,13 +50,16 @@ struct Emitter {
 
 struct Particle {
     color: vec4<f32>,
-    position: vec2<f32>,
+    position: vec3<f32>,
     size: f32,
     rotation: f32,
     normalized_age: f32,
     emitter_index: u32,
     alive: u32,
     particle_index: u32,
+    _padding_0: u32,
+    _padding_1: u32,
+    _padding_2: u32,
 }
 
 struct Globals {
@@ -138,11 +143,14 @@ fn sample_gradient(gradient: Gradient, time: f32) -> vec4<f32> {
 fn dead_particle(emitter_index: u32) -> Particle {
     return Particle(
         vec4<f32>(0.0),
-        vec2<f32>(0.0),
+        vec3<f32>(0.0),
         0.0,
         0.0,
         0.0,
         emitter_index,
+        0u,
+        0u,
+        0u,
         0u,
         0u,
     );
@@ -220,21 +228,60 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let normalized_age = age / lifetime;
-    let direction = emitter.direction_radians
-        + (hash01(particle_index, 1u) - 0.5) * emitter.spread_radians;
+    let forward = normalize(emitter.direction);
+    let half_angle = min(abs(emitter.spread_radians) * 0.5, 3.141592653589793);
+    let cos_theta = 1.0 - hash01(particle_index, 1u) * (1.0 - cos(half_angle));
+    let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
+    let direction_angle = hash01(particle_index, 11u) * TAU;
+    var helper = vec3<f32>(0.0, 1.0, 0.0);
+    if abs(forward.y) >= 0.999 {
+        helper = vec3<f32>(1.0, 0.0, 0.0);
+    }
+    let tangent = normalize(cross(helper, forward));
+    let bitangent = cross(forward, tangent);
+    let direction = forward * cos_theta
+        + tangent * (sin_theta * cos(direction_angle))
+        + bitangent * (sin_theta * sin(direction_angle));
     let speed = sample_range(emitter.speed, hash01(particle_index, 2u));
     let shape_angle = hash01(particle_index, 5u) * TAU;
-    var origin = vec2<f32>(0.0);
+    var origin = vec3<f32>(0.0);
     if emitter.shape_kind == 1u {
         let radius = emitter.shape_radius * sqrt(hash01(particle_index, 6u));
-        origin = vec2<f32>(cos(shape_angle), sin(shape_angle)) * radius;
+        origin = vec3<f32>(cos(shape_angle) * radius, sin(shape_angle) * radius, 0.0);
     } else if emitter.shape_kind == 2u {
-        origin = vec2<f32>(cos(shape_angle), sin(shape_angle)) * emitter.shape_radius;
+        origin = vec3<f32>(
+            cos(shape_angle) * emitter.shape_radius,
+            sin(shape_angle) * emitter.shape_radius,
+            0.0,
+        );
     } else if emitter.shape_kind == 3u {
+        let y = hash01(particle_index, 6u) * 2.0 - 1.0;
+        let radial = sqrt(max(1.0 - y * y, 0.0));
+        let radius = emitter.shape_radius * pow(hash01(particle_index, 8u), 0.3333333333333333);
+        origin = vec3<f32>(cos(shape_angle) * radial, y, sin(shape_angle) * radial) * radius;
+    } else if emitter.shape_kind == 4u {
+        let y = hash01(particle_index, 6u);
+        let radial = sqrt(max(1.0 - y * y, 0.0));
+        let radius = emitter.shape_radius * pow(hash01(particle_index, 8u), 0.3333333333333333);
+        origin = vec3<f32>(cos(shape_angle) * radial, y, sin(shape_angle) * radial) * radius;
+    } else if emitter.shape_kind == 5u {
+        origin = vec3<f32>(
+            (hash01(particle_index, 5u) * 2.0 - 1.0) * emitter.shape_radius,
+            (hash01(particle_index, 6u) * 2.0 - 1.0) * emitter.shape_depth,
+            (hash01(particle_index, 7u) * 2.0 - 1.0) * emitter.shape_extent_z,
+        );
+    } else if emitter.shape_kind == 6u {
+        let radius = emitter.shape_radius * sqrt(hash01(particle_index, 6u));
+        origin = vec3<f32>(
+            cos(shape_angle) * radius,
+            (hash01(particle_index, 7u) - 0.5) * emitter.shape_depth,
+            sin(shape_angle) * radius,
+        );
+    } else if emitter.shape_kind == 7u {
         let y = hash01(particle_index, 6u) * emitter.shape_depth;
-        let x = (hash01(particle_index, 7u) * 2.0 - 1.0)
-            * emitter.shape_radius * (y / max(emitter.shape_depth, 0.001));
-        origin = vec2<f32>(x, y);
+        let radius = emitter.shape_radius * (y / max(emitter.shape_depth, 0.001))
+            * sqrt(hash01(particle_index, 7u));
+        origin = vec3<f32>(cos(shape_angle) * radius, y, sin(shape_angle) * radius);
     }
 
     let damping = exp(-max(emitter.drag, 0.0) * age);
@@ -242,14 +289,12 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if abs(emitter.drag) >= 0.0001 {
         travel = speed * (1.0 - damping) / max(emitter.drag, 0.0001);
     }
-    let turbulence = emitter.turbulence
-        * sin(age * 7.0 + hash01(particle_index, 3u) * TAU);
-    let position = vec2<f32>(
-        origin.x + cos(direction) * travel + turbulence,
-        origin.y + sin(direction) * travel
-            + emitter.gravity.y * age * age * 0.5
-            + emitter.gravity.x * age * 0.1,
+    let turbulence = emitter.turbulence * vec3<f32>(
+        sin(age * 7.0 + hash01(particle_index, 3u) * TAU),
+        sin(age * 6.3 + hash01(particle_index, 8u) * TAU),
+        sin(age * 7.7 + hash01(particle_index, 10u) * TAU),
     );
+    let position = origin + direction * travel + emitter.gravity * age * age * 0.5 + turbulence;
     var color = sample_gradient(emitter.color, normalized_age);
     color.a *= sample_curve(emitter.opacity, normalized_age);
     let rotation = sample_range(emitter.angular_velocity, hash01(particle_index, 4u)) * age;
@@ -263,6 +308,9 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         emitter_index,
         1u,
         particle_index,
+        0u,
+        0u,
+        0u,
     );
     let compact_index = atomicAdd(&counters[0], 1u);
     alive_indices[compact_index] = slot;

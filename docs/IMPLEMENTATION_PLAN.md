@@ -9,7 +9,7 @@ architecture vision; this file is the shorter delivery plan.
 ## Current delivery status
 
 - M0 reference behavior and architecture decisions: complete.
-- M1 semantic core and format v2 foundation: complete for the initial module set.
+- M1 semantic core and format v3 foundation: complete for the native 3D module set.
 - M2 deterministic authoring operations: complete for current editor operations.
 - M3 module registry, compiler frontend, and CPU runtime: complete for the initial module set.
 - M4 first GPU production slice: complete. The deterministic WESL compute substrate,
@@ -110,9 +110,9 @@ but its format-v1 schema is not retained.
    boundary is needed and tested.
 5. Keep the CPU evaluator as the conformance oracle while introducing a compiler
    and GPU backend.
-6. Replace prototype format v1 with format v2. Only v2 is supported; no legacy
+6. Replace the planar prototype formats with native-3D format v3. Only v3 is supported; no legacy
    parser or migration layer is maintained.
-7. Implement commands immediately after the v2 semantic foundation. Although the
+7. Implement commands immediately after the v3 semantic foundation. Although the
    source document lists commands later in one revised priority list, commands do
    not depend on the GPU runtime and are necessary to make subsequent editor
    changes safe and automatable.
@@ -159,7 +159,7 @@ Deliverables:
 
 - architecture decisions for terminology, IDs, the format reset, and crate
   boundaries;
-- a golden v2 asset and deterministic evaluator snapshots at selected times;
+- a golden v3 asset and deterministic evaluator snapshots at selected times;
 - save/load, evaluator determinism, and viewer capture smoke tests;
 - performance baseline for the bundled example;
 - explicit statement that `EffectAsset`, `CompiledEffect`, and `EffectInstance`
@@ -168,7 +168,7 @@ Deliverables:
 Exit gate: the current sample can be compared mechanically with every subsequent
 runtime implementation.
 
-### M1 — Semantic core and format v2
+### M1 — Semantic core and format v3
 
 Goal: define a complete authored effect independently of Bevy and editor layout.
 
@@ -199,7 +199,7 @@ Particle Update: Gravity, Drag, Turbulence, ColorOverLife, SizeOverLife,
 Renderer:        SpriteRenderer
 ```
 
-Exit gate: a v2 effect can be created, validated, serialized deterministically,
+Exit gate: a v3 effect can be created, validated, serialized deterministically,
 loaded without Bevy, and can represent the current bundled example.
 
 ### M2 — Deterministic authoring operations
@@ -245,7 +245,7 @@ Start `crates/aestra-compiler` and `crates/aestra-runtime` with:
   emitters, and runtime allocation handles;
 - a deterministic CPU interpreter for the initial IR.
 
-Exit gate: format-v2 examples compile and match the frozen CPU reference within
+Exit gate: format-v3 examples compile and match the frozen CPU reference within
 defined tolerances; editor and viewer preview only through compile/instantiate/
 update APIs.
 
@@ -391,14 +391,14 @@ changes:
 1. Add architecture decisions and golden reference-behavior tests.
 2. Create `aestra-core` with typed IDs, diagnostic types, and deterministic value
    primitives.
-3. Add the minimal v2 `EffectAsset`, stage, module instance, and sprite renderer
+3. Add the minimal v3 `EffectAsset`, stage, module instance, and sprite renderer
    model.
-4. Replace the example with format v2 and add golden serialization tests.
+4. Replace the example with format v3 and add golden serialization tests.
 5. Create `aestra-authoring` with commands, atomic transactions, selection, locks,
    history, and semantic diff.
 6. Refactor `EditorSession` to submit commands while retaining the existing UI.
 7. Move persistence and semantic validation out of `aestra-bevy`.
-8. Update editor/viewer loading so both accept and save only v2 assets.
+8. Update editor/viewer loading so both accept and save only v3 assets.
 
 This slice intentionally does not redesign the UI, generate WESL, add an LLM, or
 implement every future module.

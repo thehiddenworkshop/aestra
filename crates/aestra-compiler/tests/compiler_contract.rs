@@ -32,7 +32,7 @@ fn builtin_registry_exposes_authoring_and_runtime_metadata() {
     let gravity = &motion.inputs[0];
     assert_eq!(gravity.display_name, "Gravity");
     assert_eq!(gravity.unit, Some("units/s²"));
-    assert_eq!(gravity.default_value, Value::Vec2([0.0, -18.0]));
+    assert_eq!(gravity.default_value, Value::Vec3([0.0, -18.0, 0.0]));
     assert!(!gravity.description.is_empty());
 }
 
