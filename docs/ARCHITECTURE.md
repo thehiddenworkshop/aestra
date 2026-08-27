@@ -177,7 +177,7 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [x] native file dialogs, project asset discovery, and unsaved-change protection
 - [x] module registry, typed compiler plan, runtime instances, and CPU extraction
 - [x] runtime parameter slots, compiled curves, constant folding, and attribute liveness
-- [ ] timeline zooming and snapping
+- [x] cursor-centered timeline zooming, panning, adaptive rulers, and configurable snapping
 - node/module stack for spawn, initialize, update, renderer, and events
 - autosave/recovery and asset migrations
 - [x] versioned persistent editor settings and a dockable Settings workspace

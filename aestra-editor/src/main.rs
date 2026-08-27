@@ -26,6 +26,7 @@ use bevy::{
         constants::{fonts, icons},
         containers::{group, group_body, group_header, pane_header},
         controls::{NumberInputValue, UpdateNumberInput},
+        cursor::{EntityCursor, OverrideCursor},
         display::{icon, label, label_dim},
         theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText},
         tokens,
@@ -95,6 +96,7 @@ fn main() {
     if let Some(diagnostic) = persistence.diagnostic() {
         session.status = diagnostic.into();
     }
+    let timeline = TimelineState::framed(session.playback_duration());
     let menu = MenuState {
         show_grid: settings.preview.show_grid,
         ..default()
@@ -109,6 +111,7 @@ fn main() {
         .insert_resource(UiScale(ui_scale))
         .insert_resource(EffectCatalog::scan())
         .insert_resource(menu)
+        .insert_resource(timeline)
         .init_resource::<EditorModuleRegistry>()
         .init_resource::<ModulePaletteState>()
         .init_resource::<DiagnosticsPanelState>()
@@ -193,7 +196,7 @@ fn main() {
                     handle_window_close_requests,
                     persist_native_window_geometry,
                     dismiss_open_menus,
-                    scrub_timeline,
+                    (navigate_timeline, scrub_timeline).chain(),
                     advance_playback,
                     sync_rendered_preview,
                     update_preview,
@@ -217,7 +220,6 @@ fn main() {
                 )
                     .chain(),
                 (
-                    update_playhead,
                     update_layer_selection,
                     update_menu_visibility,
                     update_grid_menu_check,
@@ -231,6 +233,7 @@ fn main() {
                     remember_scroll_positions,
                     rebuild_editor_ui,
                     restore_scroll_positions,
+                    (update_timeline_visuals, update_timeline_scrollbar).chain(),
                     (
                         sync_settings_number_inputs,
                         sync_emitter_number_inputs,
@@ -285,6 +288,8 @@ enum EditorAction {
     DeleteLayer,
     SelectLayer(usize),
     EffectDuration(f32),
+    SetTimelineSnap(TimelineSnapMode),
+    FrameTimeline,
     OpenModulePalette(StackStage),
     CloseModulePalette,
     AddModule(usize),
@@ -880,6 +885,177 @@ struct AboutOverlay;
 #[derive(Component)]
 struct TimelineCanvas;
 
+#[derive(Component, Clone, Copy)]
+struct TimelineClip {
+    emitter: EmitterId,
+}
+
+#[derive(Component, Clone, Copy)]
+struct TimelineClipInteraction {
+    emitter: EmitterId,
+    kind: TimelineDragKind,
+}
+
+#[derive(Component)]
+struct TimelineRulerTick(usize);
+
+#[derive(Component)]
+struct TimelineSnapGuide;
+
+#[derive(Component)]
+struct TimelineScrollbarTrack;
+
+#[derive(Component)]
+struct TimelineScrollbarThumb;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum TimelineSnapMode {
+    None,
+    Frames,
+    Seconds,
+    #[default]
+    Smart,
+}
+
+impl TimelineSnapMode {
+    const ALL: [Self; 4] = [Self::None, Self::Frames, Self::Seconds, Self::Smart];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::None => "Snap: Off",
+            Self::Frames => "Snap: Frames",
+            Self::Seconds => "Snap: Time",
+            Self::Smart => "Snap: Smart",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TimelineDragKind {
+    Move,
+    TrimStart,
+    TrimEnd,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TimelineDrag {
+    emitter: EmitterId,
+    kind: TimelineDragKind,
+    pointer_start: f32,
+    original_start: f32,
+    original_duration: f32,
+    current_start: f32,
+    current_duration: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TimelineScrollbarDrag {
+    view_start: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TimelineView {
+    start: f32,
+    end: f32,
+}
+
+impl TimelineView {
+    fn span(self) -> f32 {
+        (self.end - self.start).max(0.000_1)
+    }
+
+    fn time_at(self, normalized: f32) -> f32 {
+        self.start + normalized.clamp(0.0, 1.0) * self.span()
+    }
+
+    fn normalized_time(self, time: f32) -> f32 {
+        (time - self.start) / self.span()
+    }
+}
+
+#[derive(Resource, Debug)]
+struct TimelineState {
+    view: TimelineView,
+    snap: TimelineSnapMode,
+    drag: Option<TimelineDrag>,
+    snap_guide: Option<f32>,
+    panning: bool,
+    scrollbar_drag: Option<TimelineScrollbarDrag>,
+    known_duration: f32,
+}
+
+impl Default for TimelineState {
+    fn default() -> Self {
+        Self::framed(1.0)
+    }
+}
+
+impl TimelineState {
+    fn framed(duration: f32) -> Self {
+        let duration = duration.max(0.05);
+        Self {
+            view: TimelineView {
+                start: 0.0,
+                end: duration,
+            },
+            snap: TimelineSnapMode::Smart,
+            drag: None,
+            snap_guide: None,
+            panning: false,
+            scrollbar_drag: None,
+            known_duration: duration,
+        }
+    }
+
+    fn frame_all(&mut self, duration: f32) {
+        let duration = duration.max(0.05);
+        self.view = TimelineView {
+            start: 0.0,
+            end: duration,
+        };
+        self.known_duration = duration;
+        self.snap_guide = None;
+    }
+
+    fn ensure_duration(&mut self, duration: f32) {
+        let duration = duration.max(0.05);
+        if (duration - self.known_duration).abs() <= f32::EPSILON {
+            return;
+        }
+        let was_framed =
+            self.view.start <= f32::EPSILON && (self.view.end - self.known_duration).abs() < 0.001;
+        self.known_duration = duration;
+        if was_framed {
+            self.frame_all(duration);
+        } else {
+            self.clamp_view(duration);
+        }
+    }
+
+    fn zoom_at(&mut self, anchor: f32, factor: f32, duration: f32, tick_rate: u32) {
+        let duration = duration.max(0.05);
+        let minimum_span = (4.0 / tick_rate.max(1) as f32).max(0.01);
+        let old_span = self.view.span();
+        let new_span = (old_span * factor).clamp(minimum_span.min(duration), duration);
+        let anchor_ratio = ((anchor - self.view.start) / old_span).clamp(0.0, 1.0);
+        self.view.start = anchor - new_span * anchor_ratio;
+        self.view.end = self.view.start + new_span;
+        self.clamp_view(duration);
+    }
+
+    fn pan_by(&mut self, delta: f32, duration: f32) {
+        self.view.start += delta;
+        self.view.end += delta;
+        self.clamp_view(duration.max(0.05));
+    }
+
+    fn clamp_view(&mut self, duration: f32) {
+        let span = self.view.span().min(duration);
+        self.view.start = self.view.start.clamp(0.0, (duration - span).max(0.0));
+        self.view.end = self.view.start + span;
+    }
+}
+
 #[derive(Component)]
 struct CurveGraph;
 
@@ -1112,6 +1288,7 @@ struct LayerRow(usize);
 #[derive(Clone, Copy)]
 struct PanelSources<'a> {
     session: &'a EditorSession,
+    timeline: &'a TimelineState,
     catalog: &'a EffectCatalog,
     registry: &'a EditorModuleRegistry,
     palette: &'a ModulePaletteState,
@@ -1138,6 +1315,7 @@ struct UiBuildResources<'w, 's> {
     settings_persistence: Res<'w, SettingsPersistence>,
     localizer: Res<'w, Localizer>,
     workspace: Res<'w, WorkspaceState>,
+    timeline: Res<'w, TimelineState>,
     preview_camera: Single<'w, 's, Entity, With<PreviewRenderCamera>>,
 }
 
@@ -1152,6 +1330,7 @@ struct SetupUiResources<'w> {
     settings_panel: Res<'w, SettingsPanelState>,
     settings_persistence: Res<'w, SettingsPersistence>,
     localizer: Res<'w, Localizer>,
+    timeline: Res<'w, TimelineState>,
 }
 
 #[derive(SystemParam)]
@@ -1209,6 +1388,7 @@ fn setup_editor(
     ));
     let sources = PanelSources {
         session: &session,
+        timeline: &editor_resources.timeline,
         catalog: &catalog,
         registry: &editor_resources.registry,
         palette: &editor_resources.palette,
@@ -3238,7 +3418,7 @@ fn spawn_panel_content(
                 sources.settings,
             );
         }
-        DockPanel::Timeline => spawn_timeline(parent, sources.session),
+        DockPanel::Timeline => spawn_timeline(parent, sources.session, sources.timeline),
         DockPanel::Curves => {
             spawn_curves_workspace(parent, sources.session, sources.registry, workspace);
         }
@@ -6649,7 +6829,11 @@ fn format_value(value: Value) -> String {
     }
 }
 
-fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_timeline(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    timeline_state: &TimelineState,
+) {
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -6684,6 +6868,22 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                     ));
                     mini_button(header, "<", EditorAction::StepFrame(-1));
                     mini_button(header, ">", EditorAction::StepFrame(1));
+                    mini_button(header, "All", EditorAction::FrameTimeline);
+                    let snap_options = TimelineSnapMode::ALL
+                        .into_iter()
+                        .map(|mode| ComboOption {
+                            label: mode.label().to_owned(),
+                            selected: timeline_state.snap == mode,
+                            action: EditorAction::SetTimelineSnap(mode),
+                        })
+                        .collect::<Vec<_>>();
+                    spawn_combo_control(
+                        header,
+                        timeline_state.snap.label(),
+                        "Timeline snapping",
+                        &snap_options,
+                        112.0,
+                    );
                     header.spawn(Node {
                         flex_grow: 1.0,
                         ..default()
@@ -6761,12 +6961,13 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                             position_type: PositionType::Relative,
                             padding: UiRect::top(Val::Px(25.0)),
                             flex_direction: FlexDirection::Column,
+                            overflow: Overflow::clip(),
                             ..default()
                         },
                         BackgroundColor(theme::TIMELINE_BG),
                     ))
                     .with_children(|tracks| {
-                        spawn_ruler(tracks, session.playback_duration());
+                        spawn_ruler(tracks);
                         for (index, layer) in session.effect.emitters.iter().enumerate() {
                             tracks
                                 .spawn(Node {
@@ -6777,25 +6978,113 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                                     ..default()
                                 })
                                 .with_children(|track| {
-                                    let duration = session.playback_duration();
-                                    let start = layer.start_time / duration * 100.0;
-                                    let width = layer.duration / duration * 100.0;
-                                    track.spawn((
-                                        Node {
-                                            position_type: PositionType::Absolute,
-                                            left: Val::Percent(start),
-                                            top: Val::Px(5.0),
-                                            width: Val::Percent(width.min(100.0 - start)),
-                                            height: Val::Px(21.0),
-                                            border_radius: BorderRadius::all(Val::Px(3.0)),
-                                            border: UiRect::all(Val::Px(1.0)),
-                                            ..default()
-                                        },
-                                        BackgroundColor(layer_color_alpha(index, 0.28)),
-                                        BorderColor::all(layer_color(index)),
-                                    ));
+                                    track
+                                        .spawn((
+                                            TimelineClip { emitter: layer.id },
+                                            Node {
+                                                position_type: PositionType::Absolute,
+                                                left: Val::Percent(0.0),
+                                                top: Val::Px(5.0),
+                                                width: Val::Percent(1.0),
+                                                height: Val::Px(21.0),
+                                                border_radius: BorderRadius::all(Val::Px(3.0)),
+                                                border: UiRect::all(Val::Px(1.0)),
+                                                overflow: Overflow::clip(),
+                                                ..default()
+                                            },
+                                            BackgroundColor(layer_color_alpha(index, 0.28)),
+                                            BorderColor::all(layer_color(index)),
+                                        ))
+                                        .with_children(|clip| {
+                                            clip.spawn((
+                                                Button,
+                                                EditorNativeControl,
+                                                TimelineClipInteraction {
+                                                    emitter: layer.id,
+                                                    kind: TimelineDragKind::Move,
+                                                },
+                                                EntityCursor::System(SystemCursorIcon::Grab),
+                                                Node {
+                                                    position_type: PositionType::Absolute,
+                                                    left: Val::Px(8.0),
+                                                    right: Val::Px(8.0),
+                                                    top: Val::Px(0.0),
+                                                    bottom: Val::Px(0.0),
+                                                    ..default()
+                                                },
+                                                BackgroundColor(Color::NONE),
+                                            ))
+                                            .observe(begin_timeline_clip_drag)
+                                            .observe(move_timeline_clip_drag)
+                                            .observe(finish_timeline_clip_drag)
+                                            .observe(select_timeline_clip);
+                                            for (kind, left, right) in [
+                                                (
+                                                    TimelineDragKind::TrimStart,
+                                                    Val::Px(0.0),
+                                                    Val::Auto,
+                                                ),
+                                                (
+                                                    TimelineDragKind::TrimEnd,
+                                                    Val::Auto,
+                                                    Val::Px(0.0),
+                                                ),
+                                            ] {
+                                                clip.spawn((
+                                                    Button,
+                                                    EditorNativeControl,
+                                                    TimelineClipInteraction {
+                                                        emitter: layer.id,
+                                                        kind,
+                                                    },
+                                                    EntityCursor::System(
+                                                        SystemCursorIcon::EwResize,
+                                                    ),
+                                                    Node {
+                                                        position_type: PositionType::Absolute,
+                                                        left,
+                                                        right,
+                                                        top: Val::Px(0.0),
+                                                        width: Val::Px(8.0),
+                                                        height: Val::Percent(100.0),
+                                                        align_items: AlignItems::Center,
+                                                        justify_content: JustifyContent::Center,
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(Color::NONE),
+                                                ))
+                                                .observe(begin_timeline_clip_drag)
+                                                .observe(move_timeline_clip_drag)
+                                                .observe(finish_timeline_clip_drag)
+                                                .observe(select_timeline_clip)
+                                                .with_child((
+                                                    Node {
+                                                        width: Val::Px(2.0),
+                                                        height: Val::Px(13.0),
+                                                        ..default()
+                                                    },
+                                                    BackgroundColor(layer_color(index)),
+                                                    Pickable::IGNORE,
+                                                ));
+                                            }
+                                        });
                                 });
                         }
+                        tracks.spawn((
+                            TimelineSnapGuide,
+                            Node {
+                                display: Display::None,
+                                position_type: PositionType::Absolute,
+                                left: Val::Percent(0.0),
+                                top: Val::Px(0.0),
+                                width: Val::Px(1.0),
+                                height: Val::Percent(100.0),
+                                ..default()
+                            },
+                            BackgroundColor(theme::ACCENT),
+                            Pickable::IGNORE,
+                            ZIndex(3),
+                        ));
                         tracks.spawn((
                             Playhead,
                             Node {
@@ -6807,7 +7096,46 @@ fn spawn_timeline(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
                                 ..default()
                             },
                             BackgroundColor(theme::PLAYHEAD),
+                            Pickable::IGNORE,
+                            ZIndex(2),
                         ));
+                        tracks
+                            .spawn((
+                                TimelineScrollbarTrack,
+                                RelativeCursorPosition::default(),
+                                Node {
+                                    display: Display::None,
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(6.0),
+                                    right: Val::Px(6.0),
+                                    bottom: Val::Px(3.0),
+                                    height: Val::Px(10.0),
+                                    border_radius: BorderRadius::all(Val::Px(5.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme::PANEL_LIGHT.with_alpha(0.88)),
+                                ZIndex(5),
+                            ))
+                            .with_child((
+                                Button,
+                                EditorNativeControl,
+                                TimelineScrollbarThumb,
+                                EntityCursor::System(SystemCursorIcon::Grab),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Percent(0.0),
+                                    top: Val::Px(2.0),
+                                    width: Val::Percent(100.0),
+                                    min_width: Val::Px(20.0),
+                                    height: Val::Px(6.0),
+                                    border_radius: BorderRadius::all(Val::Px(3.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme::TEXT_FAINT.with_alpha(0.75)),
+                            ))
+                            .observe(begin_timeline_scrollbar_drag)
+                            .observe(move_timeline_scrollbar_drag)
+                            .observe(finish_timeline_scrollbar_drag);
                     });
                 });
         });
@@ -10690,22 +11018,38 @@ fn spawn_complex_controls(
         });
 }
 
-fn spawn_ruler(parent: &mut ChildSpawnerCommands, duration: f32) {
-    for index in 0..=7 {
-        parent.spawn((
-            Text::new(format!("{:.1}", index as f32 / 7.0 * duration)),
-            TextFont {
-                font_size: FontSize::Px(9.0),
-                ..default()
-            },
-            TextColor(theme::TEXT_FAINT),
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Percent(index as f32 / 7.0 * 100.0),
-                top: Val::Px(5.0),
-                ..default()
-            },
-        ));
+fn spawn_ruler(parent: &mut ChildSpawnerCommands) {
+    for index in 0..32 {
+        parent
+            .spawn((
+                TimelineRulerTick(index),
+                Node {
+                    position_type: PositionType::Absolute,
+                    display: Display::None,
+                    left: Val::Percent(0.0),
+                    top: Val::Px(0.0),
+                    width: Val::Px(1.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
+                BackgroundColor(theme::BORDER.with_alpha(0.55)),
+                Pickable::IGNORE,
+            ))
+            .with_child((
+                Text::new("0.0"),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(4.0),
+                    top: Val::Px(4.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
     }
 }
 
@@ -11114,6 +11458,7 @@ fn handle_buttons(
         ResMut<PreviewCameraController>,
         ResMut<PreviewDisplayState>,
     ),
+    mut timeline_state: ResMut<TimelineState>,
     window: Single<&Window, With<PrimaryWindow>>,
     mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
 ) {
@@ -11321,6 +11666,16 @@ fn handle_buttons(
                     }
                     EditorAction::EffectDuration(delta) => {
                         session.adjust_effect_duration(delta);
+                    }
+                    EditorAction::SetTimelineSnap(mode) => {
+                        if timeline_state.snap != mode {
+                            timeline_state.snap = mode;
+                            timeline_state.snap_guide = None;
+                            session.ui_revision += 1;
+                        }
+                    }
+                    EditorAction::FrameTimeline => {
+                        timeline_state.frame_all(session.playback_duration());
                     }
                     EditorAction::OpenModulePalette(stage) => {
                         palette.open = true;
@@ -12128,10 +12483,348 @@ fn save_session(session: &mut EditorSession, save_as: bool) {
     }
 }
 
-fn scrub_timeline(
-    timeline: Query<(&Interaction, &RelativeCursorPosition), With<TimelineCanvas>>,
+fn navigate_timeline(
+    mut wheel: MessageReader<MouseWheel>,
+    mut motion: MessageReader<MouseMotion>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    canvases: Query<(&RelativeCursorPosition, &ComputedNode), With<TimelineCanvas>>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    if keys.just_pressed(KeyCode::Escape)
+        && (state.drag.take().is_some() || state.scrollbar_drag.take().is_some())
+    {
+        state.snap_guide = None;
+        override_cursor.0 = None;
+        **cursor = CursorIcon::System(SystemCursorIcon::Default);
+    }
+    let pointer_delta = motion
+        .read()
+        .fold(Vec2::ZERO, |sum, event| sum + event.delta);
+    let hovered = canvases.iter().find(|(cursor, _)| cursor.cursor_over());
+
+    if buttons.just_pressed(MouseButton::Middle) && hovered.is_some() {
+        state.panning = true;
+    }
+    if buttons.just_released(MouseButton::Middle) {
+        state.panning = false;
+    }
+    if state.panning && buttons.pressed(MouseButton::Middle) {
+        if let Some((_, canvas)) = hovered {
+            let width = canvas.size().x.max(1.0);
+            let delta_time = -pointer_delta.x / width * state.view.span();
+            state.pan_by(delta_time, session.playback_duration());
+        }
+    }
+
+    let scroll = wheel.read().fold(Vec2::ZERO, |sum, event| {
+        let scale = match event.unit {
+            MouseScrollUnit::Line => 1.0,
+            MouseScrollUnit::Pixel => 0.01,
+        };
+        sum + Vec2::new(event.x, event.y) * scale
+    });
+    let Some((cursor, _)) = hovered else {
+        return;
+    };
+    if scroll == Vec2::ZERO {
+        return;
+    }
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    if shift {
+        let amount = if scroll.x.abs() > scroll.y.abs() {
+            scroll.x
+        } else {
+            scroll.y
+        };
+        let span = state.view.span();
+        state.pan_by(-amount * span * 0.08, session.playback_duration());
+    } else if let Some(position) = cursor.normalized {
+        let anchor = state.view.time_at(position.x);
+        state.zoom_at(
+            anchor,
+            0.82_f32.powf(scroll.y),
+            session.playback_duration(),
+            session.clock.tick_rate(),
+        );
+    }
+}
+
+fn begin_timeline_clip_drag(
+    drag: On<Pointer<DragStart>>,
+    targets: Query<&TimelineClipInteraction>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(target) = targets.get(drag.event_target()) else {
+        return;
+    };
+    let Some(emitter) = session
+        .effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == target.emitter)
+    else {
+        return;
+    };
+    state.drag = Some(TimelineDrag {
+        emitter: target.emitter,
+        kind: target.kind,
+        pointer_start: 0.0,
+        original_start: emitter.start_time,
+        original_duration: emitter.duration,
+        current_start: emitter.start_time,
+        current_duration: emitter.duration,
+    });
+    override_cursor.0 = Some(EntityCursor::System(timeline_system_cursor(
+        target.kind,
+        true,
+    )));
+    **cursor = timeline_drag_cursor(target.kind, true);
+}
+
+fn move_timeline_clip_drag(
+    drag_event: On<Pointer<Drag>>,
+    targets: Query<&TimelineClipInteraction>,
+    canvases: Query<&ComputedNode, With<TimelineCanvas>>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+) {
+    let Ok(target) = targets.get(drag_event.event_target()) else {
+        return;
+    };
+    let Some(mut drag) = state.drag else {
+        return;
+    };
+    if drag.emitter != target.emitter || drag.kind != target.kind {
+        return;
+    }
+    let width = canvases
+        .iter()
+        .map(|canvas| canvas.size().x)
+        .fold(0.0, f32::max)
+        .max(1.0);
+    let pointer_time = drag_event.distance.x / width * state.view.span();
+    let mut snap_guide = state.snap_guide;
+    update_timeline_drag(
+        &mut drag,
+        pointer_time,
+        &session,
+        state.snap,
+        state.view,
+        width,
+        &mut snap_guide,
+    );
+    state.drag = Some(drag);
+    state.snap_guide = snap_guide;
+}
+
+fn finish_timeline_clip_drag(
+    drag_event: On<Pointer<DragEnd>>,
+    targets: Query<&TimelineClipInteraction>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(target) = targets.get(drag_event.event_target()) else {
+        return;
+    };
+    let Some(drag) = state.drag.take() else {
+        return;
+    };
+    if drag.emitter != target.emitter || drag.kind != target.kind {
+        return;
+    }
+    state.snap_guide = None;
+    override_cursor.0 = None;
+    **cursor = timeline_drag_cursor(target.kind, false);
+    commit_timeline_drag(&mut session, drag);
+}
+
+fn commit_timeline_drag(session: &mut EditorSession, drag: TimelineDrag) {
+    let selected_index = session
+        .effect
+        .emitters
+        .iter()
+        .position(|emitter| emitter.id == drag.emitter);
+    let changed = (drag.current_start - drag.original_start).abs() > 0.000_1
+        || (drag.current_duration - drag.original_duration).abs() > 0.000_1;
+    if changed {
+        let label = match drag.kind {
+            TimelineDragKind::Move => "Moved emitter on timeline",
+            TimelineDragKind::TrimStart | TimelineDragKind::TrimEnd => {
+                "Trimmed emitter on timeline"
+            }
+        };
+        session.set_emitter_timing(
+            drag.emitter,
+            drag.current_start,
+            drag.current_duration,
+            label,
+        );
+    }
+    if let Some(index) = selected_index
+        && index != session.selected_layer_index()
+    {
+        session.select_layer(index);
+    }
+}
+
+fn select_timeline_clip(
+    click: On<Pointer<Click>>,
+    targets: Query<&TimelineClipInteraction>,
     mut session: ResMut<EditorSession>,
 ) {
+    let Ok(target) = targets.get(click.event_target()) else {
+        return;
+    };
+    if let Some(index) = session
+        .effect
+        .emitters
+        .iter()
+        .position(|emitter| emitter.id == target.emitter)
+        && index != session.selected_layer_index()
+    {
+        session.select_layer(index);
+    }
+}
+
+fn timeline_drag_cursor(kind: TimelineDragKind, active: bool) -> CursorIcon {
+    CursorIcon::System(timeline_system_cursor(kind, active))
+}
+
+fn timeline_system_cursor(kind: TimelineDragKind, active: bool) -> SystemCursorIcon {
+    match kind {
+        TimelineDragKind::Move if active => SystemCursorIcon::Grabbing,
+        TimelineDragKind::Move => SystemCursorIcon::Grab,
+        TimelineDragKind::TrimStart | TimelineDragKind::TrimEnd => SystemCursorIcon::EwResize,
+    }
+}
+
+fn begin_timeline_scrollbar_drag(
+    drag: On<Pointer<DragStart>>,
+    thumbs: Query<(), With<TimelineScrollbarThumb>>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    if !thumbs.contains(drag.event_target()) {
+        return;
+    }
+    state.scrollbar_drag = Some(TimelineScrollbarDrag {
+        view_start: state.view.start,
+    });
+    override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
+    **cursor = CursorIcon::System(SystemCursorIcon::Grabbing);
+}
+
+fn move_timeline_scrollbar_drag(
+    drag: On<Pointer<Drag>>,
+    thumbs: Query<(), With<TimelineScrollbarThumb>>,
+    tracks: Query<&ComputedNode, With<TimelineScrollbarTrack>>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+) {
+    if !thumbs.contains(drag.event_target()) {
+        return;
+    }
+    let Some(active) = state.scrollbar_drag else {
+        return;
+    };
+    let width = tracks
+        .iter()
+        .map(|track| track.size().x)
+        .fold(0.0, f32::max)
+        .max(1.0);
+    let delta = drag.distance.x / width * session.playback_duration();
+    let span = state.view.span();
+    state.view.start = active.view_start + delta;
+    state.view.end = state.view.start + span;
+    state.clamp_view(session.playback_duration());
+}
+
+fn finish_timeline_scrollbar_drag(
+    drag: On<Pointer<DragEnd>>,
+    thumbs: Query<(), With<TimelineScrollbarThumb>>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    if thumbs.contains(drag.event_target()) {
+        state.scrollbar_drag = None;
+        override_cursor.0 = None;
+        **cursor = CursorIcon::System(SystemCursorIcon::Grab);
+    }
+}
+
+fn update_timeline_drag(
+    drag: &mut TimelineDrag,
+    pointer_time: f32,
+    session: &EditorSession,
+    snap: TimelineSnapMode,
+    view: TimelineView,
+    canvas_width: f32,
+    snap_guide: &mut Option<f32>,
+) {
+    let effect_duration = session.playback_duration();
+    let minimum_duration = (1.0 / session.clock.tick_rate().max(1) as f32).max(0.001);
+    let pointer_delta = pointer_time - drag.pointer_start;
+    *snap_guide = None;
+    match drag.kind {
+        TimelineDragKind::Move => {
+            let unsnapped = (drag.original_start + pointer_delta)
+                .clamp(0.0, (effect_duration - drag.original_duration).max(0.0));
+            let (start, guide) = snap_moved_timing(
+                unsnapped,
+                drag.original_duration,
+                drag.emitter,
+                session,
+                snap,
+                view,
+                canvas_width,
+            );
+            drag.current_start =
+                start.clamp(0.0, (effect_duration - drag.original_duration).max(0.0));
+            drag.current_duration = drag.original_duration;
+            *snap_guide = guide;
+        }
+        TimelineDragKind::TrimStart => {
+            let end = drag.original_start + drag.original_duration;
+            let unsnapped =
+                (drag.original_start + pointer_delta).clamp(0.0, (end - minimum_duration).max(0.0));
+            let (start, guide) =
+                snap_timeline_boundary(unsnapped, drag.emitter, session, snap, view, canvas_width);
+            drag.current_start = start.clamp(0.0, end - minimum_duration);
+            drag.current_duration = end - drag.current_start;
+            *snap_guide = guide;
+        }
+        TimelineDragKind::TrimEnd => {
+            let unsnapped = (drag.original_start + drag.original_duration + pointer_delta)
+                .clamp(drag.original_start + minimum_duration, effect_duration);
+            let (end, guide) =
+                snap_timeline_boundary(unsnapped, drag.emitter, session, snap, view, canvas_width);
+            let end = end.clamp(drag.original_start + minimum_duration, effect_duration);
+            drag.current_start = drag.original_start;
+            drag.current_duration = end - drag.original_start;
+            *snap_guide = guide;
+        }
+    }
+}
+
+fn scrub_timeline(
+    timeline: Query<(&Interaction, &RelativeCursorPosition), With<TimelineCanvas>>,
+    state: Res<TimelineState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if state.drag.is_some() || state.scrollbar_drag.is_some() || state.panning {
+        return;
+    }
     for (interaction, cursor) in &timeline {
         if *interaction != Interaction::Pressed {
             continue;
@@ -12139,7 +12832,7 @@ fn scrub_timeline(
         let Some(position) = cursor.normalized else {
             continue;
         };
-        let time = position.x.clamp(0.0, 1.0) * session.playback_duration();
+        let time = state.view.time_at(position.x);
         session.seek_time(time);
     }
 }
@@ -12493,6 +13186,7 @@ fn sync_native_floating_windows(
 
     let sources = PanelSources {
         session: &session,
+        timeline: &editor_resources.timeline,
         catalog: &editor_resources.catalog,
         registry: &editor_resources.registry,
         palette: &editor_resources.palette,
@@ -12571,6 +13265,7 @@ fn rebuild_editor_ui(
     }
     let sources = PanelSources {
         session: &session,
+        timeline: &editor_resources.timeline,
         catalog: &editor_resources.catalog,
         registry: &editor_resources.registry,
         palette: &editor_resources.palette,
@@ -12898,9 +13593,238 @@ fn update_history_actions(
     }
 }
 
-fn update_playhead(session: Res<EditorSession>, mut playhead: Query<&mut Node, With<Playhead>>) {
-    if let Ok(mut node) = playhead.single_mut() {
-        node.left = Val::Percent(session.time() / session.playback_duration() * 100.0);
+#[allow(clippy::type_complexity)]
+fn update_timeline_visuals(
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    canvases: Query<&ComputedNode, With<TimelineCanvas>>,
+    mut clips: Query<(&TimelineClip, &mut Node), Without<Playhead>>,
+    mut playheads: Query<&mut Node, (With<Playhead>, Without<TimelineClip>)>,
+    mut guides: Query<
+        &mut Node,
+        (
+            With<TimelineSnapGuide>,
+            Without<TimelineClip>,
+            Without<Playhead>,
+            Without<TimelineRulerTick>,
+        ),
+    >,
+    mut ticks: Query<
+        (&TimelineRulerTick, &Children, &mut Node),
+        (
+            Without<TimelineClip>,
+            Without<Playhead>,
+            Without<TimelineSnapGuide>,
+        ),
+    >,
+    mut texts: Query<&mut Text>,
+) {
+    state.ensure_duration(session.playback_duration());
+    let view = state.view;
+    let width = canvases
+        .iter()
+        .map(|canvas| canvas.size().x)
+        .fold(0.0, f32::max)
+        .max(320.0);
+
+    for (clip, mut node) in &mut clips {
+        let Some(emitter) = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == clip.emitter)
+        else {
+            node.display = Display::None;
+            continue;
+        };
+        let (start, duration) = state
+            .drag
+            .filter(|drag| drag.emitter == clip.emitter)
+            .map_or((emitter.start_time, emitter.duration), |drag| {
+                (drag.current_start, drag.current_duration)
+            });
+        let end = start + duration;
+        let visible_start = start.max(view.start);
+        let visible_end = end.min(view.end);
+        if visible_end <= visible_start {
+            node.display = Display::None;
+            continue;
+        }
+        node.display = Display::Flex;
+        node.left = Val::Percent(view.normalized_time(visible_start) * 100.0);
+        node.width =
+            Val::Percent(((visible_end - visible_start) / view.span() * 100.0).clamp(0.05, 100.0));
+    }
+
+    let playhead_position = view.normalized_time(session.time());
+    for mut node in &mut playheads {
+        node.display = if (0.0..=1.0).contains(&playhead_position) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        node.left = Val::Percent(playhead_position.clamp(0.0, 1.0) * 100.0);
+    }
+    for mut node in &mut guides {
+        if let Some(time) = state.snap_guide
+            && (view.start..=view.end).contains(&time)
+        {
+            node.display = Display::Flex;
+            node.left = Val::Percent(view.normalized_time(time) * 100.0);
+        } else {
+            node.display = Display::None;
+        }
+    }
+
+    let step = nice_timeline_step(view.span(), width);
+    let first = (view.start / step).ceil() * step;
+    for (tick, children, mut node) in &mut ticks {
+        let time = first + tick.0 as f32 * step;
+        if time > view.end + step * 0.001 {
+            node.display = Display::None;
+            continue;
+        }
+        node.display = Display::Flex;
+        node.left = Val::Percent(view.normalized_time(time) * 100.0);
+        if let Some(child) = children.first()
+            && let Ok(mut text) = texts.get_mut(*child)
+        {
+            text.0 = format_timeline_tick(time, step);
+        }
+    }
+}
+
+fn update_timeline_scrollbar(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    mut tracks: Query<
+        &mut Node,
+        (
+            With<TimelineScrollbarTrack>,
+            Without<TimelineScrollbarThumb>,
+        ),
+    >,
+    mut thumbs: Query<
+        &mut Node,
+        (
+            With<TimelineScrollbarThumb>,
+            Without<TimelineScrollbarTrack>,
+        ),
+    >,
+) {
+    let duration = session.playback_duration().max(0.05);
+    let visible_ratio = (state.view.span() / duration).clamp(0.0, 1.0);
+    let overflow = visible_ratio < 0.999;
+    for mut node in &mut tracks {
+        node.display = if overflow {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for mut node in &mut thumbs {
+        node.left = Val::Percent((state.view.start / duration * 100.0).clamp(0.0, 100.0));
+        node.width = Val::Percent((visible_ratio * 100.0).clamp(2.0, 100.0));
+    }
+}
+
+fn nice_timeline_step(span: f32, width: f32) -> f32 {
+    let target_ticks = (width / 96.0).clamp(2.0, 24.0);
+    let raw = (span / target_ticks).max(0.000_001);
+    let magnitude = 10.0_f32.powf(raw.log10().floor());
+    let normalized = raw / magnitude;
+    let factor = if normalized <= 1.0 {
+        1.0
+    } else if normalized <= 2.0 {
+        2.0
+    } else if normalized <= 5.0 {
+        5.0
+    } else {
+        10.0
+    };
+    factor * magnitude
+}
+
+fn format_timeline_tick(time: f32, step: f32) -> String {
+    if step >= 1.0 {
+        format!("{time:.1}")
+    } else if step >= 0.1 {
+        format!("{time:.2}")
+    } else {
+        format!("{time:.3}")
+    }
+}
+
+fn snap_timeline_boundary(
+    candidate: f32,
+    emitter: EmitterId,
+    session: &EditorSession,
+    mode: TimelineSnapMode,
+    view: TimelineView,
+    canvas_width: f32,
+) -> (f32, Option<f32>) {
+    match mode {
+        TimelineSnapMode::None => (candidate, None),
+        TimelineSnapMode::Frames => {
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let snapped = (candidate / frame).round() * frame;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Seconds => {
+            let interval = nice_timeline_step(view.span(), canvas_width) / 5.0;
+            let snapped = (candidate / interval).round() * interval;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Smart => {
+            let threshold = view.span() / canvas_width.max(1.0) * 9.0;
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let mut targets = vec![
+                0.0,
+                session.playback_duration(),
+                session.time(),
+                (candidate / frame).round() * frame,
+            ];
+            for other in &session.effect.emitters {
+                if other.id != emitter {
+                    targets.push(other.start_time);
+                    targets.push(other.start_time + other.duration);
+                }
+            }
+            let nearest = targets.into_iter().min_by(|left, right| {
+                (candidate - *left)
+                    .abs()
+                    .total_cmp(&(candidate - *right).abs())
+            });
+            nearest
+                .filter(|target| (candidate - *target).abs() <= threshold)
+                .map_or((candidate, None), |target| (target, Some(target)))
+        }
+    }
+}
+
+fn snap_moved_timing(
+    start: f32,
+    duration: f32,
+    emitter: EmitterId,
+    session: &EditorSession,
+    mode: TimelineSnapMode,
+    view: TimelineView,
+    canvas_width: f32,
+) -> (f32, Option<f32>) {
+    let start_snap = snap_timeline_boundary(start, emitter, session, mode, view, canvas_width);
+    if mode != TimelineSnapMode::Smart {
+        return start_snap;
+    }
+    let end = start + duration;
+    let end_snap = snap_timeline_boundary(end, emitter, session, mode, view, canvas_width);
+    let start_delta = (start_snap.0 - start).abs();
+    let end_delta = (end_snap.0 - end).abs();
+    match (start_snap.1, end_snap.1) {
+        (None, Some(guide)) => (start + end_snap.0 - end, Some(guide)),
+        (Some(_), Some(guide)) if end_delta < start_delta => {
+            (start + end_snap.0 - end, Some(guide))
+        }
+        _ => start_snap,
     }
 }
 
@@ -14118,5 +15042,80 @@ mod tests {
             .set_locale("fr-FR");
         app.update();
         assert_eq!(app.world().get::<Text>(label).unwrap().0, "Fichier");
+    }
+
+    #[test]
+    fn timeline_zoom_keeps_the_time_under_the_pointer() {
+        let mut state = TimelineState::default();
+        state.frame_all(10.0);
+        let anchor = state.view.time_at(0.73);
+
+        state.zoom_at(anchor, 0.5, 10.0, 60);
+
+        assert!((state.view.time_at(0.73) - anchor).abs() < 0.000_1);
+        assert!((state.view.span() - 5.0).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn timeline_pan_stays_inside_the_effect() {
+        let mut state = TimelineState::default();
+        state.view = TimelineView {
+            start: 2.0,
+            end: 4.0,
+        };
+
+        state.pan_by(-10.0, 8.0);
+        assert_eq!(state.view.start, 0.0);
+        assert_eq!(state.view.end, 2.0);
+
+        state.pan_by(20.0, 8.0);
+        assert_eq!(state.view.start, 6.0);
+        assert_eq!(state.view.end, 8.0);
+    }
+
+    #[test]
+    fn timeline_ruler_uses_human_readable_intervals() {
+        assert_eq!(nice_timeline_step(10.0, 1_000.0), 1.0);
+        assert_eq!(nice_timeline_step(2.8, 1_000.0), 0.5);
+        assert_eq!(nice_timeline_step(0.2, 1_000.0), 0.02);
+    }
+
+    #[test]
+    fn timeline_timing_commit_is_one_undoable_command() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.effect.emitters[0].clone();
+
+        assert!(session.set_emitter_timing(
+            emitter.id,
+            emitter.start_time + 0.1,
+            emitter.duration - 0.1,
+            "Moved emitter on timeline",
+        ));
+        assert!(session.can_undo());
+        session.undo();
+
+        let restored = session
+            .effect
+            .emitters
+            .iter()
+            .find(|candidate| candidate.id == emitter.id)
+            .unwrap();
+        assert_eq!(restored.start_time, emitter.start_time);
+        assert_eq!(restored.duration, emitter.duration);
+    }
+
+    #[test]
+    fn timeline_visual_queries_initialize_without_aliasing() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let timeline = TimelineState::framed(session.playback_duration());
+        let mut app = App::new();
+        app.insert_resource(session);
+        app.insert_resource(timeline);
+        app.add_systems(
+            Update,
+            (update_timeline_visuals, update_timeline_scrollbar).chain(),
+        );
+
+        app.update();
     }
 }

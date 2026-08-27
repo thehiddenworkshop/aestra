@@ -3,7 +3,7 @@ use aestra_authoring::{
     LockState, Selection, TransactionPreview,
 };
 use aestra_bevy::{
-    AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter,
+    AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, EmitterId,
     EmitterTransform, FlipbookDefinition, FlipbookPlaybackMode, FlipbookTimeSource,
     MaterialDefinition, MaterialId, MaterialInput, MaterialProperties, ModuleId, ModuleInstance,
     RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
@@ -1256,6 +1256,24 @@ impl EditorSession {
             },
             true,
         );
+    }
+
+    pub fn set_emitter_timing(
+        &mut self,
+        id: EmitterId,
+        start_time: f32,
+        duration: f32,
+        label: impl Into<String>,
+    ) -> bool {
+        self.execute(
+            label,
+            EffectCommand::SetEmitterTiming {
+                id,
+                start_time,
+                duration,
+            },
+            true,
+        )
     }
 
     pub fn adjust_selected_duration(&mut self, delta: f32) {
