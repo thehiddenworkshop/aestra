@@ -1,12 +1,13 @@
 use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
 };
 
-pub(crate) const SETTINGS_FORMAT_VERSION: u32 = 1;
+pub(crate) const SETTINGS_FORMAT_VERSION: u32 = 2;
 
 #[derive(Resource, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -17,6 +18,7 @@ pub(crate) struct EditorSettings {
     pub(crate) performance: PerformanceSettings,
     pub(crate) capture: CaptureSettings,
     pub(crate) appearance: AppearanceSettings,
+    pub(crate) inspector: InspectorSettings,
     pub(crate) language: LanguageSettings,
 }
 
@@ -29,6 +31,7 @@ impl Default for EditorSettings {
             performance: PerformanceSettings::default(),
             capture: CaptureSettings::default(),
             appearance: AppearanceSettings::default(),
+            inspector: InspectorSettings::default(),
             language: LanguageSettings::default(),
         }
     }
@@ -120,6 +123,13 @@ impl Default for AppearanceSettings {
     fn default() -> Self {
         Self { ui_scale: 1.0 }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub(crate) struct InspectorSettings {
+    /// User expansion choices keyed by stable module or renderer type.
+    pub(crate) section_expansion: BTreeMap<String, bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -335,6 +345,10 @@ mod tests {
         let mut settings = EditorSettings::default();
         settings.preview.show_grid = false;
         settings.appearance.ui_scale = 8.0;
+        settings
+            .inspector
+            .section_expansion
+            .insert("module/aestra.update.motion".into(), true);
         settings.language.locale = "fr-FR".into();
         let mut persistence = SettingsPersistence {
             path: path.clone(),
@@ -346,6 +360,13 @@ mod tests {
         let (loaded, state) = SettingsPersistence::load_from(path.clone());
         assert!(!loaded.preview.show_grid);
         assert_eq!(loaded.appearance.ui_scale, 1.5);
+        assert_eq!(
+            loaded
+                .inspector
+                .section_expansion
+                .get("module/aestra.update.motion"),
+            Some(&true)
+        );
         assert_eq!(loaded.language.locale, "fr-FR");
         assert!(state.diagnostic().is_none());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();

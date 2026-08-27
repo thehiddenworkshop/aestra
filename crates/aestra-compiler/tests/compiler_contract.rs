@@ -24,6 +24,7 @@ fn builtin_registry_exposes_authoring_and_runtime_metadata() {
         .find(|metadata| metadata.type_id.0 == "aestra.update.motion")
         .expect("motion metadata must be registered");
     assert_eq!(motion.category, "Forces");
+    assert!(motion.description.contains("gravity"));
     assert_eq!(motion.stages, [StageKind::ParticleUpdate]);
     assert!(motion.reads.contains(&ParticleAttribute::Velocity));
     assert!(motion.writes.contains(&ParticleAttribute::Position));

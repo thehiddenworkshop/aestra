@@ -30,13 +30,16 @@ use bevy::{
         tokens,
     },
     input::{ButtonState, keyboard::KeyboardInput},
-    picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer},
+    picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer, Scroll},
     picking::pointer::PointerButton,
     prelude::*,
     render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
     text::FontSource,
     ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition, widget::ViewportNode},
-    ui_widgets::{Activate, ScrollArea, ScrollIntoView, Scrollbar, ValueChange},
+    ui_widgets::{
+        Activate, ScrollArea, ScrollIntoView, Scrollbar, ValueChange,
+        popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
+    },
     window::{
         CursorIcon, PrimaryWindow, SystemCursorIcon, WindowCloseRequested, WindowMoved,
         WindowPosition, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
@@ -60,6 +63,7 @@ const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
 const EDITOR_ASSET_ROOT: &str = "../assets";
 const MAX_PREVIEW_PARTICLE_LIMIT: usize = 384;
 const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
+const INSPECTOR_TOOLTIP_DELAY: Duration = Duration::from_millis(650);
 const PROFILER_HISTORY_SAMPLES: usize = 96;
 
 fn main() {
@@ -92,6 +96,7 @@ fn main() {
         .init_resource::<ProfilerState>()
         .init_resource::<SettingsPanelState>()
         .init_resource::<InspectorFocus>()
+        .init_resource::<InspectorTooltipState>()
         .init_resource::<ScrollMemoryState>()
         .init_resource::<WorkspaceState>()
         .init_resource::<DockDragState>()
@@ -126,8 +131,11 @@ fn main() {
         .add_observer(handle_renderer_enabled_change)
         .add_observer(handle_renderer_scalar_change)
         .add_observer(handle_renderer_toggle_change)
+        .add_observer(handle_emitter_scalar_change)
         .add_observer(handle_inspector_integer_change)
         .add_observer(handle_inspector_scalar_change)
+        .add_observer(handle_inspector_numeric_scroll)
+        .add_observer(begin_inspector_tooltip)
         .add_observer(queue_feathers_action_activation)
         .add_systems(
             Startup,
@@ -173,6 +181,7 @@ fn main() {
                     restore_scroll_positions,
                     (
                         sync_settings_number_inputs,
+                        sync_emitter_number_inputs,
                         sync_inspector_number_inputs,
                         sync_renderer_number_inputs,
                     )
@@ -181,6 +190,7 @@ fn main() {
                     scroll_inspector_to_focus,
                     update_scrollbar_visibility,
                     update_inspector_highlight,
+                    update_inspector_tooltip,
                 )
                     .chain(),
             )
@@ -208,8 +218,6 @@ enum EditorAction {
     DuplicateLayer,
     DeleteLayer,
     SelectLayer(usize),
-    LayerStart(f32),
-    LayerDuration(f32),
     EffectDuration(f32),
     OpenModulePalette(StackStage),
     CloseModulePalette,
@@ -248,6 +256,7 @@ enum EditorAction {
     ToggleGrid,
     ResetWorkspaceLayout,
     SelectSettingsCategory(SettingsCategory),
+    ToggleInspectorSection(InspectorSection),
     SetLocale(usize),
     SetModuleChoice {
         module: ModuleId,
@@ -275,6 +284,25 @@ struct ComplexSelection {
 #[derive(Resource, Default)]
 struct WorkspaceState {
     complex: Option<ComplexSelection>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum InspectorSection {
+    Module(ModuleId),
+    Renderer(RendererId),
+}
+
+#[derive(Component)]
+struct InspectorHelp(String);
+
+#[derive(Component)]
+struct InspectorTooltipPopup;
+
+#[derive(Resource, Default)]
+struct InspectorTooltipState {
+    target: Option<Entity>,
+    hovered_at: Option<Instant>,
+    popup: Option<Entity>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -607,8 +635,15 @@ struct InspectorNumberControl {
     parameter: &'static str,
     component: u8,
     kind: InspectorNumberKind,
+    step: f32,
     min: Option<f32>,
     max: Option<f32>,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+enum EmitterNumberControl {
+    Start,
+    Duration,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -1740,6 +1775,7 @@ fn spawn_panel_content(
                 sources.registry,
                 sources.palette,
                 sources.localizer,
+                sources.settings,
             );
         }
         DockPanel::Timeline => spawn_timeline(parent, sources.session),
@@ -2929,6 +2965,7 @@ fn spawn_inspector(
     registry: &EditorModuleRegistry,
     palette: &ModulePaletteState,
     localizer: &Localizer,
+    settings: &EditorSettings,
 ) {
     let layer = session.selected_layer();
     let emitter_index = session.selected_layer_index();
@@ -2988,18 +3025,7 @@ fn spawn_inspector(
                             ..default()
                         },
                     ));
-                    property_stepper(
-                        stack,
-                        &format!("Start  {:.2}s", layer.start_time),
-                        EditorAction::LayerStart(-0.05),
-                        EditorAction::LayerStart(0.05),
-                    );
-                    property_stepper(
-                        stack,
-                        &format!("Duration  {:.2}s", layer.duration),
-                        EditorAction::LayerDuration(-0.05),
-                        EditorAction::LayerDuration(0.05),
-                    );
+                    spawn_emitter_timing_controls(stack);
                     for stage in StackStage::ALL {
                         spawn_stage_header(stack, stage);
                         if stage == StackStage::Render {
@@ -3011,6 +3037,7 @@ fn spawn_inspector(
                                         "effect.emitters[{emitter_index}].renderers[{renderer_index}]"
                                     ),
                                     session,
+                                    inspector_renderer_collapsed(settings, renderer),
                                 );
                             }
                             spawn_stage_diagnostics(
@@ -3036,6 +3063,7 @@ fn spawn_inspector(
                                 ),
                                 session,
                                 localizer,
+                                inspector_module_collapsed(settings, module),
                             );
                         }
                         spawn_stage_diagnostics(
@@ -3055,14 +3083,127 @@ fn spawn_inspector(
         });
 }
 
+fn inspector_module_collapsed(settings: &EditorSettings, module: &ModuleInstance) -> bool {
+    let key = inspector_module_key(module);
+    !settings
+        .inspector
+        .section_expansion
+        .get(&key)
+        .copied()
+        .unwrap_or(!matches!(module.stage, StageKind::ParticleUpdate))
+}
+
+fn inspector_renderer_collapsed(
+    settings: &EditorSettings,
+    renderer: &aestra_bevy::RendererInstance,
+) -> bool {
+    !settings
+        .inspector
+        .section_expansion
+        .get(&inspector_renderer_key(renderer))
+        .copied()
+        .unwrap_or(false)
+}
+
+fn inspector_module_key(module: &ModuleInstance) -> String {
+    format!("module/{}", module.module_type.0)
+}
+
+fn inspector_renderer_key(renderer: &aestra_bevy::RendererInstance) -> String {
+    match renderer.properties {
+        RendererProperties::Sprite => "renderer/sprite",
+        RendererProperties::Flipbook { .. } => "renderer/flipbook",
+        _ => "renderer/unknown",
+    }
+    .into()
+}
+
+fn toggle_persisted_inspector_section(
+    session: &EditorSession,
+    settings: &mut EditorSettings,
+    section: InspectorSection,
+) -> bool {
+    let (key, default_expanded) = match section {
+        InspectorSection::Module(id) => {
+            let Some(module) = session
+                .selected_layer()
+                .modules
+                .iter()
+                .find(|module| module.id == id)
+            else {
+                return false;
+            };
+            (
+                inspector_module_key(module),
+                !matches!(module.stage, StageKind::ParticleUpdate),
+            )
+        }
+        InspectorSection::Renderer(id) => {
+            let Some(renderer) = session
+                .selected_layer()
+                .renderers
+                .iter()
+                .find(|renderer| renderer.id == id)
+            else {
+                return false;
+            };
+            (inspector_renderer_key(renderer), false)
+        }
+    };
+    let expanded = settings
+        .inspector
+        .section_expansion
+        .get(&key)
+        .copied()
+        .unwrap_or(default_expanded);
+    settings.inspector.section_expansion.insert(key, !expanded);
+    true
+}
+
+fn spawn_emitter_timing_controls(parent: &mut ChildSpawnerCommands) {
+    parent
+        .spawn((
+            InspectorHelp("Start offset and active duration for this emitter.".into()),
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(29.0),
+                padding: UiRect::horizontal(Val::Px(8.0)),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(5.0),
+                ..default()
+            },
+        ))
+        .with_children(|row| {
+            for (title, control) in [
+                ("Start", EmitterNumberControl::Start),
+                ("Duration", EmitterNumberControl::Duration),
+            ] {
+                row.spawn_empty().apply_scene(label(title));
+                row.spawn(Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(62.0),
+                    ..default()
+                })
+                .with_children(|input| {
+                    input
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_scalar_input())
+                        .insert((control, AccessibleLabel(format!("{title} in seconds"))));
+                });
+                row.spawn_empty().apply_scene(label_dim("s"));
+            }
+        });
+}
+
 fn spawn_stage_header(parent: &mut ChildSpawnerCommands, stage: StackStage) {
     parent
         .spawn((
             Node {
                 width: Val::Percent(100.0),
-                height: Val::Px(30.0),
-                padding: UiRect::horizontal(Val::Px(10.0)),
-                margin: UiRect::top(Val::Px(5.0)),
+                height: Val::Px(24.0),
+                padding: UiRect::horizontal(Val::Px(8.0)),
+                margin: UiRect::top(Val::Px(3.0)),
                 align_items: AlignItems::Center,
                 border: UiRect::bottom(Val::Px(1.0)),
                 ..default()
@@ -3156,11 +3297,12 @@ fn spawn_module_card(
     diagnostic_path: &str,
     session: &EditorSession,
     localizer: &Localizer,
+    collapsed: bool,
 ) {
     let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
-    let meta = metadata.map_or_else(
-        || "Unknown module".to_string(),
-        |item| format!("{}  ·  cost {}", item.category, item.approximate_cost),
+    let help = metadata.map_or(
+        "This module is not available in the current registry.",
+        |item| item.description,
     );
     let base_border = if session
         .diagnostics
@@ -3170,7 +3312,7 @@ fn spawn_module_card(
     {
         Color::srgb(0.82, 0.28, 0.24)
     } else {
-        theme::BORDER_BRIGHT
+        theme::BORDER
     };
     parent
         .spawn((
@@ -3180,10 +3322,10 @@ fn spawn_module_card(
             },
             Node {
                 width: Val::Auto,
-                margin: UiRect::axes(Val::Px(9.0), Val::Px(3.0)),
-                padding: UiRect::all(Val::Px(8.0)),
+                margin: UiRect::axes(Val::Px(7.0), Val::Px(2.0)),
+                padding: UiRect::axes(Val::Px(6.0), Val::Px(if collapsed { 3.0 } else { 5.0 })),
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(4.0),
+                row_gap: Val::Px(if collapsed { 0.0 } else { 2.0 }),
                 border: UiRect::all(Val::Px(1.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
@@ -3203,22 +3345,14 @@ fn spawn_module_card(
                 ..default()
             })
             .with_children(|header| {
-                header.spawn((
-                    Text::new(display_name),
-                    TextFont {
-                        font_size: FontSize::Px(11.0),
-                        ..default()
-                    },
-                    TextColor(if module.enabled {
-                        theme::TEXT
-                    } else {
-                        theme::TEXT_FAINT
-                    }),
-                    Node {
-                        flex_grow: 1.0,
-                        ..default()
-                    },
-                ));
+                spawn_inspector_disclosure(
+                    header,
+                    InspectorSection::Module(module.id),
+                    collapsed,
+                    display_name,
+                    module.enabled,
+                    Some(help),
+                );
                 let mut enabled = header.spawn_empty();
                 enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
                     ModuleEnabledControl(module.id),
@@ -3254,14 +3388,9 @@ fn spawn_module_card(
                     ],
                 );
             });
-            card.spawn((
-                Text::new(meta),
-                TextFont {
-                    font_size: FontSize::Px(8.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-            ));
+            if collapsed {
+                return;
+            }
             if let Some(metadata) = metadata {
                 for (input_index, input) in metadata.inputs.iter().enumerate() {
                     spawn_input_control(card, module, input, input_index as u8, localizer);
@@ -3269,6 +3398,67 @@ fn spawn_module_card(
             }
             spawn_inline_diagnostics(card, diagnostic_path, session);
         });
+}
+
+fn spawn_inspector_disclosure(
+    parent: &mut ChildSpawnerCommands,
+    section: InspectorSection,
+    collapsed: bool,
+    title: &str,
+    enabled: bool,
+    help: Option<&str>,
+) {
+    let mut disclosure = parent.spawn_empty();
+    disclosure
+        .apply_scene(ui_shell::feathers_plain_button())
+        .insert((
+            EditorAction::ToggleInspectorSection(section),
+            FeathersActionButton,
+            AccessibleLabel(format!(
+                "{} {title}",
+                if collapsed { "Expand" } else { "Collapse" }
+            )),
+            Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                height: Val::Px(26.0),
+                padding: UiRect::horizontal(Val::Px(2.0)),
+                justify_content: JustifyContent::FlexStart,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ));
+    if let Some(help) = help {
+        disclosure.insert((
+            InspectorHelp(help.to_owned()),
+            RelativeCursorPosition::default(),
+        ));
+    }
+    disclosure.with_children(|button| {
+        button
+            .spawn_empty()
+            .apply_scene(icon(if collapsed {
+                icons::CHEVRON_RIGHT
+            } else {
+                icons::CHEVRON_DOWN
+            }))
+            .insert(Pickable::IGNORE);
+        button.spawn((
+            Text::new(title),
+            ThemedText,
+            TextColor(if enabled {
+                theme::TEXT
+            } else {
+                theme::TEXT_FAINT
+            }),
+            TextFont {
+                font_size: FontSize::Px(12.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ));
+    });
 }
 
 fn spawn_input_control(
@@ -3289,84 +3479,93 @@ fn spawn_input_control(
             parent,
             &format!("{}  ·  {} keys  →", display_name, curve.keys.len()),
             EditorAction::EditComplexInput(module.id, input_index),
+            Some(&description),
         ),
         (InputControl::Gradient, Value::Gradient(gradient)) => inspector_action_button(
             parent,
             &format!("{}  ·  {} color keys  →", display_name, gradient.keys.len()),
             EditorAction::EditComplexInput(module.id, input_index),
+            Some(&description),
         ),
         (InputControl::Toggle, Value::Bool(value)) => {
-            spawn_inspector_toggle_control(parent, module.id, input, &display_name, value);
-        }
-        (InputControl::Number { min, max, .. }, Value::U32(value)) => {
-            spawn_inspector_integer_control(
+            spawn_inspector_toggle_control(
                 parent,
                 module.id,
                 input,
                 &display_name,
+                &description,
                 value,
-                *min,
-                *max,
             );
         }
-        (InputControl::Number { min, max, .. }, Value::Scalar(value)) => {
+        (InputControl::Number { .. }, Value::U32(_)) => {
+            spawn_inspector_integer_control(parent, module.id, input, &display_name, &description);
+        }
+        (InputControl::Number { step, min, max }, Value::Scalar(value)) => {
             spawn_inspector_number_controls(
                 parent,
                 input,
                 &display_name,
+                &description,
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
                     kind: InspectorNumberKind::Scalar,
+                    step: *step,
                     min: *min,
                     max: *max,
                 },
                 &[("", value, 0)],
             );
         }
-        (InputControl::Vector { min, max, .. }, Value::Vec2(value)) => {
+        (InputControl::Vector { step, min, max }, Value::Vec2(value)) => {
             spawn_inspector_number_controls(
                 parent,
                 input,
                 &display_name,
+                &description,
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
                     kind: InspectorNumberKind::Vector,
+                    step: *step,
                     min: *min,
                     max: *max,
                 },
                 &[("X", value[0], 0), ("Y", value[1], 1)],
             );
         }
-        (InputControl::Vector { min, max, .. }, Value::Vec3(value)) => {
+        (InputControl::Vector { step, min, max }, Value::Vec3(value)) => {
             spawn_inspector_number_controls(
                 parent,
                 input,
                 &display_name,
+                &description,
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
                     kind: InspectorNumberKind::Vector,
+                    step: *step,
                     min: *min,
                     max: *max,
                 },
                 &[("X", value[0], 0), ("Y", value[1], 1), ("Z", value[2], 2)],
             );
         }
-        (InputControl::Vector { min, max, .. }, Value::Vec4(value)) => {
+        (InputControl::Vector { step, min, max }, Value::Vec4(value)) => {
             spawn_inspector_number_controls(
                 parent,
                 input,
                 &display_name,
+                &description,
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
                     kind: InspectorNumberKind::Vector,
+                    step: *step,
                     min: *min,
                     max: *max,
                 },
@@ -3378,43 +3577,38 @@ fn spawn_input_control(
                 ],
             );
         }
-        (InputControl::Range { min, max, .. }, Value::Range(value)) => {
+        (InputControl::Range { step, min, max }, Value::Range(value)) => {
             spawn_inspector_number_controls(
                 parent,
                 input,
                 &display_name,
+                &description,
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
                     kind: InspectorNumberKind::Range,
+                    step: *step,
                     min: *min,
                     max: *max,
                 },
                 &[("MIN", value.min, 0), ("MAX", value.max, 1)],
             );
         }
-        (InputControl::Choice, value) => {
-            spawn_inspector_choice_control(parent, module.id, input_index, &display_name, &value)
-        }
+        (InputControl::Choice, value) => spawn_inspector_choice_control(
+            parent,
+            module.id,
+            input_index,
+            &display_name,
+            &description,
+            &value,
+        ),
         (_, value) => spawn_inspector_read_only_control(
             parent,
             &display_name,
             &format!("{}{}", format_value(value), unit_suffix(input)),
         ),
     }
-    parent.spawn((
-        Text::new(description),
-        TextFont {
-            font_size: FontSize::Px(7.0),
-            ..default()
-        },
-        TextColor(theme::TEXT_FAINT),
-        Node {
-            margin: UiRect::horizontal(Val::Px(12.0)),
-            ..default()
-        },
-    ));
 }
 
 fn localized_inspector_input(
@@ -3457,60 +3651,55 @@ fn localized_inspector_input(
     localizer.text(message)
 }
 
-fn spawn_inspector_control_heading(
-    parent: &mut ChildSpawnerCommands,
-    input: &InputMetadata,
-    title: &str,
-) {
-    parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(6.0),
-            ..default()
-        })
-        .with_children(|heading| {
-            heading.spawn_empty().apply_scene(label(title.to_owned()));
-            heading.spawn(Node {
-                flex_grow: 1.0,
-                ..default()
-            });
-            if let Some(unit) = input.unit {
-                heading.spawn_empty().apply_scene(label_dim(unit));
-            }
-        });
-}
-
 fn spawn_inspector_integer_control(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
     input: &InputMetadata,
     title: &str,
-    _value: u32,
-    min: Option<f32>,
-    max: Option<f32>,
+    description: &str,
 ) {
-    spawn_inspector_control_heading(parent, input, title);
+    let InputControl::Number { step, min, max } = input.control else {
+        return;
+    };
     parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            ..default()
-        })
-        .with_children(|container| {
-            container
-                .spawn_empty()
-                .apply_scene(ui_shell::feathers_integer_input())
-                .insert((
-                    InspectorNumberControl {
-                        module,
-                        parameter: input.name,
-                        component: 0,
-                        kind: InspectorNumberKind::U32,
-                        min,
-                        max,
-                    },
-                    AccessibleLabel(title.to_owned()),
-                ));
+        .spawn((
+            InspectorHelp(description.to_owned()),
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|row| {
+            spawn_inspector_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                ..default()
+            })
+            .with_children(|container| {
+                container
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_integer_input())
+                    .insert((
+                        InspectorNumberControl {
+                            module,
+                            parameter: input.name,
+                            component: 0,
+                            kind: InspectorNumberKind::U32,
+                            step,
+                            min,
+                            max,
+                        },
+                        AccessibleLabel(title.to_owned()),
+                    ));
+            });
+            if let Some(unit) = input.unit {
+                row.spawn_empty().apply_scene(label_dim(unit));
+            }
         });
 }
 
@@ -3518,53 +3707,89 @@ fn spawn_inspector_number_controls(
     parent: &mut ChildSpawnerCommands,
     input: &InputMetadata,
     title: &str,
+    description: &str,
     control: InspectorNumberControl,
     values: &[(&'static str, f32, u8)],
 ) {
-    spawn_inspector_control_heading(parent, input, title);
     parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            column_gap: Val::Px(4.0),
-            ..default()
-        })
-        .with_children(|controls| {
-            for (axis, _value, component) in values {
-                let sigil = match *axis {
-                    "X" => tokens::TEXT_INPUT_X_AXIS,
-                    "Y" => tokens::TEXT_INPUT_Y_AXIS,
-                    "Z" => tokens::TEXT_INPUT_Z_AXIS,
-                    _ => tokens::TEXT_INPUT_BG,
-                };
-                controls
-                    .spawn(Node {
-                        flex_grow: 1.0,
-                        flex_basis: Val::Px(0.0),
-                        min_width: Val::Px(58.0),
-                        ..default()
-                    })
-                    .with_children(|wrapper| {
-                        let mut input_entity = wrapper.spawn_empty();
-                        if axis.is_empty() {
-                            input_entity.apply_scene(ui_shell::feathers_scalar_input());
-                        } else {
-                            input_entity
-                                .apply_scene(ui_shell::feathers_labeled_scalar_input(axis, sigil));
-                        }
-                        input_entity.insert((
-                            InspectorNumberControl {
-                                component: *component,
-                                ..control
-                            },
-                            AccessibleLabel(if axis.is_empty() {
-                                title.to_owned()
+        .spawn((
+            InspectorHelp(description.to_owned()),
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|row| {
+            spawn_inspector_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                column_gap: Val::Px(4.0),
+                ..default()
+            })
+            .with_children(|controls| {
+                for (axis, _value, component) in values {
+                    let sigil = match *axis {
+                        "X" => tokens::TEXT_INPUT_X_AXIS,
+                        "Y" => tokens::TEXT_INPUT_Y_AXIS,
+                        "Z" => tokens::TEXT_INPUT_Z_AXIS,
+                        _ => tokens::TEXT_INPUT_BG,
+                    };
+                    controls
+                        .spawn(Node {
+                            flex_grow: 1.0,
+                            flex_basis: Val::Px(0.0),
+                            min_width: Val::Px(44.0),
+                            ..default()
+                        })
+                        .with_children(|wrapper| {
+                            let mut input_entity = wrapper.spawn_empty();
+                            if axis.is_empty() {
+                                input_entity.apply_scene(ui_shell::feathers_scalar_input());
                             } else {
-                                format!("{title} {axis}")
-                            }),
-                        ));
-                    });
+                                input_entity.apply_scene(ui_shell::feathers_labeled_scalar_input(
+                                    axis, sigil,
+                                ));
+                            }
+                            input_entity.insert((
+                                InspectorNumberControl {
+                                    component: *component,
+                                    ..control
+                                },
+                                AccessibleLabel(if axis.is_empty() {
+                                    title.to_owned()
+                                } else {
+                                    format!("{title} {axis}")
+                                }),
+                            ));
+                        });
+                }
+            });
+            if let Some(unit) = input.unit {
+                row.spawn_empty().apply_scene(label_dim(unit));
             }
         });
+}
+
+fn spawn_inspector_property_label(parent: &mut ChildSpawnerCommands, title: &str) {
+    parent.spawn((
+        Text::new(title),
+        ThemedText,
+        TextFont {
+            font_size: FontSize::Px(11.0),
+            ..default()
+        },
+        Node {
+            width: Val::Percent(36.0),
+            min_width: Val::Px(82.0),
+            flex_shrink: 0.0,
+            ..default()
+        },
+    ));
 }
 
 fn spawn_inspector_toggle_control(
@@ -3572,18 +3797,23 @@ fn spawn_inspector_toggle_control(
     module: ModuleId,
     input: &InputMetadata,
     title: &str,
+    description: &str,
     value: bool,
 ) {
     parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            min_height: Val::Px(28.0),
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(8.0),
-            ..default()
-        })
+        .spawn((
+            InspectorHelp(description.to_owned()),
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
         .with_children(|row| {
-            row.spawn_empty().apply_scene(label(title.to_owned()));
+            spawn_inspector_property_label(row, title);
             row.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
@@ -3607,6 +3837,7 @@ fn spawn_inspector_choice_control(
     module: ModuleId,
     input: u8,
     title: &str,
+    description: &str,
     value: &Value,
 ) {
     let Value::Shape(shape) = value else {
@@ -3628,7 +3859,7 @@ fn spawn_inspector_choice_control(
             },
         })
         .collect::<Vec<_>>();
-    spawn_inspector_combo_row(parent, title, current, &options);
+    spawn_inspector_combo_row(parent, title, current, &options, Some(description));
 }
 
 fn spawn_inspector_combo_row(
@@ -3636,26 +3867,29 @@ fn spawn_inspector_combo_row(
     title: &str,
     current: &str,
     options: &[ComboOption],
+    description: Option<&str>,
 ) {
-    parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            min_height: Val::Px(30.0),
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(8.0),
+    let mut row = parent.spawn(Node {
+        width: Val::Percent(100.0),
+        min_height: Val::Px(27.0),
+        align_items: AlignItems::Center,
+        column_gap: Val::Px(6.0),
+        ..default()
+    });
+    if let Some(description) = description {
+        row.insert((
+            InspectorHelp(description.to_owned()),
+            RelativeCursorPosition::default(),
+        ));
+    }
+    row.with_children(|row| {
+        spawn_inspector_property_label(row, title);
+        row.spawn(Node {
+            flex_grow: 1.0,
             ..default()
-        })
-        .with_children(|row| {
-            row.spawn((
-                Text::new(title),
-                ThemedText,
-                Node {
-                    flex_grow: 1.0,
-                    ..default()
-                },
-            ));
-            spawn_combo_control(row, current, title, options, 150.0);
         });
+        spawn_combo_control(row, current, title, options, 150.0);
+    });
 }
 
 fn spawn_renderer_scalar_control(
@@ -3667,20 +3901,17 @@ fn spawn_renderer_scalar_control(
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
-            min_height: Val::Px(30.0),
+            min_height: Val::Px(27.0),
             align_items: AlignItems::Center,
-            column_gap: Val::Px(8.0),
+            column_gap: Val::Px(6.0),
             ..default()
         })
         .with_children(|row| {
-            row.spawn((
-                Text::new(title),
-                ThemedText,
-                Node {
-                    flex_grow: 1.0,
-                    ..default()
-                },
-            ));
+            spawn_inspector_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
             row.spawn(Node {
                 width: Val::Px(112.0),
                 ..default()
@@ -3706,20 +3937,17 @@ fn spawn_renderer_toggle_control(
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
-            min_height: Val::Px(30.0),
+            min_height: Val::Px(27.0),
             align_items: AlignItems::Center,
-            column_gap: Val::Px(8.0),
+            column_gap: Val::Px(6.0),
             ..default()
         })
         .with_children(|row| {
-            row.spawn((
-                Text::new(title),
-                ThemedText,
-                Node {
-                    flex_grow: 1.0,
-                    ..default()
-                },
-            ));
+            spawn_inspector_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
             let mut checkbox = row.spawn_empty();
             checkbox
                 .apply_scene(ui_shell::feathers_checkbox())
@@ -3752,13 +3980,13 @@ fn spawn_inspector_read_only_control(parent: &mut ChildSpawnerCommands, title: &
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
-            min_height: Val::Px(28.0),
+            min_height: Val::Px(27.0),
             align_items: AlignItems::Center,
-            column_gap: Val::Px(8.0),
+            column_gap: Val::Px(6.0),
             ..default()
         })
         .with_children(|row| {
-            row.spawn_empty().apply_scene(label(title.to_owned()));
+            spawn_inspector_property_label(row, title);
             row.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
@@ -3778,25 +4006,31 @@ fn spawn_renderer_card(
     renderer: &aestra_bevy::RendererInstance,
     diagnostic_path: &str,
     session: &EditorSession,
+    collapsed: bool,
 ) {
+    let display_name = match renderer.properties {
+        RendererProperties::Sprite => "Sprite Renderer",
+        RendererProperties::Flipbook { .. } => "Flipbook Renderer",
+        _ => "Renderer",
+    };
     parent
         .spawn((
             InspectorSemanticTarget {
                 target: SemanticTarget::Renderer(renderer.id),
-                base_border: theme::BORDER_BRIGHT,
+                base_border: theme::BORDER,
             },
             Node {
                 width: Val::Auto,
-                margin: UiRect::axes(Val::Px(9.0), Val::Px(3.0)),
-                padding: UiRect::all(Val::Px(8.0)),
+                margin: UiRect::axes(Val::Px(7.0), Val::Px(2.0)),
+                padding: UiRect::axes(Val::Px(6.0), Val::Px(if collapsed { 3.0 } else { 5.0 })),
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(5.0),
+                row_gap: Val::Px(if collapsed { 0.0 } else { 2.0 }),
                 border: UiRect::all(Val::Px(1.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
             BackgroundColor(theme::PANEL_LIGHT),
-            BorderColor::all(theme::BORDER_BRIGHT),
+            BorderColor::all(theme::BORDER),
         ))
         .with_children(|card| {
             card.spawn(Node {
@@ -3806,22 +4040,14 @@ fn spawn_renderer_card(
                 ..default()
             })
             .with_children(|header| {
-                header.spawn((
-                    Text::new(match renderer.properties {
-                        RendererProperties::Sprite => "Sprite Renderer",
-                        RendererProperties::Flipbook { .. } => "Flipbook Renderer",
-                        _ => "Renderer",
-                    }),
-                    TextFont {
-                        font_size: FontSize::Px(11.0),
-                        ..default()
-                    },
-                    TextColor(theme::TEXT),
-                    Node {
-                        flex_grow: 1.0,
-                        ..default()
-                    },
-                ));
+                spawn_inspector_disclosure(
+                    header,
+                    InspectorSection::Renderer(renderer.id),
+                    collapsed,
+                    display_name,
+                    renderer.enabled,
+                    Some("Controls how this emitter is drawn."),
+                );
                 let mut enabled = header.spawn_empty();
                 enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
                     RendererEnabledControl(renderer.id),
@@ -3847,6 +4073,9 @@ fn spawn_renderer_card(
                     ],
                 );
             });
+            if collapsed {
+                return;
+            }
             let Some(material) = session
                 .effect
                 .materials
@@ -3868,7 +4097,7 @@ fn spawn_renderer_card(
                     action: EditorAction::SetRendererMaterial(renderer.id, index),
                 })
                 .collect::<Vec<_>>();
-            spawn_inspector_combo_row(card, "Material", &material.name, &material_options);
+            spawn_inspector_combo_row(card, "Material", &material.name, &material_options, None);
             let blend_options = [BlendMode::Alpha, BlendMode::Additive, BlendMode::Multiply]
                 .into_iter()
                 .map(|blend| ComboOption {
@@ -3882,6 +4111,7 @@ fn spawn_renderer_card(
                 "Blend",
                 &format!("{:?}", material.blend),
                 &blend_options,
+                None,
             );
             let MaterialProperties::Sprite {
                 softness, texture, ..
@@ -3922,7 +4152,13 @@ fn spawn_renderer_card(
                                 action: EditorAction::SetRendererTexture(renderer.id, Some(index)),
                             }),
                     );
-                    spawn_inspector_combo_row(card, "Texture", texture_name, &texture_options);
+                    spawn_inspector_combo_row(
+                        card,
+                        "Texture",
+                        texture_name,
+                        &texture_options,
+                        None,
+                    );
                     if texture.is_some() {
                         for (label, component) in [
                             ("UV Min X", 0),
@@ -3966,6 +4202,7 @@ fn spawn_renderer_card(
                         "Flipbook",
                         definition.map_or("Missing", |item| item.name.as_str()),
                         &flipbook_options,
+                        None,
                     );
                     if let Some(definition) = definition {
                         spawn_renderer_scalar_control(
@@ -3997,6 +4234,7 @@ fn spawn_renderer_card(
                         "Time Source",
                         &format!("{time_source:?}"),
                         &time_source_options,
+                        None,
                     );
                     let playback_options = [
                         FlipbookPlaybackMode::Forward,
@@ -4015,6 +4253,7 @@ fn spawn_renderer_card(
                         "Playback",
                         &format!("{playback:?}"),
                         &playback_options,
+                        None,
                     );
                     spawn_renderer_toggle_control(
                         card,
@@ -4203,10 +4442,7 @@ fn spawn_module_palette(
                 palette_result(
                     popup,
                     metadata.display_name,
-                    &format!(
-                        "{} · {} · cost {}",
-                        metadata.category, metadata.type_id.0, metadata.approximate_cost
-                    ),
+                    &format!("{} · {}", metadata.category, metadata.description),
                     EditorAction::AddModule(index),
                 );
                 results += 1;
@@ -5798,6 +6034,29 @@ fn spawn_action_menu(
                 });
             menu.spawn_empty()
                 .apply_scene(ui_shell::feathers_menu_popup())
+                .insert((
+                    Popover {
+                        positions: vec![
+                            PopoverPlacement {
+                                side: PopoverSide::Bottom,
+                                align: PopoverAlign::End,
+                                gap: 2.0,
+                            },
+                            PopoverPlacement {
+                                side: PopoverSide::Top,
+                                align: PopoverAlign::End,
+                                gap: 2.0,
+                            },
+                            PopoverPlacement {
+                                side: PopoverSide::Left,
+                                align: PopoverAlign::Start,
+                                gap: 2.0,
+                            },
+                        ],
+                        window_margin: 8.0,
+                    },
+                    OverrideClip,
+                ))
                 .with_children(|popup| {
                     for option in options {
                         spawn_combo_option(popup, option);
@@ -6036,6 +6295,118 @@ fn handle_renderer_scalar_change(
     }
 }
 
+fn handle_emitter_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&EmitterNumberControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let current = emitter_number_input_value(&session, *control);
+    match control {
+        EmitterNumberControl::Start => {
+            session.adjust_selected_start(change.value.max(0.0) - current);
+        }
+        EmitterNumberControl::Duration => {
+            session.adjust_selected_duration(change.value.max(0.05) - current);
+        }
+    }
+}
+
+fn handle_inspector_numeric_scroll(
+    mut scroll: On<Pointer<Scroll>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    inspector_controls: Query<&InspectorNumberControl>,
+    emitter_controls: Query<&EmitterNumberControl>,
+    renderer_controls: Query<&RendererNumberControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    let direction = scroll.y.signum();
+    if direction == 0.0 {
+        return;
+    }
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let multiplier = numeric_scroll_multiplier(shift, control);
+
+    if let Ok(number) = inspector_controls.get(scroll.entity) {
+        adjust_inspector_number_from_scroll(&mut session, *number, direction, multiplier);
+        scroll.propagate(false);
+        return;
+    }
+    if let Ok(number) = emitter_controls.get(scroll.entity) {
+        let step = 0.05 * multiplier * direction;
+        match number {
+            EmitterNumberControl::Start => session.adjust_selected_start(step),
+            EmitterNumberControl::Duration => session.adjust_selected_duration(step),
+        }
+        scroll.propagate(false);
+        return;
+    }
+    if let Ok(number) = renderer_controls.get(scroll.entity) {
+        let Some(current) = renderer_number_input_value(&session, *number) else {
+            return;
+        };
+        let value = current + renderer_number_step(*number) * multiplier * direction;
+        match number {
+            RendererNumberControl::Softness(renderer) => {
+                session.set_renderer_softness(*renderer, value)
+            }
+            RendererNumberControl::Uv(renderer, component) => {
+                session.set_renderer_uv(*renderer, *component, value)
+            }
+            RendererNumberControl::FlipbookFrameRate(renderer) => {
+                session.set_flipbook_frame_rate(*renderer, value)
+            }
+        }
+        scroll.propagate(false);
+    }
+}
+
+fn numeric_scroll_multiplier(shift: bool, control: bool) -> f32 {
+    if shift {
+        0.1
+    } else if control {
+        10.0
+    } else {
+        1.0
+    }
+}
+
+fn renderer_number_step(control: RendererNumberControl) -> f32 {
+    match control {
+        RendererNumberControl::Softness(_) => 0.1,
+        RendererNumberControl::Uv(_, _) => 0.05,
+        RendererNumberControl::FlipbookFrameRate(_) => 1.0,
+    }
+}
+
+fn adjust_inspector_number_from_scroll(
+    session: &mut EditorSession,
+    control: InspectorNumberControl,
+    direction: f32,
+    multiplier: f32,
+) -> bool {
+    let Some(current) = inspector_number_input_value(session, control) else {
+        return false;
+    };
+    let current = match current {
+        NumberInputValue::I32(value) => value as f32,
+        NumberInputValue::F32(value) => value,
+        NumberInputValue::I64(value) => value as f32,
+        NumberInputValue::F64(value) => value as f32,
+    };
+    apply_inspector_number(
+        session,
+        control,
+        current + control.step * multiplier * direction,
+    )
+}
+
 fn handle_renderer_toggle_change(
     change: On<ValueChange<bool>>,
     controls: Query<&RendererToggleControl>,
@@ -6224,6 +6595,26 @@ fn sync_settings_number_inputs(
     for (entity, control) in &controls {
         let value = settings_number_input_value(&settings, control.0);
         commands.trigger(UpdateNumberInput { entity, value });
+    }
+}
+
+fn sync_emitter_number_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &EmitterNumberControl), Added<EmitterNumberControl>>,
+) {
+    for (entity, control) in &controls {
+        commands.trigger(UpdateNumberInput {
+            entity,
+            value: NumberInputValue::F32(emitter_number_input_value(&session, *control)),
+        });
+    }
+}
+
+fn emitter_number_input_value(session: &EditorSession, control: EmitterNumberControl) -> f32 {
+    match control {
+        EmitterNumberControl::Start => session.selected_layer().start_time,
+        EmitterNumberControl::Duration => session.selected_layer().duration,
     }
 }
 
@@ -7605,11 +7996,13 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
                                     actions,
                                     "Discard",
                                     EditorAction::DiscardPendingChange,
+                                    None,
                                 );
                                 inspector_action_button(
                                     actions,
                                     if pending.can_apply { "Apply" } else { "Apply blocked" },
                                     EditorAction::ApplyPendingChange,
+                                    None,
                                 );
                             });
                             },
@@ -8267,39 +8660,6 @@ fn panel_heading(parent: &mut ChildSpawnerCommands, title: &str, meta: &str) {
         });
 }
 
-fn property_stepper(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    decrease: EditorAction,
-    increase: EditorAction,
-) {
-    parent
-        .spawn(Node {
-            height: Val::Px(34.0),
-            width: Val::Percent(100.0),
-            padding: UiRect::horizontal(Val::Px(12.0)),
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(5.0),
-            ..default()
-        })
-        .with_children(|row| {
-            row.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_MUTED),
-                Node {
-                    flex_grow: 1.0,
-                    ..default()
-                },
-            ));
-            mini_button(row, "-", decrease);
-            mini_button(row, "+", increase);
-        });
-}
-
 fn mini_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAction) {
     parent
         .spawn_empty()
@@ -8321,27 +8681,36 @@ fn mini_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAct
         });
 }
 
-fn inspector_action_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAction) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_button())
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.to_owned()),
-            Node {
-                width: Val::Auto,
-                height: Val::Px(28.0),
-                margin: UiRect::horizontal(Val::Px(12.0)),
-                padding: UiRect::horizontal(Val::Px(10.0)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-        ))
-        .with_children(|button| {
-            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
-        });
+fn inspector_action_button(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    action: EditorAction,
+    help: Option<&str>,
+) {
+    let mut button = parent.spawn_empty();
+    button.apply_scene(ui_shell::feathers_button()).insert((
+        action,
+        FeathersActionButton,
+        AccessibleLabel(label.to_owned()),
+        Node {
+            width: Val::Auto,
+            height: Val::Px(28.0),
+            margin: UiRect::horizontal(Val::Px(12.0)),
+            padding: UiRect::horizontal(Val::Px(10.0)),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+    ));
+    if let Some(help) = help {
+        button.insert((
+            InspectorHelp(help.to_owned()),
+            RelativeCursorPosition::default(),
+        ));
+    }
+    button.with_children(|button| {
+        button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
+    });
 }
 
 fn localized_action_button(
@@ -8747,9 +9116,15 @@ fn handle_buttons(
                         session.select_layer(index);
                         workspace.complex = None;
                     }
-                    EditorAction::LayerStart(delta) => session.adjust_selected_start(delta),
-                    EditorAction::LayerDuration(delta) => {
-                        session.adjust_selected_duration(delta);
+                    EditorAction::ToggleInspectorSection(section) => {
+                        if toggle_persisted_inspector_section(&session, &mut settings, section) {
+                            session.ui_revision += 1;
+                            persist_editor_settings(
+                                &settings,
+                                &mut settings_persistence,
+                                &mut session,
+                            );
+                        }
                     }
                     EditorAction::EffectDuration(delta) => {
                         session.adjust_effect_duration(delta);
@@ -9636,6 +10011,123 @@ fn update_inspector_highlight(
     }
 }
 
+fn begin_inspector_tooltip(
+    over: On<Pointer<Over>>,
+    helps: Query<(), With<InspectorHelp>>,
+    mut state: ResMut<InspectorTooltipState>,
+    mut commands: Commands,
+) {
+    if !helps.contains(over.entity) || state.target == Some(over.entity) {
+        return;
+    }
+    if let Some(popup) = state.popup.take() {
+        commands.entity(popup).despawn();
+    }
+    state.target = Some(over.entity);
+    state.hovered_at = Some(Instant::now());
+}
+
+fn update_inspector_tooltip(
+    mut commands: Commands,
+    mut state: ResMut<InspectorTooltipState>,
+    helps: Query<(&InspectorHelp, &RelativeCursorPosition)>,
+    popups: Query<(), With<InspectorTooltipPopup>>,
+) {
+    if state.popup.is_some_and(|popup| !popups.contains(popup)) {
+        state.popup = None;
+    }
+    let Some(target) = state.target else {
+        return;
+    };
+    let Ok((help, cursor)) = helps.get(target) else {
+        clear_inspector_tooltip(&mut commands, &mut state);
+        return;
+    };
+    if !cursor.cursor_over() {
+        clear_inspector_tooltip(&mut commands, &mut state);
+        return;
+    }
+    if state.popup.is_some()
+        || state
+            .hovered_at
+            .is_none_or(|started| started.elapsed() < INSPECTOR_TOOLTIP_DELAY)
+    {
+        return;
+    }
+
+    let text = help.0.clone();
+    let mut popup = None;
+    commands.entity(target).with_children(|target| {
+        popup = Some(
+            target
+                .spawn((
+                    InspectorTooltipPopup,
+                    Popover {
+                        positions: vec![
+                            PopoverPlacement {
+                                side: PopoverSide::Left,
+                                align: PopoverAlign::Center,
+                                gap: 8.0,
+                            },
+                            PopoverPlacement {
+                                side: PopoverSide::Right,
+                                align: PopoverAlign::Center,
+                                gap: 8.0,
+                            },
+                            PopoverPlacement {
+                                side: PopoverSide::Bottom,
+                                align: PopoverAlign::Start,
+                                gap: 6.0,
+                            },
+                        ],
+                        window_margin: 10.0,
+                    },
+                    OverrideClip,
+                    GlobalZIndex(300),
+                    Pickable::IGNORE,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Px(280.0),
+                        padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
+                        border: UiRect::all(Val::Px(1.0)),
+                        border_radius: BorderRadius::all(Val::Px(4.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL),
+                    BorderColor::all(theme::BORDER_BRIGHT),
+                    BoxShadow::new(
+                        Color::srgba(0.0, 0.0, 0.0, 0.65),
+                        Val::Px(0.0),
+                        Val::Px(2.0),
+                        Val::Px(3.0),
+                        Val::Px(5.0),
+                    ),
+                ))
+                .with_children(|tooltip| {
+                    tooltip.spawn((
+                        Text::new(text),
+                        TextFont {
+                            font_size: FontSize::Px(11.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Pickable::IGNORE,
+                    ));
+                })
+                .id(),
+        );
+    });
+    state.popup = popup;
+}
+
+fn clear_inspector_tooltip(commands: &mut Commands, state: &mut InspectorTooltipState) {
+    if let Some(popup) = state.popup.take() {
+        commands.entity(popup).despawn();
+    }
+    state.target = None;
+    state.hovered_at = None;
+}
+
 fn update_panel_visibility_labels(
     layout: Res<WorkspaceLayout>,
     localizer: Res<Localizer>,
@@ -10376,6 +10868,7 @@ mod tests {
             parameter: "spawn_rate",
             component: 0,
             kind: InspectorNumberKind::Scalar,
+            step: 5.0,
             min: Some(0.0),
             max: Some(30.0),
         };
@@ -10395,6 +10888,90 @@ mod tests {
     }
 
     #[test]
+    fn inspector_sections_use_compact_defaults_and_persist_type_preferences() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut settings = EditorSettings::default();
+        let emission = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module.stage == StageKind::EmitterUpdate)
+            .unwrap();
+        let motion = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module.stage == StageKind::ParticleUpdate)
+            .unwrap();
+
+        assert!(!inspector_module_collapsed(&settings, emission));
+        assert!(inspector_module_collapsed(&settings, motion));
+
+        assert!(toggle_persisted_inspector_section(
+            &session,
+            &mut settings,
+            InspectorSection::Module(motion.id),
+        ));
+        assert!(!inspector_module_collapsed(&settings, motion));
+        assert_eq!(
+            settings
+                .inspector
+                .section_expansion
+                .get(&inspector_module_key(motion)),
+            Some(&true)
+        );
+    }
+
+    #[test]
+    fn inspector_wheel_uses_metadata_steps_and_modifier_precision() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "spawn_rate").is_some())
+            .unwrap()
+            .id;
+        let control = InspectorNumberControl {
+            module,
+            parameter: "spawn_rate",
+            component: 0,
+            kind: InspectorNumberKind::Scalar,
+            step: 5.0,
+            min: Some(0.0),
+            max: None,
+        };
+        let Value::Scalar(initial) =
+            inspector_module_parameter(&session, module, "spawn_rate").unwrap()
+        else {
+            panic!("spawn rate should be a scalar");
+        };
+
+        assert!(adjust_inspector_number_from_scroll(
+            &mut session,
+            control,
+            1.0,
+            numeric_scroll_multiplier(false, false),
+        ));
+        assert_eq!(
+            inspector_module_parameter(&session, module, "spawn_rate"),
+            Some(Value::Scalar(initial + 5.0))
+        );
+
+        assert!(adjust_inspector_number_from_scroll(
+            &mut session,
+            control,
+            -1.0,
+            numeric_scroll_multiplier(true, false),
+        ));
+        assert_eq!(
+            inspector_module_parameter(&session, module, "spawn_rate"),
+            Some(Value::Scalar(initial + 4.5))
+        );
+        assert_eq!(numeric_scroll_multiplier(false, true), 10.0);
+    }
+
+    #[test]
     fn inspector_range_edit_preserves_ordering() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
@@ -10409,6 +10986,7 @@ mod tests {
             parameter: "lifetime",
             component: 0,
             kind: InspectorNumberKind::Range,
+            step: 0.1,
             min: Some(0.05),
             max: None,
         };
@@ -10443,6 +11021,7 @@ mod tests {
                 parameter: "spawn_rate",
                 component: 0,
                 kind: InspectorNumberKind::Scalar,
+                step: 5.0,
                 min: Some(0.0),
                 max: None,
             })

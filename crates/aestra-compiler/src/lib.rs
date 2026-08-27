@@ -68,6 +68,7 @@ pub enum Capability {
 pub struct ModuleMetadata {
     pub type_id: ModuleTypeId,
     pub display_name: &'static str,
+    pub description: &'static str,
     pub category: &'static str,
     pub stages: Vec<StageKind>,
     pub inputs: Vec<InputMetadata>,
@@ -885,12 +886,14 @@ impl InputMetadata {
 fn metadata(
     type_id: &'static str,
     display_name: &'static str,
+    description: &'static str,
     category: &'static str,
     stage: StageKind,
 ) -> ModuleMetadata {
     ModuleMetadata {
         type_id: ModuleTypeId::new(type_id),
         display_name,
+        description,
         category,
         stages: vec![stage],
         inputs: Vec::new(),
@@ -931,6 +934,7 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
         metadata(
             MODULE_EMISSION,
             "Emission",
+            "Controls continuous spawning and the initial particle burst.",
             "Emitter",
             StageKind::EmitterUpdate,
         )
@@ -962,20 +966,27 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
         .with_flow(vec![], vec![])
         .with_tags(vec!["spawn", "rate", "burst"])
         .with_cost(1),
-        metadata(MODULE_SHAPE, "Shape", "Spawn", StageKind::ParticleSpawn)
-            .with_inputs(vec![input(
-                "shape",
-                "Shape",
-                "Volume used to place newly spawned particles.",
-                aestra_core::Value::Shape(EmitterShape::Point),
-                InputControl::Choice,
-            )])
-            .with_flow(vec![], vec![A::Position])
-            .with_tags(vec!["spawn", "position"])
-            .with_cost(2),
+        metadata(
+            MODULE_SHAPE,
+            "Shape",
+            "Defines where newly spawned particles are placed.",
+            "Spawn",
+            StageKind::ParticleSpawn,
+        )
+        .with_inputs(vec![input(
+            "shape",
+            "Shape",
+            "Volume used to place newly spawned particles.",
+            aestra_core::Value::Shape(EmitterShape::Point),
+            InputControl::Choice,
+        )])
+        .with_flow(vec![], vec![A::Position])
+        .with_tags(vec!["spawn", "position"])
+        .with_cost(2),
         metadata(
             MODULE_INITIALIZE,
             "Initialize Particle",
+            "Sets lifetime, velocity, direction, and rotation for new particles.",
             "Spawn",
             StageKind::ParticleSpawn,
         )
@@ -1047,52 +1058,59 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
         )
         .with_tags(vec!["spawn", "velocity", "lifetime"])
         .with_cost(4),
-        metadata(MODULE_MOTION, "Motion", "Forces", StageKind::ParticleUpdate)
-            .with_inputs(vec![
-                input(
-                    "gravity",
-                    "Gravity",
-                    "Constant acceleration applied to particle velocity.",
-                    aestra_core::Value::Vec2([0.0, -18.0]),
-                    InputControl::Vector {
-                        step: 5.0,
-                        min: None,
-                        max: None,
-                    },
-                )
-                .with_unit("units/s²"),
-                input(
-                    "drag",
-                    "Drag",
-                    "Velocity damping applied over time.",
-                    aestra_core::Value::Scalar(0.6),
-                    InputControl::Number {
-                        step: 0.1,
-                        min: Some(0.0),
-                        max: None,
-                    },
-                ),
-                input(
-                    "turbulence",
-                    "Turbulence",
-                    "Strength of deterministic procedural motion.",
-                    aestra_core::Value::Scalar(4.0),
-                    InputControl::Number {
-                        step: 0.5,
-                        min: None,
-                        max: None,
-                    },
-                ),
-            ])
-            .with_flow(
-                vec![A::Position, A::Velocity, A::Age],
-                vec![A::Position, A::Velocity],
+        metadata(
+            MODULE_MOTION,
+            "Motion",
+            "Updates particle movement using gravity, drag, and procedural turbulence.",
+            "Forces",
+            StageKind::ParticleUpdate,
+        )
+        .with_inputs(vec![
+            input(
+                "gravity",
+                "Gravity",
+                "Constant acceleration applied to particle velocity.",
+                aestra_core::Value::Vec2([0.0, -18.0]),
+                InputControl::Vector {
+                    step: 5.0,
+                    min: None,
+                    max: None,
+                },
             )
-            .with_tags(vec!["update", "force", "motion"])
-            .with_cost(6),
+            .with_unit("units/s²"),
+            input(
+                "drag",
+                "Drag",
+                "Velocity damping applied over time.",
+                aestra_core::Value::Scalar(0.6),
+                InputControl::Number {
+                    step: 0.1,
+                    min: Some(0.0),
+                    max: None,
+                },
+            ),
+            input(
+                "turbulence",
+                "Turbulence",
+                "Strength of deterministic procedural motion.",
+                aestra_core::Value::Scalar(4.0),
+                InputControl::Number {
+                    step: 0.5,
+                    min: None,
+                    max: None,
+                },
+            ),
+        ])
+        .with_flow(
+            vec![A::Position, A::Velocity, A::Age],
+            vec![A::Position, A::Velocity],
+        )
+        .with_tags(vec!["update", "force", "motion"])
+        .with_cost(6),
         metadata(
             MODULE_APPEARANCE,
             "Appearance Over Life",
+            "Shapes particle size, opacity, and color across normalized lifetime.",
             "Appearance",
             StageKind::ParticleUpdate,
         )
