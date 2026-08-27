@@ -10,8 +10,8 @@ pub use checkpoint::{
 pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource};
 
 use aestra_core::{
-    AssetId, BlendMode, Curve, EffectId, EmitterId, EmitterShape, Gradient, MaterialId, ModuleId,
-    ParameterId, RendererId, ScalarRange, Value, ValueType,
+    AssetId, AssetKind, BlendMode, Curve, EffectId, EmitterId, EmitterShape, Gradient, MaterialId,
+    ModuleId, ParameterId, RendererId, ScalarRange, UvRect, Value, ValueType,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -364,6 +364,17 @@ pub struct RendererPlan {
     pub source: RendererId,
     pub blend: BlendMode,
     pub softness: f32,
+    pub texture: Option<AssetId>,
+    pub uv: UvRect,
+}
+
+/// One resolved entry in the compiled effect's renderer asset registry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompiledAsset {
+    pub source: AssetId,
+    pub name: String,
+    pub kind: AssetKind,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -415,6 +426,7 @@ pub struct CompiledEffect {
     pub duration: f32,
     pub looping: bool,
     pub seek_mode: SimulationSeekMode,
+    pub assets: Vec<CompiledAsset>,
     pub parameters: Vec<CompiledParameter>,
     pub parameter_slots: BTreeMap<ParameterId, ParameterSlot>,
     pub particle_layout: ParticleLayout,

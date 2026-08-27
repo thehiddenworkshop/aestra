@@ -10,6 +10,7 @@ use aestra_runtime::{
 use std::{collections::BTreeMap, sync::Arc};
 
 const SAMPLE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
+const TEXTURED_SAMPLE: &str = include_str!("../../../assets/effects/ember_sigil.aestra.ron");
 
 #[test]
 fn builtin_registry_exposes_authoring_and_runtime_metadata() {
@@ -98,6 +99,26 @@ fn compiler_lowers_ordered_stages_and_records_source_locations() {
     let location = compiled.source_map.get(&motion.id).unwrap();
     assert_eq!(location.stage, RuntimeStage::ParticleUpdate);
     assert_eq!(location.instruction_index, 0);
+}
+
+#[test]
+fn compiler_resolves_texture_assets_into_renderer_plans() {
+    let asset = EffectAsset::from_ron(TEXTURED_SAMPLE).unwrap();
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let renderer = compiled.emitters[0]
+        .renderers
+        .iter()
+        .find(|renderer| renderer.texture.is_some())
+        .unwrap();
+    let texture = renderer.texture.expect("example renderer must be textured");
+    let registered = compiled
+        .assets
+        .iter()
+        .find(|asset| asset.source == texture)
+        .unwrap();
+
+    assert_eq!(registered.path, "textures/ember_spark.png");
+    assert_eq!(renderer.uv, aestra_core::UvRect::FULL);
 }
 
 #[test]

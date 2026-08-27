@@ -3,8 +3,8 @@ use aestra_authoring::{
     LockState, Selection, TransactionPreview,
 };
 use aestra_bevy::{
-    AssetError, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, ModuleId, ModuleInstance,
-    RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
+    AssetError, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, ModuleId,
+    ModuleInstance, RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
@@ -903,7 +903,12 @@ impl EditorSession {
             self.status = "Renderer no longer exists".into();
             return;
         };
-        let RendererProperties::Sprite { softness } = renderer.properties else {
+        let RendererProperties::Sprite {
+            softness,
+            texture,
+            uv,
+        } = renderer.properties
+        else {
             self.status = "This renderer has no softness property".into();
             return;
         };
@@ -914,6 +919,131 @@ impl EditorSession {
                 renderer: id,
                 properties: RendererProperties::Sprite {
                     softness: (softness + delta).max(0.0),
+                    texture,
+                    uv,
+                },
+            },
+            true,
+        );
+    }
+
+    pub fn cycle_renderer_texture(&mut self, id: RendererId) {
+        let emitter = self.selected_layer();
+        let emitter_id = emitter.id;
+        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
+            self.status = "Renderer no longer exists".into();
+            return;
+        };
+        let RendererProperties::Sprite {
+            softness,
+            texture,
+            uv,
+        } = renderer.properties
+        else {
+            self.status = "This renderer cannot use a texture".into();
+            return;
+        };
+        let textures = self
+            .effect
+            .assets
+            .iter()
+            .filter(|asset| asset.kind == AssetKind::Texture)
+            .map(|asset| asset.id)
+            .collect::<Vec<_>>();
+        let Some(next) = textures
+            .iter()
+            .position(|asset| Some(*asset) == texture)
+            .map(|index| textures[(index + 1) % textures.len()])
+            .or_else(|| textures.first().copied())
+        else {
+            self.status = "This effect has no registered texture assets".into();
+            return;
+        };
+        self.execute(
+            "Assigned renderer texture",
+            EffectCommand::SetRendererProperties {
+                emitter: emitter_id,
+                renderer: id,
+                properties: RendererProperties::Sprite {
+                    softness,
+                    texture: Some(next),
+                    uv,
+                },
+            },
+            true,
+        );
+    }
+
+    pub fn clear_renderer_texture(&mut self, id: RendererId) {
+        let emitter = self.selected_layer();
+        let emitter_id = emitter.id;
+        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
+            self.status = "Renderer no longer exists".into();
+            return;
+        };
+        let RendererProperties::Sprite {
+            softness,
+            texture,
+            uv,
+        } = renderer.properties
+        else {
+            self.status = "This renderer cannot use a texture".into();
+            return;
+        };
+        if texture.is_none() {
+            self.status = "Renderer already uses the procedural sprite".into();
+            return;
+        }
+        self.execute(
+            "Cleared renderer texture",
+            EffectCommand::SetRendererProperties {
+                emitter: emitter_id,
+                renderer: id,
+                properties: RendererProperties::Sprite {
+                    softness,
+                    texture: None,
+                    uv,
+                },
+            },
+            true,
+        );
+    }
+
+    pub fn adjust_renderer_uv(&mut self, id: RendererId, component: u8, delta: f32) {
+        let emitter = self.selected_layer();
+        let emitter_id = emitter.id;
+        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
+            self.status = "Renderer no longer exists".into();
+            return;
+        };
+        let RendererProperties::Sprite {
+            softness,
+            texture,
+            mut uv,
+        } = renderer.properties
+        else {
+            self.status = "This renderer has no UV bounds".into();
+            return;
+        };
+        match component {
+            0 => uv.min[0] = (uv.min[0] + delta).clamp(0.0, uv.max[0] - 0.01),
+            1 => uv.min[1] = (uv.min[1] + delta).clamp(0.0, uv.max[1] - 0.01),
+            2 => uv.max[0] = (uv.max[0] + delta).clamp(uv.min[0] + 0.01, 1.0),
+            3 => uv.max[1] = (uv.max[1] + delta).clamp(uv.min[1] + 0.01, 1.0),
+            _ => {
+                self.status = "Unknown UV component".into();
+                return;
+            }
+        }
+        self.execute(
+            "Changed renderer UV bounds",
+            EffectCommand::SetRendererProperties {
+                emitter: emitter_id,
+                renderer: id,
+                properties: RendererProperties::Sprite {
+                    softness,
+                    texture,
+                    uv,
                 },
             },
             true,
@@ -1159,6 +1289,65 @@ mod tests {
         session.undo();
         assert_eq!(session.effect.emitters.len(), 2);
         assert_eq!(session.effect.emitters[1].id, added);
+    }
+
+    #[test]
+    fn renderer_texture_assignment_is_compiled_and_undoable() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/ember_sigil.aestra.ron"),
+            "ember_sigil.aestra.ron",
+        );
+        let renderer = session.effect.emitters[0].renderers[0].id;
+
+        session.clear_renderer_texture(renderer);
+        let RendererProperties::Sprite { texture, .. } =
+            session.effect.emitters[0].renderers[0].properties
+        else {
+            panic!("example renderer must be a sprite");
+        };
+        assert!(texture.is_none());
+
+        session.cycle_renderer_texture(renderer);
+        let RendererProperties::Sprite { texture, .. } =
+            session.effect.emitters[0].renderers[0].properties
+        else {
+            panic!("example renderer must be a sprite");
+        };
+        assert!(texture.is_some());
+        assert_eq!(
+            session.preview.as_ref().unwrap().effect().emitters[0].renderers[0].texture,
+            texture
+        );
+
+        session.undo();
+        let RendererProperties::Sprite { texture, .. } =
+            session.effect.emitters[0].renderers[0].properties
+        else {
+            panic!("example renderer must be a sprite");
+        };
+        assert!(texture.is_none());
+        session.undo();
+        let RendererProperties::Sprite { texture, .. } =
+            session.effect.emitters[0].renderers[0].properties
+        else {
+            panic!("example renderer must be a sprite");
+        };
+        assert!(texture.is_some());
+
+        session.adjust_renderer_uv(renderer, 0, 0.1);
+        let RendererProperties::Sprite { uv, .. } =
+            session.effect.emitters[0].renderers[0].properties
+        else {
+            panic!("example renderer must be a sprite");
+        };
+        assert_eq!(uv.min[0], 0.1);
+        session.undo();
+        let RendererProperties::Sprite { uv, .. } =
+            session.effect.emitters[0].renderers[0].properties
+        else {
+            panic!("example renderer must be a sprite");
+        };
+        assert_eq!(uv.min[0], 0.0);
     }
 
     #[test]

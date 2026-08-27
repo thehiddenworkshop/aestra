@@ -9,7 +9,9 @@ struct Renderer {
     emitter_index: u32,
     blend_mode: u32,
     softness: f32,
-    _padding: f32,
+    textured: u32,
+    uv_min: vec2<f32>,
+    uv_max: vec2<f32>,
 }
 
 struct Particle {
@@ -38,6 +40,8 @@ struct VertexOutput {
     @location(1) quad_position: vec2<f32>,
     @location(2) softness: f32,
     @location(3) @interpolate(flat) visible: u32,
+    @location(4) uv: vec2<f32>,
+    @location(5) @interpolate(flat) textured: u32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -46,6 +50,8 @@ struct VertexOutput {
 @group(1) @binding(2) var<storage, read> alive_indices: array<u32>;
 @group(1) @binding(3) var<storage, read> globals: RenderGlobals;
 @group(1) @binding(4) var<storage, read> params: RenderParams;
+@group(1) @binding(5) var sprite_texture: texture_2d<f32>;
+@group(1) @binding(6) var sprite_sampler: sampler;
 
 @vertex
 fn vertex(
@@ -78,14 +84,21 @@ fn vertex(
     output.quad_position = corner;
     output.softness = renderer.softness;
     output.visible = select(0u, 1u, particle.emitter_index == renderer.emitter_index);
+    output.uv = mix(renderer.uv_min, renderer.uv_max, corner * 0.5 + vec2<f32>(0.5));
+    output.textured = renderer.textured;
     return output;
 }
 
 fn particle_color(input: VertexOutput) -> vec4<f32> {
-    let radius = length(input.quad_position);
     let feather = clamp(input.softness, 0.001, 1.0);
-    let coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radius);
-    return vec4<f32>(input.color.rgb, input.color.a * coverage);
+    var distance = length(input.quad_position);
+    var sampled = vec4<f32>(1.0);
+    if input.textured != 0u {
+        distance = max(abs(input.quad_position.x), abs(input.quad_position.y));
+        sampled = textureSample(sprite_texture, sprite_sampler, input.uv);
+    }
+    let coverage = 1.0 - smoothstep(1.0 - feather, 1.0, distance);
+    return vec4<f32>(input.color.rgb * sampled.rgb, input.color.a * sampled.a * coverage);
 }
 
 @fragment

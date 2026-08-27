@@ -131,8 +131,11 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   GPU-readback, or CPU presentation without attempting unsupported allocation.
 - Applies both physical storage/dispatch limits and an application particle budget;
   oversized or unsupported effects fall back independently with a public reason.
-- Runs compute simulation, live-particle compaction, alpha/additive sprite presentation,
-  visibility culling, and indirect drawing without a per-frame CPU readback.
+- Runs compute simulation, live-particle compaction, alpha/additive/multiply sprite
+  presentation, visibility culling, and indirect drawing without a per-frame CPU readback.
+- Resolves stable texture IDs through the compiled asset registry, binds one texture and
+  normalized UV region per renderer, and keeps missing files visible through a diagnostic
+  checkerboard fallback.
 - Retains deterministic CPU and GPU-readback presentation modes as explicit
   reference and compatibility paths.
 - Publishes global adapter capabilities and per-effect active-backend diagnostics

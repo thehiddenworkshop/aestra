@@ -74,6 +74,14 @@ impl EffectProfile {
             .flat_map(|emitter| emitter.renderers.iter())
             .count()
             .min(u32::MAX as usize) as u32;
+        let texture_sample_count = effect
+            .emitters
+            .iter()
+            .filter(|emitter| emitter.enabled)
+            .flat_map(|emitter| emitter.renderers.iter())
+            .filter(|renderer| renderer.texture.is_some())
+            .count()
+            .min(u32::MAX as usize) as u32;
         let dispatch_count = u32::from(effect.max_particles > 0) * 2;
         Self {
             cpu_time_ns: ProfileValue::Unavailable,
@@ -87,9 +95,13 @@ impl EffectProfile {
             draw_calls: ProfileValue::Estimated(draw_calls),
             dispatch_count: ProfileValue::Estimated(dispatch_count),
             estimated_overdraw: ProfileValue::Unavailable,
-            texture_sample_count: ProfileValue::Estimated(0),
+            texture_sample_count: ProfileValue::Estimated(texture_sample_count),
             buffer_memory_bytes: ProfileValue::Estimated(estimated_buffer_memory(effect)),
-            texture_memory_bytes: ProfileValue::Estimated(0),
+            texture_memory_bytes: if texture_sample_count == 0 {
+                ProfileValue::Estimated(0)
+            } else {
+                ProfileValue::Unavailable
+            },
             collision_time_ns: ProfileValue::Unavailable,
             emitters: effect
                 .emitters

@@ -21,6 +21,7 @@ aestra/
 ├── aestra-bevy/             Bevy playback and rendering integration
 ├── aestra-viewer/           Viewer, frame capture, and contact-sheet binary
 ├── assets/effects/          Authored `.aestra.ron` choreography assets
+├── assets/textures/         Renderer textures referenced through stable asset IDs
 └── crates/
     ├── aestra-core/         Engine-independent semantic effect model
     ├── aestra-authoring/    Commands, transactions, history, locks, and diffs
@@ -44,6 +45,12 @@ Open another effect:
 cargo run -p aestra-viewer -- --effect path/to/effect.aestra.ron
 ```
 
+The bundled textured example can be opened with:
+
+```powershell
+cargo run -p aestra-viewer -- --effect assets/effects/ember_sigil.aestra.ron
+```
+
 Capture evenly spaced, exact 60 Hz simulation frames plus a single AI-friendly contact sheet:
 
 ```powershell
@@ -60,6 +67,12 @@ Run the native-GPU visual regression against the approved, effect-only reference
 
 ```powershell
 cargo run -p aestra-viewer -- --visual-test aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom --frames 8
+```
+
+Use the same workflow for the textured renderer reference:
+
+```powershell
+cargo run -p aestra-viewer -- --effect assets/effects/ember_sigil.aestra.ron --visual-test aestra-viewer/tests/references/ember_sigil target/visual-regression/ember-sigil --frames 8
 ```
 
 The command exits with an error when a frame exceeds the tolerant foreground RMSE,
@@ -93,6 +106,9 @@ fn main() {
 Each player receives an `EffectProfiler` component. It exposes measured CPU and
 particle statistics alongside compiler-estimated draw, dispatch, and buffer costs;
 unsupported measurements such as GPU time remain explicitly unavailable.
+Texture paths in an effect's asset registry are relative to the consuming Bevy
+application's `AssetPlugin` root. Missing files use a visible checkerboard fallback
+and are reported through the effect profile instead of silently removing the draw.
 
 ## Development
 

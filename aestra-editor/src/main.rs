@@ -15,6 +15,7 @@ use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistr
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
 use aestra_runtime::{EffectProfile, ProfileValue, ProfileValueSource};
 use bevy::{
+    asset::AssetPlugin,
     camera::RenderTarget,
     ecs::system::SystemParam,
     feathers::{
@@ -92,16 +93,23 @@ fn main() {
         .init_resource::<ResizeState>()
         .insert_resource(WorkspaceLayout::load())
         .init_resource::<RenderedUiRevision>()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            close_when_requested: false,
-            primary_window: Some(Window {
-                title: "Aestra — VFX Choreography Editor".into(),
-                resolution: WindowResolution::new(1440, 900),
-                resizable: true,
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(AssetPlugin {
+                    file_path: "../assets".into(),
+                    ..default()
+                })
+                .set(WindowPlugin {
+                    close_when_requested: false,
+                    primary_window: Some(Window {
+                        title: "Aestra — VFX Choreography Editor".into(),
+                        resolution: WindowResolution::new(1440, 900),
+                        resizable: true,
+                        ..default()
+                    }),
+                    ..default()
+                }),
+        )
         .add_plugins(FeathersPlugins)
         .insert_resource(theme::feathers_theme())
         .add_observer(handle_settings_toggle_change)
@@ -208,6 +216,9 @@ enum EditorAction {
     ToggleRenderer(RendererId),
     CycleRendererBlend(RendererId),
     AdjustRendererSoftness(RendererId, i8),
+    CycleRendererTexture(RendererId),
+    ClearRendererTexture(RendererId),
+    AdjustRendererUv(RendererId, u8, i8),
     DuplicateRenderer(RendererId),
     DeleteRenderer(RendererId),
     ApplyPendingChange,
@@ -2514,6 +2525,55 @@ fn spawn_asset_browser(
 
             panel_heading(
                 panel,
+                "RENDER ASSETS",
+                &format!("{} REGISTERED", session.effect.assets.len()),
+            );
+            if session.effect.assets.is_empty() {
+                panel.spawn((
+                    Text::new("No render assets in this effect."),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_FAINT),
+                    Node {
+                        margin: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
+                        ..default()
+                    },
+                ));
+            }
+            for asset in &session.effect.assets {
+                panel
+                    .spawn(Node {
+                        min_height: Val::Px(38.0),
+                        margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
+                        padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(2.0),
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new(format!("{:?}  {}", asset.kind, asset.name)),
+                            TextFont {
+                                font_size: FontSize::Px(10.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT),
+                        ));
+                        row.spawn((
+                            Text::new(&asset.path),
+                            TextFont {
+                                font_size: FontSize::Px(8.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT_FAINT),
+                        ));
+                    });
+            }
+
+            panel_heading(
+                panel,
                 "LAYERS",
                 &format!("{} ACTIVE", session.effect.emitters.len()),
             );
@@ -3441,7 +3501,12 @@ fn spawn_renderer_card(
                 &format!("Blend  {:?}", renderer.blend),
                 EditorAction::CycleRendererBlend(renderer.id),
             );
-            let RendererProperties::Sprite { softness } = renderer.properties else {
+            let RendererProperties::Sprite {
+                softness,
+                texture,
+                uv,
+            } = renderer.properties
+            else {
                 spawn_inline_diagnostics(card, diagnostic_path, session);
                 return;
             };
@@ -3451,6 +3516,34 @@ fn spawn_renderer_card(
                 EditorAction::AdjustRendererSoftness(renderer.id, -1),
                 EditorAction::AdjustRendererSoftness(renderer.id, 1),
             );
+            let texture_name = texture
+                .and_then(|id| session.effect.assets.iter().find(|asset| asset.id == id))
+                .map_or("Procedural", |asset| asset.name.as_str());
+            inspector_action_button(
+                card,
+                &format!("Texture  {texture_name}"),
+                EditorAction::CycleRendererTexture(renderer.id),
+            );
+            if texture.is_some() {
+                inspector_action_button(
+                    card,
+                    "Clear texture",
+                    EditorAction::ClearRendererTexture(renderer.id),
+                );
+                for (label, value, component) in [
+                    ("UV Min X", uv.min[0], 0),
+                    ("UV Min Y", uv.min[1], 1),
+                    ("UV Max X", uv.max[0], 2),
+                    ("UV Max Y", uv.max[1], 3),
+                ] {
+                    property_stepper(
+                        card,
+                        &format!("{label}  {value:.2}"),
+                        EditorAction::AdjustRendererUv(renderer.id, component, -1),
+                        EditorAction::AdjustRendererUv(renderer.id, component, 1),
+                    );
+                }
+            }
             spawn_inline_diagnostics(card, diagnostic_path, session);
         });
 }
@@ -5758,6 +5851,12 @@ fn spawn_compiled_emitter(
             } else {
                 spawn_compiled_stage_heading(section, "RENDERERS", emitter.renderers.len());
                 for (index, renderer) in emitter.renderers.iter().enumerate() {
+                    let texture = renderer
+                        .texture
+                        .and_then(|id| compiled.assets.iter().find(|asset| asset.source == id))
+                        .map_or("procedural".to_string(), |asset| {
+                            format!("texture {}", asset.name)
+                        });
                     spawn_compiled_target_row(
                         section,
                         SemanticTarget::Renderer(renderer.source),
@@ -5765,8 +5864,8 @@ fn spawn_compiled_emitter(
                         &format!("R{index:03}"),
                         "SPRITE DRAW",
                         &format!(
-                            "{:?} blend  ·  softness {:.2}  ·  {}",
-                            renderer.blend, renderer.softness, renderer.source
+                            "{:?} blend  ·  softness {:.2}  ·  {texture}  ·  {}",
+                            renderer.blend, renderer.softness, renderer.source,
                         ),
                     );
                 }
@@ -7949,6 +8048,15 @@ fn handle_buttons(
                     EditorAction::CycleRendererBlend(id) => session.cycle_renderer_blend(id),
                     EditorAction::AdjustRendererSoftness(id, direction) => {
                         session.adjust_renderer_softness(id, direction as f32 * 0.1);
+                    }
+                    EditorAction::CycleRendererTexture(id) => {
+                        session.cycle_renderer_texture(id);
+                    }
+                    EditorAction::ClearRendererTexture(id) => {
+                        session.clear_renderer_texture(id);
+                    }
+                    EditorAction::AdjustRendererUv(id, component, direction) => {
+                        session.adjust_renderer_uv(id, component, direction as f32 * 0.05);
                     }
                     EditorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     EditorAction::DeleteRenderer(id) => {

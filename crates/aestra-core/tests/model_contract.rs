@@ -1,6 +1,6 @@
 use aestra_core::{
-    DiagnosticCode, EffectAsset, EffectParameter, Emitter, EmitterId, MODULE_EMISSION, ParameterId,
-    RendererInstance, ScalarRange, Value,
+    AssetDefinition, DiagnosticCode, EffectAsset, EffectParameter, Emitter, EmitterId,
+    MODULE_EMISSION, ParameterId, RendererInstance, RendererProperties, ScalarRange, Value,
 };
 
 #[test]
@@ -90,6 +90,36 @@ fn one_emitter_supports_multiple_renderers() {
 
     effect.validate().unwrap();
     assert_eq!(effect.emitters[0].renderers.len(), 2);
+}
+
+#[test]
+fn texture_assets_are_stable_validated_renderer_references() {
+    let mut effect = EffectAsset::new("Textured", 1.0);
+    let texture = AssetDefinition::texture("Spark", "textures/spark.png");
+    let texture_id = texture.id;
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
+    let RendererProperties::Sprite {
+        texture: renderer_texture,
+        ..
+    } = &mut emitter.renderers[0].properties
+    else {
+        panic!("basic renderer must be a sprite");
+    };
+    *renderer_texture = Some(texture_id);
+    effect.assets.push(texture);
+    effect.emitters.push(emitter);
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+    assert_eq!(decoded.assets[0].id, texture_id);
+    assert!(encoded.contains("textures/spark.png"));
+
+    effect.assets.clear();
+    let report = effect.validation_report();
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidReference
+            && diagnostic.path.ends_with("properties.texture")
+    }));
 }
 
 #[test]

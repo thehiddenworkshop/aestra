@@ -23,12 +23,14 @@ use bevy::{
             BlendComponent, BlendFactor, BlendOperation, BlendState, ColorTargetState, ColorWrites,
             CompareFunction, DepthBiasState, DepthStencilState, Face, FragmentState,
             MultisampleState, PipelineCache, PrimitiveState, PrimitiveTopology,
-            RenderPipelineDescriptor, ShaderStages, SpecializedRenderPipeline,
-            SpecializedRenderPipelines, StencilFaceState, StencilState, VertexState,
-            binding_types::storage_buffer_read_only,
+            RenderPipelineDescriptor, SamplerBindingType, ShaderStages, SpecializedRenderPipeline,
+            SpecializedRenderPipelines, StencilFaceState, StencilState, TextureSampleType,
+            VertexState,
+            binding_types::{sampler, storage_buffer_read_only, texture_2d},
         },
         renderer::RenderDevice,
         storage::GpuShaderBuffer,
+        texture::GpuImage,
         view::{ExtractedView, RenderVisibleEntities},
     },
     sprite_render::{
@@ -74,13 +76,15 @@ fn init_render_pipeline(
     let effect_layout = BindGroupLayoutDescriptor::new(
         "aestra_gpu_sprite",
         &BindGroupLayoutEntries::sequential(
-            ShaderStages::VERTEX,
+            ShaderStages::VERTEX_FRAGMENT,
             (
                 storage_buffer_read_only::<Vec<GpuRenderer>>(false),
                 storage_buffer_read_only::<Vec<GpuParticle>>(false),
                 storage_buffer_read_only::<Vec<u32>>(false),
                 storage_buffer_read_only::<GpuRenderGlobals>(false),
                 storage_buffer_read_only::<GpuRenderParams>(false),
+                texture_2d(TextureSampleType::Float { filterable: true }),
+                sampler(SamplerBindingType::Filtering),
             ),
         ),
     );
@@ -180,6 +184,7 @@ fn prepare_render_bind_groups(
     render_device: Res<RenderDevice>,
     pipeline_cache: Res<PipelineCache>,
     buffers: Res<RenderAssets<GpuShaderBuffer>>,
+    images: Res<RenderAssets<GpuImage>>,
     effects: Query<(Entity, &GpuDrawInstance)>,
 ) {
     for (entity, effect) in &effects {
@@ -198,6 +203,12 @@ fn prepare_render_bind_groups(
         let Some(params) = buffers.get(&effect.render_params) else {
             continue;
         };
+        let Some(image) = images
+            .get(&effect.texture)
+            .or_else(|| images.get(&effect.fallback_texture))
+        else {
+            continue;
+        };
         let bind_group = render_device.create_bind_group(
             Some("aestra gpu sprite"),
             &pipeline_cache.get_bind_group_layout(&pipeline.effect_layout),
@@ -207,6 +218,8 @@ fn prepare_render_bind_groups(
                 alive.buffer.as_entire_buffer_binding(),
                 globals.buffer.as_entire_buffer_binding(),
                 params.buffer.as_entire_buffer_binding(),
+                &image.texture_view,
+                &image.sampler,
             )),
         );
         commands

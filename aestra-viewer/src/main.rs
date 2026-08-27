@@ -7,6 +7,7 @@ use aestra_bevy::{
 };
 use bevy::{
     app::AppExit,
+    asset::AssetPlugin,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::WindowResolution,
@@ -41,15 +42,20 @@ fn main() {
         })
         .insert_resource(config)
         .add_plugins((
-            DefaultPlugins.set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Aestra Viewer".into(),
-                    resolution: WindowResolution::new(VIEW_WIDTH, VIEW_HEIGHT),
-                    resizable: true,
+            DefaultPlugins
+                .set(AssetPlugin {
+                    file_path: "../assets".into(),
+                    ..default()
+                })
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Aestra Viewer".into(),
+                        resolution: WindowResolution::new(VIEW_WIDTH, VIEW_HEIGHT),
+                        resizable: true,
+                        ..default()
+                    }),
                     ..default()
                 }),
-                ..default()
-            }),
             AestraPlugin,
         ))
         .add_systems(Startup, setup)

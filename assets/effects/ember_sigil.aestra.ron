@@ -1,0 +1,58 @@
+(
+    format_version: 2,
+    id: "2c4ebbb0-12cf-4e28-83fc-f6f19487fbd0",
+    name: "Ember Sigil",
+    duration: 2.4,
+    looping: true,
+    assets: [
+        (
+            id: "01b43d8a-dff5-42b0-98ea-f227f34c0185",
+            name: "Ember Spark",
+            kind: Texture,
+            path: "textures/ember_spark.png",
+        ),
+    ],
+    emitters: [
+        (
+            id: "92a44d4a-0fb0-4597-a54d-14aa03516de4",
+            name: "Kindled Motes",
+            enabled: true,
+            start_time: 0.0,
+            duration: 2.4,
+            max_particles: 128,
+            simulation_domain: Particle,
+            modules: [
+                (id: "b4425e5c-c1c1-42f2-99e0-dbd57a5404c1", module_type: "aestra.emission.rate", stage: EmitterUpdate, enabled: true, parameters: Emission(spawn_rate: 18.0, burst_count: 12)),
+                (id: "7564b695-fc10-46de-8372-58175fd449f6", module_type: "aestra.spawn.shape", stage: ParticleSpawn, enabled: true, parameters: Shape(shape: Ring(radius: 18.0))),
+                (
+                    id: "b92002fa-7915-41ef-95fd-128901b62a4c",
+                    module_type: "aestra.spawn.initialize",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Initialize(
+                        lifetime: (min: 0.8, max: 1.5),
+                        speed: (min: 22.0, max: 58.0),
+                        direction_degrees: 90.0,
+                        spread_degrees: 360.0,
+                        angular_velocity: (min: -1.2, max: 1.2),
+                    ),
+                ),
+                (id: "55c1470c-09a9-4dd9-91c6-c7861840340e", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 28.0), drag: 0.85, turbulence: 3.5)),
+                (
+                    id: "1f877141-f09e-4769-9a4e-c896449a36c7",
+                    module_type: "aestra.update.appearance",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Appearance(
+                        size: (id: "7bdaab41-b64d-4342-821f-b9ac79fa035d", keys: [(time: 0.0, value: 42.0), (time: 0.25, value: 64.0), (time: 1.0, value: 18.0)]),
+                        opacity: (id: "cc7036fa-bbf9-48e7-8ba4-c4a7a2344bde", keys: [(time: 0.0, value: 0.0), (time: 0.1, value: 1.0), (time: 0.72, value: 0.8), (time: 1.0, value: 0.0)]),
+                        color: (id: "bfa55e23-b6e2-4af4-9923-3ae8ead03d07", keys: [(time: 0.0, color: (1.0, 0.96, 0.78, 1.0)), (time: 0.45, color: (1.0, 0.45, 0.12, 1.0)), (time: 1.0, color: (0.45, 0.04, 0.01, 0.0))]),
+                    ),
+                ),
+            ],
+            renderers: [
+                (id: "5a8a157d-a765-4904-9256-9981e173d996", renderer_type: "aestra.renderer.sprite", enabled: true, blend: Additive, properties: Sprite(softness: 0.12, texture: Some("01b43d8a-dff5-42b0-98ea-f227f34c0185"))),
+            ],
+        ),
+    ],
+)

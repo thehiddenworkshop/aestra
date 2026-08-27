@@ -16,12 +16,17 @@ pub use capabilities::{
     GpuCapabilities,
 };
 
+use bevy::asset::LoadState;
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{
-    App, Children, Color, Commands, Component, Entity, Plugin, Quat, Query, Res, Resource, Sprite,
-    Time, Transform, Update, Vec2, Vec3, Visibility, Without,
+    App, AssetServer, Assets, Children, Color, Commands, Component, Entity, Image, Plugin, Quat,
+    Query, Res, Resource, Sprite, Time, Transform, Update, Vec2, Vec3, Visibility, Without,
 };
-use std::{sync::Arc, time::Instant};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    time::Instant,
+};
 
 /// Selects the presentation path used by [`AestraPlugin`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -62,6 +67,7 @@ impl Plugin for AestraPlugin {
         app.init_resource::<AestraSettings>()
             .init_resource::<GpuCapabilities>()
             .init_resource::<AestraRuntimeStatus>()
+            .init_resource::<TextureAssetCache>()
             .add_observer(gpu::receive_readback);
         gpu::install(app);
         app.add_systems(
@@ -71,10 +77,27 @@ impl Plugin for AestraPlugin {
                 prepare_effect_profiles,
                 prepare_effect_players,
                 gpu::prepare_gpu_players,
+                update_asset_diagnostics,
                 play_effects,
             )
                 .chain(),
         );
+    }
+}
+
+#[derive(Resource, Default)]
+pub(crate) struct TextureAssetCache(BTreeMap<String, bevy::prelude::Handle<Image>>);
+
+impl TextureAssetCache {
+    pub(crate) fn load(
+        &mut self,
+        asset_server: &AssetServer,
+        path: &str,
+    ) -> bevy::prelude::Handle<Image> {
+        self.0
+            .entry(path.to_owned())
+            .or_insert_with(|| asset_server.load(path.to_owned()))
+            .clone()
     }
 }
 
@@ -326,6 +349,66 @@ fn prepare_effect_profiles(
     }
 }
 
+fn update_asset_diagnostics(
+    asset_server: Res<AssetServer>,
+    images: Res<Assets<Image>>,
+    mut texture_cache: bevy::prelude::ResMut<TextureAssetCache>,
+    mut players: Query<(&EffectPlayer, &mut EffectProfiler)>,
+) {
+    const PREFIX: &str = "texture asset '";
+    for (player, mut profiler) in &mut players {
+        profiler
+            .0
+            .platform_warnings
+            .retain(|warning| !warning.starts_with(PREFIX));
+        let referenced = player
+            .effect()
+            .emitters
+            .iter()
+            .flat_map(|emitter| emitter.renderers.iter())
+            .filter_map(|renderer| renderer.texture)
+            .collect::<BTreeSet<_>>();
+        let mut texture_bytes = 0_u64;
+        let mut all_loaded = true;
+        for asset in &player.effect().assets {
+            if asset.kind != AssetKind::Texture {
+                continue;
+            }
+            if !referenced.contains(&asset.source) {
+                continue;
+            }
+            let handle = texture_cache.load(&asset_server, &asset.path);
+            match asset_server.get_load_state(handle.id()) {
+                Some(LoadState::Failed(error)) => {
+                    all_loaded = false;
+                    profiler.0.platform_warnings.push(format!(
+                        "texture asset '{}' ({}) failed to load: {error}; using the missing-texture fallback",
+                        asset.name, asset.path
+                    ));
+                }
+                Some(LoadState::Loaded) => {
+                    let Some(image) = images.get(&handle) else {
+                        all_loaded = false;
+                        continue;
+                    };
+                    texture_bytes = texture_bytes
+                        .saturating_add(image.data.as_ref().map_or(0, |data| data.len()) as u64);
+                }
+                Some(LoadState::NotLoaded | LoadState::Loading) | None => {
+                    all_loaded = false;
+                }
+            }
+        }
+        profiler.0.texture_memory_bytes = if referenced.is_empty() {
+            ProfileValue::Estimated(0)
+        } else if all_loaded {
+            ProfileValue::Measured(texture_bytes)
+        } else {
+            ProfileValue::Unavailable
+        };
+    }
+}
+
 fn bevy_profile(
     effect: &CompiledEffect,
     capabilities: &GpuCapabilities,
@@ -342,9 +425,18 @@ fn bevy_profile(
     profile
 }
 
+#[derive(bevy::ecs::system::SystemParam)]
+struct TexturePresentationAssets<'w> {
+    asset_server: Res<'w, AssetServer>,
+    images: Res<'w, Assets<Image>>,
+    texture_cache: bevy::prelude::ResMut<'w, TextureAssetCache>,
+    fallback_textures: Res<'w, gpu::GpuFallbackTextures>,
+}
+
 fn play_effects(
     time: Res<Time>,
     capabilities: Res<GpuCapabilities>,
+    mut textures: TexturePresentationAssets,
     mut players: Query<(
         &mut EffectPlayer,
         &mut EffectProfiler,
@@ -404,9 +496,32 @@ fn play_effects(
                 *visibility = Visibility::Hidden;
                 continue;
             };
-            if emitter.renderers.get(slot.renderer_index).is_none() {
+            let Some(renderer) = emitter.renderers.get(slot.renderer_index) else {
                 *visibility = Visibility::Hidden;
                 continue;
+            };
+            sprite.rect = None;
+            sprite.image = textures.fallback_textures.white.clone();
+            if let Some(texture) = renderer.texture
+                && let Some(asset) = player
+                    .effect()
+                    .assets
+                    .iter()
+                    .find(|asset| asset.source == texture)
+            {
+                let handle = textures
+                    .texture_cache
+                    .load(&textures.asset_server, &asset.path);
+                if let Some(image) = textures.images.get(&handle) {
+                    let image_size = image.size_f32();
+                    sprite.rect = Some(bevy::math::Rect::from_corners(
+                        Vec2::from_array(renderer.uv.min) * image_size,
+                        Vec2::from_array(renderer.uv.max) * image_size,
+                    ));
+                    sprite.image = handle;
+                } else {
+                    sprite.image = textures.fallback_textures.missing.clone();
+                }
             }
             let size = sample.size.max(0.01);
             sprite.color = Color::srgba(

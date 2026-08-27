@@ -9,10 +9,10 @@ use aestra_core::{
     RENDERER_SPRITE, RendererProperties, ScalarRange, StageKind, ValidationReport,
 };
 use aestra_runtime::{
-    CompiledCurve, CompiledEffect, CompiledEmitter, CompiledGradient, CompiledParameter,
-    ExecutionPlan, Expression, Instruction, IrLocation, OptimizationStats, ParameterSlot,
-    ParticleAttribute, ParticleLayout, RendererPlan, RuntimeParameterValue, RuntimeStage,
-    RuntimeValue, SimulationSeekMode,
+    CompiledAsset, CompiledCurve, CompiledEffect, CompiledEmitter, CompiledGradient,
+    CompiledParameter, ExecutionPlan, Expression, Instruction, IrLocation, OptimizationStats,
+    ParameterSlot, ParticleAttribute, ParticleLayout, RendererPlan, RuntimeParameterValue,
+    RuntimeStage, RuntimeValue, SimulationSeekMode,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -272,10 +272,16 @@ impl EffectCompiler {
                 .iter()
                 .filter(|renderer| renderer.enabled)
                 .map(|renderer| match renderer.properties {
-                    RendererProperties::Sprite { softness } => RendererPlan {
+                    RendererProperties::Sprite {
+                        softness,
+                        texture,
+                        uv,
+                    } => RendererPlan {
                         source: renderer.id,
                         blend: renderer.blend,
                         softness,
+                        texture,
+                        uv,
                     },
                     _ => unreachable!("compiler validation rejects unsupported renderers"),
                 })
@@ -301,6 +307,16 @@ impl EffectCompiler {
             duration: asset.duration,
             looping: asset.looping,
             seek_mode: SimulationSeekMode::StatelessDirect,
+            assets: asset
+                .assets
+                .iter()
+                .map(|entry| CompiledAsset {
+                    source: entry.id,
+                    name: entry.name.clone(),
+                    kind: entry.kind,
+                    path: entry.path.clone(),
+                })
+                .collect(),
             parameters,
             parameter_slots,
             particle_layout: ParticleLayout {

@@ -23,6 +23,8 @@ pub struct EffectAsset {
     pub name: String,
     pub duration: f32,
     pub looping: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assets: Vec<AssetDefinition>,
     #[serde(default)]
     pub parameters: Vec<EffectParameter>,
     #[serde(default)]
@@ -43,6 +45,7 @@ impl EffectAsset {
             name: name.into(),
             duration,
             looping: true,
+            assets: Vec::new(),
             parameters: Vec::new(),
             emitters: Vec::new(),
             events: Vec::new(),
@@ -89,6 +92,13 @@ impl EffectAsset {
             self.id.as_uuid().as_u128(),
             "effect.id".into(),
         );
+        for (index, asset) in self.assets.iter().enumerate() {
+            asset.validate(
+                &format!("effect.assets[{index}]"),
+                &mut report,
+                &mut semantic_ids,
+            );
+        }
         for (index, parameter) in self.parameters.iter().enumerate() {
             let path = format!("effect.parameters[{index}]");
             register_id(
@@ -114,6 +124,32 @@ impl EffectAsset {
         for (index, emitter) in self.emitters.iter().enumerate() {
             let emitter_path = format!("effect.emitters[{index}]");
             emitter.validate(&emitter_path, self.duration, &mut report, &mut semantic_ids);
+            for (renderer_index, renderer) in emitter.renderers.iter().enumerate() {
+                let RendererProperties::Sprite {
+                    texture: Some(texture),
+                    ..
+                } = renderer.properties
+                else {
+                    continue;
+                };
+                let path = format!("{emitter_path}.renderers[{renderer_index}].properties.texture");
+                match self.assets.iter().find(|asset| asset.id == texture) {
+                    Some(asset) if asset.kind == AssetKind::Texture => {}
+                    Some(asset) => report.push(Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        path,
+                        format!(
+                            "sprite texture references '{}' which is registered as {:?}",
+                            asset.name, asset.kind
+                        ),
+                    )),
+                    None => report.push(Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        path,
+                        format!("sprite texture references missing asset {texture}"),
+                    )),
+                }
+            }
             for (module_index, module) in emitter.modules.iter().enumerate() {
                 for (input, parameter_id) in &module.bindings {
                     let path = format!("{emitter_path}.modules[{module_index}].bindings.{input}");
@@ -946,6 +982,106 @@ pub enum BlendMode {
     Multiply,
 }
 
+/// The engine-independent type of an entry in an effect's asset registry.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AssetKind {
+    Texture,
+    Mesh,
+    Flipbook,
+    Material,
+}
+
+/// A stable asset identity and its project-relative source path.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AssetDefinition {
+    pub id: AssetId,
+    pub name: String,
+    pub kind: AssetKind,
+    pub path: String,
+}
+
+impl AssetDefinition {
+    pub fn texture(name: impl Into<String>, path: impl Into<String>) -> Self {
+        Self {
+            id: AssetId::new(),
+            name: name.into(),
+            kind: AssetKind::Texture,
+            path: path.into(),
+        }
+    }
+
+    fn validate(
+        &self,
+        path: &str,
+        report: &mut ValidationReport,
+        semantic_ids: &mut BTreeMap<u128, String>,
+    ) {
+        register_id(
+            report,
+            semantic_ids,
+            self.id.as_uuid().as_u128(),
+            format!("{path}.id"),
+        );
+        if self.name.trim().is_empty() {
+            invalid_value(
+                report,
+                &format!("{path}.name"),
+                "asset name cannot be empty",
+            );
+        }
+        let source = Path::new(&self.path);
+        let unsafe_component = source.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        });
+        if self.path.trim().is_empty() || source.is_absolute() || unsafe_component {
+            invalid_value(
+                report,
+                &format!("{path}.path"),
+                "asset path must be a non-empty project-relative path without parent traversal",
+            );
+        }
+    }
+}
+
+/// Normalized texture coordinates used by a sprite renderer.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct UvRect {
+    pub min: [f32; 2],
+    pub max: [f32; 2],
+}
+
+impl UvRect {
+    pub const FULL: Self = Self {
+        min: [0.0, 0.0],
+        max: [1.0, 1.0],
+    };
+
+    fn is_full(value: &Self) -> bool {
+        *value == Self::FULL
+    }
+
+    fn is_valid(self) -> bool {
+        self.min.into_iter().chain(self.max).all(f32::is_finite)
+            && self.min[0] >= 0.0
+            && self.min[1] >= 0.0
+            && self.max[0] <= 1.0
+            && self.max[1] <= 1.0
+            && self.min[0] < self.max[0]
+            && self.min[1] < self.max[1]
+    }
+}
+
+impl Default for UvRect {
+    fn default() -> Self {
+        Self::FULL
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct RendererTypeId(pub String);
@@ -972,7 +1108,11 @@ impl RendererInstance {
             renderer_type: RendererTypeId::new(RENDERER_SPRITE),
             enabled: true,
             blend,
-            properties: RendererProperties::Sprite { softness },
+            properties: RendererProperties::Sprite {
+                softness,
+                texture: None,
+                uv: UvRect::FULL,
+            },
         }
     }
 
@@ -989,12 +1129,26 @@ impl RendererInstance {
             format!("{path}.id"),
         );
         let expected_type = match &self.properties {
-            RendererProperties::Sprite { softness } => {
+            RendererProperties::Sprite {
+                softness,
+                texture,
+                uv,
+            } => {
                 if !softness.is_finite() || *softness < 0.0 {
                     invalid_value(
                         report,
                         path,
                         "sprite softness must be finite and non-negative",
+                    );
+                }
+                if texture.is_some_and(AssetId::is_nil) {
+                    invalid_value(report, path, "sprite texture asset cannot be nil");
+                }
+                if !uv.is_valid() {
+                    invalid_value(
+                        report,
+                        path,
+                        "sprite UV bounds must be finite, normalized, and have positive area",
                     );
                 }
                 Some(RENDERER_SPRITE)
@@ -1043,9 +1197,19 @@ impl RendererInstance {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RendererProperties {
-    Sprite { softness: f32 },
-    Ribbon { width: f32 },
-    Mesh { asset: AssetId },
+    Sprite {
+        softness: f32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        texture: Option<AssetId>,
+        #[serde(default, skip_serializing_if = "UvRect::is_full")]
+        uv: UvRect,
+    },
+    Ribbon {
+        width: f32,
+    },
+    Mesh {
+        asset: AssetId,
+    },
     Custom(BTreeMap<String, Value>),
 }
 

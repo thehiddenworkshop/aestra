@@ -1,7 +1,11 @@
-use aestra_bevy::{AssetError, EffectAsset, EffectCompiler, EffectInstance, ParticleSample};
+use aestra_bevy::{
+    AssetError, EffectAsset, EffectCompiler, EffectInstance, EffectProfile, ParticleSample,
+    ProfileValue,
+};
 use std::sync::Arc;
 
 const V2_REFERENCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
+const TEXTURED_REFERENCE: &str = include_str!("../../assets/effects/ember_sigil.aestra.ron");
 
 #[test]
 fn bundled_v2_asset_preserves_its_public_shape() {
@@ -33,6 +37,19 @@ fn bundled_v2_asset_preserves_its_public_shape() {
             .iter()
             .all(|emitter| { emitter.modules.len() == 5 && !emitter.renderers.is_empty() })
     );
+}
+
+#[test]
+fn bundled_textured_effect_compiles_with_multiple_renderer_paths() {
+    let effect = EffectAsset::from_ron(TEXTURED_REFERENCE).unwrap();
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+
+    assert_eq!(compiled.assets.len(), 1);
+    assert_eq!(compiled.emitters[0].renderers.len(), 1);
+    assert!(compiled.emitters[0].renderers[0].texture.is_some());
+    let profile = EffectProfile::from_compiled(&compiled);
+    assert_eq!(profile.texture_sample_count, ProfileValue::Estimated(1));
+    assert_eq!(profile.texture_memory_bytes, ProfileValue::Unavailable);
 }
 
 #[test]

@@ -7,7 +7,7 @@ use aestra_runtime::{
     CompiledCurve, CompiledGradient, EffectInstance, ExecutionPlan, Instruction, RuntimeValue,
 };
 use bevy::{
-    asset::embedded_asset,
+    asset::{RenderAssetUsages, embedded_asset},
     camera::{
         primitives::Aabb,
         visibility::{self, VisibilityClass},
@@ -22,7 +22,8 @@ use bevy::{
         render_resource::{
             BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
             BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
-            ComputePipelineDescriptor, DownlevelFlags, PipelineCache, ShaderStages, ShaderType,
+            ComputePipelineDescriptor, DownlevelFlags, Extent3d, PipelineCache, ShaderStages,
+            ShaderType, TextureDimension, TextureFormat,
             binding_types::{storage_buffer, storage_buffer_read_only},
         },
         renderer::{RenderAdapter, RenderAdapterInfo, RenderContext, RenderDevice, RenderGraph},
@@ -33,7 +34,7 @@ use thiserror::Error;
 
 use crate::{
     ActiveBackend, AestraRuntimeStatus, AestraSettings, EffectPlayer, EffectRuntimeStatus,
-    GpuCapabilities, GpuPresentationPrepared, capabilities::select_backend,
+    GpuCapabilities, GpuPresentationPrepared, TextureAssetCache, capabilities::select_backend,
 };
 
 pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy/shaders/aestra_simulation.wesl";
@@ -106,7 +107,9 @@ pub struct GpuRenderer {
     pub emitter_index: u32,
     pub blend_mode: u32,
     pub softness: f32,
-    pub _padding: f32,
+    pub textured: u32,
+    pub uv_min: Vec2,
+    pub uv_max: Vec2,
 }
 
 /// Selects the renderer record used by one indirect draw.
@@ -188,7 +191,9 @@ impl GpuEffectArtifact {
                         BlendMode::Multiply => GpuBlend::Multiply as u32,
                     },
                     softness: renderer.softness,
-                    _padding: 0.0,
+                    textured: u32::from(renderer.texture.is_some()),
+                    uv_min: Vec2::from_array(renderer.uv.min),
+                    uv_max: Vec2::from_array(renderer.uv.max),
                 }));
             }
             bounds_half_extents = bounds_half_extents.max(emitter_bounds(
@@ -267,6 +272,8 @@ struct GpuDrawInstance {
     indirect: Handle<ShaderBuffer>,
     render_globals: Handle<ShaderBuffer>,
     render_params: Handle<ShaderBuffer>,
+    texture: Handle<Image>,
+    fallback_texture: Handle<Image>,
     renderer_order: u32,
     blend: GpuBlend,
 }
@@ -276,6 +283,12 @@ pub(crate) struct GpuReadbackOwner(Entity);
 
 #[derive(Component)]
 struct GpuBindGroup(BindGroup);
+
+#[derive(Resource)]
+pub(crate) struct GpuFallbackTextures {
+    pub(crate) white: Handle<Image>,
+    pub(crate) missing: Handle<Image>,
+}
 
 type UnpreparedPlayers<'w, 's> = Query<
     'w,
@@ -298,6 +311,7 @@ pub(crate) fn install(app: &mut App) {
         ExtractComponentPlugin::<GpuEffectBuffers>::default(),
         ExtractComponentPlugin::<GpuDrawInstance>::default(),
     ))
+    .add_systems(Startup, init_fallback_textures)
     .add_systems(Update, update_gpu_inputs.after(crate::play_effects));
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
         let capabilities = GpuCapabilities::unavailable("Bevy has no render sub-application");
@@ -317,9 +331,40 @@ pub(crate) fn install(app: &mut App) {
     render::install(render_app);
 }
 
+fn init_fallback_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    let white = images.add(Image::new_fill(
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[255, 255, 255, 255],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    ));
+    let missing = images.add(Image::new_fill(
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[
+            255, 0, 255, 255, 24, 8, 28, 255, 24, 8, 28, 255, 255, 0, 255, 255,
+        ],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    ));
+    commands.insert_resource(GpuFallbackTextures { white, missing });
+}
+
 pub(crate) fn prepare_gpu_players(
     mut commands: Commands,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
+    asset_server: Res<AssetServer>,
+    mut texture_cache: ResMut<TextureAssetCache>,
+    fallback_textures: Res<GpuFallbackTextures>,
     players: UnpreparedPlayers,
 ) {
     for (entity, player, runtime) in &players {
@@ -349,7 +394,37 @@ pub(crate) fn prepare_gpu_players(
             .renderers
             .iter()
             .enumerate()
-            .map(|(index, renderer)| {
+            .zip(
+                player
+                    .effect()
+                    .emitters
+                    .iter()
+                    .filter(|emitter| emitter.enabled)
+                    .flat_map(|emitter| emitter.renderers.iter()),
+            )
+            .map(|((index, renderer), plan)| {
+                let texture_path = plan.texture.and_then(|texture| {
+                    player
+                        .effect()
+                        .assets
+                        .iter()
+                        .find(|asset| asset.source == texture)
+                        .map(|asset| asset.path.clone())
+                });
+                let (texture, fallback_texture) = texture_path.map_or_else(
+                    || {
+                        (
+                            fallback_textures.white.clone(),
+                            fallback_textures.white.clone(),
+                        )
+                    },
+                    |path| {
+                        (
+                            texture_cache.load(&asset_server, &path),
+                            fallback_textures.missing.clone(),
+                        )
+                    },
+                );
                 (
                     index as u32,
                     match renderer.blend_mode {
@@ -357,6 +432,8 @@ pub(crate) fn prepare_gpu_players(
                         mode if mode == GpuBlend::Multiply as u32 => GpuBlend::Multiply,
                         _ => GpuBlend::Alpha,
                     },
+                    texture,
+                    fallback_texture,
                 )
             })
             .collect::<Vec<_>>();
@@ -408,7 +485,7 @@ pub(crate) fn prepare_gpu_players(
             .entity(entity)
             .with_children(|parent| match runtime.active {
                 ActiveBackend::Gpu => {
-                    for (renderer_index, blend) in renderer_draws {
+                    for (renderer_index, blend, texture, fallback_texture) in renderer_draws {
                         let render_params = buffers.add(ShaderBuffer::from(GpuRenderParams {
                             renderer_index,
                             _padding: UVec3::ZERO,
@@ -421,6 +498,8 @@ pub(crate) fn prepare_gpu_players(
                                 indirect: indirect.clone(),
                                 render_globals: render_globals.clone(),
                                 render_params,
+                                texture,
+                                fallback_texture,
                                 renderer_order: renderer_index,
                                 blend,
                             },
@@ -938,7 +1017,10 @@ fn appearance<'a>(
 mod tests {
     use super::*;
     use aestra_compiler::EffectCompiler;
-    use aestra_core::{BlendMode, EffectAsset, Emitter, RendererInstance};
+    use aestra_core::{
+        AssetDefinition, BlendMode, EffectAsset, Emitter, RendererInstance, RendererProperties,
+        UvRect,
+    };
     use std::sync::Arc;
 
     #[test]
@@ -960,7 +1042,17 @@ mod tests {
     #[test]
     fn artifact_preserves_every_enabled_renderer() {
         let mut effect = EffectAsset::new("GPU renderers", 2.0);
+        let texture = AssetDefinition::texture("Spark", "textures/spark.png");
+        let texture_id = texture.id;
         let mut first = Emitter::basic_sprite("First", 2.0);
+        first.renderers[0].properties = RendererProperties::Sprite {
+            softness: 0.5,
+            texture: Some(texture_id),
+            uv: UvRect {
+                min: [0.25, 0.0],
+                max: [0.75, 1.0],
+            },
+        };
         first
             .renderers
             .push(RendererInstance::sprite(BlendMode::Alpha, 0.65));
@@ -969,6 +1061,7 @@ mod tests {
             .push(RendererInstance::sprite(BlendMode::Multiply, 0.8));
         let mut disabled = Emitter::basic_sprite("Disabled", 2.0);
         disabled.enabled = false;
+        effect.assets.push(texture);
         effect.emitters.extend([first, disabled]);
 
         let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
@@ -977,6 +1070,9 @@ mod tests {
         assert_eq!(artifact.renderers.len(), 3);
         assert_eq!(artifact.renderers[0].emitter_index, 0);
         assert_eq!(artifact.renderers[0].blend_mode, GpuBlend::Additive as u32);
+        assert_eq!(artifact.renderers[0].textured, 1);
+        assert_eq!(artifact.renderers[0].uv_min, Vec2::new(0.25, 0.0));
+        assert_eq!(artifact.renderers[0].uv_max, Vec2::new(0.75, 1.0));
         assert_eq!(artifact.renderers[1].emitter_index, 0);
         assert_eq!(artifact.renderers[1].blend_mode, GpuBlend::Alpha as u32);
         assert_eq!(artifact.renderers[1].softness, 0.65);
