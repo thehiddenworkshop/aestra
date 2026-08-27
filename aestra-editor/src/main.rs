@@ -7,7 +7,8 @@ mod ui_shell;
 
 use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    ColorKey, CurveKey, Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterShape,
+    ActiveBackend, AestraPlugin, AestraSet, ColorKey, CurveKey, Diagnostic, DiagnosticCode,
+    DiagnosticSeverity, EffectAsset, EffectPlayer, EffectRuntimeStatus, EmitterShape,
     MaterialInput, MaterialProperties, ModuleId, ModuleInstance, ModuleParameters, RendererId,
     RendererProperties, StageKind, ValidationReport, Value,
 };
@@ -15,8 +16,8 @@ use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistr
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
 use aestra_runtime::{EffectProfile, ProfileValue, ProfileValueSource};
 use bevy::{
-    asset::AssetPlugin,
-    camera::RenderTarget,
+    asset::{AssetPlugin, RenderAssetUsages},
+    camera::{RenderTarget, visibility::RenderLayers},
     ecs::system::SystemParam,
     feathers::{
         FeathersPlugins,
@@ -31,8 +32,9 @@ use bevy::{
     picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer},
     picking::pointer::PointerButton,
     prelude::*,
+    render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
     text::FontSource,
-    ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition},
+    ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition, widget::ViewportNode},
     ui_widgets::{Activate, ScrollArea, ScrollIntoView, Scrollbar, ValueChange},
     window::{
         CursorIcon, PrimaryWindow, SystemCursorIcon, WindowCloseRequested, WindowMoved,
@@ -54,7 +56,8 @@ use std::{
 
 const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
-const PARTICLE_POOL_SIZE: usize = 384;
+const EDITOR_ASSET_ROOT: &str = "../assets";
+const MAX_PREVIEW_PARTICLE_LIMIT: usize = 384;
 const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
 const PROFILER_HISTORY_SAMPLES: usize = 96;
 
@@ -96,7 +99,7 @@ fn main() {
         .add_plugins(
             DefaultPlugins
                 .set(AssetPlugin {
-                    file_path: "../assets".into(),
+                    file_path: EDITOR_ASSET_ROOT.into(),
                     ..default()
                 })
                 .set(WindowPlugin {
@@ -111,6 +114,7 @@ fn main() {
                 }),
         )
         .add_plugins(FeathersPlugins)
+        .add_plugins(AestraPlugin)
         .insert_resource(theme::feathers_theme())
         .add_observer(handle_settings_toggle_change)
         .add_observer(handle_settings_integer_change)
@@ -137,6 +141,7 @@ fn main() {
                     dismiss_open_menus,
                     scrub_timeline,
                     advance_playback,
+                    sync_rendered_preview,
                     update_preview,
                     update_profiler_labels,
                     update_localized_text,
@@ -169,6 +174,7 @@ fn main() {
             )
                 .chain(),
         )
+        .configure_sets(Update, AestraSet::Playback.after(sync_rendered_preview))
         .run();
 }
 
@@ -758,10 +764,13 @@ impl EffectCatalog {
 }
 
 #[derive(Component)]
-struct PreviewParticle(usize);
+struct PreviewCanvas;
 
 #[derive(Component)]
-struct PreviewCanvas;
+struct PreviewRenderCamera;
+
+#[derive(Component)]
+struct PreviewEffectPlayer;
 
 #[derive(Component)]
 struct PlaybackLabel;
@@ -802,10 +811,11 @@ struct PanelSources<'a> {
     settings_panel: &'a SettingsPanelState,
     settings_persistence: &'a SettingsPersistence,
     localizer: &'a Localizer,
+    preview_camera: Entity,
 }
 
 #[derive(SystemParam)]
-struct UiBuildResources<'w> {
+struct UiBuildResources<'w, 's> {
     catalog: Res<'w, EffectCatalog>,
     layout: Res<'w, WorkspaceLayout>,
     menu: Res<'w, MenuState>,
@@ -818,10 +828,12 @@ struct UiBuildResources<'w> {
     settings_persistence: Res<'w, SettingsPersistence>,
     localizer: Res<'w, Localizer>,
     workspace: Res<'w, WorkspaceState>,
+    preview_camera: Single<'w, 's, Entity, With<PreviewRenderCamera>>,
 }
 
 #[derive(SystemParam)]
 struct SetupUiResources<'w> {
+    images: ResMut<'w, Assets<Image>>,
     registry: Res<'w, EditorModuleRegistry>,
     palette: Res<'w, ModulePaletteState>,
     workspace: Res<'w, WorkspaceState>,
@@ -855,10 +867,12 @@ fn setup_editor(
     menu: Res<MenuState>,
     catalog: Res<EffectCatalog>,
     layout: Res<WorkspaceLayout>,
-    editor_resources: SetupUiResources,
+    mut editor_resources: SetupUiResources,
     mut rendered: ResMut<RenderedUiRevision>,
 ) {
-    commands.spawn(Camera2d);
+    commands.spawn((Camera2d, IsDefaultUiCamera, RenderLayers::layer(31)));
+    let preview_camera = spawn_preview_camera(&mut commands, &mut editor_resources.images);
+    spawn_preview_effect_player(&mut commands, &session);
     let sources = PanelSources {
         session: &session,
         catalog: &catalog,
@@ -870,6 +884,7 @@ fn setup_editor(
         settings_panel: &editor_resources.settings_panel,
         settings_persistence: &editor_resources.settings_persistence,
         localizer: &editor_resources.localizer,
+        preview_camera,
     };
     spawn_editor_ui(
         &mut commands,
@@ -879,6 +894,47 @@ fn setup_editor(
         sources,
     );
     rendered.0 = session.ui_revision;
+}
+
+fn spawn_preview_camera(commands: &mut Commands, images: &mut Assets<Image>) -> Entity {
+    let mut image = Image::new_uninit(
+        default(),
+        TextureDimension::D2,
+        TextureFormat::Bgra8UnormSrgb,
+        RenderAssetUsages::all(),
+    );
+    image.texture_descriptor.usage =
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
+    let target = images.add(image);
+    commands
+        .spawn((
+            PreviewRenderCamera,
+            Camera2d,
+            Camera {
+                order: -1,
+                clear_color: ClearColorConfig::Custom(theme::VIEWPORT),
+                ..default()
+            },
+            RenderTarget::Image(target.into()),
+            RenderLayers::layer(0),
+        ))
+        .id()
+}
+
+fn configured_preview_player(session: &EditorSession) -> Option<EffectPlayer> {
+    let preview = session.preview.as_ref()?;
+    let mut player = EffectPlayer::from_compiled(preview.effect().clone());
+    player.playing = false;
+    player.speed = session.speed;
+    player.set_seed(session.preview_seed);
+    player.seek_frame(session.frame());
+    Some(player)
+}
+
+fn spawn_preview_effect_player(commands: &mut Commands, session: &EditorSession) {
+    if let Some(player) = configured_preview_player(session) {
+        commands.spawn((PreviewEffectPlayer, player, RenderLayers::layer(0)));
+    }
 }
 
 fn setup_editor_fonts(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -1635,7 +1691,7 @@ fn spawn_panel_content(
     sources: PanelSources<'_>,
 ) {
     match panel {
-        DockPanel::Viewport => spawn_preview(parent),
+        DockPanel::Viewport => spawn_preview(parent, sources.preview_camera),
         DockPanel::Assets => spawn_asset_browser(parent, sources.session, sources.catalog),
         DockPanel::Inspector => {
             spawn_inspector(
@@ -2723,7 +2779,7 @@ fn spawn_asset_browser(
         });
 }
 
-fn spawn_preview(parent: &mut ChildSpawnerCommands) {
+fn spawn_preview(parent: &mut ChildSpawnerCommands, preview_camera: Entity) {
     parent
         .spawn(())
         .apply_scene(ui_shell::viewport_pane())
@@ -2745,6 +2801,17 @@ fn spawn_preview(parent: &mut ChildSpawnerCommands) {
                     BorderColor::all(theme::BORDER_BRIGHT),
                 ))
                 .with_children(|canvas| {
+                    canvas.spawn((
+                        ViewportNode::new(preview_camera),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(0.0),
+                            right: Val::Px(0.0),
+                            top: Val::Px(0.0),
+                            bottom: Val::Px(0.0),
+                            ..default()
+                        },
+                    ));
                     spawn_preview_grid(canvas);
                     canvas.spawn((
                         Node {
@@ -2758,20 +2825,6 @@ fn spawn_preview(parent: &mut ChildSpawnerCommands) {
                         },
                         BackgroundColor(theme::TEXT_FAINT),
                     ));
-                    for index in 0..PARTICLE_POOL_SIZE {
-                        canvas.spawn((
-                            PreviewParticle(index),
-                            Node {
-                                display: Display::None,
-                                position_type: PositionType::Absolute,
-                                width: Val::Px(4.0),
-                                height: Val::Px(4.0),
-                                border_radius: BorderRadius::MAX,
-                                ..default()
-                            },
-                            BackgroundColor(Color::WHITE),
-                        ));
-                    }
                     canvas.spawn((
                         Text::new("PERSPECTIVE  |  LIT  |  LOCAL SPACE"),
                         TextFont {
@@ -5503,7 +5556,7 @@ fn apply_settings_integer(
 ) -> bool {
     match setting {
         SettingsNumber::PreviewParticleLimit => {
-            let value = value.clamp(64, PARTICLE_POOL_SIZE as i32) as usize;
+            let value = value.clamp(64, MAX_PREVIEW_PARTICLE_LIMIT as i32) as usize;
             let changed = settings.performance.preview_particle_limit != value;
             settings.performance.preview_particle_limit = value;
             changed
@@ -9149,6 +9202,7 @@ fn sync_native_floating_windows(
         settings_panel: &editor_resources.settings_panel,
         settings_persistence: &editor_resources.settings_persistence,
         localizer: &editor_resources.localizer,
+        preview_camera: *editor_resources.preview_camera,
     };
     for floating in &editor_resources.layout.floating {
         if windows.iter().any(|(_, native)| native.0 == floating.panel) {
@@ -9185,6 +9239,7 @@ fn sync_native_floating_windows(
             .spawn((
                 Camera2d,
                 RenderTarget::Window(WindowRef::Entity(window)),
+                RenderLayers::layer(31),
                 NativeFloatingCamera(floating.panel),
             ))
             .id();
@@ -9225,6 +9280,7 @@ fn rebuild_editor_ui(
         settings_panel: &editor_resources.settings_panel,
         settings_persistence: &editor_resources.settings_persistence,
         localizer: &editor_resources.localizer,
+        preview_camera: *editor_resources.preview_camera,
     };
     commands.entity(*root).with_children(|root| {
         spawn_editor_content(
@@ -9260,13 +9316,43 @@ fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
     session.advance_playback(time.delta_secs());
 }
 
-fn update_preview(
-    mut session: ResMut<EditorSession>,
-    mut profiler: ResMut<ProfilerState>,
-    settings: Res<EditorSettings>,
-    mut particles: Query<(&PreviewParticle, &mut Node, &mut BackgroundColor)>,
-    canvas: Single<&ComputedNode, With<PreviewCanvas>>,
+fn sync_rendered_preview(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    mut players: Query<(Entity, &mut EffectPlayer), With<PreviewEffectPlayer>>,
 ) {
+    let desired = session
+        .preview
+        .as_ref()
+        .map(|preview| preview.effect().clone());
+    let Some(desired) = desired else {
+        for (entity, _) in &mut players {
+            commands.entity(entity).despawn();
+        }
+        return;
+    };
+
+    let Some((entity, mut player)) = players.iter_mut().next() else {
+        spawn_preview_effect_player(&mut commands, &session);
+        return;
+    };
+    if !std::sync::Arc::ptr_eq(player.effect(), &desired) {
+        commands.entity(entity).despawn();
+        spawn_preview_effect_player(&mut commands, &session);
+        return;
+    }
+
+    player.playing = false;
+    player.speed = session.speed;
+    if player.instance.seed() != session.preview_seed {
+        player.set_seed(session.preview_seed);
+    }
+    if player.frame() != session.frame() {
+        player.seek_frame(session.frame());
+    }
+}
+
+fn update_preview(mut session: ResMut<EditorSession>, mut profiler: ResMut<ProfilerState>) {
     let compiled = session
         .preview
         .as_ref()
@@ -9280,29 +9366,6 @@ fn update_preview(
         && profiler.record_cpu_frame(&compiled, &session.samples, elapsed)
     {
         session.ui_revision += 1;
-    }
-    let canvas_size = canvas.size() * canvas.inverse_scale_factor;
-    for (marker, mut node, mut background) in &mut particles {
-        if marker.0 >= settings.performance.preview_particle_limit {
-            node.display = Display::None;
-            continue;
-        }
-        let Some(sample) = session.samples.get(marker.0) else {
-            node.display = Display::None;
-            continue;
-        };
-        let scale = sample.size.clamp(1.0, 38.0);
-        node.display = Display::Flex;
-        node.left = Val::Px(canvas_size.x * 0.5 + sample.position[0] - scale * 0.5);
-        node.top = Val::Px(canvas_size.y * 0.5 - sample.position[1] - scale * 0.5);
-        node.width = Val::Px(scale);
-        node.height = Val::Px(scale);
-        background.0 = Color::srgba(
-            sample.color[0],
-            sample.color[1],
-            sample.color[2],
-            sample.color[3],
-        );
     }
 }
 
@@ -9403,8 +9466,8 @@ fn update_localized_text(
 #[allow(clippy::type_complexity)]
 fn update_editor_labels(
     session: Res<EditorSession>,
-    settings: Res<EditorSettings>,
     localizer: Res<Localizer>,
+    preview_runtime: Query<Ref<EffectRuntimeStatus>, With<PreviewEffectPlayer>>,
     mut labels: Query<(
         &mut Text,
         Option<&PlaybackLabel>,
@@ -9415,9 +9478,21 @@ fn update_editor_labels(
         Option<&DocumentToolbarLabel>,
     )>,
 ) {
-    if !session.is_changed() && !localizer.is_changed() {
+    let runtime_changed = preview_runtime
+        .iter()
+        .any(|runtime| runtime.is_added() || runtime.is_changed());
+    if !session.is_changed() && !localizer.is_changed() && !runtime_changed {
         return;
     }
+    let backend = preview_runtime
+        .iter()
+        .next()
+        .map_or("DETECTING GPU", |runtime| match runtime.active {
+            ActiveBackend::Pending => "DETECTING GPU",
+            ActiveBackend::Gpu => "NATIVE GPU",
+            ActiveBackend::GpuReadback => "GPU READBACK",
+            ActiveBackend::CpuReference => "CPU FALLBACK",
+        });
     let layer = session.selected_layer();
     for (mut text, playback, time, title, count, document_menu, document_toolbar) in &mut labels {
         if playback.is_some() {
@@ -9438,13 +9513,7 @@ fn update_editor_labels(
         } else if title.is_some() {
             text.0 = layer.name.clone();
         } else if count.is_some() {
-            text.0 = format!(
-                "{} LIVE PARTICLES  |  60 FPS",
-                session
-                    .samples
-                    .len()
-                    .min(settings.performance.preview_particle_limit)
-            );
+            text.0 = format!("{} LIVE PARTICLES  |  {backend}", session.samples.len());
         } else if document_menu.is_some() {
             let file = session
                 .source_path
@@ -9558,10 +9627,7 @@ mod tests {
         app.add_systems(Update, update_history_actions);
 
         let particle_color = Color::srgba(0.8, 0.4, 1.0, 0.75);
-        let particle = app
-            .world_mut()
-            .spawn((PreviewParticle(0), BackgroundColor(particle_color)))
-            .id();
+        let particle = app.world_mut().spawn(BackgroundColor(particle_color)).id();
         let undo = app
             .world_mut()
             .spawn((UndoMenuItem, BackgroundColor(theme::PANEL)))
@@ -9622,6 +9688,41 @@ mod tests {
         let effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("bundled effect should parse");
         assert_eq!(effect.format_version, 2);
         assert_eq!(effect.emitters.len(), 4);
+    }
+
+    #[test]
+    fn editor_asset_root_contains_bundled_textures() {
+        let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(EDITOR_ASSET_ROOT);
+        for source in [
+            include_str!("../../assets/effects/ember_sigil.aestra.ron"),
+            include_str!("../../assets/effects/plasma_burst.aestra.ron"),
+        ] {
+            let effect = EffectAsset::from_ron(source).unwrap();
+            for asset in effect.assets {
+                assert!(
+                    asset_root.join(&asset.path).is_file(),
+                    "missing bundled asset {}",
+                    asset.path
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn editor_preview_player_uses_the_compiled_effect_timeline_and_seed() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.preview_seed = 42;
+        session.clock.seek_frame(37, session.playback_duration());
+
+        let player = configured_preview_player(&session).unwrap();
+
+        assert!(std::sync::Arc::ptr_eq(
+            player.effect(),
+            session.preview.as_ref().unwrap().effect()
+        ));
+        assert_eq!(player.frame(), session.frame());
+        assert_eq!(player.instance.seed(), 42);
+        assert!(!player.playing);
     }
 
     #[test]

@@ -62,6 +62,14 @@ impl Default for AestraSettings {
 #[derive(Default)]
 pub struct AestraPlugin;
 
+/// Public scheduling points for applications that need to coordinate editor or game state with
+/// Aestra playback.
+#[derive(bevy::ecs::schedule::SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AestraSet {
+    /// Advances effect clocks and updates their presentation for the current frame.
+    Playback,
+}
+
 impl Plugin for AestraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AestraSettings>()
@@ -80,7 +88,8 @@ impl Plugin for AestraPlugin {
                 update_asset_diagnostics,
                 play_effects,
             )
-                .chain(),
+                .chain()
+                .in_set(AestraSet::Playback),
         );
     }
 }
