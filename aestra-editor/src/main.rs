@@ -17,6 +17,7 @@ use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistr
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
 use aestra_runtime::{EffectProfile, ProfileValue, ProfileValueSource};
 use bevy::{
+    app::TransformGizmoRenderStep,
     asset::AssetPlugin,
     camera::{RenderTarget, Viewport, visibility::RenderLayers},
     ecs::system::SystemParam,
@@ -30,8 +31,9 @@ use bevy::{
         tokens,
     },
     gizmos::transform_gizmo::{
-        TransformGizmoCamera, TransformGizmoFocus, TransformGizmoMode, TransformGizmoPlugin,
-        TransformGizmoSettings, TransformGizmoSpace, TransformGizmoState, TransformGizmoSystems,
+        TransformGizmoAxis, TransformGizmoCamera, TransformGizmoFocus, TransformGizmoMode,
+        TransformGizmoPlugin, TransformGizmoSettings, TransformGizmoSpace, TransformGizmoState,
+        TransformGizmoSystems,
     },
     input::{
         ButtonState,
@@ -239,7 +241,12 @@ fn main() {
                 sync_preview_camera_viewport
                     .after(UiSystems::Layout)
                     .before(TransformGizmoSystems),
-                update_emitter_transform_gizmo.after(TransformGizmoSystems),
+                update_emitter_transform_gizmo
+                    .after(TransformGizmoSystems)
+                    .before(TransformGizmoRenderStep),
+                apply_transform_gizmo_drag_feedback
+                    .after(TransformGizmoRenderStep)
+                    .after(update_emitter_transform_gizmo),
             ),
         )
         .configure_sets(Update, AestraSet::Playback.after(sync_rendered_preview))
@@ -987,6 +994,9 @@ struct PreviewEffectPlayer;
 #[derive(Component)]
 struct EmitterTransformGizmoProxy;
 
+#[derive(Component)]
+struct TransformGizmoVisualRoot;
+
 #[derive(Clone, Copy, Debug)]
 struct ActiveEmitterTransformGizmo {
     emitter: EmitterId,
@@ -1180,14 +1190,18 @@ fn configure_transform_gizmo_overlay_camera(
 }
 
 fn configure_transform_gizmo_overlay_materials(
-    gizmo_meshes: Query<(&RenderLayers, &MeshMaterial3d<StandardMaterial>)>,
+    mut commands: Commands,
+    gizmo_meshes: Query<(&RenderLayers, &MeshMaterial3d<StandardMaterial>, &ChildOf)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let gizmo_layers = RenderLayers::layer(15);
-    for (layers, material) in &gizmo_meshes {
+    for (layers, material, parent) in &gizmo_meshes {
         if layers != &gizmo_layers {
             continue;
         }
+        commands
+            .entity(parent.parent())
+            .insert(TransformGizmoVisualRoot);
         if let Some(mut material) = materials.get_mut(&material.0) {
             material.alpha_mode = AlphaMode::Blend;
             material.depth_bias = 10_000.0;
@@ -1474,6 +1488,96 @@ fn update_emitter_transform_gizmo(
         }
     } else {
         session.restore_interaction_preview();
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TransformGizmoDragVisual {
+    rotation: Option<Quat>,
+    scale: Vec3,
+}
+
+fn transform_gizmo_drag_visual(
+    mode: TransformGizmoMode,
+    space: TransformGizmoSpace,
+    axis: Option<TransformGizmoAxis>,
+    original: Transform,
+    current: Transform,
+) -> TransformGizmoDragVisual {
+    let mut visual = TransformGizmoDragVisual {
+        rotation: None,
+        scale: Vec3::ONE,
+    };
+    match mode {
+        TransformGizmoMode::Translate => {}
+        TransformGizmoMode::Rotate => {
+            visual.rotation = Some(match space {
+                TransformGizmoSpace::World => {
+                    (current.rotation * original.rotation.inverse()).normalize()
+                }
+                TransformGizmoSpace::Local => current.rotation.normalize(),
+            });
+        }
+        TransformGizmoMode::Scale => {
+            let ratio = (current.scale / original.scale.max(Vec3::splat(0.001)))
+                .abs()
+                .clamp(Vec3::splat(0.15), Vec3::splat(6.0));
+            visual.scale = match axis {
+                Some(TransformGizmoAxis::X) => Vec3::new(ratio.x, 1.0, 1.0),
+                Some(TransformGizmoAxis::Y) => Vec3::new(1.0, ratio.y, 1.0),
+                Some(TransformGizmoAxis::Z) => Vec3::new(1.0, 1.0, ratio.z),
+                Some(TransformGizmoAxis::View) | None => ratio,
+            };
+        }
+    }
+    visual
+}
+
+fn apply_transform_gizmo_drag_feedback(
+    gizmo: Res<TransformGizmoState>,
+    settings: Res<TransformGizmoSettings>,
+    interaction: Res<EmitterTransformGizmoInteraction>,
+    proxy: Single<&Transform, With<EmitterTransformGizmoProxy>>,
+    mut roots: Query<
+        (Entity, &mut Transform, &mut GlobalTransform),
+        (
+            With<TransformGizmoVisualRoot>,
+            Without<EmitterTransformGizmoProxy>,
+        ),
+    >,
+    mut children: Query<
+        (&ChildOf, &Transform, &mut GlobalTransform),
+        (
+            With<Mesh3d>,
+            Without<TransformGizmoVisualRoot>,
+            Without<EmitterTransformGizmoProxy>,
+        ),
+    >,
+) {
+    if !gizmo.active {
+        return;
+    }
+    let Some(active) = interaction.active else {
+        return;
+    };
+    let visual = transform_gizmo_drag_visual(
+        settings.mode,
+        settings.space,
+        gizmo.axis,
+        bevy_transform_from_emitter(active.original),
+        **proxy,
+    );
+    for (root_entity, mut root, mut root_global) in &mut roots {
+        if let Some(rotation) = visual.rotation {
+            root.rotation = rotation;
+        }
+        root.scale *= visual.scale;
+        *root_global = GlobalTransform::from(*root);
+        for (parent, local, mut global) in &mut children {
+            if parent.parent() == root_entity {
+                *global = root_global.mul_transform(*local);
+            }
+        }
     }
 }
 
@@ -12651,13 +12755,17 @@ mod tests {
             .world_mut()
             .resource_mut::<Assets<StandardMaterial>>()
             .add(StandardMaterial::default());
+        let overlay_root = app.world_mut().spawn_empty().id();
+        let scene_root = app.world_mut().spawn_empty().id();
         app.world_mut().spawn((
             RenderLayers::layer(15),
             MeshMaterial3d(overlay_material.clone()),
+            ChildOf(overlay_root),
         ));
         app.world_mut().spawn((
             RenderLayers::layer(0),
             MeshMaterial3d(scene_material.clone()),
+            ChildOf(scene_root),
         ));
 
         app.update();
@@ -12669,6 +12777,51 @@ mod tests {
         let scene = materials.get(&scene_material).unwrap();
         assert_eq!(scene.alpha_mode, AlphaMode::Opaque);
         assert_eq!(scene.depth_bias, 0.0);
+        assert!(
+            app.world()
+                .entity(overlay_root)
+                .contains::<TransformGizmoVisualRoot>()
+        );
+        assert!(
+            !app.world()
+                .entity(scene_root)
+                .contains::<TransformGizmoVisualRoot>()
+        );
+    }
+
+    #[test]
+    fn transform_gizmo_scale_feedback_stretches_only_the_dragged_axis() {
+        let original = Transform::from_scale(Vec3::new(2.0, 3.0, 4.0));
+        let current = Transform::from_scale(Vec3::new(5.0, 3.0, 4.0));
+
+        let visual = transform_gizmo_drag_visual(
+            TransformGizmoMode::Scale,
+            TransformGizmoSpace::World,
+            Some(TransformGizmoAxis::X),
+            original,
+            current,
+        );
+
+        assert_eq!(visual.scale, Vec3::new(2.5, 1.0, 1.0));
+        assert!(visual.rotation.is_none());
+    }
+
+    #[test]
+    fn transform_gizmo_rotation_feedback_uses_the_live_drag_delta() {
+        let original = Transform::from_rotation(Quat::from_rotation_z(30.0_f32.to_radians()));
+        let current = Transform::from_rotation(Quat::from_rotation_z(75.0_f32.to_radians()));
+
+        let visual = transform_gizmo_drag_visual(
+            TransformGizmoMode::Rotate,
+            TransformGizmoSpace::World,
+            Some(TransformGizmoAxis::Z),
+            original,
+            current,
+        );
+
+        let rotation = visual.rotation.unwrap();
+        assert!(rotation.angle_between(Quat::from_rotation_z(45.0_f32.to_radians())) < 0.0001);
+        assert_eq!(visual.scale, Vec3::ONE);
     }
 
     #[test]
