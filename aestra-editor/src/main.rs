@@ -197,7 +197,9 @@ enum EditorAction {
     CloseModulePalette,
     AddModule(usize),
     AddSpriteMaterial,
+    AddGridFlipbook,
     AddSpriteRenderer,
+    AddFlipbookRenderer,
     AdjustModuleInput {
         module: ModuleId,
         input: u8,
@@ -221,6 +223,12 @@ enum EditorAction {
     CycleRendererTexture(RendererId),
     ClearRendererTexture(RendererId),
     AdjustRendererUv(RendererId, u8, i8),
+    CycleRendererFlipbook(RendererId),
+    AdjustFlipbookFrameRate(RendererId, i8),
+    ToggleFlipbookLooping(RendererId),
+    CycleFlipbookTimeSource(RendererId),
+    CycleFlipbookPlayback(RendererId),
+    ToggleFlipbookRandomStart(RendererId),
     DuplicateRenderer(RendererId),
     DeleteRenderer(RendererId),
     ApplyPendingChange,
@@ -2614,6 +2622,50 @@ fn spawn_asset_browser(
                         ));
                     });
             }
+            panel_heading(
+                panel,
+                "FLIPBOOKS",
+                &format!("{} REGISTERED", session.effect.flipbooks.len()),
+            );
+            plain_toolbar_button(
+                panel,
+                "+ Add 4×1 Flipbook",
+                EditorAction::AddGridFlipbook,
+                PlainMarker,
+            );
+            for flipbook in &session.effect.flipbooks {
+                panel
+                    .spawn(Node {
+                        min_height: Val::Px(38.0),
+                        margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
+                        padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(2.0),
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new(&flipbook.name),
+                            TextFont {
+                                font_size: FontSize::Px(10.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT),
+                        ));
+                        row.spawn((
+                            Text::new(format!(
+                                "Flipbook · {} frames · {:.0} FPS",
+                                flipbook.frames.len(),
+                                flipbook.frame_rate
+                            )),
+                            TextFont {
+                                font_size: FontSize::Px(8.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT_FAINT),
+                        ));
+                    });
+            }
 
             panel_heading(
                 panel,
@@ -3514,7 +3566,11 @@ fn spawn_renderer_card(
             })
             .with_children(|header| {
                 header.spawn((
-                    Text::new("Sprite Renderer"),
+                    Text::new(match renderer.properties {
+                        RendererProperties::Sprite => "Sprite Renderer",
+                        RendererProperties::Flipbook { .. } => "Flipbook Renderer",
+                        _ => "Renderer",
+                    }),
                     TextFont {
                         font_size: FontSize::Px(11.0),
                         ..default()
@@ -3539,10 +3595,6 @@ fn spawn_renderer_card(
                 );
                 stack_button(header, "×", EditorAction::DeleteRenderer(renderer.id), 24.0);
             });
-            let RendererProperties::Sprite = renderer.properties else {
-                spawn_inline_diagnostics(card, diagnostic_path, session);
-                return;
-            };
             let Some(material) = session
                 .effect
                 .materials
@@ -3579,33 +3631,94 @@ fn spawn_renderer_card(
                 EditorAction::AdjustRendererSoftness(renderer.id, -1),
                 EditorAction::AdjustRendererSoftness(renderer.id, 1),
             );
-            let texture_name = texture
-                .and_then(|id| session.effect.assets.iter().find(|asset| asset.id == id))
-                .map_or("Procedural", |asset| asset.name.as_str());
-            inspector_action_button(
-                card,
-                &format!("Texture  {texture_name}"),
-                EditorAction::CycleRendererTexture(renderer.id),
-            );
-            if texture.is_some() {
-                inspector_action_button(
-                    card,
-                    "Clear texture",
-                    EditorAction::ClearRendererTexture(renderer.id),
-                );
-                for (label, value, component) in [
-                    ("UV Min X", uv.min[0], 0),
-                    ("UV Min Y", uv.min[1], 1),
-                    ("UV Max X", uv.max[0], 2),
-                    ("UV Max Y", uv.max[1], 3),
-                ] {
-                    property_stepper(
+            match &renderer.properties {
+                RendererProperties::Sprite => {
+                    let texture_name = texture
+                        .and_then(|id| session.effect.assets.iter().find(|asset| asset.id == id))
+                        .map_or("Procedural", |asset| asset.name.as_str());
+                    inspector_action_button(
                         card,
-                        &format!("{label}  {value:.2}"),
-                        EditorAction::AdjustRendererUv(renderer.id, component, -1),
-                        EditorAction::AdjustRendererUv(renderer.id, component, 1),
+                        &format!("Texture  {texture_name}"),
+                        EditorAction::CycleRendererTexture(renderer.id),
+                    );
+                    if texture.is_some() {
+                        inspector_action_button(
+                            card,
+                            "Clear texture",
+                            EditorAction::ClearRendererTexture(renderer.id),
+                        );
+                        for (label, value, component) in [
+                            ("UV Min X", uv.min[0], 0),
+                            ("UV Min Y", uv.min[1], 1),
+                            ("UV Max X", uv.max[0], 2),
+                            ("UV Max Y", uv.max[1], 3),
+                        ] {
+                            property_stepper(
+                                card,
+                                &format!("{label}  {value:.2}"),
+                                EditorAction::AdjustRendererUv(renderer.id, component, -1),
+                                EditorAction::AdjustRendererUv(renderer.id, component, 1),
+                            );
+                        }
+                    }
+                }
+                RendererProperties::Flipbook {
+                    flipbook,
+                    time_source,
+                    playback,
+                    random_start,
+                } => {
+                    let definition = session
+                        .effect
+                        .flipbooks
+                        .iter()
+                        .find(|item| item.id == *flipbook);
+                    inspector_action_button(
+                        card,
+                        &format!(
+                            "Flipbook  {}",
+                            definition.map_or("Missing", |item| item.name.as_str())
+                        ),
+                        EditorAction::CycleRendererFlipbook(renderer.id),
+                    );
+                    if let Some(definition) = definition {
+                        property_stepper(
+                            card,
+                            &format!("Frame Rate  {:.0} FPS", definition.frame_rate),
+                            EditorAction::AdjustFlipbookFrameRate(renderer.id, -1),
+                            EditorAction::AdjustFlipbookFrameRate(renderer.id, 1),
+                        );
+                        inspector_action_button(
+                            card,
+                            if definition.looping {
+                                "Looping  On"
+                            } else {
+                                "Looping  Off"
+                            },
+                            EditorAction::ToggleFlipbookLooping(renderer.id),
+                        );
+                    }
+                    inspector_action_button(
+                        card,
+                        &format!("Time Source  {time_source:?}"),
+                        EditorAction::CycleFlipbookTimeSource(renderer.id),
+                    );
+                    inspector_action_button(
+                        card,
+                        &format!("Playback  {playback:?}"),
+                        EditorAction::CycleFlipbookPlayback(renderer.id),
+                    );
+                    inspector_action_button(
+                        card,
+                        if *random_start {
+                            "Random Start  On"
+                        } else {
+                            "Random Start  Off"
+                        },
+                        EditorAction::ToggleFlipbookRandomStart(renderer.id),
                     );
                 }
+                _ => {}
             }
             spawn_inline_diagnostics(card, diagnostic_path, session);
         });
@@ -3761,6 +3874,17 @@ fn spawn_module_palette(
                     "Sprite Renderer",
                     "Render · translucent particle sprites",
                     EditorAction::AddSpriteRenderer,
+                );
+                results += 1;
+            }
+            if palette.stage == StackStage::Render
+                && (query.is_empty() || "flipbook renderer animation render".contains(&query))
+            {
+                palette_result(
+                    popup,
+                    "Flipbook Renderer",
+                    "Render · animated imported sprite sheet",
+                    EditorAction::AddFlipbookRenderer,
                 );
                 results += 1;
             }
@@ -8000,6 +8124,7 @@ fn handle_buttons(
                     EditorAction::Redo => session.redo(),
                     EditorAction::AddLayer => session.add_layer(),
                     EditorAction::AddSpriteMaterial => session.add_sprite_material(),
+                    EditorAction::AddGridFlipbook => session.add_grid_flipbook(),
                     EditorAction::DuplicateLayer => {
                         session.duplicate_selected_layer();
                         workspace.complex = None;
@@ -8046,6 +8171,10 @@ fn handle_buttons(
                     }
                     EditorAction::AddSpriteRenderer => {
                         session.add_sprite_renderer();
+                        palette.open = false;
+                    }
+                    EditorAction::AddFlipbookRenderer => {
+                        session.add_flipbook_renderer();
                         palette.open = false;
                     }
                     EditorAction::AdjustModuleInput {
@@ -8127,6 +8256,18 @@ fn handle_buttons(
                     }
                     EditorAction::AdjustRendererUv(id, component, direction) => {
                         session.adjust_renderer_uv(id, component, direction as f32 * 0.05);
+                    }
+                    EditorAction::CycleRendererFlipbook(id) => session.cycle_renderer_flipbook(id),
+                    EditorAction::AdjustFlipbookFrameRate(id, direction) => {
+                        session.adjust_flipbook_frame_rate(id, direction as f32);
+                    }
+                    EditorAction::ToggleFlipbookLooping(id) => session.toggle_flipbook_looping(id),
+                    EditorAction::CycleFlipbookTimeSource(id) => {
+                        session.cycle_flipbook_time_source(id)
+                    }
+                    EditorAction::CycleFlipbookPlayback(id) => session.cycle_flipbook_playback(id),
+                    EditorAction::ToggleFlipbookRandomStart(id) => {
+                        session.toggle_flipbook_random_start(id)
                     }
                     EditorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     EditorAction::DeleteRenderer(id) => {

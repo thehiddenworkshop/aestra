@@ -51,6 +51,13 @@ The bundled textured example can be opened with:
 cargo run -p aestra-viewer -- --effect assets/effects/ember_sigil.aestra.ron
 ```
 
+The imported flipbook example exercises explicit atlas frames across CPU, GPU-readback,
+and native WESL presentation:
+
+```powershell
+cargo run -p aestra-viewer -- --effect assets/effects/plasma_burst.aestra.ron
+```
+
 Capture evenly spaced, exact 60 Hz simulation frames plus a single AI-friendly contact sheet:
 
 ```powershell
@@ -112,6 +119,10 @@ and are reported through the effect profile instead of silently removing the dra
 Renderers reference stable material IDs; sprite materials own blend state, softness,
 particle-color or typed value bindings, texture assets, and normalized UV regions.
 Shared materials compile once and can be reused by multiple renderers.
+Flipbook renderers reference a stable atlas definition separately from their material.
+Definitions store an imported texture, explicit normalized frame UVs, frame rate, and
+loop policy; renderers select particle-age or effect-time playback with deterministic
+random starts and forward, reverse, or ping-pong ordering.
 
 ## Development
 

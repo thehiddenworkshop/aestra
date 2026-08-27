@@ -13,6 +13,7 @@ pub const MODULE_INITIALIZE: &str = "aestra.spawn.initialize";
 pub const MODULE_MOTION: &str = "aestra.update.motion";
 pub const MODULE_APPEARANCE: &str = "aestra.update.appearance";
 pub const RENDERER_SPRITE: &str = "aestra.renderer.sprite";
+pub const RENDERER_FLIPBOOK: &str = "aestra.renderer.flipbook";
 pub const RENDERER_RIBBON: &str = "aestra.renderer.ribbon";
 pub const RENDERER_MESH: &str = "aestra.renderer.mesh";
 pub const DEFAULT_SPRITE_MATERIAL_ID: MaterialId =
@@ -27,6 +28,8 @@ pub struct EffectAsset {
     pub looping: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<AssetDefinition>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flipbooks: Vec<FlipbookDefinition>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub materials: Vec<MaterialDefinition>,
     #[serde(default)]
@@ -50,6 +53,7 @@ impl EffectAsset {
             duration,
             looping: true,
             assets: Vec::new(),
+            flipbooks: Vec::new(),
             materials: vec![MaterialDefinition::default_sprite()],
             parameters: Vec::new(),
             emitters: Vec::new(),
@@ -104,6 +108,13 @@ impl EffectAsset {
                 &mut semantic_ids,
             );
         }
+        for (index, flipbook) in self.flipbooks.iter().enumerate() {
+            flipbook.validate(
+                &format!("effect.flipbooks[{index}]"),
+                &mut report,
+                &mut semantic_ids,
+            );
+        }
         for (index, material) in self.materials.iter().enumerate() {
             material.validate(
                 &format!("effect.materials[{index}]"),
@@ -148,6 +159,9 @@ impl EffectAsset {
                             (&renderer.properties, &material.properties),
                             (
                                 RendererProperties::Sprite,
+                                MaterialProperties::Sprite { .. }
+                            ) | (
+                                RendererProperties::Flipbook { .. },
                                 MaterialProperties::Sprite { .. }
                             )
                         ) => {}
@@ -267,6 +281,45 @@ impl EffectAsset {
                         format!("{path}.texture"),
                         format!("material texture references missing asset {input}"),
                     )),
+                }
+            }
+        }
+        for (flipbook_index, flipbook) in self.flipbooks.iter().enumerate() {
+            let path = format!("effect.flipbooks[{flipbook_index}].texture");
+            match self
+                .assets
+                .iter()
+                .find(|asset| asset.id == flipbook.texture)
+            {
+                Some(asset) if asset.kind == AssetKind::Texture => {}
+                Some(asset) => report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidReference,
+                    path,
+                    format!(
+                        "flipbook texture references '{}' which is registered as {:?}",
+                        asset.name, asset.kind
+                    ),
+                )),
+                None => report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidReference,
+                    path,
+                    format!(
+                        "flipbook references missing texture asset {}",
+                        flipbook.texture
+                    ),
+                )),
+            }
+        }
+        for (emitter_index, emitter) in self.emitters.iter().enumerate() {
+            for (renderer_index, renderer) in emitter.renderers.iter().enumerate() {
+                if let RendererProperties::Flipbook { flipbook, .. } = renderer.properties
+                    && !self.flipbooks.iter().any(|item| item.id == flipbook)
+                {
+                    report.push(Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        format!("effect.emitters[{emitter_index}].renderers[{renderer_index}].properties.flipbook"),
+                        format!("renderer references missing flipbook {flipbook}"),
+                    ));
                 }
             }
         }
@@ -1136,6 +1189,102 @@ impl AssetDefinition {
     }
 }
 
+/// Imported sprite-sheet metadata. Frames are explicit normalized UV rectangles,
+/// so importers can support packed atlases as well as regular grids.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FlipbookDefinition {
+    pub id: AssetId,
+    pub name: String,
+    pub texture: AssetId,
+    pub frames: Vec<UvRect>,
+    pub frame_rate: f32,
+    pub looping: bool,
+}
+
+impl FlipbookDefinition {
+    pub fn grid(
+        name: impl Into<String>,
+        texture: AssetId,
+        columns: u32,
+        rows: u32,
+        frame_rate: f32,
+    ) -> Self {
+        let columns = columns.max(1);
+        let rows = rows.max(1);
+        let mut frames = Vec::with_capacity((columns * rows) as usize);
+        for row in 0..rows {
+            for column in 0..columns {
+                frames.push(UvRect {
+                    min: [column as f32 / columns as f32, row as f32 / rows as f32],
+                    max: [
+                        (column + 1) as f32 / columns as f32,
+                        (row + 1) as f32 / rows as f32,
+                    ],
+                });
+            }
+        }
+        Self {
+            id: AssetId::new(),
+            name: name.into(),
+            texture,
+            frames,
+            frame_rate,
+            looping: true,
+        }
+    }
+
+    fn validate(
+        &self,
+        path: &str,
+        report: &mut ValidationReport,
+        semantic_ids: &mut BTreeMap<u128, String>,
+    ) {
+        register_id(
+            report,
+            semantic_ids,
+            self.id.as_uuid().as_u128(),
+            format!("{path}.id"),
+        );
+        if self.name.trim().is_empty() {
+            invalid_value(
+                report,
+                &format!("{path}.name"),
+                "flipbook name cannot be empty",
+            );
+        }
+        if self.texture.is_nil() {
+            invalid_value(
+                report,
+                &format!("{path}.texture"),
+                "flipbook texture cannot be nil",
+            );
+        }
+        if self.frames.is_empty() {
+            invalid_value(
+                report,
+                &format!("{path}.frames"),
+                "flipbook must contain at least one frame",
+            );
+        }
+        for (index, frame) in self.frames.iter().enumerate() {
+            if !frame.is_valid() {
+                invalid_value(
+                    report,
+                    &format!("{path}.frames[{index}]"),
+                    "flipbook frame UV bounds must be finite, normalized, and have positive area",
+                );
+            }
+        }
+        if !self.frame_rate.is_finite() || self.frame_rate <= 0.0 {
+            invalid_value(
+                report,
+                &format!("{path}.frame_rate"),
+                "flipbook frame rate must be positive and finite",
+            );
+        }
+    }
+}
+
 /// Normalized texture coordinates used by a sprite renderer.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct UvRect {
@@ -1335,6 +1484,21 @@ impl RendererInstance {
         }
     }
 
+    pub fn flipbook(material: MaterialId, flipbook: AssetId) -> Self {
+        Self {
+            id: RendererId::new(),
+            renderer_type: RendererTypeId::new(RENDERER_FLIPBOOK),
+            enabled: true,
+            material,
+            properties: RendererProperties::Flipbook {
+                flipbook,
+                time_source: FlipbookTimeSource::ParticleAge,
+                playback: FlipbookPlaybackMode::Forward,
+                random_start: false,
+            },
+        }
+    }
+
     fn validate(
         &self,
         path: &str,
@@ -1356,6 +1520,12 @@ impl RendererInstance {
         }
         let expected_type = match &self.properties {
             RendererProperties::Sprite => Some(RENDERER_SPRITE),
+            RendererProperties::Flipbook { flipbook, .. } => {
+                if flipbook.is_nil() {
+                    invalid_value(report, path, "flipbook renderer asset cannot be nil");
+                }
+                Some(RENDERER_FLIPBOOK)
+            }
             RendererProperties::Ribbon { width } => {
                 if !width.is_finite() || *width <= 0.0 {
                     invalid_value(report, path, "ribbon width must be positive and finite");
@@ -1401,9 +1571,32 @@ impl RendererInstance {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RendererProperties {
     Sprite,
-    Ribbon { width: f32 },
-    Mesh { asset: AssetId },
+    Flipbook {
+        flipbook: AssetId,
+        time_source: FlipbookTimeSource,
+        playback: FlipbookPlaybackMode,
+        random_start: bool,
+    },
+    Ribbon {
+        width: f32,
+    },
+    Mesh {
+        asset: AssetId,
+    },
     Custom(BTreeMap<String, Value>),
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FlipbookTimeSource {
+    ParticleAge,
+    EffectTime,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FlipbookPlaybackMode {
+    Forward,
+    Reverse,
+    PingPong,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

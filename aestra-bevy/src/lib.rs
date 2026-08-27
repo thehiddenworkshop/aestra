@@ -368,6 +368,13 @@ fn update_asset_diagnostics(
             .flat_map(|emitter| emitter.renderers.iter())
             .filter_map(|renderer| player.effect().material(renderer.material))
             .filter_map(|material| material.texture)
+            .chain(
+                player
+                    .effect()
+                    .flipbooks
+                    .iter()
+                    .map(|flipbook| flipbook.texture),
+            )
             .collect::<BTreeSet<_>>();
         let mut texture_bytes = 0_u64;
         let mut all_loaded = true;
@@ -505,9 +512,36 @@ fn play_effects(
                 *visibility = Visibility::Hidden;
                 continue;
             };
+            let (texture, uv) = match &renderer.kind {
+                aestra_runtime::RendererPlanKind::Sprite => (material.texture, material.uv),
+                aestra_runtime::RendererPlanKind::Flipbook {
+                    flipbook,
+                    time_source,
+                    playback,
+                    random_start,
+                } => {
+                    let Some(flipbook) = player.effect().flipbook(*flipbook) else {
+                        *visibility = Visibility::Hidden;
+                        continue;
+                    };
+                    let frame = aestra_runtime::flipbook_frame_index(
+                        flipbook,
+                        aestra_runtime::FlipbookFrameContext {
+                            time_source: *time_source,
+                            playback: *playback,
+                            random_start: *random_start,
+                            effect_time: player.elapsed(),
+                            normalized_age: sample.normalized_age,
+                            particle_index: sample.particle_index,
+                            seed: player.instance.seed(),
+                        },
+                    );
+                    (Some(flipbook.texture), flipbook.frames[frame])
+                }
+            };
             sprite.rect = None;
             sprite.image = textures.fallback_textures.white.clone();
-            if let Some(texture) = material.texture
+            if let Some(texture) = texture
                 && let Some(asset) = player
                     .effect()
                     .assets
@@ -520,8 +554,8 @@ fn play_effects(
                 if let Some(image) = textures.images.get(&handle) {
                     let image_size = image.size_f32();
                     sprite.rect = Some(bevy::math::Rect::from_corners(
-                        Vec2::from_array(material.uv.min) * image_size,
-                        Vec2::from_array(material.uv.max) * image_size,
+                        Vec2::from_array(uv.min) * image_size,
+                        Vec2::from_array(uv.max) * image_size,
                     ));
                     sprite.image = handle;
                 } else {

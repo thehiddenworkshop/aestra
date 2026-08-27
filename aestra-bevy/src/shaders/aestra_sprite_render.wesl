@@ -14,7 +14,13 @@ struct Renderer {
     uv_max: vec2<f32>,
     tint: vec4<f32>,
     particle_color: u32,
-    _padding: vec3<u32>,
+    renderer_kind: u32,
+    frame_count: u32,
+    playback_mode: u32,
+    flipbook_flags: u32,
+    frame_rate: f32,
+    _padding: vec3<f32>,
+    frames: array<vec4<f32>, 64>,
 }
 
 struct Particle {
@@ -25,11 +31,14 @@ struct Particle {
     normalized_age: f32,
     emitter_index: u32,
     alive: u32,
-    _padding: u32,
+    particle_index: u32,
 }
 
 struct RenderGlobals {
     world_from_effect: mat4x4<f32>,
+    time: f32,
+    seed: u32,
+    _padding: vec2<f32>,
 }
 
 struct RenderParams {
@@ -56,6 +65,51 @@ struct VertexOutput {
 @group(1) @binding(5) var sprite_texture: texture_2d<f32>;
 @group(1) @binding(6) var sprite_sampler: sampler;
 
+fn hash01(index: u32, channel: u32) -> f32 {
+    var result = (index * 0x9e3779b9u) ^ (channel * 0x85ebca6bu) ^ globals.seed;
+    result ^= result >> 16u;
+    result *= 0x7feb352du;
+    result ^= result >> 15u;
+    result *= 0x846ca68bu;
+    result ^= result >> 16u;
+    return f32(result) / 4294967295.0;
+}
+
+fn flipbook_frame(renderer: Renderer, particle: Particle) -> u32 {
+    let count = max(renderer.frame_count, 1u);
+    if count <= 1u {
+        return 0u;
+    }
+    let effect_time = (renderer.flipbook_flags & 1u) != 0u;
+    let random_start = (renderer.flipbook_flags & 2u) != 0u;
+    let looping = (renderer.flipbook_flags & 4u) != 0u;
+    let seconds = select(
+        clamp(particle.normalized_age, 0.0, 1.0) * f32(count) / renderer.frame_rate,
+        max(globals.time, 0.0),
+        effect_time,
+    );
+    var frame = u32(floor(seconds * renderer.frame_rate));
+    if random_start {
+        frame += u32(hash01(particle.particle_index, 9u) * f32(count));
+    }
+    var selected = min(frame, count - 1u);
+    if looping {
+        selected = frame % count;
+    }
+    if renderer.playback_mode == 1u {
+        return count - 1u - selected;
+    }
+    if renderer.playback_mode == 2u {
+        let period = (count - 1u) * 2u;
+        var value = min(frame, period);
+        if looping {
+            value = frame % period;
+        }
+        return select(value, period - value, value >= count);
+    }
+    return selected;
+}
+
 @vertex
 fn vertex(
     @builtin(vertex_index) vertex_index: u32,
@@ -70,7 +124,8 @@ fn vertex(
         vec2<f32>(-1.0, 1.0),
     );
     let corner = corners[vertex_index];
-    let particle = particles[alive_indices[instance_index]];
+    let particle_index = alive_indices[instance_index];
+    let particle = particles[particle_index];
     let renderer = renderers[params.renderer_index];
     let sine = sin(particle.rotation);
     let cosine = cos(particle.rotation);
@@ -90,7 +145,11 @@ fn vertex(
     output.quad_position = corner;
     output.softness = renderer.softness;
     output.visible = select(0u, 1u, particle.emitter_index == renderer.emitter_index);
-    output.uv = mix(renderer.uv_min, renderer.uv_max, corner * 0.5 + vec2<f32>(0.5));
+    var uv_bounds = vec4<f32>(renderer.uv_min, renderer.uv_max);
+    if renderer.renderer_kind == 1u {
+        uv_bounds = renderer.frames[flipbook_frame(renderer, particle)];
+    }
+    output.uv = mix(uv_bounds.xy, uv_bounds.zw, corner * 0.5 + vec2<f32>(0.5));
     output.textured = renderer.textured;
     return output;
 }

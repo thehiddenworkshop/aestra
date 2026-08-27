@@ -1,0 +1,95 @@
+(
+    format_version: 2,
+    id: "9cb21c43-12f9-4fcb-91c3-ae38a4a44f1d",
+    name: "Plasma Burst",
+    duration: 2.0,
+    looping: true,
+    assets: [
+        (
+            id: "38ff510c-03c0-47fd-83db-f034006ea196",
+            name: "Plasma Flipbook Texture",
+            kind: Texture,
+            path: "textures/plasma_flipbook.png",
+        ),
+    ],
+    flipbooks: [
+        (
+            id: "63408936-cc9c-46ac-aa0e-858062129d48",
+            name: "Plasma Bloom",
+            texture: "38ff510c-03c0-47fd-83db-f034006ea196",
+            frames: [
+                (min: (0.0, 0.0), max: (0.5, 0.5)),
+                (min: (0.5, 0.0), max: (1.0, 0.5)),
+                (min: (0.0, 0.5), max: (0.5, 1.0)),
+                (min: (0.5, 0.5), max: (1.0, 1.0)),
+            ],
+            frame_rate: 8.0,
+            looping: true,
+        ),
+    ],
+    materials: [
+        (
+            id: "d1b1cf2d-1370-49dc-9732-25c58501714d",
+            name: "Plasma Additive",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.08),
+                color: ParticleColor,
+            ),
+        ),
+    ],
+    emitters: [
+        (
+            id: "f87393ec-3fd9-4524-b066-ec2ff3422686",
+            name: "Plasma Motes",
+            enabled: true,
+            start_time: 0.0,
+            duration: 2.0,
+            max_particles: 96,
+            simulation_domain: Particle,
+            modules: [
+                (id: "2c7e55b9-2524-47b6-8958-1496c9e6948b", module_type: "aestra.emission.rate", stage: EmitterUpdate, enabled: true, parameters: Emission(spawn_rate: 12.0, burst_count: 8)),
+                (id: "3f3d086d-3946-44b5-bd84-4cc8d7a614fc", module_type: "aestra.spawn.shape", stage: ParticleSpawn, enabled: true, parameters: Shape(shape: Circle(radius: 12.0))),
+                (
+                    id: "51e700a0-f8cd-45af-a69c-c98122c578b2",
+                    module_type: "aestra.spawn.initialize",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Initialize(
+                        lifetime: (min: 0.7, max: 1.25),
+                        speed: (min: 8.0, max: 26.0),
+                        direction_degrees: 90.0,
+                        spread_degrees: 360.0,
+                        angular_velocity: (min: -0.8, max: 0.8),
+                    ),
+                ),
+                (id: "ae8da36f-cf4b-4380-b44f-ffab33f1d761", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 8.0), drag: 1.1, turbulence: 2.0)),
+                (
+                    id: "99c9c045-f511-4ac2-9f27-3b921e698cb5",
+                    module_type: "aestra.update.appearance",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Appearance(
+                        size: (id: "cb09d4a1-66fa-4cb6-af60-4cba7b5344ce", keys: [(time: 0.0, value: 28.0), (time: 0.35, value: 58.0), (time: 1.0, value: 12.0)]),
+                        opacity: (id: "53b5e6f5-5d94-4c5d-bafb-30491104bf8e", keys: [(time: 0.0, value: 0.0), (time: 0.08, value: 1.0), (time: 0.72, value: 0.72), (time: 1.0, value: 0.0)]),
+                        color: (id: "f25e6cd3-2416-4f0d-a34c-1eb51eeb4576", keys: [(time: 0.0, color: (0.72, 0.9, 1.0, 1.0)), (time: 0.5, color: (0.62, 0.32, 1.0, 1.0)), (time: 1.0, color: (0.15, 0.04, 0.4, 0.0))]),
+                    ),
+                ),
+            ],
+            renderers: [
+                (
+                    id: "6bdb8e11-e76c-40eb-be78-e26a56e4a8e1",
+                    renderer_type: "aestra.renderer.flipbook",
+                    enabled: true,
+                    material: "d1b1cf2d-1370-49dc-9732-25c58501714d",
+                    properties: Flipbook(
+                        flipbook: "63408936-cc9c-46ac-aa0e-858062129d48",
+                        time_source: ParticleAge,
+                        playback: Forward,
+                        random_start: true,
+                    ),
+                ),
+            ],
+        ),
+    ],
+)

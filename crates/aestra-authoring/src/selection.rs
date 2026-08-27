@@ -276,6 +276,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::AddMaterial { .. }
         | EffectCommand::RemoveMaterial { .. }
         | EffectCommand::SetMaterial { .. }
+        | EffectCommand::AddFlipbook { .. }
+        | EffectCommand::RemoveFlipbook { .. }
+        | EffectCommand::SetFlipbook { .. }
         | EffectCommand::AddEvent { .. } => (None, None),
         EffectCommand::RemoveParameter { id } => (None, Some(SemanticTarget::Parameter(*id))),
         EffectCommand::RemoveEmitter { id }

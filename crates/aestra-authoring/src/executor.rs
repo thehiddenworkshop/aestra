@@ -188,6 +188,38 @@ fn apply_command(
                 material: previous,
             }]
         }
+        EffectCommand::AddFlipbook { flipbook, index } => {
+            checked_insert(
+                &mut effect.flipbooks,
+                *index,
+                flipbook.clone(),
+                "effect flipbooks",
+            )?;
+            vec![EffectCommand::RemoveFlipbook { id: flipbook.id }]
+        }
+        EffectCommand::RemoveFlipbook { id } => {
+            let index = effect
+                .flipbooks
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| not_found("flipbook", id))?;
+            let flipbook = effect.flipbooks.remove(index);
+            vec![EffectCommand::AddFlipbook { flipbook, index }]
+        }
+        EffectCommand::SetFlipbook { id, flipbook } => {
+            let index = effect
+                .flipbooks
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| not_found("flipbook", id))?;
+            let mut replacement = flipbook.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(&mut effect.flipbooks[index], replacement);
+            vec![EffectCommand::SetFlipbook {
+                id: *id,
+                flipbook: previous,
+            }]
+        }
         EffectCommand::AddEmitter { emitter, index } => {
             checked_insert(
                 &mut effect.emitters,

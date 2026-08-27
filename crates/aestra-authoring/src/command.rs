@@ -1,7 +1,7 @@
 use aestra_core::{
     ColorKey, CurveKey, EffectParameter, Emitter, EmitterId, EventId, EventLink,
-    MaterialDefinition, MaterialId, ModuleId, ModuleInstance, RendererId, RendererInstance,
-    RendererProperties, Value,
+    FlipbookDefinition, MaterialDefinition, MaterialId, ModuleId, ModuleInstance, RendererId,
+    RendererInstance, RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +33,17 @@ pub enum EffectCommand {
     SetMaterial {
         id: MaterialId,
         material: MaterialDefinition,
+    },
+    AddFlipbook {
+        flipbook: FlipbookDefinition,
+        index: usize,
+    },
+    RemoveFlipbook {
+        id: aestra_core::AssetId,
+    },
+    SetFlipbook {
+        id: aestra_core::AssetId,
+        flipbook: FlipbookDefinition,
     },
     AddEmitter {
         emitter: Emitter,

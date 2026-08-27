@@ -3,8 +3,9 @@ use aestra_authoring::{
     LockState, Selection, TransactionPreview,
 };
 use aestra_bevy::{
-    AssetError, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, MaterialDefinition,
-    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance,
+    AssetError, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, FlipbookDefinition,
+    FlipbookPlaybackMode, FlipbookTimeSource, MaterialDefinition, MaterialInput,
+    MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties,
     ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
@@ -863,6 +864,224 @@ impl EditorSession {
         }
     }
 
+    pub fn add_grid_flipbook(&mut self) {
+        let Some(texture) = self
+            .effect
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Texture)
+            .map(|asset| asset.id)
+        else {
+            self.status = "Import a texture before creating a flipbook".into();
+            return;
+        };
+        let flipbook = FlipbookDefinition::grid(
+            format!("Flipbook {}", self.effect.flipbooks.len() + 1),
+            texture,
+            4,
+            1,
+            12.0,
+        );
+        let id = flipbook.id;
+        if self.execute(
+            "Added grid flipbook",
+            EffectCommand::AddFlipbook {
+                flipbook,
+                index: self.effect.flipbooks.len(),
+            },
+            true,
+        ) {
+            self.status = format!("Added flipbook {id}");
+        }
+    }
+
+    pub fn add_flipbook_renderer(&mut self) {
+        let emitter = self.selected_layer();
+        let Some(material) = self.effect.materials.first().map(|material| material.id) else {
+            self.status = "This effect has no sprite material".into();
+            return;
+        };
+        let Some(flipbook) = self.effect.flipbooks.first().map(|flipbook| flipbook.id) else {
+            self.status = "Create a flipbook asset first".into();
+            return;
+        };
+        let renderer = RendererInstance::flipbook(material, flipbook);
+        let renderer_id = renderer.id;
+        if self.execute(
+            "Added flipbook renderer",
+            EffectCommand::AddRenderer {
+                emitter: emitter.id,
+                renderer,
+                index: emitter.renderers.len(),
+            },
+            true,
+        ) {
+            self.selection.primary = aestra_authoring::SemanticTarget::Renderer(renderer_id);
+        }
+    }
+
+    pub fn cycle_renderer_flipbook(&mut self, id: RendererId) {
+        let emitter = self.selected_layer();
+        let emitter_id = emitter.id;
+        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
+            return;
+        };
+        let RendererProperties::Flipbook { flipbook, .. } = renderer.properties else {
+            return;
+        };
+        let flipbooks = self
+            .effect
+            .flipbooks
+            .iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>();
+        let Some(next) = flipbooks
+            .iter()
+            .position(|item| *item == flipbook)
+            .map(|index| flipbooks[(index + 1) % flipbooks.len()])
+            .or_else(|| flipbooks.first().copied())
+        else {
+            self.status = "This effect has no flipbooks".into();
+            return;
+        };
+        let mut properties = renderer.properties.clone();
+        if let RendererProperties::Flipbook { flipbook, .. } = &mut properties {
+            *flipbook = next;
+        }
+        self.execute(
+            "Changed renderer flipbook",
+            EffectCommand::SetRendererProperties {
+                emitter: emitter_id,
+                renderer: id,
+                properties,
+            },
+            true,
+        );
+    }
+
+    pub fn adjust_flipbook_frame_rate(&mut self, id: RendererId, delta: f32) {
+        let Some(renderer) = self
+            .selected_layer()
+            .renderers
+            .iter()
+            .find(|item| item.id == id)
+        else {
+            return;
+        };
+        let RendererProperties::Flipbook { flipbook, .. } = renderer.properties else {
+            return;
+        };
+        let Some(mut definition) = self
+            .effect
+            .flipbooks
+            .iter()
+            .find(|item| item.id == flipbook)
+            .cloned()
+        else {
+            return;
+        };
+        definition.frame_rate = (definition.frame_rate + delta).clamp(1.0, 120.0);
+        self.execute(
+            "Changed flipbook frame rate",
+            EffectCommand::SetFlipbook {
+                id: flipbook,
+                flipbook: definition,
+            },
+            true,
+        );
+    }
+
+    pub fn toggle_flipbook_looping(&mut self, id: RendererId) {
+        let Some(renderer) = self
+            .selected_layer()
+            .renderers
+            .iter()
+            .find(|item| item.id == id)
+        else {
+            return;
+        };
+        let RendererProperties::Flipbook { flipbook, .. } = renderer.properties else {
+            return;
+        };
+        let Some(mut definition) = self
+            .effect
+            .flipbooks
+            .iter()
+            .find(|item| item.id == flipbook)
+            .cloned()
+        else {
+            return;
+        };
+        definition.looping = !definition.looping;
+        self.execute(
+            "Toggled flipbook looping",
+            EffectCommand::SetFlipbook {
+                id: flipbook,
+                flipbook: definition,
+            },
+            true,
+        );
+    }
+
+    pub fn cycle_flipbook_time_source(&mut self, id: RendererId) {
+        self.update_flipbook_renderer(id, "Changed flipbook time source", |properties| {
+            if let RendererProperties::Flipbook { time_source, .. } = properties {
+                *time_source = match time_source {
+                    FlipbookTimeSource::ParticleAge => FlipbookTimeSource::EffectTime,
+                    FlipbookTimeSource::EffectTime => FlipbookTimeSource::ParticleAge,
+                };
+            }
+        });
+    }
+
+    pub fn cycle_flipbook_playback(&mut self, id: RendererId) {
+        self.update_flipbook_renderer(id, "Changed flipbook playback", |properties| {
+            if let RendererProperties::Flipbook { playback, .. } = properties {
+                *playback = match playback {
+                    FlipbookPlaybackMode::Forward => FlipbookPlaybackMode::Reverse,
+                    FlipbookPlaybackMode::Reverse => FlipbookPlaybackMode::PingPong,
+                    FlipbookPlaybackMode::PingPong => FlipbookPlaybackMode::Forward,
+                };
+            }
+        });
+    }
+
+    pub fn toggle_flipbook_random_start(&mut self, id: RendererId) {
+        self.update_flipbook_renderer(id, "Toggled random flipbook start", |properties| {
+            if let RendererProperties::Flipbook { random_start, .. } = properties {
+                *random_start = !*random_start;
+            }
+        });
+    }
+
+    fn update_flipbook_renderer(
+        &mut self,
+        id: RendererId,
+        label: &str,
+        update: impl FnOnce(&mut RendererProperties),
+    ) {
+        let emitter = self.selected_layer();
+        let emitter_id = emitter.id;
+        let Some(mut properties) = emitter
+            .renderers
+            .iter()
+            .find(|item| item.id == id)
+            .map(|item| item.properties.clone())
+        else {
+            return;
+        };
+        update(&mut properties);
+        self.execute(
+            label,
+            EffectCommand::SetRendererProperties {
+                emitter: emitter_id,
+                renderer: id,
+                properties,
+            },
+            true,
+        );
+    }
+
     pub fn add_sprite_material(&mut self) {
         let material = MaterialDefinition::sprite(
             format!("Sprite Material {}", self.effect.materials.len() + 1),
@@ -1616,6 +1835,31 @@ mod tests {
         let id = session.effect.emitters[2].id;
         session.select_layer(2);
         assert_eq!(session.selection.emitter(&session.effect), Some(id));
+    }
+
+    #[test]
+    fn flipbook_authoring_is_compiled_and_undoable() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/ember_sigil.aestra.ron"),
+            "ember.ron",
+        );
+        session.add_grid_flipbook();
+        assert_eq!(session.effect.flipbooks.len(), 1);
+        session.add_flipbook_renderer();
+        let renderer = session.effect.emitters[0].renderers.last().unwrap().id;
+        assert!(matches!(
+            session.effect.emitters[0]
+                .renderers
+                .last()
+                .unwrap()
+                .properties,
+            RendererProperties::Flipbook { .. }
+        ));
+        session.adjust_flipbook_frame_rate(renderer, 3.0);
+        assert_eq!(session.effect.flipbooks[0].frame_rate, 15.0);
+        assert!(session.preview.is_some());
+        session.undo();
+        assert_eq!(session.effect.flipbooks[0].frame_rate, 12.0);
     }
 
     fn preview_spawn_rate(session: &EditorSession) -> f32 {

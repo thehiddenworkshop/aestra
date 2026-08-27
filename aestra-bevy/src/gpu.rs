@@ -2,10 +2,10 @@
 
 mod render;
 
-use aestra_core::{BlendMode, EmitterShape, ScalarRange};
+use aestra_core::{BlendMode, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, ScalarRange};
 use aestra_runtime::{
     CompiledCurve, CompiledGradient, EffectInstance, ExecutionPlan, Instruction, MaterialColorPlan,
-    RuntimeValue,
+    RendererPlanKind, RuntimeValue,
 };
 use bevy::{
     asset::{RenderAssetUsages, embedded_asset},
@@ -42,6 +42,7 @@ pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy/shaders/aestra_simula
 pub const WESL_RENDER_SHADER_PATH: &str =
     "embedded://aestra_bevy/shaders/aestra_sprite_render.wesl";
 pub const MAX_CURVE_KEYS: usize = 8;
+pub const MAX_FLIPBOOK_FRAMES: usize = 64;
 const WORKGROUP_SIZE: u32 = 64;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -51,6 +52,12 @@ pub enum GpuArtifactError {
     #[error("{kind} has {actual} keys; the GPU profile supports at most {maximum}")]
     KeyLimit {
         kind: &'static str,
+        actual: usize,
+        maximum: usize,
+    },
+    #[error("flipbook '{name}' has {actual} frames; the GPU profile supports at most {maximum}")]
+    FlipbookFrameLimit {
+        name: String,
         actual: usize,
         maximum: usize,
     },
@@ -103,7 +110,7 @@ pub struct GpuEmitter {
 }
 
 /// One authored presentation path for an emitter.
-#[derive(Debug, Clone, Copy, Default, ShaderType)]
+#[derive(Debug, Clone, Copy, ShaderType)]
 pub struct GpuRenderer {
     pub emitter_index: u32,
     pub blend_mode: u32,
@@ -113,7 +120,13 @@ pub struct GpuRenderer {
     pub uv_max: Vec2,
     pub tint: Vec4,
     pub particle_color: u32,
-    pub _padding: UVec3,
+    pub renderer_kind: u32,
+    pub frame_count: u32,
+    pub playback_mode: u32,
+    pub flipbook_flags: u32,
+    pub frame_rate: f32,
+    pub _padding: Vec3,
+    pub frames: [Vec4; MAX_FLIPBOOK_FRAMES],
 }
 
 /// Selects the renderer record used by one indirect draw.
@@ -134,6 +147,9 @@ pub struct GpuGlobals {
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
 pub struct GpuRenderGlobals {
     pub world_from_effect: Mat4,
+    pub time: f32,
+    pub seed: u32,
+    pub _padding: Vec2,
 }
 
 /// Stable storage/readback ABI shared with `aestra_simulation.wesl`.
@@ -146,7 +162,7 @@ pub struct GpuParticle {
     pub normalized_age: f32,
     pub emitter_index: u32,
     pub alive: u32,
-    pub _padding: u32,
+    pub particle_index: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -160,6 +176,15 @@ pub struct GpuEffectArtifact {
 
 impl GpuEffectArtifact {
     pub fn from_instance(instance: &EffectInstance) -> Result<Self, GpuArtifactError> {
+        for flipbook in &instance.effect().flipbooks {
+            if flipbook.frames.len() > MAX_FLIPBOOK_FRAMES {
+                return Err(GpuArtifactError::FlipbookFrameLimit {
+                    name: flipbook.name.clone(),
+                    actual: flipbook.frames.len(),
+                    maximum: MAX_FLIPBOOK_FRAMES,
+                });
+            }
+        }
         let parameters = instance.parameter_values();
         let mut slot_offset = 0_u32;
         let mut bounds_half_extents = Vec2::splat(0.01);
@@ -196,6 +221,58 @@ impl GpuEffectArtifact {
                         MaterialColorPlan::ParticleColor => ([1.0; 4], 1),
                         MaterialColorPlan::Value(value) => (*value.resolve(parameters), 0),
                     };
+                    let mut frames = [Vec4::new(0.0, 0.0, 1.0, 1.0); MAX_FLIPBOOK_FRAMES];
+                    let (
+                        renderer_kind,
+                        frame_count,
+                        playback_mode,
+                        flipbook_flags,
+                        frame_rate,
+                        texture,
+                    ) = match &renderer.kind {
+                        RendererPlanKind::Sprite => (0, 1, 0, 0, 0.0, material.texture),
+                        RendererPlanKind::Flipbook {
+                            flipbook,
+                            time_source,
+                            playback,
+                            random_start,
+                        } => {
+                            let flipbook = instance
+                                .effect()
+                                .flipbook(*flipbook)
+                                .expect("compiler guarantees flipbook references");
+                            for (target, frame) in frames.iter_mut().zip(&flipbook.frames) {
+                                *target = Vec4::new(
+                                    frame.min[0],
+                                    frame.min[1],
+                                    frame.max[0],
+                                    frame.max[1],
+                                );
+                            }
+                            let mut flags = 0;
+                            if *time_source == FlipbookTimeSource::EffectTime {
+                                flags |= 1;
+                            }
+                            if *random_start {
+                                flags |= 2;
+                            }
+                            if flipbook.looping {
+                                flags |= 4;
+                            }
+                            (
+                                1,
+                                flipbook.frames.len() as u32,
+                                match playback {
+                                    FlipbookPlaybackMode::Forward => 0,
+                                    FlipbookPlaybackMode::Reverse => 1,
+                                    FlipbookPlaybackMode::PingPong => 2,
+                                },
+                                flags,
+                                flipbook.frame_rate,
+                                Some(flipbook.texture),
+                            )
+                        }
+                    };
                     GpuRenderer {
                         emitter_index: emitter_index as u32,
                         blend_mode: match material.blend {
@@ -204,12 +281,18 @@ impl GpuEffectArtifact {
                             BlendMode::Multiply => GpuBlend::Multiply as u32,
                         },
                         softness: *material.softness.resolve(parameters),
-                        textured: u32::from(material.texture.is_some()),
+                        textured: u32::from(texture.is_some()),
                         uv_min: Vec2::from_array(material.uv.min),
                         uv_max: Vec2::from_array(material.uv.max),
                         tint: Vec4::from_array(tint),
                         particle_color,
-                        _padding: UVec3::ZERO,
+                        renderer_kind,
+                        frame_count,
+                        playback_mode,
+                        flipbook_flags,
+                        frame_rate,
+                        _padding: Vec3::ZERO,
+                        frames,
                     }
                 }));
             }
@@ -424,7 +507,14 @@ pub(crate) fn prepare_gpu_players(
                     .effect()
                     .material(plan.material)
                     .expect("compiler guarantees renderer material references");
-                let texture_path = material.texture.and_then(|texture| {
+                let texture = match &plan.kind {
+                    RendererPlanKind::Sprite => material.texture,
+                    RendererPlanKind::Flipbook { flipbook, .. } => player
+                        .effect()
+                        .flipbook(*flipbook)
+                        .map(|flipbook| flipbook.texture),
+                };
+                let texture_path = texture.and_then(|texture| {
                     player
                         .effect()
                         .assets
@@ -485,6 +575,9 @@ pub(crate) fn prepare_gpu_players(
         }));
         let render_globals = buffers.add(ShaderBuffer::from(GpuRenderGlobals {
             world_from_effect: Mat4::IDENTITY,
+            time: player.elapsed(),
+            seed: fold_seed(player.instance.seed()),
+            _padding: Vec2::ZERO,
         }));
         commands.entity(entity).insert((
             GpuEffectBuffers {
@@ -683,6 +776,9 @@ fn update_gpu_inputs(
         if let Some(mut buffer) = buffers.get_mut(&gpu.render_globals) {
             buffer.set_data(GpuRenderGlobals {
                 world_from_effect: Mat4::from(transform.affine()),
+                time: player.elapsed(),
+                seed: fold_seed(player.instance.seed()),
+                _padding: Vec2::ZERO,
             });
         }
     }
@@ -707,6 +803,7 @@ pub(crate) fn receive_readback(
             .filter(|particle| particle.alive != 0)
             .map(|particle| aestra_runtime::ParticleSample {
                 emitter_index: particle.emitter_index as usize,
+                particle_index: particle.particle_index,
                 position: particle.position.to_array(),
                 size: particle.size,
                 rotation: particle.rotation,
@@ -1107,6 +1204,22 @@ mod tests {
         assert_eq!(artifact.renderers[2].emitter_index, 0);
         assert_eq!(artifact.renderers[2].blend_mode, GpuBlend::Multiply as u32);
         assert_eq!(artifact.renderers[2].softness, 0.8);
+    }
+
+    #[test]
+    fn artifact_packs_explicit_flipbook_frames_for_wesl() {
+        let effect =
+            EffectAsset::from_ron(include_str!("../../assets/effects/plasma_burst.aestra.ron"))
+                .unwrap();
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
+        let renderer = &artifact.renderers[0];
+        assert_eq!(renderer.renderer_kind, 1);
+        assert_eq!(renderer.frame_count, 4);
+        assert_eq!(renderer.frame_rate, 8.0);
+        assert_eq!(renderer.frames[0], Vec4::new(0.0, 0.0, 0.5, 0.5));
+        assert_ne!(renderer.flipbook_flags & 2, 0);
+        assert_ne!(renderer.flipbook_flags & 4, 0);
     }
 
     #[test]

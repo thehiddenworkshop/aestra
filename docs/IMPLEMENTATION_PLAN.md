@@ -62,8 +62,11 @@ architecture vision; this file is the shorter delivery plan.
   material domain compiles blend state, typed softness/tint inputs, explicit particle-color
   consumption, stable texture assets, and UV regions into backend-independent material
   plans consumed by native GPU, readback, and CPU presentation. The Assets and Inspector
-  workspaces expose material creation, assignment, and undoable editing. Flipbooks,
-  procedural recipes, mesh/ribbon production paths, and richer material domains remain.
+  workspaces expose material creation, assignment, and undoable editing. Imported
+  flipbooks now add explicit atlas frames, particle-age/effect-time animation,
+  forward/reverse/ping-pong playback, looping, deterministic random starts, native WESL,
+  CPU/readback parity, authoring controls, and a viewer example. Procedural recipes,
+  mesh/ribbon production paths, renderer sorting, and richer material domains remain.
 
 ## 1. Assessment of the current prototype
 

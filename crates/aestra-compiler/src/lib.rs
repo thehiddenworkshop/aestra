@@ -6,14 +6,15 @@ use aestra_core::{
     ColorKey, Curve, CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
     EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
     MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProperties, ModuleInstance,
-    ModuleParameters, ModuleTypeId, ParameterId, RENDERER_SPRITE, RendererProperties, ScalarRange,
-    SpriteColorSource, StageKind, ValidationReport,
+    ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_SPRITE,
+    RendererProperties, ScalarRange, SpriteColorSource, StageKind, ValidationReport,
 };
 use aestra_runtime::{
-    CompiledAsset, CompiledCurve, CompiledEffect, CompiledEmitter, CompiledGradient,
-    CompiledMaterial, CompiledParameter, ExecutionPlan, Expression, Instruction, IrLocation,
-    MaterialColorPlan, OptimizationStats, ParameterSlot, ParticleAttribute, ParticleLayout,
-    RendererPlan, RuntimeParameterValue, RuntimeStage, RuntimeValue, SimulationSeekMode,
+    CompiledAsset, CompiledCurve, CompiledEffect, CompiledEmitter, CompiledFlipbook,
+    CompiledGradient, CompiledMaterial, CompiledParameter, ExecutionPlan, Expression, Instruction,
+    IrLocation, MaterialColorPlan, OptimizationStats, ParameterSlot, ParticleAttribute,
+    ParticleLayout, RendererPlan, RendererPlanKind, RuntimeParameterValue, RuntimeStage,
+    RuntimeValue, SimulationSeekMode,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -317,10 +318,26 @@ impl EffectCompiler {
                 .renderers
                 .iter()
                 .filter(|renderer| renderer.enabled)
-                .map(|renderer| match renderer.properties {
+                .map(|renderer| match &renderer.properties {
                     RendererProperties::Sprite => RendererPlan {
                         source: renderer.id,
                         material: renderer.material,
+                        kind: RendererPlanKind::Sprite,
+                    },
+                    RendererProperties::Flipbook {
+                        flipbook,
+                        time_source,
+                        playback,
+                        random_start,
+                    } => RendererPlan {
+                        source: renderer.id,
+                        material: renderer.material,
+                        kind: RendererPlanKind::Flipbook {
+                            flipbook: *flipbook,
+                            time_source: *time_source,
+                            playback: *playback,
+                            random_start: *random_start,
+                        },
                     },
                     _ => unreachable!("compiler validation rejects unsupported renderers"),
                 })
@@ -354,6 +371,18 @@ impl EffectCompiler {
                     name: entry.name.clone(),
                     kind: entry.kind,
                     path: entry.path.clone(),
+                })
+                .collect(),
+            flipbooks: asset
+                .flipbooks
+                .iter()
+                .map(|flipbook| CompiledFlipbook {
+                    source: flipbook.id,
+                    name: flipbook.name.clone(),
+                    texture: flipbook.texture,
+                    frames: flipbook.frames.clone(),
+                    frame_rate: flipbook.frame_rate,
+                    looping: flipbook.looping,
                 })
                 .collect(),
             materials,
@@ -477,10 +506,12 @@ impl EffectCompiler {
                 );
             }
             for (renderer_index, renderer) in emitter.renderers.iter().enumerate() {
-                if renderer.enabled
-                    && (renderer.renderer_type.0 != RENDERER_SPRITE
-                        || !matches!(renderer.properties, RendererProperties::Sprite))
-                {
+                let supported = matches!(
+                    (&renderer.properties, renderer.renderer_type.0.as_str()),
+                    (RendererProperties::Sprite, RENDERER_SPRITE)
+                        | (RendererProperties::Flipbook { .. }, RENDERER_FLIPBOOK)
+                );
+                if renderer.enabled && !supported {
                     push_unique(
                         report,
                         Diagnostic::error(

@@ -111,6 +111,15 @@ impl EffectDiff {
                 format!("{:?}", after.materials),
             );
         }
+        if before.flipbooks != after.flipbooks {
+            modified(
+                &mut changes,
+                SemanticTarget::Effect(after.id),
+                "effect.flipbooks",
+                format!("{:?}", before.flipbooks),
+                format!("{:?}", after.flipbooks),
+            );
+        }
         if before.events != after.events {
             modified(
                 &mut changes,

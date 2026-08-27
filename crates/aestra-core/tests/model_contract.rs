@@ -1,6 +1,7 @@
 use aestra_core::{
     AssetDefinition, DiagnosticCode, EffectAsset, EffectParameter, Emitter, EmitterId,
-    MODULE_EMISSION, MaterialProperties, ParameterId, RendererInstance, ScalarRange, Value,
+    FlipbookDefinition, MODULE_EMISSION, MaterialProperties, ParameterId, RendererInstance,
+    ScalarRange, Value,
 };
 
 #[test]
@@ -15,6 +16,34 @@ fn semantic_ids_survive_round_trip() {
 
     assert_eq!(decoded.id, effect_id);
     assert_eq!(decoded.emitters[0].id, emitter_id);
+}
+
+#[test]
+fn flipbooks_validate_texture_frames_and_round_trip() {
+    let mut effect = EffectAsset::new("Flipbook", 1.0);
+    let texture = AssetDefinition::texture("Atlas", "textures/atlas.png");
+    let flipbook = FlipbookDefinition::grid("Burst", texture.id, 2, 2, 12.0);
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
+    emitter.renderers[0] = RendererInstance::flipbook(effect.materials[0].id, flipbook.id);
+    effect.assets.push(texture);
+    effect.flipbooks.push(flipbook);
+    effect.emitters.push(emitter);
+
+    assert!(effect.validation_report().is_valid());
+    let encoded = effect.to_pretty_ron().unwrap();
+    assert_eq!(EffectAsset::from_ron(&encoded).unwrap(), effect);
+
+    effect.flipbooks[0].frames.clear();
+    assert!(
+        effect
+            .validation_report()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.code == DiagnosticCode::InvalidValue
+                    && diagnostic.path.ends_with("flipbooks[0].frames")
+            })
+    );
 }
 
 #[test]

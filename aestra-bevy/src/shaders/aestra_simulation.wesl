@@ -54,7 +54,7 @@ struct Particle {
     normalized_age: f32,
     emitter_index: u32,
     alive: u32,
-    _padding: u32,
+    particle_index: u32,
 }
 
 struct Globals {
@@ -262,7 +262,7 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         normalized_age,
         emitter_index,
         1u,
-        0u,
+        particle_index,
     );
     let compact_index = atomicAdd(&counters[0], 1u);
     alive_indices[compact_index] = slot;

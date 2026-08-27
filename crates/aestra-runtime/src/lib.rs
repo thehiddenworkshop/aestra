@@ -10,8 +10,9 @@ pub use checkpoint::{
 pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource};
 
 use aestra_core::{
-    AssetId, AssetKind, BlendMode, Curve, EffectId, EmitterId, EmitterShape, Gradient, MaterialId,
-    ModuleId, ParameterId, RendererId, ScalarRange, UvRect, Value, ValueType,
+    AssetId, AssetKind, BlendMode, Curve, EffectId, EmitterId, EmitterShape, FlipbookPlaybackMode,
+    FlipbookTimeSource, Gradient, MaterialId, ModuleId, ParameterId, RendererId, ScalarRange,
+    UvRect, Value, ValueType,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -363,6 +364,18 @@ pub struct ExecutionPlan {
 pub struct RendererPlan {
     pub source: RendererId,
     pub material: MaterialId,
+    pub kind: RendererPlanKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RendererPlanKind {
+    Sprite,
+    Flipbook {
+        flipbook: AssetId,
+        time_source: FlipbookTimeSource,
+        playback: FlipbookPlaybackMode,
+        random_start: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -390,6 +403,16 @@ pub struct CompiledAsset {
     pub name: String,
     pub kind: AssetKind,
     pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledFlipbook {
+    pub source: AssetId,
+    pub name: String,
+    pub texture: AssetId,
+    pub frames: Vec<UvRect>,
+    pub frame_rate: f32,
+    pub looping: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -442,6 +465,7 @@ pub struct CompiledEffect {
     pub looping: bool,
     pub seek_mode: SimulationSeekMode,
     pub assets: Vec<CompiledAsset>,
+    pub flipbooks: Vec<CompiledFlipbook>,
     pub materials: Vec<CompiledMaterial>,
     pub parameters: Vec<CompiledParameter>,
     pub parameter_slots: BTreeMap<ParameterId, ParameterSlot>,
@@ -456,12 +480,17 @@ impl CompiledEffect {
     pub fn material(&self, id: MaterialId) -> Option<&CompiledMaterial> {
         self.materials.iter().find(|material| material.source == id)
     }
+
+    pub fn flipbook(&self, id: AssetId) -> Option<&CompiledFlipbook> {
+        self.flipbooks.iter().find(|flipbook| flipbook.source == id)
+    }
 }
 
 /// A renderer-neutral particle sample produced by the reference interpreter.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ParticleSample {
     pub emitter_index: usize,
+    pub particle_index: u32,
     pub position: [f32; 2],
     pub size: f32,
     pub rotation: f32,
@@ -831,12 +860,62 @@ fn evaluate_with_parameters(
             color[3] *= appearance.opacity.sample(normalized_age);
             output.push(ParticleSample {
                 emitter_index,
+                particle_index: index,
                 position,
                 size: appearance.size.sample(normalized_age),
                 rotation: initializer.angular_velocity.sample(hash01(index, 4, seed)) * age,
                 color,
                 normalized_age,
             });
+        }
+    }
+}
+
+/// Selects a frame deterministically for every presentation backend.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FlipbookFrameContext {
+    pub time_source: FlipbookTimeSource,
+    pub playback: FlipbookPlaybackMode,
+    pub random_start: bool,
+    pub effect_time: f32,
+    pub normalized_age: f32,
+    pub particle_index: u32,
+    pub seed: u64,
+}
+
+pub fn flipbook_frame_index(flipbook: &CompiledFlipbook, context: FlipbookFrameContext) -> usize {
+    let count = flipbook.frames.len();
+    if count <= 1 {
+        return 0;
+    }
+    let seconds = match context.time_source {
+        FlipbookTimeSource::ParticleAge => {
+            context.normalized_age.clamp(0.0, 1.0) * count as f32 / flipbook.frame_rate
+        }
+        FlipbookTimeSource::EffectTime => context.effect_time.max(0.0),
+    };
+    let mut frame = (seconds * flipbook.frame_rate).floor() as usize;
+    if context.random_start {
+        frame = frame.wrapping_add(
+            (hash01(context.particle_index, 9, context.seed) * count as f32) as usize,
+        );
+    }
+    let forward = if flipbook.looping {
+        frame % count
+    } else {
+        frame.min(count - 1)
+    };
+    match context.playback {
+        FlipbookPlaybackMode::Forward => forward,
+        FlipbookPlaybackMode::Reverse => count - 1 - forward,
+        FlipbookPlaybackMode::PingPong => {
+            let period = (count - 1) * 2;
+            let value = if flipbook.looping {
+                frame % period
+            } else {
+                frame.min(period)
+            };
+            if value < count { value } else { period - value }
         }
     }
 }
@@ -1020,5 +1099,38 @@ mod tests {
         let result = looping.advance(1.25, 1.0, 1.0, true);
         assert_eq!(looping.frame(), 15);
         assert!(!result.reached_end);
+    }
+
+    #[test]
+    fn flipbook_frame_selection_supports_modes_and_is_deterministic() {
+        let flipbook = CompiledFlipbook {
+            source: AssetId::new(),
+            name: "Test".into(),
+            texture: AssetId::new(),
+            frames: vec![UvRect::FULL; 4],
+            frame_rate: 4.0,
+            looping: true,
+        };
+        let frame = |playback, random_start| {
+            flipbook_frame_index(
+                &flipbook,
+                FlipbookFrameContext {
+                    time_source: FlipbookTimeSource::EffectTime,
+                    playback,
+                    random_start,
+                    effect_time: 0.5,
+                    normalized_age: 0.0,
+                    particle_index: 7,
+                    seed: 42,
+                },
+            )
+        };
+        assert_eq!(frame(FlipbookPlaybackMode::Forward, false), 2);
+        assert_eq!(frame(FlipbookPlaybackMode::Reverse, false), 1);
+        assert_eq!(frame(FlipbookPlaybackMode::PingPong, false), 2);
+        assert_eq!(
+            frame(FlipbookPlaybackMode::Forward, true),
+            frame(FlipbookPlaybackMode::Forward, true)
+        );
     }
 }

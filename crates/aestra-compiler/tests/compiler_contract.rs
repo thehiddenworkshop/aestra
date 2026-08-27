@@ -5,13 +5,14 @@ use aestra_core::{
     StageKind, Value,
 };
 use aestra_runtime::{
-    EffectInstance, Expression, Instruction, ParameterError, ParticleAttribute, RuntimeStage,
-    SimulationSeekMode,
+    EffectInstance, Expression, Instruction, ParameterError, ParticleAttribute, RendererPlanKind,
+    RuntimeStage, SimulationSeekMode,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
 const SAMPLE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
 const TEXTURED_SAMPLE: &str = include_str!("../../../assets/effects/ember_sigil.aestra.ron");
+const FLIPBOOK_SAMPLE: &str = include_str!("../../../assets/effects/plasma_burst.aestra.ron");
 
 #[test]
 fn builtin_registry_exposes_authoring_and_runtime_metadata() {
@@ -125,6 +126,29 @@ fn compiler_resolves_texture_assets_into_renderer_plans() {
 
     assert_eq!(registered.path, "textures/ember_spark.png");
     assert_eq!(material.uv, aestra_core::UvRect::FULL);
+}
+
+#[test]
+fn compiler_lowers_imported_flipbook_renderer_metadata() {
+    let asset = EffectAsset::from_ron(FLIPBOOK_SAMPLE).unwrap();
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let renderer = &compiled.emitters[0].renderers[0];
+    let RendererPlanKind::Flipbook {
+        flipbook,
+        time_source,
+        playback,
+        random_start,
+    } = renderer.kind
+    else {
+        panic!("example must compile to a flipbook renderer");
+    };
+    let definition = compiled.flipbook(flipbook).unwrap();
+    assert_eq!(definition.frames.len(), 4);
+    assert_eq!(definition.frame_rate, 8.0);
+    assert_eq!(time_source, aestra_core::FlipbookTimeSource::ParticleAge);
+    assert_eq!(playback, aestra_core::FlipbookPlaybackMode::Forward);
+    assert!(random_start);
+    assert_eq!(compiled.assets[0].source, definition.texture);
 }
 
 #[test]
