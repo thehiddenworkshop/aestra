@@ -29,6 +29,7 @@ use bevy::{
         },
         renderer::{RenderAdapter, RenderAdapterInfo, RenderContext, RenderDevice, RenderGraph},
         storage::{GpuShaderBuffer, ShaderBuffer},
+        sync_component::SyncComponent,
     },
 };
 use thiserror::Error;
@@ -362,7 +363,7 @@ pub(crate) struct GpuEffectBuffers {
     total_slots: u32,
 }
 
-#[derive(Component, Clone, ExtractComponent)]
+#[derive(Component, Clone)]
 #[require(Transform, Visibility, VisibilityClass)]
 #[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
 struct GpuDrawInstance {
@@ -376,6 +377,22 @@ struct GpuDrawInstance {
     fallback_texture: Handle<Image>,
     renderer_order: u32,
     blend: GpuBlend,
+}
+
+impl SyncComponent for GpuDrawInstance {
+    type Target = Self;
+}
+
+impl ExtractComponent for GpuDrawInstance {
+    type QueryData = (&'static Self, &'static ViewVisibility);
+    type QueryFilter = ();
+    type Out = Self;
+
+    fn extract_component(
+        (instance, visibility): bevy::ecs::query::QueryItem<'_, '_, Self::QueryData>,
+    ) -> Option<Self::Out> {
+        visibility.get().then(|| instance.clone())
+    }
 }
 
 #[derive(Component)]

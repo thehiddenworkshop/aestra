@@ -17,8 +17,8 @@ use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistr
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
 use aestra_runtime::{EffectProfile, ProfileValue, ProfileValueSource};
 use bevy::{
-    asset::{AssetPlugin, RenderAssetUsages},
-    camera::{RenderTarget, visibility::RenderLayers},
+    asset::AssetPlugin,
+    camera::{RenderTarget, Viewport, visibility::RenderLayers},
     ecs::system::SystemParam,
     feathers::{
         FeathersPlugins,
@@ -29,13 +29,20 @@ use bevy::{
         theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText},
         tokens,
     },
-    input::{ButtonState, keyboard::KeyboardInput},
+    gizmos::transform_gizmo::{
+        TransformGizmoCamera, TransformGizmoFocus, TransformGizmoMode, TransformGizmoPlugin,
+        TransformGizmoSettings, TransformGizmoSpace, TransformGizmoSystems,
+    },
+    input::{
+        ButtonState,
+        keyboard::KeyboardInput,
+        mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
+    },
     picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer, Scroll},
     picking::pointer::PointerButton,
     prelude::*,
-    render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
     text::FontSource,
-    ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition, widget::ViewportNode},
+    ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition, UiSystems},
     ui_widgets::{
         Activate, ScrollArea, ScrollIntoView, Scrollbar, ValueChange,
         popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
@@ -101,6 +108,7 @@ fn main() {
         .init_resource::<WorkspaceState>()
         .init_resource::<DockDragState>()
         .init_resource::<ResizeState>()
+        .init_resource::<PreviewCameraController>()
         .insert_resource(WorkspaceLayout::load())
         .init_resource::<RenderedUiRevision>()
         .add_plugins(
@@ -121,6 +129,7 @@ fn main() {
                 }),
         )
         .add_plugins(FeathersPlugins)
+        .add_plugins(TransformGizmoPlugin)
         .add_plugins(AestraPlugin)
         .insert_resource(theme::feathers_theme())
         .add_observer(handle_settings_toggle_change)
@@ -136,6 +145,7 @@ fn main() {
         .add_observer(handle_inspector_scalar_change)
         .add_observer(handle_inspector_numeric_scroll)
         .add_observer(begin_inspector_tooltip)
+        .add_observer(select_inspector_header)
         .add_observer(queue_feathers_action_activation)
         .add_systems(
             Startup,
@@ -162,6 +172,9 @@ fn main() {
                     update_editor_labels,
                     update_compile_status,
                     update_history_actions,
+                    navigate_preview_camera,
+                    update_transform_gizmo_controls,
+                    draw_preview_scene_gizmos,
                 )
                     .chain(),
                 (
@@ -170,7 +183,6 @@ fn main() {
                     update_menu_visibility,
                     update_panel_visibility_labels,
                     update_floating_window_titles,
-                    update_preview_grid_visibility,
                     clear_finished_dock_drag,
                     sync_dock_drop_hints,
                     sync_tab_reorder_hints,
@@ -195,6 +207,12 @@ fn main() {
                     .chain(),
             )
                 .chain(),
+        )
+        .add_systems(
+            PostUpdate,
+            sync_preview_camera_viewport
+                .after(UiSystems::Layout)
+                .before(TransformGizmoSystems),
         )
         .configure_sets(Update, AestraSet::Playback.after(sync_rendered_preview))
         .run();
@@ -726,6 +744,9 @@ struct InspectorSemanticTarget {
     base_border: Color,
 }
 
+#[derive(Component, Debug, Clone, Copy)]
+struct InspectorSelectionTarget(SemanticTarget);
+
 #[derive(Resource, Default)]
 struct InspectorFocus {
     target: Option<SemanticTarget>,
@@ -796,9 +817,6 @@ struct MenuButton;
 struct MenuSurface;
 
 #[derive(Component)]
-struct PreviewGrid;
-
-#[derive(Component)]
 struct AboutOverlay;
 
 #[derive(Component)]
@@ -844,8 +862,30 @@ struct PreviewCanvas;
 #[derive(Component)]
 struct PreviewRenderCamera;
 
+#[derive(Resource)]
+struct PreviewCameraController {
+    focus: Vec3,
+    distance: f32,
+    yaw: f32,
+    pitch: f32,
+}
+
+impl Default for PreviewCameraController {
+    fn default() -> Self {
+        Self {
+            focus: Vec3::ZERO,
+            distance: 140.0,
+            yaw: 0.0,
+            pitch: 0.0,
+        }
+    }
+}
+
 #[derive(Component)]
 struct PreviewEffectPlayer;
+
+#[derive(Component)]
+struct GizmoModeLabel;
 
 #[derive(Component)]
 struct PlaybackLabel;
@@ -908,7 +948,6 @@ struct UiBuildResources<'w, 's> {
 
 #[derive(SystemParam)]
 struct SetupUiResources<'w> {
-    images: ResMut<'w, Assets<Image>>,
     registry: Res<'w, EditorModuleRegistry>,
     palette: Res<'w, ModulePaletteState>,
     workspace: Res<'w, WorkspaceState>,
@@ -942,12 +981,21 @@ fn setup_editor(
     menu: Res<MenuState>,
     catalog: Res<EffectCatalog>,
     layout: Res<WorkspaceLayout>,
-    mut editor_resources: SetupUiResources,
+    editor_resources: SetupUiResources,
     mut rendered: ResMut<RenderedUiRevision>,
 ) {
-    commands.spawn((Camera2d, IsDefaultUiCamera, RenderLayers::layer(31)));
-    let preview_camera = spawn_preview_camera(&mut commands, &mut editor_resources.images);
-    spawn_preview_effect_player(&mut commands, &session);
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 0,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        IsDefaultUiCamera,
+        RenderLayers::layer(31),
+    ));
+    let preview_camera = spawn_preview_camera(&mut commands);
+    spawn_preview_effect_player(&mut commands, &session, Transform::IDENTITY);
     let sources = PanelSources {
         session: &session,
         catalog: &catalog,
@@ -971,29 +1019,211 @@ fn setup_editor(
     rendered.0 = session.ui_revision;
 }
 
-fn spawn_preview_camera(commands: &mut Commands, images: &mut Assets<Image>) -> Entity {
-    let mut image = Image::new_uninit(
-        default(),
-        TextureDimension::D2,
-        TextureFormat::Bgra8UnormSrgb,
-        RenderAssetUsages::all(),
-    );
-    image.texture_descriptor.usage =
-        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
-    let target = images.add(image);
+fn spawn_preview_camera(commands: &mut Commands) -> Entity {
     commands
         .spawn((
             PreviewRenderCamera,
-            Camera2d,
+            TransformGizmoCamera,
+            Camera3d::default(),
             Camera {
-                order: -1,
+                order: -2,
                 clear_color: ClearColorConfig::Custom(theme::VIEWPORT),
+                viewport: Some(Viewport {
+                    physical_size: UVec2::splat(128),
+                    ..default()
+                }),
                 ..default()
             },
-            RenderTarget::Image(target.into()),
+            Transform::from_xyz(0.0, 0.0, 140.0).looking_at(Vec3::ZERO, Vec3::Y),
             RenderLayers::layer(0),
         ))
         .id()
+}
+
+fn sync_preview_camera_viewport(
+    canvas: Single<(&ComputedNode, &UiGlobalTransform), With<PreviewCanvas>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut camera: Single<&mut Camera, With<PreviewRenderCamera>>,
+) {
+    let (computed, transform) = *canvas;
+    let size = computed.size();
+    if !size.is_finite() || size.x < 16.0 || size.y < 16.0 {
+        return;
+    }
+    let top_left = transform.translation.trunc() - size * 0.5;
+    let target_size = UVec2::new(
+        window.physical_width().max(1),
+        window.physical_height().max(1),
+    );
+    let position = top_left.max(Vec2::ZERO).as_uvec2().min(target_size - 1);
+    let available = target_size.saturating_sub(position).max(UVec2::ONE);
+    let physical_size = size.as_uvec2().max(UVec2::ONE).min(available);
+    camera.viewport = Some(Viewport {
+        physical_position: position,
+        physical_size,
+        ..default()
+    });
+}
+
+fn navigate_preview_camera(
+    mut motion: MessageReader<MouseMotion>,
+    mut wheel: MessageReader<MouseWheel>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
+    mut controller: ResMut<PreviewCameraController>,
+    mut camera: Single<&mut Transform, With<PreviewRenderCamera>>,
+) {
+    let cursor_over = canvas.cursor_over();
+    let pointer_delta = motion
+        .read()
+        .fold(Vec2::ZERO, |sum, event| sum + event.delta);
+    let scroll_delta = wheel.read().fold(0.0, |sum, event| {
+        let scale = match event.unit {
+            MouseScrollUnit::Line => 1.0,
+            MouseScrollUnit::Pixel => 0.02,
+        };
+        sum + event.y * scale
+    });
+    if !cursor_over {
+        return;
+    }
+
+    let mut changed = false;
+    if buttons.pressed(MouseButton::Middle) && pointer_delta != Vec2::ZERO {
+        if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
+            let right = camera.rotation * Vec3::X;
+            let up = camera.rotation * Vec3::Y;
+            let units_per_pixel = controller.distance * 0.0018;
+            controller.focus += (-right * pointer_delta.x + up * pointer_delta.y) * units_per_pixel;
+        } else {
+            controller.yaw -= pointer_delta.x * 0.005;
+            controller.pitch = (controller.pitch - pointer_delta.y * 0.005).clamp(-1.54, 1.54);
+        }
+        changed = true;
+    }
+    if scroll_delta != 0.0 {
+        controller.distance =
+            (controller.distance * (-scroll_delta * 0.12).exp()).clamp(1.0, 4_000.0);
+        changed = true;
+    }
+    if !changed {
+        return;
+    }
+
+    let orbit = Quat::from_rotation_y(controller.yaw) * Quat::from_rotation_x(controller.pitch);
+    camera.translation = controller.focus + orbit * Vec3::Z * controller.distance;
+    camera.look_at(controller.focus, Vec3::Y);
+}
+
+fn update_transform_gizmo_controls(
+    keys: Res<ButtonInput<KeyCode>>,
+    canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
+    mut settings: ResMut<TransformGizmoSettings>,
+    mut labels: Query<&mut Text, With<GizmoModeLabel>>,
+) {
+    if canvas.cursor_over() {
+        if keys.just_pressed(KeyCode::Digit1) {
+            settings.mode = TransformGizmoMode::Translate;
+        }
+        if keys.just_pressed(KeyCode::Digit2) {
+            settings.mode = TransformGizmoMode::Rotate;
+        }
+        if keys.just_pressed(KeyCode::Digit3) {
+            settings.mode = TransformGizmoMode::Scale;
+        }
+        if keys.just_pressed(KeyCode::KeyX) {
+            settings.space = match settings.space {
+                TransformGizmoSpace::World => TransformGizmoSpace::Local,
+                TransformGizmoSpace::Local => TransformGizmoSpace::World,
+            };
+        }
+    }
+    if !settings.is_changed() {
+        return;
+    }
+    let mode = match settings.mode {
+        TransformGizmoMode::Translate => "MOVE",
+        TransformGizmoMode::Rotate => "ROTATE",
+        TransformGizmoMode::Scale => "SCALE",
+    };
+    let space = match settings.space {
+        TransformGizmoSpace::World => "WORLD",
+        TransformGizmoSpace::Local => "LOCAL",
+    };
+    for mut label in &mut labels {
+        **label = format!("1 MOVE  2 ROTATE  3 SCALE  |  {mode} · {space}");
+    }
+}
+
+fn draw_preview_scene_gizmos(
+    session: Res<EditorSession>,
+    menu: Res<MenuState>,
+    player: Single<&GlobalTransform, With<PreviewEffectPlayer>>,
+    mut gizmos: Gizmos,
+) {
+    if menu.show_grid {
+        gizmos
+            .grid(
+                Isometry3d::from_translation(Vec3::new(0.0, 0.0, -0.05)),
+                UVec2::new(16, 10),
+                Vec2::splat(20.0),
+                theme::GRID.with_alpha(0.7),
+            )
+            .outer_edges();
+    }
+
+    let Some((_, shape)) = selected_shape_module(&session) else {
+        return;
+    };
+    let translation = player.translation();
+    let rotation = player.rotation();
+    let scale = player.to_scale_rotation_translation().0;
+    let axis_scale = scale.x.abs().max(scale.y.abs()).max(0.001);
+    let isometry = Isometry3d::new(translation, rotation);
+    let accent = theme::ACCENT.with_alpha(0.9);
+    match shape {
+        EmitterShape::Point => {
+            gizmos.cross(isometry, 2.0 * axis_scale, accent);
+        }
+        EmitterShape::Circle { radius } => {
+            gizmos
+                .circle(isometry, radius * axis_scale, accent)
+                .resolution(64);
+            gizmos.line(
+                player.transform_point(Vec3::ZERO),
+                player.transform_point(Vec3::X * radius),
+                accent,
+            );
+        }
+        EmitterShape::Ring { radius } => {
+            gizmos
+                .circle(isometry, radius * axis_scale, accent)
+                .resolution(64);
+            gizmos
+                .circle(
+                    isometry,
+                    radius * axis_scale * 0.92,
+                    accent.with_alpha(0.45),
+                )
+                .resolution(64);
+        }
+        EmitterShape::Cone { radius, depth } => {
+            let origin = player.transform_point(Vec3::ZERO);
+            let left = player.transform_point(Vec3::new(-radius, depth, 0.0));
+            let right = player.transform_point(Vec3::new(radius, depth, 0.0));
+            gizmos.line(origin, left, accent);
+            gizmos.line(origin, right, accent);
+            gizmos.line(left, right, accent);
+            gizmos
+                .circle(
+                    Isometry3d::new(player.transform_point(Vec3::Y * depth), player.rotation()),
+                    radius * axis_scale,
+                    accent.with_alpha(0.62),
+                )
+                .resolution(64);
+        }
+    }
 }
 
 fn configured_preview_player(session: &EditorSession) -> Option<EffectPlayer> {
@@ -1006,9 +1236,19 @@ fn configured_preview_player(session: &EditorSession) -> Option<EffectPlayer> {
     Some(player)
 }
 
-fn spawn_preview_effect_player(commands: &mut Commands, session: &EditorSession) {
+fn spawn_preview_effect_player(
+    commands: &mut Commands,
+    session: &EditorSession,
+    transform: Transform,
+) {
     if let Some(player) = configured_preview_player(session) {
-        commands.spawn((PreviewEffectPlayer, player, RenderLayers::layer(0)));
+        commands.spawn((
+            PreviewEffectPlayer,
+            TransformGizmoFocus,
+            player,
+            transform,
+            RenderLayers::layer(0),
+        ));
     }
 }
 
@@ -1766,7 +2006,7 @@ fn spawn_panel_content(
     sources: PanelSources<'_>,
 ) {
     match panel {
-        DockPanel::Viewport => spawn_preview(parent, sources.preview_camera),
+        DockPanel::Viewport => spawn_preview(parent, sources.preview_camera, sources.session),
         DockPanel::Assets => spawn_asset_browser(parent, sources.session, sources.catalog),
         DockPanel::Inspector => {
             spawn_inspector(
@@ -2245,6 +2485,35 @@ fn reset_cursor(
         if let Ok(mut color) = colors.get_mut(out.event_target()) {
             color.0 = theme::SPLITTER_GUTTER;
         }
+    }
+}
+
+fn select_inspector_header(
+    click: On<Pointer<Click>>,
+    selectable: Query<&InspectorSelectionTarget>,
+    parents: Query<&ChildOf>,
+    mut session: ResMut<EditorSession>,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let mut entity = click.event_target();
+    let target = loop {
+        if let Ok(target) = selectable.get(entity) {
+            break Some(target.0);
+        }
+        let Ok(parent) = parents.get(entity) else {
+            break None;
+        };
+        entity = parent.parent();
+    };
+    let Some(target) = target else {
+        return;
+    };
+    if session.selection.primary != target {
+        session.selection.primary = target;
+        session.status = format!("Selected {target}");
+        session.ui_revision += 1;
     }
 }
 
@@ -2855,7 +3124,11 @@ fn spawn_asset_browser(
         });
 }
 
-fn spawn_preview(parent: &mut ChildSpawnerCommands, preview_camera: Entity) {
+fn spawn_preview(
+    parent: &mut ChildSpawnerCommands,
+    _preview_camera: Entity,
+    _session: &EditorSession,
+) {
     parent
         .spawn(())
         .apply_scene(ui_shell::viewport_pane())
@@ -2873,36 +3146,14 @@ fn spawn_preview(parent: &mut ChildSpawnerCommands, preview_camera: Entity) {
                         border_radius: BorderRadius::all(Val::Px(6.0)),
                         ..default()
                     },
-                    BackgroundColor(theme::VIEWPORT),
+                    BackgroundColor(Color::NONE),
                     BorderColor::all(theme::BORDER_BRIGHT),
+                    RelativeCursorPosition::default(),
                 ))
                 .with_children(|canvas| {
                     canvas.spawn((
-                        ViewportNode::new(preview_camera),
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(0.0),
-                            right: Val::Px(0.0),
-                            top: Val::Px(0.0),
-                            bottom: Val::Px(0.0),
-                            ..default()
-                        },
-                    ));
-                    spawn_preview_grid(canvas);
-                    canvas.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Percent(50.0),
-                            top: Val::Percent(50.0),
-                            width: Val::Px(4.0),
-                            height: Val::Px(4.0),
-                            border_radius: BorderRadius::MAX,
-                            ..default()
-                        },
-                        BackgroundColor(theme::TEXT_FAINT),
-                    ));
-                    canvas.spawn((
-                        Text::new("PERSPECTIVE  |  LIT  |  LOCAL SPACE"),
+                        Text::new("1 MOVE  2 ROTATE  3 SCALE  |  MOVE · WORLD"),
+                        GizmoModeLabel,
                         TextFont {
                             font_size: FontSize::Px(9.0),
                             ..default()
@@ -2911,6 +3162,20 @@ fn spawn_preview(parent: &mut ChildSpawnerCommands, preview_camera: Entity) {
                         Node {
                             position_type: PositionType::Absolute,
                             left: Val::Px(12.0),
+                            top: Val::Px(10.0),
+                            ..default()
+                        },
+                    ));
+                    canvas.spawn((
+                        Text::new("MMB ORBIT  |  SHIFT+MMB PAN  |  WHEEL DOLLY"),
+                        TextFont {
+                            font_size: FontSize::Px(9.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_FAINT),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            right: Val::Px(12.0),
                             top: Val::Px(10.0),
                             ..default()
                         },
@@ -2928,34 +3193,21 @@ fn spawn_preview(parent: &mut ChildSpawnerCommands, preview_camera: Entity) {
         });
 }
 
-fn spawn_preview_grid(parent: &mut ChildSpawnerCommands) {
-    for i in 1..8 {
-        parent.spawn((
-            PreviewGrid,
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Percent(i as f32 * 12.5),
-                top: Val::Px(0.0),
-                width: Val::Px(1.0),
-                height: Val::Percent(100.0),
-                ..default()
-            },
-            BackgroundColor(theme::GRID),
-        ));
+fn selected_shape_module(session: &EditorSession) -> Option<(ModuleId, EmitterShape)> {
+    if session.pending_change.is_some() {
+        return None;
     }
-    for i in 1..6 {
-        parent.spawn((
-            PreviewGrid,
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Percent(i as f32 * 16.6667),
-                width: Val::Percent(100.0),
-                height: Val::Px(1.0),
-                ..default()
-            },
-            BackgroundColor(theme::GRID),
-        ));
+    let SemanticTarget::Module(module_id) = session.selection.primary else {
+        return None;
+    };
+    let module = session
+        .selected_layer()
+        .modules
+        .iter()
+        .find(|module| module.id == module_id)?;
+    match module_parameter(module, "shape") {
+        Some(Value::Shape(shape)) if module.enabled => Some((module_id, shape)),
+        _ => None,
     }
 }
 
@@ -3311,6 +3563,8 @@ fn spawn_module_card(
         .any(|diagnostic| diagnostic.path.starts_with(diagnostic_path))
     {
         Color::srgb(0.82, 0.28, 0.24)
+    } else if session.selection.primary == SemanticTarget::Module(module.id) {
+        theme::ACCENT_DIM
     } else {
         theme::BORDER
     };
@@ -3338,12 +3592,15 @@ fn spawn_module_card(
             BorderColor::all(base_border),
         ))
         .with_children(|card| {
-            card.spawn(Node {
-                width: Val::Percent(100.0),
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(4.0),
-                ..default()
-            })
+            card.spawn((
+                InspectorSelectionTarget(SemanticTarget::Module(module.id)),
+                Node {
+                    width: Val::Percent(100.0),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(4.0),
+                    ..default()
+                },
+            ))
             .with_children(|header| {
                 spawn_inspector_disclosure(
                     header,
@@ -4013,11 +4270,16 @@ fn spawn_renderer_card(
         RendererProperties::Flipbook { .. } => "Flipbook Renderer",
         _ => "Renderer",
     };
+    let base_border = if session.selection.primary == SemanticTarget::Renderer(renderer.id) {
+        theme::ACCENT_DIM
+    } else {
+        theme::BORDER
+    };
     parent
         .spawn((
             InspectorSemanticTarget {
                 target: SemanticTarget::Renderer(renderer.id),
-                base_border: theme::BORDER,
+                base_border,
             },
             Node {
                 width: Val::Auto,
@@ -4030,15 +4292,18 @@ fn spawn_renderer_card(
                 ..default()
             },
             BackgroundColor(theme::PANEL_LIGHT),
-            BorderColor::all(theme::BORDER),
+            BorderColor::all(base_border),
         ))
         .with_children(|card| {
-            card.spawn(Node {
-                width: Val::Percent(100.0),
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(4.0),
-                ..default()
-            })
+            card.spawn((
+                InspectorSelectionTarget(SemanticTarget::Renderer(renderer.id)),
+                Node {
+                    width: Val::Percent(100.0),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(4.0),
+                    ..default()
+                },
+            ))
             .with_children(|header| {
                 spawn_inspector_disclosure(
                     header,
@@ -10153,22 +10418,6 @@ fn update_floating_window_titles(
     }
 }
 
-fn update_preview_grid_visibility(
-    menu: Res<MenuState>,
-    mut grid: Query<&mut Visibility, With<PreviewGrid>>,
-) {
-    if !menu.is_changed() {
-        return;
-    }
-    for mut visibility in &mut grid {
-        *visibility = if menu.show_grid {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-    }
-}
-
 fn handle_window_close_requests(
     mut close_requests: MessageReader<WindowCloseRequested>,
     primary: Single<Entity, With<PrimaryWindow>>,
@@ -10389,26 +10638,27 @@ fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
 fn sync_rendered_preview(
     mut commands: Commands,
     session: Res<EditorSession>,
-    mut players: Query<(Entity, &mut EffectPlayer), With<PreviewEffectPlayer>>,
+    mut players: Query<(Entity, &mut EffectPlayer, &Transform), With<PreviewEffectPlayer>>,
 ) {
     let desired = session
         .preview
         .as_ref()
         .map(|preview| preview.effect().clone());
     let Some(desired) = desired else {
-        for (entity, _) in &mut players {
+        for (entity, _, _) in &mut players {
             commands.entity(entity).despawn();
         }
         return;
     };
 
-    let Some((entity, mut player)) = players.iter_mut().next() else {
-        spawn_preview_effect_player(&mut commands, &session);
+    let Some((entity, mut player, transform)) = players.iter_mut().next() else {
+        spawn_preview_effect_player(&mut commands, &session, Transform::IDENTITY);
         return;
     };
     if !std::sync::Arc::ptr_eq(player.effect(), &desired) {
+        let transform = *transform;
         commands.entity(entity).despawn();
-        spawn_preview_effect_player(&mut commands, &session);
+        spawn_preview_effect_player(&mut commands, &session, transform);
         return;
     }
 

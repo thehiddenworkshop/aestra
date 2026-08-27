@@ -4,12 +4,16 @@ use super::{
 };
 use bevy::{
     app::SubApp,
-    core_pipeline::core_2d::{CORE_2D_DEPTH_FORMAT, Transparent2d},
+    core_pipeline::{
+        core_2d::{CORE_2D_DEPTH_FORMAT, Transparent2d},
+        core_3d::{CORE_3D_DEPTH_FORMAT, Transparent3d, TransparentSortingInfo3d},
+    },
     ecs::{
         query::ROQueryItem,
         system::{SystemParamItem, lifetimeless::*},
     },
     math::FloatOrd,
+    pbr::{MeshPipeline, MeshPipelineKey, MeshPipelineSystems, SetMeshViewBindGroup, ViewKeyCache},
     prelude::*,
     render::{
         Render, RenderStartup, RenderSystems,
@@ -30,6 +34,7 @@ use bevy::{
         },
         renderer::RenderDevice,
         storage::GpuShaderBuffer,
+        sync_world::MainEntity,
         texture::GpuImage,
         view::{ExtractedView, RenderVisibleEntities},
     },
@@ -41,29 +46,40 @@ use bevy::{
 pub(super) fn install(render_app: &mut SubApp) {
     render_app
         .add_render_command::<Transparent2d, DrawGpuSprites>()
+        .add_render_command::<Transparent3d, DrawGpuSprites3d>()
         .init_resource::<SpecializedRenderPipelines<GpuSpritePipeline>>()
         .add_systems(
             RenderStartup,
-            init_render_pipeline.after(init_mesh_2d_pipeline),
+            init_render_pipeline
+                .after(init_mesh_2d_pipeline)
+                .after(MeshPipelineSystems),
         )
         .add_systems(
             Render,
             (
                 prepare_render_bind_groups.in_set(RenderSystems::PrepareBindGroups),
                 queue_gpu_sprites.in_set(RenderSystems::QueueMeshes),
+                queue_gpu_sprites_3d.in_set(RenderSystems::QueueMeshes),
             ),
         );
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct GpuSpritePipelineKey {
-    mesh: Mesh2dPipelineKey,
+    view: GpuSpriteViewKey,
     blend: GpuBlend,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum GpuSpriteViewKey {
+    TwoD(Mesh2dPipelineKey),
+    ThreeD(MeshPipelineKey),
 }
 
 #[derive(Resource)]
 struct GpuSpritePipeline {
     mesh2d: Mesh2dPipeline,
+    mesh3d: MeshPipeline,
     effect_layout: BindGroupLayoutDescriptor,
     shader: Handle<Shader>,
 }
@@ -72,6 +88,7 @@ fn init_render_pipeline(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mesh2d: Res<Mesh2dPipeline>,
+    mesh3d: Res<MeshPipeline>,
 ) {
     let effect_layout = BindGroupLayoutDescriptor::new(
         "aestra_gpu_sprite",
@@ -90,6 +107,7 @@ fn init_render_pipeline(
     );
     commands.insert_resource(GpuSpritePipeline {
         mesh2d: mesh2d.clone(),
+        mesh3d: mesh3d.clone(),
         effect_layout,
         shader: asset_server.load(WESL_RENDER_SHADER_PATH),
     });
@@ -99,6 +117,20 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
     type Key = GpuSpritePipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+        let (view_layout, target_format, depth_format, msaa_samples) = match key.view {
+            GpuSpriteViewKey::TwoD(mesh) => (
+                self.mesh2d.view_layout.clone(),
+                mesh.target_format(),
+                CORE_2D_DEPTH_FORMAT,
+                mesh.msaa_samples(),
+            ),
+            GpuSpriteViewKey::ThreeD(mesh) => (
+                self.mesh3d.get_view_layout(mesh.into()).main_layout,
+                mesh.target_format(),
+                CORE_3D_DEPTH_FORMAT,
+                mesh.msaa_samples(),
+            ),
+        };
         let blend = match key.blend {
             GpuBlend::Alpha => BlendState::ALPHA_BLENDING,
             GpuBlend::Additive => BlendState {
@@ -124,7 +156,7 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
         };
         RenderPipelineDescriptor {
             label: Some("aestra gpu sprite".into()),
-            layout: vec![self.mesh2d.view_layout.clone(), self.effect_layout.clone()],
+            layout: vec![view_layout, self.effect_layout.clone()],
             vertex: VertexState {
                 shader: self.shader.clone(),
                 entry_point: Some("vertex".into()),
@@ -142,7 +174,7 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                     .into(),
                 ),
                 targets: vec![Some(ColorTargetState {
-                    format: key.mesh.target_format(),
+                    format: target_format,
                     blend: Some(blend),
                     write_mask: ColorWrites::ALL,
                 })],
@@ -154,7 +186,7 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 ..default()
             },
             depth_stencil: Some(DepthStencilState {
-                format: CORE_2D_DEPTH_FORMAT,
+                format: depth_format,
                 depth_write_enabled: Some(false),
                 depth_compare: Some(CompareFunction::GreaterEqual),
                 stencil: StencilState {
@@ -166,7 +198,7 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 bias: DepthBiasState::default(),
             }),
             multisample: MultisampleState {
-                count: key.mesh.msaa_samples(),
+                count: msaa_samples,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -255,7 +287,7 @@ fn queue_gpu_sprites(
                 &pipeline_cache,
                 &pipeline,
                 GpuSpritePipelineKey {
-                    mesh: mesh_key,
+                    view: GpuSpriteViewKey::TwoD(mesh_key),
                     blend: effect.blend,
                 },
             );
@@ -273,9 +305,60 @@ fn queue_gpu_sprites(
     }
 }
 
+fn queue_gpu_sprites_3d(
+    draw_functions: Res<DrawFunctions<Transparent3d>>,
+    pipeline: Res<GpuSpritePipeline>,
+    mut pipelines: ResMut<SpecializedRenderPipelines<GpuSpritePipeline>>,
+    pipeline_cache: Res<PipelineCache>,
+    effects: Query<(Entity, &MainEntity, &GpuDrawInstance)>,
+    mut phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
+    views: Query<&ExtractedView>,
+    view_key_cache: Res<ViewKeyCache>,
+) {
+    let draw_function = draw_functions.read().id::<DrawGpuSprites3d>();
+    for view in &views {
+        let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
+            continue;
+        };
+        let Some(&mesh_key) = view_key_cache.get(&view.retained_view_entity) else {
+            continue;
+        };
+        for (render_entity, main_entity, effect) in &effects {
+            let pipeline_id = pipelines.specialize(
+                &pipeline_cache,
+                &pipeline,
+                GpuSpritePipelineKey {
+                    view: GpuSpriteViewKey::ThreeD(mesh_key),
+                    blend: effect.blend,
+                },
+            );
+            phase.add_retained(Transparent3d {
+                sorting_info: TransparentSortingInfo3d::Sorted {
+                    mesh_center: Vec3::ZERO,
+                    depth_bias: effect.renderer_order as f32 * -0.0001,
+                },
+                entity: (render_entity, *main_entity),
+                pipeline: pipeline_id,
+                draw_function,
+                distance: 0.0,
+                batch_range: 0..1,
+                extra_index: PhaseItemExtraIndex::None,
+                indexed: false,
+            });
+        }
+    }
+}
+
 type DrawGpuSprites = (
     SetItemPipeline,
     SetMesh2dViewBindGroup<0>,
+    SetGpuRenderBindGroup<1>,
+    DrawGpuSpritesIndirect,
+);
+
+type DrawGpuSprites3d = (
+    SetItemPipeline,
+    SetMeshViewBindGroup<0>,
     SetGpuRenderBindGroup<1>,
     DrawGpuSpritesIndirect,
 );
