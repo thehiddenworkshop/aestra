@@ -43,6 +43,12 @@ panel-settings = SETTINGS
 
 viewport-frame-effect = Frame Effect
 viewport-frame-effect-description = Center the viewport camera on the effect.
+viewport-gizmo-move = Move
+viewport-gizmo-move-description = Move the selected emitter along its transform axes.
+viewport-gizmo-rotate = Rotate
+viewport-gizmo-rotate-description = Rotate the selected emitter around its transform axes.
+viewport-gizmo-scale = Scale
+viewport-gizmo-scale-description = Scale the selected emitter with cube-ended axis handles.
 viewport-wireframe = Wireframe
 viewport-wireframe-description = Show the live particle sprite meshes as unfilled outlines.
 viewport-rendered = Rendered

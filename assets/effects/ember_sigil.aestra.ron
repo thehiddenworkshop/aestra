@@ -29,6 +29,7 @@
             id: "92a44d4a-0fb0-4597-a54d-14aa03516de4",
             name: "Kindled Motes",
             enabled: true,
+            transform: (translation: (0.0, 0.0, 0.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
             start_time: 0.0,
             duration: 2.4,
             max_particles: 128,

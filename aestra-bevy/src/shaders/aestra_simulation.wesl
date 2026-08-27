@@ -43,6 +43,11 @@ struct Emitter {
     _range_padding: vec2<f32>,
     gravity: vec3<f32>,
     turbulence: f32,
+    translation: vec3<f32>,
+    max_scale: f32,
+    rotation: vec4<f32>,
+    scale: vec3<f32>,
+    _transform_padding: f32,
     size: Curve,
     opacity: Curve,
     color: Gradient,
@@ -89,6 +94,12 @@ fn hash01(index: u32, channel: u32) -> f32 {
 
 fn sample_range(range: vec2<f32>, random: f32) -> f32 {
     return mix(range.x, range.y, clamp(random, 0.0, 1.0));
+}
+
+fn rotate_by_quaternion(value: vec3<f32>, rotation: vec4<f32>) -> vec3<f32> {
+    let q = normalize(rotation);
+    let t = 2.0 * cross(q.xyz, value);
+    return value + q.w * t + cross(q.xyz, t);
 }
 
 fn sample_curve(curve: Curve, time: f32) -> f32 {
@@ -294,7 +305,9 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         sin(age * 6.3 + hash01(particle_index, 8u) * TAU),
         sin(age * 7.7 + hash01(particle_index, 10u) * TAU),
     );
-    let position = origin + direction * travel + emitter.gravity * age * age * 0.5 + turbulence;
+    let local_position = origin + direction * travel + emitter.gravity * age * age * 0.5 + turbulence;
+    let position = emitter.translation
+        + rotate_by_quaternion(local_position * emitter.scale, emitter.rotation);
     var color = sample_gradient(emitter.color, normalized_age);
     color.a *= sample_curve(emitter.opacity, normalized_age);
     let rotation = sample_range(emitter.angular_velocity, hash01(particle_index, 4u)) * age;
@@ -302,7 +315,7 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     particles[slot] = Particle(
         color,
         position,
-        sample_curve(emitter.size, normalized_age),
+        sample_curve(emitter.size, normalized_age) * emitter.max_scale,
         rotation,
         normalized_age,
         emitter_index,

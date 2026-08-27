@@ -43,6 +43,12 @@ panel-settings = PARAMÈTRES
 
 viewport-frame-effect = Centrer l’effet
 viewport-frame-effect-description = Centrer la caméra de l’aperçu sur l’effet.
+viewport-gizmo-move = Déplacer
+viewport-gizmo-move-description = Déplacer l’émetteur sélectionné le long de ses axes de transformation.
+viewport-gizmo-rotate = Faire pivoter
+viewport-gizmo-rotate-description = Faire pivoter l’émetteur sélectionné autour de ses axes de transformation.
+viewport-gizmo-scale = Redimensionner
+viewport-gizmo-scale-description = Redimensionner l’émetteur sélectionné avec les poignées cubiques des axes.
 viewport-wireframe = Fil de fer
 viewport-wireframe-description = Afficher les maillages des particules animées sous forme de contours non remplis.
 viewport-rendered = Rendu

@@ -1,7 +1,7 @@
 use aestra_core::{
     AssetDefinition, DiagnosticCode, EffectAsset, EffectParameter, Emitter, EmitterId,
-    EmitterShape, FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE, MaterialProperties,
-    ModuleParameters, ParameterId, RendererInstance, ScalarRange, Value,
+    EmitterShape, EmitterTransform, FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE,
+    MaterialProperties, ModuleParameters, ParameterId, RendererInstance, ScalarRange, Value,
 };
 
 #[test]
@@ -241,5 +241,26 @@ fn volumetric_shape_dimensions_are_validated() {
     let report = effect.validation_report();
     assert!(report.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == DiagnosticCode::InvalidValue && diagnostic.path.ends_with("shape")
+    }));
+}
+
+#[test]
+fn emitter_transforms_round_trip_and_reject_degenerate_values() {
+    let mut effect = EffectAsset::new("Transformed", 1.0);
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
+    emitter.transform = EmitterTransform {
+        translation: [3.0, -2.0, 7.0],
+        rotation: [0.0, 0.0, 0.70710677, 0.70710677],
+        scale: [2.0, 1.0, 0.5],
+    };
+    effect.emitters.push(emitter);
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    assert_eq!(EffectAsset::from_ron(&encoded).unwrap(), effect);
+
+    effect.emitters[0].transform.scale[1] = 0.0;
+    let report = effect.validation_report();
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidValue && diagnostic.path.ends_with("transform")
     }));
 }

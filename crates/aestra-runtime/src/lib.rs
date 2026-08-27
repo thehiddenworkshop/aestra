@@ -10,9 +10,9 @@ pub use checkpoint::{
 pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource};
 
 use aestra_core::{
-    AssetId, AssetKind, BlendMode, Curve, EffectId, EmitterId, EmitterShape, FlipbookPlaybackMode,
-    FlipbookTimeSource, Gradient, MaterialId, ModuleId, ParameterId, RendererId, ScalarRange,
-    UvRect, Value, ValueType,
+    AssetId, AssetKind, BlendMode, Curve, EffectId, EmitterId, EmitterShape, EmitterTransform,
+    FlipbookPlaybackMode, FlipbookTimeSource, Gradient, MaterialId, ModuleId, ParameterId,
+    RendererId, ScalarRange, UvRect, Value, ValueType,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -434,6 +434,7 @@ pub struct CompiledEmitter {
     pub source: EmitterId,
     pub name: String,
     pub enabled: bool,
+    pub transform: EmitterTransform,
     pub start_time: f32,
     pub duration: f32,
     pub max_particles: u32,
@@ -858,7 +859,7 @@ fn evaluate_with_parameters(
                 motion.turbulence
                     * (age * 7.7 + hash01(index, 10, seed) * std::f32::consts::TAU).sin(),
             ];
-            let position = [
+            let local_position = [
                 origin[0]
                     + direction[0] * travel
                     + motion.gravity[0] * age * age * 0.5
@@ -872,19 +873,40 @@ fn evaluate_with_parameters(
                     + motion.gravity[2] * age * age * 0.5
                     + turbulence[2],
             ];
+            let position = transform_emitter_position(emitter.transform, local_position);
             let mut color = appearance.color.sample(normalized_age);
             color[3] *= appearance.opacity.sample(normalized_age);
             output.push(ParticleSample {
                 emitter_index,
                 particle_index: index,
                 position,
-                size: appearance.size.sample(normalized_age),
+                size: appearance.size.sample(normalized_age)
+                    * emitter.transform.scale.into_iter().fold(0.0_f32, f32::max),
                 rotation: initializer.angular_velocity.sample(hash01(index, 4, seed)) * age,
                 color,
                 normalized_age,
             });
         }
     }
+}
+
+fn transform_emitter_position(transform: EmitterTransform, position: [f32; 3]) -> [f32; 3] {
+    let scaled = [
+        position[0] * transform.scale[0],
+        position[1] * transform.scale[1],
+        position[2] * transform.scale[2],
+    ];
+    let [qx, qy, qz, qw] = transform.rotation;
+    let length = (qx * qx + qy * qy + qz * qz + qw * qw).sqrt();
+    let (qx, qy, qz, qw) = (qx / length, qy / length, qz / length, qw / length);
+    let tx = 2.0 * (qy * scaled[2] - qz * scaled[1]);
+    let ty = 2.0 * (qz * scaled[0] - qx * scaled[2]);
+    let tz = 2.0 * (qx * scaled[1] - qy * scaled[0]);
+    [
+        scaled[0] + qw * tx + (qy * tz - qz * ty) + transform.translation[0],
+        scaled[1] + qw * ty + (qz * tx - qx * tz) + transform.translation[1],
+        scaled[2] + qw * tz + (qx * ty - qy * tx) + transform.translation[2],
+    ]
 }
 
 /// Selects a frame deterministically for every presentation backend.
@@ -1184,6 +1206,24 @@ mod tests {
         assert!(box_sample[0].abs() <= 2.0);
         assert!(box_sample[1].abs() <= 3.0);
         assert!(box_sample[2].abs() <= 4.0);
+    }
+
+    #[test]
+    fn emitter_transform_scales_rotates_and_translates_particle_positions() {
+        let transform = EmitterTransform {
+            translation: [3.0, 4.0, 5.0],
+            rotation: [
+                0.0,
+                0.0,
+                std::f32::consts::FRAC_1_SQRT_2,
+                std::f32::consts::FRAC_1_SQRT_2,
+            ],
+            scale: [2.0, 1.0, 1.0],
+        };
+        let transformed = transform_emitter_position(transform, [1.0, 0.0, 0.0]);
+        assert!((transformed[0] - 3.0).abs() < 0.0001);
+        assert!((transformed[1] - 6.0).abs() < 0.0001);
+        assert!((transformed[2] - 5.0).abs() < 0.0001);
     }
 
     #[test]

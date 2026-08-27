@@ -421,6 +421,7 @@ pub struct Emitter {
     pub id: EmitterId,
     pub name: String,
     pub enabled: bool,
+    pub transform: EmitterTransform,
     pub start_time: f32,
     pub duration: f32,
     pub max_particles: u32,
@@ -429,12 +430,32 @@ pub struct Emitter {
     pub renderers: Vec<RendererInstance>,
 }
 
+/// Authored local transform applied to one emitter before the effect-instance transform.
+/// Rotation is stored as a normalized quaternion in `[x, y, z, w]` order.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct EmitterTransform {
+    pub translation: [f32; 3],
+    pub rotation: [f32; 4],
+    pub scale: [f32; 3],
+}
+
+impl Default for EmitterTransform {
+    fn default() -> Self {
+        Self {
+            translation: [0.0; 3],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0; 3],
+        }
+    }
+}
+
 impl Emitter {
     pub fn basic_sprite(name: impl Into<String>, duration: f32) -> Self {
         Self {
             id: EmitterId::new(),
             name: name.into(),
             enabled: true,
+            transform: EmitterTransform::default(),
             start_time: 0.0,
             duration,
             max_particles: 128,
@@ -692,6 +713,29 @@ impl Emitter {
                 DiagnosticCode::InvalidCapacity,
                 format!("{path}.max_particles"),
                 "emitter capacity must be greater than zero",
+            ));
+        }
+        let rotation_length_squared = self
+            .transform
+            .rotation
+            .iter()
+            .map(|value| value * value)
+            .sum::<f32>();
+        if self
+            .transform
+            .translation
+            .iter()
+            .chain(self.transform.rotation.iter())
+            .chain(self.transform.scale.iter())
+            .any(|value| !value.is_finite())
+            || self.transform.scale.iter().any(|value| *value <= 0.0)
+            || !rotation_length_squared.is_finite()
+            || (rotation_length_squared - 1.0).abs() > 1.0e-3
+        {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                format!("{path}.transform"),
+                "emitter transform must be finite, have positive scale, and use a normalized quaternion",
             ));
         }
 

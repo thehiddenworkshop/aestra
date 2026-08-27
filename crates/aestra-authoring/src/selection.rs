@@ -285,6 +285,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::MoveEmitter { id, .. }
         | EffectCommand::SetEmitterName { id, .. }
         | EffectCommand::SetEmitterEnabled { id, .. }
+        | EffectCommand::SetEmitterTransform { id, .. }
         | EffectCommand::SetEmitterTiming { id, .. }
         | EffectCommand::SetEmitterCapacity { id, .. } => {
             (Some(*id), Some(SemanticTarget::Emitter(*id)))

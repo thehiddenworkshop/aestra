@@ -4,9 +4,9 @@ use aestra_authoring::{
 };
 use aestra_bevy::{
     AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter,
-    FlipbookDefinition, FlipbookPlaybackMode, FlipbookTimeSource, MaterialDefinition, MaterialId,
-    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance,
-    RendererProperties, ValidationReport, Value,
+    EmitterTransform, FlipbookDefinition, FlipbookPlaybackMode, FlipbookTimeSource,
+    MaterialDefinition, MaterialId, MaterialInput, MaterialProperties, ModuleId, ModuleInstance,
+    RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
@@ -437,6 +437,21 @@ impl EditorSession {
                 false
             }
         }
+    }
+
+    pub fn set_selected_emitter_transform(
+        &mut self,
+        transform: EmitterTransform,
+        rebuild_ui: bool,
+    ) -> bool {
+        self.execute(
+            "Transformed emitter",
+            EffectCommand::SetEmitterTransform {
+                id: self.selected_layer().id,
+                transform,
+            },
+            rebuild_ui,
+        )
     }
 
     /// Compiles a temporary interaction candidate without mutating the document or history.

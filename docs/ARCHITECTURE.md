@@ -183,6 +183,7 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [x] versioned persistent editor settings and a dockable Settings workspace
 - [x] Fluent editor-shell localization with catalog validation, fallback, and live locale switching
 - [x] localized built-in Inspector module inputs and descriptions
+- [x] semantic emitter transforms with undoable Inspector and viewport gizmo editing
 - [ ] localized diagnostics, profiler, and remaining authoring workspace content
 - [x] persistent recursive pane resizing and dockable authoring-panel tab stacks
 - [x] persisted native floating panel windows with redocking

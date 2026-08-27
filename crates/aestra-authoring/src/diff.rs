@@ -151,6 +151,15 @@ fn diff_emitter(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticCha
             after.enabled,
         );
     }
+    if before.transform != after.transform {
+        modified(
+            changes,
+            target,
+            "emitter.transform",
+            format!("{:?}", before.transform),
+            format!("{:?}", after.transform),
+        );
+    }
     if before.start_time != after.start_time || before.duration != after.duration {
         modified(
             changes,

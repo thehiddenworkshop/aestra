@@ -55,8 +55,11 @@ architecture vision; this file is the shorter delivery plan.
   coverage tests. Metadata-defined Inspector scalars, integers, vectors, ranges,
   and toggles now use Feathers controls, commit final values through semantic
   undoable commands, retain in-progress text across live preview frames, and expose
-  localized built-in names and descriptions. The remaining M5 work is viewport
-  gizmos, localization of the other deep authoring workspaces, and recovery.
+  localized built-in names and descriptions. Semantic emitter transforms now flow
+  from persisted format-v3 assets through commands, compiler artifacts, CPU/GPU
+  execution, compact Inspector controls, and viewport gizmos. Gizmo drags preview
+  temporary transactions and commit one undoable command on release. The remaining
+  M5 work is localization of the other deep authoring workspaces and recovery.
 - M6 renderer, material, and asset breadth: in progress. Renderers now reference stable,
   reusable material definitions instead of owning presentation state. The first sprite
   material domain compiles blend state, typed softness/tint inputs, explicit particle-color

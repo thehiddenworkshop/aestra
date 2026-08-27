@@ -3,9 +3,9 @@ use aestra_authoring::{
     Selection, SemanticTarget,
 };
 use aestra_core::{
-    BlendMode, ColorKey, CurveKey, EffectAsset, EffectParameter, Emitter, EventId, EventLink,
-    EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, ParameterId, ScalarRange,
-    Value,
+    BlendMode, ColorKey, CurveKey, EffectAsset, EffectParameter, Emitter, EmitterTransform,
+    EventId, EventLink, EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
+    ParameterId, ScalarRange, Value,
 };
 
 fn test_effect() -> EffectAsset {
@@ -38,6 +38,37 @@ fn semantic_parameter_command_executes_without_ui() {
     assert_eq!(effect.emitters[0].spawn_rate(), 72.0);
     assert!(!outcome.diff.is_empty());
     assert_eq!(outcome.inverse.commands.len(), 1);
+}
+
+#[test]
+fn emitter_transform_is_a_reversible_semantic_command() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let transform = EmitterTransform {
+        translation: [4.0, 5.0, 6.0],
+        rotation: [0.0, 0.0, 0.0, 1.0],
+        scale: [2.0, 2.0, 2.0],
+    };
+    let mut history = CommandHistory::default();
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Transform emitter",
+                EffectCommand::SetEmitterTransform {
+                    id: emitter,
+                    transform,
+                },
+            ),
+        )
+        .unwrap();
+
+    assert_eq!(effect.emitters[0].transform, transform);
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect.emitters[0].transform, EmitterTransform::default());
+    history.redo(&mut effect).unwrap();
+    assert_eq!(effect.emitters[0].transform, transform);
 }
 
 #[test]

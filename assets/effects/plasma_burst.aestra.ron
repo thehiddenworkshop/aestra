@@ -43,6 +43,7 @@
             id: "f87393ec-3fd9-4524-b066-ec2ff3422686",
             name: "Plasma Motes",
             enabled: true,
+            transform: (translation: (0.0, 0.0, 0.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
             start_time: 0.0,
             duration: 2.0,
             max_particles: 96,

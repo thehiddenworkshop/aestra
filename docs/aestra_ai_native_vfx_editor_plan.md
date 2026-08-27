@@ -6623,7 +6623,7 @@ Professional editor/runtime readiness should additionally require:
 - [ ] Mesh particle rendering uses instancing.
 - [ ] Profiler exposes per-effect and per-emitter cost.
 - [ ] Debugger can inspect attributes/events at least in debug mode.
-- [ ] Viewport gizmos mutate semantic data through normal commands.
+- [x] Viewport gizmos mutate semantic data through normal commands.
 - [ ] Technical artists can create reusable subgraphs/functions.
 - [ ] Quality/platform profiles are explicit and compiler-visible.
 

@@ -9,9 +9,9 @@ use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTar
 use aestra_bevy::{
     ActiveBackend, AestraPlugin, AestraSet, BlendMode, ColorKey, CurveKey, Diagnostic,
     DiagnosticCode, DiagnosticSeverity, EffectAsset, EffectPlayer, EffectRenderMode,
-    EffectRuntimeStatus, EmitterId, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource,
-    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, ModuleParameters, RendererId,
-    RendererProperties, StageKind, ValidationReport, Value,
+    EffectRuntimeStatus, EmitterId, EmitterShape, EmitterTransform, FlipbookPlaybackMode,
+    FlipbookTimeSource, MaterialInput, MaterialProperties, ModuleId, ModuleInstance,
+    ModuleParameters, RendererId, RendererProperties, StageKind, ValidationReport, Value,
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
@@ -31,7 +31,7 @@ use bevy::{
     },
     gizmos::transform_gizmo::{
         TransformGizmoCamera, TransformGizmoFocus, TransformGizmoMode, TransformGizmoPlugin,
-        TransformGizmoSettings, TransformGizmoSpace, TransformGizmoSystems,
+        TransformGizmoSettings, TransformGizmoSpace, TransformGizmoState, TransformGizmoSystems,
     },
     input::{
         ButtonState,
@@ -112,6 +112,7 @@ fn main() {
         .init_resource::<PreviewNavigationState>()
         .init_resource::<PreviewDisplayState>()
         .init_resource::<ShapeGizmoState>()
+        .init_resource::<EmitterTransformGizmoInteraction>()
         .insert_resource(WorkspaceLayout::load())
         .init_resource::<RenderedUiRevision>()
         .add_plugins(
@@ -161,6 +162,13 @@ fn main() {
             ),
         )
         .add_systems(
+            PostStartup,
+            (
+                configure_transform_gizmo_overlay_camera,
+                configure_transform_gizmo_overlay_materials,
+            ),
+        )
+        .add_systems(
             Update,
             (
                 (
@@ -186,8 +194,9 @@ fn main() {
                         sync_preview_display_mode,
                         update_preview_display_controls,
                         update_transform_gizmo_controls,
-                        sync_transform_gizmo_focus,
+                        sync_emitter_transform_proxy,
                         interact_shape_gizmo,
+                        sync_transform_gizmo_focus,
                         draw_preview_scene_gizmos,
                     )
                         .chain(),
@@ -226,9 +235,12 @@ fn main() {
         )
         .add_systems(
             PostUpdate,
-            sync_preview_camera_viewport
-                .after(UiSystems::Layout)
-                .before(TransformGizmoSystems),
+            (
+                sync_preview_camera_viewport
+                    .after(UiSystems::Layout)
+                    .before(TransformGizmoSystems),
+                update_emitter_transform_gizmo.after(TransformGizmoSystems),
+            ),
         )
         .configure_sets(Update, AestraSet::Playback.after(sync_rendered_preview))
         .run();
@@ -289,6 +301,7 @@ enum EditorAction {
     TogglePanelsSubmenu,
     ToggleGrid,
     FramePreview,
+    SetTransformGizmoMode(TransformGizmoMode),
     SetPreviewDisplayMode(PreviewDisplayMode),
     ResetWorkspaceLayout,
     SelectSettingsCategory(SettingsCategory),
@@ -681,6 +694,9 @@ struct InspectorNumberControl {
 enum EmitterNumberControl {
     Start,
     Duration,
+    Translation(u8),
+    Rotation(u8),
+    Scale(u8),
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -960,7 +976,28 @@ struct ShapeGizmoState {
 struct PreviewDisplayModeIcon(PreviewDisplayMode);
 
 #[derive(Component)]
+struct TransformGizmoModeFill(TransformGizmoMode);
+
+#[derive(Component)]
+struct TransformGizmoModeOutline(TransformGizmoMode);
+
+#[derive(Component)]
 struct PreviewEffectPlayer;
+
+#[derive(Component)]
+struct EmitterTransformGizmoProxy;
+
+#[derive(Clone, Copy, Debug)]
+struct ActiveEmitterTransformGizmo {
+    emitter: EmitterId,
+    original: EmitterTransform,
+    current: EmitterTransform,
+}
+
+#[derive(Resource, Default)]
+struct EmitterTransformGizmoInteraction {
+    active: Option<ActiveEmitterTransformGizmo>,
+}
 
 #[derive(Component)]
 struct GizmoModeLabel;
@@ -1077,6 +1114,11 @@ fn setup_editor(
     ));
     let preview_camera = spawn_preview_camera(&mut commands);
     spawn_preview_effect_player(&mut commands, &session, Transform::IDENTITY);
+    commands.spawn((
+        EmitterTransformGizmoProxy,
+        TransformGizmoFocus,
+        bevy_transform_from_emitter(session.selected_layer().transform),
+    ));
     let sources = PanelSources {
         session: &session,
         catalog: &catalog,
@@ -1121,6 +1163,38 @@ fn spawn_preview_camera(commands: &mut Commands) -> Entity {
         .id()
 }
 
+fn configure_transform_gizmo_overlay_camera(
+    mut cameras: Query<
+        (&RenderLayers, &mut Camera),
+        (With<Camera3d>, Without<PreviewRenderCamera>),
+    >,
+) {
+    let gizmo_layers = RenderLayers::layer(15);
+    for (layers, mut camera) in &mut cameras {
+        if layers == &gizmo_layers {
+            camera.clear_color = ClearColorConfig::None;
+            camera.order = 1;
+            camera.is_active = true;
+        }
+    }
+}
+
+fn configure_transform_gizmo_overlay_materials(
+    gizmo_meshes: Query<(&RenderLayers, &MeshMaterial3d<StandardMaterial>)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let gizmo_layers = RenderLayers::layer(15);
+    for (layers, material) in &gizmo_meshes {
+        if layers != &gizmo_layers {
+            continue;
+        }
+        if let Some(mut material) = materials.get_mut(&material.0) {
+            material.alpha_mode = AlphaMode::Blend;
+            material.depth_bias = 10_000.0;
+        }
+    }
+}
+
 fn sync_preview_camera_viewport(
     canvas: Single<(&ComputedNode, &UiGlobalTransform), With<PreviewCanvas>>,
     window: Single<&Window, With<PrimaryWindow>>,
@@ -1152,7 +1226,7 @@ fn navigate_preview_camera(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
-    player: Query<&GlobalTransform, With<PreviewEffectPlayer>>,
+    player: Query<&GlobalTransform, With<EmitterTransformGizmoProxy>>,
     mut navigation: ResMut<PreviewNavigationState>,
     mut controller: ResMut<PreviewCameraController>,
     mut camera: Single<&mut Transform, With<PreviewRenderCamera>>,
@@ -1265,6 +1339,8 @@ fn update_transform_gizmo_controls(
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
     mut settings: ResMut<TransformGizmoSettings>,
     mut labels: Query<&mut Text, With<GizmoModeLabel>>,
+    mut fills: Query<(&TransformGizmoModeFill, &mut BackgroundColor)>,
+    mut outlines: Query<(&TransformGizmoModeOutline, &mut BorderColor)>,
 ) {
     if canvas.cursor_over() {
         if keys.just_pressed(KeyCode::Digit1) {
@@ -1295,16 +1371,125 @@ fn update_transform_gizmo_controls(
     for mut label in &mut labels {
         **label = format!("{mode} · {space}");
     }
+    for (icon, mut color) in &mut fills {
+        color.0 = if icon.0 == settings.mode {
+            theme::ACCENT
+        } else {
+            theme::TEXT_MUTED
+        };
+    }
+    for (icon, mut color) in &mut outlines {
+        *color = BorderColor::all(if icon.0 == settings.mode {
+            theme::ACCENT
+        } else {
+            theme::TEXT_MUTED
+        });
+    }
 }
 
 fn sync_transform_gizmo_focus(
     mut commands: Commands,
-    players: Query<(Entity, Has<TransformGizmoFocus>), With<PreviewEffectPlayer>>,
+    session: Res<EditorSession>,
+    shape_gizmo: Res<ShapeGizmoState>,
+    proxies: Query<(Entity, Has<TransformGizmoFocus>), With<EmitterTransformGizmoProxy>>,
 ) {
-    for (entity, has_focus) in &players {
-        if !has_focus {
+    let emitter = session.selected_layer().id;
+    let allowed = session.pending_change.is_none()
+        && shape_gizmo.hovered.is_none()
+        && shape_gizmo.active.is_none()
+        && !session
+            .locks
+            .is_locked(SemanticTarget::Effect(session.effect.id))
+        && !session.locks.is_locked(SemanticTarget::Emitter(emitter));
+    for (entity, has_focus) in &proxies {
+        if allowed && !has_focus {
             commands.entity(entity).insert(TransformGizmoFocus);
+        } else if !allowed && has_focus {
+            commands.entity(entity).remove::<TransformGizmoFocus>();
         }
+    }
+}
+
+fn sync_emitter_transform_proxy(
+    session: Res<EditorSession>,
+    gizmo: Res<TransformGizmoState>,
+    interaction: Res<EmitterTransformGizmoInteraction>,
+    mut proxies: Query<&mut Transform, With<EmitterTransformGizmoProxy>>,
+) {
+    if gizmo.active || interaction.active.is_some() {
+        return;
+    }
+    let desired = bevy_transform_from_emitter(session.selected_layer().transform);
+    for mut transform in &mut proxies {
+        if *transform != desired {
+            *transform = desired;
+        }
+    }
+}
+
+fn update_emitter_transform_gizmo(
+    gizmo: Res<TransformGizmoState>,
+    mut interaction: ResMut<EmitterTransformGizmoInteraction>,
+    proxies: Query<&Transform, With<EmitterTransformGizmoProxy>>,
+    mut session: ResMut<EditorSession>,
+) {
+    let Ok(transform) = proxies.single() else {
+        return;
+    };
+    let current = emitter_transform_from_bevy(transform);
+    if gizmo.active {
+        let active = interaction
+            .active
+            .get_or_insert_with(|| ActiveEmitterTransformGizmo {
+                emitter: session.selected_layer().id,
+                original: session.selected_layer().transform,
+                current: session.selected_layer().transform,
+            });
+        if active.current != current {
+            active.current = current;
+            session.preview_interaction(EffectTransaction::single(
+                "Preview emitter transform",
+                EffectCommand::SetEmitterTransform {
+                    id: active.emitter,
+                    transform: current,
+                },
+            ));
+        }
+        return;
+    }
+
+    let Some(active) = interaction.active.take() else {
+        return;
+    };
+    if active.current != active.original {
+        if !session.execute(
+            "Transformed emitter",
+            EffectCommand::SetEmitterTransform {
+                id: active.emitter,
+                transform: active.current,
+            },
+            true,
+        ) {
+            session.restore_interaction_preview();
+        }
+    } else {
+        session.restore_interaction_preview();
+    }
+}
+
+fn bevy_transform_from_emitter(transform: EmitterTransform) -> Transform {
+    Transform {
+        translation: Vec3::from_array(transform.translation),
+        rotation: Quat::from_array(transform.rotation).normalize(),
+        scale: Vec3::from_array(transform.scale),
+    }
+}
+
+fn emitter_transform_from_bevy(transform: &Transform) -> EmitterTransform {
+    EmitterTransform {
+        translation: transform.translation.to_array(),
+        rotation: transform.rotation.normalize().to_array(),
+        scale: transform.scale.max(Vec3::splat(0.001)).to_array(),
     }
 }
 
@@ -1320,7 +1505,7 @@ fn interact_shape_gizmo(
         With<PreviewCanvas>,
     >,
     camera: Single<(&Camera, &GlobalTransform), With<PreviewRenderCamera>>,
-    players: Query<&GlobalTransform, With<PreviewEffectPlayer>>,
+    players: Query<&GlobalTransform, With<EmitterTransformGizmoProxy>>,
     mut session: ResMut<EditorSession>,
     mut state: ResMut<ShapeGizmoState>,
     mut labels: Query<(&mut Text, &mut Node, &mut Visibility), With<ShapeGizmoValueLabel>>,
@@ -1675,7 +1860,7 @@ fn draw_preview_scene_gizmos(
     menu: Res<MenuState>,
     state: Res<ShapeGizmoState>,
     camera: Single<(&Camera, &GlobalTransform), With<PreviewRenderCamera>>,
-    players: Query<&GlobalTransform, With<PreviewEffectPlayer>>,
+    players: Query<&GlobalTransform, With<EmitterTransformGizmoProxy>>,
     mut gizmos: Gizmos<PreviewSceneGizmos>,
 ) {
     if menu.show_grid {
@@ -1956,7 +2141,6 @@ fn spawn_preview_effect_player(
     if let Some(player) = configured_preview_player(session) {
         commands.spawn((
             PreviewEffectPlayer,
-            TransformGizmoFocus,
             player,
             transform,
             RenderLayers::layer(0),
@@ -3885,6 +4069,45 @@ fn spawn_preview(
                             ..default()
                         },
                     ));
+                    canvas
+                        .spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(8.0),
+                                top: Val::Px(28.0),
+                                padding: UiRect::all(Val::Px(2.0)),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(2.0),
+                                border: UiRect::all(Val::Px(1.0)),
+                                border_radius: BorderRadius::all(Val::Px(4.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme::PANEL.with_alpha(0.92)),
+                            BorderColor::all(theme::BORDER),
+                        ))
+                        .with_children(|tools| {
+                            spawn_transform_gizmo_tool_button(
+                                tools,
+                                TransformGizmoMode::Translate,
+                                "viewport-gizmo-move",
+                                "viewport-gizmo-move-description",
+                                localizer,
+                            );
+                            spawn_transform_gizmo_tool_button(
+                                tools,
+                                TransformGizmoMode::Rotate,
+                                "viewport-gizmo-rotate",
+                                "viewport-gizmo-rotate-description",
+                                localizer,
+                            );
+                            spawn_transform_gizmo_tool_button(
+                                tools,
+                                TransformGizmoMode::Scale,
+                                "viewport-gizmo-scale",
+                                "viewport-gizmo-scale-description",
+                                localizer,
+                            );
+                        });
                     canvas.spawn((
                         ShapeGizmoValueLabel,
                         Text::new(""),
@@ -3978,6 +4201,120 @@ enum ViewportToolIcon {
     Frame,
     Wireframe,
     Rendered,
+}
+
+fn spawn_transform_gizmo_tool_button(
+    parent: &mut ChildSpawnerCommands,
+    mode: TransformGizmoMode,
+    label_id: &'static str,
+    description_id: &'static str,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_tool_button())
+        .insert((
+            EditorAction::SetTransformGizmoMode(mode),
+            FeathersActionButton,
+            AccessibleLabel(localizer.text(label_id)),
+            InspectorHelp(localizer.text(description_id)),
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Px(22.0),
+                min_width: Val::Px(22.0),
+                height: Val::Px(22.0),
+                padding: UiRect::ZERO,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+        ))
+        .with_children(|button| match mode {
+            TransformGizmoMode::Translate => {
+                button
+                    .spawn((
+                        Node {
+                            width: Val::Px(12.0),
+                            height: Val::Px(12.0),
+                            position_type: PositionType::Relative,
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|icon| {
+                        icon.spawn((
+                            TransformGizmoModeFill(mode),
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(5.5),
+                                top: Val::Px(1.0),
+                                width: Val::Px(1.0),
+                                height: Val::Px(10.0),
+                                ..default()
+                            },
+                            BackgroundColor(theme::TEXT_MUTED),
+                            Pickable::IGNORE,
+                        ));
+                        icon.spawn((
+                            TransformGizmoModeFill(mode),
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(1.0),
+                                top: Val::Px(5.5),
+                                width: Val::Px(10.0),
+                                height: Val::Px(1.0),
+                                ..default()
+                            },
+                            BackgroundColor(theme::TEXT_MUTED),
+                            Pickable::IGNORE,
+                        ));
+                    });
+            }
+            TransformGizmoMode::Rotate => {
+                button.spawn((
+                    TransformGizmoModeOutline(mode),
+                    Node {
+                        width: Val::Px(12.0),
+                        height: Val::Px(12.0),
+                        border: UiRect::all(Val::Px(1.0)),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BorderColor::all(theme::TEXT_MUTED),
+                    Pickable::IGNORE,
+                ));
+            }
+            TransformGizmoMode::Scale => {
+                button
+                    .spawn((
+                        TransformGizmoModeOutline(mode),
+                        Node {
+                            width: Val::Px(11.0),
+                            height: Val::Px(11.0),
+                            position_type: PositionType::Relative,
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BorderColor::all(theme::TEXT_MUTED),
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|cube| {
+                        cube.spawn((
+                            TransformGizmoModeFill(mode),
+                            Node {
+                                position_type: PositionType::Absolute,
+                                right: Val::Px(-2.0),
+                                top: Val::Px(-2.0),
+                                width: Val::Px(4.0),
+                                height: Val::Px(4.0),
+                                ..default()
+                            },
+                            BackgroundColor(theme::TEXT_MUTED),
+                            Pickable::IGNORE,
+                        ));
+                    });
+            }
+        });
 }
 
 fn spawn_viewport_tool_button(
@@ -4154,6 +4491,7 @@ fn spawn_inspector(
                             ..default()
                         },
                     ));
+                    spawn_emitter_transform_controls(stack);
                     spawn_emitter_timing_controls(stack);
                     for stage in StackStage::ALL {
                         spawn_stage_header(stack, stage);
@@ -4322,6 +4660,103 @@ fn spawn_emitter_timing_controls(parent: &mut ChildSpawnerCommands) {
                 });
                 row.spawn_empty().apply_scene(label_dim("s"));
             }
+        });
+}
+
+fn spawn_emitter_transform_controls(parent: &mut ChildSpawnerCommands) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::all(Val::Px(7.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Text::new("Transform"),
+                ThemedText,
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+            ));
+            spawn_emitter_transform_row(
+                card,
+                "Position",
+                "Emitter origin in effect-local units.",
+                EmitterNumberControl::Translation,
+            );
+            spawn_emitter_transform_row(
+                card,
+                "Rotation",
+                "Emitter orientation in local Euler degrees.",
+                EmitterNumberControl::Rotation,
+            );
+            spawn_emitter_transform_row(
+                card,
+                "Scale",
+                "Emitter simulation and renderer scale.",
+                EmitterNumberControl::Scale,
+            );
+        });
+}
+
+fn spawn_emitter_transform_row(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    description: &str,
+    control: fn(u8) -> EmitterNumberControl,
+) {
+    parent
+        .spawn((
+            InspectorHelp(description.to_owned()),
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|row| {
+            spawn_inspector_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                column_gap: Val::Px(4.0),
+                ..default()
+            })
+            .with_children(|inputs| {
+                for (axis, component, color) in [
+                    ("X", 0, tokens::TEXT_INPUT_X_AXIS),
+                    ("Y", 1, tokens::TEXT_INPUT_Y_AXIS),
+                    ("Z", 2, tokens::TEXT_INPUT_Z_AXIS),
+                ] {
+                    inputs
+                        .spawn(Node {
+                            flex_grow: 1.0,
+                            flex_basis: Val::Px(0.0),
+                            min_width: Val::Px(44.0),
+                            ..default()
+                        })
+                        .with_children(|wrapper| {
+                            wrapper
+                                .spawn_empty()
+                                .apply_scene(ui_shell::feathers_labeled_scalar_input(axis, color))
+                                .insert((
+                                    control(component),
+                                    AccessibleLabel(format!("{title} {axis}")),
+                                ));
+                        });
+                }
+            });
         });
 }
 
@@ -7600,6 +8035,11 @@ fn handle_emitter_scalar_change(
         EmitterNumberControl::Duration => {
             session.adjust_selected_duration(change.value.max(0.05) - current);
         }
+        EmitterNumberControl::Translation(_)
+        | EmitterNumberControl::Rotation(_)
+        | EmitterNumberControl::Scale(_) => {
+            set_emitter_transform_component(&mut session, *control, change.value, true);
+        }
     }
 }
 
@@ -7625,10 +8065,22 @@ fn handle_inspector_numeric_scroll(
         return;
     }
     if let Ok(number) = emitter_controls.get(scroll.entity) {
-        let step = 0.05 * multiplier * direction;
+        let step = match number {
+            EmitterNumberControl::Translation(_) => 0.1,
+            EmitterNumberControl::Rotation(_) => 1.0,
+            EmitterNumberControl::Scale(_) => 0.05,
+            EmitterNumberControl::Start | EmitterNumberControl::Duration => 0.05,
+        } * multiplier
+            * direction;
         match number {
             EmitterNumberControl::Start => session.adjust_selected_start(step),
             EmitterNumberControl::Duration => session.adjust_selected_duration(step),
+            EmitterNumberControl::Translation(_)
+            | EmitterNumberControl::Rotation(_)
+            | EmitterNumberControl::Scale(_) => {
+                let value = emitter_number_input_value(&session, *number) + step;
+                set_emitter_transform_component(&mut session, *number, value, true);
+            }
         }
         scroll.propagate(false);
         return;
@@ -7893,21 +8345,91 @@ fn sync_settings_number_inputs(
 fn sync_emitter_number_inputs(
     mut commands: Commands,
     session: Res<EditorSession>,
-    controls: Query<(Entity, &EmitterNumberControl), Added<EmitterNumberControl>>,
+    gizmo: Res<TransformGizmoState>,
+    interaction: Res<EmitterTransformGizmoInteraction>,
+    proxy: Query<Ref<Transform>, With<EmitterTransformGizmoProxy>>,
+    controls: Query<(Entity, Ref<EmitterNumberControl>)>,
 ) {
+    let live_transform = proxy
+        .single()
+        .ok()
+        .filter(|transform| {
+            (gizmo.active || interaction.active.is_some()) && transform.is_changed()
+        })
+        .map(|transform| emitter_transform_from_bevy(&transform));
     for (entity, control) in &controls {
+        if !control.is_added() && live_transform.is_none() {
+            continue;
+        }
+        let value = live_transform
+            .and_then(|transform| emitter_transform_component_value(transform, *control))
+            .unwrap_or_else(|| emitter_number_input_value(&session, *control));
         commands.trigger(UpdateNumberInput {
             entity,
-            value: NumberInputValue::F32(emitter_number_input_value(&session, *control)),
+            value: NumberInputValue::F32(value),
         });
     }
 }
 
 fn emitter_number_input_value(session: &EditorSession, control: EmitterNumberControl) -> f32 {
+    let transform = session.selected_layer().transform;
     match control {
         EmitterNumberControl::Start => session.selected_layer().start_time,
         EmitterNumberControl::Duration => session.selected_layer().duration,
+        _ => emitter_transform_component_value(transform, control)
+            .expect("transform control must resolve against an emitter transform"),
     }
+}
+
+fn emitter_transform_component_value(
+    transform: EmitterTransform,
+    control: EmitterNumberControl,
+) -> Option<f32> {
+    match control {
+        EmitterNumberControl::Translation(component) => {
+            Some(transform.translation[component as usize])
+        }
+        EmitterNumberControl::Rotation(component) => {
+            let (x, y, z) = Quat::from_array(transform.rotation)
+                .normalize()
+                .to_euler(EulerRot::XYZ);
+            Some([x.to_degrees(), y.to_degrees(), z.to_degrees()][component as usize])
+        }
+        EmitterNumberControl::Scale(component) => Some(transform.scale[component as usize]),
+        EmitterNumberControl::Start | EmitterNumberControl::Duration => None,
+    }
+}
+
+fn set_emitter_transform_component(
+    session: &mut EditorSession,
+    control: EmitterNumberControl,
+    value: f32,
+    rebuild_ui: bool,
+) -> bool {
+    if !value.is_finite() {
+        return false;
+    }
+    let mut transform = session.selected_layer().transform;
+    match control {
+        EmitterNumberControl::Translation(component) => {
+            transform.translation[component as usize] = value;
+        }
+        EmitterNumberControl::Rotation(component) => {
+            let (x, y, z) = Quat::from_array(transform.rotation)
+                .normalize()
+                .to_euler(EulerRot::XYZ);
+            let mut euler = [x, y, z];
+            euler[component as usize] = value.to_radians();
+            transform.rotation = Quat::from_euler(EulerRot::XYZ, euler[0], euler[1], euler[2])
+                .normalize()
+                .to_array();
+        }
+        EmitterNumberControl::Scale(component) => {
+            transform.scale[component as usize] = value.max(0.001);
+        }
+        EmitterNumberControl::Start | EmitterNumberControl::Duration => return false,
+    }
+    session.set_selected_emitter_transform(transform, rebuild_ui)
 }
 
 fn sync_inspector_number_inputs(
@@ -8340,8 +8862,13 @@ fn spawn_compiled_emitter(
                     "DISABLED"
                 },
                 &format!(
-                    "start {:.2}s  ·  duration {:.2}s  ·  capacity {}  ·  {}",
-                    emitter.start_time, emitter.duration, emitter.max_particles, emitter.source
+                    "start {:.2}s  ·  duration {:.2}s  ·  position {:?}  ·  scale {:?}  ·  capacity {}  ·  {}",
+                    emitter.start_time,
+                    emitter.duration,
+                    emitter.transform.translation,
+                    emitter.transform.scale,
+                    emitter.max_particles,
+                    emitter.source
                 ),
             );
             spawn_compiled_stage(
@@ -10270,6 +10797,7 @@ fn handle_buttons(
         ResMut<PreviewDisplayState>,
     ),
     window: Single<&Window, With<PrimaryWindow>>,
+    mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
 ) {
     let (
         catalog,
@@ -10713,6 +11241,9 @@ fn handle_buttons(
                     }
                     EditorAction::FramePreview => {
                         preview_camera.frame_requested = true;
+                    }
+                    EditorAction::SetTransformGizmoMode(mode) => {
+                        transform_gizmo_settings.mode = mode;
                     }
                     EditorAction::SetPreviewDisplayMode(mode) => {
                         preview_display.mode = mode;
@@ -11753,28 +12284,33 @@ fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
 fn sync_rendered_preview(
     mut commands: Commands,
     session: Res<EditorSession>,
-    mut players: Query<(Entity, &mut EffectPlayer, &Transform), With<PreviewEffectPlayer>>,
+    mut players: Query<(Entity, &mut EffectPlayer), With<PreviewEffectPlayer>>,
 ) {
     let desired = session
         .preview
         .as_ref()
         .map(|preview| preview.effect().clone());
     let Some(desired) = desired else {
-        for (entity, _, _) in &mut players {
+        for (entity, _) in &mut players {
             commands.entity(entity).despawn();
         }
         return;
     };
 
-    let Some((entity, mut player, transform)) = players.iter_mut().next() else {
+    let Some((entity, mut player)) = players.iter_mut().next() else {
         spawn_preview_effect_player(&mut commands, &session, Transform::IDENTITY);
         return;
     };
     if !std::sync::Arc::ptr_eq(player.effect(), &desired) {
-        let transform = *transform;
-        commands.entity(entity).despawn();
-        spawn_preview_effect_player(&mut commands, &session, transform);
-        return;
+        if compiled_effects_differ_only_by_emitter_transforms(player.effect(), &desired) {
+            if let Some(replacement) = configured_preview_player(&session) {
+                *player = replacement;
+            }
+        } else {
+            commands.entity(entity).despawn();
+            spawn_preview_effect_player(&mut commands, &session, Transform::IDENTITY);
+            return;
+        }
     }
 
     player.playing = false;
@@ -11785,6 +12321,20 @@ fn sync_rendered_preview(
     if player.frame() != session.frame() {
         player.seek_frame(session.frame());
     }
+}
+
+fn compiled_effects_differ_only_by_emitter_transforms(
+    current: &CompiledEffect,
+    desired: &CompiledEffect,
+) -> bool {
+    if current.emitters.len() != desired.emitters.len() {
+        return false;
+    }
+    let mut normalized = current.clone();
+    for (emitter, desired_emitter) in normalized.emitters.iter_mut().zip(&desired.emitters) {
+        emitter.transform = desired_emitter.transform;
+    }
+    &normalized == desired
 }
 
 fn update_preview(mut session: ResMut<EditorSession>, mut profiler: ResMut<ProfilerState>) {
@@ -12053,6 +12603,75 @@ mod tests {
     use super::*;
 
     #[test]
+    fn transform_gizmo_overlay_preserves_the_preview_color_buffer() {
+        let mut app = App::new();
+        app.add_systems(Update, configure_transform_gizmo_overlay_camera);
+        let overlay = app
+            .world_mut()
+            .spawn((
+                Camera3d::default(),
+                Camera::default(),
+                RenderLayers::layer(15),
+            ))
+            .id();
+        let preview = app
+            .world_mut()
+            .spawn((
+                PreviewRenderCamera,
+                Camera3d::default(),
+                Camera::default(),
+                RenderLayers::layer(0),
+            ))
+            .id();
+
+        app.update();
+
+        assert!(matches!(
+            app.world().get::<Camera>(overlay).unwrap().clear_color,
+            ClearColorConfig::None
+        ));
+        assert_eq!(app.world().get::<Camera>(overlay).unwrap().order, 1);
+        assert!(app.world().get::<Camera>(overlay).unwrap().is_active);
+        assert!(!matches!(
+            app.world().get::<Camera>(preview).unwrap().clear_color,
+            ClearColorConfig::None
+        ));
+    }
+
+    #[test]
+    fn transform_gizmo_materials_render_after_transparent_particles() {
+        let mut app = App::new();
+        app.init_resource::<Assets<StandardMaterial>>()
+            .add_systems(Update, configure_transform_gizmo_overlay_materials);
+        let overlay_material = app
+            .world_mut()
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        let scene_material = app
+            .world_mut()
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        app.world_mut().spawn((
+            RenderLayers::layer(15),
+            MeshMaterial3d(overlay_material.clone()),
+        ));
+        app.world_mut().spawn((
+            RenderLayers::layer(0),
+            MeshMaterial3d(scene_material.clone()),
+        ));
+
+        app.update();
+
+        let materials = app.world().resource::<Assets<StandardMaterial>>();
+        let overlay = materials.get(&overlay_material).unwrap();
+        assert_eq!(overlay.alpha_mode, AlphaMode::Blend);
+        assert_eq!(overlay.depth_bias, 10_000.0);
+        let scene = materials.get(&scene_material).unwrap();
+        assert_eq!(scene.alpha_mode, AlphaMode::Opaque);
+        assert_eq!(scene.depth_bias, 0.0);
+    }
+
+    #[test]
     fn framing_preview_restores_default_camera_around_effect() {
         let mut controller = PreviewCameraController {
             focus: Vec3::new(12.0, -7.0, 3.0),
@@ -12159,12 +12778,77 @@ mod tests {
         session.selection.primary = SemanticTarget::Module(shape_module);
         let mut app = App::new();
         app.insert_resource(session)
+            .init_resource::<ShapeGizmoState>()
             .add_systems(Update, sync_transform_gizmo_focus);
-        let player = app.world_mut().spawn(PreviewEffectPlayer).id();
+        let player = app.world_mut().spawn(EmitterTransformGizmoProxy).id();
 
         app.update();
 
         assert!(app.world().entity(player).contains::<TransformGizmoFocus>());
+    }
+
+    #[test]
+    fn emitter_gizmo_previews_then_commits_one_undoable_transform() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut gizmo = TransformGizmoState::default();
+        gizmo.active = true;
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(gizmo)
+            .init_resource::<EmitterTransformGizmoInteraction>()
+            .add_systems(Update, update_emitter_transform_gizmo);
+        app.world_mut().spawn((
+            EmitterTransformGizmoProxy,
+            Transform::from_xyz(4.0, 5.0, 6.0),
+        ));
+
+        app.update();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(
+            session.selected_layer().transform,
+            EmitterTransform::default()
+        );
+        assert_eq!(
+            session.preview.as_ref().unwrap().effect().emitters[0]
+                .transform
+                .translation,
+            [4.0, 5.0, 6.0],
+            "drag preview must update the compiled effect before release"
+        );
+
+        app.world_mut().resource_mut::<TransformGizmoState>().active = false;
+        app.update();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(
+            session.selected_layer().transform.translation,
+            [4.0, 5.0, 6.0]
+        );
+
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .selected_layer()
+                .transform,
+            EmitterTransform::default()
+        );
+    }
+
+    #[test]
+    fn inspector_emitter_transform_components_are_semantic_and_undoable() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        assert!(set_emitter_transform_component(
+            &mut session,
+            EmitterNumberControl::Translation(2),
+            12.5,
+            false,
+        ));
+        assert_eq!(session.selected_layer().transform.translation[2], 12.5);
+        session.undo();
+        assert_eq!(
+            session.selected_layer().transform,
+            EmitterTransform::default()
+        );
     }
 
     #[test]
@@ -12294,6 +12978,62 @@ mod tests {
         assert_eq!(player.frame(), session.frame());
         assert_eq!(player.instance.seed(), 42);
         assert!(!player.playing);
+    }
+
+    #[test]
+    fn transform_only_preview_updates_the_existing_player_in_place() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let player = configured_preview_player(&session).unwrap();
+        let emitter = session.selected_layer().id;
+        let transform = EmitterTransform {
+            translation: [7.0, -3.0, 2.0],
+            ..default()
+        };
+        assert!(session.preview_interaction(EffectTransaction::single(
+            "Preview emitter transform",
+            EffectCommand::SetEmitterTransform {
+                id: emitter,
+                transform,
+            },
+        )));
+
+        let mut app = App::new();
+        app.insert_resource(session)
+            .add_systems(Update, sync_rendered_preview);
+        let player_entity = app.world_mut().spawn((PreviewEffectPlayer, player)).id();
+
+        app.update();
+
+        let world = app.world();
+        let player = world.get::<EffectPlayer>(player_entity).unwrap();
+        assert_eq!(player.effect().emitters[0].transform, transform);
+        assert!(std::sync::Arc::ptr_eq(
+            player.effect(),
+            world
+                .resource::<EditorSession>()
+                .preview
+                .as_ref()
+                .unwrap()
+                .effect()
+        ));
+    }
+
+    #[test]
+    fn live_player_replacement_rejects_structural_compiler_changes() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let current = session.preview.as_ref().unwrap().effect();
+        let mut transformed = current.as_ref().clone();
+        transformed.emitters[0].transform.translation[0] = 4.0;
+        assert!(compiled_effects_differ_only_by_emitter_transforms(
+            current,
+            &transformed
+        ));
+
+        transformed.emitters[0].duration += 0.25;
+        assert!(!compiled_effects_differ_only_by_emitter_transforms(
+            current,
+            &transformed
+        ));
     }
 
     #[test]

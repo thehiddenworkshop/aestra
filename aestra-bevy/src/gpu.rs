@@ -108,6 +108,11 @@ pub struct GpuEmitter {
     pub _range_padding: Vec2,
     pub gravity: Vec3,
     pub turbulence: f32,
+    pub translation: Vec3,
+    pub max_scale: f32,
+    pub rotation: Vec4,
+    pub scale: Vec3,
+    pub _transform_padding: f32,
     pub size: GpuCurve,
     pub opacity: GpuCurve,
     pub color: GpuGradient,
@@ -309,14 +314,22 @@ impl GpuEffectArtifact {
                     }
                 }));
             }
-            bounds_half_extents = bounds_half_extents.max(emitter_bounds(
+            let local_bounds = emitter_bounds(
                 shape,
                 init.lifetime,
                 init.speed,
                 motion.gravity,
                 motion.turbulence,
                 appearance.size,
+            );
+            bounds_half_extents = bounds_half_extents.max(transformed_emitter_bounds(
+                local_bounds,
+                emitter.transform.translation,
+                emitter.transform.rotation,
+                emitter.transform.scale,
             ));
+            let rotation = Quat::from_array(emitter.transform.rotation).normalize();
+            let scale = Vec3::from_array(emitter.transform.scale);
             emitters.push(GpuEmitter {
                 slot_offset,
                 max_particles: emitter.max_particles,
@@ -338,6 +351,11 @@ impl GpuEffectArtifact {
                 _range_padding: Vec2::ZERO,
                 gravity: Vec3::from_array(motion.gravity),
                 turbulence: motion.turbulence,
+                translation: Vec3::from_array(emitter.transform.translation),
+                max_scale: scale.max_element(),
+                rotation: Vec4::from_array(rotation.to_array()),
+                scale,
+                _transform_padding: 0.0,
                 size: pack_curve(appearance.size)?,
                 opacity: pack_curve(appearance.opacity)?,
                 color: pack_gradient(appearance.color)?,
@@ -1040,6 +1058,20 @@ fn emitter_bounds(
         )
 }
 
+fn transformed_emitter_bounds(
+    local: Vec3,
+    translation: [f32; 3],
+    rotation: [f32; 4],
+    scale: [f32; 3],
+) -> Vec3 {
+    let scaled = local * Vec3::from_array(scale).abs();
+    let rotation = Quat::from_array(rotation).normalize();
+    let rotated = (rotation * Vec3::X * scaled.x).abs()
+        + (rotation * Vec3::Y * scaled.y).abs()
+        + (rotation * Vec3::Z * scaled.z).abs();
+    Vec3::from_array(translation).abs() + rotated
+}
+
 fn pack_curve(curve: &CompiledCurve) -> Result<GpuCurve, GpuArtifactError> {
     let mut points = Vec::new();
     if let Some(first) = curve.first() {
@@ -1287,6 +1319,31 @@ mod tests {
         assert_eq!(emitter.gravity, Vec3::new(4.0, 5.0, 6.0));
         assert!((emitter.direction.length() - 1.0).abs() < 0.0001);
         assert!(artifact.bounds_half_extents.z > 4.0);
+    }
+
+    #[test]
+    fn artifact_packs_emitter_transform_and_expands_bounds() {
+        let mut effect = EffectAsset::new("Transformed GPU", 2.0);
+        let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
+        emitter.transform.translation = [100.0, 20.0, -30.0];
+        emitter.transform.rotation = [
+            0.0,
+            0.0,
+            std::f32::consts::FRAC_1_SQRT_2,
+            std::f32::consts::FRAC_1_SQRT_2,
+        ];
+        emitter.transform.scale = [2.0, 3.0, 4.0];
+        effect.emitters.push(emitter);
+
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
+        let emitter = artifact.emitters[0];
+
+        assert_eq!(emitter.translation, Vec3::new(100.0, 20.0, -30.0));
+        assert_eq!(emitter.scale, Vec3::new(2.0, 3.0, 4.0));
+        assert_eq!(emitter.max_scale, 4.0);
+        assert!(artifact.bounds_half_extents.x > 100.0);
+        assert!(artifact.bounds_half_extents.z > 30.0);
     }
 
     #[test]

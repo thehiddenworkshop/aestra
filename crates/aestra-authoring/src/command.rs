@@ -1,5 +1,5 @@
 use aestra_core::{
-    ColorKey, CurveKey, EffectParameter, Emitter, EmitterId, EventId, EventLink,
+    ColorKey, CurveKey, EffectParameter, Emitter, EmitterId, EmitterTransform, EventId, EventLink,
     FlipbookDefinition, MaterialDefinition, MaterialId, ModuleId, ModuleInstance, RendererId,
     RendererInstance, RendererProperties, Value,
 };
@@ -63,6 +63,10 @@ pub enum EffectCommand {
     SetEmitterEnabled {
         id: EmitterId,
         enabled: bool,
+    },
+    SetEmitterTransform {
+        id: EmitterId,
+        transform: EmitterTransform,
     },
     SetEmitterTiming {
         id: EmitterId,

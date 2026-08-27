@@ -21,8 +21,11 @@ Format v3 is natively three-dimensional from authored data through rendering:
 - circle and ring remain planar local-XY primitives;
 - sphere, hemisphere, box, cylinder, and volumetric cone are first-class spawn
   shapes oriented in effect-local space;
+- every emitter owns a persisted local translation, quaternion rotation, and
+  positive XYZ scale that are applied consistently by CPU and GPU execution;
 - the editor exposes all shapes through one choice control and draws direct 3D
-  wireframe handles for their dimensions;
+  wireframe handles for their dimensions; standard transform gizmos edit emitter
+  transforms through preview transactions and one undoable command per drag;
 - only `CURRENT_FORMAT_VERSION` is accepted. Format v2 has no compatibility
   parser or runtime branch.
 

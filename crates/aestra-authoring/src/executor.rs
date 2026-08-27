@@ -275,6 +275,14 @@ fn apply_command(
                 enabled: previous,
             }]
         }
+        EffectCommand::SetEmitterTransform { id, transform } => {
+            let emitter = emitter_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut emitter.transform, *transform);
+            vec![EffectCommand::SetEmitterTransform {
+                id: *id,
+                transform: previous,
+            }]
+        }
         EffectCommand::SetEmitterTiming {
             id,
             start_time,

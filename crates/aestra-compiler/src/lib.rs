@@ -347,6 +347,7 @@ impl EffectCompiler {
                 source: emitter.id,
                 name: emitter.name.clone(),
                 enabled: emitter.enabled,
+                transform: emitter.transform,
                 start_time: emitter.start_time,
                 duration: emitter.duration,
                 max_particles: emitter.max_particles,

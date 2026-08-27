@@ -74,12 +74,12 @@ fn bundled_v3_asset_has_stable_pretty_serialization() {
 
     assert_eq!(
         serialized.len(),
-        22_594,
+        23_310,
         "update only for an intentional format change"
     );
     assert_eq!(
         fnv1a64(serialized.as_bytes()),
-        0xc064_346c_d6cb_ca6c,
+        0x6fad_5d0e_7a4d_d7b2,
         "update only for an intentional format change"
     );
     assert_eq!(
