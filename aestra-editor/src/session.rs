@@ -109,6 +109,21 @@ impl EditorSession {
         self.status = "Choreography restarted".into();
     }
 
+    pub fn stop(&mut self) {
+        self.clock.restart();
+        if let Some(preview) = &mut self.preview {
+            preview.restart();
+            preview.set_seed(self.preview_seed);
+        }
+        self.last_seek = SeekPlan {
+            target_frame: 0,
+            origin: SeekOrigin::Restart,
+            replay_ticks: 0,
+        };
+        self.playing = false;
+        self.status = "Choreography stopped".into();
+    }
+
     pub fn time(&self) -> f32 {
         self.clock.time(self.playback_duration())
     }

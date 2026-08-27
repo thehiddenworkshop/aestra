@@ -343,6 +343,8 @@ mod tests {
     fn grid_is_enabled_by_default() {
         assert!(EditorSettings::default().preview.show_grid);
         assert!(PreviewSettings::default().show_grid);
+        assert!(EditorSettings::default().preview.play_on_open);
+        assert!(PreviewSettings::default().play_on_open);
     }
 
     #[test]

@@ -33,6 +33,7 @@ const SHELL_MESSAGE_IDS: &[&str] = &[
     "help-about",
     "toolbar-play",
     "toolbar-pause",
+    "toolbar-stop",
     "toolbar-restart",
     "toolbar-save",
     "toolbar-choreography",

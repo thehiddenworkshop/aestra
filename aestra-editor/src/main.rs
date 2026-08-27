@@ -205,6 +205,7 @@ fn main() {
                     update_profiler_labels,
                     update_localized_text,
                     update_editor_labels,
+                    update_transport_icons,
                     update_compile_status,
                     update_history_actions,
                     (
@@ -277,6 +278,7 @@ enum EditorAction {
     OpenEffect,
     OpenCatalog(usize),
     TogglePlayback,
+    StopPlayback,
     Restart,
     StepFrame(i8),
     AdjustPreviewSeed(i8),
@@ -1261,7 +1263,10 @@ struct GizmoModeLabel;
 struct ShapeGizmoValueLabel;
 
 #[derive(Component)]
-struct PlaybackLabel;
+struct PlaybackPlayIcon;
+
+#[derive(Component)]
+struct PlaybackPauseIcon;
 
 #[derive(Component)]
 struct TimeLabel;
@@ -3170,27 +3175,47 @@ fn spawn_toolbar(
                     ..default()
                 },
             ));
-            toolbar_button(
-                bar,
-                "toolbar-play",
-                EditorAction::TogglePlayback,
-                PlaybackLabel,
-                localizer,
-            );
-            toolbar_button(
-                bar,
-                "toolbar-restart",
-                EditorAction::Restart,
-                PlainMarker,
-                localizer,
-            );
-            toolbar_button(
-                bar,
-                "toolbar-save",
-                EditorAction::Save,
-                PlainMarker,
-                localizer,
-            );
+            bar.spawn((
+                Node {
+                    height: Val::Px(34.0),
+                    padding: UiRect::all(Val::Px(2.0)),
+                    column_gap: Val::Px(2.0),
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(1.0)),
+                    border_radius: BorderRadius::all(Val::Px(5.0)),
+                    ..default()
+                },
+                ThemeBackgroundColor(tokens::PANE_HEADER_BG),
+                ThemeBorderColor(tokens::PANE_HEADER_BORDER),
+            ))
+            .with_children(|transport| {
+                transport_button(
+                    transport,
+                    "toolbar-play",
+                    EditorAction::TogglePlayback,
+                    localizer,
+                )
+                .with_children(|button| {
+                    spawn_play_icon(button, !session.playing);
+                    spawn_pause_icon(button, session.playing);
+                });
+                transport_button(
+                    transport,
+                    "toolbar-stop",
+                    EditorAction::StopPlayback,
+                    localizer,
+                )
+                .with_child((
+                    Node {
+                        width: Val::Px(10.0),
+                        height: Val::Px(10.0),
+                        border_radius: BorderRadius::all(Val::Px(1.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
+            });
             bar.spawn((
                 Node {
                     width: Val::Px(1.0),
@@ -3232,33 +3257,97 @@ fn spawn_toolbar(
 #[derive(Component)]
 struct PlainMarker;
 
-fn toolbar_button<M: Component>(
-    parent: &mut ChildSpawnerCommands,
+fn transport_button<'a>(
+    parent: &'a mut ChildSpawnerCommands,
     message_id: &'static str,
     action: EditorAction,
-    marker: M,
     localizer: &Localizer,
-) {
+) -> EntityCommands<'a> {
     let mut button = parent.spawn_empty();
-    if matches!(action, EditorAction::TogglePlayback) {
-        button.apply_scene(ui_shell::feathers_primary_button());
-    } else {
-        button.apply_scene(ui_shell::feathers_button());
-    }
     button
+        .apply_scene(ui_shell::feathers_tool_button())
         .insert((
             action,
             FeathersActionButton,
             AccessibleLabel(localizer.text(message_id)),
+            Node {
+                width: Val::Px(28.0),
+                height: Val::Px(28.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+        ));
+    button
+}
+
+fn spawn_play_icon(parent: &mut ChildSpawnerCommands, visible: bool) {
+    parent
+        .spawn((
+            PlaybackPlayIcon,
+            Node {
+                display: if visible {
+                    Display::Flex
+                } else {
+                    Display::None
+                },
+                width: Val::Px(8.0),
+                height: Val::Px(14.0),
+                position_type: PositionType::Relative,
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            Pickable::IGNORE,
         ))
-        .with_children(|button| {
-            button.spawn((
-                LocalizedText(message_id),
-                Text::new(localizer.text(message_id)),
-                ThemedText,
-                marker,
-                Pickable::IGNORE,
-            ));
+        .with_child((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(-5.0),
+                top: Val::Px(2.0),
+                width: Val::Px(10.0),
+                height: Val::Px(10.0),
+                border_radius: BorderRadius::all(Val::Px(1.0)),
+                ..default()
+            },
+            UiTransform::from_rotation(Rot2::radians(std::f32::consts::FRAC_PI_4)),
+            BackgroundColor(theme::TEXT),
+            Pickable::IGNORE,
+        ));
+}
+
+fn spawn_pause_icon(parent: &mut ChildSpawnerCommands, visible: bool) {
+    parent
+        .spawn((
+            PlaybackPauseIcon,
+            Node {
+                display: if visible {
+                    Display::Flex
+                } else {
+                    Display::None
+                },
+                width: Val::Px(11.0),
+                height: Val::Px(13.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                column_gap: Val::Px(3.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_children(|icon| {
+            for _ in 0..2 {
+                icon.spawn((
+                    Node {
+                        width: Val::Px(3.0),
+                        height: Val::Px(12.0),
+                        border_radius: BorderRadius::all(Val::Px(0.5)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
+            }
         });
 }
 
@@ -11608,6 +11697,7 @@ fn handle_buttons(
                     EditorAction::NewEffect => {
                         if confirm_discard(&session, &settings) {
                             session.new_effect();
+                            session.playing = settings.preview.play_on_open;
                             workspace.complex = None;
                         }
                     }
@@ -11617,10 +11707,15 @@ fn handle_buttons(
                     }
                     EditorAction::OpenCatalog(index) => {
                         if confirm_discard(&session, &settings) {
-                            if let Some(entry) = catalog.entries.get(index)
-                                && let Err(error) = session.open(&entry.path)
-                            {
-                                session.status = format!("Open failed: {error}");
+                            if let Some(entry) = catalog.entries.get(index) {
+                                match session.open(&entry.path) {
+                                    Ok(()) => {
+                                        session.playing = settings.preview.play_on_open;
+                                    }
+                                    Err(error) => {
+                                        session.status = format!("Open failed: {error}");
+                                    }
+                                }
                             }
                             workspace.complex = None;
                         } else {
@@ -11628,6 +11723,7 @@ fn handle_buttons(
                         }
                     }
                     EditorAction::TogglePlayback => session.playing = !session.playing,
+                    EditorAction::StopPlayback => session.stop(),
                     EditorAction::Restart => session.restart(),
                     EditorAction::StepFrame(direction) => session.step_frame(direction),
                     EditorAction::AdjustPreviewSeed(direction) => {
@@ -12435,8 +12531,9 @@ fn open_effect_dialog(session: &mut EditorSession, settings: &EditorSettings) {
         session.status = "Open cancelled".into();
         return;
     };
-    if let Err(error) = session.open(&path) {
-        session.status = format!("Open failed: {error}");
+    match session.open(&path) {
+        Ok(()) => session.playing = settings.preview.play_on_open,
+        Err(error) => session.status = format!("Open failed: {error}"),
     }
 }
 
@@ -13519,7 +13616,6 @@ fn update_editor_labels(
     preview_runtime: Query<Ref<EffectRuntimeStatus>, With<PreviewEffectPlayer>>,
     mut labels: Query<(
         &mut Text,
-        Option<&PlaybackLabel>,
         Option<&TimeLabel>,
         Option<&InspectorTitle>,
         Option<&ParticleCountLabel>,
@@ -13543,14 +13639,8 @@ fn update_editor_labels(
             ActiveBackend::CpuReference => "CPU FALLBACK",
         });
     let layer = session.selected_layer();
-    for (mut text, playback, time, title, count, document_menu, document_toolbar) in &mut labels {
-        if playback.is_some() {
-            text.0 = localizer.text(if session.playing {
-                "toolbar-pause"
-            } else {
-                "toolbar-play"
-            });
-        } else if time.is_some() {
+    for (mut text, time, title, count, document_menu, document_toolbar) in &mut labels {
+        if time.is_some() {
             text.0 = format!(
                 "F{:05}  ·  {:02}:{:06.3}  /  00:{:06.3}  ·  {}",
                 session.frame(),
@@ -13583,6 +13673,30 @@ fn update_editor_labels(
                 localizer.text("toolbar-choreography")
             );
         }
+    }
+}
+
+fn update_transport_icons(
+    session: Res<EditorSession>,
+    mut play_icons: Query<&mut Node, (With<PlaybackPlayIcon>, Without<PlaybackPauseIcon>)>,
+    mut pause_icons: Query<&mut Node, (With<PlaybackPauseIcon>, Without<PlaybackPlayIcon>)>,
+) {
+    if !session.is_changed() {
+        return;
+    }
+    for mut node in &mut play_icons {
+        node.display = if session.playing {
+            Display::None
+        } else {
+            Display::Flex
+        };
+    }
+    for mut node in &mut pause_icons {
+        node.display = if session.playing {
+            Display::Flex
+        } else {
+            Display::None
+        };
     }
 }
 
