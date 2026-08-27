@@ -85,6 +85,10 @@ settings-keybindings = KEYBINDINGS
 
 settings-confirm-unsaved = Confirm unsaved changes
 settings-confirm-unsaved-description = Ask before closing or replacing a modified effect.
+settings-autosave-enabled = Enable recovery autosave
+settings-autosave-enabled-description = Periodically save crash-recovery snapshots for modified effects.
+settings-autosave-interval = Recovery autosave interval
+settings-autosave-interval-description = Save a crash-recovery snapshot after this many seconds without an edit.
 settings-viewport-grid = Viewport grid
 settings-viewport-grid-description = Show the reference grid behind the effect preview.
 settings-play-on-open = Autoplay effects

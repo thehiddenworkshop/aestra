@@ -1,5 +1,6 @@
 mod docking;
 mod localization;
+mod recovery;
 mod session;
 mod settings;
 mod theme;
@@ -66,13 +67,14 @@ use bevy::{
 use docking::{DockAxis, DockDrop, DockNode, DockNodeId, DockPanel, DockStack, WorkspaceLayout};
 use fluent_bundle::FluentArgs;
 use localization::{Localizer, SUPPORTED_LOCALES};
+use recovery::{RecoveryCandidate, RecoveryPersistence};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use session::EditorSession;
 use settings::{EditorSettings, SettingsPersistence};
 use std::{
     collections::{HashMap, VecDeque},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -93,6 +95,12 @@ fn main() {
         Localizer::new(&settings.language.locale).expect("embedded Fluent catalogs must be valid");
     settings.language.locale = localizer.locale().into();
     let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+    let (mut recovery, recovery_candidate, recovery_diagnostic) = RecoveryPersistence::discover();
+    if let Some(candidate) = recovery_candidate {
+        recover_startup_session(&mut session, &mut recovery, candidate);
+    } else if let Some(diagnostic) = recovery_diagnostic {
+        session.status = diagnostic;
+    }
     session.playing = settings.preview.play_on_open;
     if let Some(diagnostic) = persistence.diagnostic() {
         session.status = diagnostic.into();
@@ -103,16 +111,19 @@ fn main() {
         ..default()
     };
     let ui_scale = settings.appearance.ui_scale;
+    let autosave = AutosaveState::new(&session, settings.general.autosave_enabled);
     App::new()
         .insert_resource(ClearColor(theme::APP_BG))
         .insert_resource(session)
         .insert_resource(settings)
         .insert_resource(persistence)
+        .insert_resource(recovery)
         .insert_resource(localizer)
         .insert_resource(UiScale(ui_scale))
         .insert_resource(EffectCatalog::scan())
         .insert_resource(menu)
         .insert_resource(timeline)
+        .insert_resource(autosave)
         .init_resource::<EditorModuleRegistry>()
         .init_resource::<ModulePaletteState>()
         .init_resource::<DiagnosticsPanelState>()
@@ -198,6 +209,7 @@ fn main() {
                     audit_editor_action_controls,
                     handle_buttons,
                     handle_window_close_requests,
+                    autosave_recovery,
                     persist_native_window_geometry,
                     dismiss_open_menus,
                     navigate_timeline,
@@ -589,12 +601,14 @@ impl SettingsCategory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsToggle {
     ConfirmUnsavedChanges,
+    AutosaveEnabled,
     ShowGrid,
     PlayOnOpen,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsNumber {
+    AutosaveInterval,
     PreviewParticleLimit,
     CaptureFrameRate,
     ContactSheetColumns,
@@ -604,6 +618,29 @@ enum SettingsNumber {
 #[derive(Resource, Default)]
 struct SettingsPanelState {
     category: SettingsCategory,
+}
+
+#[derive(Resource)]
+struct AutosaveState {
+    document_key: String,
+    observed_revision: u64,
+    written_revision: Option<u64>,
+    write_after: Instant,
+    enabled: bool,
+    suspended: bool,
+}
+
+impl AutosaveState {
+    fn new(session: &EditorSession, enabled: bool) -> Self {
+        Self {
+            document_key: recovery_document_key(session),
+            observed_revision: session.document_revision(),
+            written_revision: session.dirty.then_some(session.document_revision()),
+            write_after: Instant::now(),
+            enabled,
+            suspended: false,
+        }
+    }
 }
 
 #[derive(Resource)]
@@ -1501,15 +1538,24 @@ fn configure_transform_gizmo_overlay_materials(
 }
 
 fn sync_preview_camera_viewport(
-    canvas: Single<(&ComputedNode, &UiGlobalTransform), With<PreviewCanvas>>,
+    canvas: Query<(&ComputedNode, &UiGlobalTransform), With<PreviewCanvas>>,
     window: Single<&Window, With<PrimaryWindow>>,
-    mut camera: Single<&mut Camera, With<PreviewRenderCamera>>,
+    mut preview_camera: Single<&mut Camera, With<PreviewRenderCamera>>,
+    mut overlay_cameras: Query<
+        (&RenderLayers, &mut Camera),
+        (With<Camera3d>, Without<PreviewRenderCamera>),
+    >,
 ) {
-    let (computed, transform) = *canvas;
+    let Ok((computed, transform)) = canvas.single() else {
+        set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
+        return;
+    };
     let size = computed.size();
     if !size.is_finite() || size.x < 16.0 || size.y < 16.0 {
+        set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, false);
         return;
     }
+    set_preview_cameras_active(&mut preview_camera, &mut overlay_cameras, true);
     let top_left = transform.translation.trunc() - size * 0.5;
     let target_size = UVec2::new(
         window.physical_width().max(1),
@@ -1518,11 +1564,28 @@ fn sync_preview_camera_viewport(
     let position = top_left.max(Vec2::ZERO).as_uvec2().min(target_size - 1);
     let available = target_size.saturating_sub(position).max(UVec2::ONE);
     let physical_size = size.as_uvec2().max(UVec2::ONE).min(available);
-    camera.viewport = Some(Viewport {
+    preview_camera.viewport = Some(Viewport {
         physical_position: position,
         physical_size,
         ..default()
     });
+}
+
+fn set_preview_cameras_active(
+    preview_camera: &mut Camera,
+    overlay_cameras: &mut Query<
+        (&RenderLayers, &mut Camera),
+        (With<Camera3d>, Without<PreviewRenderCamera>),
+    >,
+    active: bool,
+) {
+    preview_camera.is_active = active;
+    let gizmo_layers = RenderLayers::layer(15);
+    for (layers, mut camera) in overlay_cameras {
+        if layers == &gizmo_layers {
+            camera.is_active = active;
+        }
+    }
 }
 
 fn navigate_preview_camera(
@@ -7942,14 +8005,17 @@ fn spawn_settings_workspace(
     localizer: &Localizer,
 ) {
     parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            min_width: Val::Px(0.0),
-            min_height: Val::Px(0.0),
-            flex_direction: FlexDirection::Column,
-            ..default()
-        })
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                min_width: Val::Px(0.0),
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(theme::APP_BG),
+        ))
         .with_children(|panel| {
             panel
                 .spawn_empty()
@@ -8101,6 +8167,21 @@ fn spawn_settings_category(
                 settings.general.confirm_unsaved_changes,
                 SettingsToggle::ConfirmUnsavedChanges,
                 localizer,
+            );
+            spawn_settings_toggle(
+                parent,
+                &localizer.text("settings-autosave-enabled"),
+                &localizer.text("settings-autosave-enabled-description"),
+                settings.general.autosave_enabled,
+                SettingsToggle::AutosaveEnabled,
+                localizer,
+            );
+            spawn_settings_integer(
+                parent,
+                &localizer.text("settings-autosave-interval"),
+                &localizer.text("settings-autosave-interval-description"),
+                SettingsNumber::AutosaveInterval,
+                Some("s"),
             );
         }
         SettingsCategory::Preview => {
@@ -8590,6 +8671,11 @@ fn apply_settings_toggle(
             settings.general.confirm_unsaved_changes = value;
             changed
         }
+        SettingsToggle::AutosaveEnabled => {
+            let changed = settings.general.autosave_enabled != value;
+            settings.general.autosave_enabled = value;
+            changed
+        }
         SettingsToggle::ShowGrid => {
             let changed = settings.preview.show_grid != value;
             settings.preview.show_grid = value;
@@ -8630,6 +8716,12 @@ fn apply_settings_integer(
     value: i32,
 ) -> bool {
     match setting {
+        SettingsNumber::AutosaveInterval => {
+            let value = value.clamp(5, 600) as u16;
+            let changed = settings.general.autosave_interval_seconds != value;
+            settings.general.autosave_interval_seconds = value;
+            changed
+        }
         SettingsNumber::PreviewParticleLimit => {
             let value = value.clamp(64, MAX_PREVIEW_PARTICLE_LIMIT as i32) as usize;
             let changed = settings.performance.preview_particle_limit != value;
@@ -9840,6 +9932,9 @@ fn settings_number_input_value(
     setting: SettingsNumber,
 ) -> NumberInputValue {
     match setting {
+        SettingsNumber::AutosaveInterval => {
+            NumberInputValue::I32(i32::from(settings.general.autosave_interval_seconds))
+        }
         SettingsNumber::PreviewParticleLimit => {
             NumberInputValue::I32(settings.performance.preview_particle_limit as i32)
         }
@@ -12049,6 +12144,8 @@ fn handle_buttons(
     mut timeline_state: ResMut<TimelineState>,
     window: Single<&Window, With<PrimaryWindow>>,
     mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
+    mut recovery: ResMut<RecoveryPersistence>,
+    mut autosave: ResMut<AutosaveState>,
 ) {
     let (
         catalog,
@@ -12225,6 +12322,8 @@ fn handle_buttons(
                     EditorAction::SaveAs => save_session(&mut session, true),
                     EditorAction::Exit => {
                         if confirm_discard(&session, &settings) {
+                            autosave.suspended = true;
+                            discard_active_recovery(&mut recovery);
                             commands.write_message(AppExit::Success);
                         } else {
                             session.status = "Exit cancelled".into();
@@ -13010,6 +13109,128 @@ fn bounded_key_time(times: &[f32], index: usize, value: f32) -> f32 {
     value.clamp(previous, next)
 }
 
+fn recover_startup_session(
+    session: &mut EditorSession,
+    persistence: &mut RecoveryPersistence,
+    candidate: RecoveryCandidate,
+) {
+    let source = candidate.source_path().map_or_else(
+        || "an unsaved effect".to_string(),
+        |path| path.display().to_string(),
+    );
+    let restore = matches!(
+        MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title("Recover unsaved effect")
+            .set_description(format!(
+                "A newer recovery snapshot was found for {source}.\n\nRestore it? Yes restores the unsaved work; No discards the snapshot."
+            ))
+            .set_buttons(MessageButtons::YesNo)
+            .show(),
+        MessageDialogResult::Yes
+    );
+    if restore {
+        session.restore_recovery(
+            candidate.effect().clone(),
+            candidate.source_path().map(Path::to_owned),
+        );
+        persistence.activate(&candidate);
+    } else {
+        match persistence.discard_candidate(&candidate) {
+            Ok(()) => session.status = "Discarded recovery snapshot".into(),
+            Err(error) => session.status = format!("Recovery discard failed: {error}"),
+        }
+    }
+}
+
+fn recovery_document_key(session: &EditorSession) -> String {
+    format!(
+        "{}|{}",
+        session.effect.id,
+        session.source_path.as_deref().map_or_else(
+            || "<untitled>".to_string(),
+            |path| path.display().to_string()
+        )
+    )
+}
+
+fn autosave_recovery(
+    mut session: ResMut<EditorSession>,
+    settings: Res<EditorSettings>,
+    mut persistence: ResMut<RecoveryPersistence>,
+    mut state: ResMut<AutosaveState>,
+) {
+    if state.suspended {
+        return;
+    }
+    let now = Instant::now();
+    let interval = Duration::from_secs(u64::from(settings.general.autosave_interval_seconds));
+    if state.enabled != settings.general.autosave_enabled {
+        state.enabled = settings.general.autosave_enabled;
+        state.write_after = now + interval;
+        if state.enabled {
+            state.written_revision = None;
+        }
+    }
+    if !state.enabled {
+        if state.written_revision.is_some() {
+            match persistence.clear_active() {
+                Ok(()) => state.written_revision = None,
+                Err(error) => warn!("failed to clear the disabled recovery snapshot: {error}"),
+            }
+        }
+        return;
+    }
+    let document_key = recovery_document_key(&session);
+    if document_key != state.document_key {
+        if let Err(error) = persistence.clear_active() {
+            warn!("failed to clear the previous recovery snapshot: {error}");
+        }
+        state.document_key = document_key;
+        state.observed_revision = session.document_revision();
+        state.written_revision = None;
+        state.write_after = now + interval;
+    }
+
+    if !session.dirty {
+        if state.written_revision.is_some() {
+            match persistence.clear_active() {
+                Ok(()) => state.written_revision = None,
+                Err(error) => {
+                    warn!("failed to clear the saved effect recovery snapshot: {error}");
+                }
+            }
+        }
+        return;
+    }
+
+    let revision = session.document_revision();
+    if revision != state.observed_revision {
+        state.observed_revision = revision;
+        state.written_revision = None;
+        state.write_after = now + interval;
+        return;
+    }
+    if state.written_revision == Some(revision) || now < state.write_after {
+        return;
+    }
+
+    match persistence.persist(&session.effect, session.source_path.as_deref()) {
+        Ok(_) => state.written_revision = Some(revision),
+        Err(error) => {
+            error!("failed to write recovery snapshot: {error}");
+            session.status = format!("Recovery autosave failed: {error}");
+            state.write_after = now + interval;
+        }
+    }
+}
+
+fn discard_active_recovery(persistence: &mut RecoveryPersistence) {
+    if let Err(error) = persistence.clear_active() {
+        warn!("failed to discard recovery snapshot: {error}");
+    }
+}
+
 fn open_effect_dialog(session: &mut EditorSession, settings: &EditorSettings) {
     if !confirm_discard(session, settings) {
         session.status = "Open cancelled".into();
@@ -13722,11 +13943,15 @@ fn handle_window_close_requests(
     mut layout: ResMut<WorkspaceLayout>,
     mut session: ResMut<EditorSession>,
     settings: Res<EditorSettings>,
+    mut recovery: ResMut<RecoveryPersistence>,
+    mut autosave: ResMut<AutosaveState>,
     mut commands: Commands,
 ) {
     for request in close_requests.read() {
         if request.window == *primary {
             if confirm_discard(&session, &settings) {
+                autosave.suspended = true;
+                discard_active_recovery(&mut recovery);
                 commands.write_message(AppExit::Success);
             } else {
                 session.status = "Exit cancelled".into();
@@ -14500,6 +14725,30 @@ fn layer_color_alpha(index: usize, alpha: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_cameras_are_disabled_without_an_active_viewport_canvas() {
+        let mut app = App::new();
+        app.add_systems(Update, sync_preview_camera_viewport);
+        app.world_mut().spawn((Window::default(), PrimaryWindow));
+        let preview = app
+            .world_mut()
+            .spawn((PreviewRenderCamera, Camera::default()))
+            .id();
+        let overlay = app
+            .world_mut()
+            .spawn((
+                Camera3d::default(),
+                Camera::default(),
+                RenderLayers::layer(15),
+            ))
+            .id();
+
+        app.update();
+
+        assert!(!app.world().get::<Camera>(preview).unwrap().is_active);
+        assert!(!app.world().get::<Camera>(overlay).unwrap().is_active);
+    }
 
     #[test]
     fn transform_gizmo_overlay_preserves_the_preview_color_buffer() {
@@ -15522,6 +15771,14 @@ mod tests {
         assert!(!settings.preview.show_grid);
         assert!(!menu.show_grid);
 
+        assert!(apply_settings_toggle(
+            &mut settings,
+            &mut menu,
+            SettingsToggle::AutosaveEnabled,
+            false,
+        ));
+        assert!(!settings.general.autosave_enabled);
+
         assert!(apply_settings_integer(
             &mut settings,
             SettingsNumber::CaptureFrameRate,
@@ -15534,6 +15791,16 @@ mod tests {
             0,
         ));
         assert_eq!(settings.capture.contact_sheet_columns, 1);
+        assert!(apply_settings_integer(
+            &mut settings,
+            SettingsNumber::AutosaveInterval,
+            900,
+        ));
+        assert_eq!(settings.general.autosave_interval_seconds, 600);
+        assert_eq!(
+            settings_number_input_value(&settings, SettingsNumber::AutosaveInterval),
+            NumberInputValue::I32(600)
+        );
 
         assert!(apply_settings_scalar(
             &mut settings,

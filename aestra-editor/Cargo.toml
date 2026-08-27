@@ -18,4 +18,5 @@ rfd = "0.15"
 ron.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tempfile.workspace = true
 unic-langid.workspace = true

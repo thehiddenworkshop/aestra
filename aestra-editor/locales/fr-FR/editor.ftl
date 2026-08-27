@@ -85,6 +85,10 @@ settings-keybindings = RACCOURCIS
 
 settings-confirm-unsaved = Confirmer les modifications non enregistrées
 settings-confirm-unsaved-description = Demander confirmation avant de fermer ou remplacer un effet modifié.
+settings-autosave-enabled = Activer la sauvegarde de récupération
+settings-autosave-enabled-description = Enregistrer périodiquement des instantanés de récupération pour les effets modifiés.
+settings-autosave-interval = Intervalle de récupération automatique
+settings-autosave-interval-description = Enregistrer un instantané de récupération après ce nombre de secondes sans modification.
 settings-viewport-grid = Grille de l’aperçu
 settings-viewport-grid-description = Afficher la grille de référence derrière l’aperçu de l’effet.
 settings-play-on-open = Lecture automatique des effets

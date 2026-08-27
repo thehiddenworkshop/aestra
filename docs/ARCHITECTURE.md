@@ -179,7 +179,8 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [x] runtime parameter slots, compiled curves, constant folding, and attribute liveness
 - [x] cursor-centered timeline zooming, panning, adaptive rulers, and configurable snapping
 - node/module stack for spawn, initialize, update, renderer, and events
-- autosave/recovery and asset migrations
+- [x] atomic debounced autosave and startup crash recovery
+- asset migrations
 - [x] versioned persistent editor settings and a dockable Settings workspace
 - [x] Fluent editor-shell localization with catalog validation, fallback, and live locale switching
 - [x] localized built-in Inspector module inputs and descriptions

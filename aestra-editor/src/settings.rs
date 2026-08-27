@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(crate) const SETTINGS_FORMAT_VERSION: u32 = 2;
+pub(crate) const SETTINGS_FORMAT_VERSION: u32 = 4;
 
 #[derive(Resource, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -42,6 +42,8 @@ impl EditorSettings {
         self.version = SETTINGS_FORMAT_VERSION;
         self.performance.preview_particle_limit =
             self.performance.preview_particle_limit.clamp(64, 384);
+        self.general.autosave_interval_seconds =
+            self.general.autosave_interval_seconds.clamp(5, 600);
         self.capture.frame_rate = self.capture.frame_rate.clamp(1, 240);
         self.capture.contact_sheet_columns = self.capture.contact_sheet_columns.clamp(1, 16);
         self.appearance.ui_scale = self.appearance.ui_scale.clamp(0.75, 1.50);
@@ -57,12 +59,16 @@ impl EditorSettings {
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct GeneralSettings {
     pub(crate) confirm_unsaved_changes: bool,
+    pub(crate) autosave_enabled: bool,
+    pub(crate) autosave_interval_seconds: u16,
 }
 
 impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
             confirm_unsaved_changes: true,
+            autosave_enabled: true,
+            autosave_interval_seconds: 30,
         }
     }
 }
@@ -255,18 +261,22 @@ impl SettingsPersistence {
 }
 
 fn settings_path() -> PathBuf {
+    config_dir().join("settings.ron")
+}
+
+pub(crate) fn config_dir() -> PathBuf {
     if let Some(path) = std::env::var_os("AESTRA_CONFIG_DIR") {
-        return PathBuf::from(path).join("settings.ron");
+        return PathBuf::from(path);
     }
     #[cfg(target_os = "windows")]
     if let Some(path) = std::env::var_os("APPDATA") {
-        return PathBuf::from(path).join("Aestra").join("settings.ron");
+        return PathBuf::from(path).join("Aestra");
     }
     #[cfg(not(target_os = "windows"))]
     if let Some(path) = std::env::var_os("XDG_CONFIG_HOME") {
-        return PathBuf::from(path).join("aestra").join("settings.ron");
+        return PathBuf::from(path).join("aestra");
     }
-    PathBuf::from(".aestra").join("settings.ron")
+    PathBuf::from(".aestra")
 }
 
 fn write_settings(path: &Path, settings: &EditorSettings) -> io::Result<()> {
@@ -344,7 +354,12 @@ mod tests {
         assert!(EditorSettings::default().preview.show_grid);
         assert!(PreviewSettings::default().show_grid);
         assert!(EditorSettings::default().preview.play_on_open);
+        assert!(EditorSettings::default().general.autosave_enabled);
         assert!(PreviewSettings::default().play_on_open);
+        assert_eq!(
+            EditorSettings::default().general.autosave_interval_seconds,
+            30
+        );
     }
 
     #[test]
@@ -369,6 +384,8 @@ mod tests {
         let path = test_path("round-trip");
         let mut settings = EditorSettings::default();
         settings.preview.show_grid = false;
+        settings.general.autosave_enabled = false;
+        settings.general.autosave_interval_seconds = 1;
         settings.appearance.ui_scale = 8.0;
         settings
             .inspector
@@ -384,6 +401,8 @@ mod tests {
 
         let (loaded, state) = SettingsPersistence::load_from(path.clone());
         assert!(!loaded.preview.show_grid);
+        assert!(!loaded.general.autosave_enabled);
+        assert_eq!(loaded.general.autosave_interval_seconds, 5);
         assert_eq!(loaded.appearance.ui_scale, 1.5);
         assert_eq!(
             loaded

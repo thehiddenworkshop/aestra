@@ -58,8 +58,11 @@ architecture vision; this file is the shorter delivery plan.
   localized built-in names and descriptions. Semantic emitter transforms now flow
   from persisted format-v3 assets through commands, compiler artifacts, CPU/GPU
   execution, compact Inspector controls, and viewport gizmos. Gizmo drags preview
-  temporary transactions and commit one undoable command on release. The remaining
-  M5 work is localization of the other deep authoring workspaces and recovery.
+  temporary transactions and commit one undoable command on release. M5 workflow now
+  includes debounced atomic recovery snapshots, startup restore/discard,
+  stale-snapshot cleanup, save/discard cleanup, and persisted autosave enablement and
+  interval controls. The
+  remaining M5 work is localization of the other deep authoring workspaces.
 - M6 renderer, material, and asset breadth: in progress. Renderers now reference stable,
   reusable material definitions instead of owning presentation state. The first sprite
   material domain compiles blend state, typed softness/tint inputs, explicit particle-color

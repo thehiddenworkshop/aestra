@@ -392,6 +392,33 @@ impl EditorSession {
         Ok(())
     }
 
+    pub fn restore_recovery(&mut self, effect: EffectAsset, source_path: Option<PathBuf>) {
+        let preview = compile_preview(&effect, self.preview_seed).ok();
+        let saved_effect = source_path
+            .as_deref()
+            .and_then(|path| EffectAsset::load_ron(path).ok());
+        self.effect = effect;
+        self.invalidate_effect_checkpoints();
+        self.preview = preview;
+        self.source_path = source_path;
+        self.selection = Selection::for_effect(&self.effect);
+        self.locks = LockState::default();
+        self.diagnostics = self.effect.validation_report();
+        self.last_diff = EffectDiff::default();
+        self.pending_change = None;
+        self.clock.restart();
+        self.playing = false;
+        self.saved_effect = saved_effect;
+        self.update_dirty_state();
+        self.history.clear();
+        self.status = format!("Recovered unsaved {}", self.effect.name);
+        self.ui_revision += 1;
+    }
+
+    pub fn document_revision(&self) -> u64 {
+        self.effect_revision
+    }
+
     pub fn save(&mut self) -> Result<(), AssetError> {
         let Some(path) = self.source_path.clone() else {
             return Ok(());
@@ -1494,6 +1521,30 @@ mod tests {
         assert!(session.dirty);
         session.redo();
         assert!(!session.dirty);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn recovered_document_preserves_source_identity_and_dirty_state() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        let path = std::env::temp_dir().join(format!(
+            "aestra-recovery-source-{}.aestra.ron",
+            std::process::id()
+        ));
+        session.effect.save_ron(&path).unwrap();
+        let mut recovered = session.effect.clone();
+        recovered.name = "Recovered name".into();
+
+        session.restore_recovery(recovered.clone(), Some(path.clone()));
+
+        assert_eq!(session.effect, recovered);
+        assert_eq!(session.source_path.as_deref(), Some(path.as_path()));
+        assert!(session.dirty);
+        assert!(!session.can_undo());
+        assert!(session.status.starts_with("Recovered unsaved"));
         std::fs::remove_file(path).unwrap();
     }
 
