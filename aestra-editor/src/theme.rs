@@ -22,7 +22,6 @@ pub const DOCK_TARGET_HOVER: Color = Color::srgba(0.38, 0.27, 0.70, 0.34);
 pub const DOCK_TARGET_TEXT_IDLE: Color = Color::srgba(0.59, 0.62, 0.70, 0.42);
 pub const DOCK_TARGET_LABEL_IDLE: Color = Color::srgba(0.03, 0.03, 0.06, 0.48);
 pub const DOCK_TARGET_LABEL: Color = Color::srgba(0.07, 0.06, 0.12, 0.92);
-pub const GRID: Color = Color::srgba(0.20, 0.23, 0.31, 0.18);
 pub const BUTTON: Color = Color::srgb(0.085, 0.095, 0.128);
 pub const BUTTON_HOVER: Color = Color::srgb(0.135, 0.143, 0.190);
 pub const SELECTION: Color = Color::srgb(0.100, 0.089, 0.173);

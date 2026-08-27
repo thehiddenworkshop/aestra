@@ -40,9 +40,16 @@ use bevy::{
         keyboard::KeyboardInput,
         mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     },
+    mesh::MeshVertexBufferLayoutRef,
+    pbr::{MaterialPipeline, MaterialPipelineKey},
     picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer, Scroll},
     picking::pointer::PointerButton,
     prelude::*,
+    reflect::TypePath,
+    render::render_resource::{
+        AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
+    },
+    shader::ShaderRef,
     text::FontSource,
     ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition, UiSystems},
     ui_widgets::{
@@ -74,6 +81,9 @@ const MAX_PREVIEW_PARTICLE_LIMIT: usize = 384;
 const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
 const INSPECTOR_TOOLTIP_DELAY: Duration = Duration::from_millis(650);
 const PROFILER_HISTORY_SAMPLES: usize = 96;
+const DEFAULT_PREVIEW_PITCH: f32 = -0.35;
+const PREVIEW_GRID_SHADER_PATH: &str = "shaders/preview_grid.wesl";
+const PREVIEW_GRID_Y: f32 = -0.05;
 
 fn main() {
     let (mut settings, persistence) = SettingsPersistence::load();
@@ -136,6 +146,7 @@ fn main() {
         )
         .add_plugins(FeathersPlugins)
         .add_plugins(TransformGizmoPlugin)
+        .add_plugins(MaterialPlugin::<PreviewGridMaterial>::default())
         .add_plugins(AestraPlugin)
         .init_gizmo_group::<PreviewSceneGizmos>()
         .insert_resource(theme::feathers_theme())
@@ -193,6 +204,7 @@ fn main() {
                     update_history_actions,
                     (
                         navigate_preview_camera,
+                        sync_preview_grid,
                         sync_preview_display_mode,
                         update_preview_display_controls,
                         update_transform_gizmo_controls,
@@ -208,6 +220,7 @@ fn main() {
                     update_playhead,
                     update_layer_selection,
                     update_menu_visibility,
+                    update_grid_menu_check,
                     update_panel_visibility_labels,
                     update_floating_window_titles,
                     clear_finished_dock_drag,
@@ -856,6 +869,9 @@ struct MenuDropdown(MenuKind);
 struct MenuButton;
 
 #[derive(Component)]
+struct GridMenuCheck;
+
+#[derive(Component)]
 struct MenuSurface;
 
 #[derive(Component)]
@@ -904,6 +920,57 @@ struct PreviewCanvas;
 #[derive(Component)]
 struct PreviewRenderCamera;
 
+#[derive(Component)]
+struct PreviewGridPlane;
+
+#[derive(Clone, Copy, Debug, PartialEq, ShaderType)]
+struct PreviewGridUniform {
+    minor_color: Vec4,
+    major_color: Vec4,
+    x_axis_color: Vec4,
+    z_axis_color: Vec4,
+    parameters: Vec4,
+    focus: Vec4,
+}
+
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+struct PreviewGridMaterial {
+    #[uniform(0)]
+    grid: PreviewGridUniform,
+}
+
+impl Material for PreviewGridMaterial {
+    fn fragment_shader() -> ShaderRef {
+        PREVIEW_GRID_SHADER_PATH.into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
+
+    fn depth_bias(&self) -> f32 {
+        100.0
+    }
+
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    fn enable_shadows() -> bool {
+        false
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
+}
+
 #[derive(Resource)]
 struct PreviewCameraController {
     focus: Vec3,
@@ -919,7 +986,7 @@ impl Default for PreviewCameraController {
             focus: Vec3::ZERO,
             distance: 140.0,
             yaw: 0.0,
-            pitch: 0.0,
+            pitch: DEFAULT_PREVIEW_PITCH,
             frame_requested: false,
         }
     }
@@ -930,7 +997,7 @@ impl PreviewCameraController {
         self.focus = position;
         self.distance = 140.0;
         self.yaw = 0.0;
-        self.pitch = 0.0;
+        self.pitch = DEFAULT_PREVIEW_PITCH;
         self.frame_requested = false;
     }
 }
@@ -1111,6 +1178,8 @@ fn setup_editor(
     layout: Res<WorkspaceLayout>,
     editor_resources: SetupUiResources,
     mut rendered: ResMut<RenderedUiRevision>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut grid_materials: ResMut<Assets<PreviewGridMaterial>>,
 ) {
     commands.spawn((
         Camera2d,
@@ -1123,6 +1192,15 @@ fn setup_editor(
         RenderLayers::layer(31),
     ));
     let preview_camera = spawn_preview_camera(&mut commands);
+    commands.spawn((
+        PreviewGridPlane,
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(2.0, 2.0))),
+        MeshMaterial3d(grid_materials.add(PreviewGridMaterial {
+            grid: preview_grid_uniform(140.0, Vec3::ZERO, 1.0),
+        })),
+        Transform::from_xyz(0.0, PREVIEW_GRID_Y, 0.0).with_scale(Vec3::new(2_800.0, 1.0, 2_800.0)),
+        RenderLayers::layer(15),
+    ));
     spawn_preview_effect_player(&mut commands, &session, Transform::IDENTITY);
     commands.spawn((
         EmitterTransformGizmoProxy,
@@ -1167,7 +1245,7 @@ fn spawn_preview_camera(commands: &mut Commands) -> Entity {
                 }),
                 ..default()
             },
-            Transform::from_xyz(0.0, 0.0, 140.0).looking_at(Vec3::ZERO, Vec3::Y),
+            preview_camera_transform(Vec3::ZERO, 140.0, 0.0, DEFAULT_PREVIEW_PITCH),
             RenderLayers::layer(0),
         ))
         .id()
@@ -1298,9 +1376,68 @@ fn navigate_preview_camera(
         return;
     }
 
-    let orbit = Quat::from_rotation_y(controller.yaw) * Quat::from_rotation_x(controller.pitch);
-    camera.translation = controller.focus + orbit * Vec3::Z * controller.distance;
-    camera.look_at(controller.focus, Vec3::Y);
+    **camera = preview_camera_transform(
+        controller.focus,
+        controller.distance,
+        controller.yaw,
+        controller.pitch,
+    );
+}
+
+fn preview_camera_transform(focus: Vec3, distance: f32, yaw: f32, pitch: f32) -> Transform {
+    let orbit = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch);
+    Transform::from_translation(focus + orbit * Vec3::Z * distance).looking_at(focus, Vec3::Y)
+}
+
+fn sync_preview_grid(
+    menu: Res<MenuState>,
+    controller: Res<PreviewCameraController>,
+    camera: Single<&GlobalTransform, With<PreviewRenderCamera>>,
+    grid: Single<
+        (
+            &mut Transform,
+            &mut Visibility,
+            &MeshMaterial3d<PreviewGridMaterial>,
+        ),
+        With<PreviewGridPlane>,
+    >,
+    mut materials: ResMut<Assets<PreviewGridMaterial>>,
+) {
+    let (mut transform, mut visibility, material_handle) = grid.into_inner();
+    *visibility = if menu.show_grid {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+
+    let plane_radius = (controller.distance * 24.0).clamp(200.0, 100_000.0);
+    transform.translation = Vec3::new(controller.focus.x, PREVIEW_GRID_Y, controller.focus.z);
+    transform.scale = Vec3::new(plane_radius, 1.0, plane_radius);
+
+    let view_angle = camera.forward().dot(Vec3::NEG_Y).abs();
+    let angle_fade = ((view_angle - 0.015) / 0.16).clamp(0.0, 1.0);
+    if let Some(mut material) = materials.get_mut(&material_handle.0) {
+        let uniform = preview_grid_uniform(controller.distance, controller.focus, angle_fade);
+        if material.grid != uniform {
+            material.grid = uniform;
+        }
+    }
+}
+
+fn preview_grid_uniform(distance: f32, focus: Vec3, angle_fade: f32) -> PreviewGridUniform {
+    PreviewGridUniform {
+        minor_color: Vec4::new(0.20, 0.22, 0.29, 0.22),
+        major_color: Vec4::new(0.27, 0.30, 0.39, 0.38),
+        x_axis_color: Vec4::new(0.58, 0.20, 0.27, 0.62),
+        z_axis_color: Vec4::new(0.20, 0.40, 0.68, 0.62),
+        parameters: Vec4::new(
+            adaptive_grid_spacing(distance / 18.0),
+            (distance * 8.0).max(90.0),
+            angle_fade,
+            10.0,
+        ),
+        focus: Vec4::new(focus.x, focus.z, 0.0, 0.0),
+    }
 }
 
 fn sync_preview_display_mode(
@@ -1961,23 +2098,11 @@ fn update_shape_gizmo_label(
 
 fn draw_preview_scene_gizmos(
     session: Res<EditorSession>,
-    menu: Res<MenuState>,
     state: Res<ShapeGizmoState>,
     camera: Single<(&Camera, &GlobalTransform), With<PreviewRenderCamera>>,
     players: Query<&GlobalTransform, With<EmitterTransformGizmoProxy>>,
     mut gizmos: Gizmos<PreviewSceneGizmos>,
 ) {
-    if menu.show_grid {
-        gizmos
-            .grid(
-                Isometry3d::from_translation(Vec3::new(0.0, 0.0, -0.05)),
-                UVec2::new(16, 10),
-                Vec2::splat(20.0),
-                theme::GRID.with_alpha(0.7),
-            )
-            .outer_edges();
-    }
-
     let Ok(player) = players.single() else {
         return;
     };
@@ -2008,6 +2133,24 @@ fn draw_preview_scene_gizmos(
             );
         }
     }
+}
+
+fn adaptive_grid_spacing(desired: f32) -> f32 {
+    if !desired.is_finite() || desired <= f32::EPSILON {
+        return 1.0;
+    }
+    let magnitude = 10.0_f32.powf(desired.log10().floor());
+    let normalized = desired / magnitude;
+    let multiplier = if normalized <= 1.0 {
+        1.0
+    } else if normalized <= 2.0 {
+        2.0
+    } else if normalized <= 5.0 {
+        5.0
+    } else {
+        10.0
+    };
+    magnitude * multiplier
 }
 
 fn screen_space_gizmo_radius(
@@ -2287,7 +2430,7 @@ fn spawn_editor_ui(
         .spawn(EditorRoot)
         .apply_scene(ui_shell::editor_root())
         .with_children(|root| {
-            spawn_menu_bar(root, sources.session, layout, sources.localizer);
+            spawn_menu_bar(root, sources.session, menu, layout, sources.localizer);
             spawn_toolbar(root, sources.session, sources.localizer);
             spawn_editor_content(root, menu, workspace, layout, sources);
             spawn_status_bar(root, sources.session, sources.localizer);
@@ -2370,6 +2513,7 @@ fn spawn_editor_content(
 fn spawn_menu_bar(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
+    menu: &MenuState,
     layout: &WorkspaceLayout,
     localizer: &Localizer,
 ) {
@@ -2423,7 +2567,7 @@ fn spawn_menu_bar(
                 ],
                 localizer,
             );
-            spawn_view_menu(bar, layout, localizer);
+            spawn_view_menu(bar, layout, menu.show_grid, localizer);
             spawn_standard_menu(
                 bar,
                 "menu-help",
@@ -2541,6 +2685,7 @@ fn spawn_dropdown(
 fn spawn_view_menu(
     parent: &mut ChildSpawnerCommands,
     layout: &WorkspaceLayout,
+    show_grid: bool,
     localizer: &Localizer,
 ) {
     parent
@@ -2557,8 +2702,15 @@ fn spawn_view_menu(
                     RelativeCursorPosition::default(),
                 ))
                 .with_children(|dropdown| {
+                    spawn_checkable_menu_item(
+                        dropdown,
+                        "view-toggle-grid",
+                        "G",
+                        EditorAction::ToggleGrid,
+                        show_grid,
+                        localizer,
+                    );
                     for (message_id, shortcut, action) in [
-                        ("view-toggle-grid", "G", EditorAction::ToggleGrid),
                         ("view-frame-effect", "F", EditorAction::FramePreview),
                         ("view-restart-preview", "R", EditorAction::Restart),
                         ("view-panels", ">", EditorAction::TogglePanelsSubmenu),
@@ -2662,6 +2814,68 @@ fn spawn_feathers_menu_item<'a>(
             ));
         });
     item
+}
+
+fn spawn_checkable_menu_item(
+    parent: &mut ChildSpawnerCommands,
+    message_id: &'static str,
+    shortcut: &str,
+    action: EditorAction,
+    checked: bool,
+    localizer: &Localizer,
+) {
+    let label = localizer.text(message_id);
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu_item())
+        .insert((
+            Interaction::None,
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.clone()),
+        ))
+        .with_children(|item| {
+            item.spawn((
+                Node {
+                    width: Val::Px(12.0),
+                    height: Val::Px(12.0),
+                    margin: UiRect::right(Val::Px(7.0)),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    border: UiRect::all(Val::Px(1.0)),
+                    border_radius: BorderRadius::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BorderColor::all(theme::TEXT_MUTED),
+                Pickable::IGNORE,
+            ))
+            .with_child((
+                GridMenuCheck,
+                Node {
+                    width: Val::Px(6.0),
+                    height: Val::Px(6.0),
+                    border_radius: BorderRadius::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BackgroundColor(if checked { theme::ACCENT } else { Color::NONE }),
+                Pickable::IGNORE,
+            ));
+            item.spawn((
+                LocalizedText(message_id),
+                Text::new(label),
+                ThemedText,
+                Pickable::IGNORE,
+            ));
+            item.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            item.spawn((
+                Text::new(shortcut),
+                ThemeTextColor(tokens::TEXT_DIM),
+                Pickable::IGNORE,
+            ));
+        });
 }
 
 fn panel_visibility_label(localizer: &Localizer, panel: DockPanel, visible: bool) -> String {
@@ -11983,6 +12197,23 @@ fn update_menu_visibility(
     }
 }
 
+fn update_grid_menu_check(
+    menu: Res<MenuState>,
+    mut checks: Query<&mut BackgroundColor, With<GridMenuCheck>>,
+) {
+    if !menu.is_changed() {
+        return;
+    }
+    let color = if menu.show_grid {
+        theme::ACCENT
+    } else {
+        Color::NONE
+    };
+    for mut background in &mut checks {
+        background.0 = color;
+    }
+}
+
 fn scroll_inspector_to_focus(
     mut commands: Commands,
     mut focus: ResMut<InspectorFocus>,
@@ -12825,6 +13056,15 @@ mod tests {
     }
 
     #[test]
+    fn adaptive_grid_spacing_uses_stable_editor_scale_steps() {
+        assert!((adaptive_grid_spacing(0.04) - 0.05).abs() < 0.000_001);
+        assert_eq!(adaptive_grid_spacing(0.7), 1.0);
+        assert_eq!(adaptive_grid_spacing(14.0), 20.0);
+        assert_eq!(adaptive_grid_spacing(260.0), 500.0);
+        assert_eq!(adaptive_grid_spacing(f32::NAN), 1.0);
+    }
+
+    #[test]
     fn framing_preview_restores_default_camera_around_effect() {
         let mut controller = PreviewCameraController {
             focus: Vec3::new(12.0, -7.0, 3.0),
@@ -12840,8 +13080,16 @@ mod tests {
         assert_eq!(controller.focus, effect_position);
         assert_eq!(controller.distance, 140.0);
         assert_eq!(controller.yaw, 0.0);
-        assert_eq!(controller.pitch, 0.0);
+        assert_eq!(controller.pitch, DEFAULT_PREVIEW_PITCH);
         assert!(!controller.frame_requested);
+    }
+
+    #[test]
+    fn default_preview_camera_views_the_ground_grid_from_above() {
+        let camera = preview_camera_transform(Vec3::ZERO, 140.0, 0.0, DEFAULT_PREVIEW_PITCH);
+
+        assert!(camera.translation.y > 0.0);
+        assert!((camera.forward().dot(Vec3::NEG_Y)).abs() > 0.25);
     }
 
     #[test]
@@ -13736,6 +13984,33 @@ mod tests {
         assert_eq!(
             menu_after_hover(Some(MenuKind::View), MenuKind::View),
             Some(MenuKind::View)
+        );
+    }
+
+    #[test]
+    fn grid_menu_check_tracks_the_persisted_visibility_state() {
+        let mut app = App::new();
+        app.insert_resource(MenuState {
+            show_grid: true,
+            ..default()
+        });
+        let check = app
+            .world_mut()
+            .spawn((GridMenuCheck, BackgroundColor(Color::NONE)))
+            .id();
+        app.add_systems(Update, update_grid_menu_check);
+
+        app.update();
+        assert_eq!(
+            app.world().get::<BackgroundColor>(check).unwrap().0,
+            theme::ACCENT
+        );
+
+        app.world_mut().resource_mut::<MenuState>().show_grid = false;
+        app.update();
+        assert_eq!(
+            app.world().get::<BackgroundColor>(check).unwrap().0,
+            Color::NONE
         );
     }
 

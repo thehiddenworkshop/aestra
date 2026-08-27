@@ -340,6 +340,29 @@ mod tests {
     }
 
     #[test]
+    fn grid_is_enabled_by_default() {
+        assert!(EditorSettings::default().preview.show_grid);
+        assert!(PreviewSettings::default().show_grid);
+    }
+
+    #[test]
+    fn missing_grid_preference_defaults_to_enabled() {
+        let path = test_path("grid-default");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            format!("(version: {SETTINGS_FORMAT_VERSION}, preview: (play_on_open: true))"),
+        )
+        .unwrap();
+
+        let (settings, state) = SettingsPersistence::load_from(path.clone());
+
+        assert!(settings.preview.show_grid);
+        assert!(state.diagnostic().is_none());
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn settings_round_trip_and_normalize() {
         let path = test_path("round-trip");
         let mut settings = EditorSettings::default();
