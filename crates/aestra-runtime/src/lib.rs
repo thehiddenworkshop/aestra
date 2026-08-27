@@ -362,8 +362,23 @@ pub struct ExecutionPlan {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RendererPlan {
     pub source: RendererId,
+    pub material: MaterialId,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MaterialColorPlan {
+    ParticleColor,
+    Value(Expression<[f32; 4]>),
+}
+
+/// One compiled material shared by every renderer that references its stable ID.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledMaterial {
+    pub source: MaterialId,
+    pub name: String,
     pub blend: BlendMode,
-    pub softness: f32,
+    pub softness: Expression<f32>,
+    pub color: MaterialColorPlan,
     pub texture: Option<AssetId>,
     pub uv: UvRect,
 }
@@ -427,6 +442,7 @@ pub struct CompiledEffect {
     pub looping: bool,
     pub seek_mode: SimulationSeekMode,
     pub assets: Vec<CompiledAsset>,
+    pub materials: Vec<CompiledMaterial>,
     pub parameters: Vec<CompiledParameter>,
     pub parameter_slots: BTreeMap<ParameterId, ParameterSlot>,
     pub particle_layout: ParticleLayout,
@@ -434,6 +450,12 @@ pub struct CompiledEffect {
     pub max_particles: usize,
     pub source_map: BTreeMap<ModuleId, IrLocation>,
     pub optimizations: OptimizationStats,
+}
+
+impl CompiledEffect {
+    pub fn material(&self, id: MaterialId) -> Option<&CompiledMaterial> {
+        self.materials.iter().find(|material| material.source == id)
+    }
 }
 
 /// A renderer-neutral particle sample produced by the reference interpreter.

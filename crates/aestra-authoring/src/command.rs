@@ -1,6 +1,7 @@
 use aestra_core::{
-    BlendMode, ColorKey, CurveKey, EffectParameter, Emitter, EmitterId, EventId, EventLink,
-    ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties, Value,
+    ColorKey, CurveKey, EffectParameter, Emitter, EmitterId, EventId, EventLink,
+    MaterialDefinition, MaterialId, ModuleId, ModuleInstance, RendererId, RendererInstance,
+    RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +22,17 @@ pub enum EffectCommand {
     },
     RemoveParameter {
         id: aestra_core::ParameterId,
+    },
+    AddMaterial {
+        material: MaterialDefinition,
+        index: usize,
+    },
+    RemoveMaterial {
+        id: MaterialId,
+    },
+    SetMaterial {
+        id: MaterialId,
+        material: MaterialDefinition,
     },
     AddEmitter {
         emitter: Emitter,
@@ -150,10 +162,10 @@ pub enum EffectCommand {
         renderer: RendererId,
         enabled: bool,
     },
-    SetRendererBlend {
+    SetRendererMaterial {
         emitter: EmitterId,
         renderer: RendererId,
-        blend: BlendMode,
+        material: MaterialId,
     },
     SetRendererProperties {
         emitter: EmitterId,

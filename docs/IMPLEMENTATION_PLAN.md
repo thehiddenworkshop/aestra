@@ -57,6 +57,13 @@ architecture vision; this file is the shorter delivery plan.
   undoable commands, retain in-progress text across live preview frames, and expose
   localized built-in names and descriptions. The remaining M5 work is viewport
   gizmos, localization of the other deep authoring workspaces, and recovery.
+- M6 renderer, material, and asset breadth: in progress. Renderers now reference stable,
+  reusable material definitions instead of owning presentation state. The first sprite
+  material domain compiles blend state, typed softness/tint inputs, explicit particle-color
+  consumption, stable texture assets, and UV regions into backend-independent material
+  plans consumed by native GPU, readback, and CPU presentation. The Assets and Inspector
+  workspaces expose material creation, assignment, and undoable editing. Flipbooks,
+  procedural recipes, mesh/ribbon production paths, and richer material domains remain.
 
 ## 1. Assessment of the current prototype
 

@@ -8,8 +8,8 @@ mod ui_shell;
 use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
     ColorKey, CurveKey, Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterShape,
-    ModuleId, ModuleInstance, ModuleParameters, RendererId, RendererProperties, StageKind,
-    ValidationReport, Value,
+    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, ModuleParameters, RendererId,
+    RendererProperties, StageKind, ValidationReport, Value,
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
@@ -196,6 +196,7 @@ enum EditorAction {
     OpenModulePalette(StackStage),
     CloseModulePalette,
     AddModule(usize),
+    AddSpriteMaterial,
     AddSpriteRenderer,
     AdjustModuleInput {
         module: ModuleId,
@@ -214,6 +215,7 @@ enum EditorAction {
     DuplicateModule(ModuleId),
     DeleteModule(ModuleId),
     ToggleRenderer(RendererId),
+    CycleRendererMaterial(RendererId),
     CycleRendererBlend(RendererId),
     AdjustRendererSoftness(RendererId, i8),
     CycleRendererTexture(RendererId),
@@ -2574,6 +2576,47 @@ fn spawn_asset_browser(
 
             panel_heading(
                 panel,
+                "MATERIALS",
+                &format!("{} REGISTERED", session.effect.materials.len()),
+            );
+            plain_toolbar_button(
+                panel,
+                "+ Add Sprite Material",
+                EditorAction::AddSpriteMaterial,
+                PlainMarker,
+            );
+            for material in &session.effect.materials {
+                panel
+                    .spawn(Node {
+                        min_height: Val::Px(38.0),
+                        margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
+                        padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(2.0),
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new(&material.name),
+                            TextFont {
+                                font_size: FontSize::Px(10.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT),
+                        ));
+                        row.spawn((
+                            Text::new(format!("Sprite  ·  {:?}", material.blend)),
+                            TextFont {
+                                font_size: FontSize::Px(8.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT_FAINT),
+                        ));
+                    });
+            }
+
+            panel_heading(
+                panel,
                 "LAYERS",
                 &format!("{} ACTIVE", session.effect.emitters.len()),
             );
@@ -3496,23 +3539,43 @@ fn spawn_renderer_card(
                 );
                 stack_button(header, "×", EditorAction::DeleteRenderer(renderer.id), 24.0);
             });
-            inspector_action_button(
-                card,
-                &format!("Blend  {:?}", renderer.blend),
-                EditorAction::CycleRendererBlend(renderer.id),
-            );
-            let RendererProperties::Sprite {
-                softness,
-                texture,
-                uv,
-            } = renderer.properties
-            else {
+            let RendererProperties::Sprite = renderer.properties else {
                 spawn_inline_diagnostics(card, diagnostic_path, session);
                 return;
             };
+            let Some(material) = session
+                .effect
+                .materials
+                .iter()
+                .find(|material| material.id == renderer.material)
+            else {
+                spawn_inspector_read_only_control(card, "Material", "Missing");
+                spawn_inline_diagnostics(card, diagnostic_path, session);
+                return;
+            };
+            inspector_action_button(
+                card,
+                &format!("Material  {}", material.name),
+                EditorAction::CycleRendererMaterial(renderer.id),
+            );
+            inspector_action_button(
+                card,
+                &format!("Blend  {:?}", material.blend),
+                EditorAction::CycleRendererBlend(renderer.id),
+            );
+            let MaterialProperties::Sprite {
+                softness,
+                texture,
+                uv,
+                ..
+            } = &material.properties;
+            let softness_label = match softness {
+                MaterialInput::Constant(value) => format!("Softness  {value:.2}"),
+                MaterialInput::Parameter(parameter) => format!("Softness  Parameter {parameter}"),
+            };
             property_stepper(
                 card,
-                &format!("Softness  {softness:.2}"),
+                &softness_label,
                 EditorAction::AdjustRendererSoftness(renderer.id, -1),
                 EditorAction::AdjustRendererSoftness(renderer.id, 1),
             );
@@ -5851,7 +5914,10 @@ fn spawn_compiled_emitter(
             } else {
                 spawn_compiled_stage_heading(section, "RENDERERS", emitter.renderers.len());
                 for (index, renderer) in emitter.renderers.iter().enumerate() {
-                    let texture = renderer
+                    let material = compiled
+                        .material(renderer.material)
+                        .expect("compiled renderer material must exist");
+                    let texture = material
                         .texture
                         .and_then(|id| compiled.assets.iter().find(|asset| asset.source == id))
                         .map_or("procedural".to_string(), |asset| {
@@ -5864,8 +5930,8 @@ fn spawn_compiled_emitter(
                         &format!("R{index:03}"),
                         "SPRITE DRAW",
                         &format!(
-                            "{:?} blend  ·  softness {:.2}  ·  {texture}  ·  {}",
-                            renderer.blend, renderer.softness, renderer.source,
+                            "material {}  ·  {:?} blend  ·  softness {:?}  ·  {texture}  ·  {}",
+                            material.name, material.blend, material.softness, renderer.source,
                         ),
                     );
                 }
@@ -7933,6 +7999,7 @@ fn handle_buttons(
                     EditorAction::Undo => session.undo(),
                     EditorAction::Redo => session.redo(),
                     EditorAction::AddLayer => session.add_layer(),
+                    EditorAction::AddSpriteMaterial => session.add_sprite_material(),
                     EditorAction::DuplicateLayer => {
                         session.duplicate_selected_layer();
                         workspace.complex = None;
@@ -8045,6 +8112,9 @@ fn handle_buttons(
                         }
                     }
                     EditorAction::ToggleRenderer(id) => session.toggle_renderer(id),
+                    EditorAction::CycleRendererMaterial(id) => {
+                        session.cycle_renderer_material(id);
+                    }
                     EditorAction::CycleRendererBlend(id) => session.cycle_renderer_blend(id),
                     EditorAction::AdjustRendererSoftness(id, direction) => {
                         session.adjust_renderer_softness(id, direction as f32 * 0.1);

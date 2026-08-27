@@ -3,8 +3,9 @@ use aestra_authoring::{
     LockState, Selection, TransactionPreview,
 };
 use aestra_bevy::{
-    AssetError, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, ModuleId,
-    ModuleInstance, RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
+    AssetError, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, MaterialDefinition,
+    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance,
+    ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
@@ -843,7 +844,11 @@ impl EditorSession {
 
     pub fn add_sprite_renderer(&mut self) {
         let emitter = self.selected_layer();
-        let renderer = RendererInstance::sprite(BlendMode::Additive, 0.5);
+        let Some(material) = self.effect.materials.first().map(|material| material.id) else {
+            self.status = "This effect has no sprite material".into();
+            return;
+        };
+        let renderer = RendererInstance::sprite(material);
         let renderer_id = renderer.id;
         if self.execute(
             "Added sprite renderer",
@@ -855,6 +860,25 @@ impl EditorSession {
             true,
         ) {
             self.selection.primary = aestra_authoring::SemanticTarget::Renderer(renderer_id);
+        }
+    }
+
+    pub fn add_sprite_material(&mut self) {
+        let material = MaterialDefinition::sprite(
+            format!("Sprite Material {}", self.effect.materials.len() + 1),
+            BlendMode::Additive,
+            0.5,
+        );
+        let material_id = material.id;
+        if self.execute(
+            "Added sprite material",
+            EffectCommand::AddMaterial {
+                material,
+                index: self.effect.materials.len(),
+            },
+            true,
+        ) {
+            self.status = format!("Added sprite material {material_id}");
         }
     }
 
@@ -875,73 +899,80 @@ impl EditorSession {
         );
     }
 
-    pub fn cycle_renderer_blend(&mut self, id: RendererId) {
-        let emitter = self.selected_layer();
-        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
-            self.status = "Renderer no longer exists".into();
-            return;
-        };
-        let blend = match renderer.blend {
-            BlendMode::Alpha => BlendMode::Additive,
-            BlendMode::Additive => BlendMode::Multiply,
-            BlendMode::Multiply => BlendMode::Alpha,
-        };
-        self.execute(
-            "Changed renderer blend",
-            EffectCommand::SetRendererBlend {
-                emitter: emitter.id,
-                renderer: id,
-                blend,
-            },
-            true,
-        );
-    }
-
-    pub fn adjust_renderer_softness(&mut self, id: RendererId, delta: f32) {
-        let emitter = self.selected_layer();
-        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
-            self.status = "Renderer no longer exists".into();
-            return;
-        };
-        let RendererProperties::Sprite {
-            softness,
-            texture,
-            uv,
-        } = renderer.properties
-        else {
-            self.status = "This renderer has no softness property".into();
-            return;
-        };
-        self.execute(
-            "Changed renderer softness",
-            EffectCommand::SetRendererProperties {
-                emitter: emitter.id,
-                renderer: id,
-                properties: RendererProperties::Sprite {
-                    softness: (softness + delta).max(0.0),
-                    texture,
-                    uv,
-                },
-            },
-            true,
-        );
-    }
-
-    pub fn cycle_renderer_texture(&mut self, id: RendererId) {
+    pub fn cycle_renderer_material(&mut self, id: RendererId) {
         let emitter = self.selected_layer();
         let emitter_id = emitter.id;
         let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
             self.status = "Renderer no longer exists".into();
             return;
         };
-        let RendererProperties::Sprite {
-            softness,
-            texture,
-            uv,
-        } = renderer.properties
+        let materials = self
+            .effect
+            .materials
+            .iter()
+            .map(|material| material.id)
+            .collect::<Vec<_>>();
+        let Some(next) = materials
+            .iter()
+            .position(|material| *material == renderer.material)
+            .map(|index| materials[(index + 1) % materials.len()])
+            .or_else(|| materials.first().copied())
         else {
-            self.status = "This renderer cannot use a texture".into();
+            self.status = "This effect has no sprite material".into();
             return;
+        };
+        self.execute(
+            "Changed renderer material",
+            EffectCommand::SetRendererMaterial {
+                emitter: emitter_id,
+                renderer: id,
+                material: next,
+            },
+            true,
+        );
+    }
+
+    pub fn cycle_renderer_blend(&mut self, id: RendererId) {
+        let Some(mut material) = self.renderer_material(id).cloned() else {
+            self.status = "Renderer material no longer exists".into();
+            return;
+        };
+        material.blend = match material.blend {
+            BlendMode::Alpha => BlendMode::Additive,
+            BlendMode::Additive => BlendMode::Multiply,
+            BlendMode::Multiply => BlendMode::Alpha,
+        };
+        self.update_material("Changed material blend", material);
+    }
+
+    pub fn adjust_renderer_softness(&mut self, id: RendererId, delta: f32) {
+        let Some(mut material) = self.renderer_material(id).cloned() else {
+            self.status = "Renderer material no longer exists".into();
+            return;
+        };
+        match &mut material.properties {
+            MaterialProperties::Sprite {
+                softness: MaterialInput::Constant(softness),
+                ..
+            } => *softness = (*softness + delta).max(0.0),
+            MaterialProperties::Sprite {
+                softness: MaterialInput::Parameter(_),
+                ..
+            } => {
+                self.status = "Material softness is bound to an effect parameter".into();
+                return;
+            }
+        }
+        self.update_material("Changed material softness", material);
+    }
+
+    pub fn cycle_renderer_texture(&mut self, id: RendererId) {
+        let Some(mut material) = self.renderer_material(id).cloned() else {
+            self.status = "Renderer material no longer exists".into();
+            return;
+        };
+        let current = match &material.properties {
+            MaterialProperties::Sprite { texture, .. } => *texture,
         };
         let textures = self
             .effect
@@ -952,79 +983,44 @@ impl EditorSession {
             .collect::<Vec<_>>();
         let Some(next) = textures
             .iter()
-            .position(|asset| Some(*asset) == texture)
+            .position(|asset| Some(*asset) == current)
             .map(|index| textures[(index + 1) % textures.len()])
             .or_else(|| textures.first().copied())
         else {
             self.status = "This effect has no registered texture assets".into();
             return;
         };
-        self.execute(
-            "Assigned renderer texture",
-            EffectCommand::SetRendererProperties {
-                emitter: emitter_id,
-                renderer: id,
-                properties: RendererProperties::Sprite {
-                    softness,
-                    texture: Some(next),
-                    uv,
-                },
-            },
-            true,
-        );
+        match &mut material.properties {
+            MaterialProperties::Sprite { texture, .. } => {
+                *texture = Some(next);
+            }
+        }
+        self.update_material("Assigned material texture", material);
     }
 
     pub fn clear_renderer_texture(&mut self, id: RendererId) {
-        let emitter = self.selected_layer();
-        let emitter_id = emitter.id;
-        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
-            self.status = "Renderer no longer exists".into();
+        let Some(mut material) = self.renderer_material(id).cloned() else {
+            self.status = "Renderer material no longer exists".into();
             return;
         };
-        let RendererProperties::Sprite {
-            softness,
-            texture,
-            uv,
-        } = renderer.properties
-        else {
-            self.status = "This renderer cannot use a texture".into();
-            return;
-        };
-        if texture.is_none() {
-            self.status = "Renderer already uses the procedural sprite".into();
-            return;
+        match &mut material.properties {
+            MaterialProperties::Sprite { texture, .. } => {
+                if texture.is_none() {
+                    self.status = "Material already uses the procedural sprite".into();
+                    return;
+                }
+                *texture = None;
+            }
         }
-        self.execute(
-            "Cleared renderer texture",
-            EffectCommand::SetRendererProperties {
-                emitter: emitter_id,
-                renderer: id,
-                properties: RendererProperties::Sprite {
-                    softness,
-                    texture: None,
-                    uv,
-                },
-            },
-            true,
-        );
+        self.update_material("Cleared material texture", material);
     }
 
     pub fn adjust_renderer_uv(&mut self, id: RendererId, component: u8, delta: f32) {
-        let emitter = self.selected_layer();
-        let emitter_id = emitter.id;
-        let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
-            self.status = "Renderer no longer exists".into();
+        let Some(mut material) = self.renderer_material(id).cloned() else {
+            self.status = "Renderer material no longer exists".into();
             return;
         };
-        let RendererProperties::Sprite {
-            softness,
-            texture,
-            mut uv,
-        } = renderer.properties
-        else {
-            self.status = "This renderer has no UV bounds".into();
-            return;
-        };
+        let MaterialProperties::Sprite { uv, .. } = &mut material.properties;
         match component {
             0 => uv.min[0] = (uv.min[0] + delta).clamp(0.0, uv.max[0] - 0.01),
             1 => uv.min[1] = (uv.min[1] + delta).clamp(0.0, uv.max[1] - 0.01),
@@ -1035,16 +1031,27 @@ impl EditorSession {
                 return;
             }
         }
+        self.update_material("Changed material UV bounds", material);
+    }
+
+    fn renderer_material(&self, id: RendererId) -> Option<&MaterialDefinition> {
+        let renderer = self
+            .selected_layer()
+            .renderers
+            .iter()
+            .find(|renderer| renderer.id == id)?;
+        self.effect
+            .materials
+            .iter()
+            .find(|material| material.id == renderer.material)
+    }
+
+    fn update_material(&mut self, label: &str, material: MaterialDefinition) {
         self.execute(
-            "Changed renderer UV bounds",
-            EffectCommand::SetRendererProperties {
-                emitter: emitter_id,
-                renderer: id,
-                properties: RendererProperties::Sprite {
-                    softness,
-                    texture,
-                    uv,
-                },
+            label,
+            EffectCommand::SetMaterial {
+                id: material.id,
+                material,
             },
             true,
         );
@@ -1298,56 +1305,86 @@ mod tests {
             "ember_sigil.aestra.ron",
         );
         let renderer = session.effect.emitters[0].renderers[0].id;
+        let material = session.effect.emitters[0].renderers[0].material;
 
         session.clear_renderer_texture(renderer);
-        let RendererProperties::Sprite { texture, .. } =
-            session.effect.emitters[0].renderers[0].properties
-        else {
-            panic!("example renderer must be a sprite");
-        };
+        let MaterialProperties::Sprite { texture, .. } = &session
+            .effect
+            .materials
+            .iter()
+            .find(|candidate| candidate.id == material)
+            .unwrap()
+            .properties;
         assert!(texture.is_none());
 
         session.cycle_renderer_texture(renderer);
-        let RendererProperties::Sprite { texture, .. } =
-            session.effect.emitters[0].renderers[0].properties
-        else {
-            panic!("example renderer must be a sprite");
-        };
-        assert!(texture.is_some());
-        assert_eq!(
-            session.preview.as_ref().unwrap().effect().emitters[0].renderers[0].texture,
-            texture
-        );
+        let compiled = session.preview.as_ref().unwrap().effect();
+        assert!(compiled.material(material).unwrap().texture.is_some());
 
         session.undo();
-        let RendererProperties::Sprite { texture, .. } =
-            session.effect.emitters[0].renderers[0].properties
-        else {
-            panic!("example renderer must be a sprite");
-        };
+        let MaterialProperties::Sprite { texture, .. } = &session
+            .effect
+            .materials
+            .iter()
+            .find(|candidate| candidate.id == material)
+            .unwrap()
+            .properties;
         assert!(texture.is_none());
         session.undo();
-        let RendererProperties::Sprite { texture, .. } =
-            session.effect.emitters[0].renderers[0].properties
-        else {
-            panic!("example renderer must be a sprite");
-        };
+        let MaterialProperties::Sprite { texture, .. } = &session
+            .effect
+            .materials
+            .iter()
+            .find(|candidate| candidate.id == material)
+            .unwrap()
+            .properties;
         assert!(texture.is_some());
 
         session.adjust_renderer_uv(renderer, 0, 0.1);
-        let RendererProperties::Sprite { uv, .. } =
-            session.effect.emitters[0].renderers[0].properties
-        else {
-            panic!("example renderer must be a sprite");
-        };
+        let MaterialProperties::Sprite { uv, .. } = &session
+            .effect
+            .materials
+            .iter()
+            .find(|candidate| candidate.id == material)
+            .unwrap()
+            .properties;
         assert_eq!(uv.min[0], 0.1);
         session.undo();
-        let RendererProperties::Sprite { uv, .. } =
-            session.effect.emitters[0].renderers[0].properties
-        else {
-            panic!("example renderer must be a sprite");
-        };
+        let MaterialProperties::Sprite { uv, .. } = &session
+            .effect
+            .materials
+            .iter()
+            .find(|candidate| candidate.id == material)
+            .unwrap()
+            .properties;
         assert_eq!(uv.min[0], 0.0);
+    }
+
+    #[test]
+    fn material_creation_and_assignment_are_undoable() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        let renderer = session.effect.emitters[0].renderers[0].id;
+        let original_material = session.effect.emitters[0].renderers[0].material;
+        let original_count = session.effect.materials.len();
+
+        session.add_sprite_material();
+        assert_eq!(session.effect.materials.len(), original_count + 1);
+        session.cycle_renderer_material(renderer);
+        assert_ne!(
+            session.effect.emitters[0].renderers[0].material,
+            original_material
+        );
+
+        session.undo();
+        assert_eq!(
+            session.effect.emitters[0].renderers[0].material,
+            original_material
+        );
+        session.undo();
+        assert_eq!(session.effect.materials.len(), original_count);
     }
 
     #[test]

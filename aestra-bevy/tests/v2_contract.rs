@@ -46,7 +46,13 @@ fn bundled_textured_effect_compiles_with_multiple_renderer_paths() {
 
     assert_eq!(compiled.assets.len(), 1);
     assert_eq!(compiled.emitters[0].renderers.len(), 1);
-    assert!(compiled.emitters[0].renderers[0].texture.is_some());
+    assert!(
+        compiled
+            .material(compiled.emitters[0].renderers[0].material)
+            .unwrap()
+            .texture
+            .is_some()
+    );
     let profile = EffectProfile::from_compiled(&compiled);
     assert_eq!(profile.texture_sample_count, ProfileValue::Estimated(1));
     assert_eq!(profile.texture_memory_bytes, ProfileValue::Unavailable);
@@ -68,12 +74,12 @@ fn bundled_v2_asset_has_stable_pretty_serialization() {
 
     assert_eq!(
         serialized.len(),
-        21_528,
+        22_542,
         "update only for an intentional format change"
     );
     assert_eq!(
         fnv1a64(serialized.as_bytes()),
-        0x25ea_3b19_3d2e_5351,
+        0xf24a_bb2d_d978_81e3,
         "update only for an intentional format change"
     );
     assert_eq!(

@@ -5,14 +5,15 @@ pub use aestra_core::ValueType;
 use aestra_core::{
     ColorKey, Curve, CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
     EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
-    MODULE_MOTION, MODULE_SHAPE, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
-    RENDERER_SPRITE, RendererProperties, ScalarRange, StageKind, ValidationReport,
+    MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProperties, ModuleInstance,
+    ModuleParameters, ModuleTypeId, ParameterId, RENDERER_SPRITE, RendererProperties, ScalarRange,
+    SpriteColorSource, StageKind, ValidationReport,
 };
 use aestra_runtime::{
     CompiledAsset, CompiledCurve, CompiledEffect, CompiledEmitter, CompiledGradient,
-    CompiledParameter, ExecutionPlan, Expression, Instruction, IrLocation, OptimizationStats,
-    ParameterSlot, ParticleAttribute, ParticleLayout, RendererPlan, RuntimeParameterValue,
-    RuntimeStage, RuntimeValue, SimulationSeekMode,
+    CompiledMaterial, CompiledParameter, ExecutionPlan, Expression, Instruction, IrLocation,
+    MaterialColorPlan, OptimizationStats, ParameterSlot, ParticleAttribute, ParticleLayout,
+    RendererPlan, RuntimeParameterValue, RuntimeStage, RuntimeValue, SimulationSeekMode,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -194,13 +195,22 @@ impl EffectCompiler {
             .iter()
             .map(|parameter| (parameter.id, parameter))
             .collect::<BTreeMap<_, _>>();
-        let referenced_parameters = asset
+        let mut referenced_parameters = asset
             .emitters
             .iter()
             .flat_map(|emitter| emitter.modules.iter())
             .filter(|module| module.enabled)
             .flat_map(|module| module.bindings.values().copied())
             .collect::<BTreeSet<_>>();
+        for material in &asset.materials {
+            let MaterialProperties::Sprite {
+                softness, color, ..
+            } = &material.properties;
+            collect_material_parameter(softness, &mut referenced_parameters);
+            if let SpriteColorSource::Value(input) = color {
+                collect_material_parameter(input, &mut referenced_parameters);
+            }
+        }
         let mut parameters = Vec::new();
         let mut parameter_slots = BTreeMap::new();
         for parameter in asset
@@ -229,6 +239,42 @@ impl EffectCompiler {
         let mut discovered_attributes = BTreeSet::new();
         let mut emitters = Vec::with_capacity(asset.emitters.len());
         let mut optimizations = OptimizationStats::default();
+        let materials = asset
+            .materials
+            .iter()
+            .map(|material| {
+                let MaterialProperties::Sprite {
+                    softness,
+                    color,
+                    texture,
+                    uv,
+                } = &material.properties;
+                let softness = material_expression(softness, &context);
+                let color = match color {
+                    SpriteColorSource::ParticleColor => MaterialColorPlan::ParticleColor,
+                    SpriteColorSource::Value(input) => {
+                        MaterialColorPlan::Value(material_expression(input, &context))
+                    }
+                };
+                CompiledMaterial {
+                    source: material.id,
+                    name: material.name.clone(),
+                    blend: material.blend,
+                    softness,
+                    color,
+                    texture: *texture,
+                    uv: *uv,
+                }
+            })
+            .collect::<Vec<_>>();
+        for material in &materials {
+            let mut counts = expression_count(&material.softness);
+            if let MaterialColorPlan::Value(color) = &material.color {
+                counts = add_expression_counts(counts, expression_count(color));
+            }
+            optimizations.constant_expressions += counts.0;
+            optimizations.runtime_parameter_reads += counts.1;
+        }
 
         for (emitter_index, emitter) in asset.emitters.iter().enumerate() {
             let liveness = self.analyze_liveness(&emitter.modules);
@@ -272,16 +318,9 @@ impl EffectCompiler {
                 .iter()
                 .filter(|renderer| renderer.enabled)
                 .map(|renderer| match renderer.properties {
-                    RendererProperties::Sprite {
-                        softness,
-                        texture,
-                        uv,
-                    } => RendererPlan {
+                    RendererProperties::Sprite => RendererPlan {
                         source: renderer.id,
-                        blend: renderer.blend,
-                        softness,
-                        texture,
-                        uv,
+                        material: renderer.material,
                     },
                     _ => unreachable!("compiler validation rejects unsupported renderers"),
                 })
@@ -317,6 +356,7 @@ impl EffectCompiler {
                     path: entry.path.clone(),
                 })
                 .collect(),
+            materials,
             parameters,
             parameter_slots,
             particle_layout: ParticleLayout {
@@ -439,7 +479,7 @@ impl EffectCompiler {
             for (renderer_index, renderer) in emitter.renderers.iter().enumerate() {
                 if renderer.enabled
                     && (renderer.renderer_type.0 != RENDERER_SPRITE
-                        || !matches!(renderer.properties, RendererProperties::Sprite { .. }))
+                        || !matches!(renderer.properties, RendererProperties::Sprite))
                 {
                     push_unique(
                         report,
@@ -655,6 +695,37 @@ where
     )
 }
 
+fn collect_material_parameter<T>(input: &MaterialInput<T>, referenced: &mut BTreeSet<ParameterId>) {
+    if let MaterialInput::Parameter(parameter) = input {
+        referenced.insert(*parameter);
+    }
+}
+
+fn material_expression<T>(input: &MaterialInput<T>, context: &LoweringContext<'_>) -> Expression<T>
+where
+    T: RuntimeParameterValue + Clone,
+{
+    match input {
+        MaterialInput::Constant(value) => Expression::constant(value.clone()),
+        MaterialInput::Parameter(parameter_id) => {
+            if let Some(slot) = context.slots.get(parameter_id) {
+                return Expression::parameter(*slot);
+            }
+            let parameter = context
+                .parameters
+                .get(parameter_id)
+                .expect("validated material binding references an existing parameter");
+            let runtime = RuntimeValue::compile(&parameter.default)
+                .expect("validated material parameter has a concrete default");
+            Expression::constant(
+                T::from_runtime(&runtime)
+                    .expect("validated material binding type matches its input")
+                    .clone(),
+            )
+        }
+    }
+}
+
 fn expression_counts(instruction: &Instruction) -> (usize, usize) {
     fn one<T>(expression: &Expression<T>) -> (usize, usize) {
         match expression {
@@ -701,6 +772,17 @@ fn expression_counts(instruction: &Instruction) -> (usize, usize) {
             ..
         } => sum([one(size), one(opacity), one(color)]),
     }
+}
+
+fn expression_count<T>(expression: &Expression<T>) -> (usize, usize) {
+    match expression {
+        Expression::Constant(_) => (1, 0),
+        Expression::Parameter(_) => (0, 1),
+    }
+}
+
+fn add_expression_counts(left: (usize, usize), right: (usize, usize)) -> (usize, usize) {
+    (left.0 + right.0, left.1 + right.1)
 }
 
 fn parameters_match(module: &ModuleInstance) -> bool {

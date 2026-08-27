@@ -102,6 +102,15 @@ impl EffectDiff {
                 after.parameters.len(),
             );
         }
+        if before.materials != after.materials {
+            modified(
+                &mut changes,
+                SemanticTarget::Effect(after.id),
+                "effect.materials",
+                format!("{:?}", before.materials),
+                format!("{:?}", after.materials),
+            );
+        }
         if before.events != after.events {
             modified(
                 &mut changes,
@@ -237,8 +246,14 @@ fn diff_renderers(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticC
                 kind: ChangeKind::Modified,
                 target,
                 path: format!("renderer.{}", renderer.renderer_type.0),
-                before: Some(format!("{:?}", renderer.properties)),
-                after: Some(format!("{:?}", after_renderer.properties)),
+                before: Some(format!(
+                    "material={} properties={:?}",
+                    renderer.material, renderer.properties
+                )),
+                after: Some(format!(
+                    "material={} properties={:?}",
+                    after_renderer.material, after_renderer.properties
+                )),
             });
         }
     }

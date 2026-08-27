@@ -3,8 +3,9 @@ use aestra_authoring::{
     Selection, SemanticTarget,
 };
 use aestra_core::{
-    ColorKey, CurveKey, EffectAsset, EffectParameter, Emitter, EventId, EventLink, EventTrigger,
-    MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, ParameterId, ScalarRange, Value,
+    BlendMode, ColorKey, CurveKey, EffectAsset, EffectParameter, Emitter, EventId, EventLink,
+    EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, ParameterId, ScalarRange,
+    Value,
 };
 
 fn test_effect() -> EffectAsset {
@@ -37,6 +38,54 @@ fn semantic_parameter_command_executes_without_ui() {
     assert_eq!(effect.emitters[0].spawn_rate(), 72.0);
     assert!(!outcome.diff.is_empty());
     assert_eq!(outcome.inverse.commands.len(), 1);
+}
+
+#[test]
+fn material_edits_use_transactions_and_undo() {
+    let mut effect = test_effect();
+    let material_id = effect.materials[0].id;
+    let mut replacement = effect.materials[0].clone();
+    replacement.blend = BlendMode::Multiply;
+    let transaction = EffectTransaction::single(
+        "Change material blend",
+        EffectCommand::SetMaterial {
+            id: material_id,
+            material: replacement,
+        },
+    );
+
+    let outcome = CommandExecutor::execute(&mut effect, &LockState::default(), &transaction)
+        .expect("material command must execute");
+    assert_eq!(effect.materials[0].blend, BlendMode::Multiply);
+    assert!(
+        outcome
+            .diff
+            .changes
+            .iter()
+            .any(|change| change.path == "effect.materials")
+    );
+
+    CommandExecutor::execute(&mut effect, &LockState::default(), &outcome.inverse).unwrap();
+    assert_eq!(effect.materials[0].blend, BlendMode::Additive);
+}
+
+#[test]
+fn referenced_materials_cannot_be_removed() {
+    let mut effect = test_effect();
+    let before = effect.clone();
+    let material = effect.materials[0].id;
+    let error = CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::single(
+            "Remove material",
+            EffectCommand::RemoveMaterial { id: material },
+        ),
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, CommandError::Validation(_)));
+    assert_eq!(effect, before);
 }
 
 #[test]

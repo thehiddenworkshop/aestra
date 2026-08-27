@@ -109,6 +109,9 @@ unsupported measurements such as GPU time remain explicitly unavailable.
 Texture paths in an effect's asset registry are relative to the consuming Bevy
 application's `AssetPlugin` root. Missing files use a visible checkerboard fallback
 and are reported through the effect profile instead of silently removing the draw.
+Renderers reference stable material IDs; sprite materials own blend state, softness,
+particle-color or typed value bindings, texture assets, and normalized UV regions.
+Shared materials compile once and can be reused by multiple renderers.
 
 ## Development
 

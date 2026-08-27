@@ -1,6 +1,6 @@
 use aestra_core::{
     AssetDefinition, DiagnosticCode, EffectAsset, EffectParameter, Emitter, EmitterId,
-    MODULE_EMISSION, ParameterId, RendererInstance, RendererProperties, ScalarRange, Value,
+    MODULE_EMISSION, MaterialProperties, ParameterId, RendererInstance, ScalarRange, Value,
 };
 
 #[test]
@@ -85,7 +85,7 @@ fn one_emitter_supports_multiple_renderers() {
     let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
     emitter
         .renderers
-        .push(RendererInstance::sprite(aestra_core::BlendMode::Alpha, 0.2));
+        .push(RendererInstance::sprite(effect.materials[0].id));
     effect.emitters.push(emitter);
 
     effect.validate().unwrap();
@@ -97,15 +97,12 @@ fn texture_assets_are_stable_validated_renderer_references() {
     let mut effect = EffectAsset::new("Textured", 1.0);
     let texture = AssetDefinition::texture("Spark", "textures/spark.png");
     let texture_id = texture.id;
-    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
-    let RendererProperties::Sprite {
-        texture: renderer_texture,
+    let emitter = Emitter::basic_sprite("Emitter", 1.0);
+    let MaterialProperties::Sprite {
+        texture: material_texture,
         ..
-    } = &mut emitter.renderers[0].properties
-    else {
-        panic!("basic renderer must be a sprite");
-    };
-    *renderer_texture = Some(texture_id);
+    } = &mut effect.materials[0].properties;
+    *material_texture = Some(texture_id);
     effect.assets.push(texture);
     effect.emitters.push(emitter);
 

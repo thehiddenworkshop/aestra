@@ -15,6 +15,8 @@ pub const MODULE_APPEARANCE: &str = "aestra.update.appearance";
 pub const RENDERER_SPRITE: &str = "aestra.renderer.sprite";
 pub const RENDERER_RIBBON: &str = "aestra.renderer.ribbon";
 pub const RENDERER_MESH: &str = "aestra.renderer.mesh";
+pub const DEFAULT_SPRITE_MATERIAL_ID: MaterialId =
+    MaterialId::from_u128(0xa357_4a00_0000_4000_8000_0000_0000_0001);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EffectAsset {
@@ -25,6 +27,8 @@ pub struct EffectAsset {
     pub looping: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<AssetDefinition>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub materials: Vec<MaterialDefinition>,
     #[serde(default)]
     pub parameters: Vec<EffectParameter>,
     #[serde(default)]
@@ -46,6 +50,7 @@ impl EffectAsset {
             duration,
             looping: true,
             assets: Vec::new(),
+            materials: vec![MaterialDefinition::default_sprite()],
             parameters: Vec::new(),
             emitters: Vec::new(),
             events: Vec::new(),
@@ -99,6 +104,13 @@ impl EffectAsset {
                 &mut semantic_ids,
             );
         }
+        for (index, material) in self.materials.iter().enumerate() {
+            material.validate(
+                &format!("effect.materials[{index}]"),
+                &mut report,
+                &mut semantic_ids,
+            );
+        }
         for (index, parameter) in self.parameters.iter().enumerate() {
             let path = format!("effect.parameters[{index}]");
             register_id(
@@ -125,28 +137,32 @@ impl EffectAsset {
             let emitter_path = format!("effect.emitters[{index}]");
             emitter.validate(&emitter_path, self.duration, &mut report, &mut semantic_ids);
             for (renderer_index, renderer) in emitter.renderers.iter().enumerate() {
-                let RendererProperties::Sprite {
-                    texture: Some(texture),
-                    ..
-                } = renderer.properties
-                else {
-                    continue;
-                };
-                let path = format!("{emitter_path}.renderers[{renderer_index}].properties.texture");
-                match self.assets.iter().find(|asset| asset.id == texture) {
-                    Some(asset) if asset.kind == AssetKind::Texture => {}
-                    Some(asset) => report.push(Diagnostic::error(
+                let path = format!("{emitter_path}.renderers[{renderer_index}].material");
+                match self
+                    .materials
+                    .iter()
+                    .find(|material| material.id == renderer.material)
+                {
+                    Some(material)
+                        if matches!(
+                            (&renderer.properties, &material.properties),
+                            (
+                                RendererProperties::Sprite,
+                                MaterialProperties::Sprite { .. }
+                            )
+                        ) => {}
+                    Some(material) => report.push(Diagnostic::error(
                         DiagnosticCode::InvalidReference,
                         path,
                         format!(
-                            "sprite texture references '{}' which is registered as {:?}",
-                            asset.name, asset.kind
+                            "renderer type '{}' is incompatible with material '{}'",
+                            renderer.renderer_type.0, material.name
                         ),
                     )),
                     None => report.push(Diagnostic::error(
                         DiagnosticCode::InvalidReference,
                         path,
-                        format!("sprite texture references missing asset {texture}"),
+                        format!("renderer references missing material {}", renderer.material),
                     )),
                 }
             }
@@ -213,7 +229,80 @@ impl EffectAsset {
                 ));
             }
         }
+        for (material_index, material) in self.materials.iter().enumerate() {
+            let path = format!("effect.materials[{material_index}].properties");
+            let MaterialProperties::Sprite {
+                softness,
+                color,
+                texture,
+                ..
+            } = &material.properties;
+            self.validate_material_input(
+                softness,
+                ValueType::Scalar,
+                &format!("{path}.softness"),
+                &mut report,
+            );
+            if let SpriteColorSource::Value(input) = color {
+                self.validate_material_input(
+                    input,
+                    ValueType::Vec4,
+                    &format!("{path}.color"),
+                    &mut report,
+                );
+            }
+            if let Some(input) = texture {
+                match self.assets.iter().find(|asset| asset.id == *input) {
+                    Some(asset) if asset.kind == AssetKind::Texture => {}
+                    Some(asset) => report.push(Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        format!("{path}.texture"),
+                        format!(
+                            "material texture references '{}' which is registered as {:?}",
+                            asset.name, asset.kind
+                        ),
+                    )),
+                    None => report.push(Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        format!("{path}.texture"),
+                        format!("material texture references missing asset {input}"),
+                    )),
+                }
+            }
+        }
         report
+    }
+
+    fn validate_material_input<T>(
+        &self,
+        input: &MaterialInput<T>,
+        expected: ValueType,
+        path: &str,
+        report: &mut ValidationReport,
+    ) {
+        let MaterialInput::Parameter(parameter_id) = input else {
+            return;
+        };
+        let Some(parameter) = self
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == *parameter_id)
+        else {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidReference,
+                path,
+                format!("material input references missing parameter {parameter_id}"),
+            ));
+            return;
+        };
+        let actual = parameter.default.value_type();
+        if actual != expected {
+            report.push(Diagnostic::error(
+                DiagnosticCode::ParameterTypeMismatch,
+                path,
+                format!("material input expects {expected:?}, found {actual:?}"),
+            ));
+        }
     }
 
     pub fn validate(&self) -> Result<(), ValidationReport> {
@@ -326,7 +415,7 @@ impl Emitter {
                     ]),
                 ),
             ],
-            renderers: vec![RendererInstance::sprite(BlendMode::Additive, 0.5)],
+            renderers: vec![RendererInstance::sprite(DEFAULT_SPRITE_MATERIAL_ID)],
         }
     }
 
@@ -988,7 +1077,6 @@ pub enum AssetKind {
     Texture,
     Mesh,
     Flipbook,
-    Material,
 }
 
 /// A stable asset identity and its project-relative source path.
@@ -1082,34 +1170,74 @@ impl Default for UvRect {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(transparent)]
-pub struct RendererTypeId(pub String);
+/// A constant material input or a typed reference to an exposed effect parameter.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MaterialInput<T> {
+    Constant(T),
+    Parameter(ParameterId),
+}
 
-impl RendererTypeId {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+impl<T> MaterialInput<T> {
+    pub fn constant(&self) -> Option<&T> {
+        match self {
+            Self::Constant(value) => Some(value),
+            Self::Parameter(_) => None,
+        }
     }
 }
 
+/// Controls whether the sprite material consumes the simulated particle color or
+/// a typed constant/parameter value.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RendererInstance {
-    pub id: RendererId,
-    pub renderer_type: RendererTypeId,
-    pub enabled: bool,
-    pub blend: BlendMode,
-    pub properties: RendererProperties,
+pub enum SpriteColorSource {
+    ParticleColor,
+    Value(MaterialInput<[f32; 4]>),
 }
 
-impl RendererInstance {
-    pub fn sprite(blend: BlendMode, softness: f32) -> Self {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MaterialProperties {
+    Sprite {
+        softness: MaterialInput<f32>,
+        color: SpriteColorSource,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        texture: Option<AssetId>,
+        #[serde(default, skip_serializing_if = "UvRect::is_full")]
+        uv: UvRect,
+    },
+}
+
+/// An engine-independent material asset referenced by renderers through a stable ID.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MaterialDefinition {
+    pub id: MaterialId,
+    pub name: String,
+    pub blend: BlendMode,
+    pub properties: MaterialProperties,
+}
+
+impl MaterialDefinition {
+    pub fn sprite(name: impl Into<String>, blend: BlendMode, softness: f32) -> Self {
         Self {
-            id: RendererId::new(),
-            renderer_type: RendererTypeId::new(RENDERER_SPRITE),
-            enabled: true,
+            id: MaterialId::new(),
+            name: name.into(),
             blend,
-            properties: RendererProperties::Sprite {
-                softness,
+            properties: MaterialProperties::Sprite {
+                softness: MaterialInput::Constant(softness),
+                color: SpriteColorSource::ParticleColor,
+                texture: None,
+                uv: UvRect::FULL,
+            },
+        }
+    }
+
+    pub fn default_sprite() -> Self {
+        Self {
+            id: DEFAULT_SPRITE_MATERIAL_ID,
+            name: "Default Sprite".into(),
+            blend: BlendMode::Additive,
+            properties: MaterialProperties::Sprite {
+                softness: MaterialInput::Constant(0.5),
+                color: SpriteColorSource::ParticleColor,
                 texture: None,
                 uv: UvRect::FULL,
             },
@@ -1128,31 +1256,106 @@ impl RendererInstance {
             self.id.as_uuid().as_u128(),
             format!("{path}.id"),
         );
+        if self.name.trim().is_empty() {
+            invalid_value(
+                report,
+                &format!("{path}.name"),
+                "material name cannot be empty",
+            );
+        }
+        let MaterialProperties::Sprite {
+            softness,
+            color,
+            texture,
+            uv,
+        } = &self.properties;
+        if softness
+            .constant()
+            .is_some_and(|value| !value.is_finite() || *value < 0.0)
+        {
+            invalid_value(
+                report,
+                &format!("{path}.properties.softness"),
+                "sprite material softness must be finite and non-negative",
+            );
+        }
+        if let SpriteColorSource::Value(MaterialInput::Constant(value)) = color
+            && value.iter().any(|component| !component.is_finite())
+        {
+            invalid_value(
+                report,
+                &format!("{path}.properties.color"),
+                "sprite material color must be finite",
+            );
+        }
+        if texture.is_some_and(AssetId::is_nil) {
+            invalid_value(
+                report,
+                &format!("{path}.properties.texture"),
+                "sprite material texture asset cannot be nil",
+            );
+        }
+        if !uv.is_valid() {
+            invalid_value(
+                report,
+                &format!("{path}.properties.uv"),
+                "sprite material UV bounds must be finite, normalized, and have positive area",
+            );
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(transparent)]
+pub struct RendererTypeId(pub String);
+
+impl RendererTypeId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RendererInstance {
+    pub id: RendererId,
+    pub renderer_type: RendererTypeId,
+    pub enabled: bool,
+    pub material: MaterialId,
+    pub properties: RendererProperties,
+}
+
+impl RendererInstance {
+    pub fn sprite(material: MaterialId) -> Self {
+        Self {
+            id: RendererId::new(),
+            renderer_type: RendererTypeId::new(RENDERER_SPRITE),
+            enabled: true,
+            material,
+            properties: RendererProperties::Sprite,
+        }
+    }
+
+    fn validate(
+        &self,
+        path: &str,
+        report: &mut ValidationReport,
+        semantic_ids: &mut BTreeMap<u128, String>,
+    ) {
+        register_id(
+            report,
+            semantic_ids,
+            self.id.as_uuid().as_u128(),
+            format!("{path}.id"),
+        );
+        if self.material.is_nil() {
+            invalid_value(
+                report,
+                &format!("{path}.material"),
+                "renderer material cannot be nil",
+            );
+        }
         let expected_type = match &self.properties {
-            RendererProperties::Sprite {
-                softness,
-                texture,
-                uv,
-            } => {
-                if !softness.is_finite() || *softness < 0.0 {
-                    invalid_value(
-                        report,
-                        path,
-                        "sprite softness must be finite and non-negative",
-                    );
-                }
-                if texture.is_some_and(AssetId::is_nil) {
-                    invalid_value(report, path, "sprite texture asset cannot be nil");
-                }
-                if !uv.is_valid() {
-                    invalid_value(
-                        report,
-                        path,
-                        "sprite UV bounds must be finite, normalized, and have positive area",
-                    );
-                }
-                Some(RENDERER_SPRITE)
-            }
+            RendererProperties::Sprite => Some(RENDERER_SPRITE),
             RendererProperties::Ribbon { width } => {
                 if !width.is_finite() || *width <= 0.0 {
                     invalid_value(report, path, "ribbon width must be positive and finite");
@@ -1197,19 +1400,9 @@ impl RendererInstance {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RendererProperties {
-    Sprite {
-        softness: f32,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        texture: Option<AssetId>,
-        #[serde(default, skip_serializing_if = "UvRect::is_full")]
-        uv: UvRect,
-    },
-    Ribbon {
-        width: f32,
-    },
-    Mesh {
-        asset: AssetId,
-    },
+    Sprite,
+    Ribbon { width: f32 },
+    Mesh { asset: AssetId },
     Custom(BTreeMap<String, Value>),
 }
 

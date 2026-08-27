@@ -12,6 +12,18 @@
             path: "textures/ember_spark.png",
         ),
     ],
+    materials: [
+        (
+            id: "a3574a00-0000-4000-8000-000000000021",
+            name: "Ember Spark Additive",
+            blend: Additive,
+            properties: Sprite(
+                softness: Constant(0.12),
+                color: ParticleColor,
+                texture: Some("01b43d8a-dff5-42b0-98ea-f227f34c0185"),
+            ),
+        ),
+    ],
     emitters: [
         (
             id: "92a44d4a-0fb0-4597-a54d-14aa03516de4",
@@ -51,7 +63,7 @@
                 ),
             ],
             renderers: [
-                (id: "5a8a157d-a765-4904-9256-9981e173d996", renderer_type: "aestra.renderer.sprite", enabled: true, blend: Additive, properties: Sprite(softness: 0.12, texture: Some("01b43d8a-dff5-42b0-98ea-f227f34c0185"))),
+                (id: "5a8a157d-a765-4904-9256-9981e173d996", renderer_type: "aestra.renderer.sprite", enabled: true, material: "a3574a00-0000-4000-8000-000000000021", properties: Sprite),
             ],
         ),
     ],

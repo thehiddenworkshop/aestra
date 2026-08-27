@@ -4,7 +4,8 @@ mod render;
 
 use aestra_core::{BlendMode, EmitterShape, ScalarRange};
 use aestra_runtime::{
-    CompiledCurve, CompiledGradient, EffectInstance, ExecutionPlan, Instruction, RuntimeValue,
+    CompiledCurve, CompiledGradient, EffectInstance, ExecutionPlan, Instruction, MaterialColorPlan,
+    RuntimeValue,
 };
 use bevy::{
     asset::{RenderAssetUsages, embedded_asset},
@@ -110,6 +111,9 @@ pub struct GpuRenderer {
     pub textured: u32,
     pub uv_min: Vec2,
     pub uv_max: Vec2,
+    pub tint: Vec4,
+    pub particle_color: u32,
+    pub _padding: UVec3,
 }
 
 /// Selects the renderer record used by one indirect draw.
@@ -183,17 +187,30 @@ impl GpuEffectArtifact {
                 EmitterShape::Cone { radius, depth } => (3, radius, depth),
             };
             if emitter.enabled {
-                renderers.extend(emitter.renderers.iter().map(|renderer| GpuRenderer {
-                    emitter_index: emitter_index as u32,
-                    blend_mode: match renderer.blend {
-                        BlendMode::Alpha => GpuBlend::Alpha as u32,
-                        BlendMode::Additive => GpuBlend::Additive as u32,
-                        BlendMode::Multiply => GpuBlend::Multiply as u32,
-                    },
-                    softness: renderer.softness,
-                    textured: u32::from(renderer.texture.is_some()),
-                    uv_min: Vec2::from_array(renderer.uv.min),
-                    uv_max: Vec2::from_array(renderer.uv.max),
+                renderers.extend(emitter.renderers.iter().map(|renderer| {
+                    let material = instance
+                        .effect()
+                        .material(renderer.material)
+                        .expect("compiler guarantees renderer material references");
+                    let (tint, particle_color) = match &material.color {
+                        MaterialColorPlan::ParticleColor => ([1.0; 4], 1),
+                        MaterialColorPlan::Value(value) => (*value.resolve(parameters), 0),
+                    };
+                    GpuRenderer {
+                        emitter_index: emitter_index as u32,
+                        blend_mode: match material.blend {
+                            BlendMode::Alpha => GpuBlend::Alpha as u32,
+                            BlendMode::Additive => GpuBlend::Additive as u32,
+                            BlendMode::Multiply => GpuBlend::Multiply as u32,
+                        },
+                        softness: *material.softness.resolve(parameters),
+                        textured: u32::from(material.texture.is_some()),
+                        uv_min: Vec2::from_array(material.uv.min),
+                        uv_max: Vec2::from_array(material.uv.max),
+                        tint: Vec4::from_array(tint),
+                        particle_color,
+                        _padding: UVec3::ZERO,
+                    }
                 }));
             }
             bounds_half_extents = bounds_half_extents.max(emitter_bounds(
@@ -403,7 +420,11 @@ pub(crate) fn prepare_gpu_players(
                     .flat_map(|emitter| emitter.renderers.iter()),
             )
             .map(|((index, renderer), plan)| {
-                let texture_path = plan.texture.and_then(|texture| {
+                let material = player
+                    .effect()
+                    .material(plan.material)
+                    .expect("compiler guarantees renderer material references");
+                let texture_path = material.texture.and_then(|texture| {
                     player
                         .effect()
                         .assets
@@ -1018,8 +1039,8 @@ mod tests {
     use super::*;
     use aestra_compiler::EffectCompiler;
     use aestra_core::{
-        AssetDefinition, BlendMode, EffectAsset, Emitter, RendererInstance, RendererProperties,
-        UvRect,
+        AssetDefinition, BlendMode, EffectAsset, Emitter, MaterialDefinition, MaterialInput,
+        MaterialProperties, RendererInstance, UvRect,
     };
     use std::sync::Arc;
 
@@ -1045,20 +1066,25 @@ mod tests {
         let texture = AssetDefinition::texture("Spark", "textures/spark.png");
         let texture_id = texture.id;
         let mut first = Emitter::basic_sprite("First", 2.0);
-        first.renderers[0].properties = RendererProperties::Sprite {
-            softness: 0.5,
+        effect.materials[0].properties = MaterialProperties::Sprite {
+            softness: MaterialInput::Constant(0.5),
+            color: aestra_core::SpriteColorSource::ParticleColor,
             texture: Some(texture_id),
             uv: UvRect {
                 min: [0.25, 0.0],
                 max: [0.75, 1.0],
             },
         };
-        first
-            .renderers
-            .push(RendererInstance::sprite(BlendMode::Alpha, 0.65));
-        first
-            .renderers
-            .push(RendererInstance::sprite(BlendMode::Multiply, 0.8));
+        let mut alpha = MaterialDefinition::sprite("Alpha", BlendMode::Alpha, 0.65);
+        let MaterialProperties::Sprite { color, .. } = &mut alpha.properties;
+        *color =
+            aestra_core::SpriteColorSource::Value(MaterialInput::Constant([0.25, 0.5, 0.75, 1.0]));
+        let alpha_id = alpha.id;
+        let multiply = MaterialDefinition::sprite("Multiply", BlendMode::Multiply, 0.8);
+        let multiply_id = multiply.id;
+        effect.materials.extend([alpha, multiply]);
+        first.renderers.push(RendererInstance::sprite(alpha_id));
+        first.renderers.push(RendererInstance::sprite(multiply_id));
         let mut disabled = Emitter::basic_sprite("Disabled", 2.0);
         disabled.enabled = false;
         effect.assets.push(texture);
@@ -1076,6 +1102,8 @@ mod tests {
         assert_eq!(artifact.renderers[1].emitter_index, 0);
         assert_eq!(artifact.renderers[1].blend_mode, GpuBlend::Alpha as u32);
         assert_eq!(artifact.renderers[1].softness, 0.65);
+        assert_eq!(artifact.renderers[1].tint, Vec4::new(0.25, 0.5, 0.75, 1.0));
+        assert_eq!(artifact.renderers[1].particle_color, 0);
         assert_eq!(artifact.renderers[2].emitter_index, 0);
         assert_eq!(artifact.renderers[2].blend_mode, GpuBlend::Multiply as u32);
         assert_eq!(artifact.renderers[2].softness, 0.8);

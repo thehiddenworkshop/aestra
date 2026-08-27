@@ -133,9 +133,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   oversized or unsupported effects fall back independently with a public reason.
 - Runs compute simulation, live-particle compaction, alpha/additive/multiply sprite
   presentation, visibility culling, and indirect drawing without a per-frame CPU readback.
-- Resolves stable texture IDs through the compiled asset registry, binds one texture and
-  normalized UV region per renderer, and keeps missing files visible through a diagnostic
-  checkerboard fallback.
+- Resolves renderer material IDs through an immutable compiled material registry. Sprite
+  materials own blend state, typed softness/tint parameter expressions, particle-color
+  bindings, stable texture IDs, and normalized UV regions; missing files remain visible
+  through a diagnostic checkerboard fallback.
 - Retains deterministic CPU and GPU-readback presentation modes as explicit
   reference and compatibility paths.
 - Publishes global adapter capabilities and per-effect active-backend diagnostics
@@ -152,7 +153,9 @@ The format begins with effect-level duration and looping, then emitters with ind
 - ordered modules assigned to explicit execution stages;
 - module inputs with authored fallback values and optional typed effect-parameter bindings;
 - stable IDs for modules, curves, gradients, and renderer instances;
-- one or more renderers with independent blend behavior;
+- one or more renderers referencing reusable materials through stable semantic IDs;
+- sprite materials with blend state, typed constant/effect-parameter inputs, explicit
+  particle-color consumption, texture assets, and UV regions;
 - typed event links between emitters.
 
 The current file format is version 2. Prototype version 1 is intentionally unsupported and has no legacy loader. A compatibility policy will be defined before the asset format is declared stable.
@@ -188,8 +191,9 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 
 - GPU compute simulation and particle buffers
 - indirect draw, frustum culling, depth sorting, and bounds
-- textured billboards, flipbooks, ribbons, meshes, and trails
-- material/shader parameter bindings
+- [x] textured billboards with stable texture assets and UV regions
+- [x] reusable sprite materials with blend state and typed parameter/color bindings
+- flipbooks, ribbons, meshes, and trails
 - effect parameters, exposed inputs, and gameplay bindings
 - deterministic seeds plus scalable quality tiers and budgets
 

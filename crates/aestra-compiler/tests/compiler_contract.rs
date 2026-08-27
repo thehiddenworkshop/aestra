@@ -1,7 +1,8 @@
 use aestra_compiler::{EffectCompiler, ModuleRegistry};
 use aestra_core::{
-    DiagnosticCode, EffectAsset, EffectParameter, Emitter, MODULE_EMISSION, ModuleInstance,
-    ModuleParameters, ModuleTypeId, ParameterId, ScalarRange, StageKind, Value,
+    DiagnosticCode, EffectAsset, EffectParameter, Emitter, MODULE_EMISSION, MaterialInput,
+    MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, ScalarRange,
+    StageKind, Value,
 };
 use aestra_runtime::{
     EffectInstance, Expression, Instruction, ParameterError, ParticleAttribute, RuntimeStage,
@@ -108,9 +109,14 @@ fn compiler_resolves_texture_assets_into_renderer_plans() {
     let renderer = compiled.emitters[0]
         .renderers
         .iter()
-        .find(|renderer| renderer.texture.is_some())
+        .find(|renderer| {
+            compiled
+                .material(renderer.material)
+                .is_some_and(|material| material.texture.is_some())
+        })
         .unwrap();
-    let texture = renderer.texture.expect("example renderer must be textured");
+    let material = compiled.material(renderer.material).unwrap();
+    let texture = material.texture.expect("example material must be textured");
     let registered = compiled
         .assets
         .iter()
@@ -118,7 +124,7 @@ fn compiler_resolves_texture_assets_into_renderer_plans() {
         .unwrap();
 
     assert_eq!(registered.path, "textures/ember_spark.png");
-    assert_eq!(renderer.uv, aestra_core::UvRect::FULL);
+    assert_eq!(material.uv, aestra_core::UvRect::FULL);
 }
 
 #[test]
@@ -215,6 +221,53 @@ fn non_exposed_bindings_are_constant_folded() {
         panic!("first instruction must emit particles");
     };
     assert_eq!(spawn_rate.constant_value(), Some(&4.0));
+}
+
+#[test]
+fn material_inputs_bind_to_runtime_parameters() {
+    let mut asset = EffectAsset::new("Parameterized Material", 1.0);
+    let parameter = EffectParameter {
+        id: ParameterId::new(),
+        name: "Edge Softness".into(),
+        default: Value::Scalar(0.25),
+        exposed: true,
+    };
+    let parameter_id = parameter.id;
+    let MaterialProperties::Sprite { softness, .. } = &mut asset.materials[0].properties;
+    *softness = MaterialInput::Parameter(parameter_id);
+    asset.parameters.push(parameter);
+    asset.emitters.push(Emitter::basic_sprite("Emitter", 1.0));
+
+    let compiled = Arc::new(EffectCompiler::default().compile(&asset).unwrap());
+    let material_id = asset.materials[0].id;
+    assert!(matches!(
+        compiled.material(material_id).unwrap().softness,
+        Expression::Parameter(_)
+    ));
+    assert_eq!(compiled.optimizations.runtime_parameter_reads, 1);
+
+    let mut instance = EffectInstance::new(compiled);
+    assert_eq!(
+        *instance
+            .effect()
+            .material(material_id)
+            .unwrap()
+            .softness
+            .resolve(instance.parameter_values()),
+        0.25
+    );
+    instance
+        .set_parameter(parameter_id, Value::Scalar(0.8))
+        .unwrap();
+    assert_eq!(
+        *instance
+            .effect()
+            .material(material_id)
+            .unwrap()
+            .softness
+            .resolve(instance.parameter_values()),
+        0.8
+    );
 }
 
 fn parameterized_effect(exposed: bool) -> (EffectAsset, ParameterId) {

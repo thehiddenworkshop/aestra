@@ -1,7 +1,7 @@
 use crate::{EffectCommand, EffectDiff, EffectTransaction, LockState, SemanticTarget};
 use aestra_core::{
-    DiagnosticCode, EffectAsset, Emitter, EmitterId, ModuleId, ModuleParameters, RendererId,
-    ValidationReport, Value,
+    DiagnosticCode, EffectAsset, Emitter, EmitterId, MaterialId, ModuleId, ModuleParameters,
+    RendererId, ValidationReport, Value,
 };
 use thiserror::Error;
 
@@ -163,6 +163,30 @@ fn apply_command(
                 .ok_or_else(|| not_found("parameter", id))?;
             let parameter = effect.parameters.remove(index);
             vec![EffectCommand::AddParameter { parameter, index }]
+        }
+        EffectCommand::AddMaterial { material, index } => {
+            checked_insert(
+                &mut effect.materials,
+                *index,
+                material.clone(),
+                "effect materials",
+            )?;
+            vec![EffectCommand::RemoveMaterial { id: material.id }]
+        }
+        EffectCommand::RemoveMaterial { id } => {
+            let index = material_index(effect, *id)?;
+            let material = effect.materials.remove(index);
+            vec![EffectCommand::AddMaterial { material, index }]
+        }
+        EffectCommand::SetMaterial { id, material } => {
+            let index = material_index(effect, *id)?;
+            let mut replacement = material.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(&mut effect.materials[index], replacement);
+            vec![EffectCommand::SetMaterial {
+                id: *id,
+                material: previous,
+            }]
         }
         EffectCommand::AddEmitter { emitter, index } => {
             checked_insert(
@@ -538,17 +562,17 @@ fn apply_command(
                 enabled: previous,
             }]
         }
-        EffectCommand::SetRendererBlend {
+        EffectCommand::SetRendererMaterial {
             emitter,
             renderer,
-            blend,
+            material,
         } => {
             let renderer = renderer_mut(effect, *emitter, *renderer)?;
-            let previous = std::mem::replace(&mut renderer.blend, *blend);
-            vec![EffectCommand::SetRendererBlend {
+            let previous = std::mem::replace(&mut renderer.material, *material);
+            vec![EffectCommand::SetRendererMaterial {
                 emitter: *emitter,
                 renderer: renderer.id,
-                blend: previous,
+                material: previous,
             }]
         }
         EffectCommand::SetRendererProperties {
@@ -718,6 +742,14 @@ fn emitter_index(effect: &EffectAsset, id: EmitterId) -> Result<usize, CommandEr
         .iter()
         .position(|emitter| emitter.id == id)
         .ok_or_else(|| not_found("emitter", &id))
+}
+
+fn material_index(effect: &EffectAsset, id: MaterialId) -> Result<usize, CommandError> {
+    effect
+        .materials
+        .iter()
+        .position(|material| material.id == id)
+        .ok_or_else(|| not_found("material", &id))
 }
 
 fn emitter_mut(effect: &mut EffectAsset, id: EmitterId) -> Result<&mut Emitter, CommandError> {

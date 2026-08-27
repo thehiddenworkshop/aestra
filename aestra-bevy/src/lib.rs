@@ -366,7 +366,8 @@ fn update_asset_diagnostics(
             .emitters
             .iter()
             .flat_map(|emitter| emitter.renderers.iter())
-            .filter_map(|renderer| renderer.texture)
+            .filter_map(|renderer| player.effect().material(renderer.material))
+            .filter_map(|material| material.texture)
             .collect::<BTreeSet<_>>();
         let mut texture_bytes = 0_u64;
         let mut all_loaded = true;
@@ -500,9 +501,13 @@ fn play_effects(
                 *visibility = Visibility::Hidden;
                 continue;
             };
+            let Some(material) = player.effect().material(renderer.material) else {
+                *visibility = Visibility::Hidden;
+                continue;
+            };
             sprite.rect = None;
             sprite.image = textures.fallback_textures.white.clone();
-            if let Some(texture) = renderer.texture
+            if let Some(texture) = material.texture
                 && let Some(asset) = player
                     .effect()
                     .assets
@@ -515,8 +520,8 @@ fn play_effects(
                 if let Some(image) = textures.images.get(&handle) {
                     let image_size = image.size_f32();
                     sprite.rect = Some(bevy::math::Rect::from_corners(
-                        Vec2::from_array(renderer.uv.min) * image_size,
-                        Vec2::from_array(renderer.uv.max) * image_size,
+                        Vec2::from_array(material.uv.min) * image_size,
+                        Vec2::from_array(material.uv.max) * image_size,
                     ));
                     sprite.image = handle;
                 } else {
@@ -524,12 +529,13 @@ fn play_effects(
                 }
             }
             let size = sample.size.max(0.01);
-            sprite.color = Color::srgba(
-                sample.color[0],
-                sample.color[1],
-                sample.color[2],
-                sample.color[3],
-            );
+            let color = match &material.color {
+                aestra_runtime::MaterialColorPlan::ParticleColor => sample.color,
+                aestra_runtime::MaterialColorPlan::Value(value) => {
+                    *value.resolve(player.instance.parameter_values())
+                }
+            };
+            sprite.color = Color::srgba(color[0], color[1], color[2], color[3]);
             sprite.custom_size = Some(Vec2::splat(size));
             transform.translation = Vec3::new(sample.position[0], sample.position[1], 0.0);
             transform.rotation = Quat::from_rotation_z(sample.rotation);
@@ -568,9 +574,12 @@ mod tests {
     fn players_receive_a_machine_readable_profile() {
         let mut effect = EffectAsset::new("Profiled", 2.0);
         let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
+        let material = MaterialDefinition::sprite("Alpha", BlendMode::Alpha, 0.2);
+        let material_id = material.id;
+        effect.materials.push(material);
         emitter
             .renderers
-            .push(RendererInstance::sprite(BlendMode::Alpha, 0.2));
+            .push(RendererInstance::sprite(material_id));
         effect.emitters.push(emitter);
         let mut app = App::new();
         app.insert_resource(GpuCapabilities::default())

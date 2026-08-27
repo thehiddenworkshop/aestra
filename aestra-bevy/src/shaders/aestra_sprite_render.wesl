@@ -12,6 +12,9 @@ struct Renderer {
     textured: u32,
     uv_min: vec2<f32>,
     uv_max: vec2<f32>,
+    tint: vec4<f32>,
+    particle_color: u32,
+    _padding: vec3<u32>,
 }
 
 struct Particle {
@@ -80,7 +83,10 @@ fn vertex(
 
     var output: VertexOutput;
     output.clip_position = view.clip_from_world * world_position;
-    output.color = particle.color;
+    output.color = renderer.tint;
+    if renderer.particle_color != 0u {
+        output.color *= particle.color;
+    }
     output.quad_position = corner;
     output.softness = renderer.softness;
     output.visible = select(0u, 1u, particle.emitter_index == renderer.emitter_index);

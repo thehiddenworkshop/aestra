@@ -273,6 +273,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetEffectLooping { .. }
         | EffectCommand::AddEmitter { .. }
         | EffectCommand::AddParameter { .. }
+        | EffectCommand::AddMaterial { .. }
+        | EffectCommand::RemoveMaterial { .. }
+        | EffectCommand::SetMaterial { .. }
         | EffectCommand::AddEvent { .. } => (None, None),
         EffectCommand::RemoveParameter { id } => (None, Some(SemanticTarget::Parameter(*id))),
         EffectCommand::RemoveEmitter { id }
@@ -334,7 +337,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetRendererEnabled {
             emitter, renderer, ..
         }
-        | EffectCommand::SetRendererBlend {
+        | EffectCommand::SetRendererMaterial {
             emitter, renderer, ..
         }
         | EffectCommand::SetRendererProperties {

@@ -79,7 +79,11 @@ impl EffectProfile {
             .iter()
             .filter(|emitter| emitter.enabled)
             .flat_map(|emitter| emitter.renderers.iter())
-            .filter(|renderer| renderer.texture.is_some())
+            .filter(|renderer| {
+                effect
+                    .material(renderer.material)
+                    .is_some_and(|material| material.texture.is_some())
+            })
             .count()
             .min(u32::MAX as usize) as u32;
         let dispatch_count = u32::from(effect.max_particles > 0) * 2;

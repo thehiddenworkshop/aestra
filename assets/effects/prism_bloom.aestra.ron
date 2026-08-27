@@ -4,6 +4,12 @@
     name: "Prism Bloom",
     duration: 2.8,
     looping: true,
+    materials: [
+        (id: "a3574a00-0000-4000-8000-000000000011", name: "Prism Core Additive", blend: Additive, properties: Sprite(softness: Constant(0.78), color: ParticleColor)),
+        (id: "a3574a00-0000-4000-8000-000000000012", name: "Spectrum Additive", blend: Additive, properties: Sprite(softness: Constant(0.2), color: ParticleColor)),
+        (id: "a3574a00-0000-4000-8000-000000000013", name: "Dust Alpha", blend: Alpha, properties: Sprite(softness: Constant(0.65), color: ParticleColor)),
+        (id: "a3574a00-0000-4000-8000-000000000014", name: "Bloom Additive", blend: Additive, properties: Sprite(softness: Constant(0.35), color: ParticleColor)),
+    ],
     emitters: [
         (
             id: "19ea9132-e094-4daa-b0a5-3dc435cd9431",
@@ -42,7 +48,7 @@
                     ),
                 ),
             ],
-            renderers: [(id: "addd1f2a-775f-4bab-b0cf-718c7c7ba6bd", renderer_type: "aestra.renderer.sprite", enabled: true, blend: Additive, properties: Sprite(softness: 0.78))],
+            renderers: [(id: "addd1f2a-775f-4bab-b0cf-718c7c7ba6bd", renderer_type: "aestra.renderer.sprite", enabled: true, material: "a3574a00-0000-4000-8000-000000000011", properties: Sprite)],
         ),
         (
             id: "f1747de9-8ba2-4f70-beb0-596ba023b956",
@@ -81,7 +87,7 @@
                     ),
                 ),
             ],
-            renderers: [(id: "2c4c8131-1203-42bc-a237-d65e128c10fe", renderer_type: "aestra.renderer.sprite", enabled: true, blend: Additive, properties: Sprite(softness: 0.2))],
+            renderers: [(id: "2c4c8131-1203-42bc-a237-d65e128c10fe", renderer_type: "aestra.renderer.sprite", enabled: true, material: "a3574a00-0000-4000-8000-000000000012", properties: Sprite)],
         ),
         (
             id: "5a8a1c6e-fb49-4486-a0dd-41a2d2257fbb",
@@ -120,7 +126,7 @@
                     ),
                 ),
             ],
-            renderers: [(id: "088b4830-68d2-484a-9206-f6852e23ec38", renderer_type: "aestra.renderer.sprite", enabled: true, blend: Alpha, properties: Sprite(softness: 0.65))],
+            renderers: [(id: "088b4830-68d2-484a-9206-f6852e23ec38", renderer_type: "aestra.renderer.sprite", enabled: true, material: "a3574a00-0000-4000-8000-000000000013", properties: Sprite)],
         ),
         (
             id: "ec65a974-0114-4f0c-a49a-1bc19f35759e",
@@ -159,7 +165,7 @@
                     ),
                 ),
             ],
-            renderers: [(id: "0642d1ac-7514-4ebf-8ca3-5b38a62bd466", renderer_type: "aestra.renderer.sprite", enabled: true, blend: Additive, properties: Sprite(softness: 0.35))],
+            renderers: [(id: "0642d1ac-7514-4ebf-8ca3-5b38a62bd466", renderer_type: "aestra.renderer.sprite", enabled: true, material: "a3574a00-0000-4000-8000-000000000014", properties: Sprite)],
         ),
     ],
     events: [
