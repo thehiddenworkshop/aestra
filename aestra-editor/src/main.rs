@@ -9,9 +9,9 @@ use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTar
 use aestra_bevy::{
     ActiveBackend, AestraPlugin, AestraSet, BlendMode, ColorKey, CurveKey, Diagnostic,
     DiagnosticCode, DiagnosticSeverity, EffectAsset, EffectPlayer, EffectRenderMode,
-    EffectRuntimeStatus, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, MaterialInput,
-    MaterialProperties, ModuleId, ModuleInstance, ModuleParameters, RendererId, RendererProperties,
-    StageKind, ValidationReport, Value,
+    EffectRuntimeStatus, EmitterId, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource,
+    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, ModuleParameters, RendererId,
+    RendererProperties, StageKind, ValidationReport, Value,
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
@@ -111,6 +111,7 @@ fn main() {
         .init_resource::<PreviewCameraController>()
         .init_resource::<PreviewNavigationState>()
         .init_resource::<PreviewDisplayState>()
+        .init_resource::<ShapeGizmoState>()
         .insert_resource(WorkspaceLayout::load())
         .init_resource::<RenderedUiRevision>()
         .add_plugins(
@@ -185,6 +186,8 @@ fn main() {
                         sync_preview_display_mode,
                         update_preview_display_controls,
                         update_transform_gizmo_controls,
+                        sync_transform_gizmo_focus,
+                        interact_shape_gizmo,
                         draw_preview_scene_gizmos,
                     )
                         .chain(),
@@ -928,6 +931,27 @@ struct PreviewDisplayState {
     mode: PreviewDisplayMode,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShapeGizmoHandle {
+    Radius,
+    Depth,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ActiveShapeGizmoDrag {
+    emitter: EmitterId,
+    module: ModuleId,
+    handle: ShapeGizmoHandle,
+    original: EmitterShape,
+    current: EmitterShape,
+}
+
+#[derive(Resource, Default)]
+struct ShapeGizmoState {
+    hovered: Option<ShapeGizmoHandle>,
+    active: Option<ActiveShapeGizmoDrag>,
+}
+
 #[derive(Component)]
 struct PreviewDisplayModeIcon(PreviewDisplayMode);
 
@@ -936,6 +960,9 @@ struct PreviewEffectPlayer;
 
 #[derive(Component)]
 struct GizmoModeLabel;
+
+#[derive(Component)]
+struct ShapeGizmoValueLabel;
 
 #[derive(Component)]
 struct PlaybackLabel;
@@ -1232,6 +1259,7 @@ fn update_preview_display_controls(
 fn update_transform_gizmo_controls(
     keys: Res<ButtonInput<KeyCode>>,
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
+    session: Res<EditorSession>,
     mut settings: ResMut<TransformGizmoSettings>,
     mut labels: Query<&mut Text, With<GizmoModeLabel>>,
 ) {
@@ -1252,9 +1280,7 @@ fn update_transform_gizmo_controls(
             };
         }
     }
-    if !settings.is_changed() {
-        return;
-    }
+    let editing_shape = selected_shape_module(&session).is_some();
     let mode = match settings.mode {
         TransformGizmoMode::Translate => "MOVE",
         TransformGizmoMode::Rotate => "ROTATE",
@@ -1265,13 +1291,318 @@ fn update_transform_gizmo_controls(
         TransformGizmoSpace::Local => "LOCAL",
     };
     for mut label in &mut labels {
-        **label = format!("{mode} · {space}");
+        **label = if editing_shape {
+            "SHAPE".into()
+        } else {
+            format!("{mode} · {space}")
+        };
+    }
+}
+
+fn sync_transform_gizmo_focus(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    players: Query<(Entity, Has<TransformGizmoFocus>), With<PreviewEffectPlayer>>,
+) {
+    let editing_shape = selected_shape_module(&session).is_some();
+    for (entity, has_focus) in &players {
+        if editing_shape && has_focus {
+            commands.entity(entity).remove::<TransformGizmoFocus>();
+        } else if !editing_shape && !has_focus {
+            commands.entity(entity).insert(TransformGizmoFocus);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn interact_shape_gizmo(
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    menu: Res<MenuState>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut cursor_icon: Single<&mut CursorIcon, With<PrimaryWindow>>,
+    canvas: Single<
+        (&RelativeCursorPosition, &ComputedNode, &UiGlobalTransform),
+        With<PreviewCanvas>,
+    >,
+    camera: Single<(&Camera, &GlobalTransform), With<PreviewRenderCamera>>,
+    players: Query<&GlobalTransform, With<PreviewEffectPlayer>>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<ShapeGizmoState>,
+    mut labels: Query<(&mut Text, &mut Node, &mut Visibility), With<ShapeGizmoValueLabel>>,
+    localizer: Res<Localizer>,
+) {
+    let was_using_cursor = state.hovered.is_some() || state.active.is_some();
+    let cursor_position = window.cursor_position();
+    let selected = selected_shape_module(&session);
+    let Ok(player) = players.single() else {
+        state.hovered = None;
+        state.active = None;
+        update_shape_gizmo_label(&mut labels, None, None, canvas.1, canvas.2, &localizer);
+        return;
+    };
+    let (camera, camera_transform) = *camera;
+
+    if keys.just_pressed(KeyCode::Escape) && state.active.take().is_some() {
+        state.hovered = None;
+        **cursor_icon = CursorIcon::System(SystemCursorIcon::Default);
+        update_shape_gizmo_label(&mut labels, None, None, canvas.1, canvas.2, &localizer);
+        session.restore_interaction_preview();
+        session.status = "Cancelled shape adjustment".into();
+        return;
+    }
+
+    if let Some(active) = state.active.as_mut() {
+        if !buttons.pressed(MouseButton::Left) {
+            let active = state.active.take().expect("shape drag is active");
+            state.hovered = None;
+            **cursor_icon = CursorIcon::System(SystemCursorIcon::Default);
+            update_shape_gizmo_label(&mut labels, None, None, canvas.1, canvas.2, &localizer);
+            if active.current != active.original {
+                if !session.execute(
+                    "Adjusted spawn shape",
+                    EffectCommand::SetModuleParameter {
+                        emitter: active.emitter,
+                        module: active.module,
+                        parameter: "shape".into(),
+                        value: Value::Shape(active.current),
+                    },
+                    true,
+                ) {
+                    session.restore_interaction_preview();
+                }
+            } else {
+                session.restore_interaction_preview();
+            }
+            return;
+        }
+        if let Some(cursor_position) = cursor_position
+            && let Some(local_position) =
+                shape_gizmo_local_cursor(camera, camera_transform, player, cursor_position)
+        {
+            let next = shape_after_gizmo_drag(active.original, active.handle, local_position);
+            if next != active.current {
+                active.current = next;
+                session.preview_interaction(EffectTransaction::single(
+                    "Preview shape adjustment",
+                    EffectCommand::SetModuleParameter {
+                        emitter: active.emitter,
+                        module: active.module,
+                        parameter: "shape".into(),
+                        value: Value::Shape(active.current),
+                    },
+                ));
+            }
+        }
+        **cursor_icon = shape_gizmo_cursor(active.handle);
+        update_shape_gizmo_label(
+            &mut labels,
+            cursor_position,
+            Some((active.handle, active.current)),
+            canvas.1,
+            canvas.2,
+            &localizer,
+        );
+        return;
+    }
+
+    state.hovered = if menu.open.is_none()
+        && menu.tab_context.is_none()
+        && canvas.0.cursor_over()
+        && session.pending_change.is_none()
+    {
+        cursor_position.and_then(|cursor_position| {
+            selected.and_then(|selected| {
+                hit_test_shape_gizmo(
+                    camera,
+                    camera_transform,
+                    player,
+                    selected.shape,
+                    cursor_position,
+                )
+            })
+        })
+    } else {
+        None
+    };
+
+    if let Some(handle) = state.hovered {
+        **cursor_icon = shape_gizmo_cursor(handle);
+        if buttons.just_pressed(MouseButton::Left)
+            && let Some(selected) = selected
+            && !shape_gizmo_target_locked(&session, selected)
+        {
+            state.active = Some(ActiveShapeGizmoDrag {
+                emitter: selected.emitter,
+                module: selected.module,
+                handle,
+                original: selected.shape,
+                current: selected.shape,
+            });
+            update_shape_gizmo_label(
+                &mut labels,
+                cursor_position,
+                Some((handle, selected.shape)),
+                canvas.1,
+                canvas.2,
+                &localizer,
+            );
+        }
+    } else if was_using_cursor {
+        **cursor_icon = CursorIcon::System(SystemCursorIcon::Default);
+    }
+    if state.active.is_none() {
+        update_shape_gizmo_label(&mut labels, None, None, canvas.1, canvas.2, &localizer);
+    }
+}
+
+fn shape_gizmo_target_locked(session: &EditorSession, selected: SelectedShapeModule) -> bool {
+    session
+        .locks
+        .is_locked(SemanticTarget::Effect(session.effect.id))
+        || session
+            .locks
+            .is_locked(SemanticTarget::Emitter(selected.emitter))
+        || session
+            .locks
+            .is_locked(SemanticTarget::Module(selected.module))
+}
+
+fn shape_gizmo_cursor(handle: ShapeGizmoHandle) -> CursorIcon {
+    CursorIcon::System(match handle {
+        ShapeGizmoHandle::Radius => SystemCursorIcon::EwResize,
+        ShapeGizmoHandle::Depth => SystemCursorIcon::NsResize,
+    })
+}
+
+fn shape_handle_local_positions(shape: EmitterShape) -> Vec<(ShapeGizmoHandle, Vec3)> {
+    match shape {
+        EmitterShape::Point => Vec::new(),
+        EmitterShape::Circle { radius } | EmitterShape::Ring { radius } => {
+            vec![(ShapeGizmoHandle::Radius, Vec3::X * radius)]
+        }
+        EmitterShape::Cone { radius, depth } => vec![
+            (ShapeGizmoHandle::Radius, Vec3::new(-radius, depth, 0.0)),
+            (ShapeGizmoHandle::Depth, Vec3::new(0.0, depth, 0.0)),
+            (ShapeGizmoHandle::Radius, Vec3::new(radius, depth, 0.0)),
+        ],
+    }
+}
+
+fn hit_test_shape_gizmo(
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    player: &GlobalTransform,
+    shape: EmitterShape,
+    cursor_position: Vec2,
+) -> Option<ShapeGizmoHandle> {
+    shape_handle_local_positions(shape)
+        .into_iter()
+        .filter_map(|(handle, local_position)| {
+            let viewport_position = camera
+                .world_to_viewport(camera_transform, player.transform_point(local_position))
+                .ok()?;
+            let distance = viewport_position.distance(cursor_position);
+            (distance <= 11.0).then_some((handle, distance))
+        })
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+        .map(|(handle, _)| handle)
+}
+
+fn shape_gizmo_local_cursor(
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    player: &GlobalTransform,
+    cursor_position: Vec2,
+) -> Option<Vec3> {
+    let ray = camera
+        .viewport_to_world(camera_transform, cursor_position)
+        .ok()?;
+    let plane_origin = player.translation();
+    let plane_normal = player.rotation() * Vec3::Z;
+    let direction = *ray.direction;
+    let denominator = direction.dot(plane_normal);
+    if denominator.abs() < 1.0e-5 {
+        return None;
+    }
+    let distance = (plane_origin - ray.origin).dot(plane_normal) / denominator;
+    if !distance.is_finite() || distance < 0.0 {
+        return None;
+    }
+    let world_position = ray.origin + direction * distance;
+    Some(player.affine().inverse().transform_point3(world_position))
+}
+
+fn shape_after_gizmo_drag(
+    original: EmitterShape,
+    handle: ShapeGizmoHandle,
+    local_position: Vec3,
+) -> EmitterShape {
+    const MIN_HANDLE_VALUE: f32 = 0.1;
+    match (original, handle) {
+        (EmitterShape::Circle { .. }, ShapeGizmoHandle::Radius) => EmitterShape::Circle {
+            radius: local_position.x.abs().max(MIN_HANDLE_VALUE),
+        },
+        (EmitterShape::Ring { .. }, ShapeGizmoHandle::Radius) => EmitterShape::Ring {
+            radius: local_position.x.abs().max(MIN_HANDLE_VALUE),
+        },
+        (EmitterShape::Cone { depth, .. }, ShapeGizmoHandle::Radius) => EmitterShape::Cone {
+            radius: local_position.x.abs().max(MIN_HANDLE_VALUE),
+            depth,
+        },
+        (EmitterShape::Cone { radius, .. }, ShapeGizmoHandle::Depth) => EmitterShape::Cone {
+            radius,
+            depth: local_position.y.max(MIN_HANDLE_VALUE),
+        },
+        (shape, _) => shape,
+    }
+}
+
+fn update_shape_gizmo_label(
+    labels: &mut Query<(&mut Text, &mut Node, &mut Visibility), With<ShapeGizmoValueLabel>>,
+    cursor_position: Option<Vec2>,
+    value: Option<(ShapeGizmoHandle, EmitterShape)>,
+    canvas: &ComputedNode,
+    canvas_transform: &UiGlobalTransform,
+    localizer: &Localizer,
+) {
+    let Some((handle, shape)) = value else {
+        for (_, _, mut visibility) in labels {
+            *visibility = Visibility::Hidden;
+        }
+        return;
+    };
+    let scalar = match (handle, shape) {
+        (ShapeGizmoHandle::Radius, EmitterShape::Circle { radius })
+        | (ShapeGizmoHandle::Radius, EmitterShape::Ring { radius })
+        | (ShapeGizmoHandle::Radius, EmitterShape::Cone { radius, .. }) => radius,
+        (ShapeGizmoHandle::Depth, EmitterShape::Cone { depth, .. }) => depth,
+        _ => return,
+    };
+    let mut args = FluentArgs::new();
+    args.set("value", format!("{scalar:.2}"));
+    let message = localizer.text_with(
+        match handle {
+            ShapeGizmoHandle::Radius => "viewport-shape-radius",
+            ShapeGizmoHandle::Depth => "viewport-shape-depth",
+        },
+        &args,
+    );
+    let top_left = canvas_transform.translation.trunc() - canvas.size() * 0.5;
+    let local_position = cursor_position.unwrap_or(top_left + Vec2::splat(24.0)) - top_left;
+    for (mut text, mut node, mut visibility) in labels {
+        text.0.clone_from(&message);
+        node.left = Val::Px((local_position.x + 14.0).clamp(8.0, canvas.size().x - 120.0));
+        node.top = Val::Px((local_position.y + 14.0).clamp(8.0, canvas.size().y - 32.0));
+        *visibility = Visibility::Inherited;
     }
 }
 
 fn draw_preview_scene_gizmos(
     session: Res<EditorSession>,
     menu: Res<MenuState>,
+    controller: Res<PreviewCameraController>,
+    state: Res<ShapeGizmoState>,
     players: Query<&GlobalTransform, With<PreviewEffectPlayer>>,
     mut gizmos: Gizmos<PreviewSceneGizmos>,
 ) {
@@ -1289,8 +1620,26 @@ fn draw_preview_scene_gizmos(
     let Ok(player) = players.single() else {
         return;
     };
-    if let Some((_, shape)) = selected_shape_module(&session) {
+    if let Some(selected) = selected_shape_module(&session) {
+        let shape = state
+            .active
+            .filter(|active| active.module == selected.module)
+            .map_or(selected.shape, |active| active.current);
         draw_emitter_shape_gizmo(&mut gizmos, player, shape, theme::ACCENT.with_alpha(0.9));
+        let handle_radius = (controller.distance * 0.008).clamp(0.35, 4.0);
+        for (handle, local_position) in shape_handle_local_positions(shape) {
+            let highlighted = state.active.is_some_and(|active| active.handle == handle)
+                || state.hovered == Some(handle);
+            gizmos.sphere(
+                player.transform_point(local_position),
+                handle_radius * if highlighted { 1.25 } else { 1.0 },
+                if highlighted {
+                    theme::TEXT
+                } else {
+                    theme::ACCENT
+                },
+            );
+        }
     }
 }
 
@@ -3298,6 +3647,28 @@ fn spawn_preview(
                             ..default()
                         },
                     ));
+                    canvas.spawn((
+                        ShapeGizmoValueLabel,
+                        Text::new(""),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(12.0),
+                            top: Val::Px(36.0),
+                            padding: UiRect::axes(Val::Px(7.0), Val::Px(4.0)),
+                            border: UiRect::all(Val::Px(1.0)),
+                            border_radius: BorderRadius::all(Val::Px(3.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme::PANEL.with_alpha(0.94)),
+                        BorderColor::all(theme::ACCENT_DIM),
+                        Visibility::Hidden,
+                        Pickable::IGNORE,
+                    ));
                     canvas
                         .spawn((
                             Node {
@@ -3450,20 +3821,31 @@ fn spawn_viewport_tool_button(
         });
 }
 
-fn selected_shape_module(session: &EditorSession) -> Option<(ModuleId, EmitterShape)> {
+#[derive(Clone, Copy, Debug)]
+struct SelectedShapeModule {
+    emitter: EmitterId,
+    module: ModuleId,
+    shape: EmitterShape,
+}
+
+fn selected_shape_module(session: &EditorSession) -> Option<SelectedShapeModule> {
     if session.pending_change.is_some() {
         return None;
     }
     let SemanticTarget::Module(module_id) = session.selection.primary else {
         return None;
     };
-    let module = session
-        .selected_layer()
+    let emitter = session.selected_layer();
+    let module = emitter
         .modules
         .iter()
         .find(|module| module.id == module_id)?;
     match module_parameter(module, "shape") {
-        Some(Value::Shape(shape)) if module.enabled => Some((module_id, shape)),
+        Some(Value::Shape(shape)) if module.enabled => Some(SelectedShapeModule {
+            emitter: emitter.id,
+            module: module_id,
+            shape,
+        }),
         _ => None,
     }
 }
@@ -11222,6 +11604,77 @@ mod tests {
         assert_eq!(controller.yaw, 0.0);
         assert_eq!(controller.pitch, 0.0);
         assert!(!controller.frame_requested);
+    }
+
+    #[test]
+    fn shape_gizmo_drag_preserves_unedited_cone_component() {
+        let cone = EmitterShape::Cone {
+            radius: 12.0,
+            depth: 24.0,
+        };
+
+        assert_eq!(
+            shape_after_gizmo_drag(cone, ShapeGizmoHandle::Radius, Vec3::new(-18.0, 90.0, 0.0)),
+            EmitterShape::Cone {
+                radius: 18.0,
+                depth: 24.0,
+            }
+        );
+        assert_eq!(
+            shape_after_gizmo_drag(cone, ShapeGizmoHandle::Depth, Vec3::new(80.0, 31.0, 0.0)),
+            EmitterShape::Cone {
+                radius: 12.0,
+                depth: 31.0,
+            }
+        );
+    }
+
+    #[test]
+    fn shape_gizmo_drag_clamps_degenerate_values() {
+        assert_eq!(
+            shape_after_gizmo_drag(
+                EmitterShape::Circle { radius: 12.0 },
+                ShapeGizmoHandle::Radius,
+                Vec3::ZERO,
+            ),
+            EmitterShape::Circle { radius: 0.1 }
+        );
+        assert_eq!(
+            shape_after_gizmo_drag(
+                EmitterShape::Cone {
+                    radius: 12.0,
+                    depth: 24.0,
+                },
+                ShapeGizmoHandle::Depth,
+                Vec3::new(0.0, -10.0, 0.0),
+            ),
+            EmitterShape::Cone {
+                radius: 12.0,
+                depth: 0.1,
+            }
+        );
+    }
+
+    #[test]
+    fn selecting_shape_module_hides_root_transform_gizmo() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let shape_module = session
+            .selected_layer()
+            .module_by_type(aestra_bevy::MODULE_SHAPE)
+            .unwrap()
+            .id;
+        session.selection.primary = SemanticTarget::Module(shape_module);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .add_systems(Update, sync_transform_gizmo_focus);
+        let player = app
+            .world_mut()
+            .spawn((PreviewEffectPlayer, TransformGizmoFocus))
+            .id();
+
+        app.update();
+
+        assert!(!app.world().entity(player).contains::<TransformGizmoFocus>());
     }
 
     #[test]

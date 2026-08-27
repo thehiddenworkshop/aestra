@@ -37,6 +37,8 @@ const SHELL_MESSAGE_IDS: &[&str] = &[
     "toolbar-save",
     "toolbar-choreography",
     "toolbar-runtime",
+    "viewport-shape-radius",
+    "viewport-shape-depth",
     "panel-viewport",
     "panel-assets",
     "panel-inspector",

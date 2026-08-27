@@ -47,6 +47,8 @@ viewport-wireframe = Fil de fer
 viewport-wireframe-description = Afficher les maillages des particules animées sous forme de contours non remplis.
 viewport-rendered = Rendu
 viewport-rendered-description = Afficher le rendu complet de l’effet de particules.
+viewport-shape-radius = Rayon {$value}
+viewport-shape-depth = Profondeur {$value}
 
 dock-float-panel = Détacher le panneau
 common-close = Fermer

@@ -47,6 +47,8 @@ viewport-wireframe = Wireframe
 viewport-wireframe-description = Show the live particle sprite meshes as unfilled outlines.
 viewport-rendered = Rendered
 viewport-rendered-description = Show the fully rendered particle effect.
+viewport-shape-radius = Radius {$value}
+viewport-shape-depth = Depth {$value}
 
 dock-float-panel = Float Panel
 common-close = Close

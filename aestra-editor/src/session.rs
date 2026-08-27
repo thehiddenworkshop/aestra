@@ -439,6 +439,26 @@ impl EditorSession {
         }
     }
 
+    /// Compiles a temporary interaction candidate without mutating the document or history.
+    /// Viewport gizmos use this while dragging, then commit one normal command on release.
+    pub fn preview_interaction(&mut self, transaction: EffectTransaction) -> bool {
+        let preview = match CommandExecutor::preview(&self.effect, &self.locks, transaction) {
+            Ok(preview) => preview,
+            Err(_) => return false,
+        };
+        let Ok(runtime_preview) = compile_preview(preview.candidate(), self.preview_seed) else {
+            return false;
+        };
+        self.preview = Some(runtime_preview);
+        self.samples.clear();
+        self.checkpoints.clear();
+        true
+    }
+
+    pub fn restore_interaction_preview(&mut self) {
+        self.refresh_preview();
+    }
+
     pub fn preview_transaction(&mut self, transaction: EffectTransaction) -> bool {
         let label = transaction.label.clone();
         let preview = match CommandExecutor::preview(&self.effect, &self.locks, transaction) {
@@ -1336,6 +1356,41 @@ mod tests {
     #[test]
     fn blank_effect_is_valid() {
         blank_effect().validate().unwrap();
+    }
+
+    #[test]
+    fn interaction_preview_does_not_mutate_document_or_history() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        let original = session.effect.clone();
+        let emitter = session.selected_layer().id;
+        let module = session
+            .selected_layer()
+            .module_by_type(aestra_bevy::MODULE_SHAPE)
+            .unwrap()
+            .id;
+
+        let command = EffectCommand::SetModuleParameter {
+            emitter,
+            module,
+            parameter: "shape".into(),
+            value: Value::Shape(aestra_bevy::EmitterShape::Circle { radius: 42.0 }),
+        };
+        assert!(
+            session
+                .preview_interaction(EffectTransaction::single("Preview radius", command.clone(),))
+        );
+
+        assert_eq!(session.effect, original);
+        assert!(!session.can_undo());
+        assert!(session.pending_change.is_none());
+
+        assert!(session.execute("Adjusted spawn shape", command, true));
+        assert!(session.can_undo());
+        session.undo();
+        assert_eq!(session.effect, original);
     }
 
     #[test]
