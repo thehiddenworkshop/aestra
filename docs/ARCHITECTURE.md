@@ -76,9 +76,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Owns panels, viewport controls, timeline state, and an authoring-backed session.
 - Presents Bevy-native UI and editor interactions.
 - Uses Bevy Feathers for standard tooling controls and theme semantics. The
-  Settings workspace is the first complete Feathers slice, including pane/group
-  containers, buttons, checkboxes, editable numeric inputs, themed typography,
-  keyboard focus, cursors, and accessibility labels.
+  editor menu bar, dropdowns, primary toolbar, and Settings workspace use
+  Feathers menus, buttons, pane/group containers, checkboxes, editable numeric
+  inputs, themed typography, keyboard focus, cursors, and accessibility labels.
 - Owns a persisted recursive workspace dock tree with tab-strip insertion and
   directional panel-content splitting,
   closable/recoverable panels, collapsing empty branches, transient drop targets,

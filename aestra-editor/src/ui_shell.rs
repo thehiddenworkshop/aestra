@@ -1,8 +1,9 @@
 use crate::theme;
 use bevy::{
     feathers::controls::{
-        ButtonVariant, FeathersButton, FeathersCheckbox, FeathersNumberInput, FeathersScrollbar,
-        FeathersToolButton, NumberFormat,
+        ButtonVariant, FeathersButton, FeathersCheckbox, FeathersMenu, FeathersMenuButton,
+        FeathersMenuDivider, FeathersMenuItem, FeathersMenuPopup, FeathersNumberInput,
+        FeathersScrollbar, FeathersToolButton, NumberFormat,
     },
     prelude::*,
     ui_widgets::ControlOrientation,
@@ -138,5 +139,37 @@ pub(crate) fn feathers_vertical_scrollbar(target: Entity) -> impl Scene {
             @target: target,
             @orientation: ControlOrientation::Vertical,
         }
+    }
+}
+
+pub(crate) fn feathers_menu() -> impl Scene {
+    bsn! {
+        @FeathersMenu
+    }
+}
+
+pub(crate) fn feathers_menu_button() -> impl Scene {
+    bsn! {
+        @FeathersMenuButton {
+            @arrow: false,
+        }
+    }
+}
+
+pub(crate) fn feathers_menu_popup() -> impl Scene {
+    bsn! {
+        @FeathersMenuPopup
+    }
+}
+
+pub(crate) fn feathers_menu_item() -> impl Scene {
+    bsn! {
+        @FeathersMenuItem
+    }
+}
+
+pub(crate) fn feathers_menu_divider() -> impl Scene {
+    bsn! {
+        @FeathersMenuDivider
     }
 }

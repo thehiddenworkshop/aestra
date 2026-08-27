@@ -46,13 +46,14 @@ architecture vision; this file is the shorter delivery plan.
   timestamps remain a capability-dependent extension. A dockable Settings workspace
   now owns versioned `settings.ron` persistence, live grid, particle-limit, and UI-scale
   controls, capture defaults, protected recovery from malformed or newer files, and a
-  persisted locale. It is also the first complete Bevy Feathers migration slice,
-  using the upstream dark theme and BSN-backed tooling controls for consistent
-  buttons, checkboxes, number entry, scrollbars, focus, cursors, and accessibility. Embedded
+  persisted locale. The Settings workspace and editor chrome now form the first
+  complete Bevy Feathers migration slices, using the upstream dark theme and
+  BSN-backed menus and tooling controls for consistent buttons, checkboxes,
+  number entry, scrollbars, focus, cursors, and accessibility. Embedded
   `en-US` and `fr-FR` Fluent catalogs now localize the editor
   shell live with English fallback, semantic message IDs, interpolation, and catalog
   coverage tests. The remaining M5 work is viewport gizmos, localization of the deeper
-  authoring workspaces, migration of the remaining standard controls to Feathers,
+  authoring workspaces, migration of remaining Inspector controls to Feathers,
   and recovery.
 
 ## 1. Assessment of the current prototype

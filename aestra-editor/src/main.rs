@@ -23,15 +23,15 @@ use bevy::{
         controls::{NumberInputValue, UpdateNumberInput},
         dark_theme::create_dark_theme,
         display::{label, label_dim},
-        theme::{ThemeBackgroundColor, ThemedText, UiTheme},
+        theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText, UiTheme},
         tokens,
     },
     input::{ButtonState, keyboard::KeyboardInput},
     picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer},
     picking::pointer::PointerButton,
     prelude::*,
-    ui::{Checked, InteractionDisabled, RelativeCursorPosition},
-    ui_widgets::{ScrollArea, ScrollIntoView, Scrollbar, ValueChange},
+    ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition},
+    ui_widgets::{Activate, ScrollArea, ScrollIntoView, Scrollbar, ValueChange},
     window::{
         CursorIcon, PrimaryWindow, SystemCursorIcon, WindowCloseRequested, WindowMoved,
         WindowPosition, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
@@ -106,6 +106,7 @@ fn main() {
         .add_observer(handle_settings_toggle_change)
         .add_observer(handle_settings_integer_change)
         .add_observer(handle_settings_scalar_change)
+        .add_observer(queue_feathers_action_activation)
         .add_systems(Startup, (setup_window_cursor, setup_editor))
         .add_systems(
             Update,
@@ -512,6 +513,9 @@ struct SettingsCategoryButton(SettingsCategory);
 struct FeathersActionButton;
 
 #[derive(Component)]
+struct PendingFeathersActivation;
+
+#[derive(Component)]
 struct SettingsToggleControl(SettingsToggle);
 
 #[derive(Component)]
@@ -915,14 +919,53 @@ fn spawn_menu_bar(
                 border: UiRect::bottom(Val::Px(1.0)),
                 ..default()
             },
-            BackgroundColor(theme::MENU),
-            BorderColor::all(theme::BORDER),
+            ThemeBackgroundColor(tokens::PANE_HEADER_BG),
+            ThemeBorderColor(tokens::PANE_HEADER_BORDER),
         ))
         .with_children(|bar| {
-            menu_button(bar, "menu-file", MenuKind::File, localizer);
-            menu_button(bar, "menu-edit", MenuKind::Edit, localizer);
-            menu_button(bar, "menu-view", MenuKind::View, localizer);
-            menu_button(bar, "menu-help", MenuKind::Help, localizer);
+            spawn_standard_menu(
+                bar,
+                "menu-file",
+                MenuKind::File,
+                &[
+                    ("file-new-effect", "Ctrl+N", EditorAction::NewEffect),
+                    ("file-open", "Ctrl+O", EditorAction::OpenEffect),
+                    ("file-save", "Ctrl+S", EditorAction::Save),
+                    ("file-save-as", "Ctrl+Shift+S", EditorAction::SaveAs),
+                    (
+                        "file-settings",
+                        "",
+                        EditorAction::ShowDockPanel(DockPanel::Settings),
+                    ),
+                    ("file-exit", "Alt+F4", EditorAction::Exit),
+                ],
+                localizer,
+            );
+            spawn_standard_menu(
+                bar,
+                "menu-edit",
+                MenuKind::Edit,
+                &[
+                    ("edit-undo", "Ctrl+Z", EditorAction::Undo),
+                    ("edit-redo", "Ctrl+Y", EditorAction::Redo),
+                    ("edit-add-emitter", "Ctrl+Enter", EditorAction::AddLayer),
+                    (
+                        "edit-duplicate-emitter",
+                        "Ctrl+D",
+                        EditorAction::DuplicateLayer,
+                    ),
+                    ("edit-delete-emitter", "Delete", EditorAction::DeleteLayer),
+                ],
+                localizer,
+            );
+            spawn_view_menu(bar, layout, localizer);
+            spawn_standard_menu(
+                bar,
+                "menu-help",
+                MenuKind::Help,
+                &[("help-about", "", EditorAction::ShowAbout)],
+                localizer,
+            );
             bar.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
@@ -947,50 +990,22 @@ fn spawn_menu_bar(
                 },
                 TextColor(theme::TEXT_FAINT),
             ));
+        });
+}
 
-            spawn_dropdown(
-                bar,
-                MenuKind::File,
-                0.0,
-                &[
-                    ("file-new-effect", "Ctrl+N", EditorAction::NewEffect),
-                    ("file-open", "Ctrl+O", EditorAction::OpenEffect),
-                    ("file-save", "Ctrl+S", EditorAction::Save),
-                    ("file-save-as", "Ctrl+Shift+S", EditorAction::SaveAs),
-                    (
-                        "file-settings",
-                        "",
-                        EditorAction::ShowDockPanel(DockPanel::Settings),
-                    ),
-                    ("file-exit", "Alt+F4", EditorAction::Exit),
-                ],
-                localizer,
-            );
-            spawn_dropdown(
-                bar,
-                MenuKind::Edit,
-                68.0,
-                &[
-                    ("edit-undo", "Ctrl+Z", EditorAction::Undo),
-                    ("edit-redo", "Ctrl+Y", EditorAction::Redo),
-                    ("edit-add-emitter", "Ctrl+Enter", EditorAction::AddLayer),
-                    (
-                        "edit-duplicate-emitter",
-                        "Ctrl+D",
-                        EditorAction::DuplicateLayer,
-                    ),
-                    ("edit-delete-emitter", "Delete", EditorAction::DeleteLayer),
-                ],
-                localizer,
-            );
-            spawn_view_dropdown(bar, layout, localizer);
-            spawn_dropdown(
-                bar,
-                MenuKind::Help,
-                204.0,
-                &[("help-about", "", EditorAction::ShowAbout)],
-                localizer,
-            );
+fn spawn_standard_menu(
+    parent: &mut ChildSpawnerCommands,
+    message_id: &'static str,
+    menu: MenuKind,
+    items: &[(&'static str, &str, EditorAction)],
+    localizer: &Localizer,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu())
+        .with_children(|menu_root| {
+            menu_button(menu_root, message_id, menu, localizer);
+            spawn_dropdown(menu_root, menu, items, localizer);
         });
 }
 
@@ -1001,29 +1016,20 @@ fn menu_button(
     localizer: &Localizer,
 ) {
     parent
-        .spawn((
-            Button,
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu_button())
+        .insert((
             MenuButton,
+            FeathersActionButton,
             EditorAction::ToggleMenu(menu),
-            Node {
-                width: Val::Px(68.0),
-                height: Val::Px(28.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                ..default()
-            },
-            BackgroundColor(theme::MENU),
+            AccessibleLabel(localizer.text(message_id)),
         ))
         .with_children(|button| {
             button.spawn((
                 LocalizedText(message_id),
                 Text::new(localizer.text(message_id)),
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_MUTED),
+                ThemedText,
+                Pickable::IGNORE,
             ));
         });
 }
@@ -1031,30 +1037,16 @@ fn menu_button(
 fn spawn_dropdown(
     parent: &mut ChildSpawnerCommands,
     menu: MenuKind,
-    left: f32,
     items: &[(&'static str, &str, EditorAction)],
     localizer: &Localizer,
 ) {
     parent
-        .spawn((
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu_popup())
+        .insert((
             MenuDropdown(menu),
             MenuSurface,
             RelativeCursorPosition::default(),
-            GlobalZIndex(100),
-            Node {
-                display: Display::None,
-                position_type: PositionType::Absolute,
-                left: Val::Px(left),
-                top: Val::Px(29.0),
-                width: Val::Px(218.0),
-                padding: UiRect::all(Val::Px(5.0)),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(5.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL),
-            BorderColor::all(theme::BORDER_BRIGHT),
         ))
         .with_children(|dropdown| {
             for (message_id, shortcut, action) in items {
@@ -1062,29 +1054,12 @@ fn spawn_dropdown(
                     action,
                     EditorAction::ShowDockPanel(DockPanel::Settings) | EditorAction::Exit
                 ) {
-                    dropdown.spawn((
-                        Node {
-                            width: Val::Percent(100.0),
-                            height: Val::Px(1.0),
-                            margin: UiRect::vertical(Val::Px(4.0)),
-                            ..default()
-                        },
-                        BackgroundColor(theme::BORDER),
-                    ));
+                    dropdown
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_menu_divider());
                 }
-                let mut item = dropdown.spawn((
-                    Button,
-                    *action,
-                    Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(29.0),
-                        padding: UiRect::horizontal(Val::Px(9.0)),
-                        align_items: AlignItems::Center,
-                        border_radius: BorderRadius::all(Val::Px(3.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::PANEL),
-                ));
+                let mut item =
+                    spawn_feathers_menu_item(dropdown, message_id, shortcut, *action, localizer);
                 match action {
                     EditorAction::Undo => {
                         item.insert(UndoMenuItem);
@@ -1094,180 +1069,120 @@ fn spawn_dropdown(
                     }
                     _ => {}
                 }
-                item.with_children(|item| {
-                    item.spawn((
-                        LocalizedText(message_id),
-                        Text::new(localizer.text(message_id)),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT),
-                    ));
-                    item.spawn(Node {
-                        flex_grow: 1.0,
-                        ..default()
-                    });
-                    item.spawn((
-                        Text::new(*shortcut),
-                        TextFont {
-                            font_size: FontSize::Px(9.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT_FAINT),
-                    ));
-                });
             }
         });
 }
 
-fn spawn_view_dropdown(
+fn spawn_view_menu(
     parent: &mut ChildSpawnerCommands,
     layout: &WorkspaceLayout,
     localizer: &Localizer,
 ) {
     parent
-        .spawn((
-            MenuDropdown(MenuKind::View),
-            MenuSurface,
-            RelativeCursorPosition::default(),
-            GlobalZIndex(100),
-            Node {
-                display: Display::None,
-                position_type: PositionType::Absolute,
-                left: Val::Px(136.0),
-                top: Val::Px(29.0),
-                width: Val::Px(218.0),
-                padding: UiRect::all(Val::Px(5.0)),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(5.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL),
-            BorderColor::all(theme::BORDER_BRIGHT),
-        ))
-        .with_children(|dropdown| {
-            spawn_view_menu_item(
-                dropdown,
-                "view-toggle-grid",
-                "G",
-                EditorAction::ToggleGrid,
-                localizer,
-            );
-            spawn_view_menu_item(
-                dropdown,
-                "view-restart-preview",
-                "R",
-                EditorAction::Restart,
-                localizer,
-            );
-            spawn_view_menu_item(
-                dropdown,
-                "view-panels",
-                ">",
-                EditorAction::TogglePanelsSubmenu,
-                localizer,
-            );
-            spawn_view_menu_item(
-                dropdown,
-                "view-reset-workspace",
-                "",
-                EditorAction::ResetWorkspaceLayout,
-                localizer,
-            );
-
-            dropdown
-                .spawn((
-                    PanelsSubmenu,
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu())
+        .with_children(|menu_root| {
+            menu_button(menu_root, "menu-view", MenuKind::View, localizer);
+            menu_root
+                .spawn_empty()
+                .apply_scene(ui_shell::feathers_menu_popup())
+                .insert((
+                    MenuDropdown(MenuKind::View),
                     MenuSurface,
                     RelativeCursorPosition::default(),
-                    GlobalZIndex(101),
-                    Node {
-                        display: Display::None,
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(212.0),
-                        top: Val::Px(63.0),
-                        width: Val::Px(206.0),
-                        padding: UiRect::all(Val::Px(5.0)),
-                        flex_direction: FlexDirection::Column,
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(5.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::PANEL),
-                    BorderColor::all(theme::BORDER_BRIGHT),
                 ))
-                .with_children(|submenu| {
-                    for panel in DockPanel::ALL {
-                        let visible = layout.is_visible(panel);
-                        let mut item = submenu.spawn((
-                            Button,
-                            EditorAction::ToggleDockPanel(panel),
+                .with_children(|dropdown| {
+                    for (message_id, shortcut, action) in [
+                        ("view-toggle-grid", "G", EditorAction::ToggleGrid),
+                        ("view-restart-preview", "R", EditorAction::Restart),
+                        ("view-panels", ">", EditorAction::TogglePanelsSubmenu),
+                    ] {
+                        spawn_feathers_menu_item(dropdown, message_id, shortcut, action, localizer);
+                    }
+                    dropdown
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_menu_divider());
+                    spawn_feathers_menu_item(
+                        dropdown,
+                        "view-reset-workspace",
+                        "",
+                        EditorAction::ResetWorkspaceLayout,
+                        localizer,
+                    );
+
+                    dropdown
+                        .spawn((
+                            PanelsSubmenu,
+                            MenuSurface,
+                            RelativeCursorPosition::default(),
+                            GlobalZIndex(101),
                             Node {
-                                width: Val::Percent(100.0),
-                                height: Val::Px(29.0),
-                                padding: UiRect::horizontal(Val::Px(9.0)),
-                                align_items: AlignItems::Center,
-                                border_radius: BorderRadius::all(Val::Px(3.0)),
+                                display: Display::None,
+                                position_type: PositionType::Absolute,
+                                left: Val::Percent(100.0),
+                                top: Val::Px(63.0),
+                                min_width: Val::Px(206.0),
+                                padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
+                                flex_direction: FlexDirection::Column,
+                                border: UiRect::all(Val::Px(1.0)),
+                                border_radius: BorderRadius::all(Val::Px(4.0)),
                                 ..default()
                             },
-                            BackgroundColor(theme::PANEL),
-                        ));
-                        if !panel.closable() {
-                            item.insert(InteractionDisabled);
-                        }
-                        item.with_children(|row| {
-                            row.spawn((
-                                PanelVisibilityLabel(panel),
-                                Text::new(panel_visibility_label(localizer, panel, visible)),
-                                TextFont {
-                                    font_size: FontSize::Px(11.0),
-                                    ..default()
-                                },
-                                TextColor(if panel.closable() {
-                                    theme::TEXT
-                                } else {
-                                    theme::TEXT_FAINT
-                                }),
-                                Pickable::IGNORE,
-                            ));
+                            ThemeBackgroundColor(tokens::MENU_BG),
+                            ThemeBorderColor(tokens::MENU_BORDER),
+                        ))
+                        .with_children(|submenu| {
+                            for panel in DockPanel::ALL {
+                                let visible = layout.is_visible(panel);
+                                let mut item = submenu.spawn_empty();
+                                item.apply_scene(ui_shell::feathers_menu_item()).insert((
+                                    Interaction::None,
+                                    EditorAction::ToggleDockPanel(panel),
+                                    FeathersActionButton,
+                                    AccessibleLabel(panel_visibility_label(
+                                        localizer, panel, visible,
+                                    )),
+                                ));
+                                if !panel.closable() {
+                                    item.insert(InteractionDisabled);
+                                }
+                                item.with_children(|row| {
+                                    row.spawn((
+                                        PanelVisibilityLabel(panel),
+                                        Text::new(panel_visibility_label(
+                                            localizer, panel, visible,
+                                        )),
+                                        ThemedText,
+                                        Pickable::IGNORE,
+                                    ));
+                                });
+                            }
                         });
-                    }
                 });
         });
 }
 
-fn spawn_view_menu_item(
-    parent: &mut ChildSpawnerCommands,
+fn spawn_feathers_menu_item<'a>(
+    parent: &'a mut ChildSpawnerCommands,
     message_id: &'static str,
     shortcut: &str,
     action: EditorAction,
     localizer: &Localizer,
-) {
-    parent
-        .spawn((
-            Button,
+) -> EntityCommands<'a> {
+    let label = localizer.text(message_id);
+    let mut item = parent.spawn_empty();
+    item.apply_scene(ui_shell::feathers_menu_item())
+        .insert((
+            Interaction::None,
             action,
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(29.0),
-                padding: UiRect::horizontal(Val::Px(9.0)),
-                align_items: AlignItems::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL),
+            FeathersActionButton,
+            AccessibleLabel(label.clone()),
         ))
         .with_children(|item| {
             item.spawn((
                 LocalizedText(message_id),
-                Text::new(localizer.text(message_id)),
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
+                Text::new(label),
+                ThemedText,
                 Pickable::IGNORE,
             ));
             item.spawn(Node {
@@ -1276,14 +1191,11 @@ fn spawn_view_menu_item(
             });
             item.spawn((
                 Text::new(shortcut),
-                TextFont {
-                    font_size: FontSize::Px(9.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
+                ThemeTextColor(tokens::TEXT_DIM),
                 Pickable::IGNORE,
             ));
         });
+    item
 }
 
 fn panel_visibility_label(localizer: &Localizer, panel: DockPanel, visible: bool) -> String {
@@ -1380,8 +1292,8 @@ fn spawn_toolbar(
                 border: UiRect::bottom(Val::Px(1.0)),
                 ..default()
             },
-            BackgroundColor(theme::PANEL),
-            BorderColor::all(theme::BORDER),
+            ThemeBackgroundColor(tokens::PANE_BODY_BG),
+            ThemeBorderColor(tokens::PANE_HEADER_BORDER),
         ))
         .with_children(|bar| {
             bar.spawn((
@@ -1465,33 +1377,25 @@ fn toolbar_button<M: Component>(
     marker: M,
     localizer: &Localizer,
 ) {
-    parent
-        .spawn((
-            Button,
+    let mut button = parent.spawn_empty();
+    if matches!(action, EditorAction::TogglePlayback) {
+        button.apply_scene(ui_shell::feathers_primary_button());
+    } else {
+        button.apply_scene(ui_shell::feathers_button());
+    }
+    button
+        .insert((
             action,
-            Node {
-                height: Val::Px(32.0),
-                min_width: Val::Px(78.0),
-                padding: UiRect::horizontal(Val::Px(12.0)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(theme::BUTTON),
-            BorderColor::all(theme::BORDER_BRIGHT),
+            FeathersActionButton,
+            AccessibleLabel(localizer.text(message_id)),
         ))
         .with_children(|button| {
             button.spawn((
                 LocalizedText(message_id),
                 Text::new(localizer.text(message_id)),
-                TextFont {
-                    font_size: FontSize::Px(12.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
+                ThemedText,
                 marker,
+                Pickable::IGNORE,
             ));
         });
 }
@@ -7181,11 +7085,24 @@ fn keyboard_shortcuts(
     }
 }
 
+fn queue_feathers_action_activation(
+    activate: On<Activate>,
+    actions: Query<(), (With<EditorAction>, With<FeathersActionButton>)>,
+    mut commands: Commands,
+) {
+    if actions.contains(activate.entity) {
+        commands
+            .entity(activate.entity)
+            .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn handle_buttons(
     mut commands: Commands,
     mut buttons: Query<
         (
+            Entity,
             &Interaction,
             &EditorAction,
             Option<&LayerRow>,
@@ -7194,12 +7111,16 @@ fn handle_buttons(
             Option<&DiagnosticsFilterButton>,
             Option<&SettingsCategoryButton>,
             Option<&FeathersActionButton>,
+            Option<&PendingFeathersActivation>,
             Option<&CompiledPlanRow>,
             Option<&CompileStatusButton>,
             Option<&InteractionDisabled>,
             &mut BackgroundColor,
         ),
-        (Changed<Interaction>, With<Button>),
+        (
+            Changed<Interaction>,
+            Or<(With<Button>, With<FeathersActionButton>)>,
+        ),
     >,
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
@@ -7236,6 +7157,7 @@ fn handle_buttons(
         mut localizer,
     ) = editor_resources;
     for (
+        entity,
         interaction,
         action,
         layer_row,
@@ -7244,6 +7166,7 @@ fn handle_buttons(
         diagnostics_filter,
         settings_category,
         feathers_action,
+        pending_feathers_activation,
         compiled_plan_row,
         compile_status,
         disabled,
@@ -7316,7 +7239,15 @@ fn handle_buttons(
                 }
             }
             Interaction::Pressed => {
-                if feathers_action.is_none() {
+                if feathers_action.is_some() {
+                    if pending_feathers_activation.is_none() {
+                        continue;
+                    }
+                    commands
+                        .entity(entity)
+                        .remove::<PendingFeathersActivation>()
+                        .insert(Interaction::None);
+                } else {
                     background.0 = theme::ACCENT_DIM;
                 }
                 if let EditorAction::ToggleMenu(kind) = *action {
@@ -7795,7 +7726,7 @@ fn dismiss_open_menus(
     mut menu: ResMut<MenuState>,
     mut session: ResMut<EditorSession>,
     menu_surfaces: Query<&RelativeCursorPosition, With<MenuSurface>>,
-    menu_buttons: Query<&Interaction, With<MenuButton>>,
+    menu_buttons: Query<(&Interaction, Has<Pressed>), With<MenuButton>>,
 ) {
     if !buttons.just_pressed(MouseButton::Left) {
         return;
@@ -7809,9 +7740,9 @@ fn dismiss_open_menus(
     let pointer_over_menu = menu_surfaces
         .iter()
         .any(RelativeCursorPosition::cursor_over);
-    let menu_button_pressed = menu_buttons
-        .iter()
-        .any(|interaction| *interaction == Interaction::Pressed);
+    let menu_button_pressed = menu_buttons.iter().any(|(interaction, feathers_pressed)| {
+        *interaction == Interaction::Pressed || feathers_pressed
+    });
     if should_dismiss_open_menu(pointer_over_menu, menu_button_pressed) {
         menu.open = None;
         menu.panels_open = false;
@@ -8143,7 +8074,7 @@ fn scrub_timeline(
 #[allow(clippy::type_complexity)]
 fn update_menu_visibility(
     menu: Res<MenuState>,
-    mut dropdowns: Query<(&MenuDropdown, &mut Node)>,
+    mut dropdowns: Query<(&MenuDropdown, &mut Node, &mut Visibility)>,
     mut panels_submenus: Query<
         &mut Node,
         (
@@ -8164,11 +8095,17 @@ fn update_menu_visibility(
     if !menu.is_changed() {
         return;
     }
-    for (dropdown, mut node) in &mut dropdowns {
-        node.display = if menu.open == Some(dropdown.0) {
+    for (dropdown, mut node, mut visibility) in &mut dropdowns {
+        let visible = menu.open == Some(dropdown.0);
+        node.display = if visible {
             Display::Flex
         } else {
             Display::None
+        };
+        *visibility = if visible {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
         };
     }
     for mut node in &mut panels_submenus {
@@ -8716,27 +8653,20 @@ fn update_compile_status(
 fn update_history_actions(
     session: Res<EditorSession>,
     mut commands: Commands,
-    mut items: Query<
-        (
-            Entity,
-            Has<UndoMenuItem>,
-            Has<RedoMenuItem>,
-            &mut BackgroundColor,
-        ),
+    items: Query<
+        (Entity, Has<UndoMenuItem>, Has<RedoMenuItem>),
         Or<(With<UndoMenuItem>, With<RedoMenuItem>)>,
     >,
 ) {
     if !session.is_changed() {
         return;
     }
-    for (entity, undo, redo, mut background) in &mut items {
+    for (entity, undo, redo) in &items {
         let enabled = (undo && session.can_undo()) || (redo && session.can_redo());
         if enabled {
             commands.entity(entity).remove::<InteractionDisabled>();
-            background.0 = theme::PANEL;
         } else {
             commands.entity(entity).insert(InteractionDisabled);
-            background.0 = theme::PANEL_DARK;
         }
     }
 }
@@ -9117,6 +9047,32 @@ mod tests {
     }
 
     #[test]
+    fn feathers_menu_button_press_does_not_immediately_dismiss_its_menu() {
+        let mut app = App::new();
+        let mut mouse = ButtonInput::<MouseButton>::default();
+        mouse.press(MouseButton::Left);
+        app.insert_resource(mouse);
+        app.insert_resource(MenuState {
+            open: Some(MenuKind::File),
+            ..default()
+        });
+        app.insert_resource(EditorSession::from_embedded_sample(
+            EFFECT_SOURCE,
+            EFFECT_PATH,
+        ));
+        app.world_mut()
+            .spawn((MenuButton, Interaction::None, Pressed));
+        app.add_systems(Update, dismiss_open_menus);
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<MenuState>().open,
+            Some(MenuKind::File)
+        );
+    }
+
+    #[test]
     fn hovering_switches_between_open_top_level_menus() {
         assert_eq!(menu_after_hover(None, MenuKind::Edit), None);
         assert_eq!(
@@ -9126,6 +9082,72 @@ mod tests {
         assert_eq!(
             menu_after_hover(Some(MenuKind::View), MenuKind::View),
             Some(MenuKind::View)
+        );
+    }
+
+    #[test]
+    fn feathers_activation_queues_one_editor_action() {
+        let mut app = App::new();
+        app.add_observer(queue_feathers_action_activation);
+        let action = app
+            .world_mut()
+            .spawn((
+                EditorAction::Restart,
+                FeathersActionButton,
+                Interaction::None,
+            ))
+            .id();
+
+        app.world_mut().trigger(Activate { entity: action });
+        app.update();
+
+        let action = app.world().entity(action);
+        assert!(action.contains::<PendingFeathersActivation>());
+        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+    }
+
+    #[test]
+    fn menu_state_controls_feathers_popup_display_and_visibility() {
+        let mut app = App::new();
+        app.insert_resource(MenuState {
+            open: Some(MenuKind::File),
+            ..default()
+        });
+        app.add_systems(Update, update_menu_visibility);
+        let file = app
+            .world_mut()
+            .spawn((
+                MenuDropdown(MenuKind::File),
+                Node::default(),
+                Visibility::Hidden,
+            ))
+            .id();
+        let edit = app
+            .world_mut()
+            .spawn((
+                MenuDropdown(MenuKind::Edit),
+                Node::default(),
+                Visibility::Visible,
+            ))
+            .id();
+
+        app.update();
+
+        assert_eq!(
+            app.world().get::<Node>(file).unwrap().display,
+            Display::Flex
+        );
+        assert_eq!(
+            app.world().get::<Visibility>(file),
+            Some(&Visibility::Visible)
+        );
+        assert_eq!(
+            app.world().get::<Node>(edit).unwrap().display,
+            Display::None
+        );
+        assert_eq!(
+            app.world().get::<Visibility>(edit),
+            Some(&Visibility::Hidden)
         );
     }
 
