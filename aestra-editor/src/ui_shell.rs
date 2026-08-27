@@ -1,5 +1,12 @@
 use crate::theme;
-use bevy::prelude::*;
+use bevy::{
+    feathers::controls::{
+        ButtonVariant, FeathersButton, FeathersCheckbox, FeathersNumberInput, FeathersScrollbar,
+        FeathersToolButton, NumberFormat,
+    },
+    prelude::*,
+    ui_widgets::ControlOrientation,
+};
 
 pub(crate) fn editor_root() -> impl Scene {
     bsn! {
@@ -74,5 +81,62 @@ pub(crate) fn splitter(vertical: bool) -> impl Scene {
             justify_content: JustifyContent::Center,
         }
         BackgroundColor(theme::SPLITTER_GUTTER)
+    }
+}
+
+pub(crate) fn feathers_button() -> impl Scene {
+    bsn! {
+        @FeathersButton
+    }
+}
+
+pub(crate) fn feathers_primary_button() -> impl Scene {
+    bsn! {
+        @FeathersButton {
+            @variant: ButtonVariant::Primary,
+        }
+    }
+}
+
+pub(crate) fn feathers_plain_button() -> impl Scene {
+    bsn! {
+        @FeathersButton {
+            @variant: ButtonVariant::Plain,
+        }
+    }
+}
+
+pub(crate) fn feathers_tool_button() -> impl Scene {
+    bsn! {
+        @FeathersToolButton
+    }
+}
+
+pub(crate) fn feathers_checkbox() -> impl Scene {
+    bsn! {
+        @FeathersCheckbox
+    }
+}
+
+pub(crate) fn feathers_integer_input() -> impl Scene {
+    bsn! {
+        @FeathersNumberInput {
+            @number_format: NumberFormat::I32,
+        }
+    }
+}
+
+pub(crate) fn feathers_scalar_input() -> impl Scene {
+    bsn! {
+        @FeathersNumberInput
+    }
+}
+
+pub(crate) fn feathers_vertical_scrollbar(target: Entity) -> impl Scene {
+    bsn! {
+        @FeathersScrollbar {
+            @target: target,
+            @orientation: ControlOrientation::Vertical,
+        }
     }
 }

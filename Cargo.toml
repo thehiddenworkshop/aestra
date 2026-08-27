@@ -18,7 +18,7 @@ authors = ["The Hidden Workshop"]
 repository = "https://github.com/TheHiddenWorkshop/aestra"
 
 [workspace.dependencies]
-bevy = { version = "0.19.1", features = ["shader_format_wesl"] }
+bevy = { version = "0.19.1", features = ["bevy_feathers", "shader_format_wesl"] }
 fluent-bundle = "0.16"
 image = { version = "0.25", default-features = false, features = ["png"] }
 ron = "0.12"

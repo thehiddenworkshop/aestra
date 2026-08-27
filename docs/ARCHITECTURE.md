@@ -4,12 +4,15 @@
 
 Aestra is an effect choreography system, not only a particle editor. A production effect may combine bursts, trails, ribbons, mesh animation, material parameters, screen-space accents, sound/event cues, and child effects on one timeline. The editor therefore treats an effect as layered, timed data and keeps simulation modules separate from rendering modules.
 
-The UI is built directly with Bevy UI. Its stable shell and reusable structural
-scenes use Bevy Scene Notation (BSN), while dynamic authoring lists remain normal
-ECS-backed builders. Workspace placement, tab stacks, and recursive split ratios live
-in a persisted dock-tree resource rather than in effect assets. Reusable editor widgets remain
-independent of effect semantics so they can later move into any shared Bevy
-editor-UI library.
+The UI is built directly with Bevy UI. Bevy Feathers supplies the editor-facing
+widget, theme-token, focus, cursor, and accessibility foundation so standard
+controls track the visual language of the future Bevy editor. Its stable shell
+and reusable structural and Feathers widget scenes use Bevy Scene Notation
+(BSN), while dynamic authoring lists remain normal ECS-backed builders.
+Workspace placement, tab stacks, and recursive split ratios live in a persisted
+dock-tree resource rather than in effect assets. Specialized controls such as
+docking, the viewport, timeline, and curve editor remain Aestra-owned while
+consuming the shared theme foundation.
 
 ## Boundaries
 
@@ -72,6 +75,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Owns panels, viewport controls, timeline state, and an authoring-backed session.
 - Presents Bevy-native UI and editor interactions.
+- Uses Bevy Feathers for standard tooling controls and theme semantics. The
+  Settings workspace is the first complete Feathers slice, including pane/group
+  containers, buttons, checkboxes, editable numeric inputs, themed typography,
+  keyboard focus, cursors, and accessibility labels.
 - Owns a persisted recursive workspace dock tree with tab-strip insertion and
   directional panel-content splitting,
   closable/recoverable panels, collapsing empty branches, transient drop targets,
@@ -93,7 +100,7 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   execution stages, source-mapped instructions, particle layout, runtime parameter
   slots, renderer plans, optimization statistics, and the WESL backend entry points.
   Compiled rows navigate back to their semantic emitter, module, renderer, or parameter.
-- Uses one native Bevy scroll-area/scrollbar composition across Inspector, Diagnostics,
+- Uses one native Bevy scroll-area with a BSN-backed Feathers scrollbar across Inspector, Diagnostics,
   Generated Code, Profiler, Changes, and curve lists. Scrollbars only participate in
   layout while their content overflows. Semantic Inspector anchors support exact
   scroll-to-source navigation from compiled instructions with a transient highlight

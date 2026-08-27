@@ -17,12 +17,21 @@ use aestra_runtime::{EffectProfile, ProfileValue, ProfileValueSource};
 use bevy::{
     camera::RenderTarget,
     ecs::system::SystemParam,
+    feathers::{
+        FeathersPlugins,
+        containers::{group, group_body, group_header, pane_header},
+        controls::{NumberInputValue, UpdateNumberInput},
+        dark_theme::create_dark_theme,
+        display::{label, label_dim},
+        theme::{ThemeBackgroundColor, ThemedText, UiTheme},
+        tokens,
+    },
     input::{ButtonState, keyboard::KeyboardInput},
     picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer},
     picking::pointer::PointerButton,
     prelude::*,
-    ui::{InteractionDisabled, RelativeCursorPosition},
-    ui_widgets::{ControlOrientation, ScrollArea, ScrollIntoView, Scrollbar, ScrollbarThumb},
+    ui::{Checked, InteractionDisabled, RelativeCursorPosition},
+    ui_widgets::{ScrollArea, ScrollIntoView, Scrollbar, ValueChange},
     window::{
         CursorIcon, PrimaryWindow, SystemCursorIcon, WindowCloseRequested, WindowMoved,
         WindowPosition, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
@@ -92,6 +101,11 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(FeathersPlugins)
+        .insert_resource(UiTheme(create_dark_theme()))
+        .add_observer(handle_settings_toggle_change)
+        .add_observer(handle_settings_integer_change)
+        .add_observer(handle_settings_scalar_change)
         .add_systems(Startup, (setup_window_cursor, setup_editor))
         .add_systems(
             Update,
@@ -126,6 +140,7 @@ fn main() {
                     sync_tab_append_hint,
                     update_dock_zone_style,
                     rebuild_editor_ui,
+                    sync_settings_number_inputs,
                     sync_native_floating_windows,
                     scroll_inspector_to_focus,
                     update_scrollbar_visibility,
@@ -203,8 +218,6 @@ enum EditorAction {
     ToggleGrid,
     ResetWorkspaceLayout,
     SelectSettingsCategory(SettingsCategory),
-    ToggleSetting(SettingsToggle),
-    AdjustSetting(SettingsNumber, i8),
     CycleLocale(i8),
     ResetEditorSettings,
     ShowAbout,
@@ -494,6 +507,15 @@ struct DiagnosticsFilterButton(DiagnosticsFilter);
 
 #[derive(Component)]
 struct SettingsCategoryButton(SettingsCategory);
+
+#[derive(Component)]
+struct FeathersActionButton;
+
+#[derive(Component)]
+struct SettingsToggleControl(SettingsToggle);
+
+#[derive(Component)]
+struct SettingsNumberControl(SettingsNumber);
 
 #[derive(Component)]
 struct LocalizedText(&'static str);
@@ -4468,49 +4490,25 @@ fn spawn_settings_workspace(
         })
         .with_children(|panel| {
             panel
-                .spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        min_height: Val::Px(46.0),
-                        align_items: AlignItems::Center,
-                        padding: UiRect::horizontal(Val::Px(14.0)),
-                        column_gap: Val::Px(12.0),
-                        border: UiRect::bottom(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::PANEL_LIGHT),
-                    BorderColor::all(theme::BORDER),
-                ))
+                .spawn_empty()
+                .apply_scene(pane_header())
                 .with_children(|header| {
                     header.spawn((
                         Text::new(localizer.text("settings-editor-settings")),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT),
+                        ThemedText,
                     ));
-                    header.spawn((
-                        Text::new(persistence.path().display().to_string()),
-                        TextFont {
-                            font_size: FontSize::Px(9.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT_FAINT),
-                        Node {
-                            flex_shrink: 1.0,
-                            ..default()
-                        },
-                    ));
+                    header
+                        .spawn_empty()
+                        .apply_scene(label_dim(persistence.path().display().to_string()));
                     header.spawn(Node {
                         flex_grow: 1.0,
                         ..default()
                     });
-                    stack_button(
+                    spawn_feathers_action_button(
                         header,
                         &localizer.text("common-reset-settings"),
                         EditorAction::ResetEditorSettings,
-                        104.0,
+                        false,
                     );
                 });
             if let Some(diagnostic) = persistence.diagnostic() {
@@ -4544,12 +4542,13 @@ fn spawn_settings_workspace(
                             width: Val::Px(156.0),
                             height: Val::Percent(100.0),
                             flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Stretch,
                             padding: UiRect::all(Val::Px(8.0)),
                             row_gap: Val::Px(3.0),
                             border: UiRect::right(Val::Px(1.0)),
                             ..default()
                         },
-                        BackgroundColor(theme::PANEL_DARK),
+                        ThemeBackgroundColor(tokens::PANE_BODY_BG),
                         BorderColor::all(theme::BORDER),
                     ))
                     .with_children(|categories| {
@@ -4601,37 +4600,23 @@ fn spawn_settings_category_button(
     selected: bool,
     localizer: &Localizer,
 ) {
-    parent
-        .spawn((
-            Button,
+    let mut button = parent.spawn_empty();
+    if selected {
+        button.apply_scene(ui_shell::feathers_primary_button());
+    } else {
+        button.apply_scene(ui_shell::feathers_plain_button());
+    }
+    button
+        .insert((
             EditorAction::SelectSettingsCategory(category),
             SettingsCategoryButton(category),
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(31.0),
-                align_items: AlignItems::Center,
-                padding: UiRect::horizontal(Val::Px(9.0)),
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                ..default()
-            },
-            BackgroundColor(if selected {
-                theme::SELECTION
-            } else {
-                theme::PANEL_DARK
-            }),
+            FeathersActionButton,
+            AccessibleLabel(localizer.text(category.message_id())),
         ))
         .with_children(|button| {
             button.spawn((
                 Text::new(localizer.text(category.message_id())),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextColor(if selected {
-                    theme::TEXT
-                } else {
-                    theme::TEXT_MUTED
-                }),
+                ThemedText,
                 Pickable::IGNORE,
             ));
         });
@@ -4674,37 +4659,37 @@ fn spawn_settings_category(
             );
         }
         SettingsCategory::Performance => {
-            spawn_settings_number(
+            spawn_settings_integer(
                 parent,
                 &localizer.text("settings-preview-particle-limit"),
                 &localizer.text("settings-preview-particle-limit-description"),
-                settings.performance.preview_particle_limit.to_string(),
                 SettingsNumber::PreviewParticleLimit,
+                None,
             );
         }
         SettingsCategory::Capture => {
-            spawn_settings_number(
+            spawn_settings_integer(
                 parent,
                 &localizer.text("settings-capture-frame-rate"),
                 &localizer.text("settings-capture-frame-rate-description"),
-                format!("{} FPS", settings.capture.frame_rate),
                 SettingsNumber::CaptureFrameRate,
+                Some("FPS"),
             );
-            spawn_settings_number(
+            spawn_settings_integer(
                 parent,
                 &localizer.text("settings-contact-sheet-columns"),
                 &localizer.text("settings-contact-sheet-columns-description"),
-                settings.capture.contact_sheet_columns.to_string(),
                 SettingsNumber::ContactSheetColumns,
+                None,
             );
         }
         SettingsCategory::Appearance => {
-            spawn_settings_number(
+            spawn_settings_scalar(
                 parent,
                 &localizer.text("settings-interface-scale"),
                 &localizer.text("settings-interface-scale-description"),
-                format!("{:.0}%", settings.appearance.ui_scale * 100.0),
                 SettingsNumber::UiScale,
+                Some("%"),
             );
         }
         SettingsCategory::Language => {
@@ -4736,68 +4721,44 @@ fn spawn_settings_category(
 }
 
 fn spawn_settings_heading(parent: &mut ChildSpawnerCommands, title: &str) {
-    parent.spawn((
-        Text::new(title),
-        TextFont {
-            font_size: FontSize::Px(14.0),
-            ..default()
-        },
-        TextColor(theme::ACCENT),
-        Node {
+    parent
+        .spawn_empty()
+        .apply_scene(label(title.to_owned()))
+        .insert(Node {
             margin: UiRect::bottom(Val::Px(6.0)),
             ..default()
-        },
-    ));
+        });
 }
 
 fn settings_row(
     parent: &mut ChildSpawnerCommands,
-    content: impl FnOnce(&mut ChildSpawnerCommands),
+    title: &str,
+    description: &str,
+    controls: impl FnOnce(&mut ChildSpawnerCommands),
 ) {
     parent
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                min_height: Val::Px(66.0),
-                padding: UiRect::all(Val::Px(11.0)),
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(12.0),
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL),
-            BorderColor::all(theme::BORDER),
-        ))
-        .with_children(content);
-}
-
-fn spawn_settings_description(parent: &mut ChildSpawnerCommands, title: &str, description: &str) {
-    parent
-        .spawn(Node {
-            flex_grow: 1.0,
-            min_width: Val::Px(0.0),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(5.0),
-            ..default()
-        })
-        .with_children(|text| {
-            text.spawn((
-                Text::new(title),
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT),
-            ));
-            text.spawn((
-                Text::new(description),
-                TextFont {
-                    font_size: FontSize::Px(9.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-            ));
+        .spawn_empty()
+        .apply_scene(group())
+        .with_children(|card| {
+            card.spawn_empty()
+                .apply_scene(group_header())
+                .with_children(|header| {
+                    header.spawn((Text::new(title), ThemedText));
+                });
+            card.spawn_empty()
+                .apply_scene(group_body())
+                .with_children(|body| {
+                    body.spawn_empty()
+                        .apply_scene(label_dim(description.to_owned()));
+                    body.spawn(Node {
+                        width: Val::Percent(100.0),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::FlexEnd,
+                        column_gap: Val::Px(6.0),
+                        ..default()
+                    })
+                    .with_children(controls);
+                });
         });
 }
 
@@ -4809,14 +4770,15 @@ fn spawn_settings_toggle(
     setting: SettingsToggle,
     localizer: &Localizer,
 ) {
-    settings_row(parent, |row| {
-        spawn_settings_description(row, title, description);
-        stack_button(
-            row,
-            &localizer.text(if enabled { "common-on" } else { "common-off" }),
-            EditorAction::ToggleSetting(setting),
-            54.0,
-        );
+    settings_row(parent, title, description, |controls| {
+        let mut checkbox = controls.spawn_empty();
+        checkbox.apply_scene(ui_shell::feathers_checkbox()).insert((
+            SettingsToggleControl(setting),
+            AccessibleLabel(localizer.text(if enabled { "common-on" } else { "common-off" })),
+        ));
+        if enabled {
+            checkbox.insert(Checked);
+        }
     });
 }
 
@@ -4826,50 +4788,80 @@ fn spawn_settings_locale(
     value: &str,
     description: &str,
 ) {
-    settings_row(parent, |row| {
-        spawn_settings_description(row, title, description);
-        mini_button(row, "−", EditorAction::CycleLocale(-1));
-        row.spawn((
-            Text::new(value),
-            TextFont {
-                font_size: FontSize::Px(10.0),
-                ..default()
-            },
-            TextColor(theme::TEXT_MUTED),
-            Node {
+    settings_row(parent, title, description, |controls| {
+        spawn_feathers_tool_button(controls, "−", EditorAction::CycleLocale(-1));
+        controls
+            .spawn(Node {
                 min_width: Val::Px(132.0),
                 justify_content: JustifyContent::Center,
                 ..default()
-            },
-        ));
-        mini_button(row, "+", EditorAction::CycleLocale(1));
+            })
+            .with_children(|value_container| {
+                value_container
+                    .spawn_empty()
+                    .apply_scene(label_dim(value.to_owned()));
+            });
+        spawn_feathers_tool_button(controls, "+", EditorAction::CycleLocale(1));
     });
 }
 
-fn spawn_settings_number(
+fn spawn_settings_integer(
     parent: &mut ChildSpawnerCommands,
     title: &str,
     description: &str,
-    value: String,
     setting: SettingsNumber,
+    unit: Option<&str>,
 ) {
-    settings_row(parent, |row| {
-        spawn_settings_description(row, title, description);
-        mini_button(row, "−", EditorAction::AdjustSetting(setting, -1));
-        row.spawn((
-            Text::new(value),
-            TextFont {
-                font_size: FontSize::Px(10.0),
+    settings_row(parent, title, description, |controls| {
+        controls
+            .spawn(Node {
+                width: Val::Px(112.0),
                 ..default()
-            },
-            TextColor(theme::TEXT_MUTED),
-            Node {
-                min_width: Val::Px(72.0),
-                justify_content: JustifyContent::Center,
+            })
+            .with_children(|input| {
+                input
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_integer_input())
+                    .insert((
+                        SettingsNumberControl(setting),
+                        AccessibleLabel(title.to_owned()),
+                    ));
+            });
+        if let Some(unit) = unit {
+            controls
+                .spawn_empty()
+                .apply_scene(label_dim(unit.to_owned()));
+        }
+    });
+}
+
+fn spawn_settings_scalar(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    description: &str,
+    setting: SettingsNumber,
+    unit: Option<&str>,
+) {
+    settings_row(parent, title, description, |controls| {
+        controls
+            .spawn(Node {
+                width: Val::Px(112.0),
                 ..default()
-            },
-        ));
-        mini_button(row, "+", EditorAction::AdjustSetting(setting, 1));
+            })
+            .with_children(|input| {
+                input
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_scalar_input())
+                    .insert((
+                        SettingsNumberControl(setting),
+                        AccessibleLabel(title.to_owned()),
+                    ));
+            });
+        if let Some(unit) = unit {
+            controls
+                .spawn_empty()
+                .apply_scene(label_dim(unit.to_owned()));
+        }
     });
 }
 
@@ -4879,17 +4871,217 @@ fn spawn_settings_read_only(
     value: &str,
     description: &str,
 ) {
-    settings_row(parent, |row| {
-        spawn_settings_description(row, title, description);
-        row.spawn((
-            Text::new(value),
-            TextFont {
-                font_size: FontSize::Px(10.0),
-                ..default()
-            },
-            TextColor(theme::TEXT_MUTED),
-        ));
+    settings_row(parent, title, description, |controls| {
+        controls
+            .spawn_empty()
+            .apply_scene(label_dim(value.to_owned()));
     });
+}
+
+fn spawn_feathers_action_button(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    action: EditorAction,
+    primary: bool,
+) {
+    let mut button = parent.spawn_empty();
+    if primary {
+        button.apply_scene(ui_shell::feathers_primary_button());
+    } else {
+        button.apply_scene(ui_shell::feathers_button());
+    }
+    button
+        .insert((
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.to_owned()),
+        ))
+        .with_children(|button| {
+            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
+        });
+}
+
+fn spawn_feathers_tool_button(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    action: EditorAction,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_tool_button())
+        .insert((
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.to_owned()),
+        ))
+        .with_children(|button| {
+            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
+        });
+}
+
+fn handle_settings_toggle_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&SettingsToggleControl>,
+    mut commands: Commands,
+    mut settings: ResMut<EditorSettings>,
+    mut menu: ResMut<MenuState>,
+    mut persistence: ResMut<SettingsPersistence>,
+    mut session: ResMut<EditorSession>,
+) {
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    let changed = apply_settings_toggle(&mut settings, &mut menu, control.0, change.value);
+    if changed {
+        session.ui_revision += 1;
+        persist_editor_settings(&settings, &mut persistence, &mut session);
+    }
+}
+
+fn apply_settings_toggle(
+    settings: &mut EditorSettings,
+    menu: &mut MenuState,
+    setting: SettingsToggle,
+    value: bool,
+) -> bool {
+    match setting {
+        SettingsToggle::ConfirmUnsavedChanges => {
+            let changed = settings.general.confirm_unsaved_changes != value;
+            settings.general.confirm_unsaved_changes = value;
+            changed
+        }
+        SettingsToggle::ShowGrid => {
+            let changed = settings.preview.show_grid != value;
+            settings.preview.show_grid = value;
+            menu.show_grid = value;
+            changed
+        }
+        SettingsToggle::PlayOnOpen => {
+            let changed = settings.preview.play_on_open != value;
+            settings.preview.play_on_open = value;
+            changed
+        }
+    }
+}
+
+fn handle_settings_integer_change(
+    change: On<ValueChange<i32>>,
+    controls: Query<&SettingsNumberControl>,
+    mut settings: ResMut<EditorSettings>,
+    mut persistence: ResMut<SettingsPersistence>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let changed = apply_settings_integer(&mut settings, control.0, change.value);
+    if changed {
+        session.ui_revision += 1;
+        persist_editor_settings(&settings, &mut persistence, &mut session);
+    }
+}
+
+fn apply_settings_integer(
+    settings: &mut EditorSettings,
+    setting: SettingsNumber,
+    value: i32,
+) -> bool {
+    match setting {
+        SettingsNumber::PreviewParticleLimit => {
+            let value = value.clamp(64, PARTICLE_POOL_SIZE as i32) as usize;
+            let changed = settings.performance.preview_particle_limit != value;
+            settings.performance.preview_particle_limit = value;
+            changed
+        }
+        SettingsNumber::CaptureFrameRate => {
+            let value = value.clamp(1, 240) as u16;
+            let changed = settings.capture.frame_rate != value;
+            settings.capture.frame_rate = value;
+            changed
+        }
+        SettingsNumber::ContactSheetColumns => {
+            let value = value.clamp(1, 16) as u8;
+            let changed = settings.capture.contact_sheet_columns != value;
+            settings.capture.contact_sheet_columns = value;
+            changed
+        }
+        SettingsNumber::UiScale => false,
+    }
+}
+
+fn handle_settings_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&SettingsNumberControl>,
+    mut settings: ResMut<EditorSettings>,
+    mut persistence: ResMut<SettingsPersistence>,
+    mut session: ResMut<EditorSession>,
+    mut ui_scale: ResMut<UiScale>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if control.0 != SettingsNumber::UiScale {
+        return;
+    }
+    if apply_settings_scalar(&mut settings, control.0, change.value) {
+        ui_scale.0 = settings.appearance.ui_scale;
+        session.ui_revision += 1;
+        persist_editor_settings(&settings, &mut persistence, &mut session);
+    }
+}
+
+fn apply_settings_scalar(
+    settings: &mut EditorSettings,
+    setting: SettingsNumber,
+    value: f32,
+) -> bool {
+    if setting != SettingsNumber::UiScale {
+        return false;
+    }
+    let value = ((value / 100.0).clamp(0.75, 1.5) * 20.0).round() / 20.0;
+    let changed = settings.appearance.ui_scale != value;
+    settings.appearance.ui_scale = value;
+    changed
+}
+
+fn sync_settings_number_inputs(
+    mut commands: Commands,
+    settings: Res<EditorSettings>,
+    controls: Query<(Entity, &SettingsNumberControl), Added<SettingsNumberControl>>,
+) {
+    for (entity, control) in &controls {
+        let value = settings_number_input_value(&settings, control.0);
+        commands.trigger(UpdateNumberInput { entity, value });
+    }
+}
+
+fn settings_number_input_value(
+    settings: &EditorSettings,
+    setting: SettingsNumber,
+) -> NumberInputValue {
+    match setting {
+        SettingsNumber::PreviewParticleLimit => {
+            NumberInputValue::I32(settings.performance.preview_particle_limit as i32)
+        }
+        SettingsNumber::CaptureFrameRate => {
+            NumberInputValue::I32(i32::from(settings.capture.frame_rate))
+        }
+        SettingsNumber::ContactSheetColumns => {
+            NumberInputValue::I32(i32::from(settings.capture.contact_sheet_columns))
+        }
+        SettingsNumber::UiScale => NumberInputValue::F32(settings.appearance.ui_scale * 100.0),
+    }
 }
 
 fn spawn_vertical_scroll_area(
@@ -4909,25 +5101,14 @@ fn spawn_vertical_scroll_area(
 
 fn spawn_vertical_scrollbar(parent: &mut ChildSpawnerCommands, target: Entity) {
     parent
-        .spawn((
-            Scrollbar::new(target, ControlOrientation::Vertical, 28.0),
-            Node {
-                width: Val::Px(10.0),
-                height: Val::Percent(100.0),
-                display: Display::None,
-                padding: UiRect::horizontal(Val::Px(3.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL_DARK),
-        ))
-        .with_children(|track| {
-            track.spawn((
-                ScrollbarThumb {
-                    border_radius: BorderRadius::all(Val::Px(3.0)),
-                    ..default()
-                },
-                BackgroundColor(theme::TEXT_FAINT),
-            ));
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_vertical_scrollbar(target))
+        .insert(Node {
+            width: Val::Px(10.0),
+            height: Val::Percent(100.0),
+            display: Display::None,
+            padding: UiRect::horizontal(Val::Px(3.0)),
+            ..default()
         });
 }
 
@@ -7012,6 +7193,7 @@ fn handle_buttons(
             Option<&DockCloseButton>,
             Option<&DiagnosticsFilterButton>,
             Option<&SettingsCategoryButton>,
+            Option<&FeathersActionButton>,
             Option<&CompiledPlanRow>,
             Option<&CompileStatusButton>,
             Option<&InteractionDisabled>,
@@ -7061,6 +7243,7 @@ fn handle_buttons(
         dock_close,
         diagnostics_filter,
         settings_category,
+        feathers_action,
         compiled_plan_row,
         compile_status,
         disabled,
@@ -7068,12 +7251,16 @@ fn handle_buttons(
     ) in &mut buttons
     {
         if disabled.is_some() {
-            background.0 = theme::PANEL_DARK;
+            if feathers_action.is_none() {
+                background.0 = theme::PANEL_DARK;
+            }
             continue;
         }
         match *interaction {
             Interaction::Hovered => {
-                background.0 = theme::BUTTON_HOVER;
+                if feathers_action.is_none() {
+                    background.0 = theme::BUTTON_HOVER;
+                }
                 if let EditorAction::ToggleMenu(kind) = *action
                     && let Some(next) = menu_after_hover(menu.open, kind)
                     && menu.open != Some(next)
@@ -7083,51 +7270,55 @@ fn handle_buttons(
                 }
             }
             Interaction::None => {
-                background.0 = if let Some(row) = layer_row {
-                    if row.0 == session.selected_layer_index() {
-                        theme::SELECTION
-                    } else {
+                if feathers_action.is_none() {
+                    background.0 = if let Some(row) = layer_row {
+                        if row.0 == session.selected_layer_index() {
+                            theme::SELECTION
+                        } else {
+                            theme::PANEL_DARK
+                        }
+                    } else if let Some(tab) = dock_tab {
+                        let active = layout.is_active(tab.0);
+                        if active {
+                            theme::PANEL
+                        } else {
+                            theme::PANEL_DARK
+                        }
+                    } else if dock_close.is_some() {
+                        Color::NONE
+                    } else if let Some(filter) = diagnostics_filter {
+                        if diagnostics_panel.filter == filter.0 {
+                            theme::SELECTION
+                        } else {
+                            theme::BUTTON
+                        }
+                    } else if let Some(category) = settings_category {
+                        if settings_panel.category == category.0 {
+                            theme::SELECTION
+                        } else {
+                            theme::PANEL_DARK
+                        }
+                    } else if compiled_plan_row.is_some() {
+                        if matches!(
+                            *action,
+                            EditorAction::SelectCompiledTarget(target)
+                                if target == session.selection.primary
+                        ) {
+                            theme::SELECTION
+                        } else {
+                            theme::PANEL
+                        }
+                    } else if compile_status.is_some() {
                         theme::PANEL_DARK
-                    }
-                } else if let Some(tab) = dock_tab {
-                    let active = layout.is_active(tab.0);
-                    if active {
-                        theme::PANEL
-                    } else {
-                        theme::PANEL_DARK
-                    }
-                } else if dock_close.is_some() {
-                    Color::NONE
-                } else if let Some(filter) = diagnostics_filter {
-                    if diagnostics_panel.filter == filter.0 {
-                        theme::SELECTION
                     } else {
                         theme::BUTTON
-                    }
-                } else if let Some(category) = settings_category {
-                    if settings_panel.category == category.0 {
-                        theme::SELECTION
-                    } else {
-                        theme::PANEL_DARK
-                    }
-                } else if compiled_plan_row.is_some() {
-                    if matches!(
-                        *action,
-                        EditorAction::SelectCompiledTarget(target)
-                            if target == session.selection.primary
-                    ) {
-                        theme::SELECTION
-                    } else {
-                        theme::PANEL
-                    }
-                } else if compile_status.is_some() {
-                    theme::PANEL_DARK
-                } else {
-                    theme::BUTTON
-                };
+                    };
+                }
             }
             Interaction::Pressed => {
-                background.0 = theme::ACCENT_DIM;
+                if feathers_action.is_none() {
+                    background.0 = theme::ACCENT_DIM;
+                }
                 if let EditorAction::ToggleMenu(kind) = *action {
                     if menu.tab_context.take().is_some() {
                         session.ui_revision += 1;
@@ -7436,57 +7627,6 @@ fn handle_buttons(
                             settings_panel.category = category;
                             session.ui_revision += 1;
                         }
-                    }
-                    EditorAction::ToggleSetting(setting) => {
-                        match setting {
-                            SettingsToggle::ConfirmUnsavedChanges => {
-                                settings.general.confirm_unsaved_changes =
-                                    !settings.general.confirm_unsaved_changes;
-                            }
-                            SettingsToggle::ShowGrid => {
-                                settings.preview.show_grid = !settings.preview.show_grid;
-                                menu.show_grid = settings.preview.show_grid;
-                            }
-                            SettingsToggle::PlayOnOpen => {
-                                settings.preview.play_on_open = !settings.preview.play_on_open;
-                            }
-                        }
-                        session.ui_revision += 1;
-                        persist_editor_settings(&settings, &mut settings_persistence, &mut session);
-                    }
-                    EditorAction::AdjustSetting(setting, direction) => {
-                        match setting {
-                            SettingsNumber::PreviewParticleLimit => {
-                                settings.performance.preview_particle_limit =
-                                    (settings.performance.preview_particle_limit as isize
-                                        + isize::from(direction) * 64)
-                                        .clamp(64, PARTICLE_POOL_SIZE as isize)
-                                        as usize;
-                            }
-                            SettingsNumber::CaptureFrameRate => {
-                                settings.capture.frame_rate =
-                                    (i32::from(settings.capture.frame_rate)
-                                        + i32::from(direction) * 10)
-                                        .clamp(1, 240) as u16;
-                            }
-                            SettingsNumber::ContactSheetColumns => {
-                                settings.capture.contact_sheet_columns =
-                                    (i16::from(settings.capture.contact_sheet_columns)
-                                        + i16::from(direction))
-                                    .clamp(1, 16) as u8;
-                            }
-                            SettingsNumber::UiScale => {
-                                settings.appearance.ui_scale = ((settings.appearance.ui_scale
-                                    + f32::from(direction) * 0.05)
-                                    .clamp(0.75, 1.5)
-                                    * 20.0)
-                                    .round()
-                                    / 20.0;
-                                ui_scale.0 = settings.appearance.ui_scale;
-                            }
-                        }
-                        session.ui_revision += 1;
-                        persist_editor_settings(&settings, &mut settings_persistence, &mut session);
                     }
                     EditorAction::CycleLocale(direction) => {
                         if localizer.cycle_locale(direction) {
@@ -8928,6 +9068,45 @@ mod tests {
         assert!(!vertical_scrollbar_needed(320.0, 320.0));
         assert!(!vertical_scrollbar_needed(320.0, 320.4));
         assert!(vertical_scrollbar_needed(320.0, 321.0));
+    }
+
+    #[test]
+    fn feathers_settings_controls_apply_persisted_constraints() {
+        let mut settings = EditorSettings::default();
+        let mut menu = MenuState::default();
+
+        assert!(apply_settings_toggle(
+            &mut settings,
+            &mut menu,
+            SettingsToggle::ShowGrid,
+            false,
+        ));
+        assert!(!settings.preview.show_grid);
+        assert!(!menu.show_grid);
+
+        assert!(apply_settings_integer(
+            &mut settings,
+            SettingsNumber::CaptureFrameRate,
+            500,
+        ));
+        assert_eq!(settings.capture.frame_rate, 240);
+        assert!(apply_settings_integer(
+            &mut settings,
+            SettingsNumber::ContactSheetColumns,
+            0,
+        ));
+        assert_eq!(settings.capture.contact_sheet_columns, 1);
+
+        assert!(apply_settings_scalar(
+            &mut settings,
+            SettingsNumber::UiScale,
+            127.0,
+        ));
+        assert_eq!(settings.appearance.ui_scale, 1.25);
+        assert_eq!(
+            settings_number_input_value(&settings, SettingsNumber::UiScale),
+            NumberInputValue::F32(125.0)
+        );
     }
 
     #[test]
