@@ -51,6 +51,7 @@ pub(crate) struct EditorSession {
     pub preview: Option<EffectInstance>,
     pub ui_revision: u64,
     history: CommandHistory,
+    saved_effect: Option<EffectAsset>,
     checkpoints: CheckpointStore<EffectInstance>,
     effect_revision: u64,
     last_seek: SeekPlan,
@@ -65,6 +66,7 @@ impl EditorSession {
         let preview_seed = 0;
         let preview = compile_preview(&effect, preview_seed)
             .expect("the bundled Prism Bloom sample must always compile");
+        let saved_effect = effect.clone();
         Self {
             effect,
             source_path: Some(path.into()),
@@ -83,6 +85,7 @@ impl EditorSession {
             preview: Some(preview),
             ui_revision: 0,
             history: CommandHistory::default(),
+            saved_effect: Some(saved_effect),
             checkpoints: CheckpointStore::default(),
             effect_revision: 0,
             last_seek: direct_seek_plan(0),
@@ -343,6 +346,7 @@ impl EditorSession {
         self.clock.restart();
         self.playing = false;
         self.dirty = true;
+        self.saved_effect = None;
         self.history.clear();
         self.status = "Created an untitled effect".into();
         self.ui_revision += 1;
@@ -352,6 +356,7 @@ impl EditorSession {
         let path = path.as_ref();
         let effect = EffectAsset::load_ron(path)?;
         let preview = compile_preview(&effect, self.preview_seed)?;
+        self.saved_effect = Some(effect.clone());
         self.effect = effect;
         self.invalidate_effect_checkpoints();
         self.preview = Some(preview);
@@ -381,7 +386,8 @@ impl EditorSession {
         let path = path.as_ref();
         self.effect.save_ron(path)?;
         self.source_path = Some(path.to_owned());
-        self.dirty = false;
+        self.saved_effect = Some(self.effect.clone());
+        self.update_dirty_state();
         self.status = format!("Saved {}", path.display());
         self.ui_revision += 1;
         Ok(())
@@ -414,7 +420,7 @@ impl EditorSession {
                 self.refresh_preview();
                 self.selection.repair(&self.effect);
                 self.clamp_clock();
-                self.dirty = true;
+                self.update_dirty_state();
                 self.status = label;
                 if rebuild_ui {
                     self.ui_revision += 1;
@@ -491,7 +497,7 @@ impl EditorSession {
                 self.selection.repair(&self.effect);
                 self.refresh_preview();
                 self.clamp_clock();
-                self.dirty = true;
+                self.update_dirty_state();
                 self.status = format!("Applied {label}");
                 self.ui_revision += 1;
                 true
@@ -531,7 +537,7 @@ impl EditorSession {
                 self.last_diff = result.diff;
                 self.clamp_clock();
                 self.status = format!("Undid {}", result.label);
-                self.dirty = true;
+                self.update_dirty_state();
                 self.ui_revision += 1;
             }
             Ok(None) => self.status = "Nothing to undo".into(),
@@ -552,7 +558,7 @@ impl EditorSession {
                 self.last_diff = result.diff;
                 self.clamp_clock();
                 self.status = format!("Redid {}", result.label);
-                self.dirty = true;
+                self.update_dirty_state();
                 self.ui_revision += 1;
             }
             Ok(None) => self.status = "Nothing to redo".into(),
@@ -1004,6 +1010,13 @@ impl EditorSession {
             }
         }
     }
+
+    fn update_dirty_state(&mut self) {
+        self.dirty = self
+            .saved_effect
+            .as_ref()
+            .is_none_or(|saved| saved != &self.effect);
+    }
 }
 
 fn compile_preview(effect: &EffectAsset, seed: u64) -> Result<EffectInstance, CompileError> {
@@ -1067,6 +1080,40 @@ mod tests {
         session.redo();
         assert_eq!(session.effect.emitters[0].spawn_rate(), 77.0);
         assert_eq!(preview_spawn_rate(&session), 77.0);
+    }
+
+    #[test]
+    fn dirty_state_tracks_the_saved_document_across_undo_and_redo() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        let module = session.effect.emitters[0]
+            .module_by_type(aestra_bevy::MODULE_EMISSION)
+            .unwrap()
+            .id;
+        let original = session.effect.emitters[0].spawn_rate();
+        session.set_module_parameter(module, "spawn_rate", Value::Scalar(77.0));
+        assert!(session.dirty);
+
+        session.undo();
+        assert_eq!(session.effect.emitters[0].spawn_rate(), original);
+        assert!(!session.dirty);
+
+        session.redo();
+        assert!(session.dirty);
+        let path = std::env::temp_dir().join(format!(
+            "aestra-dirty-checkpoint-{}.aestra.ron",
+            std::process::id()
+        ));
+        session.save_as(&path).unwrap();
+        assert!(!session.dirty);
+
+        session.undo();
+        assert!(session.dirty);
+        session.redo();
+        assert!(!session.dirty);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

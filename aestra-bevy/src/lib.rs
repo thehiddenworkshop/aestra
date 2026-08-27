@@ -299,20 +299,44 @@ fn prepare_effect_profiles(
     players: Query<(Entity, &EffectPlayer, &EffectRuntimeStatus), Without<EffectProfiler>>,
 ) {
     for (entity, player, runtime) in &players {
-        let mut profile = EffectProfile::from_compiled(player.effect());
-        profile.platform_warnings = capabilities.limitations.clone();
-        if runtime.active == ActiveBackend::CpuReference
-            && runtime.reason.contains("fallback")
-            && !profile.platform_warnings.contains(&runtime.reason)
-        {
-            profile.platform_warnings.push(runtime.reason.clone());
-        }
-        commands.entity(entity).insert(EffectProfiler(profile));
+        commands.entity(entity).insert(EffectProfiler(bevy_profile(
+            player.effect(),
+            &capabilities,
+            runtime,
+        )));
     }
+}
+
+fn bevy_profile(
+    effect: &CompiledEffect,
+    capabilities: &GpuCapabilities,
+    runtime: &EffectRuntimeStatus,
+) -> EffectProfile {
+    let mut profile = EffectProfile::from_compiled(effect);
+    profile.platform_warnings = capabilities.limitations.clone();
+    if runtime.active == ActiveBackend::CpuReference
+        && runtime.reason.contains("fallback")
+        && !profile.platform_warnings.contains(&runtime.reason)
+    {
+        profile.platform_warnings.push(runtime.reason.clone());
+    }
+    let multi_renderer_emitters = effect
+        .emitters
+        .iter()
+        .filter(|emitter| emitter.renderers.len() > 1)
+        .count();
+    if multi_renderer_emitters > 0 {
+        profile.platform_warnings.push(format!(
+            "{multi_renderer_emitters} emitter(s) use multiple renderers; the current Bevy \
+             presentation displays only the first renderer"
+        ));
+    }
+    profile
 }
 
 fn play_effects(
     time: Res<Time>,
+    capabilities: Res<GpuCapabilities>,
     mut players: Query<(
         &mut EffectPlayer,
         &mut EffectProfiler,
@@ -328,7 +352,7 @@ fn play_effects(
 ) {
     for (mut player, mut profiler, children, runtime) in &mut players {
         if !profiler.0.matches_compiled(player.effect()) {
-            profiler.0 = EffectProfile::from_compiled(player.effect());
+            profiler.0 = bevy_profile(player.effect(), &capabilities, runtime);
         }
         if player.playing {
             let advance = player.advance_clock(time.delta_secs());
@@ -412,7 +436,11 @@ mod tests {
     #[test]
     fn players_receive_a_machine_readable_profile() {
         let mut effect = EffectAsset::new("Profiled", 2.0);
-        effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+        let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
+        emitter
+            .renderers
+            .push(RendererInstance::sprite(BlendMode::Alpha, 0.2));
+        effect.emitters.push(emitter);
         let mut app = App::new();
         app.insert_resource(GpuCapabilities::default())
             .add_systems(Update, prepare_effect_profiles);
@@ -436,6 +464,12 @@ mod tests {
             profile.buffer_memory_bytes,
             ProfileValue::Estimated(bytes) if bytes > 0
         ));
+        assert!(
+            profile
+                .platform_warnings
+                .iter()
+                .any(|warning| warning.contains("displays only the first renderer"))
+        );
     }
 
     #[test]

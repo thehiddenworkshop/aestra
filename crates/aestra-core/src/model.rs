@@ -3,7 +3,8 @@ use crate::{
     MaterialId, ModuleId, ParameterId, RendererId, ValidationReport,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, fs, io::Write, path::Path};
+use tempfile::NamedTempFile;
 use thiserror::Error;
 
 pub const MODULE_EMISSION: &str = "aestra.emission.rate";
@@ -202,9 +203,31 @@ impl EffectAsset {
     }
 
     pub fn save_ron(&self, path: impl AsRef<Path>) -> Result<(), AssetError> {
-        fs::write(path, self.to_pretty_ron()?)?;
+        atomic_write(path.as_ref(), self.to_pretty_ron()?.as_bytes())?;
         Ok(())
     }
+}
+
+fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+
+    // The temporary file lives beside the destination so persistence is a same-filesystem atomic
+    // replacement. If writing or syncing fails, NamedTempFile removes it and leaves the previous
+    // effect untouched.
+    let mut temporary = NamedTempFile::new_in(parent)?;
+    temporary.write_all(contents)?;
+    temporary.as_file().sync_all()?;
+    let persisted = temporary.persist(path).map_err(|error| error.error)?;
+    persisted.sync_all()?;
+
+    // Persist the directory entry on platforms where directory handles can be synchronized.
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

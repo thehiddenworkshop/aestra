@@ -120,6 +120,24 @@ fn module_parameter_bindings_survive_round_trip() {
 }
 
 #[test]
+fn saving_replaces_an_existing_effect_without_leaving_temporary_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("effect.aestra.ron");
+    let mut original = EffectAsset::new("Original", 1.0);
+    original
+        .emitters
+        .push(Emitter::basic_sprite("Emitter", 1.0));
+    original.save_ron(&path).unwrap();
+
+    let mut replacement = original.clone();
+    replacement.name = "Replacement".into();
+    replacement.save_ron(&path).unwrap();
+
+    assert_eq!(EffectAsset::load_ron(&path).unwrap(), replacement);
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+}
+
+#[test]
 fn binding_types_are_validated_in_the_semantic_model() {
     let mut effect = EffectAsset::new("Bad binding", 1.0);
     let parameter = EffectParameter {
