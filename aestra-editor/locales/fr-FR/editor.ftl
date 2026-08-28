@@ -276,9 +276,14 @@ library-kind-flipbook = Source de flipbook
 library-blend-alpha = Alpha
 library-blend-additive = Additif
 library-blend-multiply = Multiplication
-library-choreography-temporary = CHORÉGRAPHIE · BIENTÔT DANS LA TIMELINE
 
 timeline-frame-all = Tout afficher
+timeline-emitters = ÉMETTEURS
+timeline-select-emitter = Sélectionner l’émetteur { $name }
+timeline-enable-emitter = Activer l’émetteur
+timeline-disable-emitter = Désactiver l’émetteur
+timeline-more-emitter-actions = Plus d’actions pour l’émetteur
+timeline-emitter-diagnostic = Cet émetteur contient des diagnostics. Ouvrez Diagnostics pour les détails.
 timeline-snap-off = Magnétisme : désactivé
 timeline-snap-frames = Magnétisme : images
 timeline-snap-time = Magnétisme : temps

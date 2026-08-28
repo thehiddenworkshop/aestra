@@ -673,14 +673,19 @@ impl EditorSession {
         &self.effect.emitters[self.selected_layer_index()]
     }
 
-    pub fn select_layer(&mut self, index: usize) {
-        let Some(emitter) = self.effect.emitters.get(index) else {
-            self.status = format!("Emitter index {index} does not exist");
-            return;
+    pub fn select_emitter(&mut self, id: EmitterId) -> bool {
+        let Some(emitter) = self.effect.emitters.iter().find(|emitter| emitter.id == id) else {
+            self.status = "Emitter no longer exists".into();
+            return false;
         };
-        self.selection.select_emitter(emitter.id);
-        self.status = format!("Selected {}", emitter.name);
+        if self.selection.primary == aestra_authoring::SemanticTarget::Emitter(id) {
+            return false;
+        }
+        let name = emitter.name.clone();
+        self.selection.select_emitter(id);
+        self.status = format!("Selected {name}");
         self.ui_revision += 1;
+        true
     }
 
     pub fn add_layer(&mut self) {
@@ -2123,7 +2128,7 @@ mod tests {
             "sample.ron",
         );
         let id = session.effect.emitters[2].id;
-        session.select_layer(2);
+        assert!(session.select_emitter(id));
         assert_eq!(session.selection.emitter(&session.effect), Some(id));
     }
 

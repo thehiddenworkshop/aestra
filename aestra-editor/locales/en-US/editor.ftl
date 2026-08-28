@@ -276,9 +276,14 @@ library-kind-flipbook = Flipbook source
 library-blend-alpha = Alpha
 library-blend-additive = Additive
 library-blend-multiply = Multiply
-library-choreography-temporary = CHOREOGRAPHY · MOVES TO TIMELINE
 
 timeline-frame-all = All
+timeline-emitters = EMITTERS
+timeline-select-emitter = Select emitter { $name }
+timeline-enable-emitter = Enable emitter
+timeline-disable-emitter = Disable emitter
+timeline-more-emitter-actions = More emitter actions
+timeline-emitter-diagnostic = This emitter has diagnostics. Open Diagnostics for details.
 timeline-snap-off = Snap: Off
 timeline-snap-frames = Snap: Frames
 timeline-snap-time = Snap: Time

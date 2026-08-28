@@ -1,21 +1,26 @@
 use crate::{
-    ComboOption, EditorNativeControl, FeathersActionButton, Localizer, MenuState,
-    PendingFeathersActivation, TransportAction, layer_color, mini_button, session::EditorSession,
-    spawn_combo_control, theme,
+    ComboOption, CurvesState, DockPanel, EditorNativeControl, EditorTooltip, FeathersActionButton,
+    Localizer, MenuState, ModulePaletteState, PendingFeathersActivation, TransportAction,
+    WorkspaceLayout, mini_button, reveal_dock_panel, session::EditorSession, spawn_combo_control,
+    spawn_feathers_action_button, theme,
 };
+use aestra_authoring::{EffectCommand, EffectTransaction};
 use aestra_bevy::EmitterId;
 use bevy::{
     feathers::cursor::{EntityCursor, OverrideCursor},
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
+    input_focus::InputFocus,
     picking::{
         events::{Click, Drag, DragEnd, DragStart, Pointer, Press},
         pointer::PointerButton,
     },
     prelude::*,
+    text::EditableText,
     ui::RelativeCursorPosition,
     ui_widgets::Activate,
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
+use fluent_bundle::FluentArgs;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum TimelineSet {
@@ -35,10 +40,21 @@ impl Plugin for TimelinePlugin {
         app.insert_resource(TimelineState::framed(duration))
             .add_observer(queue_timeline_action_activation)
             .add_observer(execute_timeline_action)
-            .add_systems(Update, navigate_timeline.in_set(TimelineSet::Input))
+            .add_observer(queue_choreography_action_activation)
+            .add_observer(execute_choreography_action)
             .add_systems(
                 Update,
-                (handle_timeline_action_buttons, audit_timeline_controls)
+                (choreography_keyboard_input, navigate_timeline)
+                    .chain()
+                    .in_set(TimelineSet::Input),
+            )
+            .add_systems(
+                Update,
+                (
+                    handle_timeline_action_buttons,
+                    handle_choreography_action_buttons,
+                    audit_timeline_controls,
+                )
                     .chain()
                     .in_set(TimelineSet::Actions),
             )
@@ -48,6 +64,7 @@ impl Plugin for TimelinePlugin {
                     update_timeline_time_label,
                     update_timeline_visuals,
                     update_timeline_scrollbar,
+                    update_track_header_hover_actions,
                 )
                     .chain()
                     .in_set(TimelineSet::Visuals),
@@ -62,9 +79,31 @@ pub(crate) enum TimelineAction {
     FrameAll,
 }
 
+#[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChoreographyAction {
+    SelectEmitter(EmitterId),
+    AddEmitter,
+    DuplicateEmitter(Option<EmitterId>),
+    DeleteEmitter(Option<EmitterId>),
+    SetEmitterEnabled { emitter: EmitterId, enabled: bool },
+    ToggleEmitterMenu(EmitterId),
+}
+
 fn queue_timeline_action_activation(
     activate: On<Activate>,
     actions: Query<(), (With<TimelineAction>, With<FeathersActionButton>)>,
+    mut commands: Commands,
+) {
+    if actions.contains(activate.entity) {
+        commands
+            .entity(activate.entity)
+            .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+fn queue_choreography_action_activation(
+    activate: On<Activate>,
+    actions: Query<(), (With<ChoreographyAction>, With<FeathersActionButton>)>,
     mut commands: Commands,
 ) {
     if actions.contains(activate.entity) {
@@ -81,6 +120,37 @@ fn handle_timeline_action_buttons(
             Entity,
             &Interaction,
             &TimelineAction,
+            Option<&PendingFeathersActivation>,
+        ),
+        (Changed<Interaction>, With<FeathersActionButton>),
+    >,
+    mut menu: ResMut<MenuState>,
+    mut session: ResMut<EditorSession>,
+) {
+    for (entity, interaction, action, pending) in &mut buttons {
+        if *interaction != Interaction::Pressed || pending.is_none() {
+            continue;
+        }
+        commands
+            .entity(entity)
+            .remove::<PendingFeathersActivation>()
+            .insert(Interaction::None);
+        menu.open = None;
+        menu.panels_open = false;
+        if menu.tab_context.take().is_some() {
+            session.ui_revision += 1;
+        }
+        commands.trigger(*action);
+    }
+}
+
+fn handle_choreography_action_buttons(
+    mut commands: Commands,
+    mut buttons: Query<
+        (
+            Entity,
+            &Interaction,
+            &ChoreographyAction,
             Option<&PendingFeathersActivation>,
         ),
         (Changed<Interaction>, With<FeathersActionButton>),
@@ -123,6 +193,133 @@ fn execute_timeline_action(
     }
 }
 
+fn execute_choreography_action(
+    action: On<ChoreographyAction>,
+    mut session: ResMut<EditorSession>,
+    mut curves: ResMut<CurvesState>,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut state: ResMut<TimelineState>,
+    localizer: Res<Localizer>,
+) {
+    if let ChoreographyAction::ToggleEmitterMenu(emitter) = *action {
+        let revision = session.ui_revision;
+        if session
+            .effect
+            .emitters
+            .iter()
+            .any(|item| item.id == emitter)
+        {
+            session.select_emitter(emitter);
+            curves.clear();
+        }
+        state.context_emitter = (state.context_emitter != Some(emitter)).then_some(emitter);
+        if session.ui_revision == revision {
+            session.ui_revision += 1;
+        }
+        return;
+    }
+
+    let revision = session.ui_revision;
+    let closed_context_menu = state.context_emitter.take().is_some();
+    match *action {
+        ChoreographyAction::SelectEmitter(emitter) => {
+            if session
+                .effect
+                .emitters
+                .iter()
+                .any(|item| item.id == emitter)
+            {
+                session.select_emitter(emitter);
+                curves.clear();
+            }
+        }
+        ChoreographyAction::AddEmitter => {
+            session.add_layer();
+            curves.clear();
+        }
+        ChoreographyAction::DuplicateEmitter(target) => {
+            if select_choreography_target(&mut session, target) {
+                session.duplicate_selected_layer();
+                curves.clear();
+            }
+        }
+        ChoreographyAction::DeleteEmitter(target) => {
+            if select_choreography_target(&mut session, target)
+                && preview_selected_emitter_deletion(&mut session, &localizer)
+            {
+                reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
+                curves.clear();
+            }
+        }
+        ChoreographyAction::SetEmitterEnabled { emitter, enabled } => {
+            if select_choreography_target(&mut session, Some(emitter)) {
+                session.set_selected_emitter_enabled(enabled);
+                curves.clear();
+            }
+        }
+        ChoreographyAction::ToggleEmitterMenu(_) => unreachable!(),
+    }
+    if closed_context_menu && session.ui_revision == revision {
+        session.ui_revision += 1;
+    }
+}
+
+fn select_choreography_target(session: &mut EditorSession, target: Option<EmitterId>) -> bool {
+    let Some(target) = target else {
+        return true;
+    };
+    if !session
+        .effect
+        .emitters
+        .iter()
+        .any(|emitter| emitter.id == target)
+    {
+        session.status = "Emitter no longer exists".into();
+        return false;
+    }
+    session.select_emitter(target);
+    true
+}
+
+fn preview_selected_emitter_deletion(session: &mut EditorSession, localizer: &Localizer) -> bool {
+    if session.effect.emitters.len() <= 1 {
+        session.status = localizer.text("assets-status-minimum-emitter");
+        return false;
+    }
+    let id = session.selected_layer().id;
+    session.preview_transaction(EffectTransaction::single(
+        localizer.text("assets-change-delete-emitter"),
+        EffectCommand::RemoveEmitter { id },
+    ))
+}
+
+fn choreography_keyboard_input(
+    mut commands: Commands,
+    keys: Res<ButtonInput<KeyCode>>,
+    palette: Res<ModulePaletteState>,
+    timelines: Query<(), With<TimelineCanvas>>,
+    focus: Option<Res<InputFocus>>,
+    editable_text: Query<(), With<EditableText>>,
+) {
+    let editing_text = focus
+        .as_ref()
+        .and_then(|focus| focus.get())
+        .is_some_and(|entity| editable_text.contains(entity));
+    if palette.open || timelines.is_empty() || editing_text {
+        return;
+    }
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    if control && keys.just_pressed(KeyCode::Enter) {
+        commands.trigger(ChoreographyAction::AddEmitter);
+    }
+    if control && keys.just_pressed(KeyCode::KeyD) {
+        commands.trigger(ChoreographyAction::DuplicateEmitter(None));
+    }
+    if keys.just_pressed(KeyCode::Delete) {
+        commands.trigger(ChoreographyAction::DeleteEmitter(None));
+    }
+}
+
 type UnclassifiedTimelineControl = (
     Added<TimelineAction>,
     With<Button>,
@@ -130,7 +327,17 @@ type UnclassifiedTimelineControl = (
     Without<EditorNativeControl>,
 );
 
-fn audit_timeline_controls(controls: Query<Entity, UnclassifiedTimelineControl>) {
+type UnclassifiedChoreographyControl = (
+    Added<ChoreographyAction>,
+    With<Button>,
+    Without<FeathersActionButton>,
+    Without<EditorNativeControl>,
+);
+
+fn audit_timeline_controls(
+    controls: Query<Entity, UnclassifiedTimelineControl>,
+    choreography: Query<Entity, UnclassifiedChoreographyControl>,
+) {
     #[cfg(debug_assertions)]
     if let Some(entity) = controls.iter().next() {
         panic!(
@@ -138,12 +345,43 @@ fn audit_timeline_controls(controls: Query<Entity, UnclassifiedTimelineControl>)
              EditorNativeControl"
         );
     }
+    #[cfg(debug_assertions)]
+    if let Some(entity) = choreography.iter().next() {
+        panic!(
+            "choreography control {entity:?} must use FeathersActionButton or be explicitly \
+             marked EditorNativeControl"
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EFFECT_PATH, EFFECT_SOURCE};
+    use crate::{EFFECT_PATH, EFFECT_SOURCE, LibraryState};
+    use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
+
+    fn spawn_test_timeline(
+        mut commands: Commands,
+        session: Res<EditorSession>,
+        state: Res<TimelineState>,
+        localizer: Res<Localizer>,
+    ) {
+        commands.spawn(Node::default()).with_children(|parent| {
+            spawn_timeline(parent, &session, &state, &localizer);
+        });
+    }
+
+    fn choreography_app(session: EditorSession) -> App {
+        let mut app = App::new();
+        let duration = session.playback_duration();
+        app.insert_resource(session)
+            .insert_resource(TimelineState::framed(duration))
+            .init_resource::<CurvesState>()
+            .init_resource::<WorkspaceLayout>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(execute_choreography_action);
+        app
+    }
 
     #[test]
     fn timeline_cursor_coordinates_cover_the_full_canvas() {
@@ -285,6 +523,262 @@ mod tests {
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
         assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+    }
+
+    #[test]
+    fn track_headers_and_clips_expose_the_same_stable_selection_actions() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.emitters[1].enabled = false;
+        session.diagnostics.push(aestra_bevy::Diagnostic::error(
+            aestra_bevy::DiagnosticCode::InvalidTiming,
+            "effect.emitters[1].duration",
+            "test diagnostic",
+        ));
+        let emitter_count = session.effect.emitters.len();
+        let duration = session.playback_duration();
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .init_asset::<Image>()
+        .insert_resource(session)
+        .insert_resource(TimelineState::framed(duration))
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_systems(Startup, spawn_test_timeline);
+
+        app.update();
+
+        let headers = {
+            let world = app.world_mut();
+            let mut query = world.query::<(
+                &EmitterTrackHeader,
+                &ChoreographyAction,
+                &AccessibleLabel,
+                Has<Button>,
+            )>();
+            query
+                .iter(world)
+                .map(|(header, action, label, button)| {
+                    (header.emitter, *action, label.0.clone(), button)
+                })
+                .collect::<Vec<_>>()
+        };
+        let clips = {
+            let world = app.world_mut();
+            let mut query = world.query::<(&TimelineClipInteraction, &ChoreographyAction)>();
+            query
+                .iter(world)
+                .filter(|(clip, _)| clip.kind == TimelineDragKind::Move)
+                .map(|(clip, action)| (clip.emitter, *action))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(headers.len(), emitter_count);
+        assert_eq!(clips.len(), emitter_count);
+        for (emitter, action, label, button) in headers {
+            assert!(button);
+            assert_eq!(action, ChoreographyAction::SelectEmitter(emitter));
+            assert_eq!(
+                clips.iter().find(|clip| clip.0 == emitter).unwrap().1,
+                action
+            );
+            assert!(!label.is_empty());
+        }
+        let disabled = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<Entity, With<EmitterTrackDisabled>>();
+            query.iter(world).count()
+        };
+        let diagnostics = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<Entity, With<EmitterTrackDiagnostic>>();
+            query.iter(world).count()
+        };
+        assert_eq!(disabled, 1);
+        assert_eq!(diagnostics, 1);
+    }
+
+    #[test]
+    fn choreography_selection_is_stable_and_clears_incompatible_curve_state() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let target = session.effect.emitters[2].id;
+        let mut app = choreography_app(session);
+        app.insert_resource(LibraryState {
+            query: "does not match anything".into(),
+            ..default()
+        });
+        app.insert_resource({
+            let mut curves = CurvesState::default();
+            curves.select_for_test(aestra_bevy::ModuleId::new(), 0, 0);
+            curves
+        });
+
+        app.world_mut()
+            .trigger(ChoreographyAction::SelectEmitter(target));
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .selection
+                .emitter(&app.world().resource::<EditorSession>().effect),
+            Some(target)
+        );
+        assert!(!app.world().resource::<CurvesState>().has_selection());
+        assert_eq!(
+            app.world().resource::<LibraryState>().query,
+            "does not match anything"
+        );
+    }
+
+    #[test]
+    fn choreography_add_duplicate_and_enabled_actions_remain_undoable() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let original_count = session.effect.emitters.len();
+        let original = session.effect.emitters[0].clone();
+        let mut app = choreography_app(session);
+
+        app.world_mut().trigger(ChoreographyAction::AddEmitter);
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .effect
+                .emitters
+                .len(),
+            original_count + 1
+        );
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .effect
+                .emitters
+                .len(),
+            original_count
+        );
+
+        app.world_mut()
+            .trigger(ChoreographyAction::DuplicateEmitter(Some(original.id)));
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .effect
+                .emitters
+                .len(),
+            original_count + 1
+        );
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .effect
+                .emitters
+                .len(),
+            original_count
+        );
+
+        app.world_mut()
+            .trigger(ChoreographyAction::SetEmitterEnabled {
+                emitter: original.id,
+                enabled: !original.enabled,
+            });
+        app.update();
+        let edited = app
+            .world()
+            .resource::<EditorSession>()
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == original.id)
+            .unwrap();
+        assert_eq!(edited.enabled, !original.enabled);
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        let restored = app
+            .world()
+            .resource::<EditorSession>()
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == original.id)
+            .unwrap();
+        assert_eq!(restored.enabled, original.enabled);
+    }
+
+    #[test]
+    fn choreography_delete_retains_review_and_minimum_emitter_guard() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let target = session.effect.emitters[1].id;
+        let mut app = choreography_app(session);
+        app.world_mut()
+            .trigger(ChoreographyAction::DeleteEmitter(Some(target)));
+        app.update();
+        assert!(
+            app.world()
+                .resource::<EditorSession>()
+                .pending_change
+                .is_some()
+        );
+        assert!(
+            app.world()
+                .resource::<WorkspaceLayout>()
+                .is_visible(DockPanel::Changes)
+        );
+
+        let mut single = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        single.effect.emitters.truncate(1);
+        single
+            .selection
+            .select_emitter(single.effect.emitters[0].id);
+        let mut guarded = choreography_app(single);
+        guarded
+            .world_mut()
+            .trigger(ChoreographyAction::DeleteEmitter(None));
+        guarded.update();
+        let session = guarded.world().resource::<EditorSession>();
+        assert_eq!(session.effect.emitters.len(), 1);
+        assert!(session.pending_change.is_none());
+        assert_eq!(session.status, "An effect must keep at least one emitter");
+    }
+
+    #[test]
+    fn choreography_shortcuts_require_timeline_context_and_ignore_text_editing() {
+        for (timeline_visible, text_focused, expected_delta) in
+            [(false, false, 0), (true, true, 0), (true, false, 1)]
+        {
+            let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+            let initial = session.effect.emitters.len();
+            let mut app = choreography_app(session);
+            app.init_resource::<ModulePaletteState>()
+                .init_resource::<ButtonInput<KeyCode>>()
+                .add_systems(Update, choreography_keyboard_input);
+            if timeline_visible {
+                app.world_mut().spawn(TimelineCanvas);
+            }
+            if text_focused {
+                let input = app.world_mut().spawn(EditableText::new("editing")).id();
+                app.insert_resource(InputFocus::from_entity(input));
+            }
+            {
+                let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+                keys.press(KeyCode::ControlLeft);
+                keys.press(KeyCode::Enter);
+            }
+
+            app.update();
+
+            assert_eq!(
+                app.world()
+                    .resource::<EditorSession>()
+                    .effect
+                    .emitters
+                    .len(),
+                initial + expected_delta
+            );
+        }
     }
 }
 
@@ -546,6 +1040,23 @@ fn snap_moved_timing(
 struct TimelineCanvas;
 
 #[derive(Component, Clone, Copy)]
+struct EmitterTrackHeader {
+    emitter: EmitterId,
+}
+
+#[derive(Component)]
+struct EmitterTrackDiagnostic;
+
+#[derive(Component)]
+struct EmitterTrackDisabled;
+
+#[derive(Component)]
+struct EmitterTrackHoverActions;
+
+#[derive(Component)]
+struct EmitterTrackContextMenu;
+
+#[derive(Component, Clone, Copy)]
 struct TimelineClip {
     emitter: EmitterId,
 }
@@ -647,6 +1158,7 @@ pub(crate) struct TimelineState {
     snap_guide: Option<f32>,
     panning: bool,
     scrollbar_drag: Option<TimelineScrollbarDrag>,
+    context_emitter: Option<EmitterId>,
     known_duration: f32,
 }
 
@@ -669,6 +1181,7 @@ impl TimelineState {
             snap_guide: None,
             panning: false,
             scrollbar_drag: None,
+            context_emitter: None,
             known_duration: duration,
         }
     }
@@ -839,7 +1352,6 @@ pub(crate) fn spawn_timeline(
                             width: Val::Px(224.0),
                             height: Val::Percent(100.0),
                             flex_direction: FlexDirection::Column,
-                            padding: UiRect::top(Val::Px(25.0)),
                             border: UiRect::right(Val::Px(1.0)),
                             ..default()
                         },
@@ -847,20 +1359,48 @@ pub(crate) fn spawn_timeline(
                         BorderColor::all(theme::BORDER),
                     ))
                     .with_children(|labels| {
+                        labels
+                            .spawn(Node {
+                                width: Val::Percent(100.0),
+                                height: Val::Px(25.0),
+                                padding: UiRect::horizontal(Val::Px(8.0)),
+                                align_items: AlignItems::Center,
+                                column_gap: Val::Px(6.0),
+                                ..default()
+                            })
+                            .with_children(|toolbar| {
+                                toolbar.spawn((
+                                    Text::new(localizer.text("timeline-emitters")),
+                                    TextFont {
+                                        font_size: FontSize::Px(9.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::TEXT_FAINT),
+                                    Pickable::IGNORE,
+                                ));
+                                toolbar.spawn(Node {
+                                    flex_grow: 1.0,
+                                    ..default()
+                                });
+                                let add = mini_button(toolbar, "+", ChoreographyAction::AddEmitter);
+                                toolbar
+                                    .commands()
+                                    .entity(add)
+                                    .insert(EditorTooltip::description(
+                                        localizer.text("edit-add-emitter"),
+                                    ));
+                            });
                         for (index, emitter) in session.effect.emitters.iter().enumerate() {
-                            labels.spawn((
-                                Text::new(format!("  {:02}   {}", index + 1, emitter.name)),
-                                TextFont {
-                                    font_size: FontSize::Px(11.0),
-                                    ..default()
-                                },
-                                TextColor(theme::TEXT_MUTED),
-                                Node {
-                                    height: Val::Px(31.0),
-                                    padding: UiRect::top(Val::Px(8.0)),
-                                    ..default()
-                                },
-                            ));
+                            spawn_emitter_track_header(
+                                labels,
+                                session,
+                                state,
+                                localizer,
+                                index,
+                                emitter.id,
+                                &emitter.name,
+                                emitter.enabled,
+                            );
                         }
                     });
                     body.spawn((
@@ -920,6 +1460,7 @@ pub(crate) fn spawn_timeline(
                                                     emitter: emitter.id,
                                                     kind: TimelineDragKind::Move,
                                                 },
+                                                ChoreographyAction::SelectEmitter(emitter.id),
                                                 EntityCursor::System(SystemCursorIcon::Grab),
                                                 Node {
                                                     position_type: PositionType::Absolute,
@@ -955,6 +1496,7 @@ pub(crate) fn spawn_timeline(
                                                         emitter: emitter.id,
                                                         kind,
                                                     },
+                                                    ChoreographyAction::SelectEmitter(emitter.id),
                                                     EntityCursor::System(
                                                         SystemCursorIcon::EwResize,
                                                     ),
@@ -1061,6 +1603,221 @@ pub(crate) fn spawn_timeline(
         });
 }
 
+#[allow(clippy::too_many_arguments)]
+fn spawn_emitter_track_header(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    state: &TimelineState,
+    localizer: &Localizer,
+    index: usize,
+    emitter: EmitterId,
+    name: &str,
+    enabled: bool,
+) {
+    let selected = session.selected_layer().id == emitter;
+    let diagnostic = emitter_has_diagnostic(session, index);
+    let mut args = FluentArgs::new();
+    args.set("name", name);
+    let accessible_label = localizer.text_with("timeline-select-emitter", &args);
+    let mut header = parent.spawn((
+        Button,
+        EditorNativeControl,
+        EmitterTrackHeader { emitter },
+        ChoreographyAction::SelectEmitter(emitter),
+        AccessibleLabel(accessible_label),
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Px(31.0),
+            padding: UiRect::horizontal(Val::Px(7.0)),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(6.0),
+            position_type: PositionType::Relative,
+            border: UiRect::bottom(Val::Px(1.0)),
+            ..default()
+        },
+        BackgroundColor(if selected {
+            theme::SELECTION
+        } else {
+            theme::PANEL_DARK
+        }),
+        BorderColor::all(theme::BORDER.with_alpha(0.55)),
+    ));
+    if diagnostic {
+        header.insert(EmitterTrackDiagnostic);
+    }
+    if !enabled {
+        header.insert(EmitterTrackDisabled);
+    }
+    header
+        .observe(select_timeline_track_header)
+        .observe(open_timeline_track_context_menu)
+        .with_children(|row| {
+            row.spawn((
+                Node {
+                    width: Val::Px(4.0),
+                    height: Val::Px(19.0),
+                    border_radius: BorderRadius::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(layer_color(index)),
+                Pickable::IGNORE,
+            ));
+            let toggle_label = if enabled { "ON" } else { "OFF" };
+            let toggle = mini_button(
+                row,
+                toggle_label,
+                ChoreographyAction::SetEmitterEnabled {
+                    emitter,
+                    enabled: !enabled,
+                },
+            );
+            row.commands()
+                .entity(toggle)
+                .insert(EditorTooltip::description(localizer.text(if enabled {
+                    "timeline-disable-emitter"
+                } else {
+                    "timeline-enable-emitter"
+                })));
+            row.spawn((
+                Text::new(format!("{:02}  {name}", index + 1)),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(if enabled {
+                    theme::TEXT_MUTED
+                } else {
+                    theme::TEXT_FAINT
+                }),
+                Node {
+                    min_width: Val::Px(0.0),
+                    flex_grow: 1.0,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            if diagnostic {
+                row.spawn((
+                    Text::new("!"),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::ACCENT),
+                    EditorTooltip::description(localizer.text("timeline-emitter-diagnostic")),
+                ));
+            }
+            row.spawn((
+                EmitterTrackHoverActions,
+                Node {
+                    display: Display::None,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(2.0),
+                    ..default()
+                },
+            ))
+            .with_children(|actions| {
+                let duplicate = mini_button(
+                    actions,
+                    "D",
+                    ChoreographyAction::DuplicateEmitter(Some(emitter)),
+                );
+                actions
+                    .commands()
+                    .entity(duplicate)
+                    .insert(EditorTooltip::description(
+                        localizer.text("edit-duplicate-emitter"),
+                    ));
+                let more = mini_button(
+                    actions,
+                    "...",
+                    ChoreographyAction::ToggleEmitterMenu(emitter),
+                );
+                actions
+                    .commands()
+                    .entity(more)
+                    .insert(EditorTooltip::description(
+                        localizer.text("timeline-more-emitter-actions"),
+                    ));
+            });
+            if state.context_emitter == Some(emitter) {
+                spawn_emitter_context_menu(row, localizer, emitter, enabled);
+            }
+        });
+}
+
+fn spawn_emitter_context_menu(
+    parent: &mut ChildSpawnerCommands,
+    localizer: &Localizer,
+    emitter: EmitterId,
+    enabled: bool,
+) {
+    parent
+        .spawn((
+            EmitterTrackContextMenu,
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Px(4.0),
+                top: Val::Px(27.0),
+                width: Val::Px(168.0),
+                padding: UiRect::all(Val::Px(4.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(2.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_LIGHT),
+            BorderColor::all(theme::BORDER_BRIGHT),
+            ZIndex(20),
+        ))
+        .with_children(|menu| {
+            spawn_feathers_action_button(
+                menu,
+                &localizer.text(if enabled {
+                    "timeline-disable-emitter"
+                } else {
+                    "timeline-enable-emitter"
+                }),
+                ChoreographyAction::SetEmitterEnabled {
+                    emitter,
+                    enabled: !enabled,
+                },
+                false,
+            );
+            spawn_feathers_action_button(
+                menu,
+                &localizer.text("edit-duplicate-emitter"),
+                ChoreographyAction::DuplicateEmitter(Some(emitter)),
+                false,
+            );
+            spawn_feathers_action_button(
+                menu,
+                &localizer.text("edit-delete-emitter"),
+                ChoreographyAction::DeleteEmitter(Some(emitter)),
+                false,
+            );
+        });
+}
+
+fn emitter_has_diagnostic(session: &EditorSession, index: usize) -> bool {
+    let prefix = format!("effect.emitters[{index}]");
+    session
+        .diagnostics
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.path.starts_with(&prefix))
+}
+
+fn layer_color(index: usize) -> Color {
+    match index % 4 {
+        0 => Color::srgb(0.48, 0.31, 0.98),
+        1 => Color::srgb(0.17, 0.75, 0.95),
+        2 => Color::srgb(0.98, 0.47, 0.21),
+        _ => Color::srgb(0.84, 0.29, 0.72),
+    }
+}
+
 fn spawn_ruler(parent: &mut ChildSpawnerCommands) {
     for index in 0..32 {
         parent
@@ -1102,17 +1859,20 @@ fn navigate_timeline(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     canvases: Query<(&RelativeCursorPosition, &ComputedNode), With<TimelineCanvas>>,
-    session: Res<EditorSession>,
+    mut session: ResMut<EditorSession>,
     mut state: ResMut<TimelineState>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
 ) {
-    if keys.just_pressed(KeyCode::Escape)
-        && (state.drag.take().is_some() || state.scrollbar_drag.take().is_some())
-    {
-        state.snap_guide = None;
-        override_cursor.0 = None;
-        **cursor = CursorIcon::System(SystemCursorIcon::Default);
+    if keys.just_pressed(KeyCode::Escape) {
+        if state.drag.take().is_some() || state.scrollbar_drag.take().is_some() {
+            state.snap_guide = None;
+            override_cursor.0 = None;
+            **cursor = CursorIcon::System(SystemCursorIcon::Default);
+        }
+        if state.context_emitter.take().is_some() {
+            session.ui_revision += 1;
+        }
     }
     let pointer_delta = motion
         .read()
@@ -1170,10 +1930,13 @@ fn navigate_timeline(
 fn seek_timeline_on_press(
     press: On<Pointer<Press>>,
     timelines: Query<&RelativeCursorPosition, With<TimelineCanvas>>,
-    state: Res<TimelineState>,
+    mut state: ResMut<TimelineState>,
     mut session: ResMut<EditorSession>,
 ) {
     if press.button == PointerButton::Primary {
+        if state.context_emitter.take().is_some() {
+            session.ui_revision += 1;
+        }
         seek_timeline_to_pointer(press.event_target(), &timelines, &state, &mut session);
     }
 }
@@ -1289,6 +2052,7 @@ fn finish_timeline_clip_drag(
     targets: Query<&TimelineClipInteraction>,
     mut session: ResMut<EditorSession>,
     mut state: ResMut<TimelineState>,
+    mut commands: Commands,
     mut override_cursor: ResMut<OverrideCursor>,
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
 ) {
@@ -1305,14 +2069,10 @@ fn finish_timeline_clip_drag(
     override_cursor.0 = None;
     **cursor = timeline_drag_cursor(target.kind, false);
     commit_timeline_drag(&mut session, drag);
+    commands.trigger(ChoreographyAction::SelectEmitter(target.emitter));
 }
 
 fn commit_timeline_drag(session: &mut EditorSession, drag: TimelineDrag) {
-    let selected_index = session
-        .effect
-        .emitters
-        .iter()
-        .position(|emitter| emitter.id == drag.emitter);
     let changed = (drag.current_start - drag.original_start).abs() > 0.000_1
         || (drag.current_duration - drag.original_duration).abs() > 0.000_1;
     if changed {
@@ -1329,29 +2089,62 @@ fn commit_timeline_drag(session: &mut EditorSession, drag: TimelineDrag) {
             label,
         );
     }
-    if let Some(index) = selected_index
-        && index != session.selected_layer_index()
-    {
-        session.select_layer(index);
-    }
 }
 
 fn select_timeline_clip(
     click: On<Pointer<Click>>,
-    targets: Query<&TimelineClipInteraction>,
-    mut session: ResMut<EditorSession>,
+    actions: Query<&ChoreographyAction, With<TimelineClipInteraction>>,
+    mut commands: Commands,
 ) {
-    let Ok(target) = targets.get(click.event_target()) else {
+    let Ok(action) = actions.get(click.event_target()) else {
         return;
     };
-    if let Some(index) = session
-        .effect
-        .emitters
-        .iter()
-        .position(|emitter| emitter.id == target.emitter)
-        && index != session.selected_layer_index()
-    {
-        session.select_layer(index);
+    if click.button == PointerButton::Primary {
+        commands.trigger(*action);
+    }
+}
+
+fn select_timeline_track_header(
+    click: On<Pointer<Click>>,
+    headers: Query<&ChoreographyAction, With<EmitterTrackHeader>>,
+    mut commands: Commands,
+) {
+    let Ok(action) = headers.get(click.event_target()) else {
+        return;
+    };
+    if click.button == PointerButton::Primary {
+        commands.trigger(*action);
+    }
+}
+
+fn open_timeline_track_context_menu(
+    click: On<Pointer<Click>>,
+    headers: Query<&EmitterTrackHeader>,
+    mut commands: Commands,
+) {
+    let Ok(header) = headers.get(click.event_target()) else {
+        return;
+    };
+    if click.button == PointerButton::Secondary {
+        commands.trigger(ChoreographyAction::ToggleEmitterMenu(header.emitter));
+    }
+}
+
+fn update_track_header_hover_actions(
+    headers: Query<(&Interaction, &Children), (With<EmitterTrackHeader>, Changed<Interaction>)>,
+    mut action_groups: Query<&mut Node, With<EmitterTrackHoverActions>>,
+) {
+    for (interaction, children) in &headers {
+        for child in children.iter() {
+            let Ok(mut node) = action_groups.get_mut(child) else {
+                continue;
+            };
+            node.display = if *interaction == Interaction::None {
+                Display::None
+            } else {
+                Display::Flex
+            };
+        }
     }
 }
 

@@ -28,15 +28,9 @@ impl Plugin for EditorLibraryPlugin {
             .add_observer(update_library_query)
             .add_systems(
                 Update,
-                (
-                    library_keyboard_input.in_set(LibrarySet::Input),
-                    handle_library_action_buttons.in_set(LibrarySet::Actions),
-                ),
+                handle_library_action_buttons.in_set(LibrarySet::Actions),
             )
-            .add_systems(
-                Update,
-                (update_layer_selection, sync_library_filtering).in_set(LibrarySet::Sync),
-            );
+            .add_systems(Update, sync_library_filtering.in_set(LibrarySet::Sync));
     }
 }
 
@@ -218,14 +212,7 @@ impl LibraryState {
 pub(crate) enum LibraryAction {
     AddSpriteMaterial,
     AddGridFlipbook,
-    AddEmitter,
-    DuplicateEmitter,
-    DeleteEmitter,
-    SelectLayer(usize),
 }
-
-#[derive(Component)]
-struct LayerRow(usize);
 
 #[derive(Component)]
 struct AssetButtonLabel;
@@ -259,9 +246,6 @@ struct LibraryMaterialsSection;
 
 #[derive(Component)]
 struct LibraryFlipbooksSection;
-
-#[derive(Component)]
-struct LibraryTemporaryChoreographySection;
 
 fn queue_library_action_activation(
     activate: On<Activate>,
@@ -659,70 +643,6 @@ pub(crate) fn spawn_library(
         .with_children(|panel| {
             spawn_project_effects(panel, catalog, state, localizer);
             spawn_current_document_resources(panel, session, localizer);
-
-            let mut args = FluentArgs::new();
-            args.set("count", session.effect.emitters.len());
-            let section = spawn_list_section_header(
-                panel,
-                &localizer.text("library-choreography-temporary"),
-                &localizer.text_with("assets-active", &args),
-            );
-            panel
-                .commands()
-                .entity(section.root)
-                .insert(LibraryTemporaryChoreographySection);
-            library_toolbar_button(
-                panel,
-                &localizer.text("assets-add-emitter"),
-                LibraryAction::AddEmitter,
-            );
-            for (index, layer) in session.effect.emitters.iter().enumerate() {
-                let selected = index == session.selected_layer_index();
-                panel
-                    .spawn((
-                        Button,
-                        EditorNativeControl,
-                        LibraryAction::SelectLayer(index),
-                        LayerRow(index),
-                        Node {
-                            height: Val::Px(42.0),
-                            margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                            padding: UiRect::horizontal(Val::Px(9.0)),
-                            align_items: AlignItems::Center,
-                            column_gap: Val::Px(9.0),
-                            border_radius: BorderRadius::all(Val::Px(4.0)),
-                            ..default()
-                        },
-                        BackgroundColor(if selected {
-                            theme::SELECTION
-                        } else {
-                            theme::PANEL_DARK
-                        }),
-                    ))
-                    .with_children(|row| {
-                        row.spawn((
-                            Node {
-                                width: Val::Px(7.0),
-                                height: Val::Px(24.0),
-                                border_radius: BorderRadius::all(Val::Px(3.0)),
-                                ..default()
-                            },
-                            BackgroundColor(layer_color(index)),
-                        ));
-                        row.spawn((
-                            Text::new(&layer.name),
-                            TextFont {
-                                font_size: FontSize::Px(12.0),
-                                ..default()
-                            },
-                            TextColor(if layer.enabled {
-                                theme::TEXT
-                            } else {
-                                theme::TEXT_FAINT
-                            }),
-                        ));
-                    });
-            }
         });
 }
 
@@ -807,91 +727,10 @@ fn handle_library_action_buttons(
     }
 }
 
-fn execute_library_action(
-    action: On<LibraryAction>,
-    mut session: ResMut<EditorSession>,
-    mut curves: ResMut<CurvesState>,
-    mut layout: ResMut<WorkspaceLayout>,
-    localizer: Res<Localizer>,
-) {
+fn execute_library_action(action: On<LibraryAction>, mut session: ResMut<EditorSession>) {
     match *action {
         LibraryAction::AddSpriteMaterial => session.add_sprite_material(),
         LibraryAction::AddGridFlipbook => session.add_grid_flipbook(),
-        LibraryAction::AddEmitter => {
-            session.add_layer();
-            curves.clear();
-        }
-        LibraryAction::DuplicateEmitter => {
-            session.duplicate_selected_layer();
-            curves.clear();
-        }
-        LibraryAction::DeleteEmitter => {
-            if preview_selected_emitter_deletion(&mut session, &localizer) {
-                reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
-                curves.clear();
-            }
-        }
-        LibraryAction::SelectLayer(index) => {
-            session.select_layer(index);
-            curves.clear();
-        }
-    }
-}
-
-fn library_keyboard_input(
-    mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
-    palette: Res<ModulePaletteState>,
-) {
-    if palette.open {
-        return;
-    }
-    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    if control && keys.just_pressed(KeyCode::Enter) {
-        commands.trigger(LibraryAction::AddEmitter);
-    }
-    if control && keys.just_pressed(KeyCode::KeyD) {
-        commands.trigger(LibraryAction::DuplicateEmitter);
-    }
-    if keys.just_pressed(KeyCode::Delete) {
-        commands.trigger(LibraryAction::DeleteEmitter);
-    }
-}
-
-fn preview_selected_emitter_deletion(session: &mut EditorSession, localizer: &Localizer) -> bool {
-    if session.effect.emitters.len() <= 1 {
-        session.status = localizer.text("assets-status-minimum-emitter");
-        return false;
-    }
-    let id = session.selected_layer().id;
-    session.preview_transaction(EffectTransaction::single(
-        localizer.text("assets-change-delete-emitter"),
-        EffectCommand::RemoveEmitter { id },
-    ))
-}
-
-fn update_layer_selection(
-    session: Res<EditorSession>,
-    mut rows: Query<(&LayerRow, &mut BackgroundColor)>,
-) {
-    if !session.is_changed() {
-        return;
-    }
-    for (row, mut color) in &mut rows {
-        color.0 = if row.0 == session.selected_layer_index() {
-            theme::SELECTION
-        } else {
-            theme::PANEL_DARK
-        };
-    }
-}
-
-pub(crate) fn layer_color(index: usize) -> Color {
-    match index % 4 {
-        0 => Color::srgb(0.48, 0.31, 0.98),
-        1 => Color::srgb(0.17, 0.75, 0.95),
-        2 => Color::srgb(0.98, 0.47, 0.21),
-        _ => Color::srgb(0.84, 0.29, 0.72),
     }
 }
 
@@ -1103,10 +942,7 @@ mod tests {
         assert_eq!(marker_count::<LibraryTextureMeshSection>(&mut app), 0);
         assert_eq!(marker_count::<LibraryMaterialsSection>(&mut app), 1);
         assert_eq!(marker_count::<LibraryFlipbooksSection>(&mut app), 1);
-        assert_eq!(
-            marker_count::<LibraryTemporaryChoreographySection>(&mut app),
-            1
-        );
+        assert_eq!(marker_count::<ChoreographyAction>(&mut app), 0);
 
         let rows = {
             let world = app.world_mut();
@@ -1384,123 +1220,6 @@ mod tests {
         assert_eq!(
             app.world().resource::<ProjectEffectCatalog>().entries()[0].id,
             expected_id
-        );
-    }
-
-    #[test]
-    fn selecting_a_layer_clears_the_curve_workspace_selection() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        session.select_layer(0);
-        let mut app = app_with_session(session);
-        app.insert_resource({
-            let mut state = CurvesState::default();
-            state.select_for_test(ModuleId::new(), 0, 0);
-            state
-        });
-        app.world_mut().spawn((
-            Button,
-            Interaction::Pressed,
-            LibraryAction::SelectLayer(1),
-            BackgroundColor::default(),
-        ));
-
-        app.update();
-
-        assert_eq!(
-            app.world()
-                .resource::<EditorSession>()
-                .selected_layer_index(),
-            1
-        );
-        assert!(!app.world().resource::<CurvesState>().has_selection());
-    }
-
-    #[test]
-    fn emitter_actions_add_and_duplicate_through_one_contract() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let initial_emitters = session.effect.emitters.len();
-        let mut app = app_with_session(session);
-
-        app.world_mut().trigger(LibraryAction::AddEmitter);
-        app.update();
-        assert_eq!(
-            app.world()
-                .resource::<EditorSession>()
-                .effect
-                .emitters
-                .len(),
-            initial_emitters + 1
-        );
-
-        app.world_mut().trigger(LibraryAction::DuplicateEmitter);
-        app.update();
-        let session = app.world().resource::<EditorSession>();
-        assert_eq!(session.effect.emitters.len(), initial_emitters + 2);
-        assert!(session.can_undo());
-    }
-
-    #[test]
-    fn delete_emitter_action_opens_a_review_and_clears_curves() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let mut app = app_with_session(session);
-        assert!(
-            app.world_mut()
-                .resource_mut::<WorkspaceLayout>()
-                .show(DockPanel::Changes)
-        );
-        app.insert_resource({
-            let mut state = CurvesState::default();
-            state.select_for_test(ModuleId::new(), 0, 0);
-            state
-        });
-
-        app.world_mut().trigger(LibraryAction::DeleteEmitter);
-        app.update();
-
-        assert!(
-            app.world()
-                .resource::<EditorSession>()
-                .pending_change
-                .is_some()
-        );
-        assert!(!app.world().resource::<CurvesState>().has_selection());
-    }
-
-    #[test]
-    fn delete_emitter_action_protects_the_last_emitter() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        session.effect.emitters.truncate(1);
-        let mut app = app_with_session(session);
-
-        app.world_mut().trigger(LibraryAction::DeleteEmitter);
-        app.update();
-
-        let session = app.world().resource::<EditorSession>();
-        assert_eq!(session.effect.emitters.len(), 1);
-        assert!(session.pending_change.is_none());
-        assert_eq!(session.status, "An effect must keep at least one emitter");
-    }
-
-    #[test]
-    fn emitter_shortcuts_route_through_the_library_action_contract() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let initial_emitters = session.effect.emitters.len();
-        let mut app = app_with_session(session);
-        {
-            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-            keys.press(KeyCode::ControlLeft);
-            keys.press(KeyCode::Enter);
-        }
-
-        app.update();
-
-        assert_eq!(
-            app.world()
-                .resource::<EditorSession>()
-                .effect
-                .emitters
-                .len(),
-            initial_emitters + 1
         );
     }
 }

@@ -71,10 +71,11 @@ pub(crate) fn spawn_tool_button<A: Component>(
     parent: &mut ChildSpawnerCommands,
     label: &str,
     action: A,
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(scenes::feathers_tool_button())
+) -> Entity {
+    let mut button = parent.spawn_empty();
+    button.apply_scene(scenes::feathers_tool_button());
+    let entity = button.id();
+    button
         .insert((
             action,
             FeathersActionButton,
@@ -90,4 +91,5 @@ pub(crate) fn spawn_tool_button<A: Component>(
         .with_children(|button| {
             button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
         });
+    entity
 }

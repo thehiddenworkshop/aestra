@@ -104,10 +104,8 @@ use fluent_bundle::FluentArgs;
 pub(crate) use history::HistoryAction;
 use history::{EditorHistoryPlugin, HistorySet};
 use inspector::*;
-use library::{EditorLibraryPlugin, LibraryAction, LibrarySet};
-pub(crate) use library::{
-    LibraryState, ProjectEffectCatalog, ProjectEffectEntryId, layer_color, spawn_library,
-};
+use library::{EditorLibraryPlugin, LibrarySet};
+pub(crate) use library::{LibraryState, ProjectEffectCatalog, ProjectEffectEntryId, spawn_library};
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
 pub(crate) use menus::{DocumentMenuLabel, MenuState, TabContextMenu};
@@ -121,6 +119,7 @@ use settings::{EditorSettings, SettingsPersistence};
 use settings_ui::EditorSettingsUiPlugin;
 pub(crate) use settings_ui::{SettingsPanelState, spawn_settings_workspace};
 pub(crate) use shell::*;
+pub(crate) use timeline::ChoreographyAction;
 use timeline::{TimelinePlugin, TimelineSet};
 pub(crate) use transport::TransportAction;
 use transport::{EditorTransportPlugin, TransportSet, spawn_transport_controls};
