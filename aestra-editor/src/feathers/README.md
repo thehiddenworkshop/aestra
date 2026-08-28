@@ -21,6 +21,7 @@ domain-specific state and semantic commands.
 | `scroll` | Native scroll areas, persisted scroll markers, and overflow-only scrollbars |
 | `separator` | Theme-aware horizontal and vertical separators |
 | `status_bar` | The persistent editor status surface |
+| `tooltip` | Delayed, window-aware help with optional title, shortcut, and footer content |
 
 ## Ownership rule
 
@@ -29,5 +30,5 @@ domain-specific state and semantic commands.
   behavior in their owning plugins.
 - Prefer Bevy 0.19 Feathers controls and accessibility/focus behavior. Wrap them when Aestra needs
   consistent composition or editor-specific policy.
-- Add a widget only when an Aestra surface uses it. Candidate additions from Jackdaw include a
-  generic delayed tooltip, remembered panel cards, slider rows, swatch rows, and richer text edits.
+- Add a widget only when an Aestra surface uses it. Candidate additions from Jackdaw include
+  remembered panel cards, slider rows, swatch rows, and richer text edits.

@@ -4,7 +4,6 @@
 use crate::*;
 
 pub(crate) const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
-const INSPECTOR_TOOLTIP_DELAY: Duration = Duration::from_millis(650);
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum InspectorSet {
@@ -19,7 +18,6 @@ impl Plugin for InspectorPlugin {
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()
             .init_resource::<InspectorFocus>()
-            .init_resource::<InspectorTooltipState>()
             .init_resource::<NumericScrubState>()
             .add_observer(handle_inspector_toggle_change)
             .add_observer(handle_module_enabled_change)
@@ -32,7 +30,6 @@ impl Plugin for InspectorPlugin {
             .add_observer(begin_numeric_scrub)
             .add_observer(update_numeric_scrub)
             .add_observer(finish_numeric_scrub)
-            .add_observer(begin_inspector_tooltip)
             .add_observer(select_inspector_header)
             .add_systems(Update, module_palette_keyboard.in_set(InspectorSet::Input))
             .add_systems(
@@ -46,7 +43,7 @@ impl Plugin for InspectorPlugin {
                         .chain(),
                     scroll_inspector_to_focus,
                     update_inspector_highlight,
-                    (update_inspector_tooltip, decorate_numeric_scrub_inputs).chain(),
+                    decorate_numeric_scrub_inputs,
                 )
                     .chain()
                     .in_set(InspectorSet::Sync),
@@ -498,123 +495,6 @@ fn update_inspector_highlight(
     if focus.highlight_remaining == 0.0 {
         focus.highlight = None;
     }
-}
-
-fn begin_inspector_tooltip(
-    over: On<Pointer<Over>>,
-    helps: Query<(), With<InspectorHelp>>,
-    mut state: ResMut<InspectorTooltipState>,
-    mut commands: Commands,
-) {
-    if !helps.contains(over.entity) || state.target == Some(over.entity) {
-        return;
-    }
-    if let Some(popup) = state.popup.take() {
-        commands.entity(popup).despawn();
-    }
-    state.target = Some(over.entity);
-    state.hovered_at = Some(Instant::now());
-}
-
-fn update_inspector_tooltip(
-    mut commands: Commands,
-    mut state: ResMut<InspectorTooltipState>,
-    helps: Query<(&InspectorHelp, &RelativeCursorPosition)>,
-    popups: Query<(), With<InspectorTooltipPopup>>,
-) {
-    if state.popup.is_some_and(|popup| !popups.contains(popup)) {
-        state.popup = None;
-    }
-    let Some(target) = state.target else {
-        return;
-    };
-    let Ok((help, cursor)) = helps.get(target) else {
-        clear_inspector_tooltip(&mut commands, &mut state);
-        return;
-    };
-    if !cursor.cursor_over() {
-        clear_inspector_tooltip(&mut commands, &mut state);
-        return;
-    }
-    if state.popup.is_some()
-        || state
-            .hovered_at
-            .is_none_or(|started| started.elapsed() < INSPECTOR_TOOLTIP_DELAY)
-    {
-        return;
-    }
-
-    let text = help.0.clone();
-    let mut popup = None;
-    commands.entity(target).with_children(|target| {
-        popup = Some(
-            target
-                .spawn((
-                    InspectorTooltipPopup,
-                    Popover {
-                        positions: vec![
-                            PopoverPlacement {
-                                side: PopoverSide::Left,
-                                align: PopoverAlign::Center,
-                                gap: 8.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Right,
-                                align: PopoverAlign::Center,
-                                gap: 8.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Bottom,
-                                align: PopoverAlign::Start,
-                                gap: 6.0,
-                            },
-                        ],
-                        window_margin: 10.0,
-                    },
-                    OverrideClip,
-                    GlobalZIndex(300),
-                    Pickable::IGNORE,
-                    Node {
-                        position_type: PositionType::Absolute,
-                        width: Val::Px(280.0),
-                        padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(4.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::PANEL),
-                    BorderColor::all(theme::BORDER_BRIGHT),
-                    BoxShadow::new(
-                        Color::srgba(0.0, 0.0, 0.0, 0.65),
-                        Val::Px(0.0),
-                        Val::Px(2.0),
-                        Val::Px(3.0),
-                        Val::Px(5.0),
-                    ),
-                ))
-                .with_children(|tooltip| {
-                    tooltip.spawn((
-                        Text::new(text),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT),
-                        Pickable::IGNORE,
-                    ));
-                })
-                .id(),
-        );
-    });
-    state.popup = popup;
-}
-
-fn clear_inspector_tooltip(commands: &mut Commands, state: &mut InspectorTooltipState) {
-    if let Some(popup) = state.popup.take() {
-        commands.entity(popup).despawn();
-    }
-    state.target = None;
-    state.hovered_at = None;
 }
 
 pub(crate) fn set_module_choice(
@@ -2039,8 +1919,7 @@ pub(crate) fn toggle_persisted_inspector_section(
 fn spawn_emitter_timing_controls(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
-            InspectorHelp("Start offset and active duration for this emitter.".into()),
-            RelativeCursorPosition::default(),
+            EditorTooltip::description("Start offset and active duration for this emitter."),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(29.0),
@@ -2127,10 +2006,7 @@ fn spawn_emitter_transform_row(
         crate::feathers::field_row::FieldRowProps::new(title)
             .indented(0)
             .with_control_min_width(150.0),
-        (
-            InspectorHelp(description.to_owned()),
-            RelativeCursorPosition::default(),
-        ),
+        EditorTooltip::description(description),
         |inputs| {
             for (axis, component, color) in [
                 ("X", 0, tokens::TEXT_INPUT_X_AXIS),
@@ -2397,10 +2273,7 @@ fn spawn_inspector_disclosure(
             },
         ));
     if let Some(help) = help {
-        disclosure.insert((
-            InspectorHelp(help.to_owned()),
-            RelativeCursorPosition::default(),
-        ));
+        disclosure.insert(EditorTooltip::description(help));
     }
     disclosure.with_children(|button| {
         button
@@ -2630,8 +2503,7 @@ fn spawn_inspector_integer_control(
     };
     parent
         .spawn((
-            InspectorHelp(description.to_owned()),
-            RelativeCursorPosition::default(),
+            EditorTooltip::description(description),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(27.0),
@@ -2680,8 +2552,7 @@ fn spawn_inspector_number_controls(
 ) {
     parent
         .spawn((
-            InspectorHelp(description.to_owned()),
-            RelativeCursorPosition::default(),
+            EditorTooltip::description(description),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(27.0),
@@ -2769,8 +2640,7 @@ fn spawn_inspector_toggle_control(
 ) {
     parent
         .spawn((
-            InspectorHelp(description.to_owned()),
-            RelativeCursorPosition::default(),
+            EditorTooltip::description(description),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(27.0),
@@ -2891,8 +2761,7 @@ fn spawn_shape_number_row(
 ) {
     parent
         .spawn((
-            InspectorHelp(description.to_owned()),
-            RelativeCursorPosition::default(),
+            EditorTooltip::description(description),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(27.0),
@@ -2970,10 +2839,7 @@ fn spawn_inspector_combo_row(
         ..default()
     });
     if let Some(description) = description {
-        row.insert((
-            InspectorHelp(description.to_owned()),
-            RelativeCursorPosition::default(),
-        ));
+        row.insert(EditorTooltip::description(description));
     }
     row.with_children(|row| {
         spawn_inspector_property_label(row, title);
@@ -3886,17 +3752,4 @@ impl Default for ModulePaletteState {
 pub(crate) enum InspectorSection {
     Module(ModuleId),
     Renderer(RendererId),
-}
-
-#[derive(Component)]
-pub(crate) struct InspectorHelp(pub(crate) String);
-
-#[derive(Component)]
-struct InspectorTooltipPopup;
-
-#[derive(Resource, Default)]
-struct InspectorTooltipState {
-    target: Option<Entity>,
-    hovered_at: Option<Instant>,
-    popup: Option<Entity>,
 }

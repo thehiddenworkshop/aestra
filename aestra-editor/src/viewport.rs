@@ -1,11 +1,8 @@
 //! Preview viewport ownership: rendering, navigation, grid, display modes, and gizmos.
 
 use crate::{
-    EditorAction, FeathersActionButton, MenuState, ProfilerState,
-    inspector::{InspectorHelp, module_parameter},
-    localization::Localizer,
-    session::EditorSession,
-    theme, ui_shell,
+    EditorAction, FeathersActionButton, MenuState, ProfilerState, feathers::tooltip::EditorTooltip,
+    inspector::module_parameter, localization::Localizer, session::EditorSession, theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
@@ -1715,15 +1712,20 @@ fn spawn_transform_gizmo_tool_button(
     description_id: &'static str,
     localizer: &Localizer,
 ) {
+    let label = localizer.text(label_id);
+    let shortcut = match mode {
+        TransformGizmoMode::Translate => "1",
+        TransformGizmoMode::Rotate => "2",
+        TransformGizmoMode::Scale => "3",
+    };
     parent
         .spawn_empty()
         .apply_scene(ui_shell::feathers_tool_button())
         .insert((
             EditorAction::SetTransformGizmoMode(mode),
             FeathersActionButton,
-            AccessibleLabel(localizer.text(label_id)),
-            InspectorHelp(localizer.text(description_id)),
-            RelativeCursorPosition::default(),
+            AccessibleLabel(label.clone()),
+            EditorTooltip::titled(label, localizer.text(description_id)).with_shortcut(shortcut),
             Node {
                 width: Val::Px(22.0),
                 min_width: Val::Px(22.0),
@@ -1837,8 +1839,7 @@ fn spawn_viewport_tool_button(
             action,
             FeathersActionButton,
             AccessibleLabel(localizer.text(label_id)),
-            InspectorHelp(localizer.text(description_id)),
-            RelativeCursorPosition::default(),
+            EditorTooltip::description(localizer.text(description_id)),
             Node {
                 width: Val::Px(22.0),
                 min_width: Val::Px(22.0),

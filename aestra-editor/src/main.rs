@@ -42,10 +42,7 @@ use bevy::{
     prelude::*,
     text::{EditableText, FontSource, TextEdit},
     ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition},
-    ui_widgets::{
-        ScrollIntoView, ValueChange,
-        popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
-    },
+    ui_widgets::{ScrollIntoView, ValueChange},
     window::{
         CursorIcon, CursorOptions, PrimaryWindow, SystemCursorIcon, WindowCloseRequested,
         WindowMoved, WindowPosition, WindowRef, WindowResizeConstraints, WindowResized,
@@ -76,6 +73,7 @@ use feathers::{
     combo_box::{ComboOption, spawn_action_menu, spawn_combo_control},
     panel::spawn_panel_heading as panel_heading,
     scroll::{PersistedScroll, spawn_vertical_scroll_area},
+    tooltip::EditorTooltip,
 };
 use fluent_bundle::FluentArgs;
 use inspector::*;
@@ -5023,10 +5021,7 @@ fn inspector_action_button(
         },
     ));
     if let Some(help) = help {
-        button.insert((
-            InspectorHelp(help.to_owned()),
-            RelativeCursorPosition::default(),
-        ));
+        button.insert(EditorTooltip::titled(label, help));
     }
     button.with_children(|button| {
         button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));

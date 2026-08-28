@@ -13,6 +13,7 @@ pub(crate) mod scenes;
 pub(crate) mod scroll;
 pub(crate) mod separator;
 pub(crate) mod status_bar;
+pub(crate) mod tooltip;
 
 use crate::theme;
 use bevy::{feathers::FeathersPlugins, prelude::*};
@@ -29,14 +30,18 @@ impl Plugin for AestraFeathersPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(FeathersPlugins)
             .insert_resource(theme::feathers_theme())
+            .init_resource::<tooltip::TooltipState>()
             .add_observer(button::queue_action_activation)
+            .add_observer(tooltip::begin_tooltip)
+            .add_observer(tooltip::dismiss_tooltip_on_drag)
             .add_systems(
                 Update,
                 button::audit_action_controls.in_set(AestraFeathersSet::Input),
             )
             .add_systems(
                 Update,
-                scroll::update_scrollbar_visibility.in_set(AestraFeathersSet::Sync),
+                (scroll::update_scrollbar_visibility, tooltip::update_tooltip)
+                    .in_set(AestraFeathersSet::Sync),
             );
     }
 }
