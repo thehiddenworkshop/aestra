@@ -161,6 +161,15 @@ pub(crate) struct SettingsPersistence {
 }
 
 impl SettingsPersistence {
+    #[cfg(test)]
+    pub(crate) fn for_test(path: PathBuf) -> Self {
+        Self {
+            path,
+            writable: true,
+            diagnostic: None,
+        }
+    }
+
     pub(crate) fn load() -> (EditorSettings, Self) {
         Self::load_from(settings_path())
     }

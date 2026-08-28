@@ -222,6 +222,7 @@ fn main() {
                     CurvesSet::Actions,
                     DiagnosticsSet::Actions,
                     DockingSet::Actions,
+                    InspectorSet::Actions,
                     ProfilerSet::Actions,
                     PersistenceSet::Actions,
                 )
@@ -265,34 +266,12 @@ enum EditorAction {
     EffectDuration(f32),
     SetTimelineSnap(TimelineSnapMode),
     FrameTimeline,
-    OpenModulePalette(StackStage),
-    CloseModulePalette,
-    AddModule(usize),
-    AddSpriteRenderer,
-    AddFlipbookRenderer,
-    MoveModule(ModuleId, i8),
-    DuplicateModule(ModuleId),
-    DeleteModule(ModuleId),
-    DuplicateRenderer(RendererId),
-    DeleteRenderer(RendererId),
     ApplyPendingChange,
     DiscardPendingChange,
     ToggleGrid,
     FramePreview,
     SetTransformGizmoMode(TransformGizmoMode),
     SetPreviewDisplayMode(PreviewDisplayMode),
-    ToggleInspectorSection(InspectorSection),
-    SetModuleChoice {
-        module: ModuleId,
-        input: u8,
-        choice: u8,
-    },
-    SetRendererMaterial(RendererId, usize),
-    SetRendererBlend(RendererId, BlendMode),
-    SetRendererTexture(RendererId, Option<usize>),
-    SetRendererFlipbook(RendererId, usize),
-    SetFlipbookTimeSource(RendererId, FlipbookTimeSource),
-    SetFlipbookPlayback(RendererId, FlipbookPlaybackMode),
     ShowAbout,
     CloseAbout,
 }
@@ -1146,8 +1125,6 @@ fn handle_buttons(
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     editor_resources: (
-        Res<EditorModuleRegistry>,
-        ResMut<ModulePaletteState>,
         ResMut<CurvesState>,
         ResMut<WorkspaceLayout>,
         ResMut<EditorSettings>,
@@ -1160,8 +1137,6 @@ fn handle_buttons(
     localizer: Res<Localizer>,
 ) {
     let (
-        registry,
-        mut palette,
         mut workspace,
         mut layout,
         mut settings,
@@ -1234,17 +1209,6 @@ fn handle_buttons(
                             workspace.clear();
                         }
                     }
-                    EditorAction::ToggleInspectorSection(section) => {
-                        if toggle_persisted_inspector_section(&session, &mut settings, section) {
-                            session.ui_revision += 1;
-                            persist_editor_settings(
-                                &settings,
-                                &mut settings_persistence,
-                                &mut session,
-                                &localizer,
-                            );
-                        }
-                    }
                     EditorAction::EffectDuration(delta) => {
                         session.adjust_effect_duration(delta);
                     }
@@ -1255,95 +1219,6 @@ fn handle_buttons(
                     }
                     EditorAction::FrameTimeline => {
                         timeline_state.frame_all(session.playback_duration());
-                    }
-                    EditorAction::OpenModulePalette(stage) => {
-                        palette.open = true;
-                        palette.stage = stage;
-                        palette.query.clear();
-                        session.ui_revision += 1;
-                    }
-                    EditorAction::CloseModulePalette => {
-                        palette.open = false;
-                        session.ui_revision += 1;
-                    }
-                    EditorAction::AddModule(index) => {
-                        let module = registry
-                            .0
-                            .iter()
-                            .nth(index)
-                            .and_then(|metadata| registry.0.instantiate(&metadata.type_id));
-                        if let Some(module) = module {
-                            session.add_module(module);
-                            palette.open = false;
-                        } else {
-                            session.status = "Module is unavailable in the registry".into();
-                        }
-                    }
-                    EditorAction::AddSpriteRenderer => {
-                        session.add_sprite_renderer();
-                        palette.open = false;
-                    }
-                    EditorAction::AddFlipbookRenderer => {
-                        session.add_flipbook_renderer();
-                        palette.open = false;
-                    }
-                    EditorAction::SetModuleChoice {
-                        module,
-                        input,
-                        choice,
-                    } => set_module_choice(&mut session, &registry.0, module, input, choice),
-                    EditorAction::MoveModule(id, direction) => {
-                        session.move_module(id, direction);
-                    }
-                    EditorAction::DuplicateModule(id) => session.duplicate_module(id),
-                    EditorAction::DeleteModule(id) => {
-                        if preview_module_deletion(&mut session, id) {
-                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
-                            workspace.clear();
-                        }
-                    }
-                    EditorAction::SetRendererMaterial(id, index) => {
-                        if let Some(material) = session
-                            .effect
-                            .materials
-                            .get(index)
-                            .map(|material| material.id)
-                        {
-                            session.set_renderer_material(id, material);
-                        }
-                    }
-                    EditorAction::SetRendererBlend(id, blend) => {
-                        session.set_renderer_blend(id, blend);
-                    }
-                    EditorAction::SetRendererTexture(id, index) => {
-                        let texture = index
-                            .and_then(|index| session.effect.assets.get(index))
-                            .filter(|asset| asset.kind == aestra_bevy::AssetKind::Texture)
-                            .map(|asset| asset.id);
-                        session.set_renderer_texture(id, texture);
-                    }
-                    EditorAction::SetRendererFlipbook(id, index) => {
-                        if let Some(flipbook) = session
-                            .effect
-                            .flipbooks
-                            .get(index)
-                            .map(|flipbook| flipbook.id)
-                        {
-                            session.set_renderer_flipbook(id, flipbook);
-                        }
-                    }
-                    EditorAction::SetFlipbookTimeSource(id, value) => {
-                        session.set_flipbook_time_source(id, value);
-                    }
-                    EditorAction::SetFlipbookPlayback(id, value) => {
-                        session.set_flipbook_playback(id, value);
-                    }
-                    EditorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
-                    EditorAction::DeleteRenderer(id) => {
-                        if preview_renderer_deletion(&mut session, id) {
-                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
-                            workspace.clear();
-                        }
                     }
                     EditorAction::ApplyPendingChange => {
                         session.apply_pending_change();
@@ -1401,22 +1276,6 @@ fn preview_selected_layer_deletion(session: &mut EditorSession) -> bool {
     session.preview_transaction(EffectTransaction::single(
         "Delete emitter layer",
         EffectCommand::RemoveEmitter { id },
-    ))
-}
-
-fn preview_module_deletion(session: &mut EditorSession, module: ModuleId) -> bool {
-    let emitter = session.selected_layer().id;
-    session.preview_transaction(EffectTransaction::single(
-        "Delete module",
-        EffectCommand::RemoveModule { emitter, module },
-    ))
-}
-
-fn preview_renderer_deletion(session: &mut EditorSession, renderer: RendererId) -> bool {
-    let emitter = session.selected_layer().id;
-    session.preview_transaction(EffectTransaction::single(
-        "Delete renderer",
-        EffectCommand::RemoveRenderer { emitter, renderer },
     ))
 }
 

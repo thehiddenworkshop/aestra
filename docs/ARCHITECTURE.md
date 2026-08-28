@@ -117,6 +117,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   and panel-local authoring actions. Opening a catalog entry emits the shared
   `DocumentAction` contract so document replacement and unsaved-change protection remain
   exclusively owned by persistence.
+- Runs effect-property authoring through `InspectorPlugin`. Inspector controls emit the
+  dedicated `InspectorAction` contract; the plugin owns module-palette navigation,
+  module and renderer mutations, renderer configuration, persisted disclosure state,
+  semantic selection, and localized validation/status outcomes. Undoable edits still
+  enter the shared `EditorSession` command history, while `main.rs` only schedules the
+  Inspector action set with the other editor domains.
 - Runs curve and gradient authoring through `EditorCurvesPlugin`. The plugin owns the
   Curves workspace, semantic property/key selection, graph interaction, key controls,
   and its Feathers action bridge. Inspector links emit `CurvesAction`, while every key

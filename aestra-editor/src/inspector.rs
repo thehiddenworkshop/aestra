@@ -7,13 +7,18 @@ use crate::feathers::panel_card::{
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
 use crate::*;
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
-use bevy::ui_widgets::SliderValue;
+use bevy::{
+    ui::InteractionDisabled,
+    ui_widgets::{Activate, SliderValue},
+};
+use fluent_bundle::FluentArgs;
 
 pub(crate) const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum InspectorSet {
     Input,
+    Actions,
     Sync,
 }
 
@@ -26,6 +31,7 @@ impl Plugin for InspectorPlugin {
             .init_resource::<InspectorFocus>()
             .init_resource::<NumericScrubState>()
             .init_resource::<BoundedSliderState>()
+            .add_observer(queue_inspector_action_activation)
             .add_observer(handle_inspector_toggle_change)
             .add_observer(handle_module_enabled_change)
             .add_observer(handle_renderer_enabled_change)
@@ -40,6 +46,10 @@ impl Plugin for InspectorPlugin {
             .add_observer(finish_numeric_scrub)
             .add_observer(select_inspector_header)
             .add_systems(Update, module_palette_keyboard.in_set(InspectorSet::Input))
+            .add_systems(
+                Update,
+                handle_inspector_actions.in_set(InspectorSet::Actions),
+            )
             .add_systems(
                 Update,
                 (
@@ -59,6 +69,298 @@ impl Plugin for InspectorPlugin {
                     .in_set(InspectorSet::Sync),
             );
     }
+}
+
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub(crate) enum InspectorAction {
+    OpenModulePalette(StackStage),
+    CloseModulePalette,
+    AddModule(usize),
+    AddSpriteRenderer,
+    AddFlipbookRenderer,
+    MoveModule(ModuleId, i8),
+    DuplicateModule(ModuleId),
+    DeleteModule(ModuleId),
+    DuplicateRenderer(RendererId),
+    DeleteRenderer(RendererId),
+    ToggleSection(InspectorSection),
+    SetModuleChoice {
+        module: ModuleId,
+        input: u8,
+        choice: u8,
+    },
+    SetRendererMaterial(RendererId, usize),
+    SetRendererBlend(RendererId, BlendMode),
+    SetRendererTexture(RendererId, Option<usize>),
+    SetRendererFlipbook(RendererId, usize),
+    SetFlipbookTimeSource(RendererId, FlipbookTimeSource),
+    SetFlipbookPlayback(RendererId, FlipbookPlaybackMode),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InspectorStatus {
+    SelectedCompiled(String),
+    Selected(String),
+    ModuleRegistryUnavailable,
+    ModuleMissing,
+    InputMetadataUnavailable,
+    NotChoice(String),
+    ChoiceUnavailable,
+    TargetUnavailable,
+    FiniteNumberRequired(String),
+    IncompatibleMetadata(String),
+}
+
+fn set_inspector_status(
+    session: &mut EditorSession,
+    localizer: &Localizer,
+    status: InspectorStatus,
+) {
+    session.status = localize_inspector_status(status, localizer);
+}
+
+fn localize_inspector_status(status: InspectorStatus, localizer: &Localizer) -> String {
+    let (message_id, argument) = match status {
+        InspectorStatus::SelectedCompiled(target) => {
+            ("inspector-status-selected-compiled", ("target", target))
+        }
+        InspectorStatus::Selected(target) => ("inspector-status-selected", ("target", target)),
+        InspectorStatus::ModuleRegistryUnavailable => {
+            return localizer.text("inspector-status-module-registry-unavailable");
+        }
+        InspectorStatus::ModuleMissing => {
+            return localizer.text("inspector-status-module-missing");
+        }
+        InspectorStatus::InputMetadataUnavailable => {
+            return localizer.text("inspector-status-input-metadata-unavailable");
+        }
+        InspectorStatus::NotChoice(input) => ("inspector-status-not-choice", ("input", input)),
+        InspectorStatus::ChoiceUnavailable => {
+            return localizer.text("inspector-status-choice-unavailable");
+        }
+        InspectorStatus::TargetUnavailable => {
+            return localizer.text("inspector-status-target-unavailable");
+        }
+        InspectorStatus::FiniteNumberRequired(parameter) => (
+            "inspector-status-finite-number-required",
+            ("parameter", parameter),
+        ),
+        InspectorStatus::IncompatibleMetadata(parameter) => (
+            "inspector-status-incompatible-metadata",
+            ("parameter", parameter),
+        ),
+    };
+    let mut args = FluentArgs::new();
+    args.set(argument.0, argument.1);
+    localizer.text_with(message_id, &args)
+}
+
+fn queue_inspector_action_activation(
+    activate: On<Activate>,
+    actions: Query<(), (With<InspectorAction>, With<FeathersActionButton>)>,
+    mut commands: Commands,
+) {
+    if actions.contains(activate.entity) {
+        commands
+            .entity(activate.entity)
+            .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn handle_inspector_actions(
+    mut commands: Commands,
+    mut actions: Query<
+        (
+            Entity,
+            &Interaction,
+            &InspectorAction,
+            Option<&FeathersActionButton>,
+            Option<&PendingFeathersActivation>,
+            Option<&InteractionDisabled>,
+            &mut BackgroundColor,
+        ),
+        (
+            Changed<Interaction>,
+            Or<(With<Button>, With<FeathersActionButton>)>,
+        ),
+    >,
+    mut session: ResMut<EditorSession>,
+    mut menu: ResMut<MenuState>,
+    registry: Res<EditorModuleRegistry>,
+    mut palette: ResMut<ModulePaletteState>,
+    mut workspace: ResMut<CurvesState>,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut settings: ResMut<EditorSettings>,
+    mut settings_persistence: ResMut<SettingsPersistence>,
+    localizer: Res<Localizer>,
+) {
+    for (entity, interaction, action, feathers_action, pending, disabled, mut background) in
+        &mut actions
+    {
+        if disabled.is_some() {
+            if feathers_action.is_none() {
+                background.0 = theme::PANEL_DARK;
+            }
+            continue;
+        }
+        match *interaction {
+            Interaction::Hovered if feathers_action.is_none() => {
+                background.0 = theme::BUTTON_HOVER;
+            }
+            Interaction::None if feathers_action.is_none() => {
+                background.0 = theme::BUTTON;
+            }
+            Interaction::Pressed => {
+                if feathers_action.is_some() {
+                    if pending.is_none() {
+                        continue;
+                    }
+                    commands
+                        .entity(entity)
+                        .remove::<PendingFeathersActivation>()
+                        .insert(Interaction::None);
+                } else {
+                    background.0 = theme::ACCENT_DIM;
+                }
+                menu.open = None;
+                menu.panels_open = false;
+                if menu.tab_context.take().is_some() {
+                    session.ui_revision += 1;
+                }
+                match *action {
+                    InspectorAction::OpenModulePalette(stage) => {
+                        palette.open = true;
+                        palette.stage = stage;
+                        palette.query.clear();
+                        session.ui_revision += 1;
+                    }
+                    InspectorAction::CloseModulePalette => {
+                        palette.open = false;
+                        session.ui_revision += 1;
+                    }
+                    InspectorAction::AddModule(index) => {
+                        let module = registry
+                            .0
+                            .iter()
+                            .nth(index)
+                            .and_then(|metadata| registry.0.instantiate(&metadata.type_id));
+                        if let Some(module) = module {
+                            session.add_module(module);
+                            palette.open = false;
+                        } else {
+                            set_inspector_status(
+                                &mut session,
+                                &localizer,
+                                InspectorStatus::ModuleRegistryUnavailable,
+                            );
+                        }
+                    }
+                    InspectorAction::AddSpriteRenderer => {
+                        session.add_sprite_renderer();
+                        palette.open = false;
+                    }
+                    InspectorAction::AddFlipbookRenderer => {
+                        session.add_flipbook_renderer();
+                        palette.open = false;
+                    }
+                    InspectorAction::SetModuleChoice {
+                        module,
+                        input,
+                        choice,
+                    } => set_module_choice(
+                        &mut session,
+                        &registry.0,
+                        module,
+                        input,
+                        choice,
+                        &localizer,
+                    ),
+                    InspectorAction::MoveModule(id, direction) => {
+                        session.move_module(id, direction);
+                    }
+                    InspectorAction::DuplicateModule(id) => session.duplicate_module(id),
+                    InspectorAction::DeleteModule(id) => {
+                        if preview_module_deletion(&mut session, id) {
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
+                            workspace.clear();
+                        }
+                    }
+                    InspectorAction::SetRendererMaterial(id, index) => {
+                        if let Some(material) = session
+                            .effect
+                            .materials
+                            .get(index)
+                            .map(|material| material.id)
+                        {
+                            session.set_renderer_material(id, material);
+                        }
+                    }
+                    InspectorAction::SetRendererBlend(id, blend) => {
+                        session.set_renderer_blend(id, blend);
+                    }
+                    InspectorAction::SetRendererTexture(id, index) => {
+                        let texture = index
+                            .and_then(|index| session.effect.assets.get(index))
+                            .filter(|asset| asset.kind == aestra_bevy::AssetKind::Texture)
+                            .map(|asset| asset.id);
+                        session.set_renderer_texture(id, texture);
+                    }
+                    InspectorAction::SetRendererFlipbook(id, index) => {
+                        if let Some(flipbook) = session
+                            .effect
+                            .flipbooks
+                            .get(index)
+                            .map(|flipbook| flipbook.id)
+                        {
+                            session.set_renderer_flipbook(id, flipbook);
+                        }
+                    }
+                    InspectorAction::SetFlipbookTimeSource(id, value) => {
+                        session.set_flipbook_time_source(id, value);
+                    }
+                    InspectorAction::SetFlipbookPlayback(id, value) => {
+                        session.set_flipbook_playback(id, value);
+                    }
+                    InspectorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
+                    InspectorAction::DeleteRenderer(id) => {
+                        if preview_renderer_deletion(&mut session, id) {
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
+                            workspace.clear();
+                        }
+                    }
+                    InspectorAction::ToggleSection(section) => {
+                        if toggle_persisted_inspector_section(&session, &mut settings, section) {
+                            session.ui_revision += 1;
+                            persist_editor_settings(
+                                &settings,
+                                &mut settings_persistence,
+                                &mut session,
+                                &localizer,
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn preview_module_deletion(session: &mut EditorSession, module: ModuleId) -> bool {
+    let emitter = session.selected_layer().id;
+    session.preview_transaction(EffectTransaction::single(
+        "Delete module",
+        EffectCommand::RemoveModule { emitter, module },
+    ))
+}
+
+fn preview_renderer_deletion(session: &mut EditorSession, renderer: RendererId) -> bool {
+    let emitter = session.selected_layer().id;
+    session.preview_transaction(EffectTransaction::single(
+        "Delete renderer",
+        EffectCommand::RemoveRenderer { emitter, renderer },
+    ))
 }
 
 // Inspector domain implementation.
@@ -86,6 +388,7 @@ pub(crate) fn focus_compiled_target(
     session: &mut EditorSession,
     focus: &mut InspectorFocus,
     target: SemanticTarget,
+    localizer: &Localizer,
 ) -> bool {
     if !semantic_target_exists(&session.effect, target) {
         return false;
@@ -100,7 +403,11 @@ pub(crate) fn focus_compiled_target(
     focus.wait_frames = 2;
     focus.highlight = Some(target);
     focus.highlight_remaining = INSPECTOR_HIGHLIGHT_DURATION;
-    session.status = format!("Selected compiled {target}");
+    set_inspector_status(
+        session,
+        localizer,
+        InspectorStatus::SelectedCompiled(target.to_string()),
+    );
     session.ui_revision += 1;
     true
 }
@@ -110,6 +417,107 @@ mod tests {
     use super::*;
     use crate::{EFFECT_PATH, EFFECT_SOURCE};
 
+    fn test_localizer() -> Localizer {
+        Localizer::new("en-US").unwrap()
+    }
+
+    #[test]
+    fn inspector_action_activation_uses_the_feathers_contract() {
+        let mut app = App::new();
+        app.add_observer(queue_inspector_action_activation);
+        let action = app
+            .world_mut()
+            .spawn((
+                InspectorAction::CloseModulePalette,
+                FeathersActionButton,
+                Interaction::None,
+            ))
+            .id();
+
+        app.world_mut().trigger(Activate { entity: action });
+        app.update();
+
+        let action = app.world().entity(action);
+        assert!(action.contains::<PendingFeathersActivation>());
+        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+    }
+
+    #[test]
+    fn inspector_actions_are_executed_by_the_inspector_plugin_path() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut app = App::new();
+        app.insert_resource(EditorSession::from_embedded_sample(
+            EFFECT_SOURCE,
+            EFFECT_PATH,
+        ))
+        .insert_resource(MenuState::default())
+        .insert_resource(EditorModuleRegistry::default())
+        .insert_resource(ModulePaletteState::default())
+        .insert_resource(CurvesState::default())
+        .insert_resource(WorkspaceLayout::default())
+        .insert_resource(EditorSettings::default())
+        .insert_resource(SettingsPersistence::for_test(
+            temporary.path().join("settings.ron"),
+        ))
+        .insert_resource(test_localizer())
+        .add_systems(Update, handle_inspector_actions);
+        app.world_mut().spawn((
+            Button,
+            Interaction::Pressed,
+            InspectorAction::OpenModulePalette(StackStage::ParticleSpawn),
+            BackgroundColor(theme::BUTTON),
+        ));
+
+        app.update();
+
+        let palette = app.world().resource::<ModulePaletteState>();
+        assert!(palette.open);
+        assert_eq!(palette.stage, StackStage::ParticleSpawn);
+    }
+
+    #[test]
+    fn inspector_outcomes_are_localized_and_preserve_semantic_details() {
+        let english = test_localizer();
+        assert_eq!(
+            localize_inspector_status(InspectorStatus::TargetUnavailable, &english),
+            "Inspector target is no longer available"
+        );
+        let finite = localize_inspector_status(
+            InspectorStatus::FiniteNumberRequired("spawn_rate".into()),
+            &english,
+        );
+        assert!(finite.contains("spawn_rate"));
+        assert!(finite.ends_with(" requires a finite number"));
+
+        let french = Localizer::new("fr-FR").unwrap();
+        assert_eq!(
+            localize_inspector_status(InspectorStatus::ChoiceUnavailable, &french),
+            "Le choix n’est plus disponible"
+        );
+        let selected =
+            localize_inspector_status(InspectorStatus::Selected("module/shape".into()), &french);
+        assert!(selected.contains("module/shape"));
+    }
+
+    #[test]
+    fn module_deletion_preview_remains_one_undoable_transaction() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let source = session.selected_layer().modules[0].id;
+        session.duplicate_module(source);
+        let SemanticTarget::Module(module) = session.selection.primary else {
+            panic!("duplicating a module should select the duplicate");
+        };
+        let original_count = session.selected_layer().modules.len();
+
+        assert!(preview_module_deletion(&mut session, module));
+        assert_eq!(session.selected_layer().modules.len(), original_count);
+        assert!(session.pending_change.is_some());
+        session.apply_pending_change();
+        assert_eq!(session.selected_layer().modules.len(), original_count - 1);
+        session.undo();
+        assert_eq!(session.selected_layer().modules.len(), original_count);
+    }
+
     // Inspector domain tests.
     #[test]
     fn compiled_navigation_focuses_the_exact_inspector_target() {
@@ -117,7 +525,12 @@ mod tests {
         let target = SemanticTarget::Module(session.effect.emitters[3].modules[2].id);
         let mut focus = InspectorFocus::default();
 
-        assert!(focus_compiled_target(&mut session, &mut focus, target));
+        assert!(focus_compiled_target(
+            &mut session,
+            &mut focus,
+            target,
+            &test_localizer(),
+        ));
         assert_eq!(session.selection.primary, target);
         assert_eq!(focus.target, Some(target));
         assert_eq!(focus.wait_frames, 2);
@@ -175,6 +588,7 @@ mod tests {
         let revision = session.ui_revision;
         let mut app = App::new();
         app.insert_resource(session);
+        app.insert_resource(test_localizer());
         app.add_observer(handle_inspector_scalar_change);
         let control = app
             .world_mut()
@@ -224,7 +638,12 @@ mod tests {
             max: None,
         };
 
-        assert!(apply_inspector_number(&mut session, control, 99.0));
+        assert!(apply_inspector_number(
+            &mut session,
+            control,
+            99.0,
+            &test_localizer(),
+        ));
         let Value::Range(range) = inspector_module_parameter(&session, module, "lifetime").unwrap()
         else {
             panic!("lifetime should remain a range");
@@ -259,7 +678,7 @@ mod tests {
             Some(original.clone()),
             "drag preview must not mutate the document"
         );
-        commit_numeric_scrub(&mut session, target, 29.0);
+        commit_numeric_scrub(&mut session, target, 29.0, &test_localizer());
         assert_eq!(
             inspector_module_parameter(&session, module, "spawn_rate"),
             Some(Value::Scalar(29.0))
@@ -432,7 +851,12 @@ mod tests {
             max: Some(30.0),
         };
 
-        assert!(apply_inspector_number(&mut session, control, 300.0));
+        assert!(apply_inspector_number(
+            &mut session,
+            control,
+            300.0,
+            &test_localizer(),
+        ));
         assert_eq!(
             inspector_module_parameter(&session, module, "spawn_rate"),
             Some(Value::Scalar(30.0))
@@ -457,7 +881,7 @@ mod tests {
             .unwrap()
             .id;
         let registry = ModuleRegistry::builtin();
-        set_module_choice(&mut session, &registry, module, 0, 5);
+        set_module_choice(&mut session, &registry, module, 0, 5, &test_localizer());
 
         let control = InspectorNumberControl {
             module,
@@ -468,7 +892,12 @@ mod tests {
             min: Some(0.1),
             max: None,
         };
-        assert!(apply_inspector_number(&mut session, control, 18.0));
+        assert!(apply_inspector_number(
+            &mut session,
+            control,
+            18.0,
+            &test_localizer(),
+        ));
         assert_eq!(
             inspector_module_parameter(&session, module, "shape"),
             Some(Value::Shape(EmitterShape::Box {
@@ -489,7 +918,7 @@ mod tests {
             .id;
         let registry = ModuleRegistry::builtin();
 
-        set_module_choice(&mut session, &registry, module, 0, 7);
+        set_module_choice(&mut session, &registry, module, 0, 7, &test_localizer());
 
         assert_eq!(
             inspector_module_parameter(&session, module, "shape"),
@@ -566,6 +995,7 @@ pub(crate) fn set_module_choice(
     module_id: ModuleId,
     input_index: u8,
     choice: u8,
+    localizer: &Localizer,
 ) {
     let Some(module) = session
         .selected_layer()
@@ -573,18 +1003,26 @@ pub(crate) fn set_module_choice(
         .iter()
         .find(|module| module.id == module_id)
     else {
-        session.status = "Module no longer exists".into();
+        set_inspector_status(session, localizer, InspectorStatus::ModuleMissing);
         return;
     };
     let Some(input) = registry
         .get(&module.module_type)
         .and_then(|metadata| metadata.inputs.get(input_index as usize))
     else {
-        session.status = "Module input metadata is unavailable".into();
+        set_inspector_status(
+            session,
+            localizer,
+            InspectorStatus::InputMetadataUnavailable,
+        );
         return;
     };
     if !matches!(input.control, InputControl::Choice) {
-        session.status = format!("{} is not a choice input", input.display_name);
+        set_inspector_status(
+            session,
+            localizer,
+            InspectorStatus::NotChoice(input.display_name.into()),
+        );
         return;
     }
     let current = module_parameter(module, input.name);
@@ -635,7 +1073,7 @@ pub(crate) fn set_module_choice(
             },
         },
         _ => {
-            session.status = "Choice is no longer available".into();
+            set_inspector_status(session, localizer, InspectorStatus::ChoiceUnavailable);
             return;
         }
     };
@@ -981,6 +1419,7 @@ fn handle_inspector_toggle_change(
     controls: Query<&InspectorToggleControl>,
     mut commands: Commands,
     mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
 ) {
     if !change.is_final {
         return;
@@ -995,7 +1434,7 @@ fn handle_inspector_toggle_change(
     }
     let Some(current) = inspector_module_parameter(&session, control.module, control.parameter)
     else {
-        session.status = "Inspector target is no longer available".into();
+        set_inspector_status(&mut session, &localizer, InspectorStatus::TargetUnavailable);
         return;
     };
     let value = Value::Bool(change.value);
@@ -1328,6 +1767,7 @@ fn finish_numeric_scrub(
     mut override_cursor: ResMut<OverrideCursor>,
     mut cursor: Single<(&mut CursorIcon, &mut CursorOptions), With<PrimaryWindow>>,
     parents: Query<&ChildOf>,
+    localizer: Res<Localizer>,
 ) {
     if drag.button != PointerButton::Primary {
         return;
@@ -1347,7 +1787,7 @@ fn finish_numeric_scrub(
         session.restore_interaction_preview();
         return;
     }
-    commit_numeric_scrub(&mut session, active.target, active.current);
+    commit_numeric_scrub(&mut session, active.target, active.current, &localizer);
 }
 
 fn resolve_numeric_scrub_target(
@@ -1674,10 +2114,15 @@ fn renderer_numeric_scrub_command(
     }
 }
 
-fn commit_numeric_scrub(session: &mut EditorSession, target: NumericScrubTarget, value: f32) {
+fn commit_numeric_scrub(
+    session: &mut EditorSession,
+    target: NumericScrubTarget,
+    value: f32,
+    localizer: &Localizer,
+) {
     match target {
         NumericScrubTarget::Inspector(control) => {
-            apply_inspector_number(session, control, value);
+            apply_inspector_number(session, control, value, localizer);
         }
         NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
             let current = session.selected_layer().start_time;
@@ -1781,6 +2226,7 @@ fn handle_inspector_integer_change(
     change: On<ValueChange<i32>>,
     controls: Query<&InspectorNumberControl>,
     mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
 ) {
     if !change.is_final {
         return;
@@ -1791,13 +2237,14 @@ fn handle_inspector_integer_change(
     if control.kind != InspectorNumberKind::U32 {
         return;
     }
-    apply_inspector_number(&mut session, *control, change.value as f32);
+    apply_inspector_number(&mut session, *control, change.value as f32, &localizer);
 }
 
 fn handle_inspector_scalar_change(
     change: On<ValueChange<f32>>,
     controls: Query<&InspectorNumberControl>,
     mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
 ) {
     if !change.is_final {
         return;
@@ -1808,7 +2255,7 @@ fn handle_inspector_scalar_change(
     if control.kind == InspectorNumberKind::U32 {
         return;
     }
-    apply_inspector_number(&mut session, *control, change.value);
+    apply_inspector_number(&mut session, *control, change.value, &localizer);
 }
 
 fn inspector_module_parameter(
@@ -1828,18 +2275,27 @@ fn apply_inspector_number(
     session: &mut EditorSession,
     control: InspectorNumberControl,
     raw_value: f32,
+    localizer: &Localizer,
 ) -> bool {
     let Some(value) = clamp_inspector_number(raw_value, control.min, control.max) else {
-        session.status = format!("{} requires a finite number", control.parameter);
+        set_inspector_status(
+            session,
+            localizer,
+            InspectorStatus::FiniteNumberRequired(control.parameter.into()),
+        );
         return false;
     };
     let Some(current) = inspector_module_parameter(session, control.module, control.parameter)
     else {
-        session.status = "Inspector target is no longer available".into();
+        set_inspector_status(session, localizer, InspectorStatus::TargetUnavailable);
         return false;
     };
     let Some(updated) = updated_inspector_number_value(session, control, value) else {
-        session.status = format!("{} has incompatible Inspector metadata", control.parameter);
+        set_inspector_status(
+            session,
+            localizer,
+            InspectorStatus::IncompatibleMetadata(control.parameter.into()),
+        );
         return false;
     };
     if updated == current {
@@ -2238,7 +2694,7 @@ fn spawn_stage_header(parent: &mut ChildSpawnerCommands, stage: StackStage) {
                 flex_grow: 1.0,
                 ..default()
             });
-            mini_button(row, "+", EditorAction::OpenModulePalette(stage));
+            mini_button(row, "+", InspectorAction::OpenModulePalette(stage));
         });
 }
 
@@ -2346,7 +2802,7 @@ fn spawn_module_card(
             base_border,
         },
         InspectorSelectionTarget(SemanticTarget::Module(module.id)),
-        EditorAction::ToggleInspectorSection(InspectorSection::Module(module.id)),
+        InspectorAction::ToggleSection(InspectorSection::Module(module.id)),
         |header| {
             let mut enabled = header.spawn_empty();
             enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
@@ -2363,22 +2819,22 @@ fn spawn_module_card(
                     ComboOption {
                         label: "Move up".into(),
                         selected: false,
-                        action: EditorAction::MoveModule(module.id, -1),
+                        action: InspectorAction::MoveModule(module.id, -1),
                     },
                     ComboOption {
                         label: "Move down".into(),
                         selected: false,
-                        action: EditorAction::MoveModule(module.id, 1),
+                        action: InspectorAction::MoveModule(module.id, 1),
                     },
                     ComboOption {
                         label: "Duplicate".into(),
                         selected: false,
-                        action: EditorAction::DuplicateModule(module.id),
+                        action: InspectorAction::DuplicateModule(module.id),
                     },
                     ComboOption {
                         label: "Delete…".into(),
                         selected: false,
-                        action: EditorAction::DeleteModule(module.id),
+                        action: InspectorAction::DeleteModule(module.id),
                     },
                 ],
             );
@@ -2817,7 +3273,7 @@ fn spawn_inspector_choice_control(
     .map(|(choice, label)| ComboOption {
         label: label.to_owned(),
         selected: choice == selected,
-        action: EditorAction::SetModuleChoice {
+        action: InspectorAction::SetModuleChoice {
             module,
             input,
             choice: choice as u8,
@@ -2947,7 +3403,7 @@ fn spawn_inspector_combo_row(
     parent: &mut ChildSpawnerCommands,
     title: &str,
     current: &str,
-    options: &[ComboOption],
+    options: &[ComboOption<InspectorAction>],
     description: Option<&str>,
 ) {
     let mut row = parent.spawn(Node {
@@ -3143,7 +3599,7 @@ fn spawn_renderer_card(
             base_border,
         },
         InspectorSelectionTarget(SemanticTarget::Renderer(renderer.id)),
-        EditorAction::ToggleInspectorSection(InspectorSection::Renderer(renderer.id)),
+        InspectorAction::ToggleSection(InspectorSection::Renderer(renderer.id)),
         |header| {
             let mut enabled = header.spawn_empty();
             enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
@@ -3160,12 +3616,12 @@ fn spawn_renderer_card(
                     ComboOption {
                         label: "Duplicate".into(),
                         selected: false,
-                        action: EditorAction::DuplicateRenderer(renderer.id),
+                        action: InspectorAction::DuplicateRenderer(renderer.id),
                     },
                     ComboOption {
                         label: "Delete…".into(),
                         selected: false,
-                        action: EditorAction::DeleteRenderer(renderer.id),
+                        action: InspectorAction::DeleteRenderer(renderer.id),
                     },
                 ],
             );
@@ -3189,7 +3645,7 @@ fn spawn_renderer_card(
                 .map(|(index, candidate)| ComboOption {
                     label: candidate.name.clone(),
                     selected: candidate.id == material.id,
-                    action: EditorAction::SetRendererMaterial(renderer.id, index),
+                    action: InspectorAction::SetRendererMaterial(renderer.id, index),
                 })
                 .collect::<Vec<_>>();
             spawn_inspector_combo_row(card, "Material", &material.name, &material_options, None);
@@ -3198,7 +3654,7 @@ fn spawn_renderer_card(
                 .map(|blend| ComboOption {
                     label: format!("{blend:?}"),
                     selected: blend == material.blend,
-                    action: EditorAction::SetRendererBlend(renderer.id, blend),
+                    action: InspectorAction::SetRendererBlend(renderer.id, blend),
                 })
                 .collect::<Vec<_>>();
             spawn_inspector_combo_row(
@@ -3233,7 +3689,7 @@ fn spawn_renderer_card(
                     let mut texture_options = vec![ComboOption {
                         label: "Procedural".into(),
                         selected: texture.is_none(),
-                        action: EditorAction::SetRendererTexture(renderer.id, None),
+                        action: InspectorAction::SetRendererTexture(renderer.id, None),
                     }];
                     texture_options.extend(
                         session
@@ -3245,7 +3701,10 @@ fn spawn_renderer_card(
                             .map(|(index, asset)| ComboOption {
                                 label: asset.name.clone(),
                                 selected: Some(asset.id) == *texture,
-                                action: EditorAction::SetRendererTexture(renderer.id, Some(index)),
+                                action: InspectorAction::SetRendererTexture(
+                                    renderer.id,
+                                    Some(index),
+                                ),
                             }),
                     );
                     spawn_inspector_combo_row(
@@ -3291,7 +3750,7 @@ fn spawn_renderer_card(
                         .map(|(index, candidate)| ComboOption {
                             label: candidate.name.clone(),
                             selected: candidate.id == *flipbook,
-                            action: EditorAction::SetRendererFlipbook(renderer.id, index),
+                            action: InspectorAction::SetRendererFlipbook(renderer.id, index),
                         })
                         .collect::<Vec<_>>();
                     spawn_inspector_combo_row(
@@ -3324,7 +3783,7 @@ fn spawn_renderer_card(
                     .map(|candidate| ComboOption {
                         label: format!("{candidate:?}"),
                         selected: candidate == *time_source,
-                        action: EditorAction::SetFlipbookTimeSource(renderer.id, candidate),
+                        action: InspectorAction::SetFlipbookTimeSource(renderer.id, candidate),
                     })
                     .collect::<Vec<_>>();
                     spawn_inspector_combo_row(
@@ -3343,7 +3802,7 @@ fn spawn_renderer_card(
                     .map(|candidate| ComboOption {
                         label: format!("{candidate:?}"),
                         selected: candidate == *playback,
-                        action: EditorAction::SetFlipbookPlayback(renderer.id, candidate),
+                        action: InspectorAction::SetFlipbookPlayback(renderer.id, candidate),
                     })
                     .collect::<Vec<_>>();
                     spawn_inspector_combo_row(
@@ -3481,7 +3940,7 @@ fn spawn_module_palette(
                             ..default()
                         },
                     ));
-                    stack_button(header, "×", EditorAction::CloseModulePalette, 28.0);
+                    stack_button(header, "×", InspectorAction::CloseModulePalette, 28.0);
                 });
             popup.spawn((
                 Text::new(format!(
@@ -3516,7 +3975,7 @@ fn spawn_module_palette(
                     popup,
                     "Sprite Renderer",
                     "Render · translucent particle sprites",
-                    EditorAction::AddSpriteRenderer,
+                    InspectorAction::AddSpriteRenderer,
                 );
                 results += 1;
             }
@@ -3527,7 +3986,7 @@ fn spawn_module_palette(
                     popup,
                     "Flipbook Renderer",
                     "Render · animated imported sprite sheet",
-                    EditorAction::AddFlipbookRenderer,
+                    InspectorAction::AddFlipbookRenderer,
                 );
                 results += 1;
             }
@@ -3542,7 +4001,7 @@ fn spawn_module_palette(
                     popup,
                     metadata.display_name,
                     &format!("{} · {}", metadata.category, metadata.description),
-                    EditorAction::AddModule(index),
+                    InspectorAction::AddModule(index),
                 );
                 results += 1;
             }
@@ -3563,7 +4022,7 @@ fn palette_result(
     parent: &mut ChildSpawnerCommands,
     title: &str,
     subtitle: &str,
-    action: EditorAction,
+    action: InspectorAction,
 ) {
     parent
         .spawn_empty()
@@ -3689,6 +4148,7 @@ fn select_inspector_header(
     selectable: Query<&InspectorSelectionTarget>,
     parents: Query<&ChildOf>,
     mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
 ) {
     if click.button != PointerButton::Primary {
         return;
@@ -3708,7 +4168,11 @@ fn select_inspector_header(
     };
     if session.selection.primary != target {
         session.selection.primary = target;
-        session.status = format!("Selected {target}");
+        set_inspector_status(
+            &mut session,
+            &localizer,
+            InspectorStatus::Selected(target.to_string()),
+        );
         session.ui_revision += 1;
     }
 }

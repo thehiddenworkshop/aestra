@@ -36,6 +36,7 @@ fn handle_compiler_inspector_actions(
     mut workspace: ResMut<CurvesState>,
     mut layout: ResMut<WorkspaceLayout>,
     mut inspector_focus: ResMut<InspectorFocus>,
+    localizer: Res<Localizer>,
 ) {
     for (interaction, action, mut background) in &mut actions {
         let CompilerInspectorAction::SelectTarget(target) = *action;
@@ -51,11 +52,10 @@ fn handle_compiler_inspector_actions(
             Interaction::Pressed => {
                 background.0 = theme::ACCENT_DIM;
                 workspace.clear();
-                if focus_compiled_target(&mut session, &mut inspector_focus, target) {
+                if focus_compiled_target(&mut session, &mut inspector_focus, target, &localizer) {
                     reveal_dock_panel(&mut layout, &mut session, DockPanel::Inspector);
                 } else {
-                    session.status =
-                        "Compiled target exists only in the pending transaction".into();
+                    session.status = localizer.text("compiler-status-pending-target");
                     session.ui_revision += 1;
                     reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                 }
@@ -749,6 +749,7 @@ mod tests {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let target = SemanticTarget::Module(session.effect.emitters[0].modules[0].id);
         app.insert_resource(session)
+            .insert_resource(Localizer::new("en-US").unwrap())
             .init_resource::<CurvesState>()
             .init_resource::<WorkspaceLayout>()
             .init_resource::<InspectorFocus>()

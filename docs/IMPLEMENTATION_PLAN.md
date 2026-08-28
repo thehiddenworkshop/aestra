@@ -157,8 +157,11 @@ Complete this milestone before expanding the editor or renderer feature surface 
    unchanged. Document creation, open/save, recovery, autosave, settings persistence,
    unsaved-change prompts, and lifecycle cancellation now produce structured outcomes
    localized by `EditorPersistencePlugin`; domain session methods no longer author their
-   UI prose. This keeps `main.rs` focused on composition and startup wiring. Next migrate
-   Inspector actions and status messages into `InspectorPlugin`.
+   UI prose. Inspector controls now emit a dedicated `InspectorAction` contract;
+   `InspectorPlugin` owns module-palette navigation, module and renderer mutations,
+   renderer configuration, persisted disclosure state, and localized validation/status
+   outcomes. This keeps `main.rs` focused on composition and startup wiring. Next establish
+   the automated quality gates below and add supported GPU smoke coverage.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.

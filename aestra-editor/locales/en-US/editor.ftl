@@ -181,6 +181,18 @@ inspector-input-opacity-over-life-description = Particle opacity over normalized
 inspector-input-color-over-life = Color Over Life
 inspector-input-color-over-life-description = Particle color and alpha over normalized lifetime.
 
+inspector-status-selected-compiled = Selected compiled {$target}
+inspector-status-selected = Selected {$target}
+inspector-status-module-registry-unavailable = Module is unavailable in the registry
+inspector-status-module-missing = Module no longer exists
+inspector-status-input-metadata-unavailable = Module input metadata is unavailable
+inspector-status-not-choice = {$input} is not a choice input
+inspector-status-choice-unavailable = Choice is no longer available
+inspector-status-target-unavailable = Inspector target is no longer available
+inspector-status-finite-number-required = {$parameter} requires a finite number
+inspector-status-incompatible-metadata = {$parameter} has incompatible Inspector metadata
+compiler-status-pending-target = Compiled target exists only in the pending transaction
+
 assets-current-effect = CURRENT EFFECT
 assets-modified = MODIFIED
 assets-saved = SAVED
