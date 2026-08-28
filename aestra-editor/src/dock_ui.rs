@@ -40,7 +40,7 @@ pub(crate) struct DockUiResources<'w> {
     settings_panel: Res<'w, SettingsPanelState>,
     settings_persistence: Res<'w, SettingsPersistence>,
     localizer: Res<'w, Localizer>,
-    workspace: Res<'w, WorkspaceState>,
+    workspace: Res<'w, CurvesState>,
     timeline: Res<'w, TimelineState>,
 }
 
@@ -238,7 +238,7 @@ pub(crate) fn floating_root_is_current(
 fn spawn_dock_node(
     parent: &mut ChildSpawnerCommands,
     node: &DockNode,
-    workspace: &WorkspaceState,
+    workspace: &CurvesState,
     sources: PanelSources<'_>,
 ) {
     match node {
@@ -309,7 +309,7 @@ fn spawn_dock_stack(
     parent: &mut ChildSpawnerCommands,
     node: DockNodeId,
     stack: &DockStack,
-    workspace: &WorkspaceState,
+    workspace: &CurvesState,
     sources: PanelSources<'_>,
 ) {
     parent
@@ -343,7 +343,7 @@ pub(crate) fn dock_pane_background(active: Option<DockPanel>) -> Color {
 fn spawn_panel_content(
     parent: &mut ChildSpawnerCommands,
     panel: DockPanel,
-    workspace: &WorkspaceState,
+    workspace: &CurvesState,
     sources: PanelSources<'_>,
 ) {
     match panel {
@@ -403,7 +403,7 @@ fn spawn_native_floating_ui(
     panel: DockPanel,
     camera: Entity,
     revision: u64,
-    workspace: &WorkspaceState,
+    workspace: &CurvesState,
     sources: PanelSources<'_>,
 ) {
     commands

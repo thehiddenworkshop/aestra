@@ -167,7 +167,7 @@ fn execute_document_action(
     mut session: ResMut<EditorSession>,
     settings: Res<EditorSettings>,
     catalog: Res<EffectCatalog>,
-    mut workspace: ResMut<WorkspaceState>,
+    mut workspace: ResMut<CurvesState>,
     mut recovery: ResMut<RecoveryPersistence>,
     mut autosave: ResMut<AutosaveState>,
 ) {
@@ -176,12 +176,12 @@ fn execute_document_action(
             if confirm_discard(&session, &settings) {
                 session.new_effect();
                 session.playing = settings.preview.play_on_open;
-                workspace.complex = None;
+                workspace.clear();
             }
         }
         DocumentAction::Open => {
             open_effect_dialog(&mut session, &settings);
-            workspace.complex = None;
+            workspace.clear();
         }
         DocumentAction::OpenCatalog(index) => {
             if confirm_discard(&session, &settings) {
@@ -191,7 +191,7 @@ fn execute_document_action(
                         Err(error) => session.status = format!("Open failed: {error}"),
                     }
                 }
-                workspace.complex = None;
+                workspace.clear();
             } else {
                 session.status = "Open cancelled".into();
             }

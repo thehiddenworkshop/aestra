@@ -67,10 +67,10 @@ pub(crate) fn spawn_action_button<A: Component>(
         });
 }
 
-pub(crate) fn spawn_tool_button(
+pub(crate) fn spawn_tool_button<A: Component>(
     parent: &mut ChildSpawnerCommands,
     label: &str,
-    action: EditorAction,
+    action: A,
 ) {
     parent
         .spawn_empty()

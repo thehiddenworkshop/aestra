@@ -1,6 +1,7 @@
 //! Assets workspace, project-effect catalog, and panel-local authoring actions.
 
 use crate::*;
+use bevy::ui_widgets::Activate;
 use std::{fs, path::PathBuf};
 
 pub(crate) struct EditorAssetsPlugin;
@@ -14,6 +15,7 @@ pub(crate) enum AssetsSet {
 impl Plugin for EditorAssetsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(EffectCatalog::scan())
+            .add_observer(queue_asset_action_activation)
             .add_systems(
                 Update,
                 handle_asset_action_buttons.in_set(AssetsSet::Actions),
@@ -69,6 +71,18 @@ struct LayerRow(usize);
 
 #[derive(Component)]
 struct AssetButtonLabel;
+
+fn queue_asset_action_activation(
+    activate: On<Activate>,
+    actions: Query<(), (With<AssetsAction>, With<FeathersActionButton>)>,
+    mut commands: Commands,
+) {
+    if actions.contains(activate.entity) {
+        commands
+            .entity(activate.entity)
+            .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
 
 pub(crate) fn spawn_asset_browser(
     parent: &mut ChildSpawnerCommands,
@@ -413,7 +427,7 @@ fn handle_asset_action_buttons(
         ),
     >,
     mut session: ResMut<EditorSession>,
-    mut workspace: ResMut<WorkspaceState>,
+    mut workspace: ResMut<CurvesState>,
 ) {
     for (entity, interaction, action, feathers, pending, mut background) in &mut interactions {
         match *interaction {
@@ -436,7 +450,7 @@ fn handle_asset_action_buttons(
                     AssetsAction::AddGridFlipbook => session.add_grid_flipbook(),
                     AssetsAction::SelectLayer(index) => {
                         session.select_layer(index);
-                        workspace.complex = None;
+                        workspace.clear();
                     }
                 }
             }
@@ -480,18 +494,28 @@ mod tests {
         let initial_materials = session.effect.materials.len();
         let mut app = App::new();
         app.insert_resource(session)
-            .init_resource::<WorkspaceState>()
+            .init_resource::<CurvesState>()
             .add_plugins(EditorAssetsPlugin);
-        app.world_mut().spawn((
-            Button,
-            Interaction::Pressed,
-            AssetsAction::AddSpriteMaterial,
-            BackgroundColor::default(),
-        ));
+        let control = app
+            .world_mut()
+            .spawn((
+                Button,
+                FeathersActionButton,
+                Interaction::None,
+                AssetsAction::AddSpriteMaterial,
+                BackgroundColor::default(),
+            ))
+            .id();
 
+        app.world_mut().trigger(Activate { entity: control });
         app.update();
 
         assert!(app.world().contains_resource::<EffectCatalog>());
+        assert!(
+            !app.world()
+                .entity(control)
+                .contains::<PendingFeathersActivation>()
+        );
         assert_eq!(
             app.world()
                 .resource::<EditorSession>()
@@ -508,12 +532,10 @@ mod tests {
         session.select_layer(0);
         let mut app = App::new();
         app.insert_resource(session)
-            .insert_resource(WorkspaceState {
-                complex: Some(ComplexSelection {
-                    module: ModuleId::new(),
-                    input: 0,
-                    key: 0,
-                }),
+            .insert_resource({
+                let mut state = CurvesState::default();
+                state.select_for_test(ModuleId::new(), 0, 0);
+                state
             })
             .add_plugins(EditorAssetsPlugin);
         app.world_mut().spawn((
@@ -531,6 +553,6 @@ mod tests {
                 .selected_layer_index(),
             1
         );
-        assert!(app.world().resource::<WorkspaceState>().complex.is_none());
+        assert!(!app.world().resource::<CurvesState>().has_selection());
     }
 }

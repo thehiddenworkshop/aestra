@@ -6,6 +6,7 @@ use crate::feathers::panel_card::{
 };
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
 use crate::*;
+use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use bevy::ui_widgets::SliderValue;
 
 pub(crate) const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
@@ -2410,13 +2411,13 @@ fn spawn_input_control(
         (InputControl::Curve { .. }, Value::Curve(curve)) => inspector_action_button(
             parent,
             &format!("{}  ·  {} keys  →", display_name, curve.keys.len()),
-            EditorAction::EditComplexInput(module.id, input_index),
+            CurvesAction::OpenInput(module.id, input_index),
             Some(&description),
         ),
         (InputControl::Gradient, Value::Gradient(gradient)) => inspector_action_button(
             parent,
             &format!("{}  ·  {} color keys  →", display_name, gradient.keys.len()),
-            EditorAction::EditComplexInput(module.id, input_index),
+            CurvesAction::OpenInput(module.id, input_index),
             Some(&description),
         ),
         (InputControl::Toggle, Value::Bool(value)) => {
@@ -3603,10 +3604,10 @@ fn palette_result(
         });
 }
 
-pub(crate) fn stack_button(
+pub(crate) fn stack_button<A: Component>(
     parent: &mut ChildSpawnerCommands,
     label: &str,
-    action: EditorAction,
+    action: A,
     width: f32,
 ) {
     parent
