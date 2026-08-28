@@ -348,7 +348,9 @@ fn spawn_panel_content(
 ) {
     match panel {
         DockPanel::Viewport => viewport::spawn_preview(parent, sources.localizer),
-        DockPanel::Assets => spawn_asset_browser(parent, sources.session, sources.catalog),
+        DockPanel::Assets => {
+            spawn_asset_browser(parent, sources.session, sources.catalog, sources.localizer)
+        }
         DockPanel::Inspector => {
             spawn_inspector(
                 parent,
@@ -359,9 +361,17 @@ fn spawn_panel_content(
                 sources.settings,
             );
         }
-        DockPanel::Timeline => timeline::spawn_timeline(parent, sources.session, sources.timeline),
+        DockPanel::Timeline => {
+            timeline::spawn_timeline(parent, sources.session, sources.timeline, sources.localizer)
+        }
         DockPanel::Curves => {
-            spawn_curves_workspace(parent, sources.session, sources.registry, workspace);
+            spawn_curves_workspace(
+                parent,
+                sources.session,
+                sources.registry,
+                workspace,
+                sources.localizer,
+            );
         }
         DockPanel::Diagnostics => {
             spawn_diagnostics_workspace(
@@ -371,11 +381,13 @@ fn spawn_panel_content(
                 sources.localizer,
             );
         }
-        DockPanel::GeneratedCode => spawn_generated_code_workspace(parent, sources.session),
+        DockPanel::GeneratedCode => {
+            spawn_generated_code_workspace(parent, sources.session, sources.localizer)
+        }
         DockPanel::Profiler => {
             spawn_profiler_workspace(parent, sources.session, sources.profiler, sources.localizer)
         }
-        DockPanel::Changes => spawn_changes_workspace(parent, sources.session),
+        DockPanel::Changes => spawn_changes_workspace(parent, sources.session, sources.localizer),
         DockPanel::Settings => spawn_settings_workspace(
             parent,
             sources.settings,

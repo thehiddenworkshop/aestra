@@ -62,10 +62,11 @@ architecture vision; this file is the shorter delivery plan.
   includes debounced atomic recovery snapshots, startup restore/discard,
   stale-snapshot cleanup, save/discard cleanup, and persisted autosave enablement and
   interval controls. The
-  diagnostics and profiler workspaces now use stable Fluent messages for their editor-owned
-  content while retaining exact compiler details and asset-authored emitter names. The
-  remaining M5 work is localization of curves, generated-plan presentation, changes, and
-  other deep authoring workspaces.
+  Assets, Timeline, Curves, Diagnostics, Generated Code, Profiler, and Changes now use
+  stable Fluent messages for editor-owned chrome, summaries, and empty states while
+  retaining exact compiler payloads, semantic paths, IDs, asset paths, and authored names.
+  Remaining M5 localization work is limited to incidental action/status messages exposed
+  while the shell decomposition continues.
 - M6 renderer, material, and asset breadth: in progress. Renderers now reference stable,
   reusable material definitions instead of owning presentation state. The first sprite
   material domain compiles blend state, typed softness/tint inputs, explicit particle-color
@@ -130,11 +131,11 @@ Complete this milestone before expanding the editor or renderer feature surface 
    cleanup now run through `EditorPersistencePlugin` and a shared `DocumentAction`
    contract used by menus, keyboard shortcuts, and project-effect rows.
    `EditorLocalizationPlugin` now owns Fluent resource setup and live generic-text
-   synchronization. Diagnostics and profiler chrome, states, metrics, severities, and
-   diagnostic-code titles use complete `en-US` and `fr-FR` catalogs; technical compiler
-   detail, semantic paths, and asset-authored names remain unchanged. This keeps
-   `main.rs` focused on composition and startup wiring. Next localize the remaining deep
-   authoring workspaces, then close the remaining shell decomposition seams.
+   synchronization. All primary deep workspaces use complete `en-US` and `fr-FR`
+   messages for editor-owned presentation; technical compiler detail, generated
+   instructions, semantic paths, IDs, file paths, and asset-authored names remain
+   unchanged. This keeps `main.rs` focused on composition and startup wiring. Next close
+   the remaining shell decomposition seams and migrate incidental action/status messages.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.
@@ -398,10 +399,11 @@ Localization slice:
 5. Add catalog validation and tests for missing or malformed messages, fallback,
    interpolation, and coverage of every registered editor command and panel title.
 
-The Fluent runtime, English fallback, French catalog, live persisted switching, and
-editor-shell coverage are complete. Inspector metadata, validation messages, profiler
-details, generated-plan descriptions, and remaining authoring content migrate next;
-user-authored names, file paths, semantic IDs, and generated code stay untranslated.
+The Fluent runtime, English fallback, French catalog, live persisted switching, shell,
+Inspector, Assets, Timeline, Curves, Diagnostics, Generated Code, Profiler, and Changes
+coverage are complete. Incidental action/status messages migrate alongside their owning
+plugins; user-authored names, file paths, semantic IDs, and generated code stay
+untranslated.
 
 ### M6 — Renderer, material, and asset breadth
 

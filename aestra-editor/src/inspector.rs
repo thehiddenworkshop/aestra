@@ -2543,7 +2543,7 @@ fn spawn_input_control(
     }
 }
 
-fn localized_inspector_input(
+pub(crate) fn localized_inspector_input(
     localizer: &Localizer,
     input: &str,
     fallback: &str,

@@ -162,6 +162,81 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "inspector-input-opacity-over-life-description",
     "inspector-input-color-over-life",
     "inspector-input-color-over-life-description",
+    "assets-current-effect",
+    "assets-modified",
+    "assets-saved",
+    "assets-project-effects",
+    "assets-found",
+    "assets-render-assets",
+    "assets-registered",
+    "assets-no-render-assets",
+    "assets-materials",
+    "assets-add-sprite-material",
+    "assets-sprite",
+    "assets-flipbooks",
+    "assets-add-grid-flipbook",
+    "assets-flipbook-summary",
+    "assets-layers",
+    "assets-active",
+    "assets-add-emitter",
+    "timeline-frame-all",
+    "timeline-snap-off",
+    "timeline-snap-frames",
+    "timeline-snap-time",
+    "timeline-snap-smart",
+    "timeline-snapping-description",
+    "timeline-hertz",
+    "timeline-seed",
+    "timeline-duration",
+    "curves-header-hint",
+    "curves-choose-property",
+    "curves-property-missing",
+    "curves-add-key",
+    "curves-delete-key",
+    "curves-time",
+    "curves-value",
+    "curves-step",
+    "generated-compiled-plan",
+    "generated-status-last-valid",
+    "generated-status-pending",
+    "generated-status-live",
+    "generated-status-unavailable",
+    "generated-no-artifact",
+    "generated-no-artifact-description",
+    "generated-emitters",
+    "generated-ops",
+    "generated-attributes",
+    "generated-parameters",
+    "generated-capacity",
+    "generated-particle-layout",
+    "generated-stored",
+    "generated-transient",
+    "generated-optimized",
+    "generated-optimization-summary",
+    "generated-parameter-table",
+    "generated-no-runtime-parameters",
+    "generated-enabled",
+    "generated-disabled",
+    "generated-renderers",
+    "generated-sprite-draw",
+    "generated-stage-emitter-update",
+    "generated-stage-particle-spawn",
+    "generated-stage-particle-update",
+    "generated-wesl-backend",
+    "generated-simulation",
+    "generated-wesl-description",
+    "changes-none-pending",
+    "changes-summary",
+    "changes-empty-description",
+    "changes-ready",
+    "changes-blocked",
+    "changes-discard",
+    "changes-apply",
+    "changes-apply-blocked",
+    "changes-kind-added",
+    "changes-kind-removed",
+    "changes-kind-modified",
+    "changes-kind-moved",
     "diagnostics-validation",
     "diagnostics-filter-all",
     "diagnostics-errors",
@@ -439,6 +514,14 @@ mod tests {
             localizer.text("profiler-metric-live-particles"),
             "PARTICULES ACTIVES"
         );
+        assert_eq!(localizer.text("assets-current-effect"), "EFFET COURANT");
+        assert_eq!(
+            localizer.text("timeline-snap-smart"),
+            "Magnétisme : intelligent"
+        );
+        assert_eq!(localizer.text("curves-value"), "Valeur");
+        assert_eq!(localizer.text("generated-compiled-plan"), "PLAN COMPILÉ");
+        assert_eq!(localizer.text("changes-discard"), "Ignorer");
 
         let mut args = FluentArgs::new();
         args.set("count", 12_u32);
@@ -449,5 +532,13 @@ mod tests {
         assert!(summary.contains("IMAGES"));
         assert!(summary.contains("MOY."));
         assert!(summary.contains("1,2 ms"));
+
+        let mut args = FluentArgs::new();
+        args.set("transaction", "SUPPRESSION");
+        args.set("count", 3_u32);
+        let summary = localizer.text_with("changes-summary", &args);
+        assert!(summary.contains("SUPPRESSION"));
+        assert!(summary.contains('3'));
+        assert!(summary.contains("MODIFICATIONS"));
     }
 }

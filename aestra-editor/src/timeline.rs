@@ -1,5 +1,5 @@
 use crate::{
-    ComboOption, EditorAction, EditorNativeControl, layer_color, mini_button,
+    ComboOption, EditorAction, EditorNativeControl, Localizer, layer_color, mini_button,
     session::EditorSession, spawn_combo_control, theme,
 };
 use aestra_bevy::EmitterId;
@@ -430,12 +430,12 @@ pub(crate) enum TimelineSnapMode {
 impl TimelineSnapMode {
     const ALL: [Self; 4] = [Self::None, Self::Frames, Self::Seconds, Self::Smart];
 
-    fn label(self) -> &'static str {
+    fn message_id(self) -> &'static str {
         match self {
-            Self::None => "Snap: Off",
-            Self::Frames => "Snap: Frames",
-            Self::Seconds => "Snap: Time",
-            Self::Smart => "Snap: Smart",
+            Self::None => "timeline-snap-off",
+            Self::Frames => "timeline-snap-frames",
+            Self::Seconds => "timeline-snap-time",
+            Self::Smart => "timeline-snap-smart",
         }
     }
 }
@@ -579,6 +579,7 @@ pub(crate) fn spawn_timeline(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     state: &TimelineState,
+    localizer: &Localizer,
 ) {
     parent
         .spawn(Node {
@@ -614,19 +615,23 @@ pub(crate) fn spawn_timeline(
                     ));
                     mini_button(header, "<", EditorAction::StepFrame(-1));
                     mini_button(header, ">", EditorAction::StepFrame(1));
-                    mini_button(header, "All", EditorAction::FrameTimeline);
+                    mini_button(
+                        header,
+                        &localizer.text("timeline-frame-all"),
+                        EditorAction::FrameTimeline,
+                    );
                     let snap_options = TimelineSnapMode::ALL
                         .into_iter()
                         .map(|mode| ComboOption {
-                            label: mode.label().to_owned(),
+                            label: localizer.text(mode.message_id()),
                             selected: state.snap == mode,
                             action: EditorAction::SetTimelineSnap(mode),
                         })
                         .collect::<Vec<_>>();
                     spawn_combo_control(
                         header,
-                        state.snap.label(),
-                        "Timeline snapping",
+                        &localizer.text(state.snap.message_id()),
+                        &localizer.text("timeline-snapping-description"),
                         &snap_options,
                         112.0,
                     );
@@ -636,8 +641,10 @@ pub(crate) fn spawn_timeline(
                     });
                     header.spawn((
                         Text::new(format!(
-                            "{} Hz  ·  Seed {:016x}",
+                            "{} {}  ·  {} {:016x}",
                             session.clock.tick_rate(),
+                            localizer.text("timeline-hertz"),
+                            localizer.text("timeline-seed"),
                             session.preview_seed
                         )),
                         TextFont {
@@ -649,7 +656,11 @@ pub(crate) fn spawn_timeline(
                     mini_button(header, "-", EditorAction::AdjustPreviewSeed(-1));
                     mini_button(header, "+", EditorAction::AdjustPreviewSeed(1));
                     header.spawn((
-                        Text::new(format!("Duration {:.2}s", session.playback_duration())),
+                        Text::new(format!(
+                            "{} {:.2}s",
+                            localizer.text("timeline-duration"),
+                            session.playback_duration()
+                        )),
                         TextFont {
                             font_size: FontSize::Px(10.0),
                             ..default()

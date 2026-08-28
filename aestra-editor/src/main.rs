@@ -852,6 +852,7 @@ fn spawn_asset_browser(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     catalog: &EffectCatalog,
+    localizer: &Localizer,
 ) {
     parent
         .spawn(Node {
@@ -864,8 +865,12 @@ fn spawn_asset_browser(
         .with_children(|panel| {
             panel_heading(
                 panel,
-                "CURRENT EFFECT",
-                if session.dirty { "MODIFIED" } else { "SAVED" },
+                &localizer.text("assets-current-effect"),
+                &localizer.text(if session.dirty {
+                    "assets-modified"
+                } else {
+                    "assets-saved"
+                }),
             );
             panel
                 .spawn((
@@ -900,10 +905,12 @@ fn spawn_asset_browser(
                     ));
                 });
 
+            let mut args = FluentArgs::new();
+            args.set("count", catalog.entries.len());
             panel_heading(
                 panel,
-                "PROJECT EFFECTS",
-                &format!("{} FOUND", catalog.entries.len()),
+                &localizer.text("assets-project-effects"),
+                &localizer.text_with("assets-found", &args),
             );
             for (index, entry) in catalog.entries.iter().enumerate() {
                 panel
@@ -933,14 +940,15 @@ fn spawn_asset_browser(
                     });
             }
 
+            args.set("count", session.effect.assets.len());
             panel_heading(
                 panel,
-                "RENDER ASSETS",
-                &format!("{} REGISTERED", session.effect.assets.len()),
+                &localizer.text("assets-render-assets"),
+                &localizer.text_with("assets-registered", &args),
             );
             if session.effect.assets.is_empty() {
                 panel.spawn((
-                    Text::new("No render assets in this effect."),
+                    Text::new(localizer.text("assets-no-render-assets")),
                     TextFont {
                         font_size: FontSize::Px(9.0),
                         ..default()
@@ -982,14 +990,15 @@ fn spawn_asset_browser(
                     });
             }
 
+            args.set("count", session.effect.materials.len());
             panel_heading(
                 panel,
-                "MATERIALS",
-                &format!("{} REGISTERED", session.effect.materials.len()),
+                &localizer.text("assets-materials"),
+                &localizer.text_with("assets-registered", &args),
             );
             plain_toolbar_button(
                 panel,
-                "+ Add Sprite Material",
+                &localizer.text("assets-add-sprite-material"),
                 EditorAction::AddSpriteMaterial,
                 PlainMarker,
             );
@@ -1013,7 +1022,11 @@ fn spawn_asset_browser(
                             TextColor(theme::TEXT),
                         ));
                         row.spawn((
-                            Text::new(format!("Sprite  ·  {:?}", material.blend)),
+                            Text::new(format!(
+                                "{}  ·  {:?}",
+                                localizer.text("assets-sprite"),
+                                material.blend
+                            )),
                             TextFont {
                                 font_size: FontSize::Px(8.0),
                                 ..default()
@@ -1022,14 +1035,15 @@ fn spawn_asset_browser(
                         ));
                     });
             }
+            args.set("count", session.effect.flipbooks.len());
             panel_heading(
                 panel,
-                "FLIPBOOKS",
-                &format!("{} REGISTERED", session.effect.flipbooks.len()),
+                &localizer.text("assets-flipbooks"),
+                &localizer.text_with("assets-registered", &args),
             );
             plain_toolbar_button(
                 panel,
-                "+ Add 4×1 Flipbook",
+                &localizer.text("assets-add-grid-flipbook"),
                 EditorAction::AddGridFlipbook,
                 PlainMarker,
             );
@@ -1052,12 +1066,11 @@ fn spawn_asset_browser(
                             },
                             TextColor(theme::TEXT),
                         ));
+                        let mut args = FluentArgs::new();
+                        args.set("frames", flipbook.frames.len());
+                        args.set("fps", flipbook.frame_rate as f64);
                         row.spawn((
-                            Text::new(format!(
-                                "Flipbook · {} frames · {:.0} FPS",
-                                flipbook.frames.len(),
-                                flipbook.frame_rate
-                            )),
+                            Text::new(localizer.text_with("assets-flipbook-summary", &args)),
                             TextFont {
                                 font_size: FontSize::Px(8.0),
                                 ..default()
@@ -1067,12 +1080,18 @@ fn spawn_asset_browser(
                     });
             }
 
+            args.set("count", session.effect.emitters.len());
             panel_heading(
                 panel,
-                "LAYERS",
-                &format!("{} ACTIVE", session.effect.emitters.len()),
+                &localizer.text("assets-layers"),
+                &localizer.text_with("assets-active", &args),
             );
-            plain_toolbar_button(panel, "+ Add Emitter", EditorAction::AddLayer, PlainMarker);
+            plain_toolbar_button(
+                panel,
+                &localizer.text("assets-add-emitter"),
+                EditorAction::AddLayer,
+                PlainMarker,
+            );
             for (index, layer) in session.effect.emitters.iter().enumerate() {
                 let selected = index == session.selected_layer_index();
                 panel
@@ -1168,6 +1187,7 @@ fn spawn_curves_workspace(
     session: &EditorSession,
     registry: &EditorModuleRegistry,
     workspace: &WorkspaceState,
+    localizer: &Localizer,
 ) {
     parent
         .spawn(Node {
@@ -1197,7 +1217,7 @@ fn spawn_curves_workspace(
                         ..default()
                     });
                     header.spawn((
-                        Text::new("NORMALIZED LIFETIME  ·  DRAG KEYS TO EDIT"),
+                        Text::new(localizer.text("curves-header-hint")),
                         TextFont {
                             font_size: FontSize::Px(9.0),
                             ..default()
@@ -1213,10 +1233,10 @@ fn spawn_curves_workspace(
                     ..default()
                 })
                 .with_children(|body| {
-                    spawn_complex_input_list(body, session, registry, workspace);
+                    spawn_complex_input_list(body, session, registry, workspace, localizer);
                     let Some(selection) = workspace.complex else {
                         body.spawn((
-                            Text::new("Choose a curve or gradient from the list."),
+                            Text::new(localizer.text("curves-choose-property")),
                             TextFont {
                                 font_size: FontSize::Px(12.0),
                                 ..default()
@@ -1233,7 +1253,7 @@ fn spawn_curves_workspace(
                         resolve_complex_input(session, registry, selection)
                     else {
                         body.spawn((
-                            Text::new("The selected property no longer exists."),
+                            Text::new(localizer.text("curves-property-missing")),
                             TextFont {
                                 font_size: FontSize::Px(12.0),
                                 ..default()
@@ -1262,6 +1282,7 @@ fn spawn_curves_workspace(
                             input,
                             &curve,
                             selection.key,
+                            localizer,
                         ),
                         Value::Gradient(gradient) => spawn_gradient_graph(
                             editor,
@@ -1270,6 +1291,7 @@ fn spawn_curves_workspace(
                             input,
                             &gradient,
                             selection.key,
+                            localizer,
                         ),
                         _ => {}
                     });
@@ -1277,7 +1299,11 @@ fn spawn_curves_workspace(
         });
 }
 
-fn spawn_generated_code_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_generated_code_workspace(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
     let compiled = session
         .preview
         .as_ref()
@@ -1308,7 +1334,7 @@ fn spawn_generated_code_workspace(parent: &mut ChildSpawnerCommands, session: &E
                 ))
                 .with_children(|header| {
                     header.spawn((
-                        Text::new("COMPILED PLAN"),
+                        Text::new(localizer.text("generated-compiled-plan")),
                         TextFont {
                             font_size: FontSize::Px(10.0),
                             ..default()
@@ -1329,7 +1355,7 @@ fn spawn_generated_code_workspace(parent: &mut ChildSpawnerCommands, session: &E
                         BackgroundColor(state_color),
                     ));
                     header.spawn((
-                        Text::new(state_label),
+                        Text::new(localizer.text(state_label)),
                         TextFont {
                             font_size: FontSize::Px(9.0),
                             ..default()
@@ -1341,14 +1367,14 @@ fn spawn_generated_code_workspace(parent: &mut ChildSpawnerCommands, session: &E
             let Some(compiled) = compiled else {
                 spawn_diagnostics_empty_state(
                     panel,
-                    "NO COMPILED ARTIFACT",
-                    "Resolve compiler diagnostics to inspect the executable plan.",
+                    &localizer.text("generated-no-artifact"),
+                    &localizer.text("generated-no-artifact-description"),
                     Color::srgb(1.0, 0.38, 0.32),
                 );
                 return;
             };
 
-            spawn_compiled_summary(panel, compiled);
+            spawn_compiled_summary(panel, compiled, localizer);
             panel
                 .spawn(Node {
                     width: Val::Percent(100.0),
@@ -1371,8 +1397,8 @@ fn spawn_generated_code_workspace(parent: &mut ChildSpawnerCommands, session: &E
                             ..default()
                         },
                         |content| {
-                            spawn_compiled_layout(content, compiled);
-                            spawn_compiled_parameters(content, compiled, session);
+                            spawn_compiled_layout(content, compiled, localizer);
+                            spawn_compiled_parameters(content, compiled, session, localizer);
                             for (emitter_index, emitter) in compiled.emitters.iter().enumerate() {
                                 spawn_compiled_emitter(
                                     content,
@@ -1380,9 +1406,10 @@ fn spawn_generated_code_workspace(parent: &mut ChildSpawnerCommands, session: &E
                                     emitter,
                                     emitter_index,
                                     session,
+                                    localizer,
                                 );
                             }
-                            spawn_wesl_backend(content);
+                            spawn_wesl_backend(content, localizer);
                         },
                     );
                 });
@@ -1896,20 +1923,21 @@ fn generated_code_status(session: &EditorSession, has_artifact: bool) -> (&'stat
         .is_some_and(|pending| !pending.can_apply)
         && has_artifact
     {
-        (
-            "PREVIEW BLOCKED  ·  LAST VALID COMPILE",
-            Color::srgb(1.0, 0.74, 0.30),
-        )
+        ("generated-status-last-valid", Color::srgb(1.0, 0.74, 0.30))
     } else if session.pending_change.is_some() && has_artifact {
-        ("PENDING PREVIEW  ·  LIVE", theme::ACCENT)
+        ("generated-status-pending", theme::ACCENT)
     } else if has_artifact {
-        ("WORKING EFFECT  ·  LIVE", Color::srgb(0.35, 0.88, 0.57))
+        ("generated-status-live", Color::srgb(0.35, 0.88, 0.57))
     } else {
-        ("COMPILE UNAVAILABLE", Color::srgb(1.0, 0.38, 0.32))
+        ("generated-status-unavailable", Color::srgb(1.0, 0.38, 0.32))
     }
 }
 
-fn spawn_compiled_summary(parent: &mut ChildSpawnerCommands, compiled: &CompiledEffect) {
+fn spawn_compiled_summary(
+    parent: &mut ChildSpawnerCommands,
+    compiled: &CompiledEffect,
+    localizer: &Localizer,
+) {
     let instruction_count = compiled
         .emitters
         .iter()
@@ -1934,15 +1962,27 @@ fn spawn_compiled_summary(parent: &mut ChildSpawnerCommands, compiled: &Compiled
             BorderColor::all(theme::BORDER),
         ))
         .with_children(|summary| {
-            spawn_compiled_metric(summary, "EMITTERS", compiled.emitters.len());
-            spawn_compiled_metric(summary, "OPS", instruction_count);
             spawn_compiled_metric(
                 summary,
-                "ATTRIBUTES",
+                &localizer.text("generated-emitters"),
+                compiled.emitters.len(),
+            );
+            spawn_compiled_metric(summary, &localizer.text("generated-ops"), instruction_count);
+            spawn_compiled_metric(
+                summary,
+                &localizer.text("generated-attributes"),
                 compiled.particle_layout.attributes.len(),
             );
-            spawn_compiled_metric(summary, "PARAMETERS", compiled.parameters.len());
-            spawn_compiled_metric(summary, "CAPACITY", compiled.max_particles);
+            spawn_compiled_metric(
+                summary,
+                &localizer.text("generated-parameters"),
+                compiled.parameters.len(),
+            );
+            spawn_compiled_metric(
+                summary,
+                &localizer.text("generated-capacity"),
+                compiled.max_particles,
+            );
             summary.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
@@ -1990,52 +2030,65 @@ fn spawn_compiled_metric(parent: &mut ChildSpawnerCommands, label: &str, value: 
         });
 }
 
-fn spawn_compiled_layout(parent: &mut ChildSpawnerCommands, compiled: &CompiledEffect) {
-    spawn_compiled_section(parent, "PARTICLE LAYOUT", |section| {
-        spawn_compiled_label_value(
-            section,
-            "STORED",
-            &format_particle_attributes(&compiled.particle_layout.attributes),
-        );
-        spawn_compiled_label_value(
-            section,
-            "TRANSIENT",
-            &format_particle_attributes(&compiled.particle_layout.transient_attributes),
-        );
-        spawn_compiled_label_value(
-            section,
-            "OPTIMIZED",
-            &format!(
-                "{} constants  ·  {} runtime reads  ·  {} attributes removed",
-                compiled.optimizations.constant_expressions,
-                compiled.optimizations.runtime_parameter_reads,
-                compiled.optimizations.eliminated_attributes
-            ),
-        );
-    });
+fn spawn_compiled_layout(
+    parent: &mut ChildSpawnerCommands,
+    compiled: &CompiledEffect,
+    localizer: &Localizer,
+) {
+    spawn_compiled_section(
+        parent,
+        &localizer.text("generated-particle-layout"),
+        |section| {
+            spawn_compiled_label_value(
+                section,
+                &localizer.text("generated-stored"),
+                &format_particle_attributes(&compiled.particle_layout.attributes),
+            );
+            spawn_compiled_label_value(
+                section,
+                &localizer.text("generated-transient"),
+                &format_particle_attributes(&compiled.particle_layout.transient_attributes),
+            );
+            spawn_compiled_label_value(section, &localizer.text("generated-optimized"), &{
+                let mut args = FluentArgs::new();
+                args.set("constants", compiled.optimizations.constant_expressions);
+                args.set("reads", compiled.optimizations.runtime_parameter_reads);
+                args.set("removed", compiled.optimizations.eliminated_attributes);
+                localizer.text_with("generated-optimization-summary", &args)
+            });
+        },
+    );
 }
 
 fn spawn_compiled_parameters(
     parent: &mut ChildSpawnerCommands,
     compiled: &CompiledEffect,
     session: &EditorSession,
+    localizer: &Localizer,
 ) {
-    spawn_compiled_section(parent, "PARAMETER TABLE", |section| {
-        if compiled.parameters.is_empty() {
-            spawn_compiled_muted_line(section, "No runtime parameter slots retained.");
-            return;
-        }
-        for (index, parameter) in compiled.parameters.iter().enumerate() {
-            spawn_compiled_target_row(
-                section,
-                SemanticTarget::Parameter(parameter.source),
-                session.selection.primary == SemanticTarget::Parameter(parameter.source),
-                &format!("P{index:03}"),
-                &parameter.name,
-                &format!("{:?}  ·  {:?}", parameter.value_type, parameter.default),
-            );
-        }
-    });
+    spawn_compiled_section(
+        parent,
+        &localizer.text("generated-parameter-table"),
+        |section| {
+            if compiled.parameters.is_empty() {
+                spawn_compiled_muted_line(
+                    section,
+                    &localizer.text("generated-no-runtime-parameters"),
+                );
+                return;
+            }
+            for (index, parameter) in compiled.parameters.iter().enumerate() {
+                spawn_compiled_target_row(
+                    section,
+                    SemanticTarget::Parameter(parameter.source),
+                    session.selection.primary == SemanticTarget::Parameter(parameter.source),
+                    &format!("P{index:03}"),
+                    &parameter.name,
+                    &format!("{:?}  ·  {:?}", parameter.value_type, parameter.default),
+                );
+            }
+        },
+    );
 }
 
 fn spawn_compiled_emitter(
@@ -2044,6 +2097,7 @@ fn spawn_compiled_emitter(
     emitter: &CompiledEmitter,
     emitter_index: usize,
     session: &EditorSession,
+    localizer: &Localizer,
 ) {
     spawn_compiled_section(
         parent,
@@ -2052,16 +2106,17 @@ fn spawn_compiled_emitter(
             emitter.name.to_uppercase()
         ),
         |section| {
+            let enabled = localizer.text(if emitter.enabled {
+                "generated-enabled"
+            } else {
+                "generated-disabled"
+            });
             spawn_compiled_target_row(
                 section,
                 SemanticTarget::Emitter(emitter.source),
                 session.selection.primary == SemanticTarget::Emitter(emitter.source),
                 &format!("E{emitter_index:02}"),
-                if emitter.enabled {
-                    "ENABLED"
-                } else {
-                    "DISABLED"
-                },
+                &enabled,
                 &format!(
                     "start {:.2}s  ·  duration {:.2}s  ·  position {:?}  ·  scale {:?}  ·  capacity {}  ·  {}",
                     emitter.start_time,
@@ -2080,6 +2135,7 @@ fn spawn_compiled_emitter(
                 RuntimeStage::EmitterUpdate,
                 &emitter.execution.emitter_update,
                 session,
+                localizer,
             );
             spawn_compiled_stage(
                 section,
@@ -2089,6 +2145,7 @@ fn spawn_compiled_emitter(
                 RuntimeStage::ParticleSpawn,
                 &emitter.execution.particle_spawn,
                 session,
+                localizer,
             );
             spawn_compiled_stage(
                 section,
@@ -2098,11 +2155,22 @@ fn spawn_compiled_emitter(
                 RuntimeStage::ParticleUpdate,
                 &emitter.execution.particle_update,
                 session,
+                localizer,
             );
             if emitter.renderers.is_empty() {
-                spawn_compiled_stage_heading(section, "RENDERERS", 0);
+                spawn_compiled_stage_heading(
+                    section,
+                    &localizer.text("generated-renderers"),
+                    0,
+                    localizer,
+                );
             } else {
-                spawn_compiled_stage_heading(section, "RENDERERS", emitter.renderers.len());
+                spawn_compiled_stage_heading(
+                    section,
+                    &localizer.text("generated-renderers"),
+                    emitter.renderers.len(),
+                    localizer,
+                );
                 for (index, renderer) in emitter.renderers.iter().enumerate() {
                     let material = compiled
                         .material(renderer.material)
@@ -2118,7 +2186,7 @@ fn spawn_compiled_emitter(
                         SemanticTarget::Renderer(renderer.source),
                         session.selection.primary == SemanticTarget::Renderer(renderer.source),
                         &format!("R{index:03}"),
-                        "SPRITE DRAW",
+                        &localizer.text("generated-sprite-draw"),
                         &format!(
                             "material {}  ·  {:?} blend  ·  softness {:?}  ·  {texture}  ·  {}",
                             material.name, material.blend, material.softness, renderer.source,
@@ -2138,8 +2206,14 @@ fn spawn_compiled_stage(
     stage: RuntimeStage,
     instructions: &[Instruction],
     session: &EditorSession,
+    localizer: &Localizer,
 ) {
-    spawn_compiled_stage_heading(parent, runtime_stage_label(stage), instructions.len());
+    spawn_compiled_stage_heading(
+        parent,
+        &localizer.text(runtime_stage_message_id(stage)),
+        instructions.len(),
+        localizer,
+    );
     for (instruction_index, instruction) in instructions.iter().enumerate() {
         let module = instruction.source();
         let source_name = authored_module_name(compiled_source_effect(session), module);
@@ -2169,9 +2243,17 @@ fn spawn_compiled_stage(
     }
 }
 
-fn spawn_compiled_stage_heading(parent: &mut ChildSpawnerCommands, title: &str, count: usize) {
+fn spawn_compiled_stage_heading(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    count: usize,
+    localizer: &Localizer,
+) {
     parent.spawn((
-        Text::new(format!("{title}  ·  {count} OPS")),
+        Text::new(format!(
+            "{title}  ·  {count} {}",
+            localizer.text("generated-ops")
+        )),
         TextFont {
             font_size: FontSize::Px(9.0),
             ..default()
@@ -2184,23 +2266,24 @@ fn spawn_compiled_stage_heading(parent: &mut ChildSpawnerCommands, title: &str, 
     ));
 }
 
-fn spawn_wesl_backend(parent: &mut ChildSpawnerCommands) {
-    spawn_compiled_section(parent, "WESL BACKEND", |section| {
-        spawn_compiled_label_value(
-            section,
-            "SIMULATION",
-            "aestra_simulation.wesl  ·  reset @compute(1)  ·  simulate @compute(64)",
-        );
-        spawn_compiled_label_value(
-            section,
-            "SPRITE",
-            "aestra_sprite_render.wesl  ·  vertex  ·  fragment_alpha  ·  fragment_additive",
-        );
-        spawn_compiled_muted_line(
-            section,
-            "The effect plan supplies typed buffers to these WESL entry points; Aestra does not store generated WGSL.",
-        );
-    });
+fn spawn_wesl_backend(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
+    spawn_compiled_section(
+        parent,
+        &localizer.text("generated-wesl-backend"),
+        |section| {
+            spawn_compiled_label_value(
+                section,
+                &localizer.text("generated-simulation"),
+                "aestra_simulation.wesl  ·  reset @compute(1)  ·  simulate @compute(64)",
+            );
+            spawn_compiled_label_value(
+                section,
+                &localizer.text("assets-sprite"),
+                "aestra_sprite_render.wesl  ·  vertex  ·  fragment_alpha  ·  fragment_additive",
+            );
+            spawn_compiled_muted_line(section, &localizer.text("generated-wesl-description"));
+        },
+    );
 }
 
 fn spawn_compiled_section(
@@ -2391,11 +2474,11 @@ fn compiled_source_effect(session: &EditorSession) -> &EffectAsset {
         .unwrap_or(&session.effect)
 }
 
-fn runtime_stage_label(stage: RuntimeStage) -> &'static str {
+fn runtime_stage_message_id(stage: RuntimeStage) -> &'static str {
     match stage {
-        RuntimeStage::EmitterUpdate => "EMITTER UPDATE",
-        RuntimeStage::ParticleSpawn => "PARTICLE SPAWN",
-        RuntimeStage::ParticleUpdate => "PARTICLE UPDATE",
+        RuntimeStage::EmitterUpdate => "generated-stage-emitter-update",
+        RuntimeStage::ParticleSpawn => "generated-stage-particle-spawn",
+        RuntimeStage::ParticleUpdate => "generated-stage-particle-update",
     }
 }
 
@@ -2884,7 +2967,11 @@ fn spawn_diagnostic_count(
     ));
 }
 
-fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
+fn spawn_changes_workspace(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -2913,13 +3000,15 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
                         ..default()
                     });
                     let summary = session.pending_change.as_ref().map_or_else(
-                        || "NO TRANSACTION PENDING".to_string(),
+                        || localizer.text("changes-none-pending"),
                         |pending| {
-                            format!(
-                                "{}  ·  {} CHANGES",
+                            let mut args = FluentArgs::new();
+                            args.set(
+                                "transaction",
                                 pending.preview.transaction().label.to_uppercase(),
-                                pending.preview.diff().changes.len()
-                            )
+                            );
+                            args.set("count", pending.preview.diff().changes.len());
+                            localizer.text_with("changes-summary", &args)
                         },
                     );
                     header.spawn((
@@ -2934,9 +3023,7 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
 
             let Some(pending) = &session.pending_change else {
                 panel.spawn((
-                    Text::new(
-                        "No proposed changes. Structural deletions open here for review before they modify the effect.",
-                    ),
+                    Text::new(localizer.text("changes-empty-description")),
                     TextFont {
                         font_size: FontSize::Px(12.0),
                         ..default()
@@ -2983,62 +3070,64 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
                                 ..default()
                             },
                             |changes| {
-                        for change in &pending.preview.diff().changes {
-                            let (kind, color) = change_kind_style(change.kind);
-                            let values = match (&change.before, &change.after) {
-                                (Some(before), Some(after)) => format!("{before}  →  {after}"),
-                                (Some(before), None) => before.clone(),
-                                (None, Some(after)) => after.clone(),
-                                (None, None) => String::new(),
-                            };
-                            changes
-                                .spawn((
-                                    Node {
-                                        width: Val::Percent(100.0),
-                                        min_height: Val::Px(30.0),
-                                        align_items: AlignItems::Center,
-                                        padding: UiRect::horizontal(Val::Px(8.0)),
-                                        column_gap: Val::Px(8.0),
-                                        border_radius: BorderRadius::all(Val::Px(3.0)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(theme::PANEL),
-                                ))
-                                .with_children(|row| {
-                                    row.spawn((
-                                        Text::new(kind),
-                                        TextFont {
-                                            font_size: FontSize::Px(9.0),
-                                            ..default()
-                                        },
-                                        TextColor(color),
-                                        Node {
-                                            width: Val::Px(58.0),
-                                            ..default()
-                                        },
-                                    ));
-                                    row.spawn((
-                                        Text::new(change.path.clone()),
-                                        TextFont {
-                                            font_size: FontSize::Px(10.0),
-                                            ..default()
-                                        },
-                                        TextColor(theme::TEXT),
-                                        Node {
-                                            width: Val::Percent(42.0),
-                                            ..default()
-                                        },
-                                    ));
-                                    row.spawn((
-                                        Text::new(values),
-                                        TextFont {
-                                            font_size: FontSize::Px(9.0),
-                                            ..default()
-                                        },
-                                        TextColor(theme::TEXT_MUTED),
-                                    ));
-                                });
-                        }
+                                for change in &pending.preview.diff().changes {
+                                    let (kind, color) = change_kind_style(change.kind, localizer);
+                                    let values = match (&change.before, &change.after) {
+                                        (Some(before), Some(after)) => {
+                                            format!("{before}  →  {after}")
+                                        }
+                                        (Some(before), None) => before.clone(),
+                                        (None, Some(after)) => after.clone(),
+                                        (None, None) => String::new(),
+                                    };
+                                    changes
+                                        .spawn((
+                                            Node {
+                                                width: Val::Percent(100.0),
+                                                min_height: Val::Px(30.0),
+                                                align_items: AlignItems::Center,
+                                                padding: UiRect::horizontal(Val::Px(8.0)),
+                                                column_gap: Val::Px(8.0),
+                                                border_radius: BorderRadius::all(Val::Px(3.0)),
+                                                ..default()
+                                            },
+                                            BackgroundColor(theme::PANEL),
+                                        ))
+                                        .with_children(|row| {
+                                            row.spawn((
+                                                Text::new(kind),
+                                                TextFont {
+                                                    font_size: FontSize::Px(9.0),
+                                                    ..default()
+                                                },
+                                                TextColor(color),
+                                                Node {
+                                                    width: Val::Px(58.0),
+                                                    ..default()
+                                                },
+                                            ));
+                                            row.spawn((
+                                                Text::new(change.path.clone()),
+                                                TextFont {
+                                                    font_size: FontSize::Px(10.0),
+                                                    ..default()
+                                                },
+                                                TextColor(theme::TEXT),
+                                                Node {
+                                                    width: Val::Percent(42.0),
+                                                    ..default()
+                                                },
+                                            ));
+                                            row.spawn((
+                                                Text::new(values),
+                                                TextFont {
+                                                    font_size: FontSize::Px(9.0),
+                                                    ..default()
+                                                },
+                                                TextColor(theme::TEXT_MUTED),
+                                            ));
+                                        });
+                                }
                             },
                         );
                     });
@@ -3062,71 +3151,81 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
                                 ..default()
                             },
                             |review| {
-                        let errors = pending
-                            .diagnostics
-                            .diagnostics
-                            .iter()
-                            .filter(|item| item.severity == DiagnosticSeverity::Error)
-                            .count();
-                        review.spawn((
-                            Text::new(if pending.can_apply {
-                                "VALIDATED · READY TO APPLY".to_string()
-                            } else {
-                                format!("BLOCKED · {errors} COMPILER ERROR(S)")
-                            }),
-                            TextFont {
-                                font_size: FontSize::Px(10.0),
-                                ..default()
-                            },
-                            TextColor(if pending.can_apply {
-                                Color::srgb(0.35, 0.88, 0.57)
-                            } else {
-                                Color::srgb(1.0, 0.38, 0.32)
-                            }),
-                        ));
-                        for diagnostic in &pending.diagnostics.diagnostics {
-                            review.spawn((
-                                Text::new(format!(
-                                    "{:?} · {}\n{}",
-                                    diagnostic.code, diagnostic.path, diagnostic.message
-                                )),
-                                TextFont {
-                                    font_size: FontSize::Px(9.0),
+                                let errors = pending
+                                    .diagnostics
+                                    .diagnostics
+                                    .iter()
+                                    .filter(|item| item.severity == DiagnosticSeverity::Error)
+                                    .count();
+                                review.spawn((
+                                    Text::new(if pending.can_apply {
+                                        localizer.text("changes-ready")
+                                    } else {
+                                        let mut args = FluentArgs::new();
+                                        args.set("count", errors);
+                                        localizer.text_with("changes-blocked", &args)
+                                    }),
+                                    TextFont {
+                                        font_size: FontSize::Px(10.0),
+                                        ..default()
+                                    },
+                                    TextColor(if pending.can_apply {
+                                        Color::srgb(0.35, 0.88, 0.57)
+                                    } else {
+                                        Color::srgb(1.0, 0.38, 0.32)
+                                    }),
+                                ));
+                                for diagnostic in &pending.diagnostics.diagnostics {
+                                    review.spawn((
+                                        Text::new(format!(
+                                            "{:?} · {}\n{}",
+                                            diagnostic.code, diagnostic.path, diagnostic.message
+                                        )),
+                                        TextFont {
+                                            font_size: FontSize::Px(9.0),
+                                            ..default()
+                                        },
+                                        TextColor(match diagnostic.severity {
+                                            DiagnosticSeverity::Error => {
+                                                Color::srgb(1.0, 0.38, 0.32)
+                                            }
+                                            DiagnosticSeverity::Warning => {
+                                                Color::srgb(1.0, 0.74, 0.30)
+                                            }
+                                            DiagnosticSeverity::Info => theme::TEXT_MUTED,
+                                        }),
+                                    ));
+                                }
+                                review.spawn(Node {
+                                    flex_grow: 1.0,
                                     ..default()
-                                },
-                                TextColor(match diagnostic.severity {
-                                    DiagnosticSeverity::Error => Color::srgb(1.0, 0.38, 0.32),
-                                    DiagnosticSeverity::Warning => Color::srgb(1.0, 0.74, 0.30),
-                                    DiagnosticSeverity::Info => theme::TEXT_MUTED,
-                                }),
-                            ));
-                        }
-                        review.spawn(Node {
-                            flex_grow: 1.0,
-                            ..default()
-                        });
-                        review
-                            .spawn(Node {
-                                width: Val::Percent(100.0),
-                                min_height: Val::Px(32.0),
-                                justify_content: JustifyContent::FlexEnd,
-                                column_gap: Val::Px(8.0),
-                                ..default()
-                            })
-                            .with_children(|actions| {
-                                inspector_action_button(
-                                    actions,
-                                    "Discard",
-                                    EditorAction::DiscardPendingChange,
-                                    None,
-                                );
-                                inspector_action_button(
-                                    actions,
-                                    if pending.can_apply { "Apply" } else { "Apply blocked" },
-                                    EditorAction::ApplyPendingChange,
-                                    None,
-                                );
-                            });
+                                });
+                                review
+                                    .spawn(Node {
+                                        width: Val::Percent(100.0),
+                                        min_height: Val::Px(32.0),
+                                        justify_content: JustifyContent::FlexEnd,
+                                        column_gap: Val::Px(8.0),
+                                        ..default()
+                                    })
+                                    .with_children(|actions| {
+                                        inspector_action_button(
+                                            actions,
+                                            &localizer.text("changes-discard"),
+                                            EditorAction::DiscardPendingChange,
+                                            None,
+                                        );
+                                        inspector_action_button(
+                                            actions,
+                                            &localizer.text(if pending.can_apply {
+                                                "changes-apply"
+                                            } else {
+                                                "changes-apply-blocked"
+                                            }),
+                                            EditorAction::ApplyPendingChange,
+                                            None,
+                                        );
+                                    });
                             },
                         );
                     });
@@ -3134,12 +3233,24 @@ fn spawn_changes_workspace(parent: &mut ChildSpawnerCommands, session: &EditorSe
         });
 }
 
-fn change_kind_style(kind: ChangeKind) -> (&'static str, Color) {
+fn change_kind_style(kind: ChangeKind, localizer: &Localizer) -> (String, Color) {
     match kind {
-        ChangeKind::Added => ("ADDED", Color::srgb(0.35, 0.88, 0.57)),
-        ChangeKind::Removed => ("REMOVED", Color::srgb(1.0, 0.38, 0.32)),
-        ChangeKind::Modified => ("MODIFIED", Color::srgb(0.45, 0.70, 1.0)),
-        ChangeKind::Moved => ("MOVED", Color::srgb(1.0, 0.74, 0.30)),
+        ChangeKind::Added => (
+            localizer.text("changes-kind-added"),
+            Color::srgb(0.35, 0.88, 0.57),
+        ),
+        ChangeKind::Removed => (
+            localizer.text("changes-kind-removed"),
+            Color::srgb(1.0, 0.38, 0.32),
+        ),
+        ChangeKind::Modified => (
+            localizer.text("changes-kind-modified"),
+            Color::srgb(0.45, 0.70, 1.0),
+        ),
+        ChangeKind::Moved => (
+            localizer.text("changes-kind-moved"),
+            Color::srgb(1.0, 0.74, 0.30),
+        ),
     }
 }
 
@@ -3148,6 +3259,7 @@ fn spawn_complex_input_list(
     session: &EditorSession,
     registry: &EditorModuleRegistry,
     workspace: &WorkspaceState,
+    localizer: &Localizer,
 ) {
     parent
         .spawn((
@@ -3189,9 +3301,15 @@ fn spawn_complex_input_list(
                                 selection.module == module.id
                                     && selection.input == input_index as u8
                             });
+                            let display_name = localized_inspector_input(
+                                localizer,
+                                input.name,
+                                input.display_name,
+                                false,
+                            );
                             parent_list_button(
                                 list,
-                                &format!("{} / {}", metadata.display_name, input.display_name),
+                                &format!("{} / {display_name}", metadata.display_name),
                                 EditorAction::EditComplexInput(module.id, input_index as u8),
                                 selected,
                             );
@@ -3269,12 +3387,15 @@ fn spawn_curve_graph(
     input: &InputMetadata,
     curve: &aestra_bevy::Curve,
     selected_key: usize,
+    localizer: &Localizer,
 ) {
     let InputControl::Curve { step, min, max } = input.control else {
         return;
     };
+    let display_name = localized_inspector_input(localizer, input.name, input.display_name, false);
+    let description = localized_inspector_input(localizer, input.name, input.description, true);
     parent.spawn((
-        Text::new(format!("{}  ·  {}", input.display_name, input.description)),
+        Text::new(format!("{display_name}  ·  {description}")),
         TextFont {
             font_size: FontSize::Px(10.0),
             ..default()
@@ -3410,7 +3531,13 @@ fn spawn_curve_graph(
                     );
             }
         });
-    spawn_complex_controls(parent, curve.keys.get(selected_key).copied(), None, step);
+    spawn_complex_controls(
+        parent,
+        curve.keys.get(selected_key).copied(),
+        None,
+        step,
+        localizer,
+    );
 }
 
 fn spawn_gradient_graph(
@@ -3420,9 +3547,12 @@ fn spawn_gradient_graph(
     input: &InputMetadata,
     gradient: &aestra_bevy::Gradient,
     selected_key: usize,
+    localizer: &Localizer,
 ) {
+    let display_name = localized_inspector_input(localizer, input.name, input.display_name, false);
+    let description = localized_inspector_input(localizer, input.name, input.description, true);
     parent.spawn((
-        Text::new(format!("{}  ·  {}", input.display_name, input.description)),
+        Text::new(format!("{display_name}  ·  {description}")),
         TextFont {
             font_size: FontSize::Px(10.0),
             ..default()
@@ -3552,7 +3682,13 @@ fn spawn_gradient_graph(
                     );
             }
         });
-    spawn_complex_controls(parent, None, gradient.keys.get(selected_key).copied(), 0.05);
+    spawn_complex_controls(
+        parent,
+        None,
+        gradient.keys.get(selected_key).copied(),
+        0.05,
+        localizer,
+    );
 }
 
 fn spawn_complex_controls(
@@ -3560,6 +3696,7 @@ fn spawn_complex_controls(
     curve_key: Option<CurveKey>,
     color_key: Option<ColorKey>,
     value_step: f32,
+    localizer: &Localizer,
 ) {
     parent
         .spawn(Node {
@@ -3570,14 +3707,24 @@ fn spawn_complex_controls(
             ..default()
         })
         .with_children(|controls| {
-            stack_button(controls, "+ KEY", EditorAction::AddComplexKey, 48.0);
-            stack_button(controls, "− KEY", EditorAction::DeleteComplexKey, 48.0);
+            stack_button(
+                controls,
+                &localizer.text("curves-add-key"),
+                EditorAction::AddComplexKey,
+                56.0,
+            );
+            stack_button(
+                controls,
+                &localizer.text("curves-delete-key"),
+                EditorAction::DeleteComplexKey,
+                56.0,
+            );
             let time = curve_key
                 .map(|key| key.time)
                 .or_else(|| color_key.map(|key| key.time));
             if let Some(time) = time {
                 controls.spawn((
-                    Text::new(format!("Time {time:.3}")),
+                    Text::new(format!("{} {time:.3}", localizer.text("curves-time"))),
                     TextFont {
                         font_size: FontSize::Px(9.0),
                         ..default()
@@ -3589,7 +3736,12 @@ fn spawn_complex_controls(
             }
             if let Some(key) = curve_key {
                 controls.spawn((
-                    Text::new(format!("Value {:.3}  step {value_step:.2}", key.value)),
+                    Text::new(format!(
+                        "{} {:.3}  ·  {} {value_step:.2}",
+                        localizer.text("curves-value"),
+                        key.value,
+                        localizer.text("curves-step")
+                    )),
                     TextFont {
                         font_size: FontSize::Px(9.0),
                         ..default()
@@ -5048,7 +5200,7 @@ mod tests {
 
         assert_eq!(
             generated_code_status(&session, true).0,
-            "WORKING EFFECT  ·  LIVE"
+            "generated-status-live"
         );
         assert_eq!(compiled.emitters.len(), session.effect.emitters.len());
         assert_eq!(instruction_count, compiled.source_map.len());
