@@ -85,8 +85,11 @@ Complete this milestone before expanding the editor or renderer feature surface 
    selection, transformed sort centers, depth ordering, and renderer tie-breaking; the
    `--editor-viewport-smoke` capture remains the acceptance gate for constrained preview
    and overlay-camera changes.
-2. **Harden recovery cleanup.** Keep tracking an active recovery snapshot until its
-   deletion succeeds, and cover failed deletion, retry, save, document-switch, and
+2. **Harden recovery cleanup — complete.** Active recovery snapshots remain tracked until
+   deletion succeeds, with throttled retries after transient filesystem failures.
+   Cleanup is driven by the persisted snapshot rather than a revision marker, and
+   document switches wait for the previous snapshot to be removed. Focused tests cover
+   failed deletion and retry, save, document switch, startup discard tracking, and
    autosave-disable behavior.
 3. **Make settings replacement crash-safe.** Replace fixed sibling temporary names with
    unique temporary files, recover interrupted replacements, and ensure the canonical

@@ -124,22 +124,40 @@ impl RecoveryPersistence {
     }
 
     pub(crate) fn discard_candidate(&mut self, candidate: &RecoveryCandidate) -> io::Result<()> {
-        remove_if_present(&candidate.path)?;
-        if self.active_path.as_ref() == Some(&candidate.path) {
-            self.active_path = None;
-        }
-        Ok(())
+        self.active_path = Some(candidate.path.clone());
+        self.clear_active()
     }
 
     pub(crate) fn clear_active(&mut self) -> io::Result<()> {
-        if let Some(path) = self.active_path.take() {
-            remove_if_present(&path)?;
-        }
+        self.clear_active_with(remove_if_present)
+    }
+
+    pub(crate) fn has_active(&self) -> bool {
+        self.active_path.is_some()
+    }
+
+    fn clear_active_with(
+        &mut self,
+        remove: impl FnOnce(&Path) -> io::Result<()>,
+    ) -> io::Result<()> {
+        let Some(path) = self.active_path.as_deref() else {
+            return Ok(());
+        };
+        remove(path)?;
+        self.active_path = None;
         Ok(())
     }
 
     fn path_for(&self, effect: &EffectAsset) -> PathBuf {
         self.directory.join(format!("{}.recovery.ron", effect.id))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(directory: PathBuf, active_path: Option<PathBuf>) -> Self {
+        Self {
+            directory,
+            active_path,
+        }
     }
 }
 
@@ -286,6 +304,63 @@ mod tests {
         assert!(candidate.is_none());
         assert!(diagnostic.is_some());
         assert_eq!(fs::read_to_string(&path).unwrap(), "not valid ron");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn failed_cleanup_keeps_the_snapshot_tracked_for_retry() {
+        let path = PathBuf::from("active.recovery.ron");
+        let mut persistence = RecoveryPersistence {
+            directory: PathBuf::new(),
+            active_path: Some(path.clone()),
+        };
+
+        let error = persistence
+            .clear_active_with(|_| Err(io::Error::other("temporary failure")))
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(persistence.active_path.as_ref(), Some(&path));
+
+        let mut removed = None;
+        persistence
+            .clear_active_with(|path| {
+                removed = Some(path.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(removed.as_ref(), Some(&path));
+        assert!(!persistence.has_active());
+    }
+
+    #[test]
+    fn failed_startup_discard_becomes_the_active_cleanup_target() {
+        let directory = test_directory("discard-retry");
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("blocked.recovery.ron");
+        fs::create_dir(&path).unwrap();
+        let candidate = RecoveryCandidate {
+            path: path.clone(),
+            snapshot: RecoverySnapshot {
+                version: RECOVERY_FORMAT_VERSION,
+                saved_at_unix_millis: unix_millis(SystemTime::now()),
+                source_path: None,
+                effect: EffectAsset::new("Discarded recovery", 1.0),
+            },
+            modified: SystemTime::now(),
+        };
+        let mut persistence = RecoveryPersistence {
+            directory: directory.clone(),
+            active_path: None,
+        };
+
+        assert!(persistence.discard_candidate(&candidate).is_err());
+        assert_eq!(persistence.active_path.as_ref(), Some(&path));
+
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, "pending snapshot").unwrap();
+        persistence.clear_active().unwrap();
+        assert!(!path.exists());
+        assert!(!persistence.has_active());
         fs::remove_dir_all(directory).unwrap();
     }
 }

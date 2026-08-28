@@ -84,6 +84,7 @@ const EDITOR_ASSET_ROOT: &str = "../assets";
 const MAX_PREVIEW_PARTICLE_LIMIT: usize = 384;
 const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
 const INSPECTOR_TOOLTIP_DELAY: Duration = Duration::from_millis(650);
+const RECOVERY_CLEANUP_RETRY_DELAY: Duration = Duration::from_secs(1);
 const PROFILER_HISTORY_SAMPLES: usize = 96;
 const DEFAULT_PREVIEW_PITCH: f32 = -0.35;
 const PREVIEW_GRID_SHADER_PATH: &str = "shaders/preview_grid.wesl";
@@ -626,17 +627,20 @@ struct AutosaveState {
     observed_revision: u64,
     written_revision: Option<u64>,
     write_after: Instant,
+    cleanup_after: Instant,
     enabled: bool,
     suspended: bool,
 }
 
 impl AutosaveState {
     fn new(session: &EditorSession, enabled: bool) -> Self {
+        let now = Instant::now();
         Self {
             document_key: recovery_document_key(session),
             observed_revision: session.document_revision(),
             written_revision: session.dirty.then_some(session.document_revision()),
-            write_after: Instant::now(),
+            write_after: now,
+            cleanup_after: now,
             enabled,
             suspended: false,
         }
@@ -13171,31 +13175,47 @@ fn autosave_recovery(
     mut persistence: ResMut<RecoveryPersistence>,
     mut state: ResMut<AutosaveState>,
 ) {
+    autosave_recovery_at(
+        &mut session,
+        &settings,
+        &mut persistence,
+        &mut state,
+        Instant::now(),
+    );
+}
+
+fn autosave_recovery_at(
+    session: &mut EditorSession,
+    settings: &EditorSettings,
+    persistence: &mut RecoveryPersistence,
+    state: &mut AutosaveState,
+    now: Instant,
+) {
     if state.suspended {
         return;
     }
-    let now = Instant::now();
     let interval = Duration::from_secs(u64::from(settings.general.autosave_interval_seconds));
     if state.enabled != settings.general.autosave_enabled {
         state.enabled = settings.general.autosave_enabled;
         state.write_after = now + interval;
+        state.cleanup_after = now;
         if state.enabled {
             state.written_revision = None;
         }
     }
     if !state.enabled {
-        if state.written_revision.is_some() {
-            match persistence.clear_active() {
-                Ok(()) => state.written_revision = None,
-                Err(error) => warn!("failed to clear the disabled recovery snapshot: {error}"),
-            }
-        }
+        try_clear_tracked_recovery(persistence, state, now, "disabled recovery snapshot");
         return;
     }
-    let document_key = recovery_document_key(&session);
+    let document_key = recovery_document_key(session);
     if document_key != state.document_key {
-        if let Err(error) = persistence.clear_active() {
-            warn!("failed to clear the previous recovery snapshot: {error}");
+        if !try_clear_tracked_recovery(
+            persistence,
+            state,
+            now,
+            "previous document recovery snapshot",
+        ) {
+            return;
         }
         state.document_key = document_key;
         state.observed_revision = session.document_revision();
@@ -13204,14 +13224,7 @@ fn autosave_recovery(
     }
 
     if !session.dirty {
-        if state.written_revision.is_some() {
-            match persistence.clear_active() {
-                Ok(()) => state.written_revision = None,
-                Err(error) => {
-                    warn!("failed to clear the saved effect recovery snapshot: {error}");
-                }
-            }
-        }
+        try_clear_tracked_recovery(persistence, state, now, "saved effect recovery snapshot");
         return;
     }
 
@@ -13227,11 +13240,42 @@ fn autosave_recovery(
     }
 
     match persistence.persist(&session.effect, session.source_path.as_deref()) {
-        Ok(_) => state.written_revision = Some(revision),
+        Ok(_) => {
+            state.written_revision = Some(revision);
+            state.cleanup_after = now;
+        }
         Err(error) => {
             error!("failed to write recovery snapshot: {error}");
             session.status = format!("Recovery autosave failed: {error}");
             state.write_after = now + interval;
+        }
+    }
+}
+
+fn try_clear_tracked_recovery(
+    persistence: &mut RecoveryPersistence,
+    state: &mut AutosaveState,
+    now: Instant,
+    context: &str,
+) -> bool {
+    if !persistence.has_active() {
+        state.written_revision = None;
+        state.cleanup_after = now;
+        return true;
+    }
+    if now < state.cleanup_after {
+        return false;
+    }
+    match persistence.clear_active() {
+        Ok(()) => {
+            state.written_revision = None;
+            state.cleanup_after = now;
+            true
+        }
+        Err(error) => {
+            warn!("failed to clear the {context}: {error}");
+            state.cleanup_after = now + RECOVERY_CLEANUP_RETRY_DELAY;
+            false
         }
     }
 }
@@ -14736,6 +14780,104 @@ fn layer_color_alpha(index: usize, alpha: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saving_a_document_clears_its_tracked_recovery_snapshot() {
+        let temporary = tempfile::tempdir().unwrap();
+        let source_path = temporary.path().join("saved-effect.aestra.ron");
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.save_as(&source_path).unwrap();
+        session.adjust_effect_duration(0.25);
+        let mut persistence = RecoveryPersistence::for_test(temporary.path().into(), None);
+        let recovery_path = persistence
+            .persist(&session.effect, session.source_path.as_deref())
+            .unwrap();
+        let mut state = AutosaveState::new(&session, true);
+        session.save().unwrap();
+
+        autosave_recovery_at(
+            &mut session,
+            &EditorSettings::default(),
+            &mut persistence,
+            &mut state,
+            Instant::now(),
+        );
+
+        assert!(!recovery_path.exists());
+        assert!(!persistence.has_active());
+        assert!(state.written_revision.is_none());
+    }
+
+    #[test]
+    fn disabling_autosave_clears_a_snapshot_even_without_a_written_revision_marker() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut persistence = RecoveryPersistence::for_test(temporary.path().into(), None);
+        let recovery_path = persistence
+            .persist(&session.effect, session.source_path.as_deref())
+            .unwrap();
+        let mut state = AutosaveState::new(&session, true);
+        assert!(state.written_revision.is_none());
+        let settings = EditorSettings {
+            general: settings::GeneralSettings {
+                autosave_enabled: false,
+                ..default()
+            },
+            ..default()
+        };
+
+        autosave_recovery_at(
+            &mut session,
+            &settings,
+            &mut persistence,
+            &mut state,
+            Instant::now(),
+        );
+
+        assert!(!recovery_path.exists());
+        assert!(!persistence.has_active());
+        assert!(!state.enabled);
+    }
+
+    #[test]
+    fn document_switch_waits_for_failed_cleanup_and_retries() {
+        let temporary = tempfile::tempdir().unwrap();
+        let blocked_path = temporary.path().join("blocked.recovery.ron");
+        fs::create_dir(&blocked_path).unwrap();
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut state = AutosaveState::new(&session, true);
+        let previous_document_key = state.document_key.clone();
+        let mut persistence =
+            RecoveryPersistence::for_test(temporary.path().into(), Some(blocked_path.clone()));
+        session.new_effect();
+        let next_document_key = recovery_document_key(&session);
+        let now = Instant::now();
+
+        autosave_recovery_at(
+            &mut session,
+            &EditorSettings::default(),
+            &mut persistence,
+            &mut state,
+            now,
+        );
+
+        assert!(persistence.has_active());
+        assert_eq!(state.document_key, previous_document_key);
+
+        fs::remove_dir(&blocked_path).unwrap();
+        fs::write(&blocked_path, "pending snapshot").unwrap();
+        autosave_recovery_at(
+            &mut session,
+            &EditorSettings::default(),
+            &mut persistence,
+            &mut state,
+            now + RECOVERY_CLEANUP_RETRY_DELAY,
+        );
+
+        assert!(!blocked_path.exists());
+        assert!(!persistence.has_active());
+        assert_eq!(state.document_key, next_document_key);
+    }
 
     #[test]
     fn viewport_dock_is_a_transparent_cutout_for_the_preview_camera() {
