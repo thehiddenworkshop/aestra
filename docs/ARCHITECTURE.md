@@ -100,6 +100,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   declares only a transparent `DockTreeHost`; the plugin populates it and refreshes floating
   panel roots when the editor UI revision changes.
 - Keeps window chrome stable while rebuilding only effect-dependent workspace content.
+- Runs top-level menu chrome through `EditorMenusPlugin`. The plugin owns popup state,
+  hover switching, delayed submenu opening, outside-click dismissal, the panels submenu,
+  tab context menus, and menu synchronization; document commands remain editor actions
+  handled by the shell.
 - Keeps versioned editor preferences separate from both semantic effect assets and the
   persisted dock layout. A dockable Settings panel edits that dedicated document,
   applies supported values live, and protects malformed, unknown, or newer files from

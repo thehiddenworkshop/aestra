@@ -117,9 +117,11 @@ Complete this milestone before expanding the editor or renderer feature surface 
    into `src/feathers/`, with one plugin owning the upstream Feathers setup, theme,
    activation auditing, and scrollbar synchronization. Action buttons, combo/action
    menus, compact field rows, numeric scrub policy, panel headings, BSN scenes,
-   separators, status surfaces, and scroll areas no longer live in `main.rs`. Next
-   separate menus, settings, persistence, and localization while keeping `main.rs` as
-   composition and startup wiring.
+   separators, status surfaces, and scroll areas no longer live in `main.rs`. Menu chrome,
+   popup behavior, delayed submenu opening, panel visibility synchronization, and tab
+   context menus now run through `EditorMenusPlugin` with their own action contract and
+   focused tests. Next separate the Settings workspace UI, followed by persistence and
+   localization, while keeping `main.rs` as composition and startup wiring.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.

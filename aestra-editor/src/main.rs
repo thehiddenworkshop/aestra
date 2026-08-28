@@ -3,6 +3,7 @@ mod docking;
 mod feathers;
 mod inspector;
 mod localization;
+mod menus;
 mod recovery;
 mod session;
 mod settings;
@@ -75,6 +76,10 @@ use feathers::{
 use fluent_bundle::FluentArgs;
 use inspector::*;
 use localization::{Localizer, SUPPORTED_LOCALES};
+pub(crate) use menus::{
+    AboutDescription, DocumentMenuLabel, MenuState, RedoMenuItem, TabContextMenu, UndoMenuItem,
+};
+use menus::{EditorMenusPlugin, spawn_about_overlay, spawn_menu_bar, spawn_tab_context_menu};
 use recovery::{RecoveryCandidate, RecoveryPersistence};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use session::EditorSession;
@@ -124,10 +129,7 @@ fn main() {
     if let Some(diagnostic) = persistence.diagnostic() {
         session.status = diagnostic.into();
     }
-    let menu = MenuState {
-        show_grid: settings.preview.show_grid,
-        ..default()
-    };
+    let show_grid = settings.preview.show_grid;
     let ui_scale = settings.appearance.ui_scale;
     let autosave = AutosaveState::new(&session, settings.general.autosave_enabled);
     App::new()
@@ -139,7 +141,6 @@ fn main() {
         .insert_resource(localizer)
         .insert_resource(UiScale(ui_scale))
         .insert_resource(EffectCatalog::scan())
-        .insert_resource(menu)
         .insert_resource(autosave)
         .init_resource::<DiagnosticsPanelState>()
         .init_resource::<ProfilerState>()
@@ -165,6 +166,7 @@ fn main() {
                 }),
         )
         .add_plugins(AestraFeathersPlugin)
+        .add_plugins(EditorMenusPlugin::new(show_grid))
         .add_plugins(AestraPlugin)
         .add_plugins(DockingPlugin)
         .add_plugins(InspectorPlugin)
@@ -188,7 +190,6 @@ fn main() {
                     handle_buttons,
                     handle_window_close_requests,
                     autosave_recovery,
-                    dismiss_open_menus,
                     advance_playback,
                 )
                     .chain()
@@ -205,9 +206,6 @@ fn main() {
                     .in_set(EditorSet::MainUpdate),
                 (
                     update_layer_selection,
-                    update_menu_visibility,
-                    update_grid_menu_check,
-                    update_panel_visibility_labels,
                     remember_scroll_positions,
                     rebuild_editor_ui,
                     restore_scroll_positions,
@@ -295,8 +293,6 @@ enum EditorAction {
     ShowDockPanel(DockPanel),
     ToggleDockPanel(DockPanel),
     FloatDockPanel(DockPanel, [f32; 2]),
-    ToggleMenu(MenuKind),
-    TogglePanelsSubmenu,
     ToggleGrid,
     FramePreview,
     SetTransformGizmoMode(TransformGizmoMode),
@@ -430,14 +426,6 @@ enum DiagnosticSource {
     Pending,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MenuKind {
-    File,
-    Edit,
-    View,
-    Help,
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum SettingsCategory {
     #[default]
@@ -522,33 +510,6 @@ impl AutosaveState {
     }
 }
 
-#[derive(Resource)]
-struct MenuState {
-    open: Option<MenuKind>,
-    panels_open: bool,
-    tab_context: Option<TabContextMenu>,
-    show_grid: bool,
-    show_about: bool,
-}
-
-impl Default for MenuState {
-    fn default() -> Self {
-        Self {
-            open: None,
-            panels_open: false,
-            tab_context: None,
-            show_grid: true,
-            show_about: false,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-struct TabContextMenu {
-    panel: DockPanel,
-    position: [f32; 2],
-}
-
 #[derive(Resource, Default)]
 struct RenderedUiRevision(u64);
 
@@ -564,16 +525,7 @@ struct EditorFonts {
 }
 
 #[derive(Component)]
-struct DocumentMenuLabel;
-
-#[derive(Component)]
 struct DocumentToolbarLabel;
-
-#[derive(Component)]
-struct UndoMenuItem;
-
-#[derive(Component)]
-struct RedoMenuItem;
 
 #[derive(Component)]
 struct DiagnosticsFilterButton(DiagnosticsFilter);
@@ -589,9 +541,6 @@ struct SettingsNumberControl(SettingsNumber);
 
 #[derive(Component)]
 struct LocalizedText(&'static str);
-
-#[derive(Component)]
-struct AboutDescription;
 
 #[derive(Component)]
 struct DiagnosticRow;
@@ -633,27 +582,6 @@ struct ProfilerHistoryBar(usize);
 
 #[derive(Component)]
 struct ProfilerHistorySummary;
-
-#[derive(Component)]
-struct PanelsSubmenu;
-
-#[derive(Component)]
-struct PanelVisibilityLabel(DockPanel);
-
-#[derive(Component)]
-struct MenuDropdown(MenuKind);
-
-#[derive(Component)]
-struct MenuButton;
-
-#[derive(Component)]
-struct GridMenuCheck;
-
-#[derive(Component)]
-struct MenuSurface;
-
-#[derive(Component)]
-struct AboutOverlay;
 
 #[derive(Component)]
 struct CurveGraph;
@@ -772,62 +700,6 @@ fn spawn_editor_ui(
         });
 }
 
-fn spawn_tab_context_menu(
-    parent: &mut ChildSpawnerCommands,
-    context: Option<TabContextMenu>,
-    localizer: &Localizer,
-) {
-    let Some(context) = context else {
-        return;
-    };
-    parent
-        .spawn((
-            GlobalZIndex(180),
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(context.position[0]),
-                top: Val::Px(context.position[1]),
-                width: Val::Px(188.0),
-                padding: UiRect::all(Val::Px(5.0)),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(5.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL),
-            BorderColor::all(theme::BORDER_BRIGHT),
-        ))
-        .with_children(|menu| {
-            menu.spawn_empty()
-                .apply_scene(ui_shell::feathers_plain_button())
-                .insert((
-                    EditorAction::FloatDockPanel(context.panel, context.position),
-                    FeathersActionButton,
-                    AccessibleLabel(localizer.text("dock-float-panel")),
-                    Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(30.0),
-                        padding: UiRect::horizontal(Val::Px(9.0)),
-                        align_items: AlignItems::Center,
-                        border_radius: BorderRadius::all(Val::Px(3.0)),
-                        ..default()
-                    },
-                ))
-                .with_children(|item| {
-                    item.spawn((
-                        LocalizedText("dock-float-panel"),
-                        Text::new(localizer.text("dock-float-panel")),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
-                        },
-                        ThemedText,
-                        Pickable::IGNORE,
-                    ));
-                });
-        });
-}
-
 fn spawn_editor_content(
     parent: &mut ChildSpawnerCommands,
     menu: &MenuState,
@@ -839,451 +711,6 @@ fn spawn_editor_content(
         .with_children(|content| {
             content.spawn(DockTreeHost);
             spawn_tab_context_menu(content, menu.tab_context, localizer);
-        });
-}
-
-fn spawn_menu_bar(
-    parent: &mut ChildSpawnerCommands,
-    session: &EditorSession,
-    menu: &MenuState,
-    layout: &WorkspaceLayout,
-    localizer: &Localizer,
-) {
-    parent
-        .spawn((
-            Node {
-                grid_row: GridPlacement::start(1),
-                width: Val::Percent(100.0),
-                height: Val::Px(30.0),
-                align_items: AlignItems::Center,
-                padding: UiRect::horizontal(Val::Px(8.0)),
-                border: UiRect::bottom(Val::Px(1.0)),
-                ..default()
-            },
-            ThemeBackgroundColor(tokens::PANE_HEADER_BG),
-            ThemeBorderColor(tokens::PANE_HEADER_BORDER),
-        ))
-        .with_children(|bar| {
-            spawn_standard_menu(
-                bar,
-                "menu-file",
-                MenuKind::File,
-                &[
-                    ("file-new-effect", "Ctrl+N", EditorAction::NewEffect),
-                    ("file-open", "Ctrl+O", EditorAction::OpenEffect),
-                    ("file-save", "Ctrl+S", EditorAction::Save),
-                    ("file-save-as", "Ctrl+Shift+S", EditorAction::SaveAs),
-                    (
-                        "file-settings",
-                        "",
-                        EditorAction::ShowDockPanel(DockPanel::Settings),
-                    ),
-                    ("file-exit", "Alt+F4", EditorAction::Exit),
-                ],
-                localizer,
-            );
-            spawn_standard_menu(
-                bar,
-                "menu-edit",
-                MenuKind::Edit,
-                &[
-                    ("edit-undo", "Ctrl+Z", EditorAction::Undo),
-                    ("edit-redo", "Ctrl+Y", EditorAction::Redo),
-                    ("edit-add-emitter", "Ctrl+Enter", EditorAction::AddLayer),
-                    (
-                        "edit-duplicate-emitter",
-                        "Ctrl+D",
-                        EditorAction::DuplicateLayer,
-                    ),
-                    ("edit-delete-emitter", "Delete", EditorAction::DeleteLayer),
-                ],
-                localizer,
-            );
-            spawn_view_menu(bar, layout, menu.show_grid, localizer);
-            spawn_standard_menu(
-                bar,
-                "menu-help",
-                MenuKind::Help,
-                &[("help-about", "", EditorAction::ShowAbout)],
-                localizer,
-            );
-            bar.spawn(Node {
-                flex_grow: 1.0,
-                ..default()
-            });
-            let file = session
-                .source_path
-                .as_ref()
-                .and_then(|path| path.file_name())
-                .and_then(|name| name.to_str())
-                .unwrap_or("Untitled");
-            bar.spawn((
-                DocumentMenuLabel,
-                Text::new(format!(
-                    "{}{}  |  {}",
-                    if session.dirty { "* " } else { "" },
-                    session.effect.name,
-                    file
-                )),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-            ));
-        });
-}
-
-fn spawn_standard_menu(
-    parent: &mut ChildSpawnerCommands,
-    message_id: &'static str,
-    menu: MenuKind,
-    items: &[(&'static str, &str, EditorAction)],
-    localizer: &Localizer,
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_menu())
-        .with_children(|menu_root| {
-            menu_button(menu_root, message_id, menu, localizer);
-            spawn_dropdown(menu_root, menu, items, localizer);
-        });
-}
-
-fn menu_button(
-    parent: &mut ChildSpawnerCommands,
-    message_id: &'static str,
-    menu: MenuKind,
-    localizer: &Localizer,
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_menu_button())
-        .insert((
-            MenuButton,
-            FeathersActionButton,
-            EditorAction::ToggleMenu(menu),
-            AccessibleLabel(localizer.text(message_id)),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                LocalizedText(message_id),
-                Text::new(localizer.text(message_id)),
-                ThemedText,
-                Pickable::IGNORE,
-            ));
-        });
-}
-
-fn spawn_dropdown(
-    parent: &mut ChildSpawnerCommands,
-    menu: MenuKind,
-    items: &[(&'static str, &str, EditorAction)],
-    localizer: &Localizer,
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_menu_popup())
-        .insert((
-            MenuDropdown(menu),
-            MenuSurface,
-            RelativeCursorPosition::default(),
-        ))
-        .with_children(|dropdown| {
-            for (message_id, shortcut, action) in items {
-                if matches!(
-                    action,
-                    EditorAction::ShowDockPanel(DockPanel::Settings) | EditorAction::Exit
-                ) {
-                    dropdown
-                        .spawn_empty()
-                        .apply_scene(ui_shell::feathers_menu_divider());
-                }
-                let mut item =
-                    spawn_feathers_menu_item(dropdown, message_id, shortcut, *action, localizer);
-                match action {
-                    EditorAction::Undo => {
-                        item.insert(UndoMenuItem);
-                    }
-                    EditorAction::Redo => {
-                        item.insert(RedoMenuItem);
-                    }
-                    _ => {}
-                }
-            }
-        });
-}
-
-fn spawn_view_menu(
-    parent: &mut ChildSpawnerCommands,
-    layout: &WorkspaceLayout,
-    show_grid: bool,
-    localizer: &Localizer,
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_menu())
-        .with_children(|menu_root| {
-            menu_button(menu_root, "menu-view", MenuKind::View, localizer);
-            menu_root
-                .spawn_empty()
-                .apply_scene(ui_shell::feathers_menu_popup())
-                .insert((
-                    MenuDropdown(MenuKind::View),
-                    MenuSurface,
-                    RelativeCursorPosition::default(),
-                ))
-                .with_children(|dropdown| {
-                    spawn_checkable_menu_item(
-                        dropdown,
-                        "view-toggle-grid",
-                        "G",
-                        EditorAction::ToggleGrid,
-                        show_grid,
-                        localizer,
-                    );
-                    for (message_id, shortcut, action) in [
-                        ("view-frame-effect", "F", EditorAction::FramePreview),
-                        ("view-restart-preview", "R", EditorAction::Restart),
-                        ("view-panels", ">", EditorAction::TogglePanelsSubmenu),
-                    ] {
-                        spawn_feathers_menu_item(dropdown, message_id, shortcut, action, localizer);
-                    }
-                    dropdown
-                        .spawn_empty()
-                        .apply_scene(ui_shell::feathers_menu_divider());
-                    spawn_feathers_menu_item(
-                        dropdown,
-                        "view-reset-workspace",
-                        "",
-                        EditorAction::ResetWorkspaceLayout,
-                        localizer,
-                    );
-
-                    dropdown
-                        .spawn((
-                            PanelsSubmenu,
-                            MenuSurface,
-                            RelativeCursorPosition::default(),
-                            GlobalZIndex(101),
-                            Node {
-                                display: Display::None,
-                                position_type: PositionType::Absolute,
-                                left: Val::Percent(100.0),
-                                top: Val::Px(63.0),
-                                min_width: Val::Px(206.0),
-                                padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
-                                flex_direction: FlexDirection::Column,
-                                border: UiRect::all(Val::Px(1.0)),
-                                border_radius: BorderRadius::all(Val::Px(4.0)),
-                                ..default()
-                            },
-                            ThemeBackgroundColor(tokens::MENU_BG),
-                            ThemeBorderColor(tokens::MENU_BORDER),
-                        ))
-                        .with_children(|submenu| {
-                            for panel in DockPanel::ALL {
-                                let visible = layout.is_visible(panel);
-                                let mut item = submenu.spawn_empty();
-                                item.apply_scene(ui_shell::feathers_menu_item()).insert((
-                                    Interaction::None,
-                                    EditorAction::ToggleDockPanel(panel),
-                                    FeathersActionButton,
-                                    AccessibleLabel(panel_visibility_label(
-                                        localizer, panel, visible,
-                                    )),
-                                ));
-                                if !panel.closable() {
-                                    item.insert(InteractionDisabled);
-                                }
-                                item.with_children(|row| {
-                                    row.spawn((
-                                        PanelVisibilityLabel(panel),
-                                        Text::new(panel_visibility_label(
-                                            localizer, panel, visible,
-                                        )),
-                                        ThemedText,
-                                        Pickable::IGNORE,
-                                    ));
-                                });
-                            }
-                        });
-                });
-        });
-}
-
-fn spawn_feathers_menu_item<'a>(
-    parent: &'a mut ChildSpawnerCommands,
-    message_id: &'static str,
-    shortcut: &str,
-    action: EditorAction,
-    localizer: &Localizer,
-) -> EntityCommands<'a> {
-    let label = localizer.text(message_id);
-    let mut item = parent.spawn_empty();
-    item.apply_scene(ui_shell::feathers_menu_item())
-        .insert((
-            Interaction::None,
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.clone()),
-        ))
-        .with_children(|item| {
-            item.spawn((
-                LocalizedText(message_id),
-                Text::new(label),
-                ThemedText,
-                Pickable::IGNORE,
-            ));
-            item.spawn(Node {
-                flex_grow: 1.0,
-                ..default()
-            });
-            item.spawn((
-                Text::new(shortcut),
-                ThemeTextColor(tokens::TEXT_DIM),
-                Pickable::IGNORE,
-            ));
-        });
-    item
-}
-
-fn spawn_checkable_menu_item(
-    parent: &mut ChildSpawnerCommands,
-    message_id: &'static str,
-    shortcut: &str,
-    action: EditorAction,
-    checked: bool,
-    localizer: &Localizer,
-) {
-    let label = localizer.text(message_id);
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_menu_item())
-        .insert((
-            Interaction::None,
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.clone()),
-        ))
-        .with_children(|item| {
-            item.spawn((
-                Node {
-                    width: Val::Px(12.0),
-                    height: Val::Px(12.0),
-                    margin: UiRect::right(Val::Px(7.0)),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    border: UiRect::all(Val::Px(1.0)),
-                    border_radius: BorderRadius::all(Val::Px(2.0)),
-                    ..default()
-                },
-                BorderColor::all(theme::TEXT_MUTED),
-                Pickable::IGNORE,
-            ))
-            .with_child((
-                GridMenuCheck,
-                Node {
-                    width: Val::Px(6.0),
-                    height: Val::Px(6.0),
-                    border_radius: BorderRadius::all(Val::Px(1.0)),
-                    ..default()
-                },
-                BackgroundColor(if checked { theme::ACCENT } else { Color::NONE }),
-                Pickable::IGNORE,
-            ));
-            item.spawn((
-                LocalizedText(message_id),
-                Text::new(label),
-                ThemedText,
-                Pickable::IGNORE,
-            ));
-            item.spawn(Node {
-                flex_grow: 1.0,
-                ..default()
-            });
-            item.spawn((
-                Text::new(shortcut),
-                ThemeTextColor(tokens::TEXT_DIM),
-                Pickable::IGNORE,
-            ));
-        });
-}
-
-fn panel_visibility_label(localizer: &Localizer, panel: DockPanel, visible: bool) -> String {
-    format!(
-        "[{}]  {}",
-        if visible { "x" } else { " " },
-        localizer.text(panel.message_id())
-    )
-}
-
-fn spawn_about_overlay(parent: &mut ChildSpawnerCommands, visible: bool, localizer: &Localizer) {
-    parent
-        .spawn((
-            AboutOverlay,
-            GlobalZIndex(200),
-            Node {
-                display: if visible {
-                    Display::Flex
-                } else {
-                    Display::None
-                },
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(0.0),
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.005, 0.007, 0.014, 0.82)),
-        ))
-        .with_children(|overlay| {
-            overlay
-                .spawn((
-                    Node {
-                        width: Val::Px(430.0),
-                        padding: UiRect::all(Val::Px(24.0)),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        row_gap: Val::Px(12.0),
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(8.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::PANEL),
-                    BorderColor::all(theme::ACCENT_DIM),
-                ))
-                .with_children(|dialog| {
-                    dialog.spawn((
-                        Text::new("AESTRA"),
-                        TextFont {
-                            font_size: FontSize::Px(24.0),
-                            ..default()
-                        },
-                        TextColor(theme::ACCENT),
-                    ));
-                    let mut args = FluentArgs::new();
-                    args.set("version", env!("CARGO_PKG_VERSION"));
-                    dialog.spawn((
-                        AboutDescription,
-                        Text::new(localizer.text_with("about-description", &args)),
-                        TextFont {
-                            font_size: FontSize::Px(12.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT_MUTED),
-                        TextLayout::justify(Justify::Center),
-                    ));
-                    localized_action_button(
-                        dialog,
-                        "common-close",
-                        EditorAction::CloseAbout,
-                        localizer,
-                    );
-                });
         });
 }
 
@@ -5163,13 +4590,6 @@ fn handle_buttons(
                 if feathers_action.is_none() {
                     background.0 = theme::BUTTON_HOVER;
                 }
-                if let EditorAction::ToggleMenu(kind) = *action
-                    && let Some(next) = menu_after_hover(menu.open, kind)
-                    && menu.open != Some(next)
-                {
-                    menu.open = Some(next);
-                    menu.panels_open = false;
-                }
             }
             Interaction::None => {
                 if feathers_action.is_none() {
@@ -5228,22 +4648,6 @@ fn handle_buttons(
                         .insert(Interaction::None);
                 } else {
                     background.0 = theme::ACCENT_DIM;
-                }
-                if let EditorAction::ToggleMenu(kind) = *action {
-                    if menu.tab_context.take().is_some() {
-                        session.ui_revision += 1;
-                    }
-                    menu.panels_open = false;
-                    menu.open = if menu.open == Some(kind) {
-                        None
-                    } else {
-                        Some(kind)
-                    };
-                    continue;
-                }
-                if matches!(*action, EditorAction::TogglePanelsSubmenu) {
-                    menu.panels_open = !menu.panels_open;
-                    continue;
                 }
                 let keep_view_menu_open = matches!(*action, EditorAction::ToggleDockPanel(_));
                 if !keep_view_menu_open {
@@ -5628,8 +5032,6 @@ fn handle_buttons(
                     }
                     EditorAction::ShowAbout => menu.show_about = true,
                     EditorAction::CloseAbout => menu.show_about = false,
-                    EditorAction::ToggleMenu(_) => unreachable!(),
-                    EditorAction::TogglePanelsSubmenu => unreachable!(),
                 }
             }
         }
@@ -5717,42 +5119,6 @@ fn reveal_dock_panel(layout: &mut WorkspaceLayout, session: &mut EditorSession, 
     if let Err(error) = layout.save() {
         warn!("failed to save editor workspace layout: {error}");
     }
-}
-
-fn dismiss_open_menus(
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut menu: ResMut<MenuState>,
-    mut session: ResMut<EditorSession>,
-    menu_surfaces: Query<&RelativeCursorPosition, With<MenuSurface>>,
-    menu_buttons: Query<(&Interaction, Has<Pressed>), With<MenuButton>>,
-) {
-    if !buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-    if menu.tab_context.take().is_some() {
-        session.ui_revision += 1;
-    }
-    if menu.open.is_none() {
-        return;
-    }
-    let pointer_over_menu = menu_surfaces
-        .iter()
-        .any(RelativeCursorPosition::cursor_over);
-    let menu_button_pressed = menu_buttons.iter().any(|(interaction, feathers_pressed)| {
-        *interaction == Interaction::Pressed || feathers_pressed
-    });
-    if should_dismiss_open_menu(pointer_over_menu, menu_button_pressed) {
-        menu.open = None;
-        menu.panels_open = false;
-    }
-}
-
-fn should_dismiss_open_menu(pointer_over_menu: bool, menu_button_pressed: bool) -> bool {
-    !pointer_over_menu && !menu_button_pressed
-}
-
-fn menu_after_hover(open: Option<MenuKind>, hovered: MenuKind) -> Option<MenuKind> {
-    open.map(|_| hovered)
 }
 
 fn preview_selected_layer_deletion(session: &mut EditorSession) -> bool {
@@ -6181,88 +5547,6 @@ fn save_session(session: &mut EditorSession, save_as: bool) {
     };
     if let Err(error) = session.save_as(path) {
         session.status = format!("Save failed: {error}");
-    }
-}
-
-fn update_menu_visibility(
-    menu: Res<MenuState>,
-    mut dropdowns: Query<(&MenuDropdown, &mut Node, &mut Visibility)>,
-    mut panels_submenus: Query<
-        &mut Node,
-        (
-            With<PanelsSubmenu>,
-            Without<MenuDropdown>,
-            Without<AboutOverlay>,
-        ),
-    >,
-    mut about: Query<
-        &mut Node,
-        (
-            With<AboutOverlay>,
-            Without<MenuDropdown>,
-            Without<PanelsSubmenu>,
-        ),
-    >,
-) {
-    if !menu.is_changed() {
-        return;
-    }
-    for (dropdown, mut node, mut visibility) in &mut dropdowns {
-        let visible = menu.open == Some(dropdown.0);
-        node.display = if visible {
-            Display::Flex
-        } else {
-            Display::None
-        };
-        *visibility = if visible {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-    }
-    for mut node in &mut panels_submenus {
-        node.display = if menu.open == Some(MenuKind::View) && menu.panels_open {
-            Display::Flex
-        } else {
-            Display::None
-        };
-    }
-    for mut node in &mut about {
-        node.display = if menu.show_about {
-            Display::Flex
-        } else {
-            Display::None
-        };
-    }
-}
-
-fn update_grid_menu_check(
-    menu: Res<MenuState>,
-    mut checks: Query<&mut BackgroundColor, With<GridMenuCheck>>,
-) {
-    if !menu.is_changed() {
-        return;
-    }
-    let color = if menu.show_grid {
-        theme::ACCENT
-    } else {
-        Color::NONE
-    };
-    for mut background in &mut checks {
-        background.0 = color;
-    }
-}
-
-fn update_panel_visibility_labels(
-    layout: Res<WorkspaceLayout>,
-    localizer: Res<Localizer>,
-    mut labels: Query<(&PanelVisibilityLabel, &mut Text)>,
-) {
-    if !layout.is_changed() && !localizer.is_changed() {
-        return;
-    }
-    for (label, mut text) in &mut labels {
-        text.0 = panel_visibility_label(&localizer, label.0, layout.is_visible(label.0));
     }
 }
 
@@ -7018,79 +6302,6 @@ mod tests {
     }
 
     #[test]
-    fn open_menu_only_dismisses_for_clicks_outside_its_surfaces() {
-        assert!(should_dismiss_open_menu(false, false));
-        assert!(!should_dismiss_open_menu(true, false));
-        assert!(!should_dismiss_open_menu(false, true));
-    }
-
-    #[test]
-    fn feathers_menu_button_press_does_not_immediately_dismiss_its_menu() {
-        let mut app = App::new();
-        let mut mouse = ButtonInput::<MouseButton>::default();
-        mouse.press(MouseButton::Left);
-        app.insert_resource(mouse);
-        app.insert_resource(MenuState {
-            open: Some(MenuKind::File),
-            ..default()
-        });
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ));
-        app.world_mut()
-            .spawn((MenuButton, Interaction::None, Pressed));
-        app.add_systems(Update, dismiss_open_menus);
-
-        app.update();
-
-        assert_eq!(
-            app.world().resource::<MenuState>().open,
-            Some(MenuKind::File)
-        );
-    }
-
-    #[test]
-    fn hovering_switches_between_open_top_level_menus() {
-        assert_eq!(menu_after_hover(None, MenuKind::Edit), None);
-        assert_eq!(
-            menu_after_hover(Some(MenuKind::File), MenuKind::Edit),
-            Some(MenuKind::Edit)
-        );
-        assert_eq!(
-            menu_after_hover(Some(MenuKind::View), MenuKind::View),
-            Some(MenuKind::View)
-        );
-    }
-
-    #[test]
-    fn grid_menu_check_tracks_the_persisted_visibility_state() {
-        let mut app = App::new();
-        app.insert_resource(MenuState {
-            show_grid: true,
-            ..default()
-        });
-        let check = app
-            .world_mut()
-            .spawn((GridMenuCheck, BackgroundColor(Color::NONE)))
-            .id();
-        app.add_systems(Update, update_grid_menu_check);
-
-        app.update();
-        assert_eq!(
-            app.world().get::<BackgroundColor>(check).unwrap().0,
-            theme::ACCENT
-        );
-
-        app.world_mut().resource_mut::<MenuState>().show_grid = false;
-        app.update();
-        assert_eq!(
-            app.world().get::<BackgroundColor>(check).unwrap().0,
-            Color::NONE
-        );
-    }
-
-    #[test]
     fn feathers_activation_queues_one_editor_action() {
         let mut app = App::new();
         app.add_observer(queue_feathers_action_activation);
@@ -7109,72 +6320,6 @@ mod tests {
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
         assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
-    }
-
-    #[test]
-    fn menu_state_controls_feathers_popup_display_and_visibility() {
-        let mut app = App::new();
-        app.insert_resource(MenuState {
-            open: Some(MenuKind::File),
-            ..default()
-        });
-        app.add_systems(Update, update_menu_visibility);
-        let file = app
-            .world_mut()
-            .spawn((
-                MenuDropdown(MenuKind::File),
-                Node::default(),
-                Visibility::Hidden,
-            ))
-            .id();
-        let edit = app
-            .world_mut()
-            .spawn((
-                MenuDropdown(MenuKind::Edit),
-                Node::default(),
-                Visibility::Visible,
-            ))
-            .id();
-
-        app.update();
-
-        assert_eq!(
-            app.world().get::<Node>(file).unwrap().display,
-            Display::Flex
-        );
-        assert_eq!(
-            app.world().get::<Visibility>(file),
-            Some(&Visibility::Visible)
-        );
-        assert_eq!(
-            app.world().get::<Node>(edit).unwrap().display,
-            Display::None
-        );
-        assert_eq!(
-            app.world().get::<Visibility>(edit),
-            Some(&Visibility::Hidden)
-        );
-    }
-
-    #[test]
-    fn panel_visibility_labels_use_checkbox_notation() {
-        let localizer = Localizer::new("en-US").unwrap();
-        assert_eq!(
-            panel_visibility_label(&localizer, DockPanel::Diagnostics, true),
-            "[x]  DIAGNOSTICS"
-        );
-        assert_eq!(
-            panel_visibility_label(&localizer, DockPanel::Diagnostics, false),
-            "[ ]  DIAGNOSTICS"
-        );
-        assert_eq!(
-            panel_visibility_label(&localizer, DockPanel::GeneratedCode, true),
-            "[x]  GENERATED CODE"
-        );
-        assert_eq!(
-            panel_visibility_label(&localizer, DockPanel::Profiler, true),
-            "[x]  PROFILER"
-        );
     }
 
     #[test]
