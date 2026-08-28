@@ -1,6 +1,7 @@
 use crate::{
-    ComboOption, EditorAction, EditorNativeControl, Localizer, TransportAction, layer_color,
-    mini_button, session::EditorSession, spawn_combo_control, theme,
+    ComboOption, EditorNativeControl, FeathersActionButton, Localizer, MenuState,
+    PendingFeathersActivation, TransportAction, layer_color, mini_button, session::EditorSession,
+    spawn_combo_control, theme,
 };
 use aestra_bevy::EmitterId;
 use bevy::{
@@ -12,12 +13,14 @@ use bevy::{
     },
     prelude::*,
     ui::RelativeCursorPosition,
+    ui_widgets::Activate,
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum TimelineSet {
     Input,
+    Actions,
     Visuals,
 }
 
@@ -30,7 +33,15 @@ impl Plugin for TimelinePlugin {
             .get_resource::<EditorSession>()
             .map_or(1.0, EditorSession::playback_duration);
         app.insert_resource(TimelineState::framed(duration))
+            .add_observer(queue_timeline_action_activation)
+            .add_observer(execute_timeline_action)
             .add_systems(Update, navigate_timeline.in_set(TimelineSet::Input))
+            .add_systems(
+                Update,
+                (handle_timeline_action_buttons, audit_timeline_controls)
+                    .chain()
+                    .in_set(TimelineSet::Actions),
+            )
             .add_systems(
                 Update,
                 (
@@ -41,6 +52,91 @@ impl Plugin for TimelinePlugin {
                     .chain()
                     .in_set(TimelineSet::Visuals),
             );
+    }
+}
+
+#[derive(Component, Event, Debug, Clone, Copy, PartialEq)]
+pub(crate) enum TimelineAction {
+    AdjustEffectDuration(f32),
+    SetSnap(TimelineSnapMode),
+    FrameAll,
+}
+
+fn queue_timeline_action_activation(
+    activate: On<Activate>,
+    actions: Query<(), (With<TimelineAction>, With<FeathersActionButton>)>,
+    mut commands: Commands,
+) {
+    if actions.contains(activate.entity) {
+        commands
+            .entity(activate.entity)
+            .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+fn handle_timeline_action_buttons(
+    mut commands: Commands,
+    mut buttons: Query<
+        (
+            Entity,
+            &Interaction,
+            &TimelineAction,
+            Option<&PendingFeathersActivation>,
+        ),
+        (Changed<Interaction>, With<FeathersActionButton>),
+    >,
+    mut menu: ResMut<MenuState>,
+    mut session: ResMut<EditorSession>,
+) {
+    for (entity, interaction, action, pending) in &mut buttons {
+        if *interaction != Interaction::Pressed || pending.is_none() {
+            continue;
+        }
+        commands
+            .entity(entity)
+            .remove::<PendingFeathersActivation>()
+            .insert(Interaction::None);
+        menu.open = None;
+        menu.panels_open = false;
+        if menu.tab_context.take().is_some() {
+            session.ui_revision += 1;
+        }
+        commands.trigger(*action);
+    }
+}
+
+fn execute_timeline_action(
+    action: On<TimelineAction>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<TimelineState>,
+) {
+    match *action {
+        TimelineAction::AdjustEffectDuration(delta) => {
+            session.adjust_effect_duration(delta);
+        }
+        TimelineAction::SetSnap(mode) => {
+            if state.set_snap(mode) {
+                session.ui_revision += 1;
+            }
+        }
+        TimelineAction::FrameAll => state.frame_all(session.playback_duration()),
+    }
+}
+
+type UnclassifiedTimelineControl = (
+    Added<TimelineAction>,
+    With<Button>,
+    Without<FeathersActionButton>,
+    Without<EditorNativeControl>,
+);
+
+fn audit_timeline_controls(controls: Query<Entity, UnclassifiedTimelineControl>) {
+    #[cfg(debug_assertions)]
+    if let Some(entity) = controls.iter().next() {
+        panic!(
+            "timeline control {entity:?} must use FeathersActionButton or be explicitly marked \
+             EditorNativeControl"
+        );
     }
 }
 
@@ -131,6 +227,64 @@ mod tests {
         );
 
         app.update();
+    }
+
+    #[test]
+    fn timeline_actions_own_duration_snap_and_framing() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let initial_duration = session.effect.duration;
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(TimelineState {
+                view: TimelineView {
+                    start: 0.5,
+                    end: 1.0,
+                },
+                ..default()
+            })
+            .add_observer(execute_timeline_action);
+
+        app.world_mut()
+            .trigger(TimelineAction::AdjustEffectDuration(0.25));
+        app.update();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.duration, initial_duration + 0.25);
+        assert!(session.can_undo());
+
+        app.world_mut()
+            .trigger(TimelineAction::SetSnap(TimelineSnapMode::None));
+        app.update();
+        assert_eq!(
+            app.world().resource::<TimelineState>().snap,
+            TimelineSnapMode::None
+        );
+
+        app.world_mut().trigger(TimelineAction::FrameAll);
+        app.update();
+        let state = app.world().resource::<TimelineState>();
+        assert_eq!(state.view.start, 0.0);
+        assert_eq!(state.view.end, initial_duration + 0.25);
+    }
+
+    #[test]
+    fn feathers_activation_queues_one_timeline_action() {
+        let mut app = App::new();
+        app.add_observer(queue_timeline_action_activation);
+        let action = app
+            .world_mut()
+            .spawn((
+                TimelineAction::FrameAll,
+                FeathersActionButton,
+                Interaction::None,
+            ))
+            .id();
+
+        app.world_mut().trigger(Activate { entity: action });
+        app.update();
+
+        let action = app.world().entity(action);
+        assert!(action.contains::<PendingFeathersActivation>());
+        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
     }
 }
 
@@ -620,14 +774,14 @@ pub(crate) fn spawn_timeline(
                     mini_button(
                         header,
                         &localizer.text("timeline-frame-all"),
-                        EditorAction::FrameTimeline,
+                        TimelineAction::FrameAll,
                     );
                     let snap_options = TimelineSnapMode::ALL
                         .into_iter()
                         .map(|mode| ComboOption {
                             label: localizer.text(mode.message_id()),
                             selected: state.snap == mode,
-                            action: EditorAction::SetTimelineSnap(mode),
+                            action: TimelineAction::SetSnap(mode),
                         })
                         .collect::<Vec<_>>();
                     spawn_combo_control(
@@ -669,8 +823,8 @@ pub(crate) fn spawn_timeline(
                         },
                         TextColor(theme::TEXT_MUTED),
                     ));
-                    mini_button(header, "-", EditorAction::EffectDuration(-0.25));
-                    mini_button(header, "+", EditorAction::EffectDuration(0.25));
+                    mini_button(header, "-", TimelineAction::AdjustEffectDuration(-0.25));
+                    mini_button(header, "+", TimelineAction::AdjustEffectDuration(0.25));
                 });
             timeline
                 .spawn(Node {

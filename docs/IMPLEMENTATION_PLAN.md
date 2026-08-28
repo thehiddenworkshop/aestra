@@ -158,6 +158,9 @@ Complete this milestone before expanding the editor or renderer feature surface 
    Preview playback now runs through `EditorTransportPlugin`. Toolbar, Timeline, View-menu,
    and keyboard controls share one `TransportAction` contract; the plugin owns playback
    mutation, clock advancement, Feathers activation, shortcuts, and play/pause icon sync.
+   Timeline framing, snapping, and effect-duration controls now run through `TimelinePlugin`.
+   Timeline buttons and combo options share one `TimelineAction` contract, while transport
+   stepping and seed changes continue to use `TransportAction`.
    Undo and redo now run through `EditorHistoryPlugin`. Edit-menu controls and keyboard
    shortcuts share one `HistoryAction` contract, and the plugin owns history execution plus
    menu availability synchronization without touching unrelated UI entities.

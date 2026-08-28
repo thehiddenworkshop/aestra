@@ -113,7 +113,7 @@ use settings::{EditorSettings, SettingsPersistence};
 use settings_ui::EditorSettingsUiPlugin;
 pub(crate) use settings_ui::{SettingsPanelState, spawn_settings_workspace};
 use std::collections::HashMap;
-use timeline::{TimelinePlugin, TimelineSet, TimelineSnapMode, TimelineState};
+use timeline::{TimelinePlugin, TimelineSet};
 pub(crate) use transport::TransportAction;
 use transport::{EditorTransportPlugin, TransportSet, spawn_transport_controls};
 use viewport::{
@@ -232,6 +232,7 @@ fn main() {
                     InspectorSet::Actions,
                     ProfilerSet::Actions,
                     PersistenceSet::Actions,
+                    TimelineSet::Actions,
                     TransportSet::Actions,
                 )
                     .chain(),
@@ -264,9 +265,6 @@ fn main() {
 
 #[derive(Component, Clone, Copy)]
 enum EditorAction {
-    EffectDuration(f32),
-    SetTimelineSnap(TimelineSnapMode),
-    FrameTimeline,
     ToggleGrid,
     FramePreview,
     SetTransformGizmoMode(TransformGizmoMode),
@@ -677,7 +675,6 @@ fn handle_buttons(
         ResMut<PreviewCameraController>,
         ResMut<PreviewDisplayState>,
     ),
-    mut timeline_state: ResMut<TimelineState>,
     mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
     localizer: Res<Localizer>,
 ) {
@@ -728,17 +725,6 @@ fn handle_buttons(
                     session.ui_revision += 1;
                 }
                 match *action {
-                    EditorAction::EffectDuration(delta) => {
-                        session.adjust_effect_duration(delta);
-                    }
-                    EditorAction::SetTimelineSnap(mode) => {
-                        if timeline_state.set_snap(mode) {
-                            session.ui_revision += 1;
-                        }
-                    }
-                    EditorAction::FrameTimeline => {
-                        timeline_state.frame_all(session.playback_duration());
-                    }
                     EditorAction::ToggleGrid => {
                         menu.show_grid = !menu.show_grid;
                         settings.preview.show_grid = menu.show_grid;
