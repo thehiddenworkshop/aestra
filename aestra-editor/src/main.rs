@@ -25,7 +25,6 @@ use bevy::ui_widgets::Activate;
 use bevy::{
     asset::AssetPlugin,
     camera::{RenderTarget, visibility::RenderLayers},
-    ecs::system::SystemParam,
     feathers::{
         constants::fonts,
         containers::{group, group_body, group_header, pane_header},
@@ -51,13 +50,11 @@ use bevy::{
 };
 #[cfg(test)]
 use dock_ui::{clear_finished_dock_drag, dock_pane_background};
-use dock_ui::{spawn_dock_node, spawn_native_floating_ui};
+#[cfg(test)]
+use docking::DockDragState;
 use docking::{
-    DockAxis, DockCloseButton, DockDragState, DockDrop, DockDropHint, DockDropQueries,
-    DockDropZone, DockDropZoneLabel, DockFirstPane, DockNode, DockNodeId, DockPane, DockPanel,
-    DockResizeQueries, DockSplitter, DockStack, DockTab, DockTabAppendIndicator, DockTabAppendZone,
-    DockingPlugin, DockingSet, NativeFloatingCamera, NativeFloatingUi, NativeFloatingWindow,
-    ResizeState, SplitterGrip, WorkspaceLayout,
+    DockCloseButton, DockPanel, DockTab, DockTreeHost, DockingPlugin, DockingSet,
+    NativeFloatingWindow, WorkspaceLayout,
 };
 #[cfg(test)]
 use feathers::button::queue_action_activation as queue_feathers_action_activation;
@@ -710,59 +707,12 @@ struct CompileStatusDot;
 #[derive(Component)]
 struct LayerRow(usize);
 
-#[derive(Clone, Copy)]
-struct PanelSources<'a> {
-    session: &'a EditorSession,
-    timeline: &'a TimelineState,
-    catalog: &'a EffectCatalog,
-    registry: &'a EditorModuleRegistry,
-    palette: &'a ModulePaletteState,
-    diagnostics_panel: &'a DiagnosticsPanelState,
-    profiler: &'a ProfilerState,
-    settings: &'a EditorSettings,
-    settings_panel: &'a SettingsPanelState,
-    settings_persistence: &'a SettingsPersistence,
-    localizer: &'a Localizer,
-}
-
-#[derive(SystemParam)]
-struct UiBuildResources<'w> {
-    catalog: Res<'w, EffectCatalog>,
-    layout: Res<'w, WorkspaceLayout>,
-    menu: Res<'w, MenuState>,
-    registry: Res<'w, EditorModuleRegistry>,
-    palette: Res<'w, ModulePaletteState>,
-    diagnostics_panel: Res<'w, DiagnosticsPanelState>,
-    profiler: Res<'w, ProfilerState>,
-    settings: Res<'w, EditorSettings>,
-    settings_panel: Res<'w, SettingsPanelState>,
-    settings_persistence: Res<'w, SettingsPersistence>,
-    localizer: Res<'w, Localizer>,
-    workspace: Res<'w, WorkspaceState>,
-    timeline: Res<'w, TimelineState>,
-}
-
-#[derive(SystemParam)]
-struct SetupUiResources<'w> {
-    registry: Res<'w, EditorModuleRegistry>,
-    palette: Res<'w, ModulePaletteState>,
-    workspace: Res<'w, WorkspaceState>,
-    diagnostics_panel: Res<'w, DiagnosticsPanelState>,
-    profiler: Res<'w, ProfilerState>,
-    settings: Res<'w, EditorSettings>,
-    settings_panel: Res<'w, SettingsPanelState>,
-    settings_persistence: Res<'w, SettingsPersistence>,
-    localizer: Res<'w, Localizer>,
-    timeline: Res<'w, TimelineState>,
-}
-
 fn setup_editor(
     mut commands: Commands,
     session: Res<EditorSession>,
     menu: Res<MenuState>,
-    catalog: Res<EffectCatalog>,
     layout: Res<WorkspaceLayout>,
-    editor_resources: SetupUiResources,
+    localizer: Res<Localizer>,
     mut rendered: ResMut<RenderedUiRevision>,
 ) {
     commands.spawn((
@@ -775,26 +725,7 @@ fn setup_editor(
         IsDefaultUiCamera,
         RenderLayers::layer(31),
     ));
-    let sources = PanelSources {
-        session: &session,
-        timeline: &editor_resources.timeline,
-        catalog: &catalog,
-        registry: &editor_resources.registry,
-        palette: &editor_resources.palette,
-        diagnostics_panel: &editor_resources.diagnostics_panel,
-        profiler: &editor_resources.profiler,
-        settings: &editor_resources.settings,
-        settings_panel: &editor_resources.settings_panel,
-        settings_persistence: &editor_resources.settings_persistence,
-        localizer: &editor_resources.localizer,
-    };
-    spawn_editor_ui(
-        &mut commands,
-        &menu,
-        &editor_resources.workspace,
-        &layout,
-        sources,
-    );
+    spawn_editor_ui(&mut commands, &menu, &layout, &session, &localizer);
     rendered.0 = session.ui_revision;
 }
 
@@ -825,19 +756,19 @@ fn setup_window_cursor(mut commands: Commands, window: Single<Entity, With<Prima
 fn spawn_editor_ui(
     commands: &mut Commands,
     menu: &MenuState,
-    workspace: &WorkspaceState,
     layout: &WorkspaceLayout,
-    sources: PanelSources<'_>,
+    session: &EditorSession,
+    localizer: &Localizer,
 ) {
     commands
         .spawn(EditorRoot)
         .apply_scene(ui_shell::editor_root())
         .with_children(|root| {
-            spawn_menu_bar(root, sources.session, menu, layout, sources.localizer);
-            spawn_toolbar(root, sources.session, sources.localizer);
-            spawn_editor_content(root, menu, workspace, layout, sources);
-            spawn_status_bar(root, sources.session, sources.localizer);
-            spawn_about_overlay(root, menu.show_about, sources.localizer);
+            spawn_menu_bar(root, session, menu, layout, localizer);
+            spawn_toolbar(root, session, localizer);
+            spawn_editor_content(root, menu, localizer);
+            spawn_status_bar(root, session, localizer);
+            spawn_about_overlay(root, menu.show_about, localizer);
         });
 }
 
@@ -900,16 +831,14 @@ fn spawn_tab_context_menu(
 fn spawn_editor_content(
     parent: &mut ChildSpawnerCommands,
     menu: &MenuState,
-    workspace: &WorkspaceState,
-    layout: &WorkspaceLayout,
-    sources: PanelSources<'_>,
+    localizer: &Localizer,
 ) {
     parent
         .spawn((EditorContent, RelativeCursorPosition::default()))
         .apply_scene(ui_shell::editor_content())
         .with_children(|content| {
-            spawn_dock_node(content, &layout.root, workspace, sources);
-            spawn_tab_context_menu(content, menu.tab_context, sources.localizer);
+            content.spawn(DockTreeHost);
+            spawn_tab_context_menu(content, menu.tab_context, localizer);
         });
 }
 
@@ -6378,11 +6307,11 @@ fn handle_window_close_requests(
 fn rebuild_editor_ui(
     mut commands: Commands,
     session: Res<EditorSession>,
-    editor_resources: UiBuildResources,
+    menu: Res<MenuState>,
+    localizer: Res<Localizer>,
     mut rendered: ResMut<RenderedUiRevision>,
     root: Single<Entity, With<EditorRoot>>,
     contents: Query<Entity, With<EditorContent>>,
-    floating_roots: Query<(Entity, &NativeFloatingUi)>,
 ) {
     if rendered.0 == session.ui_revision {
         return;
@@ -6390,46 +6319,9 @@ fn rebuild_editor_ui(
     for content in &contents {
         commands.entity(content).despawn();
     }
-    let sources = PanelSources {
-        session: &session,
-        timeline: &editor_resources.timeline,
-        catalog: &editor_resources.catalog,
-        registry: &editor_resources.registry,
-        palette: &editor_resources.palette,
-        diagnostics_panel: &editor_resources.diagnostics_panel,
-        profiler: &editor_resources.profiler,
-        settings: &editor_resources.settings,
-        settings_panel: &editor_resources.settings_panel,
-        settings_persistence: &editor_resources.settings_persistence,
-        localizer: &editor_resources.localizer,
-    };
     commands.entity(*root).with_children(|root| {
-        spawn_editor_content(
-            root,
-            &editor_resources.menu,
-            &editor_resources.workspace,
-            &editor_resources.layout,
-            sources,
-        );
+        spawn_editor_content(root, &menu, &localizer);
     });
-    for (entity, floating_root) in &floating_roots {
-        commands.entity(entity).despawn();
-        if editor_resources
-            .layout
-            .floating
-            .iter()
-            .any(|floating| floating.panel == floating_root.panel)
-        {
-            spawn_native_floating_ui(
-                &mut commands,
-                floating_root.panel,
-                floating_root.window,
-                floating_root.camera,
-                &editor_resources.workspace,
-                sources,
-            );
-        }
-    }
     rendered.0 = session.ui_revision;
 }
 

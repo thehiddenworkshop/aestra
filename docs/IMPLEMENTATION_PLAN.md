@@ -111,14 +111,15 @@ Complete this milestone before expanding the editor or renderer feature surface 
    synchronization. The
    inspector owns module-stack construction, semantic property controls, numeric scrub
    transactions, renderer fields, focus navigation, contextual help, and focused tests.
-   The reusable Bevy Feathers layer is now extracted into `src/feathers/`, with
-   one plugin owning the upstream Feathers setup, theme, activation auditing, and
-   scrollbar synchronization. Action buttons, combo/action menus, compact field
-   rows, numeric scrub policy, panel headings, BSN scenes, separators, status
-   surfaces, and scroll areas no longer live in `main.rs`. Finish moving dock-tree
-   entity construction behind the docking boundary, then separate menus, settings,
-   persistence, and localization while
-   keeping `main.rs` as composition and startup wiring.
+   Recursive main-window dock construction and revision-aware native floating-panel
+   reconstruction now run behind `DockingPlugin`; the editor shell declares only a
+   required transparent dock host. The reusable Bevy Feathers layer is now extracted
+   into `src/feathers/`, with one plugin owning the upstream Feathers setup, theme,
+   activation auditing, and scrollbar synchronization. Action buttons, combo/action
+   menus, compact field rows, numeric scrub policy, panel headings, BSN scenes,
+   separators, status surfaces, and scroll areas no longer live in `main.rs`. Next
+   separate menus, settings, persistence, and localization while keeping `main.rs` as
+   composition and startup wiring.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.

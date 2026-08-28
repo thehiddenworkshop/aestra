@@ -21,8 +21,8 @@ pub(crate) enum DockingSet {
 
 impl Plugin for DockingPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<crate::DockDragState>()
-            .init_resource::<crate::ResizeState>()
+        app.init_resource::<DockDragState>()
+            .init_resource::<ResizeState>()
             .insert_resource(WorkspaceLayout::load())
             .add_systems(
                 Update,
@@ -43,7 +43,12 @@ impl Plugin for DockingPlugin {
             )
             .add_systems(
                 Update,
-                crate::dock_ui::sync_native_floating_windows.in_set(DockingSet::Sync),
+                (
+                    crate::dock_ui::build_added_dock_trees,
+                    crate::dock_ui::sync_native_floating_windows,
+                )
+                    .chain()
+                    .in_set(DockingSet::Sync),
             );
     }
 }
@@ -53,6 +58,24 @@ impl Plugin for DockingPlugin {
 // of truth.
 #[derive(Component)]
 pub(crate) struct DockPane(pub(crate) DockNodeId);
+
+/// Editor-shell slot populated exclusively by [`DockingPlugin`].
+#[derive(Component)]
+#[require(
+    Node = dock_tree_host_node(),
+    BackgroundColor = BackgroundColor(Color::NONE)
+)]
+pub(crate) struct DockTreeHost;
+
+fn dock_tree_host_node() -> Node {
+    Node {
+        width: Val::Percent(100.0),
+        flex_grow: 1.0,
+        min_width: Val::Px(0.0),
+        min_height: Val::Px(0.0),
+        ..default()
+    }
+}
 
 #[derive(Component)]
 pub(crate) struct DockTab(pub(crate) DockPanel);
@@ -72,8 +95,7 @@ pub(crate) struct NativeFloatingCamera(pub(crate) DockPanel);
 #[derive(Component)]
 pub(crate) struct NativeFloatingUi {
     pub(crate) panel: DockPanel,
-    pub(crate) window: Entity,
-    pub(crate) camera: Entity,
+    pub(crate) revision: u64,
 }
 
 #[derive(Component)]
@@ -843,6 +865,22 @@ mod tests {
         assert!(app.world().contains_resource::<WorkspaceLayout>());
         assert!(app.world().contains_resource::<DockDragState>());
         assert!(app.world().contains_resource::<ResizeState>());
+
+        let host = app.world_mut().spawn(DockTreeHost).id();
+        let node = app.world().get::<Node>(host).unwrap();
+        assert_eq!(node.width, Val::Percent(100.0));
+        assert_eq!(node.flex_grow, 1.0);
+        assert_eq!(
+            app.world().get::<BackgroundColor>(host).unwrap().0,
+            Color::NONE
+        );
+    }
+
+    #[test]
+    fn floating_panel_content_tracks_the_editor_ui_revision() {
+        assert!(crate::dock_ui::floating_root_is_current(Some(7), 7));
+        assert!(!crate::dock_ui::floating_root_is_current(Some(6), 7));
+        assert!(!crate::dock_ui::floating_root_is_current(None, 7));
     }
 
     #[test]

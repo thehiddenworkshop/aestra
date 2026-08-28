@@ -95,9 +95,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   persisted native secondary windows for multi-monitor panels, draggable splitter
   gutters, and directional resize cursors.
 - Runs that workspace through a dedicated `DockingPlugin`. Its explicit input,
-  reconciliation, and native-window synchronization sets keep serialized layout state
-  separate from transient ECS pointer state and make ordering relative to UI rebuilds
-  visible at application composition time.
+  reconciliation, recursive entity construction, and native-window synchronization sets
+  keep serialized layout state separate from transient ECS pointer state. The editor shell
+  declares only a transparent `DockTreeHost`; the plugin populates it and refreshes floating
+  panel roots when the editor UI revision changes.
 - Keeps window chrome stable while rebuilding only effect-dependent workspace content.
 - Keeps versioned editor preferences separate from both semantic effect assets and the
   persisted dock layout. A dockable Settings panel edits that dedicated document,

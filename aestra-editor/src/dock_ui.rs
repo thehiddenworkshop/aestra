@@ -1,6 +1,86 @@
 //! Dock-tree entity construction and transient docking interactions.
 
+use crate::docking::{
+    DockAxis, DockCloseButton, DockDragState, DockDrop, DockDropHint, DockDropQueries,
+    DockDropZone, DockDropZoneLabel, DockFirstPane, DockNode, DockNodeId, DockPane, DockPanel,
+    DockResizeQueries, DockSplitter, DockStack, DockTab, DockTabAppendIndicator, DockTabAppendZone,
+    DockTreeHost, NativeFloatingCamera, NativeFloatingUi, NativeFloatingWindow, ResizeState,
+    SplitterGrip, WorkspaceLayout,
+};
 use crate::*;
+use bevy::ecs::system::SystemParam;
+
+#[derive(Clone, Copy)]
+struct PanelSources<'a> {
+    session: &'a EditorSession,
+    timeline: &'a TimelineState,
+    catalog: &'a EffectCatalog,
+    registry: &'a EditorModuleRegistry,
+    palette: &'a ModulePaletteState,
+    diagnostics_panel: &'a DiagnosticsPanelState,
+    profiler: &'a ProfilerState,
+    settings: &'a EditorSettings,
+    settings_panel: &'a SettingsPanelState,
+    settings_persistence: &'a SettingsPersistence,
+    localizer: &'a Localizer,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct DockUiResources<'w> {
+    catalog: Res<'w, EffectCatalog>,
+    layout: Res<'w, WorkspaceLayout>,
+    registry: Res<'w, EditorModuleRegistry>,
+    palette: Res<'w, ModulePaletteState>,
+    diagnostics_panel: Res<'w, DiagnosticsPanelState>,
+    profiler: Res<'w, ProfilerState>,
+    settings: Res<'w, EditorSettings>,
+    settings_panel: Res<'w, SettingsPanelState>,
+    settings_persistence: Res<'w, SettingsPersistence>,
+    localizer: Res<'w, Localizer>,
+    workspace: Res<'w, WorkspaceState>,
+    timeline: Res<'w, TimelineState>,
+}
+
+impl<'w> DockUiResources<'w> {
+    fn panel_sources<'a>(&'a self, session: &'a EditorSession) -> PanelSources<'a> {
+        PanelSources {
+            session,
+            timeline: &self.timeline,
+            catalog: &self.catalog,
+            registry: &self.registry,
+            palette: &self.palette,
+            diagnostics_panel: &self.diagnostics_panel,
+            profiler: &self.profiler,
+            settings: &self.settings,
+            settings_panel: &self.settings_panel,
+            settings_persistence: &self.settings_persistence,
+            localizer: &self.localizer,
+        }
+    }
+}
+
+/// Populates newly-created editor shell slots from the persisted dock model.
+///
+/// The shell only declares a [`DockTreeHost`]; all recursive dock entities are owned by
+/// [`DockingPlugin`] through this system.
+pub(crate) fn build_added_dock_trees(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    resources: DockUiResources,
+    hosts: Query<Entity, Added<DockTreeHost>>,
+) {
+    let sources = resources.panel_sources(&session);
+    for host in &hosts {
+        commands.entity(host).with_children(|parent| {
+            spawn_dock_node(
+                parent,
+                &resources.layout.root,
+                &resources.workspace,
+                sources,
+            );
+        });
+    }
+}
 
 pub(crate) fn update_floating_window_titles(
     localizer: Res<Localizer>,
@@ -46,13 +126,13 @@ pub(crate) fn persist_native_window_geometry(
 pub(crate) fn sync_native_floating_windows(
     mut commands: Commands,
     session: Res<EditorSession>,
-    editor_resources: UiBuildResources,
+    resources: DockUiResources,
     windows: Query<(Entity, &NativeFloatingWindow)>,
     cameras: Query<(Entity, &NativeFloatingCamera)>,
     roots: Query<(Entity, &NativeFloatingUi)>,
 ) {
     for (entity, native) in &windows {
-        if editor_resources
+        if resources
             .layout
             .floating
             .iter()
@@ -72,70 +152,87 @@ pub(crate) fn sync_native_floating_windows(
         }
     }
 
-    let sources = PanelSources {
-        session: &session,
-        timeline: &editor_resources.timeline,
-        catalog: &editor_resources.catalog,
-        registry: &editor_resources.registry,
-        palette: &editor_resources.palette,
-        diagnostics_panel: &editor_resources.diagnostics_panel,
-        profiler: &editor_resources.profiler,
-        settings: &editor_resources.settings,
-        settings_panel: &editor_resources.settings_panel,
-        settings_persistence: &editor_resources.settings_persistence,
-        localizer: &editor_resources.localizer,
-    };
-    for floating in &editor_resources.layout.floating {
-        if windows.iter().any(|(_, native)| native.0 == floating.panel) {
-            continue;
-        }
-        let window = commands
-            .spawn((
-                Window {
-                    title: format!(
-                        "{} — Aestra",
-                        editor_resources.localizer.text(floating.panel.message_id())
-                    ),
-                    resolution: WindowResolution::new(
-                        floating.size[0].round() as u32,
-                        floating.size[1].round() as u32,
-                    ),
-                    position: WindowPosition::At(IVec2::new(
-                        floating.position[0].round() as i32,
-                        floating.position[1].round() as i32,
-                    )),
-                    resize_constraints: WindowResizeConstraints {
-                        min_width: 260.0,
-                        min_height: 180.0,
+    let sources = resources.panel_sources(&session);
+    for floating in &resources.layout.floating {
+        let existing_window = windows
+            .iter()
+            .find(|(_, native)| native.0 == floating.panel)
+            .map(|(entity, _)| entity);
+        let window = existing_window.unwrap_or_else(|| {
+            commands
+                .spawn((
+                    Window {
+                        title: format!(
+                            "{} — Aestra",
+                            resources.localizer.text(floating.panel.message_id())
+                        ),
+                        resolution: WindowResolution::new(
+                            floating.size[0].round() as u32,
+                            floating.size[1].round() as u32,
+                        ),
+                        position: WindowPosition::At(IVec2::new(
+                            floating.position[0].round() as i32,
+                            floating.position[1].round() as i32,
+                        )),
+                        resize_constraints: WindowResizeConstraints {
+                            min_width: 260.0,
+                            min_height: 180.0,
+                            ..default()
+                        },
+                        resizable: true,
                         ..default()
                     },
-                    resizable: true,
-                    ..default()
-                },
-                CursorIcon::default(),
-                NativeFloatingWindow(floating.panel),
-            ))
-            .id();
-        let camera = commands
-            .spawn((
-                Camera2d,
-                RenderTarget::Window(WindowRef::Entity(window)),
-                RenderLayers::layer(31),
-                NativeFloatingCamera(floating.panel),
-            ))
-            .id();
+                    CursorIcon::default(),
+                    NativeFloatingWindow(floating.panel),
+                ))
+                .id()
+        });
+        let existing_camera = cameras
+            .iter()
+            .find(|(_, native)| native.0 == floating.panel)
+            .map(|(entity, _)| entity);
+        let camera = existing_camera.unwrap_or_else(|| {
+            commands
+                .spawn((
+                    Camera2d,
+                    RenderTarget::Window(WindowRef::Entity(window)),
+                    RenderLayers::layer(31),
+                    NativeFloatingCamera(floating.panel),
+                ))
+                .id()
+        });
+        let existing_root = roots
+            .iter()
+            .find(|(_, root)| root.panel == floating.panel)
+            .map(|(entity, root)| (entity, root.revision));
+        if floating_root_is_current(
+            existing_root.map(|(_, revision)| revision),
+            session.ui_revision,
+        ) {
+            continue;
+        }
+        if let Some((root, _)) = existing_root {
+            commands.entity(root).despawn();
+        }
         spawn_native_floating_ui(
             &mut commands,
             floating.panel,
-            window,
             camera,
-            &editor_resources.workspace,
+            session.ui_revision,
+            &resources.workspace,
             sources,
         );
     }
 }
 
-pub(crate) fn spawn_dock_node(
+pub(crate) fn floating_root_is_current(
+    existing_revision: Option<u64>,
+    session_revision: u64,
+) -> bool {
+    existing_revision == Some(session_revision)
+}
+
+fn spawn_dock_node(
     parent: &mut ChildSpawnerCommands,
     node: &DockNode,
     workspace: &WorkspaceState,
@@ -279,21 +376,17 @@ fn spawn_panel_content(
     }
 }
 
-pub(crate) fn spawn_native_floating_ui(
+fn spawn_native_floating_ui(
     commands: &mut Commands,
     panel: DockPanel,
-    window: Entity,
     camera: Entity,
+    revision: u64,
     workspace: &WorkspaceState,
     sources: PanelSources<'_>,
 ) {
     commands
         .spawn((
-            NativeFloatingUi {
-                panel,
-                window,
-                camera,
-            },
+            NativeFloatingUi { panel, revision },
             UiTargetCamera(camera),
             Node {
                 width: Val::Percent(100.0),
