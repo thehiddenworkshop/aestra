@@ -112,7 +112,7 @@ Complete this milestone before expanding the editor or renderer feature surface 
    Profiles expose submitted instances alongside live particles, the buffer estimate
    includes the indirect command table, focused tests cover command/range isolation,
    and the native editor-viewport GPU smoke remains the visual acceptance gate.
-5. **Decompose the editor application — in progress.** The timeline, viewport,
+5. **Decompose the editor application — complete.** The timeline, viewport,
    inspector, and docking lifecycle are extracted domain plugins with explicit
    system-set boundaries. `DockingPlugin` owns persisted layout loading, transient
    drag/resize state, drop-affordance reconciliation, and native floating-window
@@ -180,7 +180,11 @@ Complete this milestone before expanding the editor or renderer feature surface 
    UI prose. Inspector controls now emit a dedicated `InspectorAction` contract;
    `InspectorPlugin` owns module-palette navigation, module and renderer mutations,
    renderer configuration, persisted disclosure state, and localized validation/status
-   outcomes. This keeps `main.rs` focused on composition and startup wiring.
+   outcomes. Root chrome construction, About actions, global document shortcuts, editor
+   labels, font setup, and revision-aware content rebuilds now run through
+   `EditorShellPlugin`. Scroll restoration remains part of that rebuild lifecycle, while
+   `main.rs` is reduced to application composition, cross-plugin ordering, and startup
+   configuration.
 6. **Establish automated quality gates — complete.** Hosted Windows CI runs formatting,
    workspace checks, strict Clippy, and tests. A separate scheduled/manual workflow targets
    a self-hosted Windows runner labeled `gpu`, validates editor viewport composition and all
