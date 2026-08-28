@@ -1,12 +1,14 @@
 //! Preview viewport ownership: rendering, navigation, grid, display modes, and gizmos.
 
 use crate::{
-    EditorAction, FeathersActionButton, MenuState,
+    EditorNativeControl, FeathersActionButton, MenuState, PendingFeathersActivation,
     feathers::tooltip::EditorTooltip,
-    inspector::module_parameter,
+    inspector::{ModulePaletteState, module_parameter},
     localization::Localizer,
+    persistence::persist_editor_settings,
     profiler::{ProfilerFrameSample, ProfilerState},
     session::EditorSession,
+    settings::{EditorSettings, SettingsPersistence},
     theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
@@ -33,6 +35,7 @@ use bevy::{
     },
     shader::ShaderRef,
     ui::{RelativeCursorPosition, UiSystems},
+    ui_widgets::Activate,
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
 use fluent_bundle::FluentArgs;
@@ -45,6 +48,8 @@ const PREVIEW_GRID_Y: f32 = -0.05;
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ViewportSet {
     Setup,
+    Input,
+    Actions,
     Update,
 }
 
@@ -60,6 +65,8 @@ impl Plugin for ViewportPlugin {
             .init_resource::<PreviewDisplayState>()
             .init_resource::<ShapeGizmoState>()
             .init_resource::<EmitterTransformGizmoInteraction>()
+            .add_observer(queue_viewport_action_activation)
+            .add_observer(execute_viewport_action)
             .add_systems(
                 Startup,
                 (setup_preview_scene, configure_preview_scene_gizmos)
@@ -72,6 +79,13 @@ impl Plugin for ViewportPlugin {
                     configure_transform_gizmo_overlay_camera,
                     configure_transform_gizmo_overlay_materials,
                 ),
+            )
+            .add_systems(Update, viewport_keyboard_input.in_set(ViewportSet::Input))
+            .add_systems(
+                Update,
+                (handle_viewport_action_buttons, audit_viewport_controls)
+                    .chain()
+                    .in_set(ViewportSet::Actions),
             )
             .add_systems(
                 Update,
@@ -107,6 +121,142 @@ impl Plugin for ViewportPlugin {
                 ),
             )
             .configure_sets(Update, AestraSet::Playback.after(sync_rendered_preview));
+    }
+}
+
+#[derive(Component, Event, Debug, Clone, Copy)]
+pub(crate) enum ViewportAction {
+    ToggleGrid,
+    FramePreview,
+    SetTransformGizmoMode(TransformGizmoMode),
+    SetPreviewDisplayMode(PreviewDisplayMode),
+}
+
+fn queue_viewport_action_activation(
+    activate: On<Activate>,
+    actions: Query<(), (With<ViewportAction>, With<FeathersActionButton>)>,
+    mut commands: Commands,
+) {
+    if actions.contains(activate.entity) {
+        commands
+            .entity(activate.entity)
+            .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+fn handle_viewport_action_buttons(
+    mut commands: Commands,
+    mut buttons: Query<
+        (
+            Entity,
+            &Interaction,
+            &ViewportAction,
+            Option<&PendingFeathersActivation>,
+        ),
+        (Changed<Interaction>, With<FeathersActionButton>),
+    >,
+    mut menu: ResMut<MenuState>,
+    mut session: ResMut<EditorSession>,
+) {
+    for (entity, interaction, action, pending) in &mut buttons {
+        if *interaction != Interaction::Pressed || pending.is_none() {
+            continue;
+        }
+        commands
+            .entity(entity)
+            .remove::<PendingFeathersActivation>()
+            .insert(Interaction::None);
+        menu.open = None;
+        menu.panels_open = false;
+        if menu.tab_context.take().is_some() {
+            session.ui_revision += 1;
+        }
+        commands.trigger(*action);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_viewport_action(
+    action: On<ViewportAction>,
+    mut session: ResMut<EditorSession>,
+    mut menu: ResMut<MenuState>,
+    mut settings: ResMut<EditorSettings>,
+    mut settings_persistence: ResMut<SettingsPersistence>,
+    localizer: Res<Localizer>,
+    mut preview_camera: ResMut<PreviewCameraController>,
+    mut preview_display: ResMut<PreviewDisplayState>,
+    mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
+) {
+    match *action {
+        ViewportAction::ToggleGrid => {
+            menu.show_grid = !menu.show_grid;
+            settings.preview.show_grid = menu.show_grid;
+            session.ui_revision += 1;
+            persist_editor_settings(
+                &settings,
+                &mut settings_persistence,
+                &mut session,
+                &localizer,
+            );
+        }
+        ViewportAction::FramePreview => preview_camera.request_frame(),
+        ViewportAction::SetTransformGizmoMode(mode) => {
+            transform_gizmo_settings.mode = mode;
+        }
+        ViewportAction::SetPreviewDisplayMode(mode) => preview_display.set_mode(mode),
+    }
+}
+
+fn viewport_keyboard_input(
+    mut commands: Commands,
+    keys: Res<ButtonInput<KeyCode>>,
+    palette: Res<ModulePaletteState>,
+    canvases: Query<&RelativeCursorPosition, With<PreviewCanvas>>,
+) {
+    if palette.open {
+        return;
+    }
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    if keys.just_pressed(KeyCode::KeyG) && !control {
+        commands.trigger(ViewportAction::ToggleGrid);
+    }
+    if !canvases.iter().any(RelativeCursorPosition::cursor_over) {
+        return;
+    }
+    if keys.just_pressed(KeyCode::KeyF) || keys.just_pressed(KeyCode::Home) {
+        commands.trigger(ViewportAction::FramePreview);
+    }
+    if keys.just_pressed(KeyCode::Digit1) {
+        commands.trigger(ViewportAction::SetTransformGizmoMode(
+            TransformGizmoMode::Translate,
+        ));
+    }
+    if keys.just_pressed(KeyCode::Digit2) {
+        commands.trigger(ViewportAction::SetTransformGizmoMode(
+            TransformGizmoMode::Rotate,
+        ));
+    }
+    if keys.just_pressed(KeyCode::Digit3) {
+        commands.trigger(ViewportAction::SetTransformGizmoMode(
+            TransformGizmoMode::Scale,
+        ));
+    }
+}
+
+type UnclassifiedViewportControl = (
+    Added<ViewportAction>,
+    With<Button>,
+    Without<FeathersActionButton>,
+    Without<EditorNativeControl>,
+);
+
+fn audit_viewport_controls(controls: Query<Entity, UnclassifiedViewportControl>) {
+    #[cfg(debug_assertions)]
+    if let Some(entity) = controls.iter().next() {
+        panic!(
+            "viewport control {entity:?} must use FeathersActionButton or be explicitly marked \
+             EditorNativeControl"
+        );
     }
 }
 
@@ -457,10 +607,6 @@ fn navigate_preview_camera(
     if buttons.just_released(MouseButton::Middle) {
         navigation.dragging = false;
     }
-    if cursor_over && (keys.just_pressed(KeyCode::KeyF) || keys.just_pressed(KeyCode::Home)) {
-        controller.frame_requested = true;
-    }
-
     let mut changed = false;
     if controller.frame_requested {
         let focus = player
@@ -610,22 +756,11 @@ fn update_transform_gizmo_controls(
     mut fills: Query<(&TransformGizmoModeFill, &mut BackgroundColor)>,
     mut outlines: Query<(&TransformGizmoModeOutline, &mut BorderColor)>,
 ) {
-    if canvas.cursor_over() {
-        if keys.just_pressed(KeyCode::Digit1) {
-            settings.mode = TransformGizmoMode::Translate;
-        }
-        if keys.just_pressed(KeyCode::Digit2) {
-            settings.mode = TransformGizmoMode::Rotate;
-        }
-        if keys.just_pressed(KeyCode::Digit3) {
-            settings.mode = TransformGizmoMode::Scale;
-        }
-        if keys.just_pressed(KeyCode::KeyX) {
-            settings.space = match settings.space {
-                TransformGizmoSpace::World => TransformGizmoSpace::Local,
-                TransformGizmoSpace::Local => TransformGizmoSpace::World,
-            };
-        }
+    if canvas.cursor_over() && keys.just_pressed(KeyCode::KeyX) {
+        settings.space = match settings.space {
+            TransformGizmoSpace::World => TransformGizmoSpace::Local,
+            TransformGizmoSpace::Local => TransformGizmoSpace::World,
+        };
     }
     let mode = match settings.mode {
         TransformGizmoMode::Translate => "MOVE",
@@ -1631,7 +1766,7 @@ pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Local
                         .with_children(|tools| {
                             spawn_viewport_tool_button(
                                 tools,
-                                EditorAction::FramePreview,
+                                ViewportAction::FramePreview,
                                 "viewport-frame-effect",
                                 "viewport-frame-effect-description",
                                 ViewportToolIcon::Frame,
@@ -1649,7 +1784,9 @@ pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Local
                             ));
                             spawn_viewport_tool_button(
                                 tools,
-                                EditorAction::SetPreviewDisplayMode(PreviewDisplayMode::Wireframe),
+                                ViewportAction::SetPreviewDisplayMode(
+                                    PreviewDisplayMode::Wireframe,
+                                ),
                                 "viewport-wireframe",
                                 "viewport-wireframe-description",
                                 ViewportToolIcon::Wireframe,
@@ -1657,7 +1794,7 @@ pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Local
                             );
                             spawn_viewport_tool_button(
                                 tools,
-                                EditorAction::SetPreviewDisplayMode(PreviewDisplayMode::Rendered),
+                                ViewportAction::SetPreviewDisplayMode(PreviewDisplayMode::Rendered),
                                 "viewport-rendered",
                                 "viewport-rendered-description",
                                 ViewportToolIcon::Rendered,
@@ -1726,7 +1863,7 @@ fn spawn_transform_gizmo_tool_button(
         .spawn_empty()
         .apply_scene(ui_shell::feathers_tool_button())
         .insert((
-            EditorAction::SetTransformGizmoMode(mode),
+            ViewportAction::SetTransformGizmoMode(mode),
             FeathersActionButton,
             AccessibleLabel(label.clone()),
             EditorTooltip::titled(label, localizer.text(description_id)).with_shortcut(shortcut),
@@ -1830,7 +1967,7 @@ fn spawn_transform_gizmo_tool_button(
 
 fn spawn_viewport_tool_button(
     parent: &mut ChildSpawnerCommands,
-    action: EditorAction,
+    action: ViewportAction,
     label_id: &'static str,
     description_id: &'static str,
     icon: ViewportToolIcon,
@@ -2018,6 +2155,98 @@ fn update_preview(mut session: ResMut<EditorSession>, mut profiler: ResMut<Profi
 mod tests {
     use super::*;
     use crate::{EFFECT_PATH, EFFECT_SOURCE};
+
+    fn viewport_action_app() -> (App, tempfile::TempDir) {
+        let temporary = tempfile::tempdir().expect("temporary settings directory should exist");
+        let mut app = App::new();
+        app.insert_resource(EditorSession::from_embedded_sample(
+            EFFECT_SOURCE,
+            EFFECT_PATH,
+        ))
+        .init_resource::<MenuState>()
+        .init_resource::<EditorSettings>()
+        .insert_resource(SettingsPersistence::for_test(
+            temporary.path().join("settings.ron"),
+        ))
+        .insert_resource(Localizer::new("en-US").expect("test locale should load"))
+        .init_resource::<PreviewCameraController>()
+        .init_resource::<PreviewDisplayState>()
+        .init_resource::<TransformGizmoSettings>()
+        .add_observer(execute_viewport_action);
+        (app, temporary)
+    }
+
+    #[test]
+    fn viewport_actions_own_grid_framing_gizmo_and_display_modes() {
+        let (mut app, _temporary) = viewport_action_app();
+
+        app.world_mut().trigger(ViewportAction::ToggleGrid);
+        app.update();
+        assert!(!app.world().resource::<MenuState>().show_grid);
+        assert!(!app.world().resource::<EditorSettings>().preview.show_grid);
+
+        app.world_mut().trigger(ViewportAction::FramePreview);
+        app.update();
+        assert!(
+            app.world()
+                .resource::<PreviewCameraController>()
+                .frame_requested
+        );
+
+        app.world_mut()
+            .trigger(ViewportAction::SetTransformGizmoMode(
+                TransformGizmoMode::Rotate,
+            ));
+        app.world_mut()
+            .trigger(ViewportAction::SetPreviewDisplayMode(
+                PreviewDisplayMode::Wireframe,
+            ));
+        app.update();
+        assert_eq!(
+            app.world().resource::<TransformGizmoSettings>().mode,
+            TransformGizmoMode::Rotate
+        );
+        assert_eq!(
+            app.world().resource::<PreviewDisplayState>().mode,
+            PreviewDisplayMode::Wireframe
+        );
+    }
+
+    #[test]
+    fn grid_shortcut_routes_through_the_viewport_action_contract() {
+        let (mut app, _temporary) = viewport_action_app();
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::KeyG);
+        app.insert_resource(keys)
+            .init_resource::<ModulePaletteState>()
+            .add_systems(Update, viewport_keyboard_input);
+
+        app.update();
+
+        assert!(!app.world().resource::<MenuState>().show_grid);
+        assert!(!app.world().resource::<EditorSettings>().preview.show_grid);
+    }
+
+    #[test]
+    fn feathers_activation_queues_one_viewport_action() {
+        let mut app = App::new();
+        app.add_observer(queue_viewport_action_activation);
+        let action = app
+            .world_mut()
+            .spawn((
+                ViewportAction::FramePreview,
+                FeathersActionButton,
+                Interaction::None,
+            ))
+            .id();
+
+        app.world_mut().trigger(Activate { entity: action });
+        app.update();
+
+        let action = app.world().entity(action);
+        assert!(action.contains::<PendingFeathersActivation>());
+        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+    }
 
     #[test]
     fn preview_cameras_are_disabled_without_an_active_viewport_canvas() {

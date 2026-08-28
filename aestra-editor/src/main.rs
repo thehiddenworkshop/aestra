@@ -49,7 +49,7 @@ use bevy::{
         theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText},
         tokens,
     },
-    gizmos::transform_gizmo::{TransformGizmoMode, TransformGizmoSettings, TransformGizmoState},
+    gizmos::transform_gizmo::TransformGizmoState,
     input::{ButtonState, keyboard::KeyboardInput},
     picking::events::{Click, Drag, DragDrop, DragEnd, DragStart, Out, Over, Pointer},
     picking::pointer::PointerButton,
@@ -117,9 +117,8 @@ use timeline::{TimelinePlugin, TimelineSet};
 pub(crate) use transport::TransportAction;
 use transport::{EditorTransportPlugin, TransportSet, spawn_transport_controls};
 use viewport::{
-    EmitterTransformGizmoInteraction, EmitterTransformGizmoProxy, PreviewCameraController,
-    PreviewDisplayMode, PreviewDisplayState, ViewportPlugin, ViewportSet,
-    emitter_transform_from_bevy,
+    EmitterTransformGizmoInteraction, EmitterTransformGizmoProxy, ViewportAction, ViewportPlugin,
+    ViewportSet, emitter_transform_from_bevy,
 };
 
 const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
@@ -216,7 +215,13 @@ fn main() {
         .configure_sets(
             Update,
             (
-                (AssetsSet::Input, TransportSet::Input, HistorySet::Input).chain(),
+                (
+                    AssetsSet::Input,
+                    TransportSet::Input,
+                    HistorySet::Input,
+                    ViewportSet::Input,
+                )
+                    .chain(),
                 TimelineSet::Input,
                 InspectorSet::Input,
                 DockingSet::Input,
@@ -234,6 +239,7 @@ fn main() {
                     PersistenceSet::Actions,
                     TimelineSet::Actions,
                     TransportSet::Actions,
+                    ViewportSet::Actions,
                 )
                     .chain(),
                 EditorSet::PreViewport,
@@ -265,10 +271,6 @@ fn main() {
 
 #[derive(Component, Clone, Copy)]
 enum EditorAction {
-    ToggleGrid,
-    FramePreview,
-    SetTransformGizmoMode(TransformGizmoMode),
-    SetPreviewDisplayMode(PreviewDisplayMode),
     ShowAbout,
     CloseAbout,
 }
@@ -604,10 +606,7 @@ fn keyboard_shortcuts(
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     palette: Res<ModulePaletteState>,
-    settings_resources: (ResMut<EditorSettings>, ResMut<SettingsPersistence>),
-    localizer: Res<Localizer>,
 ) {
-    let (mut settings, mut settings_persistence) = settings_resources;
     if palette.open {
         return;
     }
@@ -636,17 +635,6 @@ fn keyboard_shortcuts(
             DocumentAction::Save
         });
     }
-    if keys.just_pressed(KeyCode::KeyG) && !control {
-        menu.show_grid = !menu.show_grid;
-        settings.preview.show_grid = menu.show_grid;
-        session.ui_revision += 1;
-        persist_editor_settings(
-            &settings,
-            &mut settings_persistence,
-            &mut session,
-            &localizer,
-        );
-    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -669,17 +657,7 @@ fn handle_buttons(
     >,
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
-    editor_resources: (
-        ResMut<EditorSettings>,
-        ResMut<SettingsPersistence>,
-        ResMut<PreviewCameraController>,
-        ResMut<PreviewDisplayState>,
-    ),
-    mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
-    localizer: Res<Localizer>,
 ) {
-    let (mut settings, mut settings_persistence, mut preview_camera, mut preview_display) =
-        editor_resources;
     for (
         entity,
         interaction,
@@ -725,25 +703,6 @@ fn handle_buttons(
                     session.ui_revision += 1;
                 }
                 match *action {
-                    EditorAction::ToggleGrid => {
-                        menu.show_grid = !menu.show_grid;
-                        settings.preview.show_grid = menu.show_grid;
-                        persist_editor_settings(
-                            &settings,
-                            &mut settings_persistence,
-                            &mut session,
-                            &localizer,
-                        );
-                    }
-                    EditorAction::FramePreview => {
-                        preview_camera.request_frame();
-                    }
-                    EditorAction::SetTransformGizmoMode(mode) => {
-                        transform_gizmo_settings.mode = mode;
-                    }
-                    EditorAction::SetPreviewDisplayMode(mode) => {
-                        preview_display.set_mode(mode);
-                    }
                     EditorAction::ShowAbout => menu.show_about = true,
                     EditorAction::CloseAbout => menu.show_about = false,
                 }

@@ -441,7 +441,7 @@ fn spawn_view_menu(
                         dropdown,
                         "view-toggle-grid",
                         "G",
-                        EditorAction::ToggleGrid,
+                        ViewportAction::ToggleGrid,
                         show_grid,
                         localizer,
                     );
@@ -449,7 +449,7 @@ fn spawn_view_menu(
                         dropdown,
                         "view-frame-effect",
                         "F",
-                        EditorAction::FramePreview,
+                        ViewportAction::FramePreview,
                         localizer,
                     );
                     spawn_feathers_menu_item(
@@ -597,11 +597,11 @@ fn spawn_menu_item_content(
     ));
 }
 
-fn spawn_checkable_menu_item(
+fn spawn_checkable_menu_item<A: Component>(
     parent: &mut ChildSpawnerCommands,
     message_id: &'static str,
     shortcut: &str,
-    action: EditorAction,
+    action: A,
     checked: bool,
     localizer: &Localizer,
 ) {

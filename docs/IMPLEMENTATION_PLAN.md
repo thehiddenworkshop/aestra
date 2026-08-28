@@ -161,6 +161,9 @@ Complete this milestone before expanding the editor or renderer feature surface 
    Timeline framing, snapping, and effect-duration controls now run through `TimelinePlugin`.
    Timeline buttons and combo options share one `TimelineAction` contract, while transport
    stepping and seed changes continue to use `TransportAction`.
+   Viewport grid visibility, effect framing, gizmo modes, and rendered/wireframe display now
+   run through `ViewportPlugin`. View-menu items, viewport tools, and keyboard shortcuts share
+   one `ViewportAction` contract, including persisted grid preference updates.
    Undo and redo now run through `EditorHistoryPlugin`. Edit-menu controls and keyboard
    shortcuts share one `HistoryAction` contract, and the plugin owns history execution plus
    menu availability synchronization without touching unrelated UI entities.
