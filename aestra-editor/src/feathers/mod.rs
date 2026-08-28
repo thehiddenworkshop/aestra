@@ -13,6 +13,7 @@ pub(crate) mod panel_card;
 pub(crate) mod scenes;
 pub(crate) mod scroll;
 pub(crate) mod separator;
+pub(crate) mod slider_row;
 pub(crate) mod status_bar;
 pub(crate) mod tooltip;
 

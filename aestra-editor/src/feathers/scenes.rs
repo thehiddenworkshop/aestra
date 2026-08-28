@@ -3,7 +3,7 @@ use bevy::{
     feathers::controls::{
         ButtonVariant, FeathersButton, FeathersCheckbox, FeathersMenu, FeathersMenuButton,
         FeathersMenuDivider, FeathersMenuItem, FeathersMenuPopup, FeathersNumberInput,
-        FeathersScrollbar, FeathersToolButton, NumberFormat,
+        FeathersScrollbar, FeathersSlider, FeathersToolButton, NumberFormat,
     },
     feathers::theme::ThemeToken,
     prelude::*,
@@ -133,6 +133,16 @@ pub(crate) fn feathers_integer_input() -> impl Scene {
 pub(crate) fn feathers_scalar_input() -> impl Scene {
     bsn! {
         @FeathersNumberInput
+    }
+}
+
+pub(crate) fn feathers_slider(value: f32, min: f32, max: f32) -> impl Scene {
+    bsn! {
+        @FeathersSlider {
+            @value: value,
+            @min: min,
+            @max: max,
+        }
     }
 }
 

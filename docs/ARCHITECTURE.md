@@ -78,11 +78,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Uses Bevy Feathers for standard tooling controls and theme semantics. The
   editor menu bar, dropdowns, primary toolbar, Settings workspace, and
   metadata-driven Inspector inputs use Feathers menus, buttons, pane/group
-  containers, checkboxes, editable numeric inputs, themed typography, keyboard
+  containers, checkboxes, editable numeric inputs, bounded sliders, themed typography, keyboard
   focus, cursors, and accessibility labels. Inspector edits commit only when an
   interaction is final and enter the semantic command history as undoable changes.
 - Owns a dedicated `src/feathers/` widget layer above Bevy Feathers. Reusable
   button activation, combo/action menus, compact field rows, scrub-number policy,
+  bounded slider/number pairs,
   panel chrome, semantic-keyed collapsible cards, delayed window-aware tooltips,
   BSN scenes, scroll areas, separators, and status surfaces live there rather than
   in application or panel builders.

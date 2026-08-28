@@ -21,6 +21,7 @@ domain-specific state and semantic commands.
 | `scenes` | BSN scenes for the editor shell and upstream Bevy Feathers controls |
 | `scroll` | Native scroll areas, persisted scroll markers, and overflow-only scrollbars |
 | `separator` | Theme-aware horizontal and vertical separators |
+| `slider_row` | Bounded slider and precise numeric-input composition with shared metadata policy |
 | `status_bar` | The persistent editor status surface |
 | `tooltip` | Delayed, window-aware help with optional title, shortcut, and footer content |
 
@@ -32,4 +33,4 @@ domain-specific state and semantic commands.
 - Prefer Bevy 0.19 Feathers controls and accessibility/focus behavior. Wrap them when Aestra needs
   consistent composition or editor-specific policy.
 - Add a widget only when an Aestra surface uses it. Candidate additions from Jackdaw include
-  slider rows, swatch rows, and richer text edits.
+  swatch rows and richer text edits.

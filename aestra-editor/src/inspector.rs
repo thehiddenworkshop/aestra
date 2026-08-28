@@ -4,7 +4,9 @@
 use crate::feathers::panel_card::{
     PanelCardProps, RememberedPanelCard, spawn_panel_card as spawn_remembered_panel_card,
 };
+use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
 use crate::*;
+use bevy::ui_widgets::SliderValue;
 
 pub(crate) const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
 
@@ -22,6 +24,7 @@ impl Plugin for InspectorPlugin {
             .init_resource::<ModulePaletteState>()
             .init_resource::<InspectorFocus>()
             .init_resource::<NumericScrubState>()
+            .init_resource::<BoundedSliderState>()
             .add_observer(handle_inspector_toggle_change)
             .add_observer(handle_module_enabled_change)
             .add_observer(handle_renderer_enabled_change)
@@ -30,6 +33,7 @@ impl Plugin for InspectorPlugin {
             .add_observer(handle_emitter_scalar_change)
             .add_observer(handle_inspector_integer_change)
             .add_observer(handle_inspector_scalar_change)
+            .add_observer(handle_bounded_slider_change)
             .add_observer(begin_numeric_scrub)
             .add_observer(update_numeric_scrub)
             .add_observer(finish_numeric_scrub)
@@ -41,7 +45,9 @@ impl Plugin for InspectorPlugin {
                     (
                         sync_emitter_number_inputs,
                         sync_inspector_number_inputs,
+                        sync_inspector_slider_inputs,
                         sync_renderer_number_inputs,
+                        sync_renderer_slider_inputs,
                     )
                         .chain(),
                     scroll_inspector_to_focus,
@@ -260,6 +266,43 @@ mod tests {
         session.undo();
         assert_eq!(
             inspector_module_parameter(&session, module, "spawn_rate"),
+            Some(original)
+        );
+    }
+
+    #[test]
+    fn bounded_slider_commit_preserves_the_inspector_tree_and_is_undoable() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "spread_degrees").is_some())
+            .unwrap()
+            .id;
+        let original = inspector_module_parameter(&session, module, "spread_degrees").unwrap();
+        let target = NumericScrubTarget::Inspector(InspectorNumberControl {
+            module,
+            parameter: "spread_degrees",
+            component: 0,
+            kind: InspectorNumberKind::Scalar,
+            step: 5.0,
+            min: Some(0.0),
+            max: Some(360.0),
+        });
+        let ui_revision = session.ui_revision;
+
+        assert!(preview_numeric_scrub(&mut session, target, 75.0));
+        assert!(commit_bounded_slider(&mut session, target, 75.0));
+        assert_eq!(session.ui_revision, ui_revision);
+        assert_eq!(
+            inspector_module_parameter(&session, module, "spread_degrees"),
+            Some(Value::Scalar(75.0))
+        );
+
+        session.undo();
+        assert_eq!(
+            inspector_module_parameter(&session, module, "spread_degrees"),
             Some(original)
         );
     }
@@ -749,6 +792,20 @@ fn sync_inspector_number_inputs(
     }
 }
 
+fn sync_inspector_slider_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &InspectorSliderControl), Added<InspectorSliderControl>>,
+) {
+    for (entity, control) in &controls {
+        let Some(NumberInputValue::F32(value)) = inspector_number_input_value(&session, control.0)
+        else {
+            continue;
+        };
+        commands.entity(entity).insert(SliderValue(value));
+    }
+}
+
 fn sync_renderer_number_inputs(
     mut commands: Commands,
     session: Res<EditorSession>,
@@ -762,6 +819,19 @@ fn sync_renderer_number_inputs(
             entity,
             value: NumberInputValue::F32(value),
         });
+    }
+}
+
+fn sync_renderer_slider_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &RendererSliderControl), Added<RendererSliderControl>>,
+) {
+    for (entity, control) in &controls {
+        let Some(value) = renderer_number_input_value(&session, control.0) else {
+            continue;
+        };
+        commands.entity(entity).insert(SliderValue(value));
     }
 }
 
@@ -1015,6 +1085,77 @@ fn handle_renderer_scalar_change(
         RendererNumberControl::FlipbookFrameRate(renderer) => {
             session.set_flipbook_frame_rate(renderer, change.value)
         }
+    }
+}
+
+fn handle_bounded_slider_change(
+    change: On<ValueChange<f32>>,
+    inspector_controls: Query<&InspectorSliderControl>,
+    renderer_controls: Query<&RendererSliderControl>,
+    pairs: Query<&SliderNumberInputPair>,
+    mut commands: Commands,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<BoundedSliderState>,
+) {
+    if !change.value.is_finite() {
+        return;
+    }
+    let target = if let Ok(control) = inspector_controls.get(change.source) {
+        NumericScrubTarget::Inspector(control.0)
+    } else if let Ok(control) = renderer_controls.get(change.source) {
+        NumericScrubTarget::Renderer(control.0)
+    } else {
+        return;
+    };
+    let value = normalize_numeric_scrub_value(&session, target, change.value);
+    commands.entity(change.source).insert(SliderValue(value));
+    if let Ok(pair) = pairs.get(change.source) {
+        commands.trigger(UpdateNumberInput {
+            entity: pair.input,
+            value: NumberInputValue::F32(value),
+        });
+    }
+
+    if !change.is_final {
+        let replace_active = state
+            .active
+            .is_some_and(|active| active.entity != change.source);
+        if replace_active {
+            session.restore_interaction_preview();
+            state.active = None;
+        }
+        if state.active.is_none() {
+            let Some(initial) = numeric_scrub_value(&session, target) else {
+                return;
+            };
+            state.active = Some(ActiveBoundedSlider {
+                entity: change.source,
+                target,
+                initial,
+            });
+        }
+        preview_numeric_scrub(&mut session, target, value);
+        return;
+    }
+
+    let (initial, target) = match state.active.take() {
+        Some(active) if active.entity == change.source => (active.initial, active.target),
+        Some(_) => {
+            session.restore_interaction_preview();
+            (
+                numeric_scrub_value(&session, target).unwrap_or(value),
+                target,
+            )
+        }
+        None => (
+            numeric_scrub_value(&session, target).unwrap_or(value),
+            target,
+        ),
+    };
+    if (value - initial).abs() <= f32::EPSILON {
+        session.restore_interaction_preview();
+    } else {
+        commit_bounded_slider(&mut session, target, value);
     }
 }
 
@@ -1558,6 +1699,30 @@ fn commit_numeric_scrub(session: &mut EditorSession, target: NumericScrubTarget,
             session.set_flipbook_frame_rate(renderer, value);
         }
     }
+}
+
+fn commit_bounded_slider(
+    session: &mut EditorSession,
+    target: NumericScrubTarget,
+    value: f32,
+) -> bool {
+    let Some(command) = numeric_scrub_command(session, target, value) else {
+        return false;
+    };
+    let label = match target {
+        NumericScrubTarget::Inspector(control) => format!("Changed {}", control.parameter),
+        NumericScrubTarget::Renderer(RendererNumberControl::Uv(_, _)) => {
+            "Changed material UV bounds".into()
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::FlipbookFrameRate(_)) => {
+            "Changed flipbook frame rate".into()
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::Softness(_)) => {
+            "Changed material softness".into()
+        }
+        NumericScrubTarget::Emitter(_) => "Changed emitter value".into(),
+    };
+    session.execute(label, command, false)
 }
 
 fn handle_renderer_toggle_change(
@@ -2477,6 +2642,20 @@ fn spawn_inspector_number_controls(
     control: InspectorNumberControl,
     values: &[(&'static str, f32, u8)],
 ) {
+    let bounded_slider = values
+        .first()
+        .filter(|(axis, _, component)| {
+            values.len() == 1
+                && axis.is_empty()
+                && *component == 0
+                && control.kind == InspectorNumberKind::Scalar
+        })
+        .and_then(|(_, value, _)| {
+            control
+                .min
+                .zip(control.max)
+                .and_then(|(min, max)| SliderRowProps::new(*value, min, max, control.step))
+        });
     parent
         .spawn((
             EditorTooltip::description(description),
@@ -2497,41 +2676,53 @@ fn spawn_inspector_number_controls(
                 ..default()
             })
             .with_children(|controls| {
-                for (axis, _value, component) in values {
-                    let sigil = match *axis {
-                        "X" => tokens::TEXT_INPUT_X_AXIS,
-                        "Y" => tokens::TEXT_INPUT_Y_AXIS,
-                        "Z" => tokens::TEXT_INPUT_Z_AXIS,
-                        _ => tokens::TEXT_INPUT_BG,
-                    };
-                    controls
-                        .spawn(Node {
-                            flex_grow: 1.0,
-                            flex_basis: Val::Px(0.0),
-                            min_width: Val::Px(44.0),
-                            ..default()
-                        })
-                        .with_children(|wrapper| {
-                            let mut input_entity = wrapper.spawn_empty();
-                            if axis.is_empty() {
-                                input_entity.apply_scene(ui_shell::feathers_scalar_input());
-                            } else {
-                                input_entity.apply_scene(ui_shell::feathers_labeled_scalar_input(
-                                    axis, sigil,
-                                ));
-                            }
-                            input_entity.insert((
-                                InspectorNumberControl {
-                                    component: *component,
-                                    ..control
-                                },
-                                AccessibleLabel(if axis.is_empty() {
-                                    title.to_owned()
+                if let Some(props) = bounded_slider {
+                    spawn_slider_input_pair(
+                        controls,
+                        props,
+                        (
+                            InspectorSliderControl(control),
+                            AccessibleLabel(title.to_owned()),
+                        ),
+                        (control, AccessibleLabel(title.to_owned())),
+                    );
+                } else {
+                    for (axis, _value, component) in values {
+                        let sigil = match *axis {
+                            "X" => tokens::TEXT_INPUT_X_AXIS,
+                            "Y" => tokens::TEXT_INPUT_Y_AXIS,
+                            "Z" => tokens::TEXT_INPUT_Z_AXIS,
+                            _ => tokens::TEXT_INPUT_BG,
+                        };
+                        controls
+                            .spawn(Node {
+                                flex_grow: 1.0,
+                                flex_basis: Val::Px(0.0),
+                                min_width: Val::Px(44.0),
+                                ..default()
+                            })
+                            .with_children(|wrapper| {
+                                let mut input_entity = wrapper.spawn_empty();
+                                if axis.is_empty() {
+                                    input_entity.apply_scene(ui_shell::feathers_scalar_input());
                                 } else {
-                                    format!("{title} {axis}")
-                                }),
-                            ));
-                        });
+                                    input_entity.apply_scene(
+                                        ui_shell::feathers_labeled_scalar_input(axis, sigil),
+                                    );
+                                }
+                                input_entity.insert((
+                                    InspectorNumberControl {
+                                        component: *component,
+                                        ..control
+                                    },
+                                    AccessibleLabel(if axis.is_empty() {
+                                        title.to_owned()
+                                    } else {
+                                        format!("{title} {axis}")
+                                    }),
+                                ));
+                            });
+                    }
                 }
             });
             if let Some(unit) = input.unit {
@@ -2783,7 +2974,16 @@ fn spawn_renderer_scalar_control(
     title: &str,
     unit: Option<&str>,
     control: RendererNumberControl,
+    session: &EditorSession,
 ) {
+    let bounded_slider = renderer_number_input_value(session, control).and_then(|value| {
+        let (min, max, step) = match control {
+            RendererNumberControl::Uv(_, _) => (0.0, 1.0, 0.01),
+            RendererNumberControl::FlipbookFrameRate(_) => (1.0, 120.0, 1.0),
+            RendererNumberControl::Softness(_) => return None,
+        };
+        SliderRowProps::new(value, min, max, step)
+    });
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -2794,20 +2994,39 @@ fn spawn_renderer_scalar_control(
         })
         .with_children(|row| {
             spawn_inspector_property_label(row, title);
-            row.spawn(Node {
-                flex_grow: 1.0,
-                ..default()
-            });
-            row.spawn(Node {
-                width: Val::Px(112.0),
-                ..default()
-            })
-            .with_children(|input| {
-                input
-                    .spawn_empty()
-                    .apply_scene(ui_shell::feathers_scalar_input())
-                    .insert((control, AccessibleLabel(title.to_owned())));
-            });
+            if let Some(props) = bounded_slider {
+                row.spawn(Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    ..default()
+                })
+                .with_children(|controls| {
+                    spawn_slider_input_pair(
+                        controls,
+                        props,
+                        (
+                            RendererSliderControl(control),
+                            AccessibleLabel(title.to_owned()),
+                        ),
+                        (control, AccessibleLabel(title.to_owned())),
+                    );
+                });
+            } else {
+                row.spawn(Node {
+                    flex_grow: 1.0,
+                    ..default()
+                });
+                row.spawn(Node {
+                    width: Val::Px(112.0),
+                    ..default()
+                })
+                .with_children(|input| {
+                    input
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_scalar_input())
+                        .insert((control, AccessibleLabel(title.to_owned())));
+                });
+            }
             if let Some(unit) = unit {
                 row.spawn_empty().apply_scene(label_dim(unit.to_owned()));
             }
@@ -2997,6 +3216,7 @@ fn spawn_renderer_card(
                     "Softness",
                     None,
                     RendererNumberControl::Softness(renderer.id),
+                    session,
                 ),
                 MaterialInput::Parameter(parameter) => spawn_inspector_read_only_control(
                     card,
@@ -3046,6 +3266,7 @@ fn spawn_renderer_card(
                                 label,
                                 None,
                                 RendererNumberControl::Uv(renderer.id, component),
+                                session,
                             );
                         }
                     }
@@ -3085,6 +3306,7 @@ fn spawn_renderer_card(
                             "Frame Rate",
                             Some("FPS"),
                             RendererNumberControl::FlipbookFrameRate(renderer.id),
+                            session,
                         );
                         spawn_renderer_toggle_control(
                             card,
@@ -3531,6 +3753,9 @@ struct InspectorNumberControl {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
+struct InspectorSliderControl(InspectorNumberControl);
+
+#[derive(Component, Debug, Clone, Copy)]
 enum EmitterNumberControl {
     Start,
     Duration,
@@ -3563,6 +3788,18 @@ struct NumericScrubState {
     active: Option<ActiveNumericScrub>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ActiveBoundedSlider {
+    entity: Entity,
+    target: NumericScrubTarget,
+    initial: f32,
+}
+
+#[derive(Resource, Default)]
+struct BoundedSliderState {
+    active: Option<ActiveBoundedSlider>,
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 struct InspectorToggleControl {
     module: ModuleId,
@@ -3581,6 +3818,9 @@ enum RendererNumberControl {
     Uv(RendererId, u8),
     FlipbookFrameRate(RendererId),
 }
+
+#[derive(Component, Debug, Clone, Copy)]
+struct RendererSliderControl(RendererNumberControl);
 
 #[derive(Component, Debug, Clone, Copy)]
 enum RendererToggleControl {
