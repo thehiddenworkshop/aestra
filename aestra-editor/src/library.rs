@@ -1,71 +1,217 @@
-//! Assets workspace, project-effect catalog, and panel-local authoring actions.
+//! Library workspace, project-effect catalog, and panel-local authoring actions.
 
 use crate::*;
 use bevy::ui_widgets::Activate;
-use std::{fs, path::PathBuf};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
-pub(crate) struct EditorAssetsPlugin;
+const DEFAULT_PROJECT_EFFECT_ROOT: &str = "assets/effects";
+
+pub(crate) struct EditorLibraryPlugin;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum AssetsSet {
+pub(crate) enum LibrarySet {
     Input,
     Actions,
     Sync,
 }
 
-impl Plugin for EditorAssetsPlugin {
+impl Plugin for EditorLibraryPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(EffectCatalog::scan())
-            .add_observer(queue_asset_action_activation)
-            .add_observer(execute_assets_action)
+        app.init_resource::<ProjectEffectCatalog>()
+            .init_resource::<LibraryState>()
+            .add_observer(queue_library_action_activation)
+            .add_observer(execute_library_action)
             .add_systems(
                 Update,
                 (
-                    assets_keyboard_input.in_set(AssetsSet::Input),
-                    handle_asset_action_buttons.in_set(AssetsSet::Actions),
+                    library_keyboard_input.in_set(LibrarySet::Input),
+                    handle_library_action_buttons.in_set(LibrarySet::Actions),
                 ),
             )
-            .add_systems(Update, update_layer_selection.in_set(AssetsSet::Sync));
+            .add_systems(Update, update_layer_selection.in_set(LibrarySet::Sync));
     }
 }
 
-struct CatalogEntry {
-    name: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ProjectEffectEntryId(u64);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ProjectEffectStatus {
+    Valid,
+    Invalid { message: String },
+    Unsupported { found: u32, current: u32 },
+}
+
+impl ProjectEffectStatus {
+    fn is_openable(&self) -> bool {
+        matches!(self, Self::Valid)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ProjectEffectEntry {
+    pub(crate) id: ProjectEffectEntryId,
+    display_name: String,
     path: PathBuf,
+    status: ProjectEffectStatus,
 }
 
-#[derive(Resource, Default)]
-pub(crate) struct EffectCatalog {
-    entries: Vec<CatalogEntry>,
+#[derive(Resource)]
+pub(crate) struct ProjectEffectCatalog {
+    entries: Vec<ProjectEffectEntry>,
 }
 
-impl EffectCatalog {
-    fn scan() -> Self {
-        let mut entries = fs::read_dir("assets/effects")
+impl Default for ProjectEffectCatalog {
+    fn default() -> Self {
+        Self::scan(DEFAULT_PROJECT_EFFECT_ROOT)
+    }
+}
+
+impl ProjectEffectCatalog {
+    pub(crate) fn scan(root: impl AsRef<Path>) -> Self {
+        let root = root.as_ref();
+        let mut paths = fs::read_dir(root)
             .into_iter()
             .flatten()
             .filter_map(Result::ok)
             .map(|entry| entry.path())
             .filter(|path| path.extension().is_some_and(|extension| extension == "ron"))
-            .filter_map(|path| {
-                let effect = EffectAsset::load_ron(&path).ok()?;
-                Some(CatalogEntry {
-                    name: effect.name,
+            .collect::<Vec<_>>();
+        paths.sort();
+
+        let mut used_ids = HashSet::new();
+        let mut entries = paths
+            .into_iter()
+            .map(|path| {
+                let mut id = stable_entry_id(root, &path);
+                while !used_ids.insert(id) {
+                    id.0 = id.0.wrapping_add(1);
+                }
+                let fallback_name = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or("Unnamed effect")
+                    .trim_end_matches(".aestra")
+                    .replace(['_', '-'], " ");
+                let (display_name, status) = match EffectAsset::load_ron(&path) {
+                    Ok(effect) => (effect.name, ProjectEffectStatus::Valid),
+                    Err(aestra_bevy::AssetError::UnsupportedFormat { found, current }) => (
+                        fallback_name,
+                        ProjectEffectStatus::Unsupported { found, current },
+                    ),
+                    Err(error) => (
+                        fallback_name,
+                        ProjectEffectStatus::Invalid {
+                            message: error.to_string(),
+                        },
+                    ),
+                };
+                ProjectEffectEntry {
+                    id,
+                    display_name,
                     path,
-                })
+                    status,
+                }
             })
             .collect::<Vec<_>>();
-        entries.sort_by(|left, right| left.name.cmp(&right.name));
+        entries.sort_by(|left, right| {
+            left.display_name
+                .to_lowercase()
+                .cmp(&right.display_name.to_lowercase())
+                .then_with(|| left.path.cmp(&right.path))
+        });
         Self { entries }
     }
 
-    pub(crate) fn path(&self, index: usize) -> Option<&std::path::Path> {
-        self.entries.get(index).map(|entry| entry.path.as_path())
+    pub(crate) fn entries(&self) -> &[ProjectEffectEntry] {
+        &self.entries
+    }
+
+    pub(crate) fn entry(&self, id: ProjectEffectEntryId) -> Option<&ProjectEffectEntry> {
+        self.entries.iter().find(|entry| entry.id == id)
+    }
+
+    pub(crate) fn openable_path(&self, id: ProjectEffectEntryId) -> Option<&Path> {
+        self.entry(id)
+            .filter(|entry| entry.status.is_openable())
+            .map(|entry| entry.path.as_path())
+    }
+}
+
+fn stable_entry_id(root: &Path, path: &Path) -> ProjectEffectEntryId {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    let normalized = relative.to_string_lossy().replace('\\', "/").to_lowercase();
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in normalized.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    ProjectEffectEntryId(hash)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "filter controls are introduced in Library Slice 2"
+    )
+)]
+pub(crate) enum LibraryOriginFilter {
+    #[default]
+    All,
+    Project,
+    CurrentDocument,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "filter controls are introduced in Library Slice 2"
+    )
+)]
+pub(crate) enum LibraryKindFilter {
+    #[default]
+    All,
+    Effect,
+    Texture,
+    Mesh,
+    Material,
+    Flipbook,
+}
+
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct LibraryState {
+    pub(crate) query: String,
+    pub(crate) origin: LibraryOriginFilter,
+    pub(crate) kind: LibraryKindFilter,
+}
+
+impl LibraryState {
+    fn matches_project_effect(&self, entry: &ProjectEffectEntry) -> bool {
+        if self.origin == LibraryOriginFilter::CurrentDocument
+            || !matches!(
+                self.kind,
+                LibraryKindFilter::All | LibraryKindFilter::Effect
+            )
+        {
+            return false;
+        }
+        let query = self.query.trim().to_lowercase();
+        query.is_empty()
+            || entry.display_name.to_lowercase().contains(&query)
+            || entry.path.to_string_lossy().to_lowercase().contains(&query)
     }
 }
 
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AssetsAction {
+pub(crate) enum LibraryAction {
     AddSpriteMaterial,
     AddGridFlipbook,
     AddEmitter,
@@ -80,9 +226,9 @@ struct LayerRow(usize);
 #[derive(Component)]
 struct AssetButtonLabel;
 
-fn queue_asset_action_activation(
+fn queue_library_action_activation(
     activate: On<Activate>,
-    actions: Query<(), (With<AssetsAction>, With<FeathersActionButton>)>,
+    actions: Query<(), (With<LibraryAction>, With<FeathersActionButton>)>,
     mut commands: Commands,
 ) {
     if actions.contains(activate.entity) {
@@ -92,10 +238,11 @@ fn queue_asset_action_activation(
     }
 }
 
-pub(crate) fn spawn_asset_browser(
+pub(crate) fn spawn_library(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
-    catalog: &EffectCatalog,
+    catalog: &ProjectEffectCatalog,
+    state: &LibraryState,
     localizer: &Localizer,
 ) {
     parent
@@ -150,38 +297,67 @@ pub(crate) fn spawn_asset_browser(
                 });
 
             let mut args = FluentArgs::new();
-            args.set("count", catalog.entries.len());
+            let visible_entries = catalog
+                .entries()
+                .iter()
+                .filter(|entry| state.matches_project_effect(entry))
+                .collect::<Vec<_>>();
+            args.set("count", visible_entries.len());
             panel_heading(
                 panel,
                 &localizer.text("assets-project-effects"),
                 &localizer.text_with("assets-found", &args),
             );
-            for (index, entry) in catalog.entries.iter().enumerate() {
-                panel
-                    .spawn((
+            for entry in visible_entries {
+                let mut row = panel.spawn((
+                    Node {
+                        height: Val::Px(36.0),
+                        margin: UiRect::horizontal(Val::Px(8.0)),
+                        padding: UiRect::horizontal(Val::Px(9.0)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::SpaceBetween,
+                        border_radius: BorderRadius::all(Val::Px(3.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL_DARK),
+                ));
+                if entry.status.is_openable() {
+                    row.insert((
                         Button,
                         EditorNativeControl,
-                        DocumentAction::OpenCatalog(index),
-                        Node {
-                            height: Val::Px(31.0),
-                            margin: UiRect::horizontal(Val::Px(8.0)),
-                            padding: UiRect::horizontal(Val::Px(9.0)),
-                            align_items: AlignItems::Center,
-                            border_radius: BorderRadius::all(Val::Px(3.0)),
+                        DocumentAction::OpenCatalog(entry.id),
+                    ));
+                }
+                row.with_children(|row| {
+                    row.spawn((
+                        Text::new(&entry.display_name),
+                        TextFont {
+                            font_size: FontSize::Px(11.0),
                             ..default()
                         },
-                        BackgroundColor(theme::PANEL_DARK),
-                    ))
-                    .with_children(|row| {
+                        TextColor(if entry.status.is_openable() {
+                            theme::TEXT_MUTED
+                        } else {
+                            theme::TEXT_FAINT
+                        }),
+                    ));
+                    if let Some(message_id) = match entry.status {
+                        ProjectEffectStatus::Valid => None,
+                        ProjectEffectStatus::Invalid { .. } => Some("library-status-invalid"),
+                        ProjectEffectStatus::Unsupported { .. } => {
+                            Some("library-status-unsupported")
+                        }
+                    } {
                         row.spawn((
-                            Text::new(&entry.name),
+                            Text::new(localizer.text(message_id)),
                             TextFont {
-                                font_size: FontSize::Px(11.0),
+                                font_size: FontSize::Px(9.0),
                                 ..default()
                             },
-                            TextColor(theme::TEXT_MUTED),
+                            TextColor(theme::ACCENT),
                         ));
-                    });
+                    }
+                });
             }
 
             args.set("count", session.effect.assets.len());
@@ -240,10 +416,10 @@ pub(crate) fn spawn_asset_browser(
                 &localizer.text("assets-materials"),
                 &localizer.text_with("assets-registered", &args),
             );
-            asset_toolbar_button(
+            library_toolbar_button(
                 panel,
                 &localizer.text("assets-add-sprite-material"),
-                AssetsAction::AddSpriteMaterial,
+                LibraryAction::AddSpriteMaterial,
             );
             for material in &session.effect.materials {
                 panel
@@ -285,10 +461,10 @@ pub(crate) fn spawn_asset_browser(
                 &localizer.text("assets-flipbooks"),
                 &localizer.text_with("assets-registered", &args),
             );
-            asset_toolbar_button(
+            library_toolbar_button(
                 panel,
                 &localizer.text("assets-add-grid-flipbook"),
-                AssetsAction::AddGridFlipbook,
+                LibraryAction::AddGridFlipbook,
             );
             for flipbook in &session.effect.flipbooks {
                 panel
@@ -329,10 +505,10 @@ pub(crate) fn spawn_asset_browser(
                 &localizer.text("assets-layers"),
                 &localizer.text_with("assets-active", &args),
             );
-            asset_toolbar_button(
+            library_toolbar_button(
                 panel,
                 &localizer.text("assets-add-emitter"),
-                AssetsAction::AddEmitter,
+                LibraryAction::AddEmitter,
             );
             for (index, layer) in session.effect.emitters.iter().enumerate() {
                 let selected = index == session.selected_layer_index();
@@ -340,7 +516,7 @@ pub(crate) fn spawn_asset_browser(
                     .spawn((
                         Button,
                         EditorNativeControl,
-                        AssetsAction::SelectLayer(index),
+                        LibraryAction::SelectLayer(index),
                         LayerRow(index),
                         Node {
                             height: Val::Px(42.0),
@@ -384,7 +560,7 @@ pub(crate) fn spawn_asset_browser(
         });
 }
 
-fn asset_toolbar_button<A: Component>(parent: &mut ChildSpawnerCommands, label: &str, action: A) {
+fn library_toolbar_button<A: Component>(parent: &mut ChildSpawnerCommands, label: &str, action: A) {
     parent
         .spawn_empty()
         .apply_scene(ui_shell::feathers_button())
@@ -418,13 +594,13 @@ fn asset_toolbar_button<A: Component>(parent: &mut ChildSpawnerCommands, label: 
 }
 
 #[allow(clippy::type_complexity)]
-fn handle_asset_action_buttons(
+fn handle_library_action_buttons(
     mut commands: Commands,
     mut interactions: Query<
         (
             Entity,
             &Interaction,
-            &AssetsAction,
+            &LibraryAction,
             Option<&FeathersActionButton>,
             Option<&PendingFeathersActivation>,
             &mut BackgroundColor,
@@ -465,38 +641,38 @@ fn handle_asset_action_buttons(
     }
 }
 
-fn execute_assets_action(
-    action: On<AssetsAction>,
+fn execute_library_action(
+    action: On<LibraryAction>,
     mut session: ResMut<EditorSession>,
     mut curves: ResMut<CurvesState>,
     mut layout: ResMut<WorkspaceLayout>,
     localizer: Res<Localizer>,
 ) {
     match *action {
-        AssetsAction::AddSpriteMaterial => session.add_sprite_material(),
-        AssetsAction::AddGridFlipbook => session.add_grid_flipbook(),
-        AssetsAction::AddEmitter => {
+        LibraryAction::AddSpriteMaterial => session.add_sprite_material(),
+        LibraryAction::AddGridFlipbook => session.add_grid_flipbook(),
+        LibraryAction::AddEmitter => {
             session.add_layer();
             curves.clear();
         }
-        AssetsAction::DuplicateEmitter => {
+        LibraryAction::DuplicateEmitter => {
             session.duplicate_selected_layer();
             curves.clear();
         }
-        AssetsAction::DeleteEmitter => {
+        LibraryAction::DeleteEmitter => {
             if preview_selected_emitter_deletion(&mut session, &localizer) {
                 reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                 curves.clear();
             }
         }
-        AssetsAction::SelectLayer(index) => {
+        LibraryAction::SelectLayer(index) => {
             session.select_layer(index);
             curves.clear();
         }
     }
 }
 
-fn assets_keyboard_input(
+fn library_keyboard_input(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     palette: Res<ModulePaletteState>,
@@ -506,13 +682,13 @@ fn assets_keyboard_input(
     }
     let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
     if control && keys.just_pressed(KeyCode::Enter) {
-        commands.trigger(AssetsAction::AddEmitter);
+        commands.trigger(LibraryAction::AddEmitter);
     }
     if control && keys.just_pressed(KeyCode::KeyD) {
-        commands.trigger(AssetsAction::DuplicateEmitter);
+        commands.trigger(LibraryAction::DuplicateEmitter);
     }
     if keys.just_pressed(KeyCode::Delete) {
-        commands.trigger(AssetsAction::DeleteEmitter);
+        commands.trigger(LibraryAction::DeleteEmitter);
     }
 }
 
@@ -557,6 +733,136 @@ pub(crate) fn layer_color(index: usize) -> Color {
 mod tests {
     use super::*;
 
+    fn write_effect(path: &Path, name: &str) {
+        let mut effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("sample effect is valid");
+        effect.name = name.into();
+        effect.save_ron(path).expect("effect fixture should save");
+    }
+
+    #[test]
+    fn project_catalog_is_sorted_and_ids_are_stable_across_scans() {
+        let temporary = tempfile::tempdir().unwrap();
+        write_effect(&temporary.path().join("zeta.aestra.ron"), "Zeta");
+        write_effect(&temporary.path().join("alpha.aestra.ron"), "Alpha");
+
+        let first = ProjectEffectCatalog::scan(temporary.path());
+        let second = ProjectEffectCatalog::scan(temporary.path());
+
+        assert_eq!(
+            first
+                .entries()
+                .iter()
+                .map(|entry| entry.display_name.as_str())
+                .collect::<Vec<_>>(),
+            ["Alpha", "Zeta"]
+        );
+        assert_eq!(
+            first
+                .entries()
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            second
+                .entries()
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn empty_project_catalog_is_a_valid_state() {
+        let temporary = tempfile::tempdir().unwrap();
+
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+
+        assert!(catalog.entries().is_empty());
+    }
+
+    #[test]
+    fn project_catalog_preserves_invalid_and_unsupported_files() {
+        let temporary = tempfile::tempdir().unwrap();
+        let valid_path = temporary.path().join("valid.aestra.ron");
+        let invalid_path = temporary.path().join("broken.aestra.ron");
+        let unsupported_path = temporary.path().join("future.aestra.ron");
+        write_effect(&valid_path, "Valid");
+        fs::write(&invalid_path, "this is not RON").unwrap();
+        fs::write(
+            &unsupported_path,
+            EFFECT_SOURCE.replacen("format_version: 3", "format_version: 99", 1),
+        )
+        .unwrap();
+
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+
+        assert_eq!(catalog.entries().len(), 3);
+        let valid = catalog
+            .entries()
+            .iter()
+            .find(|entry| entry.path == valid_path)
+            .unwrap();
+        let invalid = catalog
+            .entries()
+            .iter()
+            .find(|entry| entry.path == invalid_path)
+            .unwrap();
+        let unsupported = catalog
+            .entries()
+            .iter()
+            .find(|entry| entry.path == unsupported_path)
+            .unwrap();
+        assert_eq!(valid.status, ProjectEffectStatus::Valid);
+        assert!(matches!(
+            invalid.status,
+            ProjectEffectStatus::Invalid { ref message } if !message.is_empty()
+        ));
+        assert_eq!(
+            unsupported.status,
+            ProjectEffectStatus::Unsupported {
+                found: 99,
+                current: aestra_bevy::CURRENT_FORMAT_VERSION,
+            }
+        );
+        assert_eq!(catalog.openable_path(valid.id), Some(valid_path.as_path()));
+        assert_eq!(catalog.openable_path(invalid.id), None);
+        assert_eq!(catalog.openable_path(unsupported.id), None);
+    }
+
+    #[test]
+    fn library_state_filters_project_effects_by_query_origin_and_kind() {
+        let entry = ProjectEffectEntry {
+            id: ProjectEffectEntryId(1),
+            display_name: "Prism Bloom".into(),
+            path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
+            status: ProjectEffectStatus::Valid,
+        };
+        let mut state = LibraryState {
+            query: "bloom".into(),
+            origin: LibraryOriginFilter::Project,
+            kind: LibraryKindFilter::Effect,
+        };
+        assert!(state.matches_project_effect(&entry));
+
+        state.query = "PRISM_BLOOM.AESTRA".into();
+        assert!(state.matches_project_effect(&entry));
+
+        state.query = "plasma".into();
+        assert!(!state.matches_project_effect(&entry));
+        state.query.clear();
+        state.origin = LibraryOriginFilter::CurrentDocument;
+        assert!(!state.matches_project_effect(&entry));
+        state.origin = LibraryOriginFilter::All;
+        for kind in [
+            LibraryKindFilter::Texture,
+            LibraryKindFilter::Mesh,
+            LibraryKindFilter::Material,
+            LibraryKindFilter::Flipbook,
+        ] {
+            state.kind = kind;
+            assert!(!state.matches_project_effect(&entry));
+        }
+    }
+
     fn app_with_session(session: EditorSession) -> App {
         let mut app = App::new();
         app.insert_resource(session)
@@ -566,12 +872,12 @@ mod tests {
             .init_resource::<ModulePaletteState>()
             .init_resource::<ButtonInput<KeyCode>>()
             .insert_resource(Localizer::new("en-US").expect("test locale should load"))
-            .add_plugins(EditorAssetsPlugin);
+            .add_plugins(EditorLibraryPlugin);
         app
     }
 
     #[test]
-    fn assets_plugin_owns_catalog_and_panel_actions() {
+    fn library_plugin_owns_catalog_and_panel_actions() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let initial_materials = session.effect.materials.len();
         let mut app = app_with_session(session);
@@ -581,7 +887,7 @@ mod tests {
                 Button,
                 FeathersActionButton,
                 Interaction::None,
-                AssetsAction::AddSpriteMaterial,
+                LibraryAction::AddSpriteMaterial,
                 BackgroundColor::default(),
             ))
             .id();
@@ -589,7 +895,7 @@ mod tests {
         app.world_mut().trigger(Activate { entity: control });
         app.update();
 
-        assert!(app.world().contains_resource::<EffectCatalog>());
+        assert!(app.world().contains_resource::<ProjectEffectCatalog>());
         assert!(
             !app.world()
                 .entity(control)
@@ -606,6 +912,34 @@ mod tests {
     }
 
     #[test]
+    fn library_plugin_preserves_an_injected_project_catalog() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let expected_id = ProjectEffectEntryId(42);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(ProjectEffectCatalog {
+                entries: vec![ProjectEffectEntry {
+                    id: expected_id,
+                    display_name: "Injected".into(),
+                    path: PathBuf::from("virtual/injected.aestra.ron"),
+                    status: ProjectEffectStatus::Valid,
+                }],
+            })
+            .init_resource::<CurvesState>()
+            .init_resource::<WorkspaceLayout>()
+            .init_resource::<MenuState>()
+            .init_resource::<ModulePaletteState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_plugins(EditorLibraryPlugin);
+
+        assert_eq!(
+            app.world().resource::<ProjectEffectCatalog>().entries()[0].id,
+            expected_id
+        );
+    }
+
+    #[test]
     fn selecting_a_layer_clears_the_curve_workspace_selection() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         session.select_layer(0);
@@ -618,7 +952,7 @@ mod tests {
         app.world_mut().spawn((
             Button,
             Interaction::Pressed,
-            AssetsAction::SelectLayer(1),
+            LibraryAction::SelectLayer(1),
             BackgroundColor::default(),
         ));
 
@@ -639,7 +973,7 @@ mod tests {
         let initial_emitters = session.effect.emitters.len();
         let mut app = app_with_session(session);
 
-        app.world_mut().trigger(AssetsAction::AddEmitter);
+        app.world_mut().trigger(LibraryAction::AddEmitter);
         app.update();
         assert_eq!(
             app.world()
@@ -650,7 +984,7 @@ mod tests {
             initial_emitters + 1
         );
 
-        app.world_mut().trigger(AssetsAction::DuplicateEmitter);
+        app.world_mut().trigger(LibraryAction::DuplicateEmitter);
         app.update();
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.emitters.len(), initial_emitters + 2);
@@ -672,7 +1006,7 @@ mod tests {
             state
         });
 
-        app.world_mut().trigger(AssetsAction::DeleteEmitter);
+        app.world_mut().trigger(LibraryAction::DeleteEmitter);
         app.update();
 
         assert!(
@@ -690,7 +1024,7 @@ mod tests {
         session.effect.emitters.truncate(1);
         let mut app = app_with_session(session);
 
-        app.world_mut().trigger(AssetsAction::DeleteEmitter);
+        app.world_mut().trigger(LibraryAction::DeleteEmitter);
         app.update();
 
         let session = app.world().resource::<EditorSession>();
@@ -700,7 +1034,7 @@ mod tests {
     }
 
     #[test]
-    fn emitter_shortcuts_route_through_the_assets_action_contract() {
+    fn emitter_shortcuts_route_through_the_library_action_contract() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let initial_emitters = session.effect.emitters.len();
         let mut app = app_with_session(session);

@@ -19,7 +19,8 @@ use fluent_bundle::FluentArgs;
 struct PanelSources<'a> {
     session: &'a EditorSession,
     timeline: &'a TimelineState,
-    catalog: &'a EffectCatalog,
+    catalog: &'a ProjectEffectCatalog,
+    library: &'a LibraryState,
     registry: &'a EditorModuleRegistry,
     palette: &'a ModulePaletteState,
     diagnostics_panel: &'a DiagnosticsPanelState,
@@ -32,7 +33,8 @@ struct PanelSources<'a> {
 
 #[derive(SystemParam)]
 pub(crate) struct DockUiResources<'w> {
-    catalog: Res<'w, EffectCatalog>,
+    catalog: Res<'w, ProjectEffectCatalog>,
+    library: Res<'w, LibraryState>,
     layout: Res<'w, WorkspaceLayout>,
     registry: Res<'w, EditorModuleRegistry>,
     palette: Res<'w, ModulePaletteState>,
@@ -52,6 +54,7 @@ impl<'w> DockUiResources<'w> {
             session,
             timeline: &self.timeline,
             catalog: &self.catalog,
+            library: &self.library,
             registry: &self.registry,
             palette: &self.palette,
             diagnostics_panel: &self.diagnostics_panel,
@@ -350,9 +353,13 @@ fn spawn_panel_content(
 ) {
     match panel {
         DockPanel::Viewport => viewport::spawn_preview(parent, sources.localizer),
-        DockPanel::Assets => {
-            spawn_asset_browser(parent, sources.session, sources.catalog, sources.localizer)
-        }
+        DockPanel::Assets => spawn_library(
+            parent,
+            sources.session,
+            sources.catalog,
+            sources.library,
+            sources.localizer,
+        ),
         DockPanel::Inspector => {
             spawn_inspector(
                 parent,

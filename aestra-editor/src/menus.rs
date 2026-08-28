@@ -357,13 +357,17 @@ fn spawn_edit_menu(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
                     )
                     .insert(RedoMenuItem);
                     for (message_id, shortcut, action) in [
-                        ("edit-add-emitter", "Ctrl+Enter", AssetsAction::AddEmitter),
+                        ("edit-add-emitter", "Ctrl+Enter", LibraryAction::AddEmitter),
                         (
                             "edit-duplicate-emitter",
                             "Ctrl+D",
-                            AssetsAction::DuplicateEmitter,
+                            LibraryAction::DuplicateEmitter,
                         ),
-                        ("edit-delete-emitter", "Delete", AssetsAction::DeleteEmitter),
+                        (
+                            "edit-delete-emitter",
+                            "Delete",
+                            LibraryAction::DeleteEmitter,
+                        ),
                     ] {
                         spawn_feathers_menu_item(dropdown, message_id, shortcut, action, localizer);
                     }

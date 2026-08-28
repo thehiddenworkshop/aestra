@@ -32,7 +32,7 @@ toolbar-choreography = CHORÉGRAPHIE VFX
 toolbar-runtime = BEVY 0.19  |  RÉFÉRENCE CPU
 
 panel-viewport = APERÇU
-panel-assets = RESSOURCES
+panel-assets = BIBLIOTHÈQUE
 panel-inspector = INSPECTEUR
 panel-timeline = TIMELINE
 panel-curves = COURBES
@@ -247,6 +247,19 @@ assets-active = { $count } ACTIFS
 assets-add-emitter = + Ajouter un émetteur
 assets-status-minimum-emitter = Un effet doit conserver au moins un émetteur
 assets-change-delete-emitter = Supprimer l’émetteur
+
+library-search-placeholder = Rechercher dans la bibliothèque
+library-filter-all = Tout
+library-filter-effects = Effets
+library-filter-textures = Textures
+library-filter-meshes = Maillages
+library-filter-materials = Matériaux
+library-filter-flipbooks = Flipbooks
+library-origin-all = Toutes les sources
+library-origin-project = Projet
+library-origin-current-document = Document courant
+library-status-invalid = INVALIDE
+library-status-unsupported = FORMAT PLUS RÉCENT
 
 timeline-frame-all = Tout afficher
 timeline-snap-off = Magnétisme : désactivé

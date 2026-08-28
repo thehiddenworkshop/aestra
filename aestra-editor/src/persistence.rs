@@ -48,7 +48,7 @@ impl Plugin for EditorPersistencePlugin {
 pub(crate) enum DocumentAction {
     New,
     Open,
-    OpenCatalog(usize),
+    OpenCatalog(ProjectEffectEntryId),
     Save,
     SaveAs,
     Exit,
@@ -287,7 +287,7 @@ fn execute_document_action(
     mut commands: Commands,
     mut session: ResMut<EditorSession>,
     settings: Res<EditorSettings>,
-    catalog: Res<EffectCatalog>,
+    catalog: Res<ProjectEffectCatalog>,
     mut workspace: ResMut<CurvesState>,
     mut recovery: ResMut<RecoveryPersistence>,
     mut autosave: ResMut<AutosaveState>,
@@ -312,14 +312,18 @@ fn execute_document_action(
             open_effect_dialog(&mut session, &settings, &localizer);
             workspace.clear();
         }
-        DocumentAction::OpenCatalog(index) => {
-            if confirm_discard(&session, &settings, &localizer) {
-                if let Some(path) = catalog.path(index) {
+        DocumentAction::OpenCatalog(id) => {
+            if let Some(path) = catalog.openable_path(id) {
+                if confirm_discard(&session, &settings, &localizer) {
                     open_effect_path(&mut session, path, &settings, &localizer);
+                    workspace.clear();
+                } else {
+                    set_persistence_status(
+                        &mut session,
+                        &localizer,
+                        PersistenceStatus::OpenCancelled,
+                    );
                 }
-                workspace.clear();
-            } else {
-                set_persistence_status(&mut session, &localizer, PersistenceStatus::OpenCancelled);
             }
         }
         DocumentAction::Save => save_session(&mut session, false, &localizer),
@@ -784,6 +788,69 @@ fn handle_window_close_requests(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn catalog_open_action_uses_stable_id_and_document_protection_path() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("catalog-effect.aestra.ron");
+        let mut effect = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        effect.name = "Catalog Effect".into();
+        effect.save_ron(&path).unwrap();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let id = catalog.entries()[0].id;
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let autosave = AutosaveState::new(&session, true);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(EditorSettings::default())
+            .insert_resource(catalog)
+            .init_resource::<CurvesState>()
+            .insert_resource(RecoveryPersistence::for_test(
+                temporary.path().join("recovery"),
+                None,
+            ))
+            .insert_resource(autosave)
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(execute_document_action);
+
+        app.world_mut().trigger(DocumentAction::OpenCatalog(id));
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.name, "Catalog Effect");
+        assert_eq!(session.source_path.as_deref(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn invalid_catalog_action_cannot_replace_the_document() {
+        let temporary = tempfile::tempdir().unwrap();
+        fs::write(temporary.path().join("broken.aestra.ron"), "not RON").unwrap();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let id = catalog.entries()[0].id;
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let original_id = session.effect.id;
+        let autosave = AutosaveState::new(&session, true);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(EditorSettings::default())
+            .insert_resource(catalog)
+            .init_resource::<CurvesState>()
+            .insert_resource(RecoveryPersistence::for_test(
+                temporary.path().join("recovery"),
+                None,
+            ))
+            .insert_resource(autosave)
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(execute_document_action);
+
+        app.world_mut().trigger(DocumentAction::OpenCatalog(id));
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.id,
+            original_id
+        );
+    }
 
     #[test]
     fn persistence_outcomes_are_localized_with_technical_details_preserved() {

@@ -2,7 +2,6 @@
 // dependencies explicit is clearer than hiding them behind editor-specific parameter bundles.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
-mod assets;
 mod changes;
 mod compiler_inspector;
 mod curves;
@@ -12,6 +11,7 @@ mod docking;
 mod feathers;
 mod history;
 mod inspector;
+mod library;
 mod localization;
 mod menus;
 mod persistence;
@@ -34,8 +34,6 @@ use aestra_bevy::{
     ModuleParameters, RendererId, RendererProperties, StageKind, Value,
 };
 use aestra_compiler::ModuleMetadata;
-use assets::{AssetsAction, AssetsSet, EditorAssetsPlugin};
-pub(crate) use assets::{EffectCatalog, layer_color, spawn_asset_browser};
 #[cfg(test)]
 use bevy::ui_widgets::Activate;
 use bevy::{
@@ -101,6 +99,10 @@ use fluent_bundle::FluentArgs;
 pub(crate) use history::HistoryAction;
 use history::{EditorHistoryPlugin, HistorySet};
 use inspector::*;
+use library::{EditorLibraryPlugin, LibraryAction, LibrarySet};
+pub(crate) use library::{
+    LibraryState, ProjectEffectCatalog, ProjectEffectEntryId, layer_color, spawn_library,
+};
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
 pub(crate) use menus::{DocumentMenuLabel, MenuState, TabContextMenu};
@@ -159,7 +161,7 @@ fn main() {
         .add_plugins(AestraFeathersPlugin)
         .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
-        .add_plugins(EditorAssetsPlugin)
+        .add_plugins(EditorLibraryPlugin)
         .add_plugins(EditorChangesPlugin)
         .add_plugins(EditorCompilerInspectorPlugin)
         .add_plugins(EditorCurvesPlugin)
@@ -188,7 +190,7 @@ fn main() {
             Update,
             (
                 (
-                    AssetsSet::Input,
+                    LibrarySet::Input,
                     TransportSet::Input,
                     HistorySet::Input,
                     ViewportSet::Input,
@@ -199,7 +201,7 @@ fn main() {
                 DockingSet::Input,
                 AestraFeathersSet::Input,
                 (
-                    AssetsSet::Actions,
+                    LibrarySet::Actions,
                     ChangesSet::Actions,
                     CompilerInspectorSet::Actions,
                     CurvesSet::Actions,
@@ -224,7 +226,7 @@ fn main() {
                 EditorSet::UiRebuild,
                 TimelineSet::Visuals,
                 (
-                    AssetsSet::Sync,
+                    LibrarySet::Sync,
                     DiagnosticsSet::Sync,
                     HistorySet::Sync,
                     ProfilerSet::Sync,
