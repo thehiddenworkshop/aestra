@@ -104,7 +104,10 @@ fn bundled_v3_evaluation_matches_golden_moments() {
         actual.push_str(&snapshot_line(time, effect.emitters.len(), &samples));
     }
 
-    assert_eq!(actual, include_str!("fixtures/v3_prism_bloom.moments"));
+    // Git may materialize text fixtures with CRLF on Windows runners. The snapshot contract is
+    // about evaluated particle data, not the checkout's line-ending policy.
+    let expected = include_str!("fixtures/v3_prism_bloom.moments").replace("\r\n", "\n");
+    assert_eq!(actual, expected);
 }
 
 fn snapshot_line(time: f32, emitter_count: usize, samples: &[ParticleSample]) -> String {
