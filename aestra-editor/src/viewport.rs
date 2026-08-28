@@ -1,8 +1,11 @@
 //! Preview viewport ownership: rendering, navigation, grid, display modes, and gizmos.
 
 use crate::{
-    EditorAction, FeathersActionButton, InspectorHelp, MenuState, ProfilerState,
-    localization::Localizer, module_parameter, session::EditorSession, theme, ui_shell,
+    EditorAction, FeathersActionButton, MenuState, ProfilerState,
+    inspector::{InspectorHelp, module_parameter},
+    localization::Localizer,
+    session::EditorSession,
+    theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
