@@ -24,7 +24,9 @@ pub(crate) fn editor_root() -> impl Scene {
                 GridTrack::px(24.0),
             ]},
         }
-        BackgroundColor(theme::APP_BG)
+        // The window clear supplies the application background. Keeping this root transparent
+        // lets the 3D preview camera show through the viewport dock's transparent cutout.
+        BackgroundColor(Color::NONE)
     }
 }
 
@@ -36,7 +38,7 @@ pub(crate) fn editor_content() -> impl Scene {
             min_width: px(0),
             flex_direction: FlexDirection::Column,
         }
-        BackgroundColor(theme::APP_BG)
+        BackgroundColor(Color::NONE)
     }
 }
 
@@ -67,7 +69,7 @@ pub(crate) fn viewport_pane() -> impl Scene {
             padding: px(12),
             min_width: px(0),
         }
-        BackgroundColor(theme::VIEWPORT_FRAME)
+        BackgroundColor(Color::NONE)
     }
 }
 

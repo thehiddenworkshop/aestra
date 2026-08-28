@@ -76,6 +76,17 @@ Run the native-GPU visual regression against the approved, effect-only reference
 cargo run -p aestra-viewer -- --visual-test aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom --frames 8
 ```
 
+Run the editor viewport GPU smoke test after changing cameras, render layers, gizmos,
+or the native GPU queue:
+
+```powershell
+cargo run -p aestra-viewer -- --editor-viewport-smoke target/visual-regression/editor-viewport-smoke --frames 3
+```
+
+This recreates the editor's constrained 3D preview camera and layer-15 overlay camera.
+It exits with an error if GPU particles disappear from the preview or leak into an
+overlay-only probe viewport, and writes the captured frames and contact sheet for review.
+
 Use the same workflow for the textured renderer reference:
 
 ```powershell

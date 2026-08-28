@@ -11,7 +11,7 @@ use bevy::{
     asset::{RenderAssetUsages, embedded_asset},
     camera::{
         primitives::Aabb,
-        visibility::{self, VisibilityClass},
+        visibility::{self, RenderLayers, VisibilityClass},
     },
     ecs::schedule::IntoScheduleConfigs,
     prelude::*,
@@ -417,6 +417,7 @@ struct GpuDrawInstance {
     renderer_order: u32,
     blend: GpuBlend,
     render_mode: GpuRenderMode,
+    render_layers: RenderLayers,
 }
 
 impl SyncComponent for GpuDrawInstance {
@@ -450,8 +451,25 @@ pub(crate) struct GpuFallbackTextures {
 type UnpreparedPlayers<'w, 's> = Query<
     'w,
     's,
-    (Entity, &'static EffectPlayer, &'static EffectRuntimeStatus),
+    (
+        Entity,
+        &'static EffectPlayer,
+        &'static EffectRuntimeStatus,
+        Option<&'static RenderLayers>,
+    ),
     (Without<GpuEffectBuffers>, Without<GpuPresentationPrepared>),
+>;
+
+type PreparedGpuPlayers<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static EffectPlayer,
+        &'static GlobalTransform,
+        &'static GpuEffectBuffers,
+        Option<&'static RenderLayers>,
+        Option<&'static Children>,
+    ),
 >;
 
 #[derive(Resource)]
@@ -524,7 +542,7 @@ pub(crate) fn prepare_gpu_players(
     fallback_textures: Res<GpuFallbackTextures>,
     players: UnpreparedPlayers,
 ) {
-    for (entity, player, runtime) in &players {
+    for (entity, player, runtime, render_layers) in &players {
         if !matches!(
             runtime.active,
             ActiveBackend::Gpu | ActiveBackend::GpuReadback
@@ -675,6 +693,7 @@ pub(crate) fn prepare_gpu_players(
                                 renderer_order: renderer_index,
                                 blend,
                                 render_mode,
+                                render_layers: render_layers.cloned().unwrap_or_default(),
                             },
                             bounds,
                             Transform::default(),
@@ -813,15 +832,10 @@ fn detect_gpu_capabilities(
 
 fn update_gpu_inputs(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    players: Query<(
-        &EffectPlayer,
-        &GlobalTransform,
-        &GpuEffectBuffers,
-        Option<&Children>,
-    )>,
+    players: PreparedGpuPlayers,
     mut draw_instances: Query<&mut GpuDrawInstance>,
 ) {
-    for (player, transform, gpu, children) in &players {
+    for (player, transform, gpu, render_layers, children) in &players {
         if let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance) {
             if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
                 buffer.set_data(artifact.emitters);
@@ -851,6 +865,7 @@ fn update_gpu_inputs(
             for child in children.iter() {
                 if let Ok(mut draw) = draw_instances.get_mut(child) {
                     draw.render_mode = render_mode;
+                    draw.render_layers = render_layers.cloned().unwrap_or_default();
                 }
             }
         }

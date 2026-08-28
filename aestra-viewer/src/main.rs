@@ -8,6 +8,7 @@ use aestra_bevy::{
 use bevy::{
     app::AppExit,
     asset::AssetPlugin,
+    camera::{Viewport, visibility::RenderLayers},
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::WindowResolution,
@@ -21,11 +22,18 @@ const SAMPLE_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestr
 const VIEW_WIDTH: u32 = 960;
 const VIEW_HEIGHT: u32 = 540;
 const REGRESSION_SEED: u64 = 0xa357_2a11_5eed_0001;
+const EDITOR_PREVIEW_X: u32 = 96;
+const EDITOR_PREVIEW_Y: u32 = 64;
+const EDITOR_PREVIEW_WIDTH: u32 = 640;
+const EDITOR_PREVIEW_HEIGHT: u32 = 412;
+const OVERLAY_PROBE_X: u32 = 784;
+const OVERLAY_PROBE_Y: u32 = 96;
+const OVERLAY_PROBE_SIZE: u32 = 144;
 
 fn main() {
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     let preview_seed = config.resolved_seed();
@@ -86,18 +94,25 @@ enum CaptureMode {
     Standard { output: PathBuf },
     Approve { reference: PathBuf },
     Compare { reference: PathBuf, output: PathBuf },
+    EditorViewportSmoke { output: PathBuf },
 }
 
 impl CaptureMode {
     fn output_directory(&self) -> &PathBuf {
         match self {
-            Self::Standard { output } | Self::Compare { output, .. } => output,
+            Self::Standard { output }
+            | Self::Compare { output, .. }
+            | Self::EditorViewportSmoke { output } => output,
             Self::Approve { reference } => reference,
         }
     }
 
     fn is_regression(&self) -> bool {
         !matches!(self, Self::Standard { .. })
+    }
+
+    fn is_editor_viewport_smoke(&self) -> bool {
+        matches!(self, Self::EditorViewportSmoke { .. })
     }
 }
 
@@ -149,6 +164,18 @@ impl ViewerConfig {
                             output: PathBuf::from(
                                 args.next()
                                     .ok_or("--visual-test requires an output directory")?,
+                            ),
+                        },
+                    )?;
+                }
+                "--editor-viewport-smoke" => {
+                    set_capture_mode(
+                        &mut capture_mode,
+                        CaptureMode::EditorViewportSmoke {
+                            output: PathBuf::from(
+                                args.next().ok_or(
+                                    "--editor-viewport-smoke requires an output directory",
+                                )?,
                             ),
                         },
                     )?;
@@ -230,7 +257,10 @@ fn parse_seed(value: &str) -> Result<u64, String> {
 
 fn set_capture_mode(target: &mut Option<CaptureMode>, mode: CaptureMode) -> Result<(), String> {
     if target.is_some() {
-        return Err("capture, approval, and visual-test modes are mutually exclusive".into());
+        return Err(
+            "capture, approval, visual-test, and viewport-smoke modes are mutually exclusive"
+                .into(),
+        );
     }
     *target = Some(mode);
     Ok(())
@@ -284,10 +314,20 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
         .capture_mode
         .as_ref()
         .is_some_and(CaptureMode::is_regression);
+    let editor_viewport_smoke = config
+        .capture_mode
+        .as_ref()
+        .is_some_and(CaptureMode::is_editor_viewport_smoke);
 
-    commands.spawn(Camera2d);
     let mut player = EffectPlayer::new(&effect);
     player.set_seed(config.resolved_seed());
+    if editor_viewport_smoke {
+        spawn_editor_viewport_smoke_scene(&mut commands);
+        commands.spawn((player, RenderLayers::layer(0)));
+        return;
+    }
+
+    commands.spawn(Camera2d);
     commands.spawn(player);
 
     if regression_scene {
@@ -337,6 +377,56 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
             ..default()
         },
     ));
+}
+
+fn spawn_editor_viewport_smoke_scene(commands: &mut Commands) {
+    let preview_viewport = Viewport {
+        physical_position: UVec2::new(EDITOR_PREVIEW_X, EDITOR_PREVIEW_Y),
+        physical_size: UVec2::new(EDITOR_PREVIEW_WIDTH, EDITOR_PREVIEW_HEIGHT),
+        ..default()
+    };
+    commands.spawn((
+        Camera3d::default(),
+        Camera {
+            order: -2,
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.009, 0.012, 0.024)),
+            viewport: Some(preview_viewport.clone()),
+            ..default()
+        },
+        editor_preview_camera_transform(),
+        RenderLayers::layer(0),
+    ));
+    commands.spawn((
+        Camera3d::default(),
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            viewport: Some(preview_viewport),
+            ..default()
+        },
+        editor_preview_camera_transform(),
+        RenderLayers::layer(15),
+    ));
+    commands.spawn((
+        Camera3d::default(),
+        Camera {
+            order: 2,
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.018, 0.024, 0.036)),
+            viewport: Some(Viewport {
+                physical_position: UVec2::new(OVERLAY_PROBE_X, OVERLAY_PROBE_Y),
+                physical_size: UVec2::splat(OVERLAY_PROBE_SIZE),
+                ..default()
+            }),
+            ..default()
+        },
+        editor_preview_camera_transform(),
+        RenderLayers::layer(15),
+    ));
+}
+
+fn editor_preview_camera_transform() -> Transform {
+    let orbit = Quat::from_rotation_x(-0.35);
+    Transform::from_translation(orbit * Vec3::Z * 140.0).looking_at(Vec3::ZERO, Vec3::Y)
 }
 
 fn viewer_controls(
@@ -592,7 +682,50 @@ fn finish_capture(
             );
             Ok(())
         }
+        CaptureMode::EditorViewportSmoke { output } => {
+            validate_editor_viewport_smoke(&capture.images)?;
+            println!(
+                "editor viewport GPU smoke passed: {} frames written to {}",
+                capture.frame_count,
+                output.display()
+            );
+            Ok(())
+        }
     }
+}
+
+fn validate_editor_viewport_smoke(images: &[RgbaImage]) -> Result<(), String> {
+    let preview_counts = images
+        .iter()
+        .map(|image| luminous_pixels_in_columns(image, EDITOR_PREVIEW_X, EDITOR_PREVIEW_WIDTH))
+        .collect::<Vec<_>>();
+    if preview_counts.iter().all(|count| *count < 8) {
+        return Err(format!(
+            "editor viewport smoke found no visible GPU particles in the preview viewport (luminous pixels per frame: {preview_counts:?})"
+        ));
+    }
+
+    let probe_counts = images
+        .iter()
+        .map(|image| luminous_pixels_in_columns(image, OVERLAY_PROBE_X, OVERLAY_PROBE_SIZE))
+        .collect::<Vec<_>>();
+    if probe_counts.iter().any(|count| *count >= 8) {
+        return Err(format!(
+            "editor viewport smoke detected GPU particles in the layer-15 overlay probe (luminous pixels per frame: {probe_counts:?})"
+        ));
+    }
+    Ok(())
+}
+
+fn luminous_pixels_in_columns(image: &RgbaImage, start_x: u32, width: u32) -> usize {
+    let end_x = start_x.saturating_add(width).min(image.width());
+    (start_x.min(image.width())..end_x)
+        .flat_map(|x| (0..image.height()).map(move |y| (x, y)))
+        .filter(|&(x, y)| {
+            let [red, green, blue, alpha] = image.get_pixel(x, y).0;
+            alpha > 0 && red.max(green).max(blue) >= 80
+        })
+        .count()
 }
 
 #[cfg(test)]
@@ -605,6 +738,17 @@ mod tests {
             .map(|index| capture_frame(120, index, 4))
             .collect::<Vec<_>>();
         assert_eq!(frames, vec![15, 45, 75, 105]);
+    }
+
+    #[test]
+    fn viewport_smoke_pixel_scan_is_limited_to_the_requested_columns() {
+        let mut image = RgbaImage::from_pixel(8, 4, Rgba([3, 4, 9, 255]));
+        image.put_pixel(2, 1, Rgba([180, 120, 220, 255]));
+        image.put_pixel(6, 2, Rgba([220, 180, 240, 255]));
+
+        assert_eq!(luminous_pixels_in_columns(&image, 0, 4), 1);
+        assert_eq!(luminous_pixels_in_columns(&image, 4, 4), 1);
+        assert_eq!(luminous_pixels_in_columns(&image, 3, 3), 0);
     }
 
     #[test]

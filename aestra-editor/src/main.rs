@@ -1448,7 +1448,9 @@ fn setup_editor(
             grid: preview_grid_uniform(140.0, Vec3::ZERO, 1.0),
         })),
         Transform::from_xyz(0.0, PREVIEW_GRID_Y, 0.0).with_scale(Vec3::new(2_800.0, 1.0, 2_800.0)),
-        RenderLayers::layer(15),
+        // The grid is scene geometry. Rendering it with the transform-gizmo overlay would put it
+        // above Bevy UI and previously hid that the actual preview pass was behind an opaque pane.
+        RenderLayers::layer(0),
     ));
     spawn_preview_effect_player(&mut commands, &session, Transform::IDENTITY);
     commands.spawn((
@@ -3565,6 +3567,7 @@ fn spawn_dock_stack(
             },
         ))
         .apply_scene(ui_shell::dock_pane())
+        .insert(BackgroundColor(dock_pane_background(stack.active)))
         .with_children(|pane| {
             spawn_dock_tab_bar(pane, node, stack, sources.localizer);
             if let Some(panel) = stack.active {
@@ -3572,6 +3575,14 @@ fn spawn_dock_stack(
             }
             spawn_dock_drop_overlay(pane, node);
         });
+}
+
+fn dock_pane_background(active: Option<DockPanel>) -> Color {
+    if active == Some(DockPanel::Viewport) {
+        Color::NONE
+    } else {
+        theme::PANEL_DARK
+    }
 }
 
 fn spawn_panel_content(
@@ -14725,6 +14736,16 @@ fn layer_color_alpha(index: usize, alpha: f32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn viewport_dock_is_a_transparent_cutout_for_the_preview_camera() {
+        assert_eq!(dock_pane_background(Some(DockPanel::Viewport)), Color::NONE);
+        assert_eq!(
+            dock_pane_background(Some(DockPanel::Inspector)),
+            theme::PANEL_DARK
+        );
+        assert_eq!(dock_pane_background(None), theme::PANEL_DARK);
+    }
 
     #[test]
     fn preview_cameras_are_disabled_without_an_active_viewport_canvas() {

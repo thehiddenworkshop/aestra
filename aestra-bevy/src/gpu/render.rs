@@ -4,6 +4,7 @@ use super::{
 };
 use bevy::{
     app::SubApp,
+    camera::visibility::RenderLayers,
     core_pipeline::{
         core_2d::{CORE_2D_DEPTH_FORMAT, Transparent2d},
         core_3d::{CORE_3D_DEPTH_FORMAT, Transparent3d, TransparentSortingInfo3d},
@@ -315,16 +316,19 @@ fn queue_gpu_sprites(
 
 fn queue_gpu_sprites_3d(
     draw_functions: Res<DrawFunctions<Transparent3d>>,
-    pipeline: Res<GpuSpritePipeline>,
-    mut pipelines: ResMut<SpecializedRenderPipelines<GpuSpritePipeline>>,
-    pipeline_cache: Res<PipelineCache>,
+    pipeline_resources: (
+        Res<GpuSpritePipeline>,
+        ResMut<SpecializedRenderPipelines<GpuSpritePipeline>>,
+        Res<PipelineCache>,
+        Res<ViewKeyCache>,
+    ),
     effects: Query<(Entity, &MainEntity, &GpuDrawInstance)>,
     mut phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
-    views: Query<&ExtractedView>,
-    view_key_cache: Res<ViewKeyCache>,
+    views: Query<(&ExtractedView, &RenderLayers)>,
 ) {
+    let (pipeline, mut pipelines, pipeline_cache, view_key_cache) = pipeline_resources;
     let draw_function = draw_functions.read().id::<DrawGpuSprites3d>();
-    for view in &views {
+    for (view, view_layers) in &views {
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
@@ -332,6 +336,9 @@ fn queue_gpu_sprites_3d(
             continue;
         };
         for (render_entity, main_entity, effect) in &effects {
+            if !gpu_draw_is_visible_in_layers(view_layers, &effect.render_layers) {
+                continue;
+            }
             let pipeline_id = pipelines.specialize(
                 &pipeline_cache,
                 &pipeline,
@@ -356,6 +363,10 @@ fn queue_gpu_sprites_3d(
             });
         }
     }
+}
+
+fn gpu_draw_is_visible_in_layers(view_layers: &RenderLayers, effect_layers: &RenderLayers) -> bool {
+    view_layers.intersects(effect_layers)
 }
 
 type DrawGpuSprites = (
@@ -416,5 +427,22 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         };
         pass.draw_indirect(&indirect.buffer, 0);
         RenderCommandResult::Success
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn three_dimensional_draws_only_enter_matching_render_layers() {
+        assert!(gpu_draw_is_visible_in_layers(
+            &RenderLayers::layer(0),
+            &RenderLayers::layer(0)
+        ));
+        assert!(!gpu_draw_is_visible_in_layers(
+            &RenderLayers::layer(15),
+            &RenderLayers::layer(0)
+        ));
     }
 }

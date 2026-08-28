@@ -74,6 +74,36 @@ architecture vision; this file is the shorter delivery plan.
   CPU/readback parity, authoring controls, and a viewer example. Procedural recipes,
   mesh/ribbon production paths, renderer sorting, and richer material domains remain.
 
+## Stability-hardening milestone
+
+Complete this milestone before expanding the editor or renderer feature surface further.
+
+1. **Correct native-GPU 3D view integration.** Queue effects only for Bevy views that
+   consider them visible, preserve render-layer and frustum decisions, and provide
+   camera-relative transparent sorting with deterministic renderer-order bias. Add
+   focused render-world tests for view selection and sorting inputs. Keep the
+   `--editor-viewport-smoke` capture as the acceptance gate for constrained preview and
+   overlay-camera changes.
+2. **Harden recovery cleanup.** Keep tracking an active recovery snapshot until its
+   deletion succeeds, and cover failed deletion, retry, save, document-switch, and
+   autosave-disable behavior.
+3. **Make settings replacement crash-safe.** Replace fixed sibling temporary names with
+   unique temporary files, recover interrupted replacements, and ensure the canonical
+   settings path never disappears during a successful replacement.
+4. **Remove multiplicative renderer work.** Replace the shared alive-particle draw for
+   every renderer with per-renderer compacted indices, emitter ranges, or equivalent
+   indirect commands so render work scales with visible particles rather than visible
+   particles multiplied by renderer count.
+5. **Decompose the editor application.** Move viewport, timeline, inspector, docking,
+   menus, settings, persistence, and localization into domain plugins with explicit
+   resources and system sets. Keep `main.rs` as composition and startup wiring.
+6. **Establish automated quality gates.** Run formatting, workspace checks, strict
+   Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
+   tolerant reference-image workflow for broader rendering regression coverage.
+7. **Refresh contributor documentation.** Mark the prototype assessment below as a
+   historical baseline or rewrite it to match the implemented semantic/compiler
+   architecture.
+
 ## 1. Assessment of the current prototype
 
 The existing vertical slice already proves several useful contracts:

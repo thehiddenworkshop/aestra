@@ -8,7 +8,6 @@ pub const MENU: Color = Color::srgb(0.032, 0.037, 0.055);
 pub const PANEL_DARK: Color = Color::srgb(0.039, 0.045, 0.066);
 pub const PANEL: Color = Color::srgb(0.055, 0.062, 0.087);
 pub const PANEL_LIGHT: Color = Color::srgb(0.070, 0.078, 0.105);
-pub const VIEWPORT_FRAME: Color = Color::srgb(0.020, 0.024, 0.038);
 pub const VIEWPORT: Color = Color::srgb(0.013, 0.017, 0.030);
 pub const TIMELINE_BG: Color = Color::srgb(0.030, 0.035, 0.052);
 pub const BORDER: Color = Color::srgb(0.105, 0.116, 0.151);

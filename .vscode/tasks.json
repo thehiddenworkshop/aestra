@@ -45,6 +45,31 @@
         "panel": "dedicated",
         "clear": true
       }
+    },
+    {
+      "label": "Aestra: Editor Viewport GPU Smoke",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "run",
+        "-p",
+        "aestra-viewer",
+        "--",
+        "--editor-viewport-smoke",
+        "target/visual-regression/editor-viewport-smoke",
+        "--frames",
+        "3"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
     }
   ]
 }
