@@ -409,7 +409,6 @@ fn handle_inspector_actions(
                     }
                     InspectorAction::ToggleSection(section) => {
                         if toggle_persisted_inspector_section(&session, &mut settings, section) {
-                            session.ui_revision += 1;
                             persist_editor_settings(
                                 &settings,
                                 &mut settings_persistence,
@@ -551,6 +550,41 @@ mod tests {
         let palette = app.world().resource::<ModulePaletteState>();
         assert!(palette.open);
         assert_eq!(palette.stage, StackStage::ParticleSpawn);
+    }
+
+    #[test]
+    fn inspector_disclosure_persists_without_requesting_a_ui_rebuild() {
+        let temporary = tempfile::tempdir().unwrap();
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let module = session.selected_layer().modules[0].id;
+        let revision = session.ui_revision;
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(MenuState::default())
+            .insert_resource(EditorModuleRegistry::default())
+            .insert_resource(ModulePaletteState::default())
+            .insert_resource(CurvesState::default())
+            .insert_resource(WorkspaceLayout::default())
+            .insert_resource(EditorSettings::default())
+            .insert_resource(SettingsPersistence::for_test(
+                temporary.path().join("settings.ron"),
+            ))
+            .insert_resource(test_localizer())
+            .add_systems(Update, handle_inspector_actions);
+        app.world_mut().spawn((
+            Button,
+            Interaction::Pressed,
+            InspectorAction::ToggleSection(InspectorSection::Module(module)),
+            BackgroundColor(theme::BUTTON),
+        ));
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<EditorSession>().ui_revision,
+            revision,
+            "a disclosure must update its existing card instead of rebuilding the editor"
+        );
     }
 
     #[test]
@@ -3289,6 +3323,7 @@ fn spawn_module_card(
     spawn_remembered_panel_card(
         parent,
         PanelCardProps::new(display_name, collapsed)
+            .with_memory_key(inspector_module_key(module))
             .with_help(help)
             .with_enabled(module.enabled)
             .with_background(if module.enabled {
@@ -4091,6 +4126,7 @@ fn spawn_renderer_card(
     spawn_remembered_panel_card(
         parent,
         PanelCardProps::new(display_name, collapsed)
+            .with_memory_key(inspector_renderer_key(renderer))
             .with_help("Controls how this emitter is drawn.")
             .with_enabled(renderer.enabled)
             .with_border(base_border),
