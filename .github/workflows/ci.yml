@@ -19,7 +19,7 @@ env:
 
 jobs:
   quality:
-    name: Format, lint, build, and test
+    name: Format, lint, and build
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -31,6 +31,12 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-quality-windows
+          cache-on-failure: true
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -39,6 +45,23 @@ jobs:
 
       - name: Run strict Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  tests:
+    name: Workspace tests
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-tests-windows
+          cache-on-failure: true
 
       - name: Run workspace tests
         run: cargo test --workspace --locked
