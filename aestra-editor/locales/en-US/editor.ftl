@@ -61,6 +61,17 @@ viewport-shape-extent-y = Y half-extent {$value}
 viewport-shape-extent-z = Z half-extent {$value}
 
 dock-float-panel = Float Panel
+dock-status-closed = Closed {$panel} · reopen it from View
+dock-status-showing = Showing {$panel}
+dock-status-hidden = Hid {$panel}
+dock-status-floated = Floated {$panel}
+dock-status-workspace-reset = Workspace layout reset
+dock-status-docked = Docked {$panel}
+dock-status-moved-relative = Moved {$source} {$relation} {$target}
+dock-status-moved-end = Moved {$panel} to the end of the tab strip
+dock-status-redocked-after-close = Docked {$panel} after closing its window
+dock-relation-before = before
+dock-relation-after = after
 common-close = Close
 common-on = ON
 common-off = OFF

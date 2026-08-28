@@ -4,14 +4,15 @@ use crate::docking::{
     DockAxis, DockCloseButton, DockDragState, DockDrop, DockDropHint, DockDropQueries,
     DockDropZone, DockDropZoneLabel, DockFirstPane, DockNode, DockNodeId, DockPane, DockPanel,
     DockResizeQueries, DockSplitter, DockStack, DockTab, DockTabAppendIndicator, DockTabAppendZone,
-    DockTreeHost, NativeFloatingCamera, NativeFloatingUi, NativeFloatingWindow, ResizeState,
-    SplitterGrip, WorkspaceLayout,
+    DockTreeHost, DockingAction, NativeFloatingCamera, NativeFloatingUi, NativeFloatingWindow,
+    ResizeState, SplitterGrip, WorkspaceLayout,
 };
 use crate::*;
 use bevy::{
     ecs::system::SystemParam,
     feathers::cursor::{EntityCursor, OverrideCursor},
 };
+use fluent_bundle::FluentArgs;
 
 #[derive(Clone, Copy)]
 struct PanelSources<'a> {
@@ -636,7 +637,7 @@ fn spawn_dock_tab(
         .spawn((
             Button,
             EditorNativeControl,
-            EditorAction::SelectDockPanel(panel),
+            DockingAction::Select(panel),
             DockTab(panel),
             RelativeCursorPosition::default(),
             Pickable {
@@ -692,7 +693,7 @@ fn spawn_dock_tab(
                 tab.spawn((
                     Button,
                     EditorNativeControl,
-                    EditorAction::CloseDockPanel(panel),
+                    DockingAction::Close(panel),
                     DockCloseButton,
                     Node {
                         width: Val::Px(24.0),
@@ -957,6 +958,7 @@ fn dock_panel_drop(
     mut drag_state: ResMut<DockDragState>,
     mut layout: ResMut<WorkspaceLayout>,
     mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
 ) {
     let mut target_entity = drop.event_target();
     let zone = loop {
@@ -984,7 +986,9 @@ fn dock_panel_drop(
             warn!("failed to save editor workspace layout: {error}");
         }
         session.ui_revision += 1;
-        session.status = format!("Docked {} panel", tab.0.title().to_ascii_lowercase());
+        let mut args = FluentArgs::new();
+        args.set("panel", localizer.text(tab.0.message_id()));
+        session.status = localizer.text_with("dock-status-docked", &args);
     }
     drop.propagate(false);
 }
@@ -996,6 +1000,7 @@ fn reorder_dock_tab(
     mut drag_state: ResMut<DockDragState>,
     mut layout: ResMut<WorkspaceLayout>,
     mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
 ) {
     let mut target_entity = drop.event_target();
     let (target, cursor) = loop {
@@ -1027,12 +1032,18 @@ fn reorder_dock_tab(
             warn!("failed to save editor workspace layout: {error}");
         }
         session.ui_revision += 1;
-        session.status = format!(
-            "Moved {} {} {}",
-            source.0.title().to_ascii_lowercase(),
-            if before { "before" } else { "after" },
-            target.0.title().to_ascii_lowercase()
+        let mut args = FluentArgs::new();
+        args.set("source", localizer.text(source.0.message_id()));
+        args.set(
+            "relation",
+            localizer.text(if before {
+                "dock-relation-before"
+            } else {
+                "dock-relation-after"
+            }),
         );
+        args.set("target", localizer.text(target.0.message_id()));
+        session.status = localizer.text_with("dock-status-moved-relative", &args);
     }
     drop.propagate(false);
 }
@@ -1045,6 +1056,7 @@ fn append_dock_tab(
     mut drag_state: ResMut<DockDragState>,
     mut layout: ResMut<WorkspaceLayout>,
     mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
 ) {
     let Ok(zone) = append_zones.get(drop.event_target()) else {
         return;
@@ -1065,10 +1077,9 @@ fn append_dock_tab(
             warn!("failed to save editor workspace layout: {error}");
         }
         session.ui_revision += 1;
-        session.status = format!(
-            "Moved {} to the end of the tab strip",
-            source.0.title().to_ascii_lowercase()
-        );
+        let mut args = FluentArgs::new();
+        args.set("panel", localizer.text(source.0.message_id()));
+        session.status = localizer.text_with("dock-status-moved-end", &args);
     }
     drop.propagate(false);
 }

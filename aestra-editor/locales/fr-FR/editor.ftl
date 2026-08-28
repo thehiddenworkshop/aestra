@@ -61,6 +61,17 @@ viewport-shape-extent-y = Demi-étendue Y {$value}
 viewport-shape-extent-z = Demi-étendue Z {$value}
 
 dock-float-panel = Détacher le panneau
+dock-status-closed = Panneau {$panel} fermé · rouvrez-le depuis Affichage
+dock-status-showing = Panneau {$panel} affiché
+dock-status-hidden = Panneau {$panel} masqué
+dock-status-floated = Panneau {$panel} détaché
+dock-status-workspace-reset = Disposition de l’espace de travail réinitialisée
+dock-status-docked = Panneau {$panel} ancré
+dock-status-moved-relative = Panneau {$source} déplacé {$relation} {$target}
+dock-status-moved-end = Panneau {$panel} déplacé à la fin de la barre d’onglets
+dock-status-redocked-after-close = Panneau {$panel} ancré après la fermeture de sa fenêtre
+dock-relation-before = avant
+dock-relation-after = après
 common-close = Fermer
 common-on = OUI
 common-off = NON

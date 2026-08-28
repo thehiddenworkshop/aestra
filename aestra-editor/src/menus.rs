@@ -1,5 +1,6 @@
 //! Editor menu chrome, popup state, and menu-specific interaction behavior.
 
+use crate::docking::DockingAction;
 use crate::*;
 use bevy::ui_widgets::Activate;
 use fluent_bundle::FluentArgs;
@@ -175,7 +176,7 @@ pub(crate) fn spawn_tab_context_menu(
             menu.spawn_empty()
                 .apply_scene(ui_shell::feathers_plain_button())
                 .insert((
-                    EditorAction::FloatDockPanel(context.panel, context.position),
+                    DockingAction::Float(context.panel, context.position),
                     FeathersActionButton,
                     AccessibleLabel(localizer.text("dock-float-panel")),
                     Node {
@@ -307,7 +308,7 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
                         dropdown,
                         "file-settings",
                         "",
-                        EditorAction::ShowDockPanel(DockPanel::Settings),
+                        DockingAction::Show(DockPanel::Settings),
                         localizer,
                     );
                     dropdown
@@ -444,7 +445,7 @@ fn spawn_view_menu(
                         dropdown,
                         "view-reset-workspace",
                         "",
-                        EditorAction::ResetWorkspaceLayout,
+                        DockingAction::ResetWorkspace,
                         localizer,
                     );
 
@@ -475,7 +476,7 @@ fn spawn_view_menu(
                                 let mut item = submenu.spawn_empty();
                                 item.apply_scene(ui_shell::feathers_menu_item()).insert((
                                     Interaction::None,
-                                    EditorAction::ToggleDockPanel(panel),
+                                    DockingAction::Toggle(panel),
                                     FeathersActionButton,
                                     AccessibleLabel(panel_visibility_label(
                                         localizer, panel, visible,

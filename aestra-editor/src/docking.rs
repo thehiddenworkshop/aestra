@@ -1,4 +1,14 @@
-use bevy::{ecs::system::SystemParam, prelude::*};
+use crate::{
+    EditorSession, FeathersActionButton, Localizer, MenuState, PendingFeathersActivation, theme,
+};
+use bevy::{
+    ecs::system::SystemParam,
+    prelude::*,
+    ui::InteractionDisabled,
+    ui_widgets::Activate,
+    window::{PrimaryWindow, WindowPosition},
+};
+use fluent_bundle::FluentArgs;
 use serde::{Deserialize, Serialize};
 use std::{fs, io, path::PathBuf};
 
@@ -13,6 +23,8 @@ pub(crate) struct DockingPlugin;
 pub(crate) enum DockingSet {
     /// Captures native-window geometry before the rest of the editor responds to the frame.
     Input,
+    /// Applies explicit tab, menu, and workspace-layout commands.
+    Actions,
     /// Updates drag/drop affordances and floating-window labels before the dock tree is rebuilt.
     Reconcile,
     /// Reconciles native floating windows after the main editor UI has been rebuilt.
@@ -24,6 +36,8 @@ impl Plugin for DockingPlugin {
         app.init_resource::<DockDragState>()
             .init_resource::<ResizeState>()
             .insert_resource(WorkspaceLayout::load())
+            .add_observer(queue_docking_action_activation)
+            .add_systems(Update, handle_docking_actions.in_set(DockingSet::Actions))
             .add_systems(
                 Update,
                 crate::dock_ui::persist_native_window_geometry.in_set(DockingSet::Input),
@@ -51,6 +65,217 @@ impl Plugin for DockingPlugin {
                     .in_set(DockingSet::Sync),
             );
     }
+}
+
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub(crate) enum DockingAction {
+    Select(DockPanel),
+    Close(DockPanel),
+    Show(DockPanel),
+    Toggle(DockPanel),
+    Float(DockPanel, [f32; 2]),
+    ResetWorkspace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DockingStatus {
+    Closed(DockPanel),
+    Showing(DockPanel),
+    Hidden(DockPanel),
+    Floated(DockPanel),
+    WorkspaceReset,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct DockingActionOutcome {
+    changed: bool,
+    status: Option<DockingStatus>,
+}
+
+fn queue_docking_action_activation(
+    activate: On<Activate>,
+    actions: Query<(), (With<DockingAction>, With<FeathersActionButton>)>,
+    mut commands: Commands,
+) {
+    if actions.contains(activate.entity) {
+        commands
+            .entity(activate.entity)
+            .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn handle_docking_actions(
+    mut commands: Commands,
+    mut actions: Query<
+        (
+            Entity,
+            &Interaction,
+            &DockingAction,
+            Option<&DockTab>,
+            Option<&DockCloseButton>,
+            Option<&FeathersActionButton>,
+            Option<&PendingFeathersActivation>,
+            Option<&InteractionDisabled>,
+            &mut BackgroundColor,
+        ),
+        (
+            Changed<Interaction>,
+            Or<(With<Button>, With<FeathersActionButton>)>,
+        ),
+    >,
+    mut layout: ResMut<WorkspaceLayout>,
+    mut session: ResMut<EditorSession>,
+    mut menu: ResMut<MenuState>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    localizer: Res<Localizer>,
+) {
+    for (
+        entity,
+        interaction,
+        action,
+        dock_tab,
+        dock_close,
+        feathers_action,
+        pending_activation,
+        disabled,
+        mut background,
+    ) in &mut actions
+    {
+        if disabled.is_some() {
+            if feathers_action.is_none() {
+                background.0 = theme::PANEL_DARK;
+            }
+            continue;
+        }
+        match *interaction {
+            Interaction::Hovered if feathers_action.is_none() => {
+                background.0 = theme::BUTTON_HOVER;
+            }
+            Interaction::None if feathers_action.is_none() => {
+                background.0 = if let Some(tab) = dock_tab {
+                    if layout.is_active(tab.0) {
+                        theme::PANEL
+                    } else {
+                        theme::PANEL_DARK
+                    }
+                } else if dock_close.is_some() {
+                    Color::NONE
+                } else {
+                    theme::BUTTON
+                };
+            }
+            Interaction::Pressed => {
+                if feathers_action.is_some() {
+                    if pending_activation.is_none() {
+                        continue;
+                    }
+                    commands
+                        .entity(entity)
+                        .remove::<PendingFeathersActivation>()
+                        .insert(Interaction::None);
+                } else {
+                    background.0 = theme::ACCENT_DIM;
+                }
+                if !matches!(action, DockingAction::Toggle(_)) {
+                    menu.open = None;
+                    menu.panels_open = false;
+                }
+                if menu.tab_context.take().is_some() {
+                    session.ui_revision += 1;
+                }
+                let outcome = apply_docking_action(*action, &mut layout, windows.iter().next());
+                if !outcome.changed {
+                    continue;
+                }
+                if let Err(error) = layout.save() {
+                    warn!("failed to save editor workspace layout: {error}");
+                }
+                session.ui_revision += 1;
+                if let Some(status) = outcome.status {
+                    session.status = localize_docking_status(status, &localizer);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_docking_action(
+    action: DockingAction,
+    layout: &mut WorkspaceLayout,
+    window: Option<&Window>,
+) -> DockingActionOutcome {
+    match action {
+        DockingAction::Select(panel) => DockingActionOutcome {
+            changed: layout.activate(panel),
+            status: None,
+        },
+        DockingAction::Close(panel) => DockingActionOutcome {
+            changed: layout.close(panel),
+            status: Some(DockingStatus::Closed(panel)),
+        },
+        DockingAction::Show(panel) => DockingActionOutcome {
+            changed: layout.show(panel),
+            status: Some(DockingStatus::Showing(panel)),
+        },
+        DockingAction::Toggle(panel) => {
+            let was_visible = layout.is_visible(panel);
+            DockingActionOutcome {
+                changed: if was_visible {
+                    layout.close(panel)
+                } else {
+                    layout.show(panel)
+                },
+                status: Some(if was_visible {
+                    DockingStatus::Hidden(panel)
+                } else {
+                    DockingStatus::Showing(panel)
+                }),
+            }
+        }
+        DockingAction::Float(panel, pointer_position) => {
+            let Some(window) = window else {
+                return DockingActionOutcome::default();
+            };
+            let available_size = [window.width(), (window.height() - 108.0).max(180.0)];
+            let origin = match window.position {
+                WindowPosition::At(position) => position,
+                _ => IVec2::new(80, 80),
+            };
+            let scale = window.scale_factor();
+            let position = [
+                origin.x as f32 + (pointer_position[0] - 92.0) * scale,
+                origin.y as f32 + (pointer_position[1] + 68.0) * scale,
+            ];
+            DockingActionOutcome {
+                changed: layout.float_panel(panel, position, available_size),
+                status: Some(DockingStatus::Floated(panel)),
+            }
+        }
+        DockingAction::ResetWorkspace => {
+            *layout = WorkspaceLayout::default();
+            DockingActionOutcome {
+                changed: true,
+                status: Some(DockingStatus::WorkspaceReset),
+            }
+        }
+    }
+}
+
+fn localize_docking_status(status: DockingStatus, localizer: &Localizer) -> String {
+    let (message_id, panel) = match status {
+        DockingStatus::Closed(panel) => ("dock-status-closed", Some(panel)),
+        DockingStatus::Showing(panel) => ("dock-status-showing", Some(panel)),
+        DockingStatus::Hidden(panel) => ("dock-status-hidden", Some(panel)),
+        DockingStatus::Floated(panel) => ("dock-status-floated", Some(panel)),
+        DockingStatus::WorkspaceReset => ("dock-status-workspace-reset", None),
+    };
+    let mut args = FluentArgs::new();
+    if let Some(panel) = panel {
+        args.set("panel", localizer.text(panel.message_id()));
+    }
+    localizer.text_with(message_id, &args)
 }
 
 // Runtime-only docking state and entity markers live beside the plugin rather than the editor
@@ -176,21 +401,6 @@ impl DockPanel {
         Self::Changes,
         Self::Settings,
     ];
-
-    pub(crate) fn title(self) -> &'static str {
-        match self {
-            Self::Viewport => "VIEWPORT",
-            Self::Assets => "ASSETS",
-            Self::Inspector => "INSPECTOR",
-            Self::Timeline => "TIMELINE",
-            Self::Curves => "CURVES",
-            Self::Diagnostics => "DIAGNOSTICS",
-            Self::CompilerInspector => "COMPILER INSPECTOR",
-            Self::Profiler => "PROFILER",
-            Self::Changes => "CHANGES",
-            Self::Settings => "SETTINGS",
-        }
-    }
 
     pub(crate) fn message_id(self) -> &'static str {
         match self {
@@ -856,6 +1066,73 @@ fn workspace_layout_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn docking_actions_own_panel_visibility_and_workspace_reset() {
+        let mut layout = WorkspaceLayout::default();
+        let closed = apply_docking_action(
+            DockingAction::Close(DockPanel::Inspector),
+            &mut layout,
+            None,
+        );
+        assert!(closed.changed);
+        assert_eq!(
+            closed.status,
+            Some(DockingStatus::Closed(DockPanel::Inspector))
+        );
+        assert!(!layout.is_visible(DockPanel::Inspector));
+
+        let shown = apply_docking_action(
+            DockingAction::Toggle(DockPanel::Inspector),
+            &mut layout,
+            None,
+        );
+        assert!(shown.changed);
+        assert_eq!(
+            shown.status,
+            Some(DockingStatus::Showing(DockPanel::Inspector))
+        );
+        assert!(layout.is_visible(DockPanel::Inspector));
+
+        assert!(layout.close(DockPanel::Assets));
+        let reset = apply_docking_action(DockingAction::ResetWorkspace, &mut layout, None);
+        assert_eq!(reset.status, Some(DockingStatus::WorkspaceReset));
+        assert_eq!(layout, WorkspaceLayout::default());
+    }
+
+    #[test]
+    fn docking_statuses_use_localized_panel_names() {
+        let english = Localizer::new("en-US").unwrap();
+        let french = Localizer::new("fr-FR").unwrap();
+        let english =
+            localize_docking_status(DockingStatus::Floated(DockPanel::Profiler), &english);
+        assert!(english.starts_with("Floated"));
+        assert!(english.contains("PROFILER"));
+        let french = localize_docking_status(DockingStatus::Closed(DockPanel::Inspector), &french);
+        assert!(french.contains("INSPECTEUR"));
+        assert!(french.ends_with("fermé · rouvrez-le depuis Affichage"));
+    }
+
+    #[test]
+    fn feathers_activation_queues_one_docking_action() {
+        let mut app = App::new();
+        app.add_observer(queue_docking_action_activation);
+        let action = app
+            .world_mut()
+            .spawn((
+                DockingAction::ResetWorkspace,
+                FeathersActionButton,
+                Interaction::None,
+            ))
+            .id();
+
+        app.world_mut().trigger(Activate { entity: action });
+        app.update();
+
+        let action = app.world().entity(action);
+        assert!(action.contains::<PendingFeathersActivation>());
+        assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+    }
 
     #[test]
     fn docking_plugin_owns_layout_and_transient_interaction_state() {

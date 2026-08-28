@@ -3,6 +3,7 @@
 use crate::recovery::{RecoveryCandidate, RecoveryPersistence};
 use crate::*;
 use bevy::ui_widgets::Activate;
+use fluent_bundle::FluentArgs;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 #[cfg(test)]
 use std::fs;
@@ -452,6 +453,7 @@ fn handle_window_close_requests(
     mut recovery: ResMut<RecoveryPersistence>,
     mut autosave: ResMut<AutosaveState>,
     mut commands: Commands,
+    localizer: Res<Localizer>,
 ) {
     for request in close_requests.read() {
         if request.window == *primary {
@@ -472,10 +474,9 @@ fn handle_window_close_requests(
                 warn!("failed to save editor workspace layout: {error}");
             }
             session.ui_revision += 1;
-            session.status = format!(
-                "Docked {} panel after closing its window",
-                floating.0.title().to_ascii_lowercase()
-            );
+            let mut args = FluentArgs::new();
+            args.set("panel", localizer.text(floating.0.message_id()));
+            session.status = localizer.text_with("dock-status-redocked-after-close", &args);
         }
     }
 }

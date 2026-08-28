@@ -143,6 +143,11 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   their placement. It presents execution stages, source-mapped instructions, particle layout, runtime parameter
   slots, renderer plans, optimization statistics, and the WESL backend entry points.
   Compiled rows navigate back to their semantic emitter, module, renderer, or parameter.
+- Runs panel selection, visibility, floating, and workspace reset commands through the
+  `DockingAction` contract owned by `DockingPlugin`. Dock tabs, context menus, and View-menu
+  entries no longer depend on the global editor action enum. Command and drag/drop outcomes
+  use localized panel names, while the serializable `WorkspaceLayout` remains the single
+  persisted source of truth.
 - Uses one native Bevy scroll-area with a BSN-backed Feathers scrollbar across Inspector, Diagnostics,
   Compiler Inspector, Profiler, Changes, and curve lists. Scrollbars only participate in
   layout while their content overflows. Semantic Inspector anchors support exact

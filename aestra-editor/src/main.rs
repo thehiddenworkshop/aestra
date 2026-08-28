@@ -51,8 +51,7 @@ use bevy::{
     ui_widgets::{ScrollIntoView, ValueChange},
     window::{
         CursorIcon, CursorOptions, PrimaryWindow, SystemCursorIcon, WindowCloseRequested,
-        WindowMoved, WindowPosition, WindowRef, WindowResizeConstraints, WindowResized,
-        WindowResolution,
+        WindowMoved, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
     },
 };
 pub(crate) use compiler_inspector::spawn_compiler_inspector_workspace;
@@ -65,9 +64,10 @@ use diagnostics::{DiagnosticsSet, EditorDiagnosticsPlugin, spawn_compile_status}
 use dock_ui::{clear_finished_dock_drag, dock_pane_background};
 #[cfg(test)]
 use docking::DockDragState;
+#[cfg(test)]
+use docking::DockTab;
 use docking::{
-    DockCloseButton, DockPanel, DockTab, DockTreeHost, DockingPlugin, DockingSet,
-    NativeFloatingWindow, WorkspaceLayout,
+    DockPanel, DockTreeHost, DockingPlugin, DockingSet, NativeFloatingWindow, WorkspaceLayout,
 };
 #[cfg(test)]
 use feathers::button::queue_action_activation as queue_feathers_action_activation;
@@ -221,6 +221,7 @@ fn main() {
                     CompilerInspectorSet::Actions,
                     CurvesSet::Actions,
                     DiagnosticsSet::Actions,
+                    DockingSet::Actions,
                     ProfilerSet::Actions,
                     PersistenceSet::Actions,
                 )
@@ -276,16 +277,10 @@ enum EditorAction {
     DeleteRenderer(RendererId),
     ApplyPendingChange,
     DiscardPendingChange,
-    SelectDockPanel(DockPanel),
-    CloseDockPanel(DockPanel),
-    ShowDockPanel(DockPanel),
-    ToggleDockPanel(DockPanel),
-    FloatDockPanel(DockPanel, [f32; 2]),
     ToggleGrid,
     FramePreview,
     SetTransformGizmoMode(TransformGizmoMode),
     SetPreviewDisplayMode(PreviewDisplayMode),
-    ResetWorkspaceLayout,
     ToggleInspectorSection(InspectorSection),
     SetModuleChoice {
         module: ModuleId,
@@ -1132,8 +1127,6 @@ fn handle_buttons(
             Entity,
             &Interaction,
             &EditorAction,
-            Option<&DockTab>,
-            Option<&DockCloseButton>,
             Option<&FeathersActionButton>,
             Option<&PendingFeathersActivation>,
             Option<&InteractionDisabled>,
@@ -1157,7 +1150,6 @@ fn handle_buttons(
         ResMut<PreviewDisplayState>,
     ),
     mut timeline_state: ResMut<TimelineState>,
-    window: Single<&Window, With<PrimaryWindow>>,
     mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
 ) {
     let (
@@ -1174,8 +1166,6 @@ fn handle_buttons(
         entity,
         interaction,
         action,
-        dock_tab,
-        dock_close,
         feathers_action,
         pending_feathers_activation,
         disabled,
@@ -1196,18 +1186,7 @@ fn handle_buttons(
             }
             Interaction::None => {
                 if feathers_action.is_none() {
-                    background.0 = if let Some(tab) = dock_tab {
-                        let active = layout.is_active(tab.0);
-                        if active {
-                            theme::PANEL
-                        } else {
-                            theme::PANEL_DARK
-                        }
-                    } else if dock_close.is_some() {
-                        Color::NONE
-                    } else {
-                        theme::BUTTON
-                    };
+                    background.0 = theme::BUTTON;
                 }
             }
             Interaction::Pressed => {
@@ -1222,11 +1201,8 @@ fn handle_buttons(
                 } else {
                     background.0 = theme::ACCENT_DIM;
                 }
-                let keep_view_menu_open = matches!(*action, EditorAction::ToggleDockPanel(_));
-                if !keep_view_menu_open {
-                    menu.open = None;
-                    menu.panels_open = false;
-                }
+                menu.open = None;
+                menu.panels_open = false;
                 if menu.tab_context.take().is_some() {
                     session.ui_revision += 1;
                 }
@@ -1367,75 +1343,6 @@ fn handle_buttons(
                     EditorAction::DiscardPendingChange => {
                         session.discard_pending_change();
                     }
-                    EditorAction::SelectDockPanel(panel) => {
-                        if layout.activate(panel) {
-                            session.ui_revision += 1;
-                            if let Err(error) = layout.save() {
-                                warn!("failed to save editor workspace layout: {error}");
-                            }
-                        }
-                    }
-                    EditorAction::CloseDockPanel(panel) => {
-                        if layout.close(panel) {
-                            session.ui_revision += 1;
-                            session.status = format!(
-                                "Closed {} panel · reopen it from View",
-                                panel.title().to_ascii_lowercase()
-                            );
-                            if let Err(error) = layout.save() {
-                                warn!("failed to save editor workspace layout: {error}");
-                            }
-                        }
-                    }
-                    EditorAction::ShowDockPanel(panel) => {
-                        if layout.show(panel) {
-                            session.ui_revision += 1;
-                            session.status =
-                                format!("Showing {} panel", panel.title().to_ascii_lowercase());
-                            if let Err(error) = layout.save() {
-                                warn!("failed to save editor workspace layout: {error}");
-                            }
-                        }
-                    }
-                    EditorAction::ToggleDockPanel(panel) => {
-                        let was_visible = layout.is_visible(panel);
-                        let changed = if was_visible {
-                            layout.close(panel)
-                        } else {
-                            layout.show(panel)
-                        };
-                        if changed {
-                            session.ui_revision += 1;
-                            session.status = format!(
-                                "{} {} panel",
-                                if was_visible { "Hid" } else { "Showing" },
-                                panel.title().to_ascii_lowercase()
-                            );
-                            if let Err(error) = layout.save() {
-                                warn!("failed to save editor workspace layout: {error}");
-                            }
-                        }
-                    }
-                    EditorAction::FloatDockPanel(panel, pointer_position) => {
-                        let available_size = [window.width(), (window.height() - 108.0).max(180.0)];
-                        let origin = match window.position {
-                            WindowPosition::At(position) => position,
-                            _ => IVec2::new(80, 80),
-                        };
-                        let scale = window.scale_factor();
-                        let position = [
-                            origin.x as f32 + (pointer_position[0] - 92.0) * scale,
-                            origin.y as f32 + (pointer_position[1] + 68.0) * scale,
-                        ];
-                        if layout.float_panel(panel, position, available_size) {
-                            if let Err(error) = layout.save() {
-                                warn!("failed to save editor workspace layout: {error}");
-                            }
-                            session.ui_revision += 1;
-                            session.status =
-                                format!("Floated {} panel", panel.title().to_ascii_lowercase());
-                        }
-                    }
                     EditorAction::ToggleGrid => {
                         menu.show_grid = !menu.show_grid;
                         settings.preview.show_grid = menu.show_grid;
@@ -1449,14 +1356,6 @@ fn handle_buttons(
                     }
                     EditorAction::SetPreviewDisplayMode(mode) => {
                         preview_display.set_mode(mode);
-                    }
-                    EditorAction::ResetWorkspaceLayout => {
-                        *layout = WorkspaceLayout::default();
-                        if let Err(error) = layout.save() {
-                            warn!("failed to save editor workspace layout: {error}");
-                        }
-                        session.ui_revision += 1;
-                        session.status = "Workspace layout reset".into();
                     }
                     EditorAction::ShowAbout => menu.show_about = true,
                     EditorAction::CloseAbout => menu.show_about = false,
