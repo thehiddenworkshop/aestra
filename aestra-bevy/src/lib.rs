@@ -511,10 +511,12 @@ fn play_effects(
             let started = Instant::now();
             player.instance.evaluate(&mut samples);
             profiler.0.record_cpu_frame(started.elapsed(), &samples);
+            profiler.0.record_submitted_frame(player.effect(), &samples);
             samples
         };
         if uses_gpu_readback {
             profiler.0.record_particle_frame(&samples);
+            profiler.0.record_submitted_frame(player.effect(), &samples);
         }
 
         let Some(children) = children else {
@@ -674,6 +676,7 @@ mod tests {
         let profile = &app.world().get::<EffectProfiler>(entity).unwrap().0;
         assert_eq!(profile.emitter_count, ProfileValue::Measured(1));
         assert_eq!(profile.gpu_time_ns, ProfileValue::Unavailable);
+        assert_eq!(profile.submitted_instances, ProfileValue::Unavailable);
         assert!(matches!(
             profile.buffer_memory_bytes,
             ProfileValue::Estimated(bytes) if bytes > 0

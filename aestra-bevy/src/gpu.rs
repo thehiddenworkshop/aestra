@@ -46,6 +46,8 @@ pub const WESL_RENDER_SHADER_PATH: &str =
 pub const MAX_CURVE_KEYS: usize = 8;
 pub const MAX_FLIPBOOK_FRAMES: usize = 64;
 const WORKGROUP_SIZE: u32 = 64;
+const INDIRECT_DRAW_WORDS: usize = 4;
+const INDIRECT_DRAW_BYTES: u64 = (INDIRECT_DRAW_WORDS * std::mem::size_of::<u32>()) as u64;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum GpuArtifactError {
@@ -142,7 +144,8 @@ pub struct GpuRenderer {
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
 pub struct GpuRenderParams {
     pub renderer_index: u32,
-    pub _padding: UVec3,
+    pub alive_offset: u32,
+    pub _padding: UVec2,
 }
 
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
@@ -415,6 +418,7 @@ struct GpuDrawInstance {
     texture: Handle<Image>,
     fallback_texture: Handle<Image>,
     renderer_order: u32,
+    indirect_offset: u64,
     blend: GpuBlend,
     render_mode: GpuRenderMode,
     mesh_center: Vec3,
@@ -631,6 +635,8 @@ pub(crate) fn prepare_gpu_players(
                 );
                 (
                     index as u32,
+                    renderer.emitter_index,
+                    artifact.emitters[renderer.emitter_index as usize].slot_offset,
                     match renderer.blend_mode {
                         mode if mode == GpuBlend::Additive as u32 => GpuBlend::Additive,
                         mode if mode == GpuBlend::Multiply as u32 => GpuBlend::Multiply,
@@ -645,6 +651,7 @@ pub(crate) fn prepare_gpu_players(
             center: Vec3A::ZERO,
             half_extents: Vec3A::from(artifact.bounds_half_extents),
         };
+        let indirect_draw_commands = indirect_draw_commands(&artifact.emitters);
         let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
         let renderers = buffers.add(ShaderBuffer::from(artifact.renderers));
         let particles = buffers.add(ShaderBuffer::from(artifact.particles));
@@ -657,7 +664,7 @@ pub(crate) fn prepare_gpu_players(
             artifact.total_slots as usize
         ]));
         let counters = buffers.add(ShaderBuffer::from(vec![0_u32; 2]));
-        let mut indirect_buffer = ShaderBuffer::from(vec![6_u32, 0, 0, 0]);
+        let mut indirect_buffer = ShaderBuffer::from(indirect_draw_commands);
         indirect_buffer.buffer_description.usage |= BufferUsages::INDIRECT;
         let indirect = buffers.add(indirect_buffer);
         let globals = buffers.add(ShaderBuffer::from(GpuGlobals {
@@ -693,10 +700,19 @@ pub(crate) fn prepare_gpu_players(
             .entity(entity)
             .with_children(|parent| match runtime.active {
                 ActiveBackend::Gpu => {
-                    for (renderer_index, blend, texture, fallback_texture) in renderer_draws {
+                    for (
+                        renderer_index,
+                        emitter_index,
+                        alive_offset,
+                        blend,
+                        texture,
+                        fallback_texture,
+                    ) in renderer_draws
+                    {
                         let render_params = buffers.add(ShaderBuffer::from(GpuRenderParams {
                             renderer_index,
-                            _padding: UVec3::ZERO,
+                            alive_offset,
+                            _padding: UVec2::ZERO,
                         }));
                         parent.spawn((
                             GpuDrawInstance {
@@ -709,6 +725,7 @@ pub(crate) fn prepare_gpu_players(
                                 texture,
                                 fallback_texture,
                                 renderer_order: renderer_index,
+                                indirect_offset: indirect_draw_offset(emitter_index),
                                 blend,
                                 render_mode,
                                 mesh_center: Vec3::ZERO,
@@ -1048,6 +1065,14 @@ fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
     }
 }
 
+fn indirect_draw_commands(emitters: &[GpuEmitter]) -> Vec<u32> {
+    emitters.iter().flat_map(|_| [6, 0, 0, 0]).collect()
+}
+
+const fn indirect_draw_offset(emitter_index: u32) -> u64 {
+    emitter_index as u64 * INDIRECT_DRAW_BYTES
+}
+
 fn emitter_bounds(
     shape: EmitterShape,
     lifetime: ScalarRange,
@@ -1310,6 +1335,29 @@ mod tests {
     }
 
     #[test]
+    fn indirect_draw_commands_are_isolated_per_emitter() {
+        let mut effect = EffectAsset::new("GPU indirect ranges", 2.0);
+        let mut first = Emitter::basic_sprite("First", 2.0);
+        first.max_particles = 17;
+        let mut second = Emitter::basic_sprite("Second", 2.0);
+        second.max_particles = 23;
+        effect.emitters.extend([first, second]);
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
+
+        assert_eq!(
+            indirect_draw_commands(&artifact.emitters),
+            vec![6, 0, 0, 0, 6, 0, 0, 0]
+        );
+        assert_eq!(indirect_draw_offset(0), 0);
+        assert_eq!(indirect_draw_offset(1), INDIRECT_DRAW_BYTES);
+        assert_eq!(artifact.emitters[0].slot_offset, 0);
+        assert_eq!(artifact.emitters[1].slot_offset, 17);
+        assert_eq!(artifact.renderers[0].emitter_index, 0);
+        assert_eq!(artifact.renderers[1].emitter_index, 1);
+    }
+
+    #[test]
     fn artifact_packs_native_3d_shape_motion_and_bounds() {
         let mut effect = EffectAsset::new("3D GPU", 2.0);
         let mut emitter = Emitter::basic_sprite("Volume", 2.0);
@@ -1474,6 +1522,8 @@ mod tests {
         let output = compiler.compile(&module).unwrap().to_string();
         assert!(output.contains("fn simulate"));
         assert!(output.contains("fn reset"));
+        assert!(output.contains("emitter_index * 4u"));
+        assert!(output.contains("emitter.slot_offset + compact_index"));
     }
 
     #[test]
@@ -1488,5 +1538,6 @@ mod tests {
         assert!(output.contains("fn fragment_additive"));
         assert!(output.contains("fn fragment_multiply"));
         assert!(output.contains("renderer_index"));
+        assert!(output.contains("alive_offset"));
     }
 }

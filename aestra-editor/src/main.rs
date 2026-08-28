@@ -533,6 +533,7 @@ impl ProfilerState {
         }
         let profile = self.profile.as_mut().expect("profile was initialized");
         profile.record_cpu_frame(elapsed, samples);
+        profile.record_submitted_frame(effect, samples);
         self.cpu_history_ns
             .push_back(elapsed.as_nanos().min(u128::from(u64::MAX)) as u64);
         while self.cpu_history_ns.len() > PROFILER_HISTORY_SAMPLES {
@@ -840,6 +841,7 @@ enum ProfilerMetric {
     CpuTime,
     GpuTime,
     AliveParticles,
+    SubmittedInstances,
     PeakParticles,
     ParticleCapacity,
     Emitters,
@@ -7722,6 +7724,7 @@ fn spawn_profiler_metric_grid(parent: &mut ChildSpawnerCommands, profile: &Effec
                 ProfilerMetric::CpuTime,
                 ProfilerMetric::GpuTime,
                 ProfilerMetric::AliveParticles,
+                ProfilerMetric::SubmittedInstances,
                 ProfilerMetric::PeakParticles,
                 ProfilerMetric::ParticleCapacity,
                 ProfilerMetric::Emitters,
@@ -7889,7 +7892,7 @@ fn spawn_profiler_availability(parent: &mut ChildSpawnerCommands, profile: &Effe
         spawn_compiled_label_value(
             section,
             "MEASURED",
-            "CPU update time, live particles, and peak particles",
+            "CPU update time, live particles, submitted instances, and peak particles",
         );
         spawn_compiled_label_value(
             section,
@@ -7911,6 +7914,7 @@ fn profiler_metric_name(metric: ProfilerMetric) -> &'static str {
         ProfilerMetric::CpuTime => "CPU UPDATE",
         ProfilerMetric::GpuTime => "GPU TIME",
         ProfilerMetric::AliveParticles => "LIVE PARTICLES",
+        ProfilerMetric::SubmittedInstances => "SUBMITTED INSTANCES",
         ProfilerMetric::PeakParticles => "PEAK PARTICLES",
         ProfilerMetric::ParticleCapacity => "CAPACITY",
         ProfilerMetric::Emitters => "EMITTERS",
@@ -7928,6 +7932,7 @@ fn profiler_metric_display(
         ProfilerMetric::CpuTime => format_profile_duration(profile.cpu_time_ns),
         ProfilerMetric::GpuTime => format_profile_duration(profile.gpu_time_ns),
         ProfilerMetric::AliveParticles => format_profile_count(profile.alive_particles),
+        ProfilerMetric::SubmittedInstances => format_profile_count(profile.submitted_instances),
         ProfilerMetric::PeakParticles => format_profile_count(profile.peak_particles),
         ProfilerMetric::ParticleCapacity => format_profile_count(profile.particle_capacity),
         ProfilerMetric::Emitters => format_profile_count(profile.emitter_count),
@@ -15874,6 +15879,7 @@ mod tests {
         let time_before = profiled.time();
         let seed_before = profiled.seed();
         profile.record_cpu_frame(Duration::from_micros(125), &profiled_samples);
+        profile.record_submitted_frame(profiled.effect(), &profiled_samples);
         assert_eq!(profiled.time(), time_before);
         assert_eq!(profiled.seed(), seed_before);
         assert_eq!(
@@ -15887,6 +15893,17 @@ mod tests {
                 .map(|emitter| emitter.alive_particles)
                 .sum::<u32>(),
             profiled_samples.len() as u32
+        );
+        let expected_submissions = profiled_samples.iter().fold(0_u32, |total, sample| {
+            total.saturating_add(
+                profiled.effect().emitters[sample.emitter_index]
+                    .renderers
+                    .len() as u32,
+            )
+        });
+        assert_eq!(
+            profile.submitted_instances,
+            ProfileValue::Measured(expected_submissions)
         );
 
         baseline.advance(1.0 / 60.0);

@@ -178,10 +178,18 @@ fn append_dead(slot: u32) {
 fn reset() {
     atomicStore(&counters[0], 0u);
     atomicStore(&counters[1], 0u);
-    atomicStore(&indirect[0], 6u);
-    atomicStore(&indirect[1], 0u);
-    atomicStore(&indirect[2], 0u);
-    atomicStore(&indirect[3], 0u);
+    var emitter_index = 0u;
+    loop {
+        if emitter_index >= globals.emitter_count {
+            break;
+        }
+        let command = emitter_index * 4u;
+        atomicStore(&indirect[command], 6u);
+        atomicStore(&indirect[command + 1u], 0u);
+        atomicStore(&indirect[command + 2u], 0u);
+        atomicStore(&indirect[command + 3u], 0u);
+        emitter_index += 1u;
+    }
 }
 
 @compute @workgroup_size(64)
@@ -325,7 +333,8 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         0u,
         0u,
     );
-    let compact_index = atomicAdd(&counters[0], 1u);
-    alive_indices[compact_index] = slot;
-    atomicAdd(&indirect[1], 1u);
+    atomicAdd(&counters[0], 1u);
+    let command = emitter_index * 4u;
+    let compact_index = atomicAdd(&indirect[command + 1u], 1u);
+    alive_indices[emitter.slot_offset + compact_index] = slot;
 }

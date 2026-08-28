@@ -50,6 +50,7 @@ pub struct EffectProfile {
     pub cpu_time_ns: ProfileValue<u64>,
     pub gpu_time_ns: ProfileValue<u64>,
     pub alive_particles: ProfileValue<u32>,
+    pub submitted_instances: ProfileValue<u32>,
     pub peak_particles: ProfileValue<u32>,
     pub particle_capacity: ProfileValue<u32>,
     pub emitter_count: ProfileValue<u32>,
@@ -91,6 +92,7 @@ impl EffectProfile {
             cpu_time_ns: ProfileValue::Unavailable,
             gpu_time_ns: ProfileValue::Unavailable,
             alive_particles: ProfileValue::Unavailable,
+            submitted_instances: ProfileValue::Unavailable,
             peak_particles: ProfileValue::Unavailable,
             particle_capacity: ProfileValue::Measured(
                 effect.max_particles.min(u32::MAX as usize) as u32
@@ -158,6 +160,21 @@ impl EffectProfile {
         self.peak_particles = ProfileValue::Measured(previous_peak.max(alive));
     }
 
+    /// Records the number of particle instances presented after emitter/renderer filtering.
+    pub fn record_submitted_frame(&mut self, effect: &CompiledEffect, samples: &[ParticleSample]) {
+        let submitted = samples.iter().fold(0_u32, |total, sample| {
+            let renderer_count = effect
+                .emitters
+                .get(sample.emitter_index)
+                .filter(|emitter| emitter.enabled)
+                .map_or(0, |emitter| {
+                    emitter.renderers.len().min(u32::MAX as usize) as u32
+                });
+            total.saturating_add(renderer_count)
+        });
+        self.submitted_instances = ProfileValue::Measured(submitted);
+    }
+
     pub fn reset_peaks(&mut self) {
         self.peak_particles = self.alive_particles;
         for emitter in &mut self.emitters {
@@ -179,9 +196,11 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
     let particle_storage = particle_count.saturating_mul(attribute_bytes);
     let alive_and_dead_indices = particle_count.saturating_mul(2 * size_of::<u32>() as u64);
     let counters = 2 * size_of::<u32>() as u64;
+    let indirect_commands = effect.emitters.len() as u64 * 4 * size_of::<u32>() as u64;
     particle_storage
         .saturating_add(alive_and_dead_indices)
         .saturating_add(counters)
+        .saturating_add(indirect_commands)
 }
 
 const fn particle_attribute_bytes(attribute: ParticleAttribute) -> u64 {

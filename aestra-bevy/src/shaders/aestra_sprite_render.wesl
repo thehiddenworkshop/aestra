@@ -49,7 +49,8 @@ struct RenderGlobals {
 
 struct RenderParams {
     renderer_index: u32,
-    _padding: vec3<u32>,
+    alive_offset: u32,
+    _padding: vec2<u32>,
 }
 
 struct VertexOutput {
@@ -130,7 +131,7 @@ fn vertex(
         vec2<f32>(-1.0, 1.0),
     );
     let corner = corners[vertex_index];
-    let particle_index = alive_indices[instance_index];
+    let particle_index = alive_indices[params.alive_offset + instance_index];
     let particle = particles[particle_index];
     let renderer = renderers[params.renderer_index];
     let sine = sin(particle.rotation);

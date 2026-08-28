@@ -97,10 +97,13 @@ Complete this milestone before expanding the editor or renderer feature surface 
    is synchronized where supported, and startup recovers interrupted legacy replacements
    or initial writes. Tests cover unique staging, canonical-file continuity, legacy and
    first-write recovery, protected malformed/newer files, and repeated replacements.
-4. **Remove multiplicative renderer work.** Replace the shared alive-particle draw for
-   every renderer with per-renderer compacted indices, emitter ranges, or equivalent
-   indirect commands so render work scales with visible particles rather than visible
-   particles multiplied by renderer count.
+4. **Remove multiplicative renderer work — complete.** GPU compaction now writes each
+   emitter into its own bounded alive-index segment and maintains one indirect command
+   per emitter. Renderers share only their emitter's command and segment, so particles
+   from unrelated emitters are no longer submitted and discarded for every draw.
+   Profiles expose submitted instances alongside live particles, the buffer estimate
+   includes the indirect command table, focused tests cover command/range isolation,
+   and the native editor-viewport GPU smoke remains the visual acceptance gate.
 5. **Decompose the editor application.** Move viewport, timeline, inspector, docking,
    menus, settings, persistence, and localization into domain plugins with explicit
    resources and system sets. Keep `main.rs` as composition and startup wiring.

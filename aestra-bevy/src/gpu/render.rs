@@ -436,7 +436,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         let Some(indirect) = buffers.into_inner().get(&effect.indirect) else {
             return RenderCommandResult::Skip;
         };
-        pass.draw_indirect(&indirect.buffer, 0);
+        pass.draw_indirect(&indirect.buffer, effect.indirect_offset);
         RenderCommandResult::Success
     }
 }
