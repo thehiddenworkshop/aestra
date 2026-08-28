@@ -4,7 +4,6 @@ use super::{
 };
 use bevy::{
     app::SubApp,
-    camera::visibility::RenderLayers,
     core_pipeline::{
         core_2d::{CORE_2D_DEPTH_FORMAT, Transparent2d},
         core_3d::{CORE_3D_DEPTH_FORMAT, Transparent3d, TransparentSortingInfo3d},
@@ -322,23 +321,23 @@ fn queue_gpu_sprites_3d(
         Res<PipelineCache>,
         Res<ViewKeyCache>,
     ),
-    effects: Query<(Entity, &MainEntity, &GpuDrawInstance)>,
+    effects: Query<&GpuDrawInstance>,
     mut phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
-    views: Query<(&ExtractedView, &RenderLayers)>,
+    views: Query<(&RenderVisibleEntities, &ExtractedView)>,
 ) {
     let (pipeline, mut pipelines, pipeline_cache, view_key_cache) = pipeline_resources;
     let draw_function = draw_functions.read().id::<DrawGpuSprites3d>();
-    for (view, view_layers) in &views {
+    for (visible_entities, view) in &views {
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
         let Some(&mesh_key) = view_key_cache.get(&view.retained_view_entity) else {
             continue;
         };
-        for (render_entity, main_entity, effect) in &effects {
-            if !gpu_draw_is_visible_in_layers(view_layers, &effect.render_layers) {
+        for (render_entity, main_entity) in visible_gpu_draws(visible_entities) {
+            let Ok(effect) = effects.get(render_entity) else {
                 continue;
-            }
+            };
             let pipeline_id = pipelines.specialize(
                 &pipeline_cache,
                 &pipeline,
@@ -349,11 +348,8 @@ fn queue_gpu_sprites_3d(
                 },
             );
             phase.add_retained(Transparent3d {
-                sorting_info: TransparentSortingInfo3d::Sorted {
-                    mesh_center: Vec3::ZERO,
-                    depth_bias: effect.renderer_order as f32 * -0.0001,
-                },
-                entity: (render_entity, *main_entity),
+                sorting_info: gpu_draw_sorting_info(effect.mesh_center, effect.renderer_order),
+                entity: (render_entity, main_entity),
                 pipeline: pipeline_id,
                 draw_function,
                 distance: 0.0,
@@ -365,8 +361,23 @@ fn queue_gpu_sprites_3d(
     }
 }
 
-fn gpu_draw_is_visible_in_layers(view_layers: &RenderLayers, effect_layers: &RenderLayers) -> bool {
-    view_layers.intersects(effect_layers)
+const RENDERER_ORDER_DEPTH_BIAS: f32 = 0.0001;
+
+fn visible_gpu_draws(
+    visible_entities: &RenderVisibleEntities,
+) -> impl Iterator<Item = (Entity, MainEntity)> + '_ {
+    visible_entities
+        .get::<GpuDrawInstance>()
+        .into_iter()
+        .flat_map(|class| class.iter_visible())
+        .map(|(render_entity, main_entity)| (*render_entity, *main_entity))
+}
+
+fn gpu_draw_sorting_info(mesh_center: Vec3, renderer_order: u32) -> TransparentSortingInfo3d {
+    TransparentSortingInfo3d::Sorted {
+        mesh_center,
+        depth_bias: renderer_order as f32 * RENDERER_ORDER_DEPTH_BIAS,
+    }
 }
 
 type DrawGpuSprites = (
@@ -433,16 +444,58 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::{
+        math::Affine3A,
+        render::{render_phase::ViewRangefinder3d, view::RenderVisibleEntitiesClass},
+    };
+    use std::any::TypeId;
 
     #[test]
-    fn three_dimensional_draws_only_enter_matching_render_layers() {
-        assert!(gpu_draw_is_visible_in_layers(
-            &RenderLayers::layer(0),
-            &RenderLayers::layer(0)
-        ));
-        assert!(!gpu_draw_is_visible_in_layers(
-            &RenderLayers::layer(15),
-            &RenderLayers::layer(0)
-        ));
+    fn three_dimensional_draw_selection_is_specific_to_each_view() {
+        let mut world = World::new();
+        let render_a = world.spawn_empty().id();
+        let render_b = world.spawn_empty().id();
+        let main_a = MainEntity::from(world.spawn_empty().id());
+        let main_b = MainEntity::from(world.spawn_empty().id());
+        let mut first_view = RenderVisibleEntities::default();
+        first_view.classes.insert(
+            TypeId::of::<GpuDrawInstance>(),
+            RenderVisibleEntitiesClass {
+                entities_cpu_culling: vec![(render_a, main_a)],
+                ..default()
+            },
+        );
+        let mut second_view = RenderVisibleEntities::default();
+        second_view.classes.insert(
+            TypeId::of::<GpuDrawInstance>(),
+            RenderVisibleEntitiesClass {
+                entities_cpu_culling: vec![(render_b, main_b)],
+                ..default()
+            },
+        );
+
+        assert_eq!(
+            visible_gpu_draws(&first_view).collect::<Vec<_>>(),
+            vec![(render_a, main_a)]
+        );
+        assert_eq!(
+            visible_gpu_draws(&second_view).collect::<Vec<_>>(),
+            vec![(render_b, main_b)]
+        );
+    }
+
+    #[test]
+    fn three_dimensional_draw_sorting_uses_world_center_and_renderer_order() {
+        let rangefinder = ViewRangefinder3d::from_world_from_view(&Affine3A::IDENTITY);
+        let near = gpu_draw_sorting_info(Vec3::new(0.0, 0.0, -2.0), 0);
+        let far = gpu_draw_sorting_info(Vec3::new(0.0, 0.0, -8.0), 0);
+        let first_renderer = gpu_draw_sorting_info(Vec3::new(0.0, 0.0, -4.0), 0);
+        let second_renderer = gpu_draw_sorting_info(Vec3::new(0.0, 0.0, -4.0), 1);
+
+        assert!(far.sort_distance(&rangefinder) < near.sort_distance(&rangefinder));
+        assert!(
+            first_renderer.sort_distance(&rangefinder)
+                < second_renderer.sort_distance(&rangefinder)
+        );
     }
 }

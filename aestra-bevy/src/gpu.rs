@@ -417,7 +417,7 @@ struct GpuDrawInstance {
     renderer_order: u32,
     blend: GpuBlend,
     render_mode: GpuRenderMode,
-    render_layers: RenderLayers,
+    mesh_center: Vec3,
 }
 
 impl SyncComponent for GpuDrawInstance {
@@ -425,15 +425,32 @@ impl SyncComponent for GpuDrawInstance {
 }
 
 impl ExtractComponent for GpuDrawInstance {
-    type QueryData = (&'static Self, &'static ViewVisibility);
+    type QueryData = (
+        &'static Self,
+        &'static ViewVisibility,
+        &'static GlobalTransform,
+        &'static Aabb,
+    );
     type QueryFilter = ();
     type Out = Self;
 
     fn extract_component(
-        (instance, visibility): bevy::ecs::query::QueryItem<'_, '_, Self::QueryData>,
+        (instance, visibility, transform, bounds): bevy::ecs::query::QueryItem<
+            '_,
+            '_,
+            Self::QueryData,
+        >,
     ) -> Option<Self::Out> {
-        visibility.get().then(|| instance.clone())
+        visibility.get().then(|| {
+            let mut extracted = instance.clone();
+            extracted.mesh_center = gpu_draw_mesh_center(transform, bounds);
+            extracted
+        })
     }
+}
+
+fn gpu_draw_mesh_center(transform: &GlobalTransform, bounds: &Aabb) -> Vec3 {
+    transform.transform_point(Vec3::from(bounds.center))
 }
 
 #[derive(Component)]
@@ -470,6 +487,7 @@ type PreparedGpuPlayers<'w, 's> = Query<
         Option<&'static RenderLayers>,
         Option<&'static Children>,
     ),
+    Without<GpuDrawInstance>,
 >;
 
 #[derive(Resource)]
@@ -693,8 +711,9 @@ pub(crate) fn prepare_gpu_players(
                                 renderer_order: renderer_index,
                                 blend,
                                 render_mode,
-                                render_layers: render_layers.cloned().unwrap_or_default(),
+                                mesh_center: Vec3::ZERO,
                             },
+                            render_layers.cloned().unwrap_or_default(),
                             bounds,
                             Transform::default(),
                             Visibility::Inherited,
@@ -833,7 +852,7 @@ fn detect_gpu_capabilities(
 fn update_gpu_inputs(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     players: PreparedGpuPlayers,
-    mut draw_instances: Query<&mut GpuDrawInstance>,
+    mut draw_instances: Query<(&mut GpuDrawInstance, &mut RenderLayers), Without<EffectPlayer>>,
 ) {
     for (player, transform, gpu, render_layers, children) in &players {
         if let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance) {
@@ -863,9 +882,9 @@ fn update_gpu_inputs(
         if let Some(children) = children {
             let render_mode = gpu_render_mode(player.render_mode());
             for child in children.iter() {
-                if let Ok(mut draw) = draw_instances.get_mut(child) {
+                if let Ok((mut draw, mut draw_layers)) = draw_instances.get_mut(child) {
                     draw.render_mode = render_mode;
-                    draw.render_layers = render_layers.cloned().unwrap_or_default();
+                    *draw_layers = render_layers.cloned().unwrap_or_default();
                 }
             }
         }
@@ -1257,6 +1276,22 @@ mod tests {
         MaterialProperties, RendererInstance, UvRect,
     };
     use std::sync::Arc;
+
+    #[test]
+    fn extracted_draw_center_uses_the_world_space_bounds_center() {
+        let transform = GlobalTransform::from(
+            Transform::from_translation(Vec3::new(10.0, 20.0, 30.0)).with_scale(Vec3::splat(2.0)),
+        );
+        let bounds = Aabb {
+            center: Vec3A::new(1.0, 2.0, 3.0),
+            half_extents: Vec3A::ONE,
+        };
+
+        assert_eq!(
+            gpu_draw_mesh_center(&transform, &bounds),
+            Vec3::new(12.0, 24.0, 36.0)
+        );
+    }
 
     #[test]
     fn artifact_capacity_matches_authored_bounds() {

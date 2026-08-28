@@ -78,12 +78,13 @@ architecture vision; this file is the shorter delivery plan.
 
 Complete this milestone before expanding the editor or renderer feature surface further.
 
-1. **Correct native-GPU 3D view integration.** Queue effects only for Bevy views that
-   consider them visible, preserve render-layer and frustum decisions, and provide
-   camera-relative transparent sorting with deterministic renderer-order bias. Add
-   focused render-world tests for view selection and sorting inputs. Keep the
-   `--editor-viewport-smoke` capture as the acceptance gate for constrained preview and
-   overlay-camera changes.
+1. **Correct native-GPU 3D view integration — complete.** GPU draws now consume Bevy's
+   per-view visible-entity classes, preserving inherited visibility, render-layer, and
+   frustum decisions. World-space bounds centers feed camera-relative transparent
+   sorting with deterministic renderer-order bias. Focused tests cover per-view
+   selection, transformed sort centers, depth ordering, and renderer tie-breaking; the
+   `--editor-viewport-smoke` capture remains the acceptance gate for constrained preview
+   and overlay-camera changes.
 2. **Harden recovery cleanup.** Keep tracking an active recovery snapshot until its
    deletion succeeds, and cover failed deletion, retry, save, document-switch, and
    autosave-disable behavior.
