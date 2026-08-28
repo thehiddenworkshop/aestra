@@ -91,9 +91,12 @@ Complete this milestone before expanding the editor or renderer feature surface 
    document switches wait for the previous snapshot to be removed. Focused tests cover
    failed deletion and retry, save, document switch, startup discard tracking, and
    autosave-disable behavior.
-3. **Make settings replacement crash-safe.** Replace fixed sibling temporary names with
-   unique temporary files, recover interrupted replacements, and ensure the canonical
-   settings path never disappears during a successful replacement.
+3. **Make settings replacement crash-safe — complete.** Settings now stage into unique,
+   same-directory temporary files and atomically replace the canonical file without first
+   moving it away. File contents are synchronized before replacement, directory metadata
+   is synchronized where supported, and startup recovers interrupted legacy replacements
+   or initial writes. Tests cover unique staging, canonical-file continuity, legacy and
+   first-write recovery, protected malformed/newer files, and repeated replacements.
 4. **Remove multiplicative renderer work.** Replace the shared alive-particle draw for
    every renderer with per-renderer compacted indices, emitter ranges, or equivalent
    indirect commands so render work scales with visible particles rather than visible

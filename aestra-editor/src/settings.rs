@@ -2,10 +2,11 @@ use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    fs::{self, File},
+    fs,
     io::{self, Write},
     path::{Path, PathBuf},
 };
+use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 
 pub(crate) const SETTINGS_FORMAT_VERSION: u32 = 4;
 
@@ -165,6 +166,21 @@ impl SettingsPersistence {
     }
 
     fn load_from(path: PathBuf) -> (EditorSettings, Self) {
+        let mut lifecycle_diagnostic = match recover_interrupted_replacement(&path) {
+            Ok(diagnostic) => diagnostic,
+            Err(error) => {
+                return (
+                    EditorSettings::default(),
+                    Self {
+                        diagnostic: Some(format!(
+                            "Interrupted settings replacement could not be recovered: {error}"
+                        )),
+                        path,
+                        writable: false,
+                    },
+                );
+            }
+        };
         let source = match fs::read_to_string(&path) {
             Ok(source) => source,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -191,16 +207,27 @@ impl SettingsPersistence {
         match ron::from_str::<EditorSettings>(&source) {
             Ok(settings) if settings.version <= SETTINGS_FORMAT_VERSION => {
                 let migrated = settings.version < SETTINGS_FORMAT_VERSION;
+                if let Err(error) = cleanup_replacement_artifacts(&path) {
+                    lifecycle_diagnostic = join_diagnostics(
+                        lifecycle_diagnostic,
+                        Some(format!(
+                            "Obsolete settings replacement files could not be removed: {error}"
+                        )),
+                    );
+                }
                 (
                     settings.normalized(),
                     Self {
                         path,
                         writable: true,
-                        diagnostic: migrated.then(|| {
-                            format!(
+                        diagnostic: join_diagnostics(
+                            lifecycle_diagnostic,
+                            migrated.then(|| {
+                                format!(
                                 "Settings will migrate to format {SETTINGS_FORMAT_VERSION} when changed"
                             )
-                        }),
+                            }),
+                        ),
                     },
                 )
             }
@@ -280,33 +307,155 @@ pub(crate) fn config_dir() -> PathBuf {
 }
 
 fn write_settings(path: &Path, settings: &EditorSettings) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    let temporary = stage_settings(path, settings)?;
+    let persisted = temporary.persist(path).map_err(|error| error.error)?;
+    persisted.sync_all()?;
+    sync_parent_directory(path)?;
+    Ok(())
+}
+
+fn stage_settings(path: &Path, settings: &EditorSettings) -> io::Result<NamedTempFile> {
+    let parent = settings_parent(path);
+    fs::create_dir_all(parent)?;
     let source = ron::ser::to_string_pretty(
         &settings.clone().normalized(),
         ron::ser::PrettyConfig::default(),
     )
     .map_err(io::Error::other)?;
-    let temporary = sibling_path(path, "tmp");
-    let backup = sibling_path(path, "previous");
-    let mut file = File::create(&temporary)?;
-    file.write_all(source.as_bytes())?;
-    file.sync_all()?;
+    let mut temporary = TempFileBuilder::new()
+        .prefix(&settings_temporary_prefix(path))
+        .tempfile_in(parent)?;
+    temporary.write_all(source.as_bytes())?;
+    temporary.as_file().sync_all()?;
+    Ok(temporary)
+}
 
-    if !path.exists() {
-        return fs::rename(temporary, path);
+fn recover_interrupted_replacement(path: &Path) -> io::Result<Option<String>> {
+    if path.exists() {
+        return Ok(None);
     }
+    let backup = sibling_path(path, "previous");
     if backup.exists() {
-        fs::remove_file(&backup)?;
+        fs::rename(&backup, path)?;
+        sync_parent_directory(path)?;
+        return Ok(Some(
+            "Recovered settings from an interrupted replacement".into(),
+        ));
     }
-    fs::rename(path, &backup)?;
-    if let Err(error) = fs::rename(&temporary, path) {
-        let _ = fs::rename(&backup, path);
-        return Err(error);
+
+    let Some(staged) = newest_staged_settings(path)? else {
+        return Ok(None);
+    };
+    let source = fs::read_to_string(&staged)?;
+    let settings: EditorSettings = ron::from_str(&source).map_err(io::Error::other)?;
+    if settings.version > SETTINGS_FORMAT_VERSION {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "staged settings format {} is newer than supported format {SETTINGS_FORMAT_VERSION}",
+                settings.version
+            ),
+        ));
     }
-    let _ = fs::remove_file(backup);
+    write_settings(path, &settings)?;
+    remove_if_present(&staged)?;
+    Ok(Some(
+        "Recovered settings from an interrupted initial write".into(),
+    ))
+}
+
+fn newest_staged_settings(path: &Path) -> io::Result<Option<PathBuf>> {
+    let parent = settings_parent(path);
+    let mut candidates = Vec::new();
+    let legacy = sibling_path(path, "tmp");
+    if legacy.exists() {
+        candidates.push(legacy);
+    }
+    match fs::read_dir(parent) {
+        Ok(entries) => {
+            let prefix = settings_temporary_prefix(path);
+            for entry in entries.flatten() {
+                let candidate = entry.path();
+                if candidate
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(&prefix))
+                {
+                    candidates.push(candidate);
+                }
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    candidates.sort_by_key(|candidate| {
+        std::cmp::Reverse(
+            fs::metadata(candidate)
+                .and_then(|metadata| metadata.modified())
+                .ok(),
+        )
+    });
+    Ok(candidates.into_iter().next())
+}
+
+fn cleanup_replacement_artifacts(path: &Path) -> io::Result<()> {
+    remove_if_present(&sibling_path(path, "previous"))?;
+    remove_if_present(&sibling_path(path, "tmp"))?;
+    let parent = settings_parent(path);
+    let prefix = settings_temporary_prefix(path);
+    match fs::read_dir(parent) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let candidate = entry.path();
+                if candidate
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(&prefix))
+                {
+                    remove_if_present(&candidate)?;
+                }
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
     Ok(())
+}
+
+fn settings_parent(path: &Path) -> &Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
+fn settings_temporary_prefix(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("settings.ron");
+    format!(".{name}.tmp-")
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn sync_parent_directory(_path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    fs::File::open(settings_parent(_path))?.sync_all()?;
+    Ok(())
+}
+
+fn join_diagnostics(first: Option<String>, second: Option<String>) -> Option<String> {
+    match (first, second) {
+        (Some(first), Some(second)) => Some(format!("{first}. {second}")),
+        (Some(diagnostic), None) | (None, Some(diagnostic)) => Some(diagnostic),
+        (None, None) => None,
+    }
 }
 
 fn preserve_existing_file(path: &Path) -> io::Result<PathBuf> {
@@ -467,6 +616,109 @@ mod tests {
         assert!(state.diagnostic().is_some());
         assert!(state.persist(&settings).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn staged_settings_use_unique_files_without_moving_the_canonical_file() {
+        let path = test_path("unique-staging");
+        let original = EditorSettings::default();
+        write_settings(&path, &original).unwrap();
+        let original_source = fs::read_to_string(&path).unwrap();
+        let first = stage_settings(&path, &original).unwrap();
+        let second = stage_settings(&path, &original).unwrap();
+
+        assert_ne!(first.path(), second.path());
+        assert!(path.exists());
+        assert_eq!(fs::read_to_string(&path).unwrap(), original_source);
+
+        drop(first);
+        drop(second);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn interrupted_legacy_replacement_restores_the_canonical_settings() {
+        let path = test_path("interrupted-replacement");
+        let original = EditorSettings::default();
+        write_settings(&path, &original).unwrap();
+        let backup = sibling_path(&path, "previous");
+        let staged = sibling_path(&path, "tmp");
+        let mut replacement = original.clone();
+        replacement.language.locale = "fr-FR".into();
+        fs::write(
+            &staged,
+            ron::ser::to_string_pretty(&replacement, ron::ser::PrettyConfig::default()).unwrap(),
+        )
+        .unwrap();
+        fs::rename(&path, &backup).unwrap();
+
+        let (loaded, persistence) = SettingsPersistence::load_from(path.clone());
+
+        assert_eq!(loaded, original);
+        assert!(path.exists());
+        assert!(!backup.exists());
+        assert!(!staged.exists());
+        assert!(
+            persistence
+                .diagnostic()
+                .is_some_and(|diagnostic| diagnostic.contains("Recovered settings"))
+        );
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn interrupted_initial_write_promotes_a_valid_staged_file() {
+        let path = test_path("interrupted-initial-write");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let staged = sibling_path(&path, "tmp");
+        let settings = EditorSettings {
+            language: LanguageSettings {
+                locale: "fr-FR".into(),
+            },
+            ..Default::default()
+        };
+        fs::write(
+            &staged,
+            ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default()).unwrap(),
+        )
+        .unwrap();
+
+        let (loaded, persistence) = SettingsPersistence::load_from(path.clone());
+
+        assert_eq!(loaded, settings);
+        assert!(path.exists());
+        assert!(!staged.exists());
+        assert!(
+            persistence
+                .diagnostic()
+                .is_some_and(|diagnostic| diagnostic.contains("interrupted initial write"))
+        );
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn repeated_settings_replacements_leave_only_the_latest_canonical_file() {
+        let path = test_path("repeated-replacement");
+        let mut persistence = SettingsPersistence {
+            path: path.clone(),
+            writable: true,
+            diagnostic: None,
+        };
+        let mut expected = EditorSettings::default();
+
+        for index in 0..8 {
+            expected.general.autosave_interval_seconds = 30 + index;
+            persistence.persist(&expected).unwrap();
+            assert!(path.exists());
+            assert!(!sibling_path(&path, "previous").exists());
+            assert!(!sibling_path(&path, "tmp").exists());
+            assert!(newest_staged_settings(&path).unwrap().is_none());
+        }
+
+        let (loaded, state) = SettingsPersistence::load_from(path.clone());
+        assert_eq!(loaded, expected);
+        assert!(state.diagnostic().is_none());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }
