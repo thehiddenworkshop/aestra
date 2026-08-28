@@ -220,7 +220,10 @@ The format begins with effect-level duration and looping, then emitters with ind
   particle-color consumption, texture assets, and UV regions;
 - typed event links between emitters.
 
-The current file format is version 2. Prototype version 1 is intentionally unsupported and has no legacy loader. A compatibility policy will be defined before the asset format is declared stable.
+The current file format is version 3. Prototype version 1 is intentionally unsupported
+and has no legacy loader. Version 2 assets are upgraded only through the editor's explicit,
+confirmed, backup-preserving migration path; core loading never silently interprets an
+outdated or future format.
 
 ## Roadmap
 
@@ -244,7 +247,7 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [x] typed event-link authoring between emitter layers
 - optional node-graph projection for dataflow-heavy authoring
 - [x] atomic debounced autosave and startup crash recovery
-- asset migrations
+- [x] typed, confirmed, backup-preserving asset migrations
 - [x] versioned persistent editor settings and a dockable Settings workspace
 - [x] Fluent editor-shell localization with catalog validation, fallback, and live locale switching
 - [x] localized built-in Inspector module inputs and descriptions

@@ -437,6 +437,12 @@ The blank-to-multi-emitter save/reload/compile portion of this gate is automated
 `aestra-editor`. Typed, confirmed, backup-preserving v2→v3 asset migration is complete;
 the optional node-graph projection remains.
 
+Before M6 semantic composition begins, the editor-only professional UI foundation is
+specified in `aestra_ui_pre_m6_implementation_plan.md`. It separates the project Library
+from current-document resources, moves emitter hierarchy/actions into choreography track
+headers, adds searchable catalog state and synchronized timeline overflow, and changes no
+effect format, compiler, runtime, or migration contract.
+
 Persistent settings slice:
 
 1. Define a serde-defaulted `EditorSettings` model with an explicit format version.
