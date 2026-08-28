@@ -8,7 +8,10 @@ use crate::docking::{
     SplitterGrip, WorkspaceLayout,
 };
 use crate::*;
-use bevy::ecs::system::SystemParam;
+use bevy::{
+    ecs::system::SystemParam,
+    feathers::cursor::{EntityCursor, OverrideCursor},
+};
 
 #[derive(Clone, Copy)]
 struct PanelSources<'a> {
@@ -515,7 +518,10 @@ fn spawn_tree_splitter(parent: &mut ChildSpawnerCommands, node: DockNodeId, axis
     let splitter = DockSplitter { node, axis };
     let horizontal_bar = axis == DockAxis::Vertical;
     parent
-        .spawn(splitter)
+        .spawn((
+            splitter,
+            EntityCursor::System(resize_system_cursor(splitter)),
+        ))
         .apply_scene(ui_shell::splitter(horizontal_bar))
         .observe(begin_workspace_resize)
         .observe(resize_workspace_pane)
@@ -697,7 +703,6 @@ fn resize_workspace_pane(
     drag: On<Pointer<Drag>>,
     mut queries: DockResizeQueries,
     window: Single<&Window, With<PrimaryWindow>>,
-    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
     mut layout: ResMut<WorkspaceLayout>,
 ) {
     let Ok(splitter) = queries.splitters.get(drag.event_target()) else {
@@ -729,7 +734,6 @@ fn resize_workspace_pane(
             DockAxis::Vertical => node.height = Val::Percent(*ratio * 100.0),
         }
     }
-    **cursor = resize_cursor(*splitter);
     if let Ok(mut color) = queries.colors.get_mut(drag.event_target()) {
         color.0 = theme::SPLITTER_HOVER;
     }
@@ -750,15 +754,14 @@ fn find_dock_node(node: &DockNode, target: DockNodeId) -> Option<&DockNode> {
 fn begin_workspace_resize(
     drag: On<Pointer<DragStart>>,
     splitters: Query<&DockSplitter>,
-    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+    mut override_cursor: ResMut<OverrideCursor>,
     mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
     mut state: ResMut<ResizeState>,
 ) {
     let Ok(splitter) = splitters.get(drag.event_target()) else {
         return;
     };
-    state.0 = Some(*splitter);
-    **cursor = resize_cursor(*splitter);
+    activate_workspace_resize_cursor(*splitter, &mut state, &mut override_cursor);
     if let Ok(mut color) = colors.get_mut(drag.event_target()) {
         color.0 = theme::SPLITTER_HOVER;
     }
@@ -767,7 +770,7 @@ fn begin_workspace_resize(
 fn finish_workspace_resize(
     drag: On<Pointer<DragEnd>>,
     splitters: Query<&DockSplitter>,
-    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+    mut override_cursor: ResMut<OverrideCursor>,
     mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
     mut state: ResMut<ResizeState>,
     layout: Res<WorkspaceLayout>,
@@ -775,8 +778,7 @@ fn finish_workspace_resize(
     if !splitters.contains(drag.event_target()) {
         return;
     }
-    state.0 = None;
-    **cursor = CursorIcon::System(SystemCursorIcon::Default);
+    deactivate_workspace_resize_cursor(&mut state, &mut override_cursor);
     for mut color in &mut colors {
         color.0 = theme::SPLITTER_GUTTER;
     }
@@ -785,23 +787,38 @@ fn finish_workspace_resize(
     }
 }
 
-fn resize_cursor(splitter: DockSplitter) -> CursorIcon {
-    CursorIcon::System(match splitter.axis {
+fn resize_system_cursor(splitter: DockSplitter) -> SystemCursorIcon {
+    match splitter.axis {
         DockAxis::Horizontal => SystemCursorIcon::EwResize,
         DockAxis::Vertical => SystemCursorIcon::NsResize,
-    })
+    }
+}
+
+fn activate_workspace_resize_cursor(
+    splitter: DockSplitter,
+    state: &mut ResizeState,
+    override_cursor: &mut OverrideCursor,
+) {
+    state.0 = Some(splitter);
+    override_cursor.0 = Some(EntityCursor::System(resize_system_cursor(splitter)));
+}
+
+fn deactivate_workspace_resize_cursor(
+    state: &mut ResizeState,
+    override_cursor: &mut OverrideCursor,
+) {
+    state.0 = None;
+    override_cursor.0 = None;
 }
 
 fn show_resize_cursor(
     over: On<Pointer<Over>>,
     splitters: Query<&DockSplitter>,
-    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
     mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
 ) {
-    let Ok(splitter) = splitters.get(over.event_target()) else {
+    if !splitters.contains(over.event_target()) {
         return;
-    };
-    **cursor = resize_cursor(*splitter);
+    }
     if let Ok(mut color) = colors.get_mut(over.event_target()) {
         color.0 = theme::SPLITTER_HOVER;
     }
@@ -811,11 +828,9 @@ fn reset_cursor(
     out: On<Pointer<Out>>,
     splitters: Query<&DockSplitter>,
     state: Res<ResizeState>,
-    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
     mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
 ) {
     if splitters.contains(out.event_target()) && state.0.is_none() {
-        **cursor = CursorIcon::System(SystemCursorIcon::Default);
         if let Ok(mut color) = colors.get_mut(out.event_target()) {
             color.0 = theme::SPLITTER_GUTTER;
         }
@@ -1151,5 +1166,51 @@ pub(crate) fn update_dock_zone_style(
                 };
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splitter_resize_cursor_remains_overridden_for_the_active_drag() {
+        let splitter = DockSplitter {
+            node: DockNodeId(7),
+            axis: DockAxis::Horizontal,
+        };
+        let mut state = ResizeState::default();
+        let mut cursor = OverrideCursor::default();
+
+        activate_workspace_resize_cursor(splitter, &mut state, &mut cursor);
+
+        assert_eq!(state.0, Some(splitter));
+        assert!(matches!(
+            cursor.0,
+            Some(EntityCursor::System(SystemCursorIcon::EwResize))
+        ));
+
+        deactivate_workspace_resize_cursor(&mut state, &mut cursor);
+
+        assert_eq!(state.0, None);
+        assert!(cursor.0.is_none());
+    }
+
+    #[test]
+    fn splitter_resize_cursor_matches_the_split_axis() {
+        assert_eq!(
+            resize_system_cursor(DockSplitter {
+                node: DockNodeId(1),
+                axis: DockAxis::Horizontal,
+            }),
+            SystemCursorIcon::EwResize
+        );
+        assert_eq!(
+            resize_system_cursor(DockSplitter {
+                node: DockNodeId(2),
+                axis: DockAxis::Vertical,
+            }),
+            SystemCursorIcon::NsResize
+        );
     }
 }
