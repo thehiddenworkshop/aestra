@@ -10,6 +10,7 @@ mod diagnostics;
 mod dock_ui;
 mod docking;
 mod feathers;
+mod history;
 mod inspector;
 mod localization;
 mod menus;
@@ -96,10 +97,12 @@ use feathers::{
     tooltip::EditorTooltip,
 };
 use fluent_bundle::FluentArgs;
+pub(crate) use history::HistoryAction;
+use history::{EditorHistoryPlugin, HistorySet};
 use inspector::*;
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
-pub(crate) use menus::{DocumentMenuLabel, MenuState, RedoMenuItem, TabContextMenu, UndoMenuItem};
+pub(crate) use menus::{DocumentMenuLabel, MenuState, TabContextMenu};
 use menus::{EditorMenusPlugin, spawn_about_overlay, spawn_menu_bar, spawn_tab_context_menu};
 pub(crate) use persistence::persist_editor_settings;
 use persistence::{DocumentAction, EditorPersistencePlugin, PersistenceSet};
@@ -172,6 +175,7 @@ fn main() {
         .add_plugins(EditorCompilerInspectorPlugin)
         .add_plugins(EditorCurvesPlugin)
         .add_plugins(EditorDiagnosticsPlugin)
+        .add_plugins(EditorHistoryPlugin)
         .add_plugins(EditorProfilerPlugin)
         .add_plugins(EditorSettingsUiPlugin)
         .add_plugins(EditorPersistencePlugin)
@@ -193,9 +197,7 @@ fn main() {
                 (apply_editor_fonts, keyboard_shortcuts, handle_buttons)
                     .chain()
                     .in_set(EditorSet::PreViewport),
-                (update_editor_labels, update_history_actions)
-                    .chain()
-                    .in_set(EditorSet::MainUpdate),
+                update_editor_labels.in_set(EditorSet::MainUpdate),
                 (remember_scroll_positions, rebuild_editor_ui)
                     .chain()
                     .in_set(EditorSet::UiRebuild),
@@ -214,7 +216,7 @@ fn main() {
         .configure_sets(
             Update,
             (
-                TransportSet::Input,
+                (TransportSet::Input, HistorySet::Input).chain(),
                 TimelineSet::Input,
                 InspectorSet::Input,
                 DockingSet::Input,
@@ -226,6 +228,7 @@ fn main() {
                     CurvesSet::Actions,
                     DiagnosticsSet::Actions,
                     DockingSet::Actions,
+                    HistorySet::Actions,
                     InspectorSet::Actions,
                     ProfilerSet::Actions,
                     PersistenceSet::Actions,
@@ -244,6 +247,7 @@ fn main() {
                 (
                     AssetsSet::Sync,
                     DiagnosticsSet::Sync,
+                    HistorySet::Sync,
                     ProfilerSet::Sync,
                     InspectorSet::Sync,
                 )
@@ -260,8 +264,6 @@ fn main() {
 
 #[derive(Component, Clone, Copy)]
 enum EditorAction {
-    Undo,
-    Redo,
     AddLayer,
     DuplicateLayer,
     DeleteLayer,
@@ -641,12 +643,6 @@ fn keyboard_shortcuts(
             DocumentAction::Save
         });
     }
-    if control && keys.just_pressed(KeyCode::KeyZ) {
-        session.undo();
-    }
-    if control && keys.just_pressed(KeyCode::KeyY) {
-        session.redo();
-    }
     if control && keys.just_pressed(KeyCode::KeyD) {
         session.duplicate_selected_layer();
     }
@@ -755,8 +751,6 @@ fn handle_buttons(
                     session.ui_revision += 1;
                 }
                 match *action {
-                    EditorAction::Undo => session.undo(),
-                    EditorAction::Redo => session.redo(),
                     EditorAction::AddLayer => session.add_layer(),
                     EditorAction::DuplicateLayer => {
                         session.duplicate_selected_layer();
@@ -894,28 +888,6 @@ fn update_editor_labels(
     }
 }
 
-#[allow(clippy::type_complexity)]
-fn update_history_actions(
-    session: Res<EditorSession>,
-    mut commands: Commands,
-    items: Query<
-        (Entity, Has<UndoMenuItem>, Has<RedoMenuItem>),
-        Or<(With<UndoMenuItem>, With<RedoMenuItem>)>,
-    >,
-) {
-    if !session.is_changed() {
-        return;
-    }
-    for (entity, undo, redo) in &items {
-        let enabled = (undo && session.can_undo()) || (redo && session.can_redo());
-        if enabled {
-            commands.entity(entity).remove::<InteractionDisabled>();
-        } else {
-            commands.entity(entity).insert(InteractionDisabled);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -928,33 +900,6 @@ mod tests {
             theme::PANEL_DARK
         );
         assert_eq!(dock_pane_background(None), theme::PANEL_DARK);
-    }
-
-    #[test]
-    fn history_action_refresh_does_not_disable_unrelated_ui() {
-        let mut app = App::new();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ));
-        app.add_systems(Update, update_history_actions);
-
-        let particle_color = Color::srgba(0.8, 0.4, 1.0, 0.75);
-        let particle = app.world_mut().spawn(BackgroundColor(particle_color)).id();
-        let undo = app
-            .world_mut()
-            .spawn((UndoMenuItem, BackgroundColor(theme::PANEL)))
-            .id();
-
-        app.update();
-
-        let world = app.world();
-        assert_eq!(
-            world.get::<BackgroundColor>(particle).unwrap().0,
-            particle_color
-        );
-        assert!(!world.entity(particle).contains::<InteractionDisabled>());
-        assert!(world.entity(undo).contains::<InteractionDisabled>());
     }
 
     #[test]

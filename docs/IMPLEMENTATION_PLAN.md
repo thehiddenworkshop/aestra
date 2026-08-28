@@ -157,6 +157,9 @@ Complete this milestone before expanding the editor or renderer feature surface 
    Preview playback now runs through `EditorTransportPlugin`. Toolbar, Timeline, View-menu,
    and keyboard controls share one `TransportAction` contract; the plugin owns playback
    mutation, clock advancement, Feathers activation, shortcuts, and play/pause icon sync.
+   Undo and redo now run through `EditorHistoryPlugin`. Edit-menu controls and keyboard
+   shortcuts share one `HistoryAction` contract, and the plugin owns history execution plus
+   menu availability synchronization without touching unrelated UI entities.
    Panel selection, visibility, floating, and workspace reset commands now use the
    `DockingAction` contract owned by `DockingPlugin`; tab, context-menu, View-menu, drag/drop,
    reorder, and floating-window outcomes use localized panel names and status messages.

@@ -226,23 +226,7 @@ pub(crate) fn spawn_menu_bar(
         ))
         .with_children(|bar| {
             spawn_file_menu(bar, localizer);
-            spawn_standard_menu(
-                bar,
-                "menu-edit",
-                MenuKind::Edit,
-                &[
-                    ("edit-undo", "Ctrl+Z", EditorAction::Undo),
-                    ("edit-redo", "Ctrl+Y", EditorAction::Redo),
-                    ("edit-add-emitter", "Ctrl+Enter", EditorAction::AddLayer),
-                    (
-                        "edit-duplicate-emitter",
-                        "Ctrl+D",
-                        EditorAction::DuplicateLayer,
-                    ),
-                    ("edit-delete-emitter", "Delete", EditorAction::DeleteLayer),
-                ],
-                localizer,
-            );
+            spawn_edit_menu(bar, localizer);
             spawn_view_menu(bar, layout, menu.show_grid, localizer);
             spawn_standard_menu(
                 bar,
@@ -341,6 +325,52 @@ fn spawn_standard_menu(
         });
 }
 
+fn spawn_edit_menu(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu())
+        .with_children(|menu_root| {
+            menu_button(menu_root, "menu-edit", MenuKind::Edit, localizer);
+            menu_root
+                .spawn_empty()
+                .apply_scene(ui_shell::feathers_menu_popup())
+                .insert((
+                    MenuDropdown(MenuKind::Edit),
+                    MenuSurface,
+                    RelativeCursorPosition::default(),
+                ))
+                .with_children(|dropdown| {
+                    spawn_feathers_menu_item(
+                        dropdown,
+                        "edit-undo",
+                        "Ctrl+Z",
+                        HistoryAction::Undo,
+                        localizer,
+                    )
+                    .insert(UndoMenuItem);
+                    spawn_feathers_menu_item(
+                        dropdown,
+                        "edit-redo",
+                        "Ctrl+Y",
+                        HistoryAction::Redo,
+                        localizer,
+                    )
+                    .insert(RedoMenuItem);
+                    for (message_id, shortcut, action) in [
+                        ("edit-add-emitter", "Ctrl+Enter", EditorAction::AddLayer),
+                        (
+                            "edit-duplicate-emitter",
+                            "Ctrl+D",
+                            EditorAction::DuplicateLayer,
+                        ),
+                        ("edit-delete-emitter", "Delete", EditorAction::DeleteLayer),
+                    ] {
+                        spawn_feathers_menu_item(dropdown, message_id, shortcut, action, localizer);
+                    }
+                });
+        });
+}
+
 fn menu_button(
     parent: &mut ChildSpawnerCommands,
     message_id: &'static str,
@@ -382,17 +412,7 @@ fn spawn_dropdown(
         ))
         .with_children(|dropdown| {
             for (message_id, shortcut, action) in items {
-                let mut item =
-                    spawn_feathers_menu_item(dropdown, message_id, shortcut, *action, localizer);
-                match action {
-                    EditorAction::Undo => {
-                        item.insert(UndoMenuItem);
-                    }
-                    EditorAction::Redo => {
-                        item.insert(RedoMenuItem);
-                    }
-                    _ => {}
-                }
+                spawn_feathers_menu_item(dropdown, message_id, shortcut, *action, localizer);
             }
         });
 }
