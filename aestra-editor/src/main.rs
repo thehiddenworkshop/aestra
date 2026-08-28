@@ -27,11 +27,11 @@ use bevy::{
     camera::{RenderTarget, visibility::RenderLayers},
     ecs::system::SystemParam,
     feathers::{
-        constants::{fonts, icons},
+        constants::fonts,
         containers::{group, group_body, group_header, pane_header},
         controls::{NumberInputValue, UpdateNumberInput},
         cursor::{EntityCursor, OverrideCursor},
-        display::{icon, label, label_dim},
+        display::{label, label_dim},
         theme::{ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor, ThemedText},
         tokens,
     },

@@ -1,6 +1,9 @@
 //! Inspector ownership: module-stack UI, semantic property editing, numeric scrubbing,
 //! navigation focus, and contextual help.
 
+use crate::feathers::panel_card::{
+    PanelCardProps, RememberedPanelCard, spawn_panel_card as spawn_remembered_panel_card,
+};
 use crate::*;
 
 pub(crate) const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
@@ -329,9 +332,11 @@ mod tests {
             .iter()
             .find(|module| module.stage == StageKind::ParticleUpdate)
             .unwrap();
+        let renderer = session.selected_layer().renderers.first().unwrap();
 
         assert!(!inspector_module_collapsed(&settings, emission));
         assert!(inspector_module_collapsed(&settings, motion));
+        assert!(inspector_renderer_collapsed(&settings, renderer));
 
         assert!(toggle_persisted_inspector_section(
             &session,
@@ -344,6 +349,20 @@ mod tests {
                 .inspector
                 .section_expansion
                 .get(&inspector_module_key(motion)),
+            Some(&true)
+        );
+
+        assert!(toggle_persisted_inspector_section(
+            &session,
+            &mut settings,
+            InspectorSection::Renderer(renderer.id),
+        ));
+        assert!(!inspector_renderer_collapsed(&settings, renderer));
+        assert_eq!(
+            settings
+                .inspector
+                .section_expansion
+                .get(&inspector_renderer_key(renderer)),
             Some(&true)
         );
     }
@@ -1840,25 +1859,25 @@ pub(crate) fn spawn_inspector(
 }
 
 fn inspector_module_collapsed(settings: &EditorSettings, module: &ModuleInstance) -> bool {
-    let key = inspector_module_key(module);
-    !settings
-        .inspector
-        .section_expansion
-        .get(&key)
-        .copied()
-        .unwrap_or(!matches!(module.stage, StageKind::ParticleUpdate))
+    inspector_module_card_memory(module).collapsed(&settings.inspector.section_expansion)
 }
 
 fn inspector_renderer_collapsed(
     settings: &EditorSettings,
     renderer: &aestra_bevy::RendererInstance,
 ) -> bool {
-    !settings
-        .inspector
-        .section_expansion
-        .get(&inspector_renderer_key(renderer))
-        .copied()
-        .unwrap_or(false)
+    inspector_renderer_card_memory(renderer).collapsed(&settings.inspector.section_expansion)
+}
+
+fn inspector_module_card_memory(module: &ModuleInstance) -> RememberedPanelCard {
+    RememberedPanelCard::new(
+        inspector_module_key(module),
+        !matches!(module.stage, StageKind::ParticleUpdate),
+    )
+}
+
+fn inspector_renderer_card_memory(renderer: &aestra_bevy::RendererInstance) -> RememberedPanelCard {
+    RememberedPanelCard::new(inspector_renderer_key(renderer), false)
 }
 
 fn inspector_module_key(module: &ModuleInstance) -> String {
@@ -1879,7 +1898,7 @@ pub(crate) fn toggle_persisted_inspector_section(
     settings: &mut EditorSettings,
     section: InspectorSection,
 ) -> bool {
-    let (key, default_expanded) = match section {
+    let card = match section {
         InspectorSection::Module(id) => {
             let Some(module) = session
                 .selected_layer()
@@ -1889,10 +1908,7 @@ pub(crate) fn toggle_persisted_inspector_section(
             else {
                 return false;
             };
-            (
-                inspector_module_key(module),
-                !matches!(module.stage, StageKind::ParticleUpdate),
-            )
+            inspector_module_card_memory(module)
         }
         InspectorSection::Renderer(id) => {
             let Some(renderer) = session
@@ -1903,16 +1919,10 @@ pub(crate) fn toggle_persisted_inspector_section(
             else {
                 return false;
             };
-            (inspector_renderer_key(renderer), false)
+            inspector_renderer_card_memory(renderer)
         }
     };
-    let expanded = settings
-        .inspector
-        .section_expansion
-        .get(&key)
-        .copied()
-        .unwrap_or(default_expanded);
-    settings.inspector.section_expansion.insert(key, !expanded);
+    card.toggle(&mut settings.inspector.section_expansion);
     true
 }
 
@@ -2154,151 +2164,68 @@ fn spawn_module_card(
     } else {
         theme::BORDER
     };
-    parent
-        .spawn((
-            InspectorSemanticTarget {
-                target: SemanticTarget::Module(module.id),
-                base_border,
-            },
-            Node {
-                width: Val::Auto,
-                margin: UiRect::axes(Val::Px(7.0), Val::Px(2.0)),
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(if collapsed { 3.0 } else { 5.0 })),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(if collapsed { 0.0 } else { 2.0 }),
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(if module.enabled {
+    spawn_remembered_panel_card(
+        parent,
+        PanelCardProps::new(display_name, collapsed)
+            .with_help(help)
+            .with_enabled(module.enabled)
+            .with_background(if module.enabled {
                 theme::PANEL_LIGHT
             } else {
                 theme::PANEL_DARK
-            }),
-            BorderColor::all(base_border),
-        ))
-        .with_children(|card| {
-            card.spawn((
-                InspectorSelectionTarget(SemanticTarget::Module(module.id)),
-                Node {
-                    width: Val::Percent(100.0),
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(4.0),
-                    ..default()
-                },
-            ))
-            .with_children(|header| {
-                spawn_inspector_disclosure(
-                    header,
-                    InspectorSection::Module(module.id),
-                    collapsed,
-                    display_name,
-                    module.enabled,
-                    Some(help),
-                );
-                let mut enabled = header.spawn_empty();
-                enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
-                    ModuleEnabledControl(module.id),
-                    AccessibleLabel(format!("Enable {display_name}")),
-                ));
-                if module.enabled {
-                    enabled.insert(Checked);
-                }
-                spawn_action_menu(
-                    header,
-                    &format!("{display_name} actions"),
-                    &[
-                        ComboOption {
-                            label: "Move up".into(),
-                            selected: false,
-                            action: EditorAction::MoveModule(module.id, -1),
-                        },
-                        ComboOption {
-                            label: "Move down".into(),
-                            selected: false,
-                            action: EditorAction::MoveModule(module.id, 1),
-                        },
-                        ComboOption {
-                            label: "Duplicate".into(),
-                            selected: false,
-                            action: EditorAction::DuplicateModule(module.id),
-                        },
-                        ComboOption {
-                            label: "Delete…".into(),
-                            selected: false,
-                            action: EditorAction::DeleteModule(module.id),
-                        },
-                    ],
-                );
-            });
-            if collapsed {
-                return;
+            })
+            .with_border(base_border),
+        InspectorSemanticTarget {
+            target: SemanticTarget::Module(module.id),
+            base_border,
+        },
+        InspectorSelectionTarget(SemanticTarget::Module(module.id)),
+        EditorAction::ToggleInspectorSection(InspectorSection::Module(module.id)),
+        |header| {
+            let mut enabled = header.spawn_empty();
+            enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
+                ModuleEnabledControl(module.id),
+                AccessibleLabel(format!("Enable {display_name}")),
+            ));
+            if module.enabled {
+                enabled.insert(Checked);
             }
+            spawn_action_menu(
+                header,
+                &format!("{display_name} actions"),
+                &[
+                    ComboOption {
+                        label: "Move up".into(),
+                        selected: false,
+                        action: EditorAction::MoveModule(module.id, -1),
+                    },
+                    ComboOption {
+                        label: "Move down".into(),
+                        selected: false,
+                        action: EditorAction::MoveModule(module.id, 1),
+                    },
+                    ComboOption {
+                        label: "Duplicate".into(),
+                        selected: false,
+                        action: EditorAction::DuplicateModule(module.id),
+                    },
+                    ComboOption {
+                        label: "Delete…".into(),
+                        selected: false,
+                        action: EditorAction::DeleteModule(module.id),
+                    },
+                ],
+            );
+        },
+        |card| {
             if let Some(metadata) = metadata {
                 for (input_index, input) in metadata.inputs.iter().enumerate() {
                     spawn_input_control(card, module, input, input_index as u8, localizer);
                 }
             }
             spawn_inline_diagnostics(card, diagnostic_path, session);
-        });
-}
-
-fn spawn_inspector_disclosure(
-    parent: &mut ChildSpawnerCommands,
-    section: InspectorSection,
-    collapsed: bool,
-    title: &str,
-    enabled: bool,
-    help: Option<&str>,
-) {
-    let mut disclosure = parent.spawn_empty();
-    disclosure
-        .apply_scene(ui_shell::feathers_plain_button())
-        .insert((
-            EditorAction::ToggleInspectorSection(section),
-            FeathersActionButton,
-            AccessibleLabel(format!(
-                "{} {title}",
-                if collapsed { "Expand" } else { "Collapse" }
-            )),
-            Node {
-                flex_grow: 1.0,
-                min_width: Val::Px(0.0),
-                height: Val::Px(26.0),
-                padding: UiRect::horizontal(Val::Px(2.0)),
-                justify_content: JustifyContent::FlexStart,
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(6.0),
-                ..default()
-            },
-        ));
-    if let Some(help) = help {
-        disclosure.insert(EditorTooltip::description(help));
-    }
-    disclosure.with_children(|button| {
-        button
-            .spawn_empty()
-            .apply_scene(icon(if collapsed {
-                icons::CHEVRON_RIGHT
-            } else {
-                icons::CHEVRON_DOWN
-            }))
-            .insert(Pickable::IGNORE);
-        button.spawn((
-            Text::new(title),
-            ThemedText,
-            TextColor(if enabled {
-                theme::TEXT
-            } else {
-                theme::TEXT_FAINT
-            }),
-            TextFont {
-                font_size: FontSize::Px(12.0),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ));
-    });
+        },
+    );
 }
 
 fn spawn_input_control(
@@ -2985,72 +2912,45 @@ fn spawn_renderer_card(
     } else {
         theme::BORDER
     };
-    parent
-        .spawn((
-            InspectorSemanticTarget {
-                target: SemanticTarget::Renderer(renderer.id),
-                base_border,
-            },
-            Node {
-                width: Val::Auto,
-                margin: UiRect::axes(Val::Px(7.0), Val::Px(2.0)),
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(if collapsed { 3.0 } else { 5.0 })),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(if collapsed { 0.0 } else { 2.0 }),
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL_LIGHT),
-            BorderColor::all(base_border),
-        ))
-        .with_children(|card| {
-            card.spawn((
-                InspectorSelectionTarget(SemanticTarget::Renderer(renderer.id)),
-                Node {
-                    width: Val::Percent(100.0),
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(4.0),
-                    ..default()
-                },
-            ))
-            .with_children(|header| {
-                spawn_inspector_disclosure(
-                    header,
-                    InspectorSection::Renderer(renderer.id),
-                    collapsed,
-                    display_name,
-                    renderer.enabled,
-                    Some("Controls how this emitter is drawn."),
-                );
-                let mut enabled = header.spawn_empty();
-                enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
-                    RendererEnabledControl(renderer.id),
-                    AccessibleLabel("Enable renderer".into()),
-                ));
-                if renderer.enabled {
-                    enabled.insert(Checked);
-                }
-                spawn_action_menu(
-                    header,
-                    "Renderer actions",
-                    &[
-                        ComboOption {
-                            label: "Duplicate".into(),
-                            selected: false,
-                            action: EditorAction::DuplicateRenderer(renderer.id),
-                        },
-                        ComboOption {
-                            label: "Delete…".into(),
-                            selected: false,
-                            action: EditorAction::DeleteRenderer(renderer.id),
-                        },
-                    ],
-                );
-            });
-            if collapsed {
-                return;
+    spawn_remembered_panel_card(
+        parent,
+        PanelCardProps::new(display_name, collapsed)
+            .with_help("Controls how this emitter is drawn.")
+            .with_enabled(renderer.enabled)
+            .with_border(base_border),
+        InspectorSemanticTarget {
+            target: SemanticTarget::Renderer(renderer.id),
+            base_border,
+        },
+        InspectorSelectionTarget(SemanticTarget::Renderer(renderer.id)),
+        EditorAction::ToggleInspectorSection(InspectorSection::Renderer(renderer.id)),
+        |header| {
+            let mut enabled = header.spawn_empty();
+            enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
+                RendererEnabledControl(renderer.id),
+                AccessibleLabel("Enable renderer".into()),
+            ));
+            if renderer.enabled {
+                enabled.insert(Checked);
             }
+            spawn_action_menu(
+                header,
+                "Renderer actions",
+                &[
+                    ComboOption {
+                        label: "Duplicate".into(),
+                        selected: false,
+                        action: EditorAction::DuplicateRenderer(renderer.id),
+                    },
+                    ComboOption {
+                        label: "Delete…".into(),
+                        selected: false,
+                        action: EditorAction::DeleteRenderer(renderer.id),
+                    },
+                ],
+            );
+        },
+        |card| {
             let Some(material) = session
                 .effect
                 .materials
@@ -3240,7 +3140,8 @@ fn spawn_renderer_card(
                 _ => {}
             }
             spawn_inline_diagnostics(card, diagnostic_path, session);
-        });
+        },
+    );
 }
 
 fn spawn_inline_diagnostics(

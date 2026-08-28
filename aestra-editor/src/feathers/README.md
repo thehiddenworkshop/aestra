@@ -17,6 +17,7 @@ domain-specific state and semantic commands.
 | `field_row` | Compact, wrapping label/control columns for inspector-like forms |
 | `number_input` | Shared precision, modifier, formatting, and delta policy for scrub inputs |
 | `panel` | Reusable panel heading chrome |
+| `panel_card` | Remembered collapsible cards with semantic-key persistence and header/body slots |
 | `scenes` | BSN scenes for the editor shell and upstream Bevy Feathers controls |
 | `scroll` | Native scroll areas, persisted scroll markers, and overflow-only scrollbars |
 | `separator` | Theme-aware horizontal and vertical separators |
@@ -31,4 +32,4 @@ domain-specific state and semantic commands.
 - Prefer Bevy 0.19 Feathers controls and accessibility/focus behavior. Wrap them when Aestra needs
   consistent composition or editor-specific policy.
 - Add a widget only when an Aestra surface uses it. Candidate additions from Jackdaw include
-  remembered panel cards, slider rows, swatch rows, and richer text edits.
+  slider rows, swatch rows, and richer text edits.

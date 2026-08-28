@@ -524,18 +524,22 @@ The first slice is implemented in `aestra-editor/src/feathers/`. Its widgets cov
 Aestra's current shared controls. The following Jackdaw primitives become useful as
 the corresponding Aestra feature lands, rather than being copied unused:
 
-1. replace remaining hand-built collapsible cards with remembered panel cards;
-2. add slider and swatch rows when continuous scalar and color authoring expand;
-3. add list/tree primitives for the future searchable content browser;
-4. evaluate Jackdaw's Bevy 0.19 scrub input as a replacement for the remaining
+1. add slider and swatch rows when continuous scalar and color authoring expand;
+2. add list/tree primitives for the future searchable content browser;
+3. evaluate Jackdaw's Bevy 0.19 scrub input as a replacement for the remaining
    Inspector-owned pointer state after its semantic preview/commit adapter is isolated;
-5. add dialogs, toasts, progress, and file-browser widgets only when those workflows
+4. add dialogs, toasts, progress, and file-browser widgets only when those workflows
    need in-editor non-native surfaces.
 
 The generic tooltip slice is complete: Inspector and viewport help now share delayed,
 popover-based content with optional titles, shortcuts, and footers. Text remains localized at
 the call site, and parenting the popup to the hovered control keeps placement scoped to the
 correct native window.
+
+The remembered panel-card slice is also complete. Module and renderer cards share one Feathers
+composition for disclosure, compact spacing, help, accessibility, and domain-owned header/body
+slots. Expansion preferences remain in editor settings under stable module or renderer type keys,
+so UI rebuilds and equivalent instances restore the same state without persisting ECS entities.
 
 Dock tabs, splitters, timeline clips, curve keys, and viewport gizmos remain specialized
 Aestra controls. They consume the shared widget and theme layer but are not generic

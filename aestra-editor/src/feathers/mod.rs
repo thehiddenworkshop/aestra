@@ -9,6 +9,7 @@ pub(crate) mod combo_box;
 pub(crate) mod field_row;
 pub(crate) mod number_input;
 pub(crate) mod panel;
+pub(crate) mod panel_card;
 pub(crate) mod scenes;
 pub(crate) mod scroll;
 pub(crate) mod separator;
