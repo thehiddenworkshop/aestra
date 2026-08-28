@@ -1,5 +1,6 @@
 mod dock_ui;
 mod docking;
+mod feathers;
 mod inspector;
 mod localization;
 mod recovery;
@@ -7,7 +8,6 @@ mod session;
 mod settings;
 mod theme;
 mod timeline;
-mod ui_shell;
 mod viewport;
 
 use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTarget};
@@ -20,12 +20,13 @@ use aestra_bevy::{
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
 use aestra_runtime::{EffectProfile, ProfileValue, ProfileValueSource};
+#[cfg(test)]
+use bevy::ui_widgets::Activate;
 use bevy::{
     asset::AssetPlugin,
     camera::{RenderTarget, visibility::RenderLayers},
     ecs::system::SystemParam,
     feathers::{
-        FeathersPlugins,
         constants::{fonts, icons},
         containers::{group, group_body, group_header, pane_header},
         controls::{NumberInputValue, UpdateNumberInput},
@@ -42,7 +43,7 @@ use bevy::{
     text::{EditableText, FontSource, TextEdit},
     ui::{Checked, InteractionDisabled, Pressed, RelativeCursorPosition},
     ui_widgets::{
-        Activate, ScrollArea, ScrollIntoView, Scrollbar, ValueChange,
+        ScrollIntoView, ValueChange,
         popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
     },
     window::{
@@ -60,6 +61,21 @@ use docking::{
     DockResizeQueries, DockSplitter, DockStack, DockTab, DockTabAppendIndicator, DockTabAppendZone,
     DockingPlugin, DockingSet, NativeFloatingCamera, NativeFloatingUi, NativeFloatingWindow,
     ResizeState, SplitterGrip, WorkspaceLayout,
+};
+#[cfg(test)]
+use feathers::button::queue_action_activation as queue_feathers_action_activation;
+pub(crate) use feathers::scenes as ui_shell;
+#[cfg(test)]
+use feathers::scroll::vertical_scrollbar_needed;
+use feathers::{
+    AestraFeathersPlugin, AestraFeathersSet,
+    button::{
+        EditorNativeControl, FeathersActionButton, PendingFeathersActivation,
+        spawn_action_button as spawn_feathers_action_button, spawn_tool_button as mini_button,
+    },
+    combo_box::{ComboOption, spawn_action_menu, spawn_combo_control},
+    panel::spawn_panel_heading as panel_heading,
+    scroll::{PersistedScroll, spawn_vertical_scroll_area},
 };
 use fluent_bundle::FluentArgs;
 use inspector::*;
@@ -153,17 +169,15 @@ fn main() {
                     ..default()
                 }),
         )
-        .add_plugins(FeathersPlugins)
+        .add_plugins(AestraFeathersPlugin)
         .add_plugins(AestraPlugin)
         .add_plugins(DockingPlugin)
         .add_plugins(InspectorPlugin)
         .add_plugins(TimelinePlugin)
         .add_plugins(ViewportPlugin)
-        .insert_resource(theme::feathers_theme())
         .add_observer(handle_settings_toggle_change)
         .add_observer(handle_settings_integer_change)
         .add_observer(handle_settings_scalar_change)
-        .add_observer(queue_feathers_action_activation)
         .add_systems(
             Startup,
             (setup_window_cursor, setup_editor_fonts, setup_editor)
@@ -176,7 +190,6 @@ fn main() {
                 (
                     apply_editor_fonts,
                     keyboard_shortcuts,
-                    audit_editor_action_controls,
                     handle_buttons,
                     handle_window_close_requests,
                     autosave_recovery,
@@ -206,9 +219,7 @@ fn main() {
                 )
                     .chain()
                     .in_set(EditorSet::UiRebuild),
-                (sync_settings_number_inputs, update_scrollbar_visibility)
-                    .chain()
-                    .in_set(EditorSet::UiSync),
+                sync_settings_number_inputs.in_set(EditorSet::UiSync),
             ),
         )
         .configure_sets(Startup, (ViewportSet::Setup, EditorSet::Setup).chain())
@@ -218,6 +229,7 @@ fn main() {
                 TimelineSet::Input,
                 InspectorSet::Input,
                 DockingSet::Input,
+                AestraFeathersSet::Input,
                 EditorSet::PreViewport,
                 ViewportSet::Update,
                 EditorSet::MainUpdate,
@@ -226,6 +238,7 @@ fn main() {
                 TimelineSet::Visuals,
                 InspectorSet::Sync,
                 DockingSet::Sync,
+                AestraFeathersSet::Sync,
                 EditorSet::UiSync,
             )
                 .chain(),
@@ -574,31 +587,10 @@ struct DiagnosticsFilterButton(DiagnosticsFilter);
 struct SettingsCategoryButton(SettingsCategory);
 
 #[derive(Component)]
-struct FeathersActionButton;
-
-/// Marks an intentional editor-native interaction that has no equivalent Feathers control.
-/// Standard buttons carrying an [`EditorAction`] should use [`FeathersActionButton`] instead.
-#[derive(Component)]
-struct EditorNativeControl;
-
-type UnclassifiedEditorActionControl = (
-    Added<EditorAction>,
-    With<Button>,
-    Without<FeathersActionButton>,
-    Without<EditorNativeControl>,
-);
-
-#[derive(Component)]
-struct PendingFeathersActivation;
-
-#[derive(Component)]
 struct SettingsToggleControl(SettingsToggle);
 
 #[derive(Component)]
 struct SettingsNumberControl(SettingsNumber);
-
-#[derive(Component, Debug, Clone, Copy)]
-struct PersistedScroll(ScrollMemoryKey);
 
 #[derive(Component)]
 struct LocalizedText(&'static str);
@@ -1442,14 +1434,14 @@ fn spawn_toolbar(
                     Pickable::IGNORE,
                 ));
             });
-            bar.spawn((
-                Node {
-                    width: Val::Px(1.0),
-                    height: Val::Px(26.0),
-                    margin: UiRect::horizontal(Val::Px(5.0)),
-                    ..default()
-                },
-                BackgroundColor(theme::BORDER),
+            bar.spawn(Node {
+                width: Val::Px(11.0),
+                height: Val::Px(26.0),
+                padding: UiRect::horizontal(Val::Px(5.0)),
+                ..default()
+            })
+            .with_child(feathers::separator::separator(
+                feathers::separator::SeparatorProps::vertical(),
             ));
             bar.spawn((
                 DocumentToolbarLabel,
@@ -2765,6 +2757,9 @@ fn spawn_settings_category(
     localizer: &Localizer,
 ) {
     spawn_settings_heading(parent, &localizer.text(category.message_id()));
+    parent.spawn(feathers::separator::separator(
+        feathers::separator::SeparatorProps::horizontal().with_alpha(0.12),
+    ));
     match category {
         SettingsCategory::General => {
             spawn_settings_toggle(
@@ -3032,216 +3027,6 @@ fn spawn_settings_read_only(
     });
 }
 
-fn spawn_feathers_action_button(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    action: EditorAction,
-    primary: bool,
-) {
-    let mut button = parent.spawn_empty();
-    if primary {
-        button.apply_scene(ui_shell::feathers_primary_button());
-    } else {
-        button.apply_scene(ui_shell::feathers_button());
-    }
-    button
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.to_owned()),
-        ))
-        .with_children(|button| {
-            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
-        });
-}
-
-struct ComboOption {
-    label: String,
-    selected: bool,
-    action: EditorAction,
-}
-
-fn spawn_combo_control(
-    parent: &mut ChildSpawnerCommands,
-    value: &str,
-    accessible_label: &str,
-    options: &[ComboOption],
-    width: f32,
-) {
-    parent
-        .spawn(Node {
-            width: Val::Px(width),
-            min_width: Val::Px(112.0),
-            ..default()
-        })
-        .with_children(|wrapper| {
-            wrapper
-                .spawn_empty()
-                .apply_scene(ui_shell::feathers_menu())
-                .with_children(|menu| {
-                    menu.spawn_empty()
-                        .apply_scene(ui_shell::feathers_menu_button())
-                        .insert((
-                            AccessibleLabel(accessible_label.to_owned()),
-                            Node {
-                                width: Val::Percent(100.0),
-                                height: Val::Px(28.0),
-                                align_items: AlignItems::Center,
-                                padding: UiRect::horizontal(Val::Px(8.0)),
-                                ..default()
-                            },
-                        ))
-                        .with_children(|button| {
-                            button.spawn((
-                                Text::new(value),
-                                ThemedText,
-                                Pickable::IGNORE,
-                                Node {
-                                    flex_grow: 1.0,
-                                    ..default()
-                                },
-                            ));
-                            button
-                                .spawn_empty()
-                                .apply_scene(icon(icons::CHEVRON_DOWN))
-                                .insert(Pickable::IGNORE);
-                        });
-                    menu.spawn_empty()
-                        .apply_scene(ui_shell::feathers_menu_popup())
-                        .with_children(|popup| {
-                            for option in options {
-                                spawn_combo_option(popup, option);
-                            }
-                        });
-                });
-        });
-}
-
-fn spawn_combo_option(parent: &mut ChildSpawnerCommands, option: &ComboOption) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_menu_item())
-        .insert((
-            Interaction::None,
-            option.action,
-            FeathersActionButton,
-            AccessibleLabel(option.label.clone()),
-        ))
-        .with_children(|item| {
-            item.spawn((
-                Node {
-                    width: Val::Px(18.0),
-                    height: Val::Percent(100.0),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ))
-            .with_children(|indicator| {
-                if option.selected {
-                    indicator.spawn((
-                        Node {
-                            width: Val::Px(6.0),
-                            height: Val::Px(6.0),
-                            border_radius: BorderRadius::all(Val::Px(2.0)),
-                            ..default()
-                        },
-                        BackgroundColor(theme::ACCENT),
-                        Pickable::IGNORE,
-                    ));
-                }
-            });
-            item.spawn((
-                Text::new(option.label.clone()),
-                ThemedText,
-                Pickable::IGNORE,
-            ));
-        });
-}
-
-fn spawn_action_menu(
-    parent: &mut ChildSpawnerCommands,
-    accessible_label: &str,
-    options: &[ComboOption],
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_menu())
-        .with_children(|menu| {
-            menu.spawn_empty()
-                .apply_scene(ui_shell::feathers_menu_button())
-                .insert((
-                    AccessibleLabel(accessible_label.to_owned()),
-                    Node {
-                        width: Val::Px(28.0),
-                        height: Val::Px(28.0),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        ..default()
-                    },
-                ))
-                .with_children(|button| {
-                    button
-                        .spawn((
-                            Node {
-                                width: Val::Px(4.0),
-                                height: Val::Px(16.0),
-                                flex_direction: FlexDirection::Column,
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::SpaceBetween,
-                                ..default()
-                            },
-                            Pickable::IGNORE,
-                        ))
-                        .with_children(|dots| {
-                            for _ in 0..3 {
-                                dots.spawn((
-                                    Node {
-                                        width: Val::Px(3.0),
-                                        height: Val::Px(3.0),
-                                        border_radius: BorderRadius::all(Val::Px(2.0)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(theme::TEXT_MUTED),
-                                    Pickable::IGNORE,
-                                ));
-                            }
-                        });
-                });
-            menu.spawn_empty()
-                .apply_scene(ui_shell::feathers_menu_popup())
-                .insert((
-                    Popover {
-                        positions: vec![
-                            PopoverPlacement {
-                                side: PopoverSide::Bottom,
-                                align: PopoverAlign::End,
-                                gap: 2.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Top,
-                                align: PopoverAlign::End,
-                                gap: 2.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Left,
-                                align: PopoverAlign::Start,
-                                gap: 2.0,
-                            },
-                        ],
-                        window_margin: 8.0,
-                    },
-                    OverrideClip,
-                ))
-                .with_children(|popup| {
-                    for option in options {
-                        spawn_combo_option(popup, option);
-                    }
-                });
-        });
-}
-
 fn handle_settings_toggle_change(
     change: On<ValueChange<bool>>,
     controls: Query<&SettingsToggleControl>,
@@ -3421,35 +3206,6 @@ fn settings_number_input_value(
     }
 }
 
-fn spawn_vertical_scroll_area(
-    parent: &mut ChildSpawnerCommands,
-    memory: ScrollMemoryKey,
-    mut viewport: Node,
-    content: impl FnOnce(&mut ChildSpawnerCommands),
-) -> Entity {
-    viewport.overflow = Overflow::scroll_y();
-    viewport.scrollbar_width = 0.0;
-    let target = parent
-        .spawn((viewport, ScrollArea, PersistedScroll(memory)))
-        .with_children(content)
-        .id();
-    spawn_vertical_scrollbar(parent, target);
-    target
-}
-
-fn spawn_vertical_scrollbar(parent: &mut ChildSpawnerCommands, target: Entity) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_vertical_scrollbar(target))
-        .insert(Node {
-            width: Val::Px(10.0),
-            height: Val::Percent(100.0),
-            display: Display::None,
-            padding: UiRect::horizontal(Val::Px(3.0)),
-            ..default()
-        });
-}
-
 fn remember_scroll_positions(
     mut memory: ResMut<ScrollMemoryState>,
     scroll_areas: Query<(&PersistedScroll, &ScrollPosition)>,
@@ -3467,26 +3223,6 @@ fn restore_scroll_positions(
         if let Some(saved) = memory.0.get(&marker.0) {
             position.0 = *saved;
         }
-    }
-}
-
-fn vertical_scrollbar_needed(viewport_height: f32, content_height: f32) -> bool {
-    content_height > viewport_height + 0.5
-}
-
-fn update_scrollbar_visibility(
-    scroll_areas: Query<&ComputedNode, With<ScrollArea>>,
-    mut scrollbars: Query<(&Scrollbar, &mut Node), Without<ScrollArea>>,
-) {
-    for (scrollbar, mut node) in &mut scrollbars {
-        let Ok(viewport) = scroll_areas.get(scrollbar.target) else {
-            continue;
-        };
-        node.display = if vertical_scrollbar_needed(viewport.size().y, viewport.content_size().y) {
-            Display::Flex
-        } else {
-            Display::None
-        };
     }
 }
 
@@ -5180,17 +4916,7 @@ fn spawn_status_bar(
     localizer: &Localizer,
 ) {
     parent
-        .spawn((
-            Node {
-                grid_row: GridPlacement::start(4),
-                width: Val::Percent(100.0),
-                height: Val::Px(24.0),
-                align_items: AlignItems::Center,
-                padding: UiRect::horizontal(Val::Px(12.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL_DARK),
-        ))
+        .spawn(feathers::status_bar::status_bar())
         .with_children(|bar| {
             let (compile_status, compile_color) = compile_status(session);
             bar.spawn_empty()
@@ -5273,65 +4999,6 @@ fn compile_status(session: &EditorSession) -> (&'static str, Color) {
     } else {
         ("compile-compiled", Color::srgb(0.35, 0.88, 0.57))
     }
-}
-
-fn panel_heading(parent: &mut ChildSpawnerCommands, title: &str, meta: &str) {
-    parent
-        .spawn((
-            Node {
-                height: Val::Px(34.0),
-                width: Val::Percent(100.0),
-                padding: UiRect::horizontal(Val::Px(12.0)),
-                align_items: AlignItems::Center,
-                border: UiRect::bottom(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(theme::PANEL),
-            BorderColor::all(theme::BORDER),
-        ))
-        .with_children(|row| {
-            row.spawn((
-                Text::new(title),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_MUTED),
-            ));
-            row.spawn(Node {
-                flex_grow: 1.0,
-                ..default()
-            });
-            row.spawn((
-                Text::new(meta),
-                TextFont {
-                    font_size: FontSize::Px(9.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-            ));
-        });
-}
-
-fn mini_button(parent: &mut ChildSpawnerCommands, label: &str, action: EditorAction) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_tool_button())
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.to_owned()),
-            Node {
-                width: Val::Px(28.0),
-                height: Val::Px(24.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-        ))
-        .with_children(|button| {
-            button.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
-        });
 }
 
 fn inspector_action_button(
@@ -5474,28 +5141,6 @@ fn keyboard_shortcuts(
         settings.preview.show_grid = menu.show_grid;
         session.ui_revision += 1;
         persist_editor_settings(&settings, &mut settings_persistence, &mut session);
-    }
-}
-
-fn queue_feathers_action_activation(
-    activate: On<Activate>,
-    actions: Query<(), (With<EditorAction>, With<FeathersActionButton>)>,
-    mut commands: Commands,
-) {
-    if actions.contains(activate.entity) {
-        commands
-            .entity(activate.entity)
-            .insert((PendingFeathersActivation, Interaction::Pressed));
-    }
-}
-
-fn audit_editor_action_controls(controls: Query<Entity, UnclassifiedEditorActionControl>) {
-    #[cfg(debug_assertions)]
-    if let Some(entity) = controls.iter().next() {
-        panic!(
-            "editor action control {entity:?} must use FeathersActionButton or be explicitly \
-             marked EditorNativeControl"
-        );
     }
 }
 

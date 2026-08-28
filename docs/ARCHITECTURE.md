@@ -81,6 +81,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   containers, checkboxes, editable numeric inputs, themed typography, keyboard
   focus, cursors, and accessibility labels. Inspector edits commit only when an
   interaction is final and enter the semantic command history as undoable changes.
+- Owns a dedicated `src/feathers/` widget layer above Bevy Feathers. Reusable
+  button activation, combo/action menus, compact field rows, scrub-number policy,
+  panel chrome, BSN scenes, scroll areas, separators, and status surfaces live
+  there rather than in application or panel builders. Domain plugins retain only
+  semantic state and commands; docking, timeline, viewport, and effect-specific
+  Inspector behavior do not leak into generic widgets.
 - Owns a persisted recursive workspace dock tree with tab-strip insertion and
   directional panel-content splitting,
   closable/recoverable panels, collapsing empty branches, transient drop targets,

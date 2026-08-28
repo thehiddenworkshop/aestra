@@ -111,8 +111,13 @@ Complete this milestone before expanding the editor or renderer feature surface 
    synchronization. The
    inspector owns module-stack construction, semantic property controls, numeric scrub
    transactions, renderer fields, focus navigation, contextual help, and focused tests.
-   Finish moving dock-tree entity construction behind the docking boundary, then
-   separate menus, settings, persistence, and localization while
+   The reusable Bevy Feathers layer is now extracted into `src/feathers/`, with
+   one plugin owning the upstream Feathers setup, theme, activation auditing, and
+   scrollbar synchronization. Action buttons, combo/action menus, compact field
+   rows, numeric scrub policy, panel headings, BSN scenes, separators, status
+   surfaces, and scroll areas no longer live in `main.rs`. Finish moving dock-tree
+   entity construction behind the docking boundary, then separate menus, settings,
+   persistence, and localization while
    keeping `main.rs` as composition and startup wiring.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
@@ -499,3 +504,35 @@ supported; until then the closed `DockPanel` enum gives exhaustive behavior and 
 persistence migrations.
 - The source plan's large checklists are product acceptance criteria; this file's
   milestones are the implementation order.
+
+## 9. Editor Feathers design reference
+
+Jackdaw's current `main` branch was reviewed after its Bevy 0.19 migration. Aestra
+adopts the architectural ideas that improve consistency without importing editor
+domain assumptions:
+
+- keep every reusable editor widget below one Feathers plugin and source folder;
+- expose data-driven option/props types instead of rebuilding combo and field-row
+  structure at each call site;
+- use a stable label/control column that wraps on narrow panels;
+- preserve collapse and scroll state by semantic keys rather than transient entities;
+- build on Bevy Feathers focus, accessibility, menus, text editing, and theme tokens;
+- keep numeric scrub mechanics independent from the semantic command committed by
+  the owning Inspector field.
+
+The first slice is implemented in `aestra-editor/src/feathers/`. Its widgets cover
+Aestra's current shared controls. The following Jackdaw primitives become useful as
+the corresponding Aestra feature lands, rather than being copied unused:
+
+1. unify delayed Inspector help under a generic tooltip widget;
+2. replace remaining hand-built collapsible cards with remembered panel cards;
+3. add slider and swatch rows when continuous scalar and color authoring expand;
+4. add list/tree primitives for the future searchable content browser;
+5. evaluate Jackdaw's Bevy 0.19 scrub input as a replacement for the remaining
+   Inspector-owned pointer state after its semantic preview/commit adapter is isolated;
+6. add dialogs, toasts, progress, and file-browser widgets only when those workflows
+   need in-editor non-native surfaces.
+
+Dock tabs, splitters, timeline clips, curve keys, and viewport gizmos remain specialized
+Aestra controls. They consume the shared widget and theme layer but are not generic
+Feathers primitives.

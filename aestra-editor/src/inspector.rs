@@ -1351,17 +1351,11 @@ fn numeric_scrub_event_belongs_to(
 }
 
 fn numeric_scrub_multiplier(shift: bool, control: bool) -> f32 {
-    if shift {
-        0.1
-    } else if control {
-        10.0
-    } else {
-        1.0
-    }
+    crate::feathers::number_input::scrub_multiplier(shift, control)
 }
 
 fn numeric_scrub_delta(pixel_delta: f32, step: f32, multiplier: f32) -> f32 {
-    pixel_delta * step * multiplier / 8.0
+    crate::feathers::number_input::scrub_delta(pixel_delta, step, multiplier)
 }
 
 fn numeric_scrub_step(target: NumericScrubTarget) -> f32 {
@@ -1415,37 +1409,11 @@ fn format_numeric_scrub_value(target: NumericScrubTarget, value: f32, multiplier
         return (value.max(0.0).round().min(i32::MAX as f32) as i32).to_string();
     }
     let precision = numeric_scrub_precision(target, multiplier);
-    let zero_threshold = 0.5 * 10.0_f32.powi(-(precision as i32));
-    let value = if value.abs() < zero_threshold {
-        0.0
-    } else {
-        value
-    };
-    let mut formatted = format!("{value:.precision$}");
-    if formatted.contains('.') {
-        while formatted.ends_with('0') {
-            formatted.pop();
-        }
-        if formatted.ends_with('.') {
-            formatted.pop();
-        }
-    }
-    formatted
+    crate::feathers::number_input::formatted(value, precision)
 }
 
 fn numeric_scrub_precision(target: NumericScrubTarget, multiplier: f32) -> usize {
-    let effective_step = (numeric_scrub_step(target) * multiplier).abs();
-    if effective_step >= 1.0 {
-        0
-    } else if effective_step >= 0.1 {
-        1
-    } else if effective_step >= 0.01 {
-        2
-    } else if effective_step >= 0.001 {
-        3
-    } else {
-        4
-    }
+    crate::feathers::number_input::decimal_places(numeric_scrub_step(target) * multiplier)
 }
 
 fn round_numeric_scrub_value(target: NumericScrubTarget, value: f32, multiplier: f32) -> f32 {
@@ -1458,8 +1426,7 @@ fn round_numeric_scrub_value(target: NumericScrubTarget, value: f32, multiplier:
     ) {
         return value.round();
     }
-    let factor = 10.0_f32.powi(numeric_scrub_precision(target, multiplier) as i32);
-    (value * factor).round() / factor
+    crate::feathers::number_input::rounded(value, numeric_scrub_precision(target, multiplier))
 }
 
 fn normalize_numeric_scrub_value(
@@ -2155,51 +2122,40 @@ fn spawn_emitter_transform_row(
     description: &str,
     control: fn(u8) -> EmitterNumberControl,
 ) {
-    parent
-        .spawn((
+    crate::feathers::field_row::spawn_field_row(
+        parent,
+        crate::feathers::field_row::FieldRowProps::new(title)
+            .indented(0)
+            .with_control_min_width(150.0),
+        (
             InspectorHelp(description.to_owned()),
             RelativeCursorPosition::default(),
-            Node {
-                width: Val::Percent(100.0),
-                min_height: Val::Px(27.0),
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(6.0),
-                ..default()
-            },
-        ))
-        .with_children(|row| {
-            spawn_inspector_property_label(row, title);
-            row.spawn(Node {
-                flex_grow: 1.0,
-                min_width: Val::Px(0.0),
-                column_gap: Val::Px(4.0),
-                ..default()
-            })
-            .with_children(|inputs| {
-                for (axis, component, color) in [
-                    ("X", 0, tokens::TEXT_INPUT_X_AXIS),
-                    ("Y", 1, tokens::TEXT_INPUT_Y_AXIS),
-                    ("Z", 2, tokens::TEXT_INPUT_Z_AXIS),
-                ] {
-                    inputs
-                        .spawn(Node {
-                            flex_grow: 1.0,
-                            flex_basis: Val::Px(0.0),
-                            min_width: Val::Px(44.0),
-                            ..default()
-                        })
-                        .with_children(|wrapper| {
-                            wrapper
-                                .spawn_empty()
-                                .apply_scene(ui_shell::feathers_labeled_scalar_input(axis, color))
-                                .insert((
-                                    control(component),
-                                    AccessibleLabel(format!("{title} {axis}")),
-                                ));
-                        });
-                }
-            });
-        });
+        ),
+        |inputs| {
+            for (axis, component, color) in [
+                ("X", 0, tokens::TEXT_INPUT_X_AXIS),
+                ("Y", 1, tokens::TEXT_INPUT_Y_AXIS),
+                ("Z", 2, tokens::TEXT_INPUT_Z_AXIS),
+            ] {
+                inputs
+                    .spawn(Node {
+                        flex_grow: 1.0,
+                        flex_basis: Val::Px(0.0),
+                        min_width: Val::Px(44.0),
+                        ..default()
+                    })
+                    .with_children(|wrapper| {
+                        wrapper
+                            .spawn_empty()
+                            .apply_scene(ui_shell::feathers_labeled_scalar_input(axis, color))
+                            .insert((
+                                control(component),
+                                AccessibleLabel(format!("{title} {axis}")),
+                            ));
+                    });
+            }
+        },
+    );
 }
 
 fn spawn_stage_header(parent: &mut ChildSpawnerCommands, stage: StackStage) {

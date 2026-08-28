@@ -1,0 +1,42 @@
+//! Aestra's editor widget layer built on Bevy Feathers.
+//!
+//! Bevy owns control behavior, focus, accessibility, and theme tokens. This module owns the
+//! reusable editor-facing compositions so panels do not each invent their own spacing, variants,
+//! activation bridge, or overflow behavior.
+
+pub(crate) mod button;
+pub(crate) mod combo_box;
+pub(crate) mod field_row;
+pub(crate) mod number_input;
+pub(crate) mod panel;
+pub(crate) mod scenes;
+pub(crate) mod scroll;
+pub(crate) mod separator;
+pub(crate) mod status_bar;
+
+use crate::theme;
+use bevy::{feathers::FeathersPlugins, prelude::*};
+
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum AestraFeathersSet {
+    Input,
+    Sync,
+}
+
+pub(crate) struct AestraFeathersPlugin;
+
+impl Plugin for AestraFeathersPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(FeathersPlugins)
+            .insert_resource(theme::feathers_theme())
+            .add_observer(button::queue_action_activation)
+            .add_systems(
+                Update,
+                button::audit_action_controls.in_set(AestraFeathersSet::Input),
+            )
+            .add_systems(
+                Update,
+                scroll::update_scrollbar_visibility.in_set(AestraFeathersSet::Sync),
+            );
+    }
+}
