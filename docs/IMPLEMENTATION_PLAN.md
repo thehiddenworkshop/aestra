@@ -55,7 +55,11 @@ architecture vision; this file is the shorter delivery plan.
   coverage tests. Metadata-defined Inspector scalars, integers, vectors, ranges,
   and toggles now use Feathers controls, commit final values through semantic
   undoable commands, retain in-progress text across live preview frames, and expose
-  localized built-in names and descriptions. Semantic emitter transforms now flow
+  localized built-in names and descriptions. Effect and emitter identity, playback,
+  enabled state, capacity, and typed outgoing emitter-event links are now editable in
+  the Inspector through the same command history. An automated blank-document acceptance
+  path authors a representative multi-emitter effect, proves full undo/redo, saves and
+  reloads the asset, and compiles it without direct RON edits. Semantic emitter transforms now flow
   from persisted format-v3 assets through commands, compiler artifacts, CPU/GPU
   execution, compact Inspector controls, and viewport gizmos. Gizmo drags preview
   temporary transactions and commit one undoable command on release. M5 workflow now
@@ -404,6 +408,9 @@ Deliver:
 Exit gate: the initial demo can be authored from an empty effect without editing
 RON, all mutations are undoable, and invalid operations produce targeted
 diagnostics without damaging the document.
+
+The blank-to-multi-emitter save/reload/compile portion of this gate is automated in
+`aestra-editor`; explicit asset migrations and the optional node-graph projection remain.
 
 Persistent settings slice:
 

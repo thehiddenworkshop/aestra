@@ -15,6 +15,7 @@ pub(crate) mod scroll;
 pub(crate) mod separator;
 pub(crate) mod slider_row;
 pub(crate) mod status_bar;
+pub(crate) mod text_input;
 pub(crate) mod tooltip;
 
 use crate::theme;
@@ -34,6 +35,9 @@ impl Plugin for AestraFeathersPlugin {
             .insert_resource(theme::feathers_theme())
             .init_resource::<tooltip::TooltipState>()
             .add_observer(button::queue_action_activation)
+            .add_observer(text_input::emit_text_change)
+            .add_observer(text_input::submit_text_on_enter)
+            .add_observer(text_input::submit_text_on_focus_loss)
             .add_observer(tooltip::begin_tooltip)
             .add_observer(tooltip::dismiss_tooltip_on_drag)
             .add_systems(

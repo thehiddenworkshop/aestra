@@ -4,9 +4,10 @@ use aestra_authoring::{
 };
 use aestra_bevy::{
     AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, EmitterId,
-    EmitterTransform, FlipbookDefinition, FlipbookPlaybackMode, FlipbookTimeSource,
-    MaterialDefinition, MaterialId, MaterialInput, MaterialProperties, ModuleId, ModuleInstance,
-    RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
+    EmitterTransform, EventId, EventLink, EventTrigger, FlipbookDefinition, FlipbookPlaybackMode,
+    FlipbookTimeSource, MaterialDefinition, MaterialId, MaterialInput, MaterialProperties,
+    ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties, ValidationReport,
+    Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
@@ -32,6 +33,13 @@ pub(crate) struct PendingChange {
     pub preview: TransactionPreview,
     pub diagnostics: ValidationReport,
     pub can_apply: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EventLinkError {
+    SameEmitter,
+    Duplicate,
+    TargetMissing,
 }
 
 #[derive(Resource)]
@@ -687,6 +695,129 @@ impl EditorSession {
         ) {
             self.selection.select_emitter(id);
         }
+    }
+
+    pub fn set_effect_name(&mut self, name: impl Into<String>) -> bool {
+        let name = name.into();
+        if self.effect.name == name {
+            return false;
+        }
+        self.execute(
+            "Renamed effect",
+            EffectCommand::SetEffectName { name },
+            true,
+        )
+    }
+
+    pub fn set_effect_looping(&mut self, looping: bool) -> bool {
+        if self.effect.looping == looping {
+            return false;
+        }
+        self.execute(
+            "Changed effect looping",
+            EffectCommand::SetEffectLooping { looping },
+            true,
+        )
+    }
+
+    pub fn set_selected_emitter_name(&mut self, name: impl Into<String>) -> bool {
+        let emitter = self.selected_layer();
+        let name = name.into();
+        if emitter.name == name {
+            return false;
+        }
+        self.execute(
+            "Renamed emitter",
+            EffectCommand::SetEmitterName {
+                id: emitter.id,
+                name,
+            },
+            true,
+        )
+    }
+
+    pub fn set_selected_emitter_enabled(&mut self, enabled: bool) -> bool {
+        let emitter = self.selected_layer();
+        if emitter.enabled == enabled {
+            return false;
+        }
+        self.execute(
+            "Changed emitter enabled state",
+            EffectCommand::SetEmitterEnabled {
+                id: emitter.id,
+                enabled,
+            },
+            true,
+        )
+    }
+
+    pub fn set_selected_emitter_capacity(&mut self, max_particles: u32) -> bool {
+        let emitter = self.selected_layer();
+        if emitter.max_particles == max_particles {
+            return false;
+        }
+        self.execute(
+            "Changed emitter capacity",
+            EffectCommand::SetEmitterCapacity {
+                id: emitter.id,
+                max_particles,
+            },
+            true,
+        )
+    }
+
+    pub fn add_event_link(
+        &mut self,
+        trigger: EventTrigger,
+        target: EmitterId,
+    ) -> Result<EventId, EventLinkError> {
+        let source = self.selected_layer().id;
+        if source == target {
+            return Err(EventLinkError::SameEmitter);
+        }
+        if !self
+            .effect
+            .emitters
+            .iter()
+            .any(|emitter| emitter.id == target)
+        {
+            return Err(EventLinkError::TargetMissing);
+        }
+        if self.effect.events.iter().any(|event| {
+            event.source == source && event.target == target && event.trigger == trigger
+        }) {
+            return Err(EventLinkError::Duplicate);
+        }
+        let event = EventLink {
+            id: EventId::new(),
+            source,
+            trigger,
+            target,
+        };
+        let id = event.id;
+        if self.execute(
+            "Added event link",
+            EffectCommand::AddEvent {
+                event,
+                index: self.effect.events.len(),
+            },
+            true,
+        ) {
+            Ok(id)
+        } else {
+            Err(EventLinkError::TargetMissing)
+        }
+    }
+
+    pub fn remove_event_link(&mut self, id: EventId) -> bool {
+        if !self.effect.events.iter().any(|event| event.id == id) {
+            return false;
+        }
+        self.execute(
+            "Removed event link",
+            EffectCommand::RemoveEvent { id },
+            true,
+        )
     }
 
     pub fn duplicate_selected_layer(&mut self) {
@@ -1560,6 +1691,80 @@ mod tests {
         assert_eq!(loaded.emitters.len(), 2);
         assert_eq!(loaded.name, "Untitled Effect");
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn blank_effect_can_be_authored_reopened_and_compiled_without_ron_edits() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        session.new_effect();
+        let blank = session.effect.clone();
+        let primary = session.selected_layer().id;
+
+        assert!(session.set_effect_name("Impact Burst"));
+        assert!(session.set_effect_looping(false));
+        assert!(session.set_selected_emitter_name("Core"));
+        assert!(session.set_selected_emitter_capacity(256));
+        session.add_layer();
+        let secondary = session.selected_layer().id;
+        assert!(session.set_selected_emitter_name("Sparks"));
+        assert!(session.set_selected_emitter_capacity(512));
+        assert!(session.set_emitter_timing(secondary, 0.25, 1.5, "Timed Sparks"));
+        assert!(
+            session
+                .add_event_link(EventTrigger::OnDeath, primary)
+                .is_ok()
+        );
+
+        let authored = session.effect.clone();
+        assert_eq!(authored.emitters.len(), 2);
+        assert_eq!(authored.events.len(), 1);
+        while session.can_undo() {
+            session.undo();
+        }
+        assert_eq!(session.effect, blank);
+        while session.can_redo() {
+            session.redo();
+        }
+        assert_eq!(session.effect, authored);
+
+        let path = std::env::temp_dir().join(format!(
+            "aestra-blank-authoring-{}.aestra.ron",
+            std::process::id()
+        ));
+        session.save_as(&path).unwrap();
+        let loaded = EffectAsset::load_ron(&path).unwrap();
+        let compiled = EffectCompiler::default().compile(&loaded).unwrap();
+        assert_eq!(loaded.name, "Impact Burst");
+        assert!(!loaded.looping);
+        assert_eq!(loaded.events[0].source, secondary);
+        assert_eq!(loaded.events[0].target, primary);
+        assert_eq!(compiled.emitters.len(), 2);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn event_links_reject_self_targets_and_duplicates() {
+        let mut session = EditorSession::from_embedded_sample(
+            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
+            "sample.ron",
+        );
+        session.new_effect();
+        let first = session.selected_layer().id;
+        assert_eq!(
+            session.add_event_link(EventTrigger::OnSpawn, first),
+            Err(EventLinkError::SameEmitter)
+        );
+        session.add_layer();
+        let second = session.selected_layer().id;
+        assert!(session.add_event_link(EventTrigger::OnSpawn, first).is_ok());
+        assert_eq!(
+            session.add_event_link(EventTrigger::OnSpawn, first),
+            Err(EventLinkError::Duplicate)
+        );
+        assert_eq!(session.effect.events[0].source, second);
     }
 
     #[test]

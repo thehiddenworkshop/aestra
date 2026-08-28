@@ -23,6 +23,7 @@ domain-specific state and semantic commands.
 | `separator` | Theme-aware horizontal and vertical separators |
 | `slider_row` | Bounded slider and precise numeric-input composition with shared metadata policy |
 | `status_bar` | The persistent editor status surface |
+| `text_input` | Styled single-line text editing with live and final value-change events |
 | `tooltip` | Delayed, window-aware help with optional title, shortcut, and footer content |
 
 ## Ownership rule

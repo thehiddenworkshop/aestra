@@ -119,8 +119,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   exclusively owned by persistence.
 - Runs effect-property authoring through `InspectorPlugin`. Inspector controls emit the
   dedicated `InspectorAction` contract; the plugin owns module-palette navigation,
-  module and renderer mutations, renderer configuration, persisted disclosure state,
-  semantic selection, and localized validation/status outcomes. Undoable edits still
+  effect/emitter identity and execution settings, typed emitter-event links, module and
+  renderer mutations, renderer configuration, persisted disclosure state, semantic
+  selection, and localized validation/status outcomes. Undoable edits still
   enter the shared `EditorSession` command history, while `main.rs` only schedules the
   Inspector action set with the other editor domains.
 - Runs curve and gradient authoring through `EditorCurvesPlugin`. The plugin owns the
@@ -235,7 +236,9 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [x] module registry, typed compiler plan, runtime instances, and CPU extraction
 - [x] runtime parameter slots, compiled curves, constant folding, and attribute liveness
 - [x] cursor-centered timeline zooming, panning, adaptive rulers, and configurable snapping
-- node/module stack for spawn, initialize, update, renderer, and events
+- [x] module stack for spawn, initialize, update, and renderer stages
+- [x] typed event-link authoring between emitter layers
+- optional node-graph projection for dataflow-heavy authoring
 - [x] atomic debounced autosave and startup crash recovery
 - asset migrations
 - [x] versioned persistent editor settings and a dockable Settings workspace

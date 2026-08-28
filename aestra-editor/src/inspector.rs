@@ -32,6 +32,9 @@ impl Plugin for InspectorPlugin {
             .init_resource::<NumericScrubState>()
             .init_resource::<BoundedSliderState>()
             .add_observer(queue_inspector_action_activation)
+            .add_observer(handle_document_text_change)
+            .add_observer(handle_document_toggle_change)
+            .add_observer(handle_emitter_capacity_change)
             .add_observer(handle_inspector_toggle_change)
             .add_observer(handle_module_enabled_change)
             .add_observer(handle_renderer_enabled_change)
@@ -54,6 +57,7 @@ impl Plugin for InspectorPlugin {
                 Update,
                 (
                     (
+                        sync_emitter_capacity_inputs,
                         sync_emitter_number_inputs,
                         sync_inspector_number_inputs,
                         sync_inspector_slider_inputs,
@@ -95,6 +99,11 @@ pub(crate) enum InspectorAction {
     SetRendererFlipbook(RendererId, usize),
     SetFlipbookTimeSource(RendererId, FlipbookTimeSource),
     SetFlipbookPlayback(RendererId, FlipbookPlaybackMode),
+    AddEventLink {
+        trigger: EventTrigger,
+        target: EmitterId,
+    },
+    DeleteEventLink(EventId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +118,13 @@ enum InspectorStatus {
     TargetUnavailable,
     FiniteNumberRequired(String),
     IncompatibleMetadata(String),
+    Updated(String),
+    NameRequired(String),
+    EventAdded { trigger: String, target: String },
+    EventRemoved,
+    EventDuplicate,
+    EventSelfTarget,
+    EventTargetMissing,
 }
 
 fn set_inspector_status(
@@ -149,6 +165,28 @@ fn localize_inspector_status(status: InspectorStatus, localizer: &Localizer) -> 
             "inspector-status-incompatible-metadata",
             ("parameter", parameter),
         ),
+        InspectorStatus::Updated(target) => ("inspector-status-updated", ("target", target)),
+        InspectorStatus::NameRequired(target) => {
+            ("inspector-status-name-required", ("target", target))
+        }
+        InspectorStatus::EventAdded { trigger, target } => {
+            let mut args = FluentArgs::new();
+            args.set("trigger", trigger);
+            args.set("target", target);
+            return localizer.text_with("inspector-status-event-added", &args);
+        }
+        InspectorStatus::EventRemoved => {
+            return localizer.text("inspector-status-event-removed");
+        }
+        InspectorStatus::EventDuplicate => {
+            return localizer.text("inspector-status-event-duplicate");
+        }
+        InspectorStatus::EventSelfTarget => {
+            return localizer.text("inspector-status-event-self-target");
+        }
+        InspectorStatus::EventTargetMissing => {
+            return localizer.text("inspector-status-event-target-missing");
+        }
     };
     let mut args = FluentArgs::new();
     args.set(argument.0, argument.1);
@@ -322,6 +360,46 @@ fn handle_inspector_actions(
                     InspectorAction::SetFlipbookPlayback(id, value) => {
                         session.set_flipbook_playback(id, value);
                     }
+                    InspectorAction::AddEventLink { trigger, target } => {
+                        let target_name = session
+                            .effect
+                            .emitters
+                            .iter()
+                            .find(|emitter| emitter.id == target)
+                            .map(|emitter| emitter.name.clone());
+                        let result = session.add_event_link(trigger, target);
+                        let status = match result {
+                            Ok(_) => InspectorStatus::EventAdded {
+                                trigger: localized_event_trigger(&localizer, trigger),
+                                target: target_name.unwrap_or_else(|| target.to_string()),
+                            },
+                            Err(crate::session::EventLinkError::SameEmitter) => {
+                                InspectorStatus::EventSelfTarget
+                            }
+                            Err(crate::session::EventLinkError::Duplicate) => {
+                                InspectorStatus::EventDuplicate
+                            }
+                            Err(crate::session::EventLinkError::TargetMissing) => {
+                                InspectorStatus::EventTargetMissing
+                            }
+                        };
+                        set_inspector_status(&mut session, &localizer, status);
+                    }
+                    InspectorAction::DeleteEventLink(id) => {
+                        if session.remove_event_link(id) {
+                            set_inspector_status(
+                                &mut session,
+                                &localizer,
+                                InspectorStatus::EventRemoved,
+                            );
+                        } else {
+                            set_inspector_status(
+                                &mut session,
+                                &localizer,
+                                InspectorStatus::TargetUnavailable,
+                            );
+                        }
+                    }
                     InspectorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     InspectorAction::DeleteRenderer(id) => {
                         if preview_renderer_deletion(&mut session, id) {
@@ -473,6 +551,46 @@ mod tests {
         let palette = app.world().resource::<ModulePaletteState>();
         assert!(palette.open);
         assert_eq!(palette.stage, StackStage::ParticleSpawn);
+    }
+
+    #[test]
+    fn inspector_event_action_creates_an_undoable_semantic_link() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.new_effect();
+        let target = session.selected_layer().id;
+        session.add_layer();
+        let source = session.selected_layer().id;
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(MenuState::default())
+            .insert_resource(EditorModuleRegistry::default())
+            .insert_resource(ModulePaletteState::default())
+            .insert_resource(CurvesState::default())
+            .insert_resource(WorkspaceLayout::default())
+            .insert_resource(EditorSettings::default())
+            .insert_resource(SettingsPersistence::for_test(
+                temporary.path().join("settings.ron"),
+            ))
+            .insert_resource(test_localizer())
+            .add_systems(Update, handle_inspector_actions);
+        app.world_mut().spawn((
+            Button,
+            Interaction::Pressed,
+            InspectorAction::AddEventLink {
+                trigger: EventTrigger::OnDeath,
+                target,
+            },
+            BackgroundColor(theme::BUTTON),
+        ));
+
+        app.update();
+
+        let session = app.world_mut().resource_mut::<EditorSession>();
+        assert_eq!(session.effect.events.len(), 1);
+        assert_eq!(session.effect.events[0].source, source);
+        assert!(session.can_undo());
+        assert!(session.status.contains("On death"));
     }
 
     #[test]
@@ -1116,6 +1234,20 @@ fn module_palette_keyboard(
     }
 }
 
+fn sync_emitter_capacity_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<Entity, Added<EmitterCapacityControl>>,
+) {
+    let value = session.selected_layer().max_particles.min(i32::MAX as u32) as i32;
+    for entity in &controls {
+        commands.trigger(UpdateNumberInput {
+            entity,
+            value: NumberInputValue::I32(value),
+        });
+    }
+}
+
 fn sync_emitter_number_inputs(
     mut commands: Commands,
     session: Res<EditorSession>,
@@ -1412,6 +1544,101 @@ fn shape_with_dimension(shape: EmitterShape, component: u8, value: f32) -> Optio
         }
         _ => return None,
     })
+}
+
+fn handle_document_text_change(
+    change: On<ValueChange<String>>,
+    controls: Query<&DocumentTextControl>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let value = change.value.trim();
+    if value.is_empty() {
+        let target = match control {
+            DocumentTextControl::EffectName => localizer.text("inspector-effect"),
+            DocumentTextControl::EmitterName => localizer.text("inspector-emitter"),
+        };
+        set_inspector_status(
+            &mut session,
+            &localizer,
+            InspectorStatus::NameRequired(target),
+        );
+        session.ui_revision += 1;
+        return;
+    }
+    let changed = match control {
+        DocumentTextControl::EffectName => session.set_effect_name(value),
+        DocumentTextControl::EmitterName => session.set_selected_emitter_name(value),
+    };
+    if changed {
+        let target = match control {
+            DocumentTextControl::EffectName => {
+                localizer.text("inspector-effect-name-status-target")
+            }
+            DocumentTextControl::EmitterName => {
+                localizer.text("inspector-emitter-name-status-target")
+            }
+        };
+        set_inspector_status(&mut session, &localizer, InspectorStatus::Updated(target));
+    }
+}
+
+fn handle_document_toggle_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&DocumentToggleControl>,
+    mut commands: Commands,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    let (changed, target) = match control {
+        DocumentToggleControl::EffectLooping => (
+            session.set_effect_looping(change.value),
+            localizer.text("inspector-effect-looping"),
+        ),
+        DocumentToggleControl::EmitterEnabled => (
+            session.set_selected_emitter_enabled(change.value),
+            localizer.text("inspector-emitter-enabled"),
+        ),
+    };
+    if changed {
+        set_inspector_status(&mut session, &localizer, InspectorStatus::Updated(target));
+    }
+}
+
+fn handle_emitter_capacity_change(
+    change: On<ValueChange<i32>>,
+    controls: Query<(), With<EmitterCapacityControl>>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final || !controls.contains(change.source) {
+        return;
+    }
+    let value = change.value.max(1) as u32;
+    if session.set_selected_emitter_capacity(value) {
+        set_inspector_status(
+            &mut session,
+            &localizer,
+            InspectorStatus::Updated(localizer.text("inspector-emitter-capacity")),
+        );
+    }
 }
 
 fn handle_inspector_toggle_change(
@@ -2409,20 +2636,11 @@ pub(crate) fn spawn_inspector(
                             ..default()
                         },
                         |stack| {
+                    spawn_document_controls(stack, session, localizer);
                     spawn_inspector_parameters(stack, session);
-                    stack.spawn((
-                        InspectorSemanticTarget {
-                            target: SemanticTarget::Emitter(layer.id),
-                            base_border: theme::BORDER_BRIGHT,
-                        },
-                        Node {
-                            width: Val::Percent(100.0),
-                            height: Val::Px(1.0),
-                            ..default()
-                        },
-                    ));
                     spawn_emitter_transform_controls(stack);
                     spawn_emitter_timing_controls(stack);
+                    spawn_event_links(stack, session, localizer);
                     for stage in StackStage::ALL {
                         spawn_stage_header(stack, stage);
                         if stage == StackStage::Render {
@@ -2478,6 +2696,288 @@ pub(crate) fn spawn_inspector(
                 spawn_module_palette(panel, registry, palette);
             }
         });
+}
+
+fn spawn_document_controls(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::all(Val::Px(7.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Text::new(localizer.text("inspector-effect")),
+                ThemedText,
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+            ));
+            spawn_text_field(
+                card,
+                &localizer.text("inspector-effect-name"),
+                &localizer.text("inspector-effect-name-description"),
+                &session.effect.name,
+                DocumentTextControl::EffectName,
+            );
+            spawn_document_toggle(
+                card,
+                &localizer.text("inspector-effect-looping"),
+                &localizer.text("inspector-effect-looping-description"),
+                session.effect.looping,
+                DocumentToggleControl::EffectLooping,
+            );
+        });
+
+    let emitter = session.selected_layer();
+    parent
+        .spawn((
+            InspectorSemanticTarget {
+                target: SemanticTarget::Emitter(emitter.id),
+                base_border: theme::BORDER,
+            },
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::all(Val::Px(7.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Text::new(localizer.text("inspector-emitter")),
+                ThemedText,
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+            ));
+            spawn_text_field(
+                card,
+                &localizer.text("inspector-emitter-name"),
+                &localizer.text("inspector-emitter-name-description"),
+                &emitter.name,
+                DocumentTextControl::EmitterName,
+            );
+            spawn_document_toggle(
+                card,
+                &localizer.text("inspector-emitter-enabled"),
+                &localizer.text("inspector-emitter-enabled-description"),
+                emitter.enabled,
+                DocumentToggleControl::EmitterEnabled,
+            );
+            crate::feathers::field_row::spawn_field_row(
+                card,
+                crate::feathers::field_row::FieldRowProps::new(
+                    localizer.text("inspector-emitter-capacity"),
+                )
+                .with_control_min_width(150.0),
+                EditorTooltip::description(
+                    localizer.text("inspector-emitter-capacity-description"),
+                ),
+                |controls| {
+                    controls
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_integer_input())
+                        .insert((
+                            EmitterCapacityControl,
+                            AccessibleLabel(localizer.text("inspector-emitter-capacity")),
+                        ));
+                },
+            );
+        });
+}
+
+fn spawn_text_field(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    description: &str,
+    value: &str,
+    control: DocumentTextControl,
+) {
+    crate::feathers::field_row::spawn_field_row(
+        parent,
+        crate::feathers::field_row::FieldRowProps::new(title).with_control_min_width(150.0),
+        EditorTooltip::description(description.to_owned()),
+        |inputs| spawn_text_input(inputs, value, title, control),
+    );
+}
+
+fn spawn_document_toggle(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    description: &str,
+    enabled: bool,
+    control: DocumentToggleControl,
+) {
+    crate::feathers::field_row::spawn_field_row(
+        parent,
+        crate::feathers::field_row::FieldRowProps::new(title).with_control_min_width(150.0),
+        EditorTooltip::description(description.to_owned()),
+        |inputs| {
+            let mut checkbox = inputs.spawn_empty();
+            checkbox
+                .apply_scene(ui_shell::feathers_checkbox())
+                .insert((control, AccessibleLabel(title.to_owned())));
+            if enabled {
+                checkbox.insert(Checked);
+            }
+        },
+    );
+}
+
+fn spawn_event_links(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
+    let source = session.selected_layer().id;
+    parent.spawn((
+        Text::new(localizer.text("inspector-events")),
+        TextFont {
+            font_size: FontSize::Px(9.0),
+            ..default()
+        },
+        TextColor(theme::ACCENT),
+        Node {
+            margin: UiRect::axes(Val::Px(10.0), Val::Px(7.0)),
+            ..default()
+        },
+    ));
+
+    let outgoing = session
+        .effect
+        .events
+        .iter()
+        .filter(|event| event.source == source)
+        .collect::<Vec<_>>();
+    if outgoing.is_empty() {
+        parent
+            .spawn_empty()
+            .apply_scene(label_dim(localizer.text("inspector-events-empty")));
+    }
+    for event in outgoing {
+        let target = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == event.target)
+            .map_or_else(|| event.target.to_string(), |emitter| emitter.name.clone());
+        let mut args = FluentArgs::new();
+        args.set("trigger", localized_event_trigger(localizer, event.trigger));
+        args.set("target", target);
+        parent
+            .spawn((
+                InspectorSemanticTarget {
+                    target: SemanticTarget::Event(event.id),
+                    base_border: theme::BORDER,
+                },
+                Node {
+                    width: Val::Percent(100.0),
+                    min_height: Val::Px(30.0),
+                    padding: UiRect::horizontal(Val::Px(8.0)),
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BackgroundColor(theme::PANEL_LIGHT),
+                BorderColor::all(theme::BORDER),
+            ))
+            .with_children(|row| {
+                row.spawn((
+                    Text::new(localizer.text_with("inspector-event-link", &args)),
+                    ThemedText,
+                    TextFont {
+                        font_size: FontSize::Px(10.0),
+                        ..default()
+                    },
+                    Node {
+                        flex_grow: 1.0,
+                        min_width: Val::Px(0.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                ));
+                mini_button(row, "×", InspectorAction::DeleteEventLink(event.id));
+            });
+    }
+
+    let mut options = Vec::new();
+    for target in session
+        .effect
+        .emitters
+        .iter()
+        .filter(|emitter| emitter.id != source)
+    {
+        for trigger in [
+            EventTrigger::OnSpawn,
+            EventTrigger::OnDeath,
+            EventTrigger::OnCollision,
+        ] {
+            if session.effect.events.iter().any(|event| {
+                event.source == source && event.target == target.id && event.trigger == trigger
+            }) {
+                continue;
+            }
+            let mut args = FluentArgs::new();
+            args.set("trigger", localized_event_trigger(localizer, trigger));
+            args.set("target", target.name.clone());
+            options.push(ComboOption {
+                label: localizer.text_with("inspector-event-link", &args),
+                selected: false,
+                action: InspectorAction::AddEventLink {
+                    trigger,
+                    target: target.id,
+                },
+            });
+        }
+    }
+    if options.is_empty() {
+        parent
+            .spawn_empty()
+            .apply_scene(label_dim(localizer.text("inspector-events-no-targets")));
+    } else {
+        parent
+            .spawn(Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::all(Val::Px(5.0)),
+                justify_content: JustifyContent::FlexEnd,
+                ..default()
+            })
+            .with_children(|row| {
+                spawn_combo_control(
+                    row,
+                    &localizer.text("inspector-events-add"),
+                    &localizer.text("inspector-events-add-description"),
+                    &options,
+                    230.0,
+                );
+            });
+    }
+}
+
+fn localized_event_trigger(localizer: &Localizer, trigger: EventTrigger) -> String {
+    localizer.text(match trigger {
+        EventTrigger::OnSpawn => "inspector-event-on-spawn",
+        EventTrigger::OnDeath => "inspector-event-on-death",
+        EventTrigger::OnCollision => "inspector-event-on-collision",
+    })
 }
 
 fn inspector_module_collapsed(settings: &EditorSettings, module: &ModuleInstance) -> bool {
@@ -4228,6 +4728,21 @@ enum EmitterNumberControl {
     Rotation(u8),
     Scale(u8),
 }
+
+#[derive(Component, Debug, Clone, Copy)]
+enum DocumentTextControl {
+    EffectName,
+    EmitterName,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+enum DocumentToggleControl {
+    EffectLooping,
+    EmitterEnabled,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct EmitterCapacityControl;
 
 #[derive(Component)]
 struct NumericScrubInput;

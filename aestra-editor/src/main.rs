@@ -24,9 +24,10 @@ mod viewport;
 
 use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    AestraPlugin, BlendMode, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterShape,
-    EmitterTransform, FlipbookPlaybackMode, FlipbookTimeSource, MaterialInput, MaterialProperties,
-    ModuleId, ModuleInstance, ModuleParameters, RendererId, RendererProperties, StageKind, Value,
+    AestraPlugin, BlendMode, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterId,
+    EmitterShape, EmitterTransform, EventId, EventTrigger, FlipbookPlaybackMode,
+    FlipbookTimeSource, MaterialInput, MaterialProperties, ModuleId, ModuleInstance,
+    ModuleParameters, RendererId, RendererProperties, StageKind, Value,
 };
 use aestra_compiler::ModuleMetadata;
 use assets::{AssetsSet, EditorAssetsPlugin};
@@ -87,6 +88,7 @@ use feathers::{
     combo_box::{ComboOption, spawn_action_menu, spawn_combo_control},
     panel::spawn_panel_heading as panel_heading,
     scroll::{PersistedScroll, spawn_vertical_scroll_area},
+    text_input::spawn_text_input,
     tooltip::EditorTooltip,
 };
 use fluent_bundle::FluentArgs;
@@ -198,6 +200,7 @@ fn main() {
                 (
                     remember_scroll_positions,
                     rebuild_editor_ui,
+                    apply_pending_scroll_restores,
                     restore_scroll_positions,
                 )
                     .chain()
@@ -294,6 +297,9 @@ enum ScrollMemoryKey {
 
 #[derive(Resource, Default)]
 struct ScrollMemoryState(HashMap<ScrollMemoryKey, Vec2>);
+
+#[derive(Component, Debug, Clone, Copy)]
+struct PendingScrollRestore(Vec2);
 
 #[derive(Resource, Default)]
 struct RenderedUiRevision(u64);
@@ -645,20 +651,41 @@ fn format_value(value: Value) -> String {
 
 fn remember_scroll_positions(
     mut memory: ResMut<ScrollMemoryState>,
-    scroll_areas: Query<(&PersistedScroll, &ScrollPosition)>,
+    scroll_areas: Query<(Ref<PersistedScroll>, &ScrollPosition), Without<PendingScrollRestore>>,
 ) {
     for (marker, position) in &scroll_areas {
+        // Dock content is populated after the editor rebuild set. A replacement scroll area
+        // therefore spends one frame at its default offset before restoration sees it; never
+        // let that provisional zero overwrite the offset captured from the previous panel.
+        if marker.is_added() {
+            continue;
+        }
         memory.0.insert(marker.0, position.0);
     }
 }
 
-fn restore_scroll_positions(
-    memory: Res<ScrollMemoryState>,
-    mut scroll_areas: Query<(&PersistedScroll, &mut ScrollPosition), Added<PersistedScroll>>,
+fn apply_pending_scroll_restores(
+    mut commands: Commands,
+    mut scroll_areas: Query<(Entity, &PendingScrollRestore, &mut ScrollPosition)>,
 ) {
-    for (marker, mut position) in &mut scroll_areas {
+    for (entity, pending, mut position) in &mut scroll_areas {
+        position.0 = pending.0;
+        commands.entity(entity).remove::<PendingScrollRestore>();
+    }
+}
+
+fn restore_scroll_positions(
+    mut commands: Commands,
+    memory: Res<ScrollMemoryState>,
+    mut scroll_areas: Query<
+        (Entity, &PersistedScroll, &mut ScrollPosition),
+        Added<PersistedScroll>,
+    >,
+) {
+    for (entity, marker, mut position) in &mut scroll_areas {
         if let Some(saved) = memory.0.get(&marker.0) {
             position.0 = *saved;
+            commands.entity(entity).insert(PendingScrollRestore(*saved));
         }
     }
 }
@@ -1476,13 +1503,21 @@ mod tests {
     }
 
     #[test]
-    fn panel_scroll_position_is_restored_after_a_rebuild() {
+    fn panel_scroll_position_survives_the_first_layout_after_a_rebuild() {
         let saved = Vec2::new(0.0, 184.0);
         let mut memory = ScrollMemoryState::default();
         memory.0.insert(ScrollMemoryKey::Inspector, saved);
         let mut app = App::new();
         app.insert_resource(memory);
-        app.add_systems(Update, restore_scroll_positions);
+        app.add_systems(
+            Update,
+            (
+                remember_scroll_positions,
+                apply_pending_scroll_restores,
+                restore_scroll_positions,
+            )
+                .chain(),
+        );
         let rebuilt = app
             .world_mut()
             .spawn((
@@ -1494,6 +1529,25 @@ mod tests {
         app.update();
 
         assert_eq!(app.world().get::<ScrollPosition>(rebuilt).unwrap().0, saved);
+        assert!(
+            app.world()
+                .entity(rebuilt)
+                .contains::<PendingScrollRestore>()
+        );
+
+        // A newly rebuilt scroll area has not been measured yet, so Bevy layout may clamp the
+        // provisional offset to zero. The pending restore reapplies it on the following frame.
+        app.world_mut()
+            .entity_mut(rebuilt)
+            .insert(ScrollPosition::default());
+        app.update();
+
+        assert_eq!(app.world().get::<ScrollPosition>(rebuilt).unwrap().0, saved);
+        assert!(
+            !app.world()
+                .entity(rebuilt)
+                .contains::<PendingScrollRestore>()
+        );
     }
 
     #[test]
