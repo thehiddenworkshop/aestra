@@ -1,8 +1,13 @@
 //! Preview viewport ownership: rendering, navigation, grid, display modes, and gizmos.
 
 use crate::{
-    EditorAction, FeathersActionButton, MenuState, ProfilerState, feathers::tooltip::EditorTooltip,
-    inspector::module_parameter, localization::Localizer, session::EditorSession, theme, ui_shell,
+    EditorAction, FeathersActionButton, MenuState,
+    feathers::tooltip::EditorTooltip,
+    inspector::module_parameter,
+    localization::Localizer,
+    profiler::{ProfilerFrameSample, ProfilerState},
+    session::EditorSession,
+    theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
@@ -1998,7 +2003,13 @@ fn update_preview(mut session: ResMut<EditorSession>, mut profiler: ResMut<Profi
     let elapsed = started.elapsed();
     session.samples = samples;
     if let Some(compiled) = compiled
-        && profiler.record_cpu_frame(&compiled, &session.samples, elapsed)
+        && profiler
+            .ingest(ProfilerFrameSample::new(
+                &compiled,
+                &session.samples,
+                elapsed,
+            ))
+            .profile_rebuilt()
     {
         session.ui_revision += 1;
     }

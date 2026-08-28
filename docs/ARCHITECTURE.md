@@ -148,10 +148,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   layout while their content overflows. Semantic Inspector anchors support exact
   scroll-to-source navigation from compiled instructions with a transient highlight
   that fades back to the normal or diagnostic border.
-- Projects machine-readable `EffectProfile` snapshots into a dockable Profiler workspace
-  with measured CPU/live-particle data, resettable peaks, rolling history, per-emitter
-  counts, and clearly marked compiler estimates. Uninstrumented GPU values remain
-  unavailable rather than being synthesized.
+- Runs runtime profiling through `EditorProfilerPlugin`. Preview producers submit borrowed
+  `ProfilerFrameSample` values containing the compiled effect, particle slice, and measured
+  CPU duration; the plugin exclusively owns `EffectProfile` aggregation, reset actions,
+  bounded history, and dockable presentation. The workspace exposes measured CPU/live-particle
+  data, per-emitter counts, and clearly marked compiler estimates. Uninstrumented GPU values
+  remain unavailable rather than being synthesized.
 - Consumes `aestra-bevy` through an explicit session resource.
 - Must not add game-only concepts to the semantic asset schema.
 

@@ -1,7 +1,7 @@
 //! Advanced compiler-artifact inspection and semantic source navigation.
 
 use crate::feathers::panel::{
-    spawn_panel_label_value, spawn_panel_muted_line, spawn_panel_section,
+    spawn_panel_empty_state, spawn_panel_label_value, spawn_panel_muted_line, spawn_panel_section,
 };
 use crate::*;
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};

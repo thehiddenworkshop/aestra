@@ -143,13 +143,16 @@ Complete this milestone before expanding the editor or renderer feature surface 
    The advanced Compiler Inspector, artifact formatting, and semantic navigation now run
    through `EditorCompilerInspectorPlugin`. New layouts keep it hidden, while a Serde
    alias preserves the placement of legacy `GeneratedCode` tabs.
+   Runtime profile ingestion, aggregation, bounded history, reset actions, presentation,
+   and UI synchronization now run through `EditorProfilerPlugin`. Viewport evaluation
+   submits a borrowed `ProfilerFrameSample`, keeping the boundary explicit without cloning
+   compiled effects or particle buffers.
    `EditorLocalizationPlugin` now owns Fluent resource setup and live generic-text
    synchronization. All primary deep workspaces use complete `en-US` and `fr-FR`
    messages for editor-owned presentation; technical compiler detail, generated
    instructions, semantic paths, IDs, file paths, and asset-authored names remain
-   unchanged. This keeps `main.rs` focused on composition and startup wiring. Next extract
-   Profiler behind an explicit runtime-sample ingestion contract, then migrate incidental
-   action/status messages.
+   unchanged. This keeps `main.rs` focused on composition and startup wiring. Next migrate
+   incidental action/status messages into their owning plugins.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.
