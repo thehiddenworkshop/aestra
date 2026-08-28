@@ -112,6 +112,11 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   plugin owns category navigation, Feathers controls, locale selection, reset, and
   live preference application; `settings.rs` remains the versioned persistence,
   migration, validation, and atomic-replacement boundary.
+- Runs document lifecycle through `EditorPersistencePlugin`. File-menu controls,
+  keyboard shortcuts, and project-effect rows emit one `DocumentAction` contract;
+  the plugin owns startup recovery, open/save/save-as/exit workflows, unsaved-change
+  confirmation, recovery autosave and cleanup, and primary-window close handling.
+  `recovery.rs` remains the atomic snapshot storage boundary.
 - Resolves editor-facing text through Fluent bundles with stable semantic message IDs,
   an embedded complete English fallback, live locale switching, and the selected locale
   persisted in editor settings. Asset-authored names, paths, and generated code remain

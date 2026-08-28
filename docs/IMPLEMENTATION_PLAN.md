@@ -122,9 +122,12 @@ Complete this milestone before expanding the editor or renderer feature surface 
    context menus now run through `EditorMenusPlugin` with their own action contract and
    focused tests. Settings workspace construction, category navigation, locale/reset
    actions, Feathers value observers, and live preference application now run through
-   `EditorSettingsUiPlugin`, with focused activation and constraint tests. Next extract
-   the remaining persistence and localization application wiring while keeping
-   `main.rs` as composition and startup wiring.
+   `EditorSettingsUiPlugin`, with focused activation and constraint tests. Document creation/opening/saving,
+   application exit, window-close confirmation, recovery discovery, autosave, and
+   cleanup now run through `EditorPersistencePlugin` and a shared `DocumentAction`
+   contract used by menus, keyboard shortcuts, and project-effect rows. This keeps
+   `main.rs` focused on composition and startup wiring. Next extract localization
+   application wiring and localize the remaining deep workspaces.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.

@@ -4,6 +4,7 @@ mod feathers;
 mod inspector;
 mod localization;
 mod menus;
+mod persistence;
 mod recovery;
 mod session;
 mod settings;
@@ -81,8 +82,8 @@ pub(crate) use menus::{
     AboutDescription, DocumentMenuLabel, MenuState, RedoMenuItem, TabContextMenu, UndoMenuItem,
 };
 use menus::{EditorMenusPlugin, spawn_about_overlay, spawn_menu_bar, spawn_tab_context_menu};
-use recovery::{RecoveryCandidate, RecoveryPersistence};
-use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+pub(crate) use persistence::persist_editor_settings;
+use persistence::{DocumentAction, EditorPersistencePlugin, PersistenceSet};
 use session::EditorSession;
 use settings::{EditorSettings, SettingsPersistence};
 use settings_ui::EditorSettingsUiPlugin;
@@ -90,8 +91,8 @@ pub(crate) use settings_ui::{SettingsPanelState, spawn_settings_workspace};
 use std::{
     collections::{HashMap, VecDeque},
     fs,
-    path::{Path, PathBuf},
-    time::{Duration, Instant},
+    path::PathBuf,
+    time::Duration,
 };
 use timeline::{TimelinePlugin, TimelineSet, TimelineSnapMode, TimelineState};
 use viewport::{
@@ -103,7 +104,6 @@ use viewport::{
 const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
 const EDITOR_ASSET_ROOT: &str = "../assets";
-const RECOVERY_CLEANUP_RETRY_DELAY: Duration = Duration::from_secs(1);
 const PROFILER_HISTORY_SAMPLES: usize = 96;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -120,30 +120,17 @@ fn main() {
     let localizer =
         Localizer::new(&settings.language.locale).expect("embedded Fluent catalogs must be valid");
     settings.language.locale = localizer.locale().into();
-    let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-    let (mut recovery, recovery_candidate, recovery_diagnostic) = RecoveryPersistence::discover();
-    if let Some(candidate) = recovery_candidate {
-        recover_startup_session(&mut session, &mut recovery, candidate);
-    } else if let Some(diagnostic) = recovery_diagnostic {
-        session.status = diagnostic;
-    }
-    session.playing = settings.preview.play_on_open;
-    if let Some(diagnostic) = persistence.diagnostic() {
-        session.status = diagnostic.into();
-    }
+    let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
     let show_grid = settings.preview.show_grid;
     let ui_scale = settings.appearance.ui_scale;
-    let autosave = AutosaveState::new(&session, settings.general.autosave_enabled);
     App::new()
         .insert_resource(ClearColor(theme::APP_BG))
         .insert_resource(session)
         .insert_resource(settings)
         .insert_resource(persistence)
-        .insert_resource(recovery)
         .insert_resource(localizer)
         .insert_resource(UiScale(ui_scale))
         .insert_resource(EffectCatalog::scan())
-        .insert_resource(autosave)
         .init_resource::<DiagnosticsPanelState>()
         .init_resource::<ProfilerState>()
         .init_resource::<ScrollMemoryState>()
@@ -169,6 +156,7 @@ fn main() {
         .add_plugins(AestraFeathersPlugin)
         .add_plugins(EditorMenusPlugin::new(show_grid))
         .add_plugins(EditorSettingsUiPlugin)
+        .add_plugins(EditorPersistencePlugin)
         .add_plugins(AestraPlugin)
         .add_plugins(DockingPlugin)
         .add_plugins(InspectorPlugin)
@@ -187,8 +175,6 @@ fn main() {
                     apply_editor_fonts,
                     keyboard_shortcuts,
                     handle_buttons,
-                    handle_window_close_requests,
-                    autosave_recovery,
                     advance_playback,
                 )
                     .chain()
@@ -213,7 +199,15 @@ fn main() {
                     .in_set(EditorSet::UiRebuild),
             ),
         )
-        .configure_sets(Startup, (ViewportSet::Setup, EditorSet::Setup).chain())
+        .configure_sets(
+            Startup,
+            (
+                PersistenceSet::Startup,
+                ViewportSet::Setup,
+                EditorSet::Setup,
+            )
+                .chain(),
+        )
         .configure_sets(
             Update,
             (
@@ -221,7 +215,9 @@ fn main() {
                 InspectorSet::Input,
                 DockingSet::Input,
                 AestraFeathersSet::Input,
+                PersistenceSet::Actions,
                 EditorSet::PreViewport,
+                PersistenceSet::Lifecycle,
                 ViewportSet::Update,
                 EditorSet::MainUpdate,
                 DockingSet::Reconcile,
@@ -239,17 +235,11 @@ fn main() {
 
 #[derive(Component, Clone, Copy)]
 enum EditorAction {
-    NewEffect,
-    OpenEffect,
-    OpenCatalog(usize),
     TogglePlayback,
     StopPlayback,
     Restart,
     StepFrame(i8),
     AdjustPreviewSeed(i8),
-    Save,
-    SaveAs,
-    Exit,
     Undo,
     Redo,
     AddLayer,
@@ -419,32 +409,6 @@ impl ProfilerState {
 enum DiagnosticSource {
     Current,
     Pending,
-}
-
-#[derive(Resource)]
-struct AutosaveState {
-    document_key: String,
-    observed_revision: u64,
-    written_revision: Option<u64>,
-    write_after: Instant,
-    cleanup_after: Instant,
-    enabled: bool,
-    suspended: bool,
-}
-
-impl AutosaveState {
-    fn new(session: &EditorSession, enabled: bool) -> Self {
-        let now = Instant::now();
-        Self {
-            document_key: recovery_document_key(session),
-            observed_revision: session.document_revision(),
-            written_revision: session.dirty.then_some(session.document_revision()),
-            write_after: now,
-            cleanup_after: now,
-            enabled,
-            suspended: false,
-        }
-    }
 }
 
 #[derive(Resource, Default)]
@@ -951,7 +915,7 @@ fn spawn_asset_browser(
                     .spawn((
                         Button,
                         EditorNativeControl,
-                        EditorAction::OpenCatalog(index),
+                        DocumentAction::OpenCatalog(index),
                         Node {
                             height: Val::Px(31.0),
                             margin: UiRect::horizontal(Val::Px(8.0)),
@@ -3742,14 +3706,15 @@ fn localized_action_button(
 }
 
 fn keyboard_shortcuts(
+    mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     palette: Res<ModulePaletteState>,
-    mut workspace: ResMut<WorkspaceState>,
-    mut layout: ResMut<WorkspaceLayout>,
+    workspace_resources: (ResMut<WorkspaceState>, ResMut<WorkspaceLayout>),
     settings_resources: (ResMut<EditorSettings>, ResMut<SettingsPersistence>),
 ) {
+    let (mut workspace, mut layout) = workspace_resources;
     let (mut settings, mut settings_persistence) = settings_resources;
     if palette.open {
         return;
@@ -3766,16 +3731,18 @@ fn keyboard_shortcuts(
             session.ui_revision += 1;
         }
     }
-    if control && keys.just_pressed(KeyCode::KeyN) && confirm_discard(&session, &settings) {
-        session.new_effect();
-        workspace.complex = None;
+    if control && keys.just_pressed(KeyCode::KeyN) {
+        commands.trigger(DocumentAction::New);
     }
     if control && keys.just_pressed(KeyCode::KeyO) {
-        open_effect_dialog(&mut session, &settings);
-        workspace.complex = None;
+        commands.trigger(DocumentAction::Open);
     }
     if control && keys.just_pressed(KeyCode::KeyS) {
-        save_session(&mut session, shift);
+        commands.trigger(if shift {
+            DocumentAction::SaveAs
+        } else {
+            DocumentAction::Save
+        });
     }
     if control && keys.just_pressed(KeyCode::KeyZ) {
         session.undo();
@@ -3840,7 +3807,6 @@ fn handle_buttons(
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     editor_resources: (
-        Res<EffectCatalog>,
         Res<EditorModuleRegistry>,
         ResMut<ModulePaletteState>,
         ResMut<WorkspaceState>,
@@ -3856,11 +3822,8 @@ fn handle_buttons(
     mut timeline_state: ResMut<TimelineState>,
     window: Single<&Window, With<PrimaryWindow>>,
     mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
-    mut recovery: ResMut<RecoveryPersistence>,
-    mut autosave: ResMut<AutosaveState>,
 ) {
     let (
-        catalog,
         registry,
         mut palette,
         mut workspace,
@@ -3962,51 +3925,12 @@ fn handle_buttons(
                     session.ui_revision += 1;
                 }
                 match *action {
-                    EditorAction::NewEffect => {
-                        if confirm_discard(&session, &settings) {
-                            session.new_effect();
-                            session.playing = settings.preview.play_on_open;
-                            workspace.complex = None;
-                        }
-                    }
-                    EditorAction::OpenEffect => {
-                        open_effect_dialog(&mut session, &settings);
-                        workspace.complex = None;
-                    }
-                    EditorAction::OpenCatalog(index) => {
-                        if confirm_discard(&session, &settings) {
-                            if let Some(entry) = catalog.entries.get(index) {
-                                match session.open(&entry.path) {
-                                    Ok(()) => {
-                                        session.playing = settings.preview.play_on_open;
-                                    }
-                                    Err(error) => {
-                                        session.status = format!("Open failed: {error}");
-                                    }
-                                }
-                            }
-                            workspace.complex = None;
-                        } else {
-                            session.status = "Open cancelled".into();
-                        }
-                    }
                     EditorAction::TogglePlayback => session.playing = !session.playing,
                     EditorAction::StopPlayback => session.stop(),
                     EditorAction::Restart => session.restart(),
                     EditorAction::StepFrame(direction) => session.step_frame(direction),
                     EditorAction::AdjustPreviewSeed(direction) => {
                         session.adjust_preview_seed(direction);
-                    }
-                    EditorAction::Save => save_session(&mut session, false),
-                    EditorAction::SaveAs => save_session(&mut session, true),
-                    EditorAction::Exit => {
-                        if confirm_discard(&session, &settings) {
-                            autosave.suspended = true;
-                            discard_active_recovery(&mut recovery);
-                            commands.write_message(AppExit::Success);
-                        } else {
-                            session.status = "Exit cancelled".into();
-                        }
                     }
                     EditorAction::Undo => session.undo(),
                     EditorAction::Redo => session.redo(),
@@ -4589,275 +4513,6 @@ fn bounded_key_time(times: &[f32], index: usize, value: f32) -> f32 {
     value.clamp(previous, next)
 }
 
-fn recover_startup_session(
-    session: &mut EditorSession,
-    persistence: &mut RecoveryPersistence,
-    candidate: RecoveryCandidate,
-) {
-    let source = candidate.source_path().map_or_else(
-        || "an unsaved effect".to_string(),
-        |path| path.display().to_string(),
-    );
-    let restore = matches!(
-        MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("Recover unsaved effect")
-            .set_description(format!(
-                "A newer recovery snapshot was found for {source}.\n\nRestore it? Yes restores the unsaved work; No discards the snapshot."
-            ))
-            .set_buttons(MessageButtons::YesNo)
-            .show(),
-        MessageDialogResult::Yes
-    );
-    if restore {
-        session.restore_recovery(
-            candidate.effect().clone(),
-            candidate.source_path().map(Path::to_owned),
-        );
-        persistence.activate(&candidate);
-    } else {
-        match persistence.discard_candidate(&candidate) {
-            Ok(()) => session.status = "Discarded recovery snapshot".into(),
-            Err(error) => session.status = format!("Recovery discard failed: {error}"),
-        }
-    }
-}
-
-fn recovery_document_key(session: &EditorSession) -> String {
-    format!(
-        "{}|{}",
-        session.effect.id,
-        session.source_path.as_deref().map_or_else(
-            || "<untitled>".to_string(),
-            |path| path.display().to_string()
-        )
-    )
-}
-
-fn autosave_recovery(
-    mut session: ResMut<EditorSession>,
-    settings: Res<EditorSettings>,
-    mut persistence: ResMut<RecoveryPersistence>,
-    mut state: ResMut<AutosaveState>,
-) {
-    autosave_recovery_at(
-        &mut session,
-        &settings,
-        &mut persistence,
-        &mut state,
-        Instant::now(),
-    );
-}
-
-fn autosave_recovery_at(
-    session: &mut EditorSession,
-    settings: &EditorSettings,
-    persistence: &mut RecoveryPersistence,
-    state: &mut AutosaveState,
-    now: Instant,
-) {
-    if state.suspended {
-        return;
-    }
-    let interval = Duration::from_secs(u64::from(settings.general.autosave_interval_seconds));
-    if state.enabled != settings.general.autosave_enabled {
-        state.enabled = settings.general.autosave_enabled;
-        state.write_after = now + interval;
-        state.cleanup_after = now;
-        if state.enabled {
-            state.written_revision = None;
-        }
-    }
-    if !state.enabled {
-        try_clear_tracked_recovery(persistence, state, now, "disabled recovery snapshot");
-        return;
-    }
-    let document_key = recovery_document_key(session);
-    if document_key != state.document_key {
-        if !try_clear_tracked_recovery(
-            persistence,
-            state,
-            now,
-            "previous document recovery snapshot",
-        ) {
-            return;
-        }
-        state.document_key = document_key;
-        state.observed_revision = session.document_revision();
-        state.written_revision = None;
-        state.write_after = now + interval;
-    }
-
-    if !session.dirty {
-        try_clear_tracked_recovery(persistence, state, now, "saved effect recovery snapshot");
-        return;
-    }
-
-    let revision = session.document_revision();
-    if revision != state.observed_revision {
-        state.observed_revision = revision;
-        state.written_revision = None;
-        state.write_after = now + interval;
-        return;
-    }
-    if state.written_revision == Some(revision) || now < state.write_after {
-        return;
-    }
-
-    match persistence.persist(&session.effect, session.source_path.as_deref()) {
-        Ok(_) => {
-            state.written_revision = Some(revision);
-            state.cleanup_after = now;
-        }
-        Err(error) => {
-            error!("failed to write recovery snapshot: {error}");
-            session.status = format!("Recovery autosave failed: {error}");
-            state.write_after = now + interval;
-        }
-    }
-}
-
-fn try_clear_tracked_recovery(
-    persistence: &mut RecoveryPersistence,
-    state: &mut AutosaveState,
-    now: Instant,
-    context: &str,
-) -> bool {
-    if !persistence.has_active() {
-        state.written_revision = None;
-        state.cleanup_after = now;
-        return true;
-    }
-    if now < state.cleanup_after {
-        return false;
-    }
-    match persistence.clear_active() {
-        Ok(()) => {
-            state.written_revision = None;
-            state.cleanup_after = now;
-            true
-        }
-        Err(error) => {
-            warn!("failed to clear the {context}: {error}");
-            state.cleanup_after = now + RECOVERY_CLEANUP_RETRY_DELAY;
-            false
-        }
-    }
-}
-
-fn discard_active_recovery(persistence: &mut RecoveryPersistence) {
-    if let Err(error) = persistence.clear_active() {
-        warn!("failed to discard recovery snapshot: {error}");
-    }
-}
-
-fn open_effect_dialog(session: &mut EditorSession, settings: &EditorSettings) {
-    if !confirm_discard(session, settings) {
-        session.status = "Open cancelled".into();
-        return;
-    }
-    let mut dialog = FileDialog::new().add_filter("Aestra effect", &["ron"]);
-    if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
-        dialog = dialog.set_directory(directory);
-    }
-    let Some(path) = dialog.pick_file() else {
-        session.status = "Open cancelled".into();
-        return;
-    };
-    match session.open(&path) {
-        Ok(()) => session.playing = settings.preview.play_on_open,
-        Err(error) => session.status = format!("Open failed: {error}"),
-    }
-}
-
-fn confirm_discard(session: &EditorSession, settings: &EditorSettings) -> bool {
-    if !session.dirty || !settings.general.confirm_unsaved_changes {
-        return true;
-    }
-    matches!(
-        MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("Unsaved changes")
-            .set_description("Discard the unsaved changes to the current effect?")
-            .set_buttons(MessageButtons::YesNo)
-            .show(),
-        MessageDialogResult::Yes
-    )
-}
-
-pub(crate) fn persist_editor_settings(
-    settings: &EditorSettings,
-    persistence: &mut SettingsPersistence,
-    session: &mut EditorSession,
-) {
-    match persistence.persist(settings) {
-        Ok(()) => session.status = "Editor settings saved".into(),
-        Err(error) => session.status = format!("Settings save failed: {error}"),
-    }
-}
-
-fn save_session(session: &mut EditorSession, save_as: bool) {
-    if !save_as && session.source_path.is_some() {
-        if let Err(error) = session.save() {
-            session.status = format!("Save failed: {error}");
-        }
-        return;
-    }
-
-    let file_name = format!("{}.aestra.ron", session.effect.id);
-    let mut dialog = FileDialog::new()
-        .add_filter("Aestra effect", &["ron"])
-        .set_file_name(file_name);
-    if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
-        dialog = dialog.set_directory(directory);
-    }
-    let Some(path) = dialog.save_file() else {
-        session.status = "Save cancelled".into();
-        return;
-    };
-    if let Err(error) = session.save_as(path) {
-        session.status = format!("Save failed: {error}");
-    }
-}
-
-fn handle_window_close_requests(
-    mut close_requests: MessageReader<WindowCloseRequested>,
-    primary: Single<Entity, With<PrimaryWindow>>,
-    floating_windows: Query<&NativeFloatingWindow>,
-    mut layout: ResMut<WorkspaceLayout>,
-    mut session: ResMut<EditorSession>,
-    settings: Res<EditorSettings>,
-    mut recovery: ResMut<RecoveryPersistence>,
-    mut autosave: ResMut<AutosaveState>,
-    mut commands: Commands,
-) {
-    for request in close_requests.read() {
-        if request.window == *primary {
-            if confirm_discard(&session, &settings) {
-                autosave.suspended = true;
-                discard_active_recovery(&mut recovery);
-                commands.write_message(AppExit::Success);
-            } else {
-                session.status = "Exit cancelled".into();
-            }
-            continue;
-        }
-        let Ok(floating) = floating_windows.get(request.window) else {
-            continue;
-        };
-        if layout.redock(floating.0) {
-            if let Err(error) = layout.save() {
-                warn!("failed to save editor workspace layout: {error}");
-            }
-            session.ui_revision += 1;
-            session.status = format!(
-                "Docked {} panel after closing its window",
-                floating.0.title().to_ascii_lowercase()
-            );
-        }
-    }
-}
-
 fn rebuild_editor_ui(
     mut commands: Commands,
     session: Res<EditorSession>,
@@ -5110,104 +4765,6 @@ fn layer_color(index: usize) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn saving_a_document_clears_its_tracked_recovery_snapshot() {
-        let temporary = tempfile::tempdir().unwrap();
-        let source_path = temporary.path().join("saved-effect.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        session.save_as(&source_path).unwrap();
-        session.adjust_effect_duration(0.25);
-        let mut persistence = RecoveryPersistence::for_test(temporary.path().into(), None);
-        let recovery_path = persistence
-            .persist(&session.effect, session.source_path.as_deref())
-            .unwrap();
-        let mut state = AutosaveState::new(&session, true);
-        session.save().unwrap();
-
-        autosave_recovery_at(
-            &mut session,
-            &EditorSettings::default(),
-            &mut persistence,
-            &mut state,
-            Instant::now(),
-        );
-
-        assert!(!recovery_path.exists());
-        assert!(!persistence.has_active());
-        assert!(state.written_revision.is_none());
-    }
-
-    #[test]
-    fn disabling_autosave_clears_a_snapshot_even_without_a_written_revision_marker() {
-        let temporary = tempfile::tempdir().unwrap();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let mut persistence = RecoveryPersistence::for_test(temporary.path().into(), None);
-        let recovery_path = persistence
-            .persist(&session.effect, session.source_path.as_deref())
-            .unwrap();
-        let mut state = AutosaveState::new(&session, true);
-        assert!(state.written_revision.is_none());
-        let settings = EditorSettings {
-            general: settings::GeneralSettings {
-                autosave_enabled: false,
-                ..default()
-            },
-            ..default()
-        };
-
-        autosave_recovery_at(
-            &mut session,
-            &settings,
-            &mut persistence,
-            &mut state,
-            Instant::now(),
-        );
-
-        assert!(!recovery_path.exists());
-        assert!(!persistence.has_active());
-        assert!(!state.enabled);
-    }
-
-    #[test]
-    fn document_switch_waits_for_failed_cleanup_and_retries() {
-        let temporary = tempfile::tempdir().unwrap();
-        let blocked_path = temporary.path().join("blocked.recovery.ron");
-        fs::create_dir(&blocked_path).unwrap();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let mut state = AutosaveState::new(&session, true);
-        let previous_document_key = state.document_key.clone();
-        let mut persistence =
-            RecoveryPersistence::for_test(temporary.path().into(), Some(blocked_path.clone()));
-        session.new_effect();
-        let next_document_key = recovery_document_key(&session);
-        let now = Instant::now();
-
-        autosave_recovery_at(
-            &mut session,
-            &EditorSettings::default(),
-            &mut persistence,
-            &mut state,
-            now,
-        );
-
-        assert!(persistence.has_active());
-        assert_eq!(state.document_key, previous_document_key);
-
-        fs::remove_dir(&blocked_path).unwrap();
-        fs::write(&blocked_path, "pending snapshot").unwrap();
-        autosave_recovery_at(
-            &mut session,
-            &EditorSettings::default(),
-            &mut persistence,
-            &mut state,
-            now + RECOVERY_CLEANUP_RETRY_DELAY,
-        );
-
-        assert!(!blocked_path.exists());
-        assert!(!persistence.has_active());
-        assert_eq!(state.document_key, next_document_key);
-    }
 
     #[test]
     fn viewport_dock_is_a_transparent_cutout_for_the_preview_camera() {

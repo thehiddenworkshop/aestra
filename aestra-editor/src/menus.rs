@@ -222,24 +222,7 @@ pub(crate) fn spawn_menu_bar(
             ThemeBorderColor(tokens::PANE_HEADER_BORDER),
         ))
         .with_children(|bar| {
-            spawn_standard_menu(
-                bar,
-                "menu-file",
-                MenuKind::File,
-                &[
-                    ("file-new-effect", "Ctrl+N", EditorAction::NewEffect),
-                    ("file-open", "Ctrl+O", EditorAction::OpenEffect),
-                    ("file-save", "Ctrl+S", EditorAction::Save),
-                    ("file-save-as", "Ctrl+Shift+S", EditorAction::SaveAs),
-                    (
-                        "file-settings",
-                        "",
-                        EditorAction::ShowDockPanel(DockPanel::Settings),
-                    ),
-                    ("file-exit", "Alt+F4", EditorAction::Exit),
-                ],
-                localizer,
-            );
+            spawn_file_menu(bar, localizer);
             spawn_standard_menu(
                 bar,
                 "menu-edit",
@@ -289,6 +272,53 @@ pub(crate) fn spawn_menu_bar(
                 },
                 TextColor(theme::TEXT_FAINT),
             ));
+        });
+}
+
+fn spawn_file_menu(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu())
+        .with_children(|menu_root| {
+            menu_button(menu_root, "menu-file", MenuKind::File, localizer);
+            menu_root
+                .spawn_empty()
+                .apply_scene(ui_shell::feathers_menu_popup())
+                .insert((
+                    MenuDropdown(MenuKind::File),
+                    MenuSurface,
+                    RelativeCursorPosition::default(),
+                ))
+                .with_children(|dropdown| {
+                    for (message_id, shortcut, action) in [
+                        ("file-new-effect", "Ctrl+N", DocumentAction::New),
+                        ("file-open", "Ctrl+O", DocumentAction::Open),
+                        ("file-save", "Ctrl+S", DocumentAction::Save),
+                        ("file-save-as", "Ctrl+Shift+S", DocumentAction::SaveAs),
+                    ] {
+                        spawn_feathers_menu_item(dropdown, message_id, shortcut, action, localizer);
+                    }
+                    dropdown
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_menu_divider());
+                    spawn_feathers_menu_item(
+                        dropdown,
+                        "file-settings",
+                        "",
+                        EditorAction::ShowDockPanel(DockPanel::Settings),
+                        localizer,
+                    );
+                    dropdown
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_menu_divider());
+                    spawn_feathers_menu_item(
+                        dropdown,
+                        "file-exit",
+                        "Alt+F4",
+                        DocumentAction::Exit,
+                        localizer,
+                    );
+                });
         });
 }
 
@@ -349,14 +379,6 @@ fn spawn_dropdown(
         ))
         .with_children(|dropdown| {
             for (message_id, shortcut, action) in items {
-                if matches!(
-                    action,
-                    EditorAction::ShowDockPanel(DockPanel::Settings) | EditorAction::Exit
-                ) {
-                    dropdown
-                        .spawn_empty()
-                        .apply_scene(ui_shell::feathers_menu_divider());
-                }
                 let mut item =
                     spawn_feathers_menu_item(dropdown, message_id, shortcut, *action, localizer);
                 match action {
@@ -476,11 +498,11 @@ fn spawn_view_menu(
         });
 }
 
-fn spawn_feathers_menu_item<'a>(
+fn spawn_feathers_menu_item<'a, A: Component>(
     parent: &'a mut ChildSpawnerCommands,
     message_id: &'static str,
     shortcut: &str,
-    action: EditorAction,
+    action: A,
     localizer: &Localizer,
 ) -> EntityCommands<'a> {
     let label = localizer.text(message_id);
