@@ -28,7 +28,7 @@ mod viewport;
 
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    AestraPlugin, BlendMode, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterId,
+    AestraPlugin, AssetKind, BlendMode, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterId,
     EmitterShape, EmitterTransform, EventId, EventTrigger, FlipbookPlaybackMode,
     FlipbookTimeSource, MaterialInput, MaterialProperties, ModuleId, ModuleInstance,
     ModuleParameters, RendererId, RendererProperties, StageKind, Value,
@@ -91,8 +91,8 @@ use feathers::{
     },
     combo_box::{ComboOption, spawn_action_menu, spawn_combo_control},
     list_row::{
-        ListRowStatus, spawn_action_list_row, spawn_list_empty_state, spawn_list_section_header,
-        spawn_status_list_row,
+        ListRowStatus, spawn_action_list_row, spawn_info_list_row, spawn_list_empty_state,
+        spawn_list_section_header, spawn_status_list_row,
     },
     panel::spawn_panel_heading as panel_heading,
     scroll::{PersistedScroll, spawn_vertical_scroll_area},

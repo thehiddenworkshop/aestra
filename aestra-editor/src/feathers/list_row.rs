@@ -42,8 +42,27 @@ pub(crate) fn spawn_status_list_row(
     primary: &str,
     secondary: Option<&str>,
     status: ListRowStatus<'_>,
+    accessible_label: &str,
 ) -> Entity {
-    spawn_list_row_content(parent, primary, secondary, Some(status))
+    let entity = spawn_list_row_content(parent, primary, secondary, Some(status));
+    parent
+        .commands()
+        .entity(entity)
+        .insert(AccessibleLabel(accessible_label.to_owned()));
+    entity
+}
+
+pub(crate) fn spawn_info_list_row(
+    parent: &mut ChildSpawnerCommands,
+    primary: &str,
+    secondary: Option<&str>,
+) -> Entity {
+    let entity = spawn_list_row_content(parent, primary, secondary, None);
+    parent
+        .commands()
+        .entity(entity)
+        .insert(AccessibleLabel(primary.to_owned()));
+    entity
 }
 
 fn spawn_list_row_content(
@@ -112,6 +131,7 @@ fn spawn_list_row_content(
 }
 
 pub(crate) struct ListSectionHeaderEntities {
+    pub(crate) root: Entity,
     pub(crate) meta: Entity,
 }
 
@@ -131,6 +151,7 @@ pub(crate) fn spawn_list_section_header(
             ..default()
         },
     ));
+    let root = row.id();
     row.with_children(|row| {
         row.spawn((
             Text::new(title),
@@ -155,7 +176,10 @@ pub(crate) fn spawn_list_section_header(
             ))
             .id();
     });
-    ListSectionHeaderEntities { meta: meta_entity }
+    ListSectionHeaderEntities {
+        root,
+        meta: meta_entity,
+    }
 }
 
 pub(crate) fn spawn_list_empty_state(
@@ -224,6 +248,7 @@ mod tests {
                     label: "INVALID",
                     color: theme::ACCENT,
                 },
+                "Broken Effect, invalid",
             );
             spawn_list_section_header(parent, "PROJECT EFFECTS", "2 FOUND");
             spawn_list_empty_state(

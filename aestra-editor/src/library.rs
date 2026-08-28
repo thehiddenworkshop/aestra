@@ -245,6 +245,24 @@ struct LibraryCatalogEmpty;
 #[derive(Component)]
 struct LibraryNoResults;
 
+#[derive(Component)]
+struct LibraryProjectEffectsSection;
+
+#[derive(Component)]
+struct LibraryCurrentResourcesSection;
+
+#[derive(Component)]
+struct LibraryTextureMeshSection;
+
+#[derive(Component)]
+struct LibraryMaterialsSection;
+
+#[derive(Component)]
+struct LibraryFlipbooksSection;
+
+#[derive(Component)]
+struct LibraryTemporaryChoreographySection;
+
 fn queue_library_action_activation(
     activate: On<Activate>,
     actions: Query<(), (With<LibraryAction>, With<FeathersActionButton>)>,
@@ -320,6 +338,309 @@ fn sync_library_filtering(
     }
 }
 
+fn spawn_project_effects(
+    panel: &mut ChildSpawnerCommands,
+    catalog: &ProjectEffectCatalog,
+    state: &LibraryState,
+    localizer: &Localizer,
+) {
+    let visible_count = catalog
+        .entries()
+        .iter()
+        .filter(|entry| state.matches_project_effect(entry))
+        .count();
+    let mut args = FluentArgs::new();
+    args.set("count", visible_count);
+    let section = spawn_list_section_header(
+        panel,
+        &localizer.text("assets-project-effects"),
+        &localizer.text_with("assets-found", &args),
+    );
+    panel
+        .commands()
+        .entity(section.root)
+        .insert(LibraryProjectEffectsSection);
+    panel
+        .commands()
+        .entity(section.meta)
+        .insert(LibraryProjectCount);
+    panel
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+            ..default()
+        })
+        .with_children(|search| {
+            spawn_search_field(
+                search,
+                &state.query,
+                &localizer.text("library-search-placeholder"),
+                &localizer.text("library-search-clear"),
+                LibrarySearchInput,
+            );
+        });
+
+    for entry in catalog.entries() {
+        let source = entry.path.display().to_string();
+        let accessible_label = project_effect_accessible_label(entry, localizer);
+        let row = match &entry.status {
+            ProjectEffectStatus::Valid => spawn_action_list_row(
+                panel,
+                &entry.display_name,
+                Some(&source),
+                None,
+                &accessible_label,
+                DocumentAction::OpenCatalog(entry.id),
+            ),
+            ProjectEffectStatus::Invalid { .. } => spawn_status_list_row(
+                panel,
+                &entry.display_name,
+                Some(&source),
+                ListRowStatus {
+                    label: &localizer.text("library-status-invalid"),
+                    color: theme::ACCENT,
+                },
+                &accessible_label,
+            ),
+            ProjectEffectStatus::Unsupported { .. } => spawn_status_list_row(
+                panel,
+                &entry.display_name,
+                Some(&source),
+                ListRowStatus {
+                    label: &localizer.text("library-status-unsupported"),
+                    color: theme::ACCENT,
+                },
+                &accessible_label,
+            ),
+        };
+        panel.commands().entity(row).insert((
+            ProjectEffectRow(entry.id),
+            project_effect_tooltip(entry, localizer),
+        ));
+    }
+    let catalog_empty = spawn_list_empty_state(
+        panel,
+        &localizer.text("library-empty-title"),
+        &localizer.text("library-empty-message"),
+        theme::TEXT_MUTED,
+    );
+    panel
+        .commands()
+        .entity(catalog_empty)
+        .insert(LibraryCatalogEmpty);
+    let no_results = spawn_list_empty_state(
+        panel,
+        &localizer.text("library-no-results-title"),
+        &localizer.text("library-no-results-message"),
+        theme::TEXT_MUTED,
+    );
+    panel.commands().entity(no_results).insert(LibraryNoResults);
+}
+
+fn project_effect_accessible_label(entry: &ProjectEffectEntry, localizer: &Localizer) -> String {
+    match entry.status {
+        ProjectEffectStatus::Valid => {
+            let mut args = FluentArgs::new();
+            args.set("name", entry.display_name.as_str());
+            localizer.text_with("library-open-effect", &args)
+        }
+        ProjectEffectStatus::Invalid { .. } => format!(
+            "{}, {}",
+            entry.display_name,
+            localizer.text("library-status-invalid")
+        ),
+        ProjectEffectStatus::Unsupported { .. } => format!(
+            "{}, {}",
+            entry.display_name,
+            localizer.text("library-status-unsupported")
+        ),
+    }
+}
+
+fn project_effect_tooltip(entry: &ProjectEffectEntry, localizer: &Localizer) -> EditorTooltip {
+    let source = entry.path.display().to_string();
+    match &entry.status {
+        ProjectEffectStatus::Valid => {
+            let mut args = FluentArgs::new();
+            args.set("path", source.as_str());
+            EditorTooltip::titled(
+                &entry.display_name,
+                localizer.text_with("library-effect-source", &args),
+            )
+        }
+        ProjectEffectStatus::Invalid { message } => {
+            EditorTooltip::titled(localizer.text("library-status-invalid"), message)
+                .with_footer(source)
+        }
+        ProjectEffectStatus::Unsupported { found, current } => {
+            let mut args = FluentArgs::new();
+            args.set("found", i64::from(*found));
+            args.set("current", i64::from(*current));
+            EditorTooltip::titled(
+                localizer.text("library-status-unsupported"),
+                localizer.text_with("library-unsupported-description", &args),
+            )
+            .with_footer(source)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CurrentResourceCounts {
+    texture_mesh: usize,
+    materials: usize,
+    flipbooks: usize,
+}
+
+impl CurrentResourceCounts {
+    fn total(self) -> usize {
+        self.texture_mesh + self.materials + self.flipbooks
+    }
+}
+
+fn current_resource_counts(effect: &EffectAsset) -> CurrentResourceCounts {
+    CurrentResourceCounts {
+        texture_mesh: effect
+            .assets
+            .iter()
+            .filter(|asset| matches!(asset.kind, AssetKind::Texture | AssetKind::Mesh))
+            .count(),
+        materials: effect.materials.len(),
+        flipbooks: effect.flipbooks.len()
+            + effect
+                .assets
+                .iter()
+                .filter(|asset| asset.kind == AssetKind::Flipbook)
+                .count(),
+    }
+}
+
+fn spawn_current_document_resources(
+    panel: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
+    let counts = current_resource_counts(&session.effect);
+    let mut args = FluentArgs::new();
+    args.set("count", counts.total());
+    let section = spawn_list_section_header(
+        panel,
+        &localizer.text("library-current-document-resources"),
+        &localizer.text_with("assets-registered", &args),
+    );
+    panel
+        .commands()
+        .entity(section.root)
+        .insert(LibraryCurrentResourcesSection);
+
+    let texture_mesh_assets = session
+        .effect
+        .assets
+        .iter()
+        .filter(|asset| matches!(asset.kind, AssetKind::Texture | AssetKind::Mesh));
+    if counts.texture_mesh > 0 {
+        args.set("count", counts.texture_mesh);
+        let section = spawn_list_section_header(
+            panel,
+            &localizer.text("library-textures-meshes"),
+            &localizer.text_with("assets-registered", &args),
+        );
+        panel
+            .commands()
+            .entity(section.root)
+            .insert(LibraryTextureMeshSection);
+        for asset in texture_mesh_assets {
+            let kind = match asset.kind {
+                AssetKind::Texture => localizer.text("library-kind-texture"),
+                AssetKind::Mesh => localizer.text("library-kind-mesh"),
+                AssetKind::Flipbook => unreachable!("filtered above"),
+            };
+            spawn_info_list_row(
+                panel,
+                &asset.name,
+                Some(&format!("{kind}  ·  {}", asset.path)),
+            );
+        }
+    }
+
+    args.set("count", counts.materials);
+    let section = spawn_list_section_header(
+        panel,
+        &localizer.text("assets-materials"),
+        &localizer.text_with("assets-registered", &args),
+    );
+    panel
+        .commands()
+        .entity(section.root)
+        .insert(LibraryMaterialsSection);
+    library_toolbar_button(
+        panel,
+        &localizer.text("assets-add-sprite-material"),
+        LibraryAction::AddSpriteMaterial,
+    );
+    for material in &session.effect.materials {
+        spawn_info_list_row(
+            panel,
+            &material.name,
+            Some(&format!(
+                "{}  ·  {}",
+                localizer.text("assets-sprite"),
+                localize_blend_mode(material.blend, localizer)
+            )),
+        );
+    }
+
+    let imported_flipbooks = session
+        .effect
+        .assets
+        .iter()
+        .filter(|asset| asset.kind == AssetKind::Flipbook);
+    args.set("count", counts.flipbooks);
+    let section = spawn_list_section_header(
+        panel,
+        &localizer.text("assets-flipbooks"),
+        &localizer.text_with("assets-registered", &args),
+    );
+    panel
+        .commands()
+        .entity(section.root)
+        .insert(LibraryFlipbooksSection);
+    library_toolbar_button(
+        panel,
+        &localizer.text("assets-add-grid-flipbook"),
+        LibraryAction::AddGridFlipbook,
+    );
+    for asset in imported_flipbooks {
+        spawn_info_list_row(
+            panel,
+            &asset.name,
+            Some(&format!(
+                "{}  ·  {}",
+                localizer.text("library-kind-flipbook"),
+                asset.path
+            )),
+        );
+    }
+    for flipbook in &session.effect.flipbooks {
+        let mut args = FluentArgs::new();
+        args.set("frames", flipbook.frames.len());
+        args.set("fps", flipbook.frame_rate as f64);
+        spawn_info_list_row(
+            panel,
+            &flipbook.name,
+            Some(&localizer.text_with("assets-flipbook-summary", &args)),
+        );
+    }
+}
+
+fn localize_blend_mode(blend: BlendMode, localizer: &Localizer) -> String {
+    localizer.text(match blend {
+        BlendMode::Alpha => "library-blend-alpha",
+        BlendMode::Additive => "library-blend-additive",
+        BlendMode::Multiply => "library-blend-multiply",
+    })
+}
+
 pub(crate) fn spawn_library(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -336,278 +657,20 @@ pub(crate) fn spawn_library(
             ..default()
         })
         .with_children(|panel| {
-            panel_heading(
-                panel,
-                &localizer.text("assets-current-effect"),
-                &localizer.text(if session.dirty {
-                    "assets-modified"
-                } else {
-                    "assets-saved"
-                }),
-            );
-            panel
-                .spawn((
-                    Node {
-                        margin: UiRect::all(Val::Px(10.0)),
-                        padding: UiRect::all(Val::Px(10.0)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(4.0),
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(5.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::SELECTION),
-                    BorderColor::all(theme::ACCENT_DIM),
-                ))
-                .with_children(|asset| {
-                    asset.spawn((
-                        Text::new(&session.effect.name),
-                        TextFont {
-                            font_size: FontSize::Px(13.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT),
-                    ));
-                    asset.spawn((
-                        Text::new(session.effect.id.to_string()),
-                        TextFont {
-                            font_size: FontSize::Px(10.0),
-                            ..default()
-                        },
-                        TextColor(theme::ACCENT),
-                    ));
-                });
-
-            panel
-                .spawn(Node {
-                    width: Val::Percent(100.0),
-                    padding: UiRect::all(Val::Px(8.0)),
-                    ..default()
-                })
-                .with_children(|search| {
-                    spawn_search_field(
-                        search,
-                        &state.query,
-                        &localizer.text("library-search-placeholder"),
-                        &localizer.text("library-search-clear"),
-                        LibrarySearchInput,
-                    );
-                });
+            spawn_project_effects(panel, catalog, state, localizer);
+            spawn_current_document_resources(panel, session, localizer);
 
             let mut args = FluentArgs::new();
-            let visible_count = catalog
-                .entries()
-                .iter()
-                .filter(|entry| state.matches_project_effect(entry))
-                .count();
-            args.set("count", visible_count);
+            args.set("count", session.effect.emitters.len());
             let section = spawn_list_section_header(
                 panel,
-                &localizer.text("assets-project-effects"),
-                &localizer.text_with("assets-found", &args),
-            );
-            panel
-                .commands()
-                .entity(section.meta)
-                .insert(LibraryProjectCount);
-            for entry in catalog.entries() {
-                let secondary = entry.path.display().to_string();
-                let row = match &entry.status {
-                    ProjectEffectStatus::Valid => spawn_action_list_row(
-                        panel,
-                        &entry.display_name,
-                        Some(&secondary),
-                        None,
-                        &entry.display_name,
-                        DocumentAction::OpenCatalog(entry.id),
-                    ),
-                    ProjectEffectStatus::Invalid { .. } => spawn_status_list_row(
-                        panel,
-                        &entry.display_name,
-                        Some(&secondary),
-                        ListRowStatus {
-                            label: &localizer.text("library-status-invalid"),
-                            color: theme::ACCENT,
-                        },
-                    ),
-                    ProjectEffectStatus::Unsupported { .. } => spawn_status_list_row(
-                        panel,
-                        &entry.display_name,
-                        Some(&secondary),
-                        ListRowStatus {
-                            label: &localizer.text("library-status-unsupported"),
-                            color: theme::ACCENT,
-                        },
-                    ),
-                };
-                panel
-                    .commands()
-                    .entity(row)
-                    .insert(ProjectEffectRow(entry.id));
-            }
-            let catalog_empty = spawn_list_empty_state(
-                panel,
-                &localizer.text("library-empty-title"),
-                &localizer.text("library-empty-message"),
-                theme::TEXT_MUTED,
-            );
-            panel
-                .commands()
-                .entity(catalog_empty)
-                .insert(LibraryCatalogEmpty);
-            let no_results = spawn_list_empty_state(
-                panel,
-                &localizer.text("library-no-results-title"),
-                &localizer.text("library-no-results-message"),
-                theme::TEXT_MUTED,
-            );
-            panel.commands().entity(no_results).insert(LibraryNoResults);
-
-            args.set("count", session.effect.assets.len());
-            panel_heading(
-                panel,
-                &localizer.text("assets-render-assets"),
-                &localizer.text_with("assets-registered", &args),
-            );
-            if session.effect.assets.is_empty() {
-                panel.spawn((
-                    Text::new(localizer.text("assets-no-render-assets")),
-                    TextFont {
-                        font_size: FontSize::Px(9.0),
-                        ..default()
-                    },
-                    TextColor(theme::TEXT_FAINT),
-                    Node {
-                        margin: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
-                        ..default()
-                    },
-                ));
-            }
-            for asset in &session.effect.assets {
-                panel
-                    .spawn(Node {
-                        min_height: Val::Px(38.0),
-                        margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                        padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(2.0),
-                        ..default()
-                    })
-                    .with_children(|row| {
-                        row.spawn((
-                            Text::new(format!("{:?}  {}", asset.kind, asset.name)),
-                            TextFont {
-                                font_size: FontSize::Px(10.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                        ));
-                        row.spawn((
-                            Text::new(&asset.path),
-                            TextFont {
-                                font_size: FontSize::Px(8.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT_FAINT),
-                        ));
-                    });
-            }
-
-            args.set("count", session.effect.materials.len());
-            panel_heading(
-                panel,
-                &localizer.text("assets-materials"),
-                &localizer.text_with("assets-registered", &args),
-            );
-            library_toolbar_button(
-                panel,
-                &localizer.text("assets-add-sprite-material"),
-                LibraryAction::AddSpriteMaterial,
-            );
-            for material in &session.effect.materials {
-                panel
-                    .spawn(Node {
-                        min_height: Val::Px(38.0),
-                        margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                        padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(2.0),
-                        ..default()
-                    })
-                    .with_children(|row| {
-                        row.spawn((
-                            Text::new(&material.name),
-                            TextFont {
-                                font_size: FontSize::Px(10.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                        ));
-                        row.spawn((
-                            Text::new(format!(
-                                "{}  ·  {:?}",
-                                localizer.text("assets-sprite"),
-                                material.blend
-                            )),
-                            TextFont {
-                                font_size: FontSize::Px(8.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT_FAINT),
-                        ));
-                    });
-            }
-
-            args.set("count", session.effect.flipbooks.len());
-            panel_heading(
-                panel,
-                &localizer.text("assets-flipbooks"),
-                &localizer.text_with("assets-registered", &args),
-            );
-            library_toolbar_button(
-                panel,
-                &localizer.text("assets-add-grid-flipbook"),
-                LibraryAction::AddGridFlipbook,
-            );
-            for flipbook in &session.effect.flipbooks {
-                panel
-                    .spawn(Node {
-                        min_height: Val::Px(38.0),
-                        margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                        padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(2.0),
-                        ..default()
-                    })
-                    .with_children(|row| {
-                        row.spawn((
-                            Text::new(&flipbook.name),
-                            TextFont {
-                                font_size: FontSize::Px(10.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                        ));
-                        let mut args = FluentArgs::new();
-                        args.set("frames", flipbook.frames.len());
-                        args.set("fps", flipbook.frame_rate as f64);
-                        row.spawn((
-                            Text::new(localizer.text_with("assets-flipbook-summary", &args)),
-                            TextFont {
-                                font_size: FontSize::Px(8.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT_FAINT),
-                        ));
-                    });
-            }
-
-            args.set("count", session.effect.emitters.len());
-            panel_heading(
-                panel,
-                &localizer.text("assets-layers"),
+                &localizer.text("library-choreography-temporary"),
                 &localizer.text_with("assets-active", &args),
             );
+            panel
+                .commands()
+                .entity(section.root)
+                .insert(LibraryTemporaryChoreographySection);
             library_toolbar_button(
                 panel,
                 &localizer.text("assets-add-emitter"),
@@ -835,6 +898,26 @@ pub(crate) fn layer_color(index: usize) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::blank_effect;
+    use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
+
+    fn spawn_test_library(
+        mut commands: Commands,
+        session: Res<EditorSession>,
+        catalog: Res<ProjectEffectCatalog>,
+        state: Res<LibraryState>,
+        localizer: Res<Localizer>,
+    ) {
+        commands.spawn(Node::default()).with_children(|parent| {
+            spawn_library(parent, &session, &catalog, &state, &localizer);
+        });
+    }
+
+    fn marker_count<T: Component>(app: &mut App) -> usize {
+        let world = app.world_mut();
+        let mut query = world.query_filtered::<Entity, With<T>>();
+        query.iter(world).count()
+    }
 
     fn write_effect(path: &Path, name: &str) {
         let mut effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("sample effect is valid");
@@ -964,6 +1047,150 @@ mod tests {
             state.kind = kind;
             assert!(!state.matches_project_effect(&entry));
         }
+    }
+
+    #[test]
+    fn library_composition_separates_project_resources_and_choreography() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let effect_id = session.effect.id.to_string();
+        let valid_id = ProjectEffectEntryId(1);
+        let invalid_id = ProjectEffectEntryId(2);
+        let unsupported_id = ProjectEffectEntryId(3);
+        let catalog = ProjectEffectCatalog {
+            entries: vec![
+                ProjectEffectEntry {
+                    id: valid_id,
+                    display_name: "Prism Bloom".into(),
+                    path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
+                    status: ProjectEffectStatus::Valid,
+                },
+                ProjectEffectEntry {
+                    id: invalid_id,
+                    display_name: "Broken Effect".into(),
+                    path: PathBuf::from("assets/effects/broken.aestra.ron"),
+                    status: ProjectEffectStatus::Invalid {
+                        message: "Invalid RON fixture".into(),
+                    },
+                },
+                ProjectEffectEntry {
+                    id: unsupported_id,
+                    display_name: "Future Effect".into(),
+                    path: PathBuf::from("assets/effects/future.aestra.ron"),
+                    status: ProjectEffectStatus::Unsupported {
+                        found: 99,
+                        current: aestra_bevy::CURRENT_FORMAT_VERSION,
+                    },
+                },
+            ],
+        };
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .insert_resource(session)
+        .insert_resource(catalog)
+        .init_resource::<LibraryState>()
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_systems(Startup, spawn_test_library);
+
+        app.update();
+
+        assert_eq!(marker_count::<LibraryProjectEffectsSection>(&mut app), 1);
+        assert_eq!(marker_count::<LibraryCurrentResourcesSection>(&mut app), 1);
+        assert_eq!(marker_count::<LibraryTextureMeshSection>(&mut app), 0);
+        assert_eq!(marker_count::<LibraryMaterialsSection>(&mut app), 1);
+        assert_eq!(marker_count::<LibraryFlipbooksSection>(&mut app), 1);
+        assert_eq!(
+            marker_count::<LibraryTemporaryChoreographySection>(&mut app),
+            1
+        );
+
+        let rows = {
+            let world = app.world_mut();
+            let mut query = world.query::<(
+                &ProjectEffectRow,
+                Has<Button>,
+                Option<&DocumentAction>,
+                Has<EditorTooltip>,
+                &AccessibleLabel,
+            )>();
+            query
+                .iter(world)
+                .map(|(row, button, action, tooltip, label)| {
+                    (row.0, button, action.copied(), tooltip, label.0.clone())
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(rows.len(), 3);
+        let valid = rows.iter().find(|row| row.0 == valid_id).unwrap();
+        assert!(valid.1);
+        assert_eq!(valid.2, Some(DocumentAction::OpenCatalog(valid_id)));
+        assert!(valid.3);
+        assert!(valid.4.starts_with("Open "));
+        assert!(valid.4.contains("Prism Bloom"));
+        for id in [invalid_id, unsupported_id] {
+            let status = rows.iter().find(|row| row.0 == id).unwrap();
+            assert!(!status.1);
+            assert_eq!(status.2, None);
+            assert!(status.3);
+            assert!(!status.4.is_empty());
+        }
+
+        let exposes_raw_id = {
+            let world = app.world_mut();
+            let mut query = world.query::<&Text>();
+            query.iter(world).any(|text| text.0.contains(&effect_id))
+        };
+        assert!(!exposes_raw_id);
+    }
+
+    #[test]
+    fn current_resource_projection_tracks_new_open_undo_and_redo() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("library-projection.aestra.ron");
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.save_ron(&path).unwrap();
+        let original = current_resource_counts(&session.effect);
+
+        session.add_sprite_material();
+        let edited = current_resource_counts(&session.effect);
+        assert_eq!(edited.materials, original.materials + 1);
+        assert_eq!(edited.texture_mesh, original.texture_mesh);
+        assert_eq!(edited.flipbooks, original.flipbooks);
+
+        session.undo();
+        assert_eq!(current_resource_counts(&session.effect), original);
+        session.redo();
+        assert_eq!(current_resource_counts(&session.effect), edited);
+
+        let blank = current_resource_counts(&blank_effect());
+        session.new_effect();
+        assert_eq!(current_resource_counts(&session.effect), blank);
+        session.open(&path).unwrap();
+        assert_eq!(current_resource_counts(&session.effect), original);
+    }
+
+    #[test]
+    fn library_resource_labels_are_localized_in_english_and_french() {
+        let english = Localizer::new("en-US").unwrap();
+        let french = Localizer::new("fr-FR").unwrap();
+
+        assert_eq!(
+            english.text("library-current-document-resources"),
+            "CURRENT DOCUMENT RESOURCES"
+        );
+        assert_eq!(
+            french.text("library-current-document-resources"),
+            "RESSOURCES DU DOCUMENT COURANT"
+        );
+        assert_eq!(
+            localize_blend_mode(BlendMode::Additive, &english),
+            "Additive"
+        );
+        assert_eq!(localize_blend_mode(BlendMode::Additive, &french), "Additif");
     }
 
     #[test]
