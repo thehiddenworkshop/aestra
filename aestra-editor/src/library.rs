@@ -25,6 +25,7 @@ impl Plugin for EditorLibraryPlugin {
             .init_resource::<LibraryState>()
             .add_observer(queue_library_action_activation)
             .add_observer(execute_library_action)
+            .add_observer(update_library_query)
             .add_systems(
                 Update,
                 (
@@ -32,7 +33,10 @@ impl Plugin for EditorLibraryPlugin {
                     handle_library_action_buttons.in_set(LibrarySet::Actions),
                 ),
             )
-            .add_systems(Update, update_layer_selection.in_set(LibrarySet::Sync));
+            .add_systems(
+                Update,
+                (update_layer_selection, sync_library_filtering).in_set(LibrarySet::Sync),
+            );
     }
 }
 
@@ -226,6 +230,21 @@ struct LayerRow(usize);
 #[derive(Component)]
 struct AssetButtonLabel;
 
+#[derive(Component)]
+struct LibrarySearchInput;
+
+#[derive(Component)]
+struct ProjectEffectRow(ProjectEffectEntryId);
+
+#[derive(Component)]
+struct LibraryProjectCount;
+
+#[derive(Component)]
+struct LibraryCatalogEmpty;
+
+#[derive(Component)]
+struct LibraryNoResults;
+
 fn queue_library_action_activation(
     activate: On<Activate>,
     actions: Query<(), (With<LibraryAction>, With<FeathersActionButton>)>,
@@ -235,6 +254,69 @@ fn queue_library_action_activation(
         commands
             .entity(activate.entity)
             .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+fn update_library_query(
+    change: On<ValueChange<String>>,
+    inputs: Query<(), With<LibrarySearchInput>>,
+    mut state: ResMut<LibraryState>,
+) {
+    if !inputs.contains(change.source) || state.query == change.value {
+        return;
+    }
+    state.query.clone_from(&change.value);
+}
+
+fn sync_library_filtering(
+    state: Res<LibraryState>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut nodes: Query<(
+        &mut Node,
+        Option<&ProjectEffectRow>,
+        Has<LibraryCatalogEmpty>,
+        Has<LibraryNoResults>,
+    )>,
+    mut counts: Query<&mut Text, With<LibraryProjectCount>>,
+    localizer: Res<Localizer>,
+) {
+    if !state.is_changed() && !catalog.is_changed() {
+        return;
+    }
+    let visible_count = catalog
+        .entries()
+        .iter()
+        .filter(|entry| state.matches_project_effect(entry))
+        .count();
+    for (mut node, row, catalog_empty, no_results) in &mut nodes {
+        if let Some(row) = row {
+            node.display = if catalog
+                .entry(row.0)
+                .is_some_and(|entry| state.matches_project_effect(entry))
+            {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        } else if catalog_empty {
+            node.display = if catalog.entries().is_empty() {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        } else if no_results {
+            node.display = if !catalog.entries().is_empty() && visible_count == 0 {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+    }
+    let mut args = FluentArgs::new();
+    args.set("count", visible_count);
+    let text = localizer.text_with("assets-found", &args);
+    for mut count in &mut counts {
+        count.0.clone_from(&text);
     }
 }
 
@@ -296,69 +378,90 @@ pub(crate) fn spawn_library(
                     ));
                 });
 
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::all(Val::Px(8.0)),
+                    ..default()
+                })
+                .with_children(|search| {
+                    spawn_search_field(
+                        search,
+                        &state.query,
+                        &localizer.text("library-search-placeholder"),
+                        &localizer.text("library-search-clear"),
+                        LibrarySearchInput,
+                    );
+                });
+
             let mut args = FluentArgs::new();
-            let visible_entries = catalog
+            let visible_count = catalog
                 .entries()
                 .iter()
                 .filter(|entry| state.matches_project_effect(entry))
-                .collect::<Vec<_>>();
-            args.set("count", visible_entries.len());
-            panel_heading(
+                .count();
+            args.set("count", visible_count);
+            let section = spawn_list_section_header(
                 panel,
                 &localizer.text("assets-project-effects"),
                 &localizer.text_with("assets-found", &args),
             );
-            for entry in visible_entries {
-                let mut row = panel.spawn((
-                    Node {
-                        height: Val::Px(36.0),
-                        margin: UiRect::horizontal(Val::Px(8.0)),
-                        padding: UiRect::horizontal(Val::Px(9.0)),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::SpaceBetween,
-                        border_radius: BorderRadius::all(Val::Px(3.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::PANEL_DARK),
-                ));
-                if entry.status.is_openable() {
-                    row.insert((
-                        Button,
-                        EditorNativeControl,
+            panel
+                .commands()
+                .entity(section.meta)
+                .insert(LibraryProjectCount);
+            for entry in catalog.entries() {
+                let secondary = entry.path.display().to_string();
+                let row = match &entry.status {
+                    ProjectEffectStatus::Valid => spawn_action_list_row(
+                        panel,
+                        &entry.display_name,
+                        Some(&secondary),
+                        None,
+                        &entry.display_name,
                         DocumentAction::OpenCatalog(entry.id),
-                    ));
-                }
-                row.with_children(|row| {
-                    row.spawn((
-                        Text::new(&entry.display_name),
-                        TextFont {
-                            font_size: FontSize::Px(11.0),
-                            ..default()
+                    ),
+                    ProjectEffectStatus::Invalid { .. } => spawn_status_list_row(
+                        panel,
+                        &entry.display_name,
+                        Some(&secondary),
+                        ListRowStatus {
+                            label: &localizer.text("library-status-invalid"),
+                            color: theme::ACCENT,
                         },
-                        TextColor(if entry.status.is_openable() {
-                            theme::TEXT_MUTED
-                        } else {
-                            theme::TEXT_FAINT
-                        }),
-                    ));
-                    if let Some(message_id) = match entry.status {
-                        ProjectEffectStatus::Valid => None,
-                        ProjectEffectStatus::Invalid { .. } => Some("library-status-invalid"),
-                        ProjectEffectStatus::Unsupported { .. } => {
-                            Some("library-status-unsupported")
-                        }
-                    } {
-                        row.spawn((
-                            Text::new(localizer.text(message_id)),
-                            TextFont {
-                                font_size: FontSize::Px(9.0),
-                                ..default()
-                            },
-                            TextColor(theme::ACCENT),
-                        ));
-                    }
-                });
+                    ),
+                    ProjectEffectStatus::Unsupported { .. } => spawn_status_list_row(
+                        panel,
+                        &entry.display_name,
+                        Some(&secondary),
+                        ListRowStatus {
+                            label: &localizer.text("library-status-unsupported"),
+                            color: theme::ACCENT,
+                        },
+                    ),
+                };
+                panel
+                    .commands()
+                    .entity(row)
+                    .insert(ProjectEffectRow(entry.id));
             }
+            let catalog_empty = spawn_list_empty_state(
+                panel,
+                &localizer.text("library-empty-title"),
+                &localizer.text("library-empty-message"),
+                theme::TEXT_MUTED,
+            );
+            panel
+                .commands()
+                .entity(catalog_empty)
+                .insert(LibraryCatalogEmpty);
+            let no_results = spawn_list_empty_state(
+                panel,
+                &localizer.text("library-no-results-title"),
+                &localizer.text("library-no-results-message"),
+                theme::TEXT_MUTED,
+            );
+            panel.commands().entity(no_results).insert(LibraryNoResults);
 
             args.set("count", session.effect.assets.len());
             panel_heading(
@@ -861,6 +964,124 @@ mod tests {
             state.kind = kind;
             assert!(!state.matches_project_effect(&entry));
         }
+    }
+
+    #[test]
+    fn live_search_updates_library_state_without_rebuilding_editor_ui() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let revision = session.ui_revision;
+        let mut app = App::new();
+        app.insert_resource(session)
+            .init_resource::<LibraryState>()
+            .add_observer(update_library_query);
+        let input = app.world_mut().spawn(LibrarySearchInput).id();
+
+        app.world_mut().trigger(ValueChange::<String> {
+            source: input,
+            value: String::from("PrIsM"),
+            is_final: false,
+        });
+
+        assert_eq!(app.world().resource::<LibraryState>().query, "PrIsM");
+        assert_eq!(
+            app.world().resource::<EditorSession>().ui_revision,
+            revision
+        );
+        assert!(app.world().entities().contains(input));
+        app.world_mut().despawn(input);
+        assert_eq!(app.world().resource::<LibraryState>().query, "PrIsM");
+    }
+
+    #[test]
+    fn filtering_updates_existing_rows_count_and_empty_state_in_place() {
+        let first_id = ProjectEffectEntryId(1);
+        let second_id = ProjectEffectEntryId(2);
+        let catalog = ProjectEffectCatalog {
+            entries: vec![
+                ProjectEffectEntry {
+                    id: first_id,
+                    display_name: "Prism Bloom".into(),
+                    path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
+                    status: ProjectEffectStatus::Valid,
+                },
+                ProjectEffectEntry {
+                    id: second_id,
+                    display_name: "Plasma Burst".into(),
+                    path: PathBuf::from("assets/effects/plasma_burst.aestra.ron"),
+                    status: ProjectEffectStatus::Valid,
+                },
+            ],
+        };
+        let mut app = App::new();
+        app.insert_resource(catalog)
+            .init_resource::<LibraryState>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_systems(Update, sync_library_filtering);
+        let prism = app
+            .world_mut()
+            .spawn((ProjectEffectRow(first_id), Node::default()))
+            .id();
+        let plasma = app
+            .world_mut()
+            .spawn((ProjectEffectRow(second_id), Node::default()))
+            .id();
+        let count = app
+            .world_mut()
+            .spawn((LibraryProjectCount, Text::new("")))
+            .id();
+        let catalog_empty = app
+            .world_mut()
+            .spawn((LibraryCatalogEmpty, Node::default()))
+            .id();
+        let no_results = app
+            .world_mut()
+            .spawn((LibraryNoResults, Node::default()))
+            .id();
+        app.update();
+
+        app.world_mut().resource_mut::<LibraryState>().query = "prism".into();
+        app.update();
+
+        assert_eq!(
+            app.world().get::<Node>(prism).unwrap().display,
+            Display::Flex
+        );
+        assert_eq!(
+            app.world().get::<Node>(plasma).unwrap().display,
+            Display::None
+        );
+        let count_text = &app.world().get::<Text>(count).unwrap().0;
+        assert!(count_text.contains('1'));
+        assert!(count_text.ends_with(" FOUND"));
+        assert_eq!(
+            app.world().get::<Node>(catalog_empty).unwrap().display,
+            Display::None
+        );
+        assert_eq!(
+            app.world().get::<Node>(no_results).unwrap().display,
+            Display::None
+        );
+
+        app.world_mut().resource_mut::<LibraryState>().query = "missing".into();
+        app.update();
+
+        assert_eq!(
+            app.world().get::<Node>(prism).unwrap().display,
+            Display::None
+        );
+        assert_eq!(
+            app.world().get::<Node>(plasma).unwrap().display,
+            Display::None
+        );
+        let count_text = &app.world().get::<Text>(count).unwrap().0;
+        assert!(count_text.contains('0'));
+        assert!(count_text.ends_with(" FOUND"));
+        assert_eq!(
+            app.world().get::<Node>(no_results).unwrap().display,
+            Display::Flex
+        );
+        assert!(app.world().entities().contains(prism));
+        assert!(app.world().entities().contains(plasma));
     }
 
     fn app_with_session(session: EditorSession) -> App {

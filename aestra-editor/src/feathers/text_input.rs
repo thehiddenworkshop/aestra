@@ -16,9 +16,10 @@ pub(crate) fn spawn_text_input<M: Bundle>(
     initial_value: &str,
     accessible_label: &str,
     marker: M,
-) {
-    parent
-        .spawn_empty()
+) -> Entity {
+    let mut container = parent.spawn_empty();
+    let entity = container.id();
+    container
         .apply_scene(scenes::feathers_text_input_container())
         .insert((marker, AccessibleLabel(accessible_label.to_owned())))
         .with_children(|container| {
@@ -30,6 +31,7 @@ pub(crate) fn spawn_text_input<M: Bundle>(
                     AccessibleLabel(accessible_label.to_owned()),
                 ));
         });
+    entity
 }
 
 pub(crate) fn emit_text_change(

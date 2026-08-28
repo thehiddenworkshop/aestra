@@ -249,6 +249,7 @@ assets-status-minimum-emitter = Un effet doit conserver au moins un émetteur
 assets-change-delete-emitter = Supprimer l’émetteur
 
 library-search-placeholder = Rechercher dans la bibliothèque
+library-search-clear = Effacer la recherche de la bibliothèque
 library-filter-all = Tout
 library-filter-effects = Effets
 library-filter-textures = Textures
@@ -260,6 +261,10 @@ library-origin-project = Projet
 library-origin-current-document = Document courant
 library-status-invalid = INVALIDE
 library-status-unsupported = FORMAT PLUS RÉCENT
+library-empty-title = Aucun effet de projet
+library-empty-message = Ajoutez des fichiers d’effet dans assets/effects pour les afficher ici.
+library-no-results-title = Aucun effet correspondant
+library-no-results-message = Essayez une autre recherche ou un autre filtre.
 
 timeline-frame-all = Tout afficher
 timeline-snap-off = Magnétisme : désactivé

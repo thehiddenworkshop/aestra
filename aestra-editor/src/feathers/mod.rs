@@ -7,11 +7,13 @@
 pub(crate) mod button;
 pub(crate) mod combo_box;
 pub(crate) mod field_row;
+pub(crate) mod list_row;
 pub(crate) mod number_input;
 pub(crate) mod panel;
 pub(crate) mod panel_card;
 pub(crate) mod scenes;
 pub(crate) mod scroll;
+pub(crate) mod search_field;
 pub(crate) mod separator;
 pub(crate) mod slider_row;
 pub(crate) mod status_bar;
@@ -38,6 +40,7 @@ impl Plugin for AestraFeathersPlugin {
             .add_observer(text_input::emit_text_change)
             .add_observer(text_input::submit_text_on_enter)
             .add_observer(text_input::submit_text_on_focus_loss)
+            .add_observer(search_field::clear_search_field)
             .add_observer(tooltip::begin_tooltip)
             .add_observer(tooltip::dismiss_tooltip_on_drag)
             .add_systems(
@@ -46,7 +49,11 @@ impl Plugin for AestraFeathersPlugin {
             )
             .add_systems(
                 Update,
-                (scroll::update_scrollbar_visibility, tooltip::update_tooltip)
+                (
+                    scroll::update_scrollbar_visibility,
+                    search_field::sync_search_clear_visibility,
+                    tooltip::update_tooltip,
+                )
                     .in_set(AestraFeathersSet::Sync),
             );
     }

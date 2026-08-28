@@ -249,6 +249,7 @@ assets-status-minimum-emitter = An effect must keep at least one emitter
 assets-change-delete-emitter = Delete emitter
 
 library-search-placeholder = Search the library
+library-search-clear = Clear library search
 library-filter-all = All
 library-filter-effects = Effects
 library-filter-textures = Textures
@@ -260,6 +261,10 @@ library-origin-project = Project
 library-origin-current-document = Current document
 library-status-invalid = INVALID
 library-status-unsupported = NEWER FORMAT
+library-empty-title = No project effects
+library-empty-message = Add effect files to assets/effects to see them here.
+library-no-results-title = No matching effects
+library-no-results-message = Try a different search or filter.
 
 timeline-frame-all = All
 timeline-snap-off = Snap: Off

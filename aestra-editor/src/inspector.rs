@@ -2849,7 +2849,9 @@ fn spawn_text_field(
         parent,
         crate::feathers::field_row::FieldRowProps::new(title).with_control_min_width(150.0),
         EditorTooltip::description(description.to_owned()),
-        |inputs| spawn_text_input(inputs, value, title, control),
+        |inputs| {
+            spawn_text_input(inputs, value, title, control);
+        },
     );
 }
 

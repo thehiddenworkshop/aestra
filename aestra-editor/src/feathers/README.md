@@ -15,11 +15,13 @@ domain-specific state and semantic commands.
 | `button` | Editor-action buttons, tool buttons, activation bridging, and action-control auditing |
 | `combo_box` | Data-driven combo options and compact action menus |
 | `field_row` | Compact, wrapping label/control columns for inspector-like forms |
+| `list_row` | Compact action/status rows, section headers, and empty result surfaces |
 | `number_input` | Shared precision, modifier, formatting, and delta policy for scrub inputs |
 | `panel` | Reusable panel heading chrome |
 | `panel_card` | Remembered collapsible cards with semantic-key persistence and header/body slots |
 | `scenes` | BSN scenes for the editor shell and upstream Bevy Feathers controls |
 | `scroll` | Native scroll areas, persisted scroll markers, and overflow-only scrollbars |
+| `search_field` | Clearable accessible search composition with live value changes |
 | `separator` | Theme-aware horizontal and vertical separators |
 | `slider_row` | Bounded slider and precise numeric-input composition with shared metadata policy |
 | `status_bar` | The persistent editor status surface |

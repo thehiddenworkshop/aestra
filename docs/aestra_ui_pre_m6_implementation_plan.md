@@ -1,6 +1,6 @@
 # Aestra — Pre-M6 Professional UI Implementation Plan
 
-Status: Slice 1 complete; Slice 2 is next
+Status: Slice 2 complete; Slice 3 is next
 
 This document turns the pre-M6 portion of
 `aestra_ui_choreography_library_ux_plan.md` into a repository-specific delivery plan.
