@@ -112,6 +112,11 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   plugin owns category navigation, Feathers controls, locale selection, reset, and
   live preference application; `settings.rs` remains the versioned persistence,
   migration, validation, and atomic-replacement boundary.
+- Runs the Assets workspace through `EditorAssetsPlugin`. The plugin owns project-effect
+  catalog discovery, asset/material/flipbook/layer presentation, layer-selection styling,
+  and panel-local authoring actions. Opening a catalog entry emits the shared
+  `DocumentAction` contract so document replacement and unsaved-change protection remain
+  exclusively owned by persistence.
 - Runs document lifecycle through `EditorPersistencePlugin`. File-menu controls,
   keyboard shortcuts, and project-effect rows emit one `DocumentAction` contract;
   the plugin owns startup recovery, open/save/save-as/exit workflows, unsaved-change

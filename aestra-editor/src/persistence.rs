@@ -185,8 +185,8 @@ fn execute_document_action(
         }
         DocumentAction::OpenCatalog(index) => {
             if confirm_discard(&session, &settings) {
-                if let Some(entry) = catalog.entries.get(index) {
-                    match session.open(&entry.path) {
+                if let Some(path) = catalog.path(index) {
+                    match session.open(path) {
                         Ok(()) => session.playing = settings.preview.play_on_open,
                         Err(error) => session.status = format!("Open failed: {error}"),
                     }

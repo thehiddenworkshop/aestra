@@ -130,12 +130,16 @@ Complete this milestone before expanding the editor or renderer feature surface 
    application exit, window-close confirmation, recovery discovery, autosave, and
    cleanup now run through `EditorPersistencePlugin` and a shared `DocumentAction`
    contract used by menus, keyboard shortcuts, and project-effect rows.
+   Project-effect discovery, Assets workspace construction, material and flipbook creation,
+   semantic layer selection, and selection styling now run through `EditorAssetsPlugin`;
+   catalog rows still emit `DocumentAction` so the Assets plugin cannot bypass persistence
+   safeguards.
    `EditorLocalizationPlugin` now owns Fluent resource setup and live generic-text
    synchronization. All primary deep workspaces use complete `en-US` and `fr-FR`
    messages for editor-owned presentation; technical compiler detail, generated
    instructions, semantic paths, IDs, file paths, and asset-authored names remain
-   unchanged. This keeps `main.rs` focused on composition and startup wiring. Next close
-   the remaining shell decomposition seams and migrate incidental action/status messages.
+   unchanged. This keeps `main.rs` focused on composition and startup wiring. Next extract
+   the Curves workspace and migrate incidental action/status messages.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.

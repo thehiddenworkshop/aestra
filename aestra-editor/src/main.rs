@@ -1,3 +1,4 @@
+mod assets;
 mod dock_ui;
 mod docking;
 mod feathers;
@@ -23,6 +24,8 @@ use aestra_bevy::{
 use aestra_compiler::{InputControl, InputMetadata, ModuleMetadata, ModuleRegistry};
 use aestra_runtime::{CompiledEffect, CompiledEmitter, Instruction, RuntimeStage};
 use aestra_runtime::{EffectProfile, ProfileValue, ProfileValueSource};
+use assets::{AssetsSet, EditorAssetsPlugin};
+pub(crate) use assets::{EffectCatalog, layer_color, spawn_asset_browser};
 #[cfg(test)]
 use bevy::ui_widgets::Activate;
 use bevy::{
@@ -89,8 +92,6 @@ use settings_ui::EditorSettingsUiPlugin;
 pub(crate) use settings_ui::{SettingsPanelState, spawn_settings_workspace};
 use std::{
     collections::{HashMap, VecDeque},
-    fs,
-    path::PathBuf,
     time::Duration,
 };
 use timeline::{TimelinePlugin, TimelineSet, TimelineSnapMode, TimelineState};
@@ -127,7 +128,6 @@ fn main() {
         .insert_resource(settings)
         .insert_resource(persistence)
         .insert_resource(UiScale(ui_scale))
-        .insert_resource(EffectCatalog::scan())
         .init_resource::<DiagnosticsPanelState>()
         .init_resource::<ProfilerState>()
         .init_resource::<ScrollMemoryState>()
@@ -153,6 +153,7 @@ fn main() {
         .add_plugins(AestraFeathersPlugin)
         .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
+        .add_plugins(EditorAssetsPlugin)
         .add_plugins(EditorSettingsUiPlugin)
         .add_plugins(EditorPersistencePlugin)
         .add_plugins(AestraPlugin)
@@ -187,7 +188,6 @@ fn main() {
                     .chain()
                     .in_set(EditorSet::MainUpdate),
                 (
-                    update_layer_selection,
                     remember_scroll_positions,
                     rebuild_editor_ui,
                     restore_scroll_positions,
@@ -212,6 +212,7 @@ fn main() {
                 InspectorSet::Input,
                 DockingSet::Input,
                 AestraFeathersSet::Input,
+                AssetsSet::Actions,
                 PersistenceSet::Actions,
                 EditorSet::PreViewport,
                 PersistenceSet::Lifecycle,
@@ -221,6 +222,7 @@ fn main() {
                 DockingSet::Reconcile,
                 EditorSet::UiRebuild,
                 TimelineSet::Visuals,
+                AssetsSet::Sync,
                 InspectorSet::Sync,
                 DockingSet::Sync,
                 AestraFeathersSet::Sync,
@@ -243,15 +245,12 @@ enum EditorAction {
     AddLayer,
     DuplicateLayer,
     DeleteLayer,
-    SelectLayer(usize),
     EffectDuration(f32),
     SetTimelineSnap(TimelineSnapMode),
     FrameTimeline,
     OpenModulePalette(StackStage),
     CloseModulePalette,
     AddModule(usize),
-    AddSpriteMaterial,
-    AddGridFlipbook,
     AddSpriteRenderer,
     AddFlipbookRenderer,
     EditComplexInput(ModuleId, u8),
@@ -473,37 +472,6 @@ struct ProfilerHistorySummary;
 #[derive(Component)]
 struct CurveGraph;
 
-struct CatalogEntry {
-    name: String,
-    path: PathBuf,
-}
-
-#[derive(Resource, Default)]
-struct EffectCatalog {
-    entries: Vec<CatalogEntry>,
-}
-
-impl EffectCatalog {
-    fn scan() -> Self {
-        let mut entries = fs::read_dir("assets/effects")
-            .into_iter()
-            .flatten()
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().is_some_and(|extension| extension == "ron"))
-            .filter_map(|path| {
-                let effect = EffectAsset::load_ron(&path).ok()?;
-                Some(CatalogEntry {
-                    name: effect.name,
-                    path,
-                })
-            })
-            .collect::<Vec<_>>();
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        Self { entries }
-    }
-}
-
 #[derive(Component)]
 struct PlaybackPlayIcon;
 
@@ -518,9 +486,6 @@ struct CompileStatusButton;
 
 #[derive(Component)]
 struct CompileStatusDot;
-
-#[derive(Component)]
-struct LayerRow(usize);
 
 fn setup_editor(
     mut commands: Commands,
@@ -713,9 +678,6 @@ fn spawn_toolbar(
         });
 }
 
-#[derive(Component)]
-struct PlainMarker;
-
 fn transport_button<'a>(
     parent: &'a mut ChildSpawnerCommands,
     message_id: &'static str,
@@ -806,338 +768,6 @@ fn spawn_pause_icon(parent: &mut ChildSpawnerCommands, visible: bool) {
                     BackgroundColor(theme::TEXT),
                     Pickable::IGNORE,
                 ));
-            }
-        });
-}
-
-fn plain_toolbar_button<M: Component>(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    action: EditorAction,
-    marker: M,
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_button())
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.to_owned()),
-            Node {
-                height: Val::Px(32.0),
-                min_width: Val::Px(78.0),
-                padding: UiRect::horizontal(Val::Px(12.0)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
-                ..default()
-            },
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FontSize::Px(12.0),
-                    ..default()
-                },
-                ThemedText,
-                marker,
-                Pickable::IGNORE,
-            ));
-        });
-}
-
-fn spawn_asset_browser(
-    parent: &mut ChildSpawnerCommands,
-    session: &EditorSession,
-    catalog: &EffectCatalog,
-    localizer: &Localizer,
-) {
-    parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            flex_grow: 1.0,
-            min_height: Val::Px(0.0),
-            flex_direction: FlexDirection::Column,
-            ..default()
-        })
-        .with_children(|panel| {
-            panel_heading(
-                panel,
-                &localizer.text("assets-current-effect"),
-                &localizer.text(if session.dirty {
-                    "assets-modified"
-                } else {
-                    "assets-saved"
-                }),
-            );
-            panel
-                .spawn((
-                    Node {
-                        margin: UiRect::all(Val::Px(10.0)),
-                        padding: UiRect::all(Val::Px(10.0)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(4.0),
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(5.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::SELECTION),
-                    BorderColor::all(theme::ACCENT_DIM),
-                ))
-                .with_children(|asset| {
-                    asset.spawn((
-                        Text::new(&session.effect.name),
-                        TextFont {
-                            font_size: FontSize::Px(13.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT),
-                    ));
-                    asset.spawn((
-                        Text::new(session.effect.id.to_string()),
-                        TextFont {
-                            font_size: FontSize::Px(10.0),
-                            ..default()
-                        },
-                        TextColor(theme::ACCENT),
-                    ));
-                });
-
-            let mut args = FluentArgs::new();
-            args.set("count", catalog.entries.len());
-            panel_heading(
-                panel,
-                &localizer.text("assets-project-effects"),
-                &localizer.text_with("assets-found", &args),
-            );
-            for (index, entry) in catalog.entries.iter().enumerate() {
-                panel
-                    .spawn((
-                        Button,
-                        EditorNativeControl,
-                        DocumentAction::OpenCatalog(index),
-                        Node {
-                            height: Val::Px(31.0),
-                            margin: UiRect::horizontal(Val::Px(8.0)),
-                            padding: UiRect::horizontal(Val::Px(9.0)),
-                            align_items: AlignItems::Center,
-                            border_radius: BorderRadius::all(Val::Px(3.0)),
-                            ..default()
-                        },
-                        BackgroundColor(theme::PANEL_DARK),
-                    ))
-                    .with_children(|row| {
-                        row.spawn((
-                            Text::new(&entry.name),
-                            TextFont {
-                                font_size: FontSize::Px(11.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT_MUTED),
-                        ));
-                    });
-            }
-
-            args.set("count", session.effect.assets.len());
-            panel_heading(
-                panel,
-                &localizer.text("assets-render-assets"),
-                &localizer.text_with("assets-registered", &args),
-            );
-            if session.effect.assets.is_empty() {
-                panel.spawn((
-                    Text::new(localizer.text("assets-no-render-assets")),
-                    TextFont {
-                        font_size: FontSize::Px(9.0),
-                        ..default()
-                    },
-                    TextColor(theme::TEXT_FAINT),
-                    Node {
-                        margin: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
-                        ..default()
-                    },
-                ));
-            }
-            for asset in &session.effect.assets {
-                panel
-                    .spawn(Node {
-                        min_height: Val::Px(38.0),
-                        margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                        padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(2.0),
-                        ..default()
-                    })
-                    .with_children(|row| {
-                        row.spawn((
-                            Text::new(format!("{:?}  {}", asset.kind, asset.name)),
-                            TextFont {
-                                font_size: FontSize::Px(10.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                        ));
-                        row.spawn((
-                            Text::new(&asset.path),
-                            TextFont {
-                                font_size: FontSize::Px(8.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT_FAINT),
-                        ));
-                    });
-            }
-
-            args.set("count", session.effect.materials.len());
-            panel_heading(
-                panel,
-                &localizer.text("assets-materials"),
-                &localizer.text_with("assets-registered", &args),
-            );
-            plain_toolbar_button(
-                panel,
-                &localizer.text("assets-add-sprite-material"),
-                EditorAction::AddSpriteMaterial,
-                PlainMarker,
-            );
-            for material in &session.effect.materials {
-                panel
-                    .spawn(Node {
-                        min_height: Val::Px(38.0),
-                        margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                        padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(2.0),
-                        ..default()
-                    })
-                    .with_children(|row| {
-                        row.spawn((
-                            Text::new(&material.name),
-                            TextFont {
-                                font_size: FontSize::Px(10.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                        ));
-                        row.spawn((
-                            Text::new(format!(
-                                "{}  ·  {:?}",
-                                localizer.text("assets-sprite"),
-                                material.blend
-                            )),
-                            TextFont {
-                                font_size: FontSize::Px(8.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT_FAINT),
-                        ));
-                    });
-            }
-            args.set("count", session.effect.flipbooks.len());
-            panel_heading(
-                panel,
-                &localizer.text("assets-flipbooks"),
-                &localizer.text_with("assets-registered", &args),
-            );
-            plain_toolbar_button(
-                panel,
-                &localizer.text("assets-add-grid-flipbook"),
-                EditorAction::AddGridFlipbook,
-                PlainMarker,
-            );
-            for flipbook in &session.effect.flipbooks {
-                panel
-                    .spawn(Node {
-                        min_height: Val::Px(38.0),
-                        margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                        padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(2.0),
-                        ..default()
-                    })
-                    .with_children(|row| {
-                        row.spawn((
-                            Text::new(&flipbook.name),
-                            TextFont {
-                                font_size: FontSize::Px(10.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT),
-                        ));
-                        let mut args = FluentArgs::new();
-                        args.set("frames", flipbook.frames.len());
-                        args.set("fps", flipbook.frame_rate as f64);
-                        row.spawn((
-                            Text::new(localizer.text_with("assets-flipbook-summary", &args)),
-                            TextFont {
-                                font_size: FontSize::Px(8.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT_FAINT),
-                        ));
-                    });
-            }
-
-            args.set("count", session.effect.emitters.len());
-            panel_heading(
-                panel,
-                &localizer.text("assets-layers"),
-                &localizer.text_with("assets-active", &args),
-            );
-            plain_toolbar_button(
-                panel,
-                &localizer.text("assets-add-emitter"),
-                EditorAction::AddLayer,
-                PlainMarker,
-            );
-            for (index, layer) in session.effect.emitters.iter().enumerate() {
-                let selected = index == session.selected_layer_index();
-                panel
-                    .spawn((
-                        Button,
-                        EditorNativeControl,
-                        EditorAction::SelectLayer(index),
-                        LayerRow(index),
-                        Node {
-                            height: Val::Px(42.0),
-                            margin: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                            padding: UiRect::horizontal(Val::Px(9.0)),
-                            align_items: AlignItems::Center,
-                            column_gap: Val::Px(9.0),
-                            border_radius: BorderRadius::all(Val::Px(4.0)),
-                            ..default()
-                        },
-                        BackgroundColor(if selected {
-                            theme::SELECTION
-                        } else {
-                            theme::PANEL_DARK
-                        }),
-                    ))
-                    .with_children(|row| {
-                        row.spawn((
-                            Node {
-                                width: Val::Px(7.0),
-                                height: Val::Px(24.0),
-                                border_radius: BorderRadius::all(Val::Px(3.0)),
-                                ..default()
-                            },
-                            BackgroundColor(layer_color(index)),
-                        ));
-                        row.spawn((
-                            Text::new(&layer.name),
-                            TextFont {
-                                font_size: FontSize::Px(12.0),
-                                ..default()
-                            },
-                            TextColor(if layer.enabled {
-                                theme::TEXT
-                            } else {
-                                theme::TEXT_FAINT
-                            }),
-                        ));
-                    });
             }
         });
 }
@@ -4018,7 +3648,6 @@ fn handle_buttons(
             Entity,
             &Interaction,
             &EditorAction,
-            Option<&LayerRow>,
             Option<&DockTab>,
             Option<&DockCloseButton>,
             Option<&DiagnosticsFilterButton>,
@@ -4072,7 +3701,6 @@ fn handle_buttons(
         entity,
         interaction,
         action,
-        layer_row,
         dock_tab,
         dock_close,
         diagnostics_filter,
@@ -4098,13 +3726,7 @@ fn handle_buttons(
             }
             Interaction::None => {
                 if feathers_action.is_none() {
-                    background.0 = if let Some(row) = layer_row {
-                        if row.0 == session.selected_layer_index() {
-                            theme::SELECTION
-                        } else {
-                            theme::PANEL_DARK
-                        }
-                    } else if let Some(tab) = dock_tab {
+                    background.0 = if let Some(tab) = dock_tab {
                         let active = layout.is_active(tab.0);
                         if active {
                             theme::PANEL
@@ -4167,8 +3789,6 @@ fn handle_buttons(
                     EditorAction::Undo => session.undo(),
                     EditorAction::Redo => session.redo(),
                     EditorAction::AddLayer => session.add_layer(),
-                    EditorAction::AddSpriteMaterial => session.add_sprite_material(),
-                    EditorAction::AddGridFlipbook => session.add_grid_flipbook(),
                     EditorAction::DuplicateLayer => {
                         session.duplicate_selected_layer();
                         workspace.complex = None;
@@ -4178,10 +3798,6 @@ fn handle_buttons(
                             reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                             workspace.complex = None;
                         }
-                    }
-                    EditorAction::SelectLayer(index) => {
-                        session.select_layer(index);
-                        workspace.complex = None;
                     }
                     EditorAction::ToggleInspectorSection(section) => {
                         if toggle_persisted_inspector_section(&session, &mut settings, section) {
@@ -4949,31 +4565,6 @@ fn update_history_actions(
         } else {
             commands.entity(entity).insert(InteractionDisabled);
         }
-    }
-}
-
-fn update_layer_selection(
-    session: Res<EditorSession>,
-    mut rows: Query<(&LayerRow, &mut BackgroundColor)>,
-) {
-    if !session.is_changed() {
-        return;
-    }
-    for (row, mut color) in &mut rows {
-        color.0 = if row.0 == session.selected_layer_index() {
-            theme::SELECTION
-        } else {
-            theme::PANEL_DARK
-        };
-    }
-}
-
-fn layer_color(index: usize) -> Color {
-    match index % 4 {
-        0 => Color::srgb(0.48, 0.31, 0.98),
-        1 => Color::srgb(0.17, 0.75, 0.95),
-        2 => Color::srgb(0.98, 0.47, 0.21),
-        _ => Color::srgb(0.84, 0.29, 0.72),
     }
 }
 
