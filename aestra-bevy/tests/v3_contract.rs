@@ -59,10 +59,16 @@ fn bundled_textured_effect_compiles_with_multiple_renderer_paths() {
 }
 
 #[test]
-fn format_v2_is_rejected_without_a_legacy_path() {
+fn strict_loading_reports_that_format_v2_requires_a_migration_path() {
     let source = V3_REFERENCE.replacen("format_version: 3", "format_version: 2", 1);
     let error = EffectAsset::from_ron(&source).expect_err("format v2 must be rejected");
-    assert!(matches!(error, AssetError::Validation(_)));
+    assert!(matches!(
+        error,
+        AssetError::UnsupportedFormat {
+            found: 2,
+            current: 3
+        }
+    ));
 }
 
 #[test]

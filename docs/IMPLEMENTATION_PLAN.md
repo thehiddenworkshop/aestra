@@ -65,12 +65,16 @@ architecture vision; this file is the shorter delivery plan.
   temporary transactions and commit one undoable command on release. M5 workflow now
   includes debounced atomic recovery snapshots, startup restore/discard,
   stale-snapshot cleanup, save/discard cleanup, and persisted autosave enablement and
-  interval controls. The
+  interval controls. Format loading now detects the authored version before full
+  deserialization and routes legacy v2 assets through an explicit typed v2→v3 migration.
+  The editor asks before replacement, preserves a uniquely named synchronized backup,
+  atomically writes the validated result, and leaves unsupported or failed migrations
+  untouched. The
   Assets, Timeline, Curves, Diagnostics, Compiler Inspector, Profiler, and Changes now use
   stable Fluent messages for editor-owned chrome, summaries, and empty states while
   retaining exact compiler payloads, semantic paths, IDs, asset paths, and authored names.
   Remaining M5 localization work is limited to incidental action/status messages exposed
-  while the shell decomposition continues.
+  as owning plugins evolve.
 - M6 renderer, material, and asset breadth: in progress. Renderers now reference stable,
   reusable material definitions instead of owning presentation state. The first sprite
   material domain compiles blend state, typed softness/tint inputs, explicit particle-color
@@ -430,7 +434,8 @@ RON, all mutations are undoable, and invalid operations produce targeted
 diagnostics without damaging the document.
 
 The blank-to-multi-emitter save/reload/compile portion of this gate is automated in
-`aestra-editor`; explicit asset migrations and the optional node-graph projection remain.
+`aestra-editor`. Typed, confirmed, backup-preserving v2→v3 asset migration is complete;
+the optional node-graph projection remains.
 
 Persistent settings slice:
 

@@ -2,13 +2,13 @@
 
 use crate::recovery::{RecoveryCandidate, RecoveryPersistence};
 use crate::*;
+use aestra_bevy::{EffectAssetLoad, EffectAssetMigration, EffectCompiler, prepare_effect_asset};
 use bevy::ui_widgets::Activate;
 use fluent_bundle::FluentArgs;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
-#[cfg(test)]
-use std::fs;
 use std::{
-    path::Path,
+    fs,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -61,6 +61,13 @@ enum PersistenceStatus {
     Opened(String),
     OpenCancelled,
     OpenFailed(String),
+    MigrationCancelled,
+    Migrated {
+        path: String,
+        backup: String,
+        from: u32,
+        to: u32,
+    },
     Saved(String),
     SaveCancelled,
     SaveFailed(String),
@@ -84,6 +91,20 @@ fn set_persistence_status(
 }
 
 fn localize_persistence_status(status: PersistenceStatus, localizer: &Localizer) -> String {
+    if let PersistenceStatus::Migrated {
+        path,
+        backup,
+        from,
+        to,
+    } = status
+    {
+        let mut args = FluentArgs::new();
+        args.set("path", path);
+        args.set("backup", backup);
+        args.set("from", i64::from(from));
+        args.set("to", i64::from(to));
+        return localizer.text_with("persistence-status-migrated", &args);
+    }
     let (message_id, argument) = match status {
         PersistenceStatus::CreatedUntitled => {
             return localizer.text("persistence-status-created-untitled");
@@ -97,6 +118,9 @@ fn localize_persistence_status(status: PersistenceStatus, localizer: &Localizer)
         }
         PersistenceStatus::OpenFailed(error) => {
             ("persistence-status-open-failed", ("error", error))
+        }
+        PersistenceStatus::MigrationCancelled => {
+            return localizer.text("persistence-status-migration-cancelled");
         }
         PersistenceStatus::Saved(path) => ("persistence-status-saved", ("path", path)),
         PersistenceStatus::SaveCancelled => {
@@ -134,6 +158,7 @@ fn localize_persistence_status(status: PersistenceStatus, localizer: &Localizer)
         PersistenceStatus::SettingsDiagnostic(detail) => {
             ("persistence-status-settings-diagnostic", ("detail", detail))
         }
+        PersistenceStatus::Migrated { .. } => unreachable!("handled above"),
     };
     let mut args = FluentArgs::new();
     args.set(argument.0, argument.1);
@@ -290,21 +315,7 @@ fn execute_document_action(
         DocumentAction::OpenCatalog(index) => {
             if confirm_discard(&session, &settings, &localizer) {
                 if let Some(path) = catalog.path(index) {
-                    match session.open(path) {
-                        Ok(()) => {
-                            session.playing = settings.preview.play_on_open;
-                            set_persistence_status(
-                                &mut session,
-                                &localizer,
-                                PersistenceStatus::Opened(path.display().to_string()),
-                            );
-                        }
-                        Err(error) => set_persistence_status(
-                            &mut session,
-                            &localizer,
-                            PersistenceStatus::OpenFailed(error.to_string()),
-                        ),
-                    }
+                    open_effect_path(&mut session, path, &settings, &localizer);
                 }
                 workspace.clear();
             } else {
@@ -524,20 +535,132 @@ fn open_effect_dialog(
         set_persistence_status(session, localizer, PersistenceStatus::OpenCancelled);
         return;
     };
-    match session.open(&path) {
-        Ok(()) => {
-            session.playing = settings.preview.play_on_open;
-            set_persistence_status(
+    open_effect_path(session, &path, settings, localizer);
+}
+
+fn open_effect_path(
+    session: &mut EditorSession,
+    path: &Path,
+    settings: &EditorSettings,
+    localizer: &Localizer,
+) {
+    let result = fs::read_to_string(path)
+        .map_err(|error| error.to_string())
+        .and_then(|source| prepare_effect_asset(&source).map_err(|error| error.to_string()));
+    match result {
+        Ok(EffectAssetLoad::Current(_)) => match session.open(path) {
+            Ok(()) => {
+                session.playing = settings.preview.play_on_open;
+                set_persistence_status(
+                    session,
+                    localizer,
+                    PersistenceStatus::Opened(path.display().to_string()),
+                );
+            }
+            Err(error) => set_persistence_status(
                 session,
                 localizer,
-                PersistenceStatus::Opened(path.display().to_string()),
+                PersistenceStatus::OpenFailed(error.to_string()),
+            ),
+        },
+        Ok(EffectAssetLoad::MigrationRequired(migration)) => {
+            if !confirm_asset_migration(path, &migration, localizer) {
+                set_persistence_status(session, localizer, PersistenceStatus::MigrationCancelled);
+                return;
+            }
+            match persist_asset_migration(path, &migration) {
+                Ok(backup) => match session.open(path) {
+                    Ok(()) => {
+                        session.playing = settings.preview.play_on_open;
+                        set_persistence_status(
+                            session,
+                            localizer,
+                            PersistenceStatus::Migrated {
+                                path: path.display().to_string(),
+                                backup: backup.display().to_string(),
+                                from: migration.source_version,
+                                to: migration.target_version,
+                            },
+                        );
+                    }
+                    Err(error) => set_persistence_status(
+                        session,
+                        localizer,
+                        PersistenceStatus::OpenFailed(error.to_string()),
+                    ),
+                },
+                Err(error) => {
+                    set_persistence_status(session, localizer, PersistenceStatus::OpenFailed(error))
+                }
+            }
+        }
+        Err(error) => {
+            set_persistence_status(session, localizer, PersistenceStatus::OpenFailed(error))
+        }
+    }
+}
+
+fn confirm_asset_migration(
+    path: &Path,
+    migration: &EffectAssetMigration,
+    localizer: &Localizer,
+) -> bool {
+    let mut args = FluentArgs::new();
+    args.set("path", path.display().to_string());
+    args.set("from", i64::from(migration.source_version));
+    args.set("to", i64::from(migration.target_version));
+    matches!(
+        MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title(localizer.text("persistence-dialog-migration-title"))
+            .set_description(
+                localizer.text_with("persistence-dialog-migration-description", &args),
+            )
+            .set_buttons(MessageButtons::YesNo)
+            .show(),
+        MessageDialogResult::Yes
+    )
+}
+
+fn persist_asset_migration(
+    path: &Path,
+    migration: &EffectAssetMigration,
+) -> Result<PathBuf, String> {
+    EffectCompiler::default()
+        .compile(&migration.asset)
+        .map_err(|error| format!("migrated effect does not compile: {error}"))?;
+    let backup = unique_migration_backup(path, migration.source_version);
+    fs::copy(path, &backup)
+        .and_then(|_| fs::OpenOptions::new().write(true).open(&backup)?.sync_all())
+        .map_err(|error| format!("could not back up the original effect: {error}"))?;
+    if let Err(error) = migration.asset.save_ron(path) {
+        if let Err(cleanup_error) = fs::remove_file(&backup) {
+            warn!(
+                "failed to remove unused migration backup after replacement failure: {cleanup_error}"
             );
         }
-        Err(error) => set_persistence_status(
-            session,
-            localizer,
-            PersistenceStatus::OpenFailed(error.to_string()),
-        ),
+        return Err(format!(
+            "could not replace the effect after backup: {error}"
+        ));
+    }
+    Ok(backup)
+}
+
+fn unique_migration_backup(path: &Path, source_version: u32) -> PathBuf {
+    let mut index = 0_u32;
+    loop {
+        let suffix = if index == 0 {
+            format!("v{source_version}.backup")
+        } else {
+            format!("v{source_version}.backup-{index}")
+        };
+        let mut name = path.as_os_str().to_os_string();
+        name.push(format!(".{suffix}"));
+        let candidate = PathBuf::from(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+        index += 1;
     }
 }
 
@@ -685,6 +808,18 @@ mod tests {
         );
         assert!(failed.starts_with("Save failed: "));
         assert!(failed.contains("access denied"));
+        let migrated = localize_persistence_status(
+            PersistenceStatus::Migrated {
+                path: "spark.aestra.ron".into(),
+                backup: "spark.aestra.ron.v2.backup".into(),
+                from: 2,
+                to: 3,
+            },
+            &english,
+        );
+        assert!(migrated.contains("spark.aestra.ron"));
+        assert!(migrated.contains("Migrated "));
+        assert!(migrated.contains("spark.aestra.ron.v2.backup"));
 
         let french = Localizer::new("fr-FR").unwrap();
         assert_eq!(
@@ -835,5 +970,81 @@ mod tests {
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
         assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+    }
+
+    #[test]
+    fn migration_preserves_the_original_and_atomically_replaces_the_effect() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("legacy.aestra.ron");
+        let original = "legacy format source";
+        fs::write(&path, original).unwrap();
+        let asset = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let migration = EffectAssetMigration {
+            source_version: 2,
+            target_version: 3,
+            asset: asset.clone(),
+        };
+
+        let backup = persist_asset_migration(&path, &migration).unwrap();
+
+        assert_eq!(fs::read_to_string(&backup).unwrap(), original);
+        assert_eq!(EffectAsset::load_ron(&path).unwrap(), asset);
+        assert_eq!(
+            backup.file_name().unwrap().to_string_lossy(),
+            "legacy.aestra.ron.v2.backup"
+        );
+    }
+
+    #[test]
+    fn failed_migration_leaves_the_source_untouched() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("legacy.aestra.ron");
+        let original = "legacy format source";
+        fs::write(&path, original).unwrap();
+        let mut asset = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        asset.duration = 0.0;
+        let migration = EffectAssetMigration {
+            source_version: 2,
+            target_version: 3,
+            asset,
+        };
+
+        assert!(persist_asset_migration(&path, &migration).is_err());
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        assert!(
+            !temporary
+                .path()
+                .join("legacy.aestra.ron.v2.backup")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn migration_backups_never_overwrite_an_existing_backup() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("legacy.aestra.ron");
+        fs::write(&path, "legacy format source").unwrap();
+        fs::write(
+            temporary.path().join("legacy.aestra.ron.v2.backup"),
+            "older backup",
+        )
+        .unwrap();
+        let migration = EffectAssetMigration {
+            source_version: 2,
+            target_version: 3,
+            asset: EffectAsset::from_ron(EFFECT_SOURCE).unwrap(),
+        };
+
+        let backup = persist_asset_migration(&path, &migration).unwrap();
+
+        assert_eq!(
+            backup.file_name().unwrap().to_string_lossy(),
+            "legacy.aestra.ron.v2.backup-1"
+        );
+        assert_eq!(
+            fs::read_to_string(temporary.path().join("legacy.aestra.ron.v2.backup")).unwrap(),
+            "older backup"
+        );
     }
 }

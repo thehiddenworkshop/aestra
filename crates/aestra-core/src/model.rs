@@ -363,6 +363,13 @@ impl EffectAsset {
     }
 
     pub fn from_ron(source: &str) -> Result<Self, AssetError> {
+        let found = crate::detect_effect_format(source)?;
+        if found != crate::CURRENT_FORMAT_VERSION {
+            return Err(AssetError::UnsupportedFormat {
+                found,
+                current: crate::CURRENT_FORMAT_VERSION,
+            });
+        }
         let asset: Self = ron::from_str(source)?;
         asset.validate()?;
         Ok(asset)
@@ -1792,6 +1799,10 @@ pub enum AssetError {
     Parse(#[from] ron::error::SpannedError),
     #[error("could not serialize the effect asset: {0}")]
     Serialize(#[from] ron::Error),
+    #[error("effect format version {found} is unsupported; expected {current}")]
+    UnsupportedFormat { found: u32, current: u32 },
+    #[error("could not migrate effect format {from} to {to}: {message}")]
+    Migration { from: u32, to: u32, message: String },
     #[error("effect validation failed: {0}")]
     Validation(#[from] ValidationReport),
 }
