@@ -241,6 +241,8 @@ assets-flipbook-summary = Flipbook · { $frames } frames · { $fps } FPS
 assets-layers = LAYERS
 assets-active = { $count } ACTIVE
 assets-add-emitter = + Add Emitter
+assets-status-minimum-emitter = An effect must keep at least one emitter
+assets-change-delete-emitter = Delete emitter
 
 timeline-frame-all = All
 timeline-snap-off = Snap: Off

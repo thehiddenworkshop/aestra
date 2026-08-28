@@ -256,6 +256,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "assets-layers",
     "assets-active",
     "assets-add-emitter",
+    "assets-status-minimum-emitter",
+    "assets-change-delete-emitter",
     "timeline-frame-all",
     "timeline-snap-off",
     "timeline-snap-frames",

@@ -33,7 +33,7 @@ use aestra_bevy::{
     ModuleParameters, RendererId, RendererProperties, StageKind, Value,
 };
 use aestra_compiler::ModuleMetadata;
-use assets::{AssetsSet, EditorAssetsPlugin};
+use assets::{AssetsAction, AssetsSet, EditorAssetsPlugin};
 pub(crate) use assets::{EffectCatalog, layer_color, spawn_asset_browser};
 #[cfg(test)]
 use bevy::ui_widgets::Activate;
@@ -216,7 +216,7 @@ fn main() {
         .configure_sets(
             Update,
             (
-                (TransportSet::Input, HistorySet::Input).chain(),
+                (AssetsSet::Input, TransportSet::Input, HistorySet::Input).chain(),
                 TimelineSet::Input,
                 InspectorSet::Input,
                 DockingSet::Input,
@@ -264,9 +264,6 @@ fn main() {
 
 #[derive(Component, Clone, Copy)]
 enum EditorAction {
-    AddLayer,
-    DuplicateLayer,
-    DeleteLayer,
     EffectDuration(f32),
     SetTimelineSnap(TimelineSnapMode),
     FrameTimeline,
@@ -609,11 +606,9 @@ fn keyboard_shortcuts(
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     palette: Res<ModulePaletteState>,
-    workspace_resources: (ResMut<CurvesState>, ResMut<WorkspaceLayout>),
     settings_resources: (ResMut<EditorSettings>, ResMut<SettingsPersistence>),
     localizer: Res<Localizer>,
 ) {
-    let (mut workspace, mut layout) = workspace_resources;
     let (mut settings, mut settings_persistence) = settings_resources;
     if palette.open {
         return;
@@ -642,16 +637,6 @@ fn keyboard_shortcuts(
         } else {
             DocumentAction::Save
         });
-    }
-    if control && keys.just_pressed(KeyCode::KeyD) {
-        session.duplicate_selected_layer();
-    }
-    if control && keys.just_pressed(KeyCode::Enter) {
-        session.add_layer();
-    }
-    if keys.just_pressed(KeyCode::Delete) && preview_selected_layer_deletion(&mut session) {
-        reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
-        workspace.clear();
     }
     if keys.just_pressed(KeyCode::KeyG) && !control {
         menu.show_grid = !menu.show_grid;
@@ -687,8 +672,6 @@ fn handle_buttons(
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     editor_resources: (
-        ResMut<CurvesState>,
-        ResMut<WorkspaceLayout>,
         ResMut<EditorSettings>,
         ResMut<SettingsPersistence>,
         ResMut<PreviewCameraController>,
@@ -698,14 +681,8 @@ fn handle_buttons(
     mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
     localizer: Res<Localizer>,
 ) {
-    let (
-        mut workspace,
-        mut layout,
-        mut settings,
-        mut settings_persistence,
-        mut preview_camera,
-        mut preview_display,
-    ) = editor_resources;
+    let (mut settings, mut settings_persistence, mut preview_camera, mut preview_display) =
+        editor_resources;
     for (
         entity,
         interaction,
@@ -751,17 +728,6 @@ fn handle_buttons(
                     session.ui_revision += 1;
                 }
                 match *action {
-                    EditorAction::AddLayer => session.add_layer(),
-                    EditorAction::DuplicateLayer => {
-                        session.duplicate_selected_layer();
-                        workspace.clear();
-                    }
-                    EditorAction::DeleteLayer => {
-                        if preview_selected_layer_deletion(&mut session) {
-                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
-                            workspace.clear();
-                        }
-                    }
                     EditorAction::EffectDuration(delta) => {
                         session.adjust_effect_duration(delta);
                     }
@@ -812,18 +778,6 @@ pub(crate) fn reveal_dock_panel(
     if let Err(error) = layout.save() {
         warn!("failed to save editor workspace layout: {error}");
     }
-}
-
-fn preview_selected_layer_deletion(session: &mut EditorSession) -> bool {
-    if session.effect.emitters.len() <= 1 {
-        session.status = "An effect must keep at least one layer".into();
-        return false;
-    }
-    let id = session.selected_layer().id;
-    session.preview_transaction(EffectTransaction::single(
-        "Delete emitter layer",
-        EffectCommand::RemoveEmitter { id },
-    ))
 }
 
 fn rebuild_editor_ui(

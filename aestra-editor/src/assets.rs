@@ -8,6 +8,7 @@ pub(crate) struct EditorAssetsPlugin;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum AssetsSet {
+    Input,
     Actions,
     Sync,
 }
@@ -16,9 +17,13 @@ impl Plugin for EditorAssetsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(EffectCatalog::scan())
             .add_observer(queue_asset_action_activation)
+            .add_observer(execute_assets_action)
             .add_systems(
                 Update,
-                handle_asset_action_buttons.in_set(AssetsSet::Actions),
+                (
+                    assets_keyboard_input.in_set(AssetsSet::Input),
+                    handle_asset_action_buttons.in_set(AssetsSet::Actions),
+                ),
             )
             .add_systems(Update, update_layer_selection.in_set(AssetsSet::Sync));
     }
@@ -59,10 +64,13 @@ impl EffectCatalog {
     }
 }
 
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-enum AssetsAction {
+#[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AssetsAction {
     AddSpriteMaterial,
     AddGridFlipbook,
+    AddEmitter,
+    DuplicateEmitter,
+    DeleteEmitter,
     SelectLayer(usize),
 }
 
@@ -324,7 +332,7 @@ pub(crate) fn spawn_asset_browser(
             asset_toolbar_button(
                 panel,
                 &localizer.text("assets-add-emitter"),
-                EditorAction::AddLayer,
+                AssetsAction::AddEmitter,
             );
             for (index, layer) in session.effect.emitters.iter().enumerate() {
                 let selected = index == session.selected_layer_index();
@@ -426,8 +434,8 @@ fn handle_asset_action_buttons(
             Or<(With<Button>, With<FeathersActionButton>)>,
         ),
     >,
+    mut menu: ResMut<MenuState>,
     mut session: ResMut<EditorSession>,
-    mut workspace: ResMut<CurvesState>,
 ) {
     for (entity, interaction, action, feathers, pending, mut background) in &mut interactions {
         match *interaction {
@@ -445,18 +453,79 @@ fn handle_asset_action_buttons(
                 } else {
                     background.0 = theme::ACCENT_DIM;
                 }
-                match *action {
-                    AssetsAction::AddSpriteMaterial => session.add_sprite_material(),
-                    AssetsAction::AddGridFlipbook => session.add_grid_flipbook(),
-                    AssetsAction::SelectLayer(index) => {
-                        session.select_layer(index);
-                        workspace.clear();
-                    }
+                menu.open = None;
+                menu.panels_open = false;
+                if menu.tab_context.take().is_some() {
+                    session.ui_revision += 1;
                 }
+                commands.trigger(*action);
             }
             _ => {}
         }
     }
+}
+
+fn execute_assets_action(
+    action: On<AssetsAction>,
+    mut session: ResMut<EditorSession>,
+    mut curves: ResMut<CurvesState>,
+    mut layout: ResMut<WorkspaceLayout>,
+    localizer: Res<Localizer>,
+) {
+    match *action {
+        AssetsAction::AddSpriteMaterial => session.add_sprite_material(),
+        AssetsAction::AddGridFlipbook => session.add_grid_flipbook(),
+        AssetsAction::AddEmitter => {
+            session.add_layer();
+            curves.clear();
+        }
+        AssetsAction::DuplicateEmitter => {
+            session.duplicate_selected_layer();
+            curves.clear();
+        }
+        AssetsAction::DeleteEmitter => {
+            if preview_selected_emitter_deletion(&mut session, &localizer) {
+                reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
+                curves.clear();
+            }
+        }
+        AssetsAction::SelectLayer(index) => {
+            session.select_layer(index);
+            curves.clear();
+        }
+    }
+}
+
+fn assets_keyboard_input(
+    mut commands: Commands,
+    keys: Res<ButtonInput<KeyCode>>,
+    palette: Res<ModulePaletteState>,
+) {
+    if palette.open {
+        return;
+    }
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    if control && keys.just_pressed(KeyCode::Enter) {
+        commands.trigger(AssetsAction::AddEmitter);
+    }
+    if control && keys.just_pressed(KeyCode::KeyD) {
+        commands.trigger(AssetsAction::DuplicateEmitter);
+    }
+    if keys.just_pressed(KeyCode::Delete) {
+        commands.trigger(AssetsAction::DeleteEmitter);
+    }
+}
+
+fn preview_selected_emitter_deletion(session: &mut EditorSession, localizer: &Localizer) -> bool {
+    if session.effect.emitters.len() <= 1 {
+        session.status = localizer.text("assets-status-minimum-emitter");
+        return false;
+    }
+    let id = session.selected_layer().id;
+    session.preview_transaction(EffectTransaction::single(
+        localizer.text("assets-change-delete-emitter"),
+        EffectCommand::RemoveEmitter { id },
+    ))
 }
 
 fn update_layer_selection(
@@ -488,14 +557,24 @@ pub(crate) fn layer_color(index: usize) -> Color {
 mod tests {
     use super::*;
 
+    fn app_with_session(session: EditorSession) -> App {
+        let mut app = App::new();
+        app.insert_resource(session)
+            .init_resource::<CurvesState>()
+            .init_resource::<WorkspaceLayout>()
+            .init_resource::<MenuState>()
+            .init_resource::<ModulePaletteState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .insert_resource(Localizer::new("en-US").expect("test locale should load"))
+            .add_plugins(EditorAssetsPlugin);
+        app
+    }
+
     #[test]
     fn assets_plugin_owns_catalog_and_panel_actions() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let initial_materials = session.effect.materials.len();
-        let mut app = App::new();
-        app.insert_resource(session)
-            .init_resource::<CurvesState>()
-            .add_plugins(EditorAssetsPlugin);
+        let mut app = app_with_session(session);
         let control = app
             .world_mut()
             .spawn((
@@ -530,14 +609,12 @@ mod tests {
     fn selecting_a_layer_clears_the_curve_workspace_selection() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         session.select_layer(0);
-        let mut app = App::new();
-        app.insert_resource(session)
-            .insert_resource({
-                let mut state = CurvesState::default();
-                state.select_for_test(ModuleId::new(), 0, 0);
-                state
-            })
-            .add_plugins(EditorAssetsPlugin);
+        let mut app = app_with_session(session);
+        app.insert_resource({
+            let mut state = CurvesState::default();
+            state.select_for_test(ModuleId::new(), 0, 0);
+            state
+        });
         app.world_mut().spawn((
             Button,
             Interaction::Pressed,
@@ -554,5 +631,94 @@ mod tests {
             1
         );
         assert!(!app.world().resource::<CurvesState>().has_selection());
+    }
+
+    #[test]
+    fn emitter_actions_add_and_duplicate_through_one_contract() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let initial_emitters = session.effect.emitters.len();
+        let mut app = app_with_session(session);
+
+        app.world_mut().trigger(AssetsAction::AddEmitter);
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .effect
+                .emitters
+                .len(),
+            initial_emitters + 1
+        );
+
+        app.world_mut().trigger(AssetsAction::DuplicateEmitter);
+        app.update();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.emitters.len(), initial_emitters + 2);
+        assert!(session.can_undo());
+    }
+
+    #[test]
+    fn delete_emitter_action_opens_a_review_and_clears_curves() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut app = app_with_session(session);
+        assert!(
+            app.world_mut()
+                .resource_mut::<WorkspaceLayout>()
+                .show(DockPanel::Changes)
+        );
+        app.insert_resource({
+            let mut state = CurvesState::default();
+            state.select_for_test(ModuleId::new(), 0, 0);
+            state
+        });
+
+        app.world_mut().trigger(AssetsAction::DeleteEmitter);
+        app.update();
+
+        assert!(
+            app.world()
+                .resource::<EditorSession>()
+                .pending_change
+                .is_some()
+        );
+        assert!(!app.world().resource::<CurvesState>().has_selection());
+    }
+
+    #[test]
+    fn delete_emitter_action_protects_the_last_emitter() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.emitters.truncate(1);
+        let mut app = app_with_session(session);
+
+        app.world_mut().trigger(AssetsAction::DeleteEmitter);
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.emitters.len(), 1);
+        assert!(session.pending_change.is_none());
+        assert_eq!(session.status, "An effect must keep at least one emitter");
+    }
+
+    #[test]
+    fn emitter_shortcuts_route_through_the_assets_action_contract() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let initial_emitters = session.effect.emitters.len();
+        let mut app = app_with_session(session);
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ControlLeft);
+            keys.press(KeyCode::Enter);
+        }
+
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .effect
+                .emitters
+                .len(),
+            initial_emitters + 1
+        );
     }
 }

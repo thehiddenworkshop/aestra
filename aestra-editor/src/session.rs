@@ -687,6 +687,11 @@ impl EditorSession {
         let index = self.effect.emitters.len();
         let mut emitter = default_layer(index);
         emitter.duration = self.effect.duration;
+        if let (Some(renderer), Some(material)) =
+            (emitter.renderers.first_mut(), self.effect.materials.first())
+        {
+            renderer.material = material.id;
+        }
         let id = emitter.id;
         if self.execute(
             "Added emitter layer",

@@ -135,9 +135,10 @@ Complete this milestone before expanding the editor or renderer feature surface 
    cleanup now run through `EditorPersistencePlugin` and a shared `DocumentAction`
    contract used by menus, keyboard shortcuts, and project-effect rows.
    Project-effect discovery, Assets workspace construction, material and flipbook creation,
-   semantic layer selection, and selection styling now run through `EditorAssetsPlugin`;
-   catalog rows still emit `DocumentAction` so the Assets plugin cannot bypass persistence
-   safeguards.
+   semantic layer selection, emitter creation/duplication/reviewed deletion, related keyboard
+   shortcuts, and selection styling now run through `EditorAssetsPlugin`. Assets-panel and
+   Edit-menu controls share one `AssetsAction` contract; catalog rows still emit
+   `DocumentAction` so the Assets plugin cannot bypass persistence safeguards.
    The Curves workspace, curve/gradient selection, Inspector navigation contract, graph
    interaction, and key controls now run through `EditorCurvesPlugin`. Its actions retain
    the existing semantic command path, including one-history-entry key edits and undo/redo.

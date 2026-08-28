@@ -241,6 +241,8 @@ assets-flipbook-summary = Flipbook · { $frames } images · { $fps } IPS
 assets-layers = CALQUES
 assets-active = { $count } ACTIFS
 assets-add-emitter = + Ajouter un émetteur
+assets-status-minimum-emitter = Un effet doit conserver au moins un émetteur
+assets-change-delete-emitter = Supprimer l’émetteur
 
 timeline-frame-all = Tout afficher
 timeline-snap-off = Magnétisme : désactivé
