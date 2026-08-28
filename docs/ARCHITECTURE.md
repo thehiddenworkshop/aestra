@@ -130,19 +130,21 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   with stable semantic message IDs, an embedded complete English fallback, live locale
   switching, and the selected locale persisted in editor settings. Diagnostics retain
   exact compiler detail and semantic paths while localizing workspace chrome, severity,
-  stable diagnostic-code titles, Assets, Timeline, Curves, Generated Code, Profiler, and
+  stable diagnostic-code titles, Assets, Timeline, Curves, Compiler Inspector, Profiler, and
   Changes presentation. Asset-authored names, paths, IDs, and generated instructions
   remain locale-independent.
 - Runs validation presentation through `EditorDiagnosticsPlugin`. The plugin owns the
   dockable Diagnostics workspace, severity filtering, semantic-path navigation, and
   the persistent compile-health footer action. Compiler validation remains an
   `EditorSession` responsibility, so presentation cannot mutate or replace reports.
-- Projects the immutable compiler artifact into a dockable Generated Code workspace:
-  execution stages, source-mapped instructions, particle layout, runtime parameter
+- Runs advanced compiler-artifact presentation through `EditorCompilerInspectorPlugin`.
+  The dockable Compiler Inspector is hidden from the default workspace but remains
+  available from View, and saved `GeneratedCode` layout entries migrate without losing
+  their placement. It presents execution stages, source-mapped instructions, particle layout, runtime parameter
   slots, renderer plans, optimization statistics, and the WESL backend entry points.
   Compiled rows navigate back to their semantic emitter, module, renderer, or parameter.
 - Uses one native Bevy scroll-area with a BSN-backed Feathers scrollbar across Inspector, Diagnostics,
-  Generated Code, Profiler, Changes, and curve lists. Scrollbars only participate in
+  Compiler Inspector, Profiler, Changes, and curve lists. Scrollbars only participate in
   layout while their content overflows. Semantic Inspector anchors support exact
   scroll-to-source navigation from compiled instructions with a transient highlight
   that fades back to the normal or diagnostic border.

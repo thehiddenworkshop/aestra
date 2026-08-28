@@ -381,8 +381,8 @@ fn spawn_panel_content(
                 sources.localizer,
             );
         }
-        DockPanel::GeneratedCode => {
-            spawn_generated_code_workspace(parent, sources.session, sources.localizer)
+        DockPanel::CompilerInspector => {
+            spawn_compiler_inspector_workspace(parent, sources.session, sources.localizer)
         }
         DockPanel::Profiler => {
             spawn_profiler_workspace(parent, sources.session, sources.profiler, sources.localizer)

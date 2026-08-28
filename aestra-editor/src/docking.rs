@@ -156,7 +156,8 @@ pub(crate) enum DockPanel {
     Timeline,
     Curves,
     Diagnostics,
-    GeneratedCode,
+    #[serde(alias = "GeneratedCode")]
+    CompilerInspector,
     Profiler,
     Changes,
     Settings,
@@ -170,7 +171,7 @@ impl DockPanel {
         Self::Timeline,
         Self::Curves,
         Self::Diagnostics,
-        Self::GeneratedCode,
+        Self::CompilerInspector,
         Self::Profiler,
         Self::Changes,
         Self::Settings,
@@ -184,7 +185,7 @@ impl DockPanel {
             Self::Timeline => "TIMELINE",
             Self::Curves => "CURVES",
             Self::Diagnostics => "DIAGNOSTICS",
-            Self::GeneratedCode => "GENERATED CODE",
+            Self::CompilerInspector => "COMPILER INSPECTOR",
             Self::Profiler => "PROFILER",
             Self::Changes => "CHANGES",
             Self::Settings => "SETTINGS",
@@ -199,7 +200,7 @@ impl DockPanel {
             Self::Timeline => "panel-timeline",
             Self::Curves => "panel-curves",
             Self::Diagnostics => "panel-diagnostics",
-            Self::GeneratedCode => "panel-generated-code",
+            Self::CompilerInspector => "panel-compiler-inspector",
             Self::Profiler => "panel-profiler",
             Self::Changes => "panel-changes",
             Self::Settings => "panel-settings",
@@ -452,7 +453,6 @@ impl Default for WorkspaceLayout {
                 DockPanel::Timeline,
                 DockPanel::Curves,
                 DockPanel::Diagnostics,
-                DockPanel::GeneratedCode,
                 DockPanel::Profiler,
                 DockPanel::Changes,
             ],
@@ -620,7 +620,7 @@ impl WorkspaceLayout {
             DockPanel::Timeline,
             DockPanel::Curves,
             DockPanel::Diagnostics,
-            DockPanel::GeneratedCode,
+            DockPanel::CompilerInspector,
             DockPanel::Profiler,
             DockPanel::Changes,
         ];
@@ -794,7 +794,7 @@ fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2]
         DockPanel::Timeline
         | DockPanel::Curves
         | DockPanel::Diagnostics
-        | DockPanel::GeneratedCode
+        | DockPanel::CompilerInspector
         | DockPanel::Profiler
         | DockPanel::Changes => [720.0, 320.0],
         DockPanel::Assets | DockPanel::Inspector => [420.0, 520.0],
@@ -891,6 +891,18 @@ mod tests {
     }
 
     #[test]
+    fn legacy_generated_code_panel_name_migrates_to_compiler_inspector() {
+        assert_eq!(
+            ron::from_str::<DockPanel>("GeneratedCode").unwrap(),
+            DockPanel::CompilerInspector
+        );
+        assert_eq!(
+            ron::to_string(&DockPanel::CompilerInspector).unwrap(),
+            "CompilerInspector"
+        );
+    }
+
+    #[test]
     fn center_drop_builds_a_tab_stack() {
         let mut layout = WorkspaceLayout::default();
         let target = layout.root.node_containing(DockPanel::Inspector).unwrap();
@@ -944,7 +956,6 @@ mod tests {
                 DockPanel::Timeline,
                 DockPanel::Curves,
                 DockPanel::Diagnostics,
-                DockPanel::GeneratedCode,
                 DockPanel::Profiler,
             ]
         );
@@ -972,20 +983,16 @@ mod tests {
     }
 
     #[test]
-    fn generated_code_restores_to_the_bottom_tab_stack() {
+    fn compiler_inspector_is_advanced_and_restores_to_the_bottom_tab_stack() {
         let mut layout = WorkspaceLayout::default();
         let bottom = layout.root.node_containing(DockPanel::Timeline).unwrap();
+        assert!(!layout.is_visible(DockPanel::CompilerInspector));
+        assert!(layout.show(DockPanel::CompilerInspector));
         assert_eq!(
-            layout.root.node_containing(DockPanel::GeneratedCode),
+            layout.root.node_containing(DockPanel::CompilerInspector),
             Some(bottom)
         );
-        assert!(layout.close(DockPanel::GeneratedCode));
-        assert!(layout.show(DockPanel::GeneratedCode));
-        assert_eq!(
-            layout.root.node_containing(DockPanel::GeneratedCode),
-            Some(bottom)
-        );
-        assert!(layout.is_active(DockPanel::GeneratedCode));
+        assert!(layout.is_active(DockPanel::CompilerInspector));
     }
 
     #[test]

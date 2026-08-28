@@ -38,7 +38,7 @@ architecture vision; this file is the shorter delivery plan.
   context action, enabling multi-monitor layouts. Structured diagnostics now have a
   dedicated severity-filtered dock panel with navigation to owning semantic objects,
   a persistent compile-state footer shortcut, and panel visibility controls under View.
-  The live compiler artifact is now exposed through a source-mapped Generated Code
+  The live compiler artifact is now exposed through a source-mapped Compiler Inspector
   panel covering execution stages, particle layout, parameter slots, renderer plans,
   optimizations, and WESL entry points. A dockable Profiler now consumes public,
   machine-readable runtime snapshots with measured CPU/live-particle data, rolling
@@ -62,7 +62,7 @@ architecture vision; this file is the shorter delivery plan.
   includes debounced atomic recovery snapshots, startup restore/discard,
   stale-snapshot cleanup, save/discard cleanup, and persisted autosave enablement and
   interval controls. The
-  Assets, Timeline, Curves, Diagnostics, Generated Code, Profiler, and Changes now use
+  Assets, Timeline, Curves, Diagnostics, Compiler Inspector, Profiler, and Changes now use
   stable Fluent messages for editor-owned chrome, summaries, and empty states while
   retaining exact compiler payloads, semantic paths, IDs, asset paths, and authored names.
   Remaining M5 localization work is limited to incidental action/status messages exposed
@@ -140,13 +140,16 @@ Complete this milestone before expanding the editor or renderer feature surface 
    The Diagnostics workspace, filter state, semantic-source navigation, compile-status
    synchronization, and footer entry point now run through `EditorDiagnosticsPlugin`;
    validation and compilation remain owned by `EditorSession`.
+   The advanced Compiler Inspector, artifact formatting, and semantic navigation now run
+   through `EditorCompilerInspectorPlugin`. New layouts keep it hidden, while a Serde
+   alias preserves the placement of legacy `GeneratedCode` tabs.
    `EditorLocalizationPlugin` now owns Fluent resource setup and live generic-text
    synchronization. All primary deep workspaces use complete `en-US` and `fr-FR`
    messages for editor-owned presentation; technical compiler detail, generated
    instructions, semantic paths, IDs, file paths, and asset-authored names remain
    unchanged. This keeps `main.rs` focused on composition and startup wiring. Next extract
-   Generated Code and Profiler behind explicit workspace action contracts, then migrate
-   incidental action/status messages.
+   Profiler behind an explicit runtime-sample ingestion contract, then migrate incidental
+   action/status messages.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.
@@ -370,7 +373,7 @@ Deliver:
 
 - effect hierarchy and searchable module stack;
 - properties generated from module metadata;
-- timeline, curve, diagnostics, generated-code, and profiler tabs;
+- timeline, curve, diagnostics, compiler-inspector, and profiler tabs;
 - node graph as an optional projection for dataflow-heavy authoring;
 - preview transaction, semantic diff, accept/reject, and undo;
 - semantic viewport selection and gizmos that submit normal commands;
@@ -411,7 +414,7 @@ Localization slice:
    interpolation, and coverage of every registered editor command and panel title.
 
 The Fluent runtime, English fallback, French catalog, live persisted switching, shell,
-Inspector, Assets, Timeline, Curves, Diagnostics, Generated Code, Profiler, and Changes
+Inspector, Assets, Timeline, Curves, Diagnostics, Compiler Inspector, Profiler, and Changes
 coverage are complete. Incidental action/status messages migrate alongside their owning
 plugins; user-authored names, file paths, semantic IDs, and generated code stay
 untranslated.

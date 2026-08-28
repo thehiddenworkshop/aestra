@@ -83,7 +83,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "panel-timeline",
     "panel-curves",
     "panel-diagnostics",
-    "panel-generated-code",
+    "panel-compiler-inspector",
     "panel-profiler",
     "panel-changes",
     "panel-settings",
