@@ -151,6 +151,9 @@ Complete this milestone before expanding the editor or renderer feature surface 
    and UI synchronization now run through `EditorProfilerPlugin`. Viewport evaluation
    submits a borrowed `ProfilerFrameSample`, keeping the boundary explicit without cloning
    compiled effects or particle buffers.
+   Pending transaction review now runs through `EditorChangesPlugin`. The plugin owns the
+   Changes workspace, apply/discard actions, and navigation from semantic diff rows back to
+   live Inspector targets, while `EditorSession` remains the transaction and history owner.
    Panel selection, visibility, floating, and workspace reset commands now use the
    `DockingAction` contract owned by `DockingPlugin`; tab, context-menu, View-menu, drag/drop,
    reorder, and floating-window outcomes use localized panel names and status messages.

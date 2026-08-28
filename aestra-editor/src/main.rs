@@ -3,6 +3,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 mod assets;
+mod changes;
 mod compiler_inspector;
 mod curves;
 mod diagnostics;
@@ -22,7 +23,7 @@ mod theme;
 mod timeline;
 mod viewport;
 
-use aestra_authoring::{ChangeKind, EffectCommand, EffectTransaction, SemanticTarget};
+use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
     AestraPlugin, BlendMode, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterId,
     EmitterShape, EmitterTransform, EventId, EventTrigger, FlipbookPlaybackMode,
@@ -59,6 +60,8 @@ use bevy::{
         WindowMoved, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
     },
 };
+pub(crate) use changes::spawn_changes_workspace;
+use changes::{ChangesSet, EditorChangesPlugin};
 pub(crate) use compiler_inspector::spawn_compiler_inspector_workspace;
 use compiler_inspector::{CompilerInspectorSet, EditorCompilerInspectorPlugin};
 pub(crate) use curves::{CurvesAction, CurvesState, spawn_curves_workspace};
@@ -162,6 +165,7 @@ fn main() {
         .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
         .add_plugins(EditorAssetsPlugin)
+        .add_plugins(EditorChangesPlugin)
         .add_plugins(EditorCompilerInspectorPlugin)
         .add_plugins(EditorCurvesPlugin)
         .add_plugins(EditorDiagnosticsPlugin)
@@ -221,6 +225,7 @@ fn main() {
                 AestraFeathersSet::Input,
                 (
                     AssetsSet::Actions,
+                    ChangesSet::Actions,
                     CompilerInspectorSet::Actions,
                     CurvesSet::Actions,
                     DiagnosticsSet::Actions,
@@ -269,8 +274,6 @@ enum EditorAction {
     EffectDuration(f32),
     SetTimelineSnap(TimelineSnapMode),
     FrameTimeline,
-    ApplyPendingChange,
-    DiscardPendingChange,
     ToggleGrid,
     FramePreview,
     SetTransformGizmoMode(TransformGizmoMode),
@@ -667,293 +670,6 @@ fn restore_scroll_positions(
     }
 }
 
-fn spawn_changes_workspace(
-    parent: &mut ChildSpawnerCommands,
-    session: &EditorSession,
-    localizer: &Localizer,
-) {
-    parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            min_width: Val::Px(0.0),
-            min_height: Val::Px(0.0),
-            flex_direction: FlexDirection::Column,
-            ..default()
-        })
-        .with_children(|panel| {
-            panel
-                .spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(38.0),
-                        align_items: AlignItems::Center,
-                        padding: UiRect::horizontal(Val::Px(14.0)),
-                        column_gap: Val::Px(8.0),
-                        ..default()
-                    },
-                    BackgroundColor(theme::PANEL_LIGHT),
-                ))
-                .with_children(|header| {
-                    header.spawn(Node {
-                        flex_grow: 1.0,
-                        ..default()
-                    });
-                    let summary = session.pending_change.as_ref().map_or_else(
-                        || localizer.text("changes-none-pending"),
-                        |pending| {
-                            let mut args = FluentArgs::new();
-                            args.set(
-                                "transaction",
-                                pending.preview.transaction().label.to_uppercase(),
-                            );
-                            args.set("count", pending.preview.diff().changes.len());
-                            localizer.text_with("changes-summary", &args)
-                        },
-                    );
-                    header.spawn((
-                        Text::new(summary),
-                        TextFont {
-                            font_size: FontSize::Px(9.0),
-                            ..default()
-                        },
-                        TextColor(theme::TEXT_FAINT),
-                    ));
-                });
-
-            let Some(pending) = &session.pending_change else {
-                panel.spawn((
-                    Text::new(localizer.text("changes-empty-description")),
-                    TextFont {
-                        font_size: FontSize::Px(12.0),
-                        ..default()
-                    },
-                    TextColor(theme::TEXT_MUTED),
-                    Node {
-                        margin: UiRect::all(Val::Px(28.0)),
-                        ..default()
-                    },
-                ));
-                return;
-            };
-
-            panel
-                .spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    flex_direction: FlexDirection::Row,
-                    ..default()
-                })
-                .with_children(|body| {
-                    body.spawn((
-                        Node {
-                            width: Val::Percent(66.0),
-                            height: Val::Percent(100.0),
-                            min_width: Val::Px(0.0),
-                            border: UiRect::right(Val::Px(1.0)),
-                            ..default()
-                        },
-                        BackgroundColor(theme::PANEL_DARK),
-                        BorderColor::all(theme::BORDER),
-                    ))
-                    .with_children(|column| {
-                        spawn_vertical_scroll_area(
-                            column,
-                            ScrollMemoryKey::ChangesList,
-                            Node {
-                                flex_grow: 1.0,
-                                min_width: Val::Px(0.0),
-                                min_height: Val::Px(0.0),
-                                flex_direction: FlexDirection::Column,
-                                padding: UiRect::all(Val::Px(8.0)),
-                                row_gap: Val::Px(4.0),
-                                ..default()
-                            },
-                            |changes| {
-                                for change in &pending.preview.diff().changes {
-                                    let (kind, color) = change_kind_style(change.kind, localizer);
-                                    let values = match (&change.before, &change.after) {
-                                        (Some(before), Some(after)) => {
-                                            format!("{before}  →  {after}")
-                                        }
-                                        (Some(before), None) => before.clone(),
-                                        (None, Some(after)) => after.clone(),
-                                        (None, None) => String::new(),
-                                    };
-                                    changes
-                                        .spawn((
-                                            Node {
-                                                width: Val::Percent(100.0),
-                                                min_height: Val::Px(30.0),
-                                                align_items: AlignItems::Center,
-                                                padding: UiRect::horizontal(Val::Px(8.0)),
-                                                column_gap: Val::Px(8.0),
-                                                border_radius: BorderRadius::all(Val::Px(3.0)),
-                                                ..default()
-                                            },
-                                            BackgroundColor(theme::PANEL),
-                                        ))
-                                        .with_children(|row| {
-                                            row.spawn((
-                                                Text::new(kind),
-                                                TextFont {
-                                                    font_size: FontSize::Px(9.0),
-                                                    ..default()
-                                                },
-                                                TextColor(color),
-                                                Node {
-                                                    width: Val::Px(58.0),
-                                                    ..default()
-                                                },
-                                            ));
-                                            row.spawn((
-                                                Text::new(change.path.clone()),
-                                                TextFont {
-                                                    font_size: FontSize::Px(10.0),
-                                                    ..default()
-                                                },
-                                                TextColor(theme::TEXT),
-                                                Node {
-                                                    width: Val::Percent(42.0),
-                                                    ..default()
-                                                },
-                                            ));
-                                            row.spawn((
-                                                Text::new(values),
-                                                TextFont {
-                                                    font_size: FontSize::Px(9.0),
-                                                    ..default()
-                                                },
-                                                TextColor(theme::TEXT_MUTED),
-                                            ));
-                                        });
-                                }
-                            },
-                        );
-                    });
-                    body.spawn(Node {
-                        flex_grow: 1.0,
-                        height: Val::Percent(100.0),
-                        min_width: Val::Px(0.0),
-                        ..default()
-                    })
-                    .with_children(|column| {
-                        spawn_vertical_scroll_area(
-                            column,
-                            ScrollMemoryKey::ChangesReview,
-                            Node {
-                                flex_grow: 1.0,
-                                min_width: Val::Px(0.0),
-                                min_height: Val::Px(0.0),
-                                flex_direction: FlexDirection::Column,
-                                padding: UiRect::all(Val::Px(10.0)),
-                                row_gap: Val::Px(6.0),
-                                ..default()
-                            },
-                            |review| {
-                                let errors = pending
-                                    .diagnostics
-                                    .diagnostics
-                                    .iter()
-                                    .filter(|item| item.severity == DiagnosticSeverity::Error)
-                                    .count();
-                                review.spawn((
-                                    Text::new(if pending.can_apply {
-                                        localizer.text("changes-ready")
-                                    } else {
-                                        let mut args = FluentArgs::new();
-                                        args.set("count", errors);
-                                        localizer.text_with("changes-blocked", &args)
-                                    }),
-                                    TextFont {
-                                        font_size: FontSize::Px(10.0),
-                                        ..default()
-                                    },
-                                    TextColor(if pending.can_apply {
-                                        Color::srgb(0.35, 0.88, 0.57)
-                                    } else {
-                                        Color::srgb(1.0, 0.38, 0.32)
-                                    }),
-                                ));
-                                for diagnostic in &pending.diagnostics.diagnostics {
-                                    review.spawn((
-                                        Text::new(format!(
-                                            "{:?} · {}\n{}",
-                                            diagnostic.code, diagnostic.path, diagnostic.message
-                                        )),
-                                        TextFont {
-                                            font_size: FontSize::Px(9.0),
-                                            ..default()
-                                        },
-                                        TextColor(match diagnostic.severity {
-                                            DiagnosticSeverity::Error => {
-                                                Color::srgb(1.0, 0.38, 0.32)
-                                            }
-                                            DiagnosticSeverity::Warning => {
-                                                Color::srgb(1.0, 0.74, 0.30)
-                                            }
-                                            DiagnosticSeverity::Info => theme::TEXT_MUTED,
-                                        }),
-                                    ));
-                                }
-                                review.spawn(Node {
-                                    flex_grow: 1.0,
-                                    ..default()
-                                });
-                                review
-                                    .spawn(Node {
-                                        width: Val::Percent(100.0),
-                                        min_height: Val::Px(32.0),
-                                        justify_content: JustifyContent::FlexEnd,
-                                        column_gap: Val::Px(8.0),
-                                        ..default()
-                                    })
-                                    .with_children(|actions| {
-                                        inspector_action_button(
-                                            actions,
-                                            &localizer.text("changes-discard"),
-                                            EditorAction::DiscardPendingChange,
-                                            None,
-                                        );
-                                        inspector_action_button(
-                                            actions,
-                                            &localizer.text(if pending.can_apply {
-                                                "changes-apply"
-                                            } else {
-                                                "changes-apply-blocked"
-                                            }),
-                                            EditorAction::ApplyPendingChange,
-                                            None,
-                                        );
-                                    });
-                            },
-                        );
-                    });
-                });
-        });
-}
-
-fn change_kind_style(kind: ChangeKind, localizer: &Localizer) -> (String, Color) {
-    match kind {
-        ChangeKind::Added => (
-            localizer.text("changes-kind-added"),
-            Color::srgb(0.35, 0.88, 0.57),
-        ),
-        ChangeKind::Removed => (
-            localizer.text("changes-kind-removed"),
-            Color::srgb(1.0, 0.38, 0.32),
-        ),
-        ChangeKind::Modified => (
-            localizer.text("changes-kind-modified"),
-            Color::srgb(0.45, 0.70, 1.0),
-        ),
-        ChangeKind::Moved => (
-            localizer.text("changes-kind-moved"),
-            Color::srgb(1.0, 0.74, 0.30),
-        ),
-    }
-}
-
 fn spawn_status_bar(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -1227,12 +943,6 @@ fn handle_buttons(
                     }
                     EditorAction::FrameTimeline => {
                         timeline_state.frame_all(session.playback_duration());
-                    }
-                    EditorAction::ApplyPendingChange => {
-                        session.apply_pending_change();
-                    }
-                    EditorAction::DiscardPendingChange => {
-                        session.discard_pending_change();
                     }
                     EditorAction::ToggleGrid => {
                         menu.show_grid = !menu.show_grid;

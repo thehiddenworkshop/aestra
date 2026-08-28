@@ -303,6 +303,8 @@ changes-kind-added = AJOUTÉ
 changes-kind-removed = SUPPRIMÉ
 changes-kind-modified = MODIFIÉ
 changes-kind-moved = DÉPLACÉ
+changes-target-preview-only = L’objet modifié existe uniquement dans l’aperçu de la transaction.
+changes-selected-target = Cible modifiée sélectionnée : { $target }.
 
 diagnostics-validation = VALIDATION
 diagnostics-filter-all = TOUS

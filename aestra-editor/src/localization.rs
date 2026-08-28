@@ -314,6 +314,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "changes-kind-removed",
     "changes-kind-modified",
     "changes-kind-moved",
+    "changes-target-preview-only",
+    "changes-selected-target",
     "diagnostics-validation",
     "diagnostics-filter-all",
     "diagnostics-errors",
