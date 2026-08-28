@@ -21,6 +21,7 @@ mod settings;
 mod settings_ui;
 mod theme;
 mod timeline;
+mod transport;
 mod viewport;
 
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
@@ -110,6 +111,8 @@ use settings_ui::EditorSettingsUiPlugin;
 pub(crate) use settings_ui::{SettingsPanelState, spawn_settings_workspace};
 use std::collections::HashMap;
 use timeline::{TimelinePlugin, TimelineSet, TimelineSnapMode, TimelineState};
+pub(crate) use transport::TransportAction;
+use transport::{EditorTransportPlugin, TransportSet, spawn_transport_controls};
 use viewport::{
     EmitterTransformGizmoInteraction, EmitterTransformGizmoProxy, PreviewCameraController,
     PreviewDisplayMode, PreviewDisplayState, ViewportPlugin, ViewportSet,
@@ -176,6 +179,7 @@ fn main() {
         .add_plugins(DockingPlugin)
         .add_plugins(InspectorPlugin)
         .add_plugins(TimelinePlugin)
+        .add_plugins(EditorTransportPlugin)
         .add_plugins(ViewportPlugin)
         .add_systems(
             Startup,
@@ -186,19 +190,10 @@ fn main() {
         .add_systems(
             Update,
             (
-                (
-                    apply_editor_fonts,
-                    keyboard_shortcuts,
-                    handle_buttons,
-                    advance_playback,
-                )
+                (apply_editor_fonts, keyboard_shortcuts, handle_buttons)
                     .chain()
                     .in_set(EditorSet::PreViewport),
-                (
-                    update_editor_labels,
-                    update_transport_icons,
-                    update_history_actions,
-                )
+                (update_editor_labels, update_history_actions)
                     .chain()
                     .in_set(EditorSet::MainUpdate),
                 (remember_scroll_positions, rebuild_editor_ui)
@@ -219,6 +214,7 @@ fn main() {
         .configure_sets(
             Update,
             (
+                TransportSet::Input,
                 TimelineSet::Input,
                 InspectorSet::Input,
                 DockingSet::Input,
@@ -233,9 +229,11 @@ fn main() {
                     InspectorSet::Actions,
                     ProfilerSet::Actions,
                     PersistenceSet::Actions,
+                    TransportSet::Actions,
                 )
                     .chain(),
                 EditorSet::PreViewport,
+                TransportSet::Playback,
                 PersistenceSet::Lifecycle,
                 ViewportSet::Update,
                 LocalizationSet::Sync,
@@ -252,6 +250,7 @@ fn main() {
                     .chain(),
                 DockingSet::Sync,
                 AestraFeathersSet::Sync,
+                TransportSet::Sync,
                 EditorSet::UiSync,
             )
                 .chain(),
@@ -261,11 +260,6 @@ fn main() {
 
 #[derive(Component, Clone, Copy)]
 enum EditorAction {
-    TogglePlayback,
-    StopPlayback,
-    Restart,
-    StepFrame(i8),
-    AdjustPreviewSeed(i8),
     Undo,
     Redo,
     AddLayer,
@@ -313,12 +307,6 @@ struct EditorFonts {
 
 #[derive(Component)]
 struct DocumentToolbarLabel;
-
-#[derive(Component)]
-struct PlaybackPlayIcon;
-
-#[derive(Component)]
-struct PlaybackPauseIcon;
 
 fn setup_editor(
     mut commands: Commands,
@@ -432,47 +420,7 @@ fn spawn_toolbar(
                     ..default()
                 },
             ));
-            bar.spawn((
-                Node {
-                    height: Val::Px(34.0),
-                    padding: UiRect::all(Val::Px(2.0)),
-                    column_gap: Val::Px(2.0),
-                    align_items: AlignItems::Center,
-                    border: UiRect::all(Val::Px(1.0)),
-                    border_radius: BorderRadius::all(Val::Px(5.0)),
-                    ..default()
-                },
-                ThemeBackgroundColor(tokens::PANE_HEADER_BG),
-                ThemeBorderColor(tokens::PANE_HEADER_BORDER),
-            ))
-            .with_children(|transport| {
-                transport_button(
-                    transport,
-                    "toolbar-play",
-                    EditorAction::TogglePlayback,
-                    localizer,
-                )
-                .with_children(|button| {
-                    spawn_play_icon(button, !session.playing);
-                    spawn_pause_icon(button, session.playing);
-                });
-                transport_button(
-                    transport,
-                    "toolbar-stop",
-                    EditorAction::StopPlayback,
-                    localizer,
-                )
-                .with_child((
-                    Node {
-                        width: Val::Px(10.0),
-                        height: Val::Px(10.0),
-                        border_radius: BorderRadius::all(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::TEXT),
-                    Pickable::IGNORE,
-                ));
-            });
+            spawn_transport_controls(bar, session, localizer);
             bar.spawn(Node {
                 width: Val::Px(11.0),
                 height: Val::Px(26.0),
@@ -508,100 +456,6 @@ fn spawn_toolbar(
                 },
                 TextColor(theme::TEXT_FAINT),
             ));
-        });
-}
-
-fn transport_button<'a>(
-    parent: &'a mut ChildSpawnerCommands,
-    message_id: &'static str,
-    action: EditorAction,
-    localizer: &Localizer,
-) -> EntityCommands<'a> {
-    let mut button = parent.spawn_empty();
-    button
-        .apply_scene(ui_shell::feathers_tool_button())
-        .insert((
-            action,
-            FeathersActionButton,
-            AccessibleLabel(localizer.text(message_id)),
-            Node {
-                width: Val::Px(28.0),
-                height: Val::Px(28.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border_radius: BorderRadius::all(Val::Px(3.0)),
-                ..default()
-            },
-        ));
-    button
-}
-
-fn spawn_play_icon(parent: &mut ChildSpawnerCommands, visible: bool) {
-    parent
-        .spawn((
-            PlaybackPlayIcon,
-            Node {
-                display: if visible {
-                    Display::Flex
-                } else {
-                    Display::None
-                },
-                width: Val::Px(8.0),
-                height: Val::Px(14.0),
-                position_type: PositionType::Relative,
-                overflow: Overflow::clip(),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ))
-        .with_child((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(-5.0),
-                top: Val::Px(2.0),
-                width: Val::Px(10.0),
-                height: Val::Px(10.0),
-                border_radius: BorderRadius::all(Val::Px(1.0)),
-                ..default()
-            },
-            UiTransform::from_rotation(Rot2::radians(std::f32::consts::FRAC_PI_4)),
-            BackgroundColor(theme::TEXT),
-            Pickable::IGNORE,
-        ));
-}
-
-fn spawn_pause_icon(parent: &mut ChildSpawnerCommands, visible: bool) {
-    parent
-        .spawn((
-            PlaybackPauseIcon,
-            Node {
-                display: if visible {
-                    Display::Flex
-                } else {
-                    Display::None
-                },
-                width: Val::Px(11.0),
-                height: Val::Px(13.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                column_gap: Val::Px(3.0),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ))
-        .with_children(|icon| {
-            for _ in 0..2 {
-                icon.spawn((
-                    Node {
-                        width: Val::Px(3.0),
-                        height: Val::Px(12.0),
-                        border_radius: BorderRadius::all(Val::Px(0.5)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::TEXT),
-                    Pickable::IGNORE,
-                ));
-            }
         });
 }
 
@@ -803,18 +657,6 @@ fn keyboard_shortcuts(
         reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
         workspace.clear();
     }
-    if keys.just_pressed(KeyCode::Space) {
-        session.playing = !session.playing;
-    }
-    if keys.just_pressed(KeyCode::KeyR) {
-        session.restart();
-    }
-    if keys.just_pressed(KeyCode::ArrowLeft) {
-        session.step_frame(-1);
-    }
-    if keys.just_pressed(KeyCode::ArrowRight) {
-        session.step_frame(1);
-    }
     if keys.just_pressed(KeyCode::KeyG) && !control {
         menu.show_grid = !menu.show_grid;
         settings.preview.show_grid = menu.show_grid;
@@ -913,13 +755,6 @@ fn handle_buttons(
                     session.ui_revision += 1;
                 }
                 match *action {
-                    EditorAction::TogglePlayback => session.playing = !session.playing,
-                    EditorAction::StopPlayback => session.stop(),
-                    EditorAction::Restart => session.restart(),
-                    EditorAction::StepFrame(direction) => session.step_frame(direction),
-                    EditorAction::AdjustPreviewSeed(direction) => {
-                        session.adjust_preview_seed(direction);
-                    }
                     EditorAction::Undo => session.undo(),
                     EditorAction::Redo => session.redo(),
                     EditorAction::AddLayer => session.add_layer(),
@@ -1018,10 +853,6 @@ fn rebuild_editor_ui(
     rendered.0 = session.ui_revision;
 }
 
-fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
-    session.advance_playback(time.delta_secs());
-}
-
 #[allow(clippy::type_complexity)]
 fn update_editor_labels(
     session: Res<EditorSession>,
@@ -1060,30 +891,6 @@ fn update_editor_labels(
                 localizer.text("toolbar-choreography")
             );
         }
-    }
-}
-
-fn update_transport_icons(
-    session: Res<EditorSession>,
-    mut play_icons: Query<&mut Node, (With<PlaybackPlayIcon>, Without<PlaybackPauseIcon>)>,
-    mut pause_icons: Query<&mut Node, (With<PlaybackPauseIcon>, Without<PlaybackPlayIcon>)>,
-) {
-    if !session.is_changed() {
-        return;
-    }
-    for mut node in &mut play_icons {
-        node.display = if session.playing {
-            Display::None
-        } else {
-            Display::Flex
-        };
-    }
-    for mut node in &mut pause_icons {
-        node.display = if session.playing {
-            Display::Flex
-        } else {
-            Display::None
-        };
     }
 }
 
@@ -1259,7 +1066,7 @@ mod tests {
         let action = app
             .world_mut()
             .spawn((
-                EditorAction::Restart,
+                EditorAction::ShowAbout,
                 FeathersActionButton,
                 Interaction::None,
             ))

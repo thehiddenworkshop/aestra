@@ -425,12 +425,20 @@ fn spawn_view_menu(
                         show_grid,
                         localizer,
                     );
-                    for (message_id, shortcut, action) in [
-                        ("view-frame-effect", "F", EditorAction::FramePreview),
-                        ("view-restart-preview", "R", EditorAction::Restart),
-                    ] {
-                        spawn_feathers_menu_item(dropdown, message_id, shortcut, action, localizer);
-                    }
+                    spawn_feathers_menu_item(
+                        dropdown,
+                        "view-frame-effect",
+                        "F",
+                        EditorAction::FramePreview,
+                        localizer,
+                    );
+                    spawn_feathers_menu_item(
+                        dropdown,
+                        "view-restart-preview",
+                        "R",
+                        TransportAction::Restart,
+                        localizer,
+                    );
                     spawn_menu_action_item(
                         dropdown,
                         "view-panels",

@@ -1,6 +1,6 @@
 use crate::{
-    ComboOption, EditorAction, EditorNativeControl, Localizer, layer_color, mini_button,
-    session::EditorSession, spawn_combo_control, theme,
+    ComboOption, EditorAction, EditorNativeControl, Localizer, TransportAction, layer_color,
+    mini_button, session::EditorSession, spawn_combo_control, theme,
 };
 use aestra_bevy::EmitterId;
 use bevy::{
@@ -615,8 +615,8 @@ pub(crate) fn spawn_timeline(
                         },
                         TextColor(theme::ACCENT),
                     ));
-                    mini_button(header, "<", EditorAction::StepFrame(-1));
-                    mini_button(header, ">", EditorAction::StepFrame(1));
+                    mini_button(header, "<", TransportAction::StepFrame(-1));
+                    mini_button(header, ">", TransportAction::StepFrame(1));
                     mini_button(
                         header,
                         &localizer.text("timeline-frame-all"),
@@ -655,8 +655,8 @@ pub(crate) fn spawn_timeline(
                         },
                         TextColor(theme::TEXT_FAINT),
                     ));
-                    mini_button(header, "-", EditorAction::AdjustPreviewSeed(-1));
-                    mini_button(header, "+", EditorAction::AdjustPreviewSeed(1));
+                    mini_button(header, "-", TransportAction::AdjustPreviewSeed(-1));
+                    mini_button(header, "+", TransportAction::AdjustPreviewSeed(1));
                     header.spawn((
                         Text::new(format!(
                             "{} {:.2}s",

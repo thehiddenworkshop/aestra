@@ -154,6 +154,9 @@ Complete this milestone before expanding the editor or renderer feature surface 
    Pending transaction review now runs through `EditorChangesPlugin`. The plugin owns the
    Changes workspace, apply/discard actions, and navigation from semantic diff rows back to
    live Inspector targets, while `EditorSession` remains the transaction and history owner.
+   Preview playback now runs through `EditorTransportPlugin`. Toolbar, Timeline, View-menu,
+   and keyboard controls share one `TransportAction` contract; the plugin owns playback
+   mutation, clock advancement, Feathers activation, shortcuts, and play/pause icon sync.
    Panel selection, visibility, floating, and workspace reset commands now use the
    `DockingAction` contract owned by `DockingPlugin`; tab, context-menu, View-menu, drag/drop,
    reorder, and floating-window outcomes use localized panel names and status messages.
