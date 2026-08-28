@@ -54,6 +54,92 @@ pub(crate) enum DocumentAction {
     Exit,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PersistenceStatus {
+    CreatedUntitled,
+    NewCancelled,
+    Opened(String),
+    OpenCancelled,
+    OpenFailed(String),
+    Saved(String),
+    SaveCancelled,
+    SaveFailed(String),
+    ExitCancelled,
+    RecoveryRestored(String),
+    RecoveryDiscarded,
+    RecoveryDiscardFailed(String),
+    RecoveryAutosaveFailed(String),
+    RecoveryDiagnostic(String),
+    SettingsSaved,
+    SettingsSaveFailed(String),
+    SettingsDiagnostic(String),
+}
+
+fn set_persistence_status(
+    session: &mut EditorSession,
+    localizer: &Localizer,
+    status: PersistenceStatus,
+) {
+    session.status = localize_persistence_status(status, localizer);
+}
+
+fn localize_persistence_status(status: PersistenceStatus, localizer: &Localizer) -> String {
+    let (message_id, argument) = match status {
+        PersistenceStatus::CreatedUntitled => {
+            return localizer.text("persistence-status-created-untitled");
+        }
+        PersistenceStatus::NewCancelled => {
+            return localizer.text("persistence-status-new-cancelled");
+        }
+        PersistenceStatus::Opened(path) => ("persistence-status-opened", ("path", path)),
+        PersistenceStatus::OpenCancelled => {
+            return localizer.text("persistence-status-open-cancelled");
+        }
+        PersistenceStatus::OpenFailed(error) => {
+            ("persistence-status-open-failed", ("error", error))
+        }
+        PersistenceStatus::Saved(path) => ("persistence-status-saved", ("path", path)),
+        PersistenceStatus::SaveCancelled => {
+            return localizer.text("persistence-status-save-cancelled");
+        }
+        PersistenceStatus::SaveFailed(error) => {
+            ("persistence-status-save-failed", ("error", error))
+        }
+        PersistenceStatus::ExitCancelled => {
+            return localizer.text("persistence-status-exit-cancelled");
+        }
+        PersistenceStatus::RecoveryRestored(effect) => {
+            ("persistence-status-recovery-restored", ("effect", effect))
+        }
+        PersistenceStatus::RecoveryDiscarded => {
+            return localizer.text("persistence-status-recovery-discarded");
+        }
+        PersistenceStatus::RecoveryDiscardFailed(error) => (
+            "persistence-status-recovery-discard-failed",
+            ("error", error),
+        ),
+        PersistenceStatus::RecoveryAutosaveFailed(error) => (
+            "persistence-status-recovery-autosave-failed",
+            ("error", error),
+        ),
+        PersistenceStatus::RecoveryDiagnostic(detail) => {
+            ("persistence-status-recovery-diagnostic", ("detail", detail))
+        }
+        PersistenceStatus::SettingsSaved => {
+            return localizer.text("persistence-status-settings-saved");
+        }
+        PersistenceStatus::SettingsSaveFailed(error) => {
+            ("persistence-status-settings-save-failed", ("error", error))
+        }
+        PersistenceStatus::SettingsDiagnostic(detail) => {
+            ("persistence-status-settings-diagnostic", ("detail", detail))
+        }
+    };
+    let mut args = FluentArgs::new();
+    args.set(argument.0, argument.1);
+    localizer.text_with(message_id, &args)
+}
+
 #[derive(Resource)]
 struct AutosaveState {
     document_key: String,
@@ -85,16 +171,25 @@ fn initialize_document_persistence(
     mut session: ResMut<EditorSession>,
     settings: Res<EditorSettings>,
     settings_persistence: Res<SettingsPersistence>,
+    localizer: Res<Localizer>,
 ) {
     let (mut recovery, candidate, recovery_diagnostic) = RecoveryPersistence::discover();
     if let Some(candidate) = candidate {
-        recover_startup_session(&mut session, &mut recovery, candidate);
+        recover_startup_session(&mut session, &mut recovery, candidate, &localizer);
     } else if let Some(diagnostic) = recovery_diagnostic {
-        session.status = diagnostic;
+        set_persistence_status(
+            &mut session,
+            &localizer,
+            PersistenceStatus::RecoveryDiagnostic(diagnostic),
+        );
     }
     session.playing = settings.preview.play_on_open;
     if let Some(diagnostic) = settings_persistence.diagnostic() {
-        session.status = diagnostic.into();
+        set_persistence_status(
+            &mut session,
+            &localizer,
+            PersistenceStatus::SettingsDiagnostic(diagnostic.into()),
+        );
     }
     let autosave = AutosaveState::new(&session, settings.general.autosave_enabled);
     commands.insert_resource(recovery);
@@ -171,41 +266,60 @@ fn execute_document_action(
     mut workspace: ResMut<CurvesState>,
     mut recovery: ResMut<RecoveryPersistence>,
     mut autosave: ResMut<AutosaveState>,
+    localizer: Res<Localizer>,
 ) {
     match *action {
         DocumentAction::New => {
-            if confirm_discard(&session, &settings) {
+            if confirm_discard(&session, &settings, &localizer) {
                 session.new_effect();
                 session.playing = settings.preview.play_on_open;
                 workspace.clear();
+                set_persistence_status(
+                    &mut session,
+                    &localizer,
+                    PersistenceStatus::CreatedUntitled,
+                );
+            } else {
+                set_persistence_status(&mut session, &localizer, PersistenceStatus::NewCancelled);
             }
         }
         DocumentAction::Open => {
-            open_effect_dialog(&mut session, &settings);
+            open_effect_dialog(&mut session, &settings, &localizer);
             workspace.clear();
         }
         DocumentAction::OpenCatalog(index) => {
-            if confirm_discard(&session, &settings) {
+            if confirm_discard(&session, &settings, &localizer) {
                 if let Some(path) = catalog.path(index) {
                     match session.open(path) {
-                        Ok(()) => session.playing = settings.preview.play_on_open,
-                        Err(error) => session.status = format!("Open failed: {error}"),
+                        Ok(()) => {
+                            session.playing = settings.preview.play_on_open;
+                            set_persistence_status(
+                                &mut session,
+                                &localizer,
+                                PersistenceStatus::Opened(path.display().to_string()),
+                            );
+                        }
+                        Err(error) => set_persistence_status(
+                            &mut session,
+                            &localizer,
+                            PersistenceStatus::OpenFailed(error.to_string()),
+                        ),
                     }
                 }
                 workspace.clear();
             } else {
-                session.status = "Open cancelled".into();
+                set_persistence_status(&mut session, &localizer, PersistenceStatus::OpenCancelled);
             }
         }
-        DocumentAction::Save => save_session(&mut session, false),
-        DocumentAction::SaveAs => save_session(&mut session, true),
+        DocumentAction::Save => save_session(&mut session, false, &localizer),
+        DocumentAction::SaveAs => save_session(&mut session, true, &localizer),
         DocumentAction::Exit => {
-            if confirm_discard(&session, &settings) {
+            if confirm_discard(&session, &settings, &localizer) {
                 autosave.suspended = true;
                 discard_active_recovery(&mut recovery);
                 commands.write_message(AppExit::Success);
             } else {
-                session.status = "Exit cancelled".into();
+                set_persistence_status(&mut session, &localizer, PersistenceStatus::ExitCancelled);
             }
         }
     }
@@ -215,18 +329,19 @@ fn recover_startup_session(
     session: &mut EditorSession,
     persistence: &mut RecoveryPersistence,
     candidate: RecoveryCandidate,
+    localizer: &Localizer,
 ) {
     let source = candidate.source_path().map_or_else(
-        || "an unsaved effect".to_string(),
+        || localizer.text("persistence-dialog-recovery-unsaved-source"),
         |path| path.display().to_string(),
     );
+    let mut args = FluentArgs::new();
+    args.set("source", source);
     let restore = matches!(
         MessageDialog::new()
             .set_level(MessageLevel::Warning)
-            .set_title("Recover unsaved effect")
-            .set_description(format!(
-                "A newer recovery snapshot was found for {source}.\n\nRestore it? Yes restores the unsaved work; No discards the snapshot."
-            ))
+            .set_title(localizer.text("persistence-dialog-recovery-title"))
+            .set_description(localizer.text_with("persistence-dialog-recovery-description", &args),)
             .set_buttons(MessageButtons::YesNo)
             .show(),
         MessageDialogResult::Yes
@@ -237,10 +352,21 @@ fn recover_startup_session(
             candidate.source_path().map(Path::to_owned),
         );
         persistence.activate(&candidate);
+        set_persistence_status(
+            session,
+            localizer,
+            PersistenceStatus::RecoveryRestored(session.effect.name.clone()),
+        );
     } else {
         match persistence.discard_candidate(&candidate) {
-            Ok(()) => session.status = "Discarded recovery snapshot".into(),
-            Err(error) => session.status = format!("Recovery discard failed: {error}"),
+            Ok(()) => {
+                set_persistence_status(session, localizer, PersistenceStatus::RecoveryDiscarded)
+            }
+            Err(error) => set_persistence_status(
+                session,
+                localizer,
+                PersistenceStatus::RecoveryDiscardFailed(error.to_string()),
+            ),
         }
     }
 }
@@ -261,6 +387,7 @@ fn autosave_recovery(
     settings: Res<EditorSettings>,
     mut persistence: ResMut<RecoveryPersistence>,
     mut state: ResMut<AutosaveState>,
+    localizer: Res<Localizer>,
 ) {
     autosave_recovery_at(
         &mut session,
@@ -268,6 +395,7 @@ fn autosave_recovery(
         &mut persistence,
         &mut state,
         Instant::now(),
+        &localizer,
     );
 }
 
@@ -277,6 +405,7 @@ fn autosave_recovery_at(
     persistence: &mut RecoveryPersistence,
     state: &mut AutosaveState,
     now: Instant,
+    localizer: &Localizer,
 ) {
     if state.suspended {
         return;
@@ -333,7 +462,11 @@ fn autosave_recovery_at(
         }
         Err(error) => {
             error!("failed to write recovery snapshot: {error}");
-            session.status = format!("Recovery autosave failed: {error}");
+            set_persistence_status(
+                session,
+                localizer,
+                PersistenceStatus::RecoveryAutosaveFailed(error.to_string()),
+            );
             state.write_after = now + interval;
         }
     }
@@ -373,34 +506,54 @@ fn discard_active_recovery(persistence: &mut RecoveryPersistence) {
     }
 }
 
-fn open_effect_dialog(session: &mut EditorSession, settings: &EditorSettings) {
-    if !confirm_discard(session, settings) {
-        session.status = "Open cancelled".into();
+fn open_effect_dialog(
+    session: &mut EditorSession,
+    settings: &EditorSettings,
+    localizer: &Localizer,
+) {
+    if !confirm_discard(session, settings, localizer) {
+        set_persistence_status(session, localizer, PersistenceStatus::OpenCancelled);
         return;
     }
-    let mut dialog = FileDialog::new().add_filter("Aestra effect", &["ron"]);
+    let mut dialog =
+        FileDialog::new().add_filter(localizer.text("persistence-file-filter-effect"), &["ron"]);
     if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
         dialog = dialog.set_directory(directory);
     }
     let Some(path) = dialog.pick_file() else {
-        session.status = "Open cancelled".into();
+        set_persistence_status(session, localizer, PersistenceStatus::OpenCancelled);
         return;
     };
     match session.open(&path) {
-        Ok(()) => session.playing = settings.preview.play_on_open,
-        Err(error) => session.status = format!("Open failed: {error}"),
+        Ok(()) => {
+            session.playing = settings.preview.play_on_open;
+            set_persistence_status(
+                session,
+                localizer,
+                PersistenceStatus::Opened(path.display().to_string()),
+            );
+        }
+        Err(error) => set_persistence_status(
+            session,
+            localizer,
+            PersistenceStatus::OpenFailed(error.to_string()),
+        ),
     }
 }
 
-fn confirm_discard(session: &EditorSession, settings: &EditorSettings) -> bool {
+fn confirm_discard(
+    session: &EditorSession,
+    settings: &EditorSettings,
+    localizer: &Localizer,
+) -> bool {
     if !session.dirty || !settings.general.confirm_unsaved_changes {
         return true;
     }
     matches!(
         MessageDialog::new()
             .set_level(MessageLevel::Warning)
-            .set_title("Unsaved changes")
-            .set_description("Discard the unsaved changes to the current effect?")
+            .set_title(localizer.text("persistence-dialog-unsaved-title"))
+            .set_description(localizer.text("persistence-dialog-unsaved-description"))
             .set_buttons(MessageButtons::YesNo)
             .show(),
         MessageDialogResult::Yes
@@ -411,34 +564,58 @@ pub(crate) fn persist_editor_settings(
     settings: &EditorSettings,
     persistence: &mut SettingsPersistence,
     session: &mut EditorSession,
+    localizer: &Localizer,
 ) {
     match persistence.persist(settings) {
-        Ok(()) => session.status = "Editor settings saved".into(),
-        Err(error) => session.status = format!("Settings save failed: {error}"),
+        Ok(()) => set_persistence_status(session, localizer, PersistenceStatus::SettingsSaved),
+        Err(error) => set_persistence_status(
+            session,
+            localizer,
+            PersistenceStatus::SettingsSaveFailed(error.to_string()),
+        ),
     }
 }
 
-fn save_session(session: &mut EditorSession, save_as: bool) {
+fn save_session(session: &mut EditorSession, save_as: bool, localizer: &Localizer) {
     if !save_as && session.source_path.is_some() {
-        if let Err(error) = session.save() {
-            session.status = format!("Save failed: {error}");
+        let path = session
+            .source_path
+            .as_deref()
+            .unwrap()
+            .display()
+            .to_string();
+        match session.save() {
+            Ok(()) => set_persistence_status(session, localizer, PersistenceStatus::Saved(path)),
+            Err(error) => set_persistence_status(
+                session,
+                localizer,
+                PersistenceStatus::SaveFailed(error.to_string()),
+            ),
         }
         return;
     }
 
     let file_name = format!("{}.aestra.ron", session.effect.id);
     let mut dialog = FileDialog::new()
-        .add_filter("Aestra effect", &["ron"])
+        .add_filter(localizer.text("persistence-file-filter-effect"), &["ron"])
         .set_file_name(file_name);
     if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
         dialog = dialog.set_directory(directory);
     }
     let Some(path) = dialog.save_file() else {
-        session.status = "Save cancelled".into();
+        set_persistence_status(session, localizer, PersistenceStatus::SaveCancelled);
         return;
     };
-    if let Err(error) = session.save_as(path) {
-        session.status = format!("Save failed: {error}");
+    let display_path = path.display().to_string();
+    match session.save_as(path) {
+        Ok(()) => {
+            set_persistence_status(session, localizer, PersistenceStatus::Saved(display_path))
+        }
+        Err(error) => set_persistence_status(
+            session,
+            localizer,
+            PersistenceStatus::SaveFailed(error.to_string()),
+        ),
     }
 }
 
@@ -457,12 +634,12 @@ fn handle_window_close_requests(
 ) {
     for request in close_requests.read() {
         if request.window == *primary {
-            if confirm_discard(&session, &settings) {
+            if confirm_discard(&session, &settings, &localizer) {
                 autosave.suspended = true;
                 discard_active_recovery(&mut recovery);
                 commands.write_message(AppExit::Success);
             } else {
-                session.status = "Exit cancelled".into();
+                set_persistence_status(&mut session, &localizer, PersistenceStatus::ExitCancelled);
             }
             continue;
         }
@@ -486,6 +663,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn persistence_outcomes_are_localized_with_technical_details_preserved() {
+        let english = Localizer::new("en-US").unwrap();
+        assert_eq!(
+            localize_persistence_status(PersistenceStatus::OpenCancelled, &english),
+            "Open cancelled"
+        );
+        assert_eq!(
+            localize_persistence_status(PersistenceStatus::NewCancelled, &english),
+            "New effect cancelled"
+        );
+        let opened = localize_persistence_status(
+            PersistenceStatus::Opened("C:\\effects\\spark.aestra.ron".into()),
+            &english,
+        );
+        assert!(opened.starts_with("Opened "));
+        assert!(opened.contains("C:\\effects\\spark.aestra.ron"));
+        let failed = localize_persistence_status(
+            PersistenceStatus::SaveFailed("access denied".into()),
+            &english,
+        );
+        assert!(failed.starts_with("Save failed: "));
+        assert!(failed.contains("access denied"));
+
+        let french = Localizer::new("fr-FR").unwrap();
+        assert_eq!(
+            localize_persistence_status(PersistenceStatus::ExitCancelled, &french),
+            "Fermeture annulée"
+        );
+        let restored = localize_persistence_status(
+            PersistenceStatus::RecoveryRestored("Prisme".into()),
+            &french,
+        );
+        assert!(restored.contains("Prisme"));
+        assert!(restored.ends_with(" non enregistré récupéré"));
+    }
+
+    #[test]
+    fn document_domain_operations_leave_status_presentation_to_the_plugin() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("effect.aestra.ron");
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.status = "sentinel".into();
+
+        session.new_effect();
+        assert_eq!(session.status, "sentinel");
+        session.save_as(&path).unwrap();
+        assert_eq!(session.status, "sentinel");
+        session.open(&path).unwrap();
+        assert_eq!(session.status, "sentinel");
+    }
+
+    #[test]
     fn saving_a_document_clears_its_tracked_recovery_snapshot() {
         let temporary = tempfile::tempdir().unwrap();
         let source_path = temporary.path().join("saved-effect.aestra.ron");
@@ -505,6 +734,7 @@ mod tests {
             &mut persistence,
             &mut state,
             Instant::now(),
+            &Localizer::new("en-US").unwrap(),
         );
 
         assert!(!recovery_path.exists());
@@ -536,6 +766,7 @@ mod tests {
             &mut persistence,
             &mut state,
             Instant::now(),
+            &Localizer::new("en-US").unwrap(),
         );
 
         assert!(!recovery_path.exists());
@@ -563,6 +794,7 @@ mod tests {
             &mut persistence,
             &mut state,
             now,
+            &Localizer::new("en-US").unwrap(),
         );
 
         assert!(persistence.has_active());
@@ -576,6 +808,7 @@ mod tests {
             &mut persistence,
             &mut state,
             now + RECOVERY_CLEANUP_RETRY_DELAY,
+            &Localizer::new("en-US").unwrap(),
         );
 
         assert!(!blocked_path.exists());

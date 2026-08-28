@@ -125,6 +125,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   keyboard shortcuts, and project-effect rows emit one `DocumentAction` contract;
   the plugin owns startup recovery, open/save/save-as/exit workflows, unsaved-change
   confirmation, recovery autosave and cleanup, and primary-window close handling.
+  Document operations return domain state while the plugin translates structured
+  outcomes into localized dialogs and status messages, preserving file paths and
+  technical errors as Fluent arguments rather than embedding presentation in the session.
   `recovery.rs` remains the atomic snapshot storage boundary.
 - Resolves editor-facing text through `EditorLocalizationPlugin` and Fluent bundles
   with stable semantic message IDs, an embedded complete English fallback, live locale

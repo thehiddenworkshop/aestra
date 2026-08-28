@@ -3,6 +3,7 @@
 use crate::localization::SUPPORTED_LOCALES;
 use crate::*;
 use bevy::{ecs::system::SystemParam, ui_widgets::Activate};
+use fluent_bundle::FluentArgs;
 
 const MAX_PREVIEW_PARTICLE_LIMIT: usize = 384;
 
@@ -586,6 +587,7 @@ fn handle_settings_actions(
                         &resources.settings,
                         &mut resources.persistence,
                         &mut session,
+                        &resources.localizer,
                     );
                 }
             }
@@ -598,10 +600,16 @@ fn handle_settings_actions(
                         .localizer
                         .set_locale(&resources.settings.language.locale);
                     session.ui_revision += 1;
-                    session.status = "Editor settings reset".into();
+                    session.status = resources
+                        .localizer
+                        .text("persistence-status-settings-reset");
                 }
                 Err(error) => {
-                    session.status = format!("Settings reset failed: {error}");
+                    let mut args = FluentArgs::new();
+                    args.set("error", error.to_string());
+                    session.status = resources
+                        .localizer
+                        .text_with("persistence-status-settings-reset-failed", &args);
                 }
             },
         }
@@ -616,6 +624,7 @@ fn handle_settings_toggle_change(
     mut menu: ResMut<MenuState>,
     mut persistence: ResMut<SettingsPersistence>,
     mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
 ) {
     let Ok(control) = controls.get(change.source) else {
         return;
@@ -628,7 +637,7 @@ fn handle_settings_toggle_change(
     let changed = apply_settings_toggle(&mut settings, &mut menu, control.0, change.value);
     if changed {
         session.ui_revision += 1;
-        persist_editor_settings(&settings, &mut persistence, &mut session);
+        persist_editor_settings(&settings, &mut persistence, &mut session, &localizer);
     }
 }
 
@@ -669,6 +678,7 @@ fn handle_settings_integer_change(
     mut settings: ResMut<EditorSettings>,
     mut persistence: ResMut<SettingsPersistence>,
     mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
 ) {
     if !change.is_final {
         return;
@@ -679,7 +689,7 @@ fn handle_settings_integer_change(
     let changed = apply_settings_integer(&mut settings, control.0, change.value);
     if changed {
         session.ui_revision += 1;
-        persist_editor_settings(&settings, &mut persistence, &mut session);
+        persist_editor_settings(&settings, &mut persistence, &mut session, &localizer);
     }
 }
 
@@ -724,6 +734,7 @@ fn handle_settings_scalar_change(
     mut persistence: ResMut<SettingsPersistence>,
     mut session: ResMut<EditorSession>,
     mut ui_scale: ResMut<UiScale>,
+    localizer: Res<Localizer>,
 ) {
     if !change.is_final {
         return;
@@ -737,7 +748,7 @@ fn handle_settings_scalar_change(
     if apply_settings_scalar(&mut settings, control.0, change.value) {
         ui_scale.0 = settings.appearance.ui_scale;
         session.ui_revision += 1;
-        persist_editor_settings(&settings, &mut persistence, &mut session);
+        persist_editor_settings(&settings, &mut persistence, &mut session, &localizer);
     }
 }
 

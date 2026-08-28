@@ -1052,6 +1052,7 @@ fn keyboard_shortcuts(
     palette: Res<ModulePaletteState>,
     workspace_resources: (ResMut<CurvesState>, ResMut<WorkspaceLayout>),
     settings_resources: (ResMut<EditorSettings>, ResMut<SettingsPersistence>),
+    localizer: Res<Localizer>,
 ) {
     let (mut workspace, mut layout) = workspace_resources;
     let (mut settings, mut settings_persistence) = settings_resources;
@@ -1115,7 +1116,12 @@ fn keyboard_shortcuts(
         menu.show_grid = !menu.show_grid;
         settings.preview.show_grid = menu.show_grid;
         session.ui_revision += 1;
-        persist_editor_settings(&settings, &mut settings_persistence, &mut session);
+        persist_editor_settings(
+            &settings,
+            &mut settings_persistence,
+            &mut session,
+            &localizer,
+        );
     }
 }
 
@@ -1151,6 +1157,7 @@ fn handle_buttons(
     ),
     mut timeline_state: ResMut<TimelineState>,
     mut transform_gizmo_settings: ResMut<TransformGizmoSettings>,
+    localizer: Res<Localizer>,
 ) {
     let (
         registry,
@@ -1234,6 +1241,7 @@ fn handle_buttons(
                                 &settings,
                                 &mut settings_persistence,
                                 &mut session,
+                                &localizer,
                             );
                         }
                     }
@@ -1346,7 +1354,12 @@ fn handle_buttons(
                     EditorAction::ToggleGrid => {
                         menu.show_grid = !menu.show_grid;
                         settings.preview.show_grid = menu.show_grid;
-                        persist_editor_settings(&settings, &mut settings_persistence, &mut session);
+                        persist_editor_settings(
+                            &settings,
+                            &mut settings_persistence,
+                            &mut session,
+                            &localizer,
+                        );
                     }
                     EditorAction::FramePreview => {
                         preview_camera.request_frame();

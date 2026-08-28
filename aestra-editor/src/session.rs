@@ -365,7 +365,6 @@ impl EditorSession {
         self.dirty = true;
         self.saved_effect = None;
         self.history.clear();
-        self.status = "Created an untitled effect".into();
         self.ui_revision += 1;
     }
 
@@ -387,7 +386,6 @@ impl EditorSession {
         self.playing = false;
         self.dirty = false;
         self.history.clear();
-        self.status = format!("Opened {}", path.display());
         self.ui_revision += 1;
         Ok(())
     }
@@ -411,7 +409,6 @@ impl EditorSession {
         self.saved_effect = saved_effect;
         self.update_dirty_state();
         self.history.clear();
-        self.status = format!("Recovered unsaved {}", self.effect.name);
         self.ui_revision += 1;
     }
 
@@ -432,7 +429,6 @@ impl EditorSession {
         self.source_path = Some(path.to_owned());
         self.saved_effect = Some(self.effect.clone());
         self.update_dirty_state();
-        self.status = format!("Saved {}", path.display());
         self.ui_revision += 1;
         Ok(())
     }
@@ -1544,7 +1540,6 @@ mod tests {
         assert_eq!(session.source_path.as_deref(), Some(path.as_path()));
         assert!(session.dirty);
         assert!(!session.can_undo());
-        assert!(session.status.starts_with("Recovered unsaved"));
         std::fs::remove_file(path).unwrap();
     }
 
