@@ -1,6 +1,129 @@
-use bevy::prelude::Resource;
+use bevy::{ecs::system::SystemParam, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{fs, io, path::PathBuf};
+
+/// Owns the editor's docking lifecycle while panel content remains supplied by the editor shell.
+///
+/// The persistent [`WorkspaceLayout`] is deliberately separate from transient pointer state. This
+/// lets the UI be reconciled from one serializable model instead of treating spawned UI entities as
+/// the source of truth.
+pub(crate) struct DockingPlugin;
+
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum DockingSet {
+    /// Captures native-window geometry before the rest of the editor responds to the frame.
+    Input,
+    /// Updates drag/drop affordances and floating-window labels before the dock tree is rebuilt.
+    Reconcile,
+    /// Reconciles native floating windows after the main editor UI has been rebuilt.
+    Sync,
+}
+
+impl Plugin for DockingPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<crate::DockDragState>()
+            .init_resource::<crate::ResizeState>()
+            .insert_resource(WorkspaceLayout::load())
+            .add_systems(
+                Update,
+                crate::dock_ui::persist_native_window_geometry.in_set(DockingSet::Input),
+            )
+            .add_systems(
+                Update,
+                (
+                    crate::dock_ui::update_floating_window_titles,
+                    crate::dock_ui::clear_finished_dock_drag,
+                    crate::dock_ui::sync_dock_drop_hints,
+                    crate::dock_ui::sync_tab_reorder_hints,
+                    crate::dock_ui::sync_tab_append_hint,
+                    crate::dock_ui::update_dock_zone_style,
+                )
+                    .chain()
+                    .in_set(DockingSet::Reconcile),
+            )
+            .add_systems(
+                Update,
+                crate::dock_ui::sync_native_floating_windows.in_set(DockingSet::Sync),
+            );
+    }
+}
+
+// Runtime-only docking state and entity markers live beside the plugin rather than the editor
+// shell. None of these types are serialized; the dock tree below remains the only persisted source
+// of truth.
+#[derive(Component)]
+pub(crate) struct DockPane(pub(crate) DockNodeId);
+
+#[derive(Component)]
+pub(crate) struct DockTab(pub(crate) DockPanel);
+
+#[derive(Component)]
+pub(crate) struct DockTabAppendZone(pub(crate) DockNodeId);
+
+#[derive(Component)]
+pub(crate) struct DockTabAppendIndicator(pub(crate) DockNodeId);
+
+#[derive(Component)]
+pub(crate) struct NativeFloatingWindow(pub(crate) DockPanel);
+
+#[derive(Component)]
+pub(crate) struct NativeFloatingCamera(pub(crate) DockPanel);
+
+#[derive(Component)]
+pub(crate) struct NativeFloatingUi {
+    pub(crate) panel: DockPanel,
+    pub(crate) window: Entity,
+    pub(crate) camera: Entity,
+}
+
+#[derive(Component)]
+pub(crate) struct SplitterGrip;
+
+#[derive(Component)]
+pub(crate) struct DockCloseButton;
+
+#[derive(Component)]
+pub(crate) struct DockDropHint(pub(crate) DockNodeId);
+
+#[derive(Component)]
+pub(crate) struct DockDropZone {
+    pub(crate) node: DockNodeId,
+    pub(crate) drop: DockDrop,
+}
+
+#[derive(Component)]
+pub(crate) struct DockDropZoneLabel;
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DockSplitter {
+    pub(crate) node: DockNodeId,
+    pub(crate) axis: DockAxis,
+}
+
+#[derive(Component)]
+pub(crate) struct DockFirstPane(pub(crate) DockNodeId);
+
+#[derive(Resource, Default)]
+pub(crate) struct DockDragState(pub(crate) Option<DockPanel>);
+
+#[derive(Resource, Default)]
+pub(crate) struct ResizeState(pub(crate) Option<DockSplitter>);
+
+#[derive(SystemParam)]
+pub(crate) struct DockDropQueries<'w, 's> {
+    pub(crate) zones: Query<'w, 's, &'static DockDropZone>,
+    pub(crate) tabs: Query<'w, 's, &'static DockTab>,
+    pub(crate) parents: Query<'w, 's, &'static ChildOf>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct DockResizeQueries<'w, 's> {
+    pub(crate) splitters: Query<'w, 's, &'static DockSplitter>,
+    pub(crate) parents: Query<'w, 's, &'static ChildOf>,
+    pub(crate) computed: Query<'w, 's, &'static ComputedNode>,
+    pub(crate) first_panes: Query<'w, 's, (&'static DockFirstPane, &'static mut Node)>,
+    pub(crate) colors: Query<'w, 's, &'static mut BackgroundColor, With<DockSplitter>>,
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum DockPanel {
@@ -711,6 +834,16 @@ fn workspace_layout_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn docking_plugin_owns_layout_and_transient_interaction_state() {
+        let mut app = App::new();
+        app.add_plugins(DockingPlugin);
+
+        assert!(app.world().contains_resource::<WorkspaceLayout>());
+        assert!(app.world().contains_resource::<DockDragState>());
+        assert!(app.world().contains_resource::<ResizeState>());
+    }
 
     #[test]
     fn layout_round_trips_through_ron() {

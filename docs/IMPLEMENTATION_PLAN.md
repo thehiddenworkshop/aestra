@@ -104,11 +104,15 @@ Complete this milestone before expanding the editor or renderer feature surface 
    Profiles expose submitted instances alongside live particles, the buffer estimate
    includes the indirect command table, focused tests cover command/range isolation,
    and the native editor-viewport GPU smoke remains the visual acceptance gate.
-5. **Decompose the editor application — in progress.** The timeline, viewport, and
-   inspector are extracted domain plugins with explicit system-set boundaries. The
+5. **Decompose the editor application — in progress.** The timeline, viewport,
+   inspector, and docking lifecycle are extracted domain plugins with explicit
+   system-set boundaries. `DockingPlugin` owns persisted layout loading, transient
+   drag/resize state, drop-affordance reconciliation, and native floating-window
+   synchronization. The
    inspector owns module-stack construction, semantic property controls, numeric scrub
    transactions, renderer fields, focus navigation, contextual help, and focused tests.
-   Finish separating docking, menus, settings, persistence, and localization while
+   Finish moving dock-tree entity construction behind the docking boundary, then
+   separate menus, settings, persistence, and localization while
    keeping `main.rs` as composition and startup wiring.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
@@ -473,5 +477,25 @@ implement every future module.
 - New renderer/runtime features require explicit capability and fallback behavior.
 - Experimental advanced features stay behind narrow interfaces until the P0 and
   P1 acceptance criteria in the source plan are satisfied.
+
+## 8. Docking design reference
+
+The `jackdaw_panels` crate was reviewed as a Bevy-native reference. Aestra adopts its
+most useful architectural ideas without copying its broader editor feature set:
+
+- compose docking as a plugin with named scheduling phases instead of registering
+  unrelated systems from the application root;
+- keep a serializable layout model distinct from transient drag, hover, resize, and
+  spawned-entity state;
+- reconcile visible dock entities and native windows from that model after structural
+  changes;
+- keep tabs, splits, drag/drop, and window synchronization as separable concerns even
+  while they share one public plugin boundary.
+
+Jackdaw's workspace tabs, sidebars, and add-window popup are intentionally deferred:
+Aestra currently needs one VFX workspace and already restores panels from the View
+menu. Its descriptor/registry approach becomes worthwhile when third-party panels are
+supported; until then the closed `DockPanel` enum gives exhaustive behavior and simpler
+persistence migrations.
 - The source plan's large checklists are product acceptance criteria; this file's
   milestones are the implementation order.
