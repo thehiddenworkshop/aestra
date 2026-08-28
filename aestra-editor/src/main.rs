@@ -77,10 +77,9 @@ use feathers::{
 };
 use fluent_bundle::FluentArgs;
 use inspector::*;
-use localization::Localizer;
-pub(crate) use menus::{
-    AboutDescription, DocumentMenuLabel, MenuState, RedoMenuItem, TabContextMenu, UndoMenuItem,
-};
+use localization::{EditorLocalizationPlugin, LocalizationSet};
+pub(crate) use localization::{LocalizedText, Localizer};
+pub(crate) use menus::{DocumentMenuLabel, MenuState, RedoMenuItem, TabContextMenu, UndoMenuItem};
 use menus::{EditorMenusPlugin, spawn_about_overlay, spawn_menu_bar, spawn_tab_context_menu};
 pub(crate) use persistence::persist_editor_settings;
 use persistence::{DocumentAction, EditorPersistencePlugin, PersistenceSet};
@@ -117,9 +116,8 @@ enum EditorSet {
 
 fn main() {
     let (mut settings, persistence) = SettingsPersistence::load();
-    let localizer =
-        Localizer::new(&settings.language.locale).expect("embedded Fluent catalogs must be valid");
-    settings.language.locale = localizer.locale().into();
+    let localization = EditorLocalizationPlugin::new(&settings.language.locale);
+    settings.language.locale = localization.locale().into();
     let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
     let show_grid = settings.preview.show_grid;
     let ui_scale = settings.appearance.ui_scale;
@@ -128,7 +126,6 @@ fn main() {
         .insert_resource(session)
         .insert_resource(settings)
         .insert_resource(persistence)
-        .insert_resource(localizer)
         .insert_resource(UiScale(ui_scale))
         .insert_resource(EffectCatalog::scan())
         .init_resource::<DiagnosticsPanelState>()
@@ -154,6 +151,7 @@ fn main() {
                 }),
         )
         .add_plugins(AestraFeathersPlugin)
+        .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
         .add_plugins(EditorSettingsUiPlugin)
         .add_plugins(EditorPersistencePlugin)
@@ -181,7 +179,6 @@ fn main() {
                     .in_set(EditorSet::PreViewport),
                 (
                     update_profiler_labels,
-                    update_localized_text,
                     update_editor_labels,
                     update_transport_icons,
                     update_compile_status,
@@ -219,6 +216,7 @@ fn main() {
                 EditorSet::PreViewport,
                 PersistenceSet::Lifecycle,
                 ViewportSet::Update,
+                LocalizationSet::Sync,
                 EditorSet::MainUpdate,
                 DockingSet::Reconcile,
                 EditorSet::UiRebuild,
@@ -346,12 +344,12 @@ enum DiagnosticsFilter {
 impl DiagnosticsFilter {
     const ALL: [Self; 4] = [Self::All, Self::Errors, Self::Warnings, Self::Info];
 
-    fn label(self) -> &'static str {
+    fn message_id(self) -> &'static str {
         match self {
-            Self::All => "ALL",
-            Self::Errors => "ERRORS",
-            Self::Warnings => "WARNINGS",
-            Self::Info => "INFO",
+            Self::All => "diagnostics-filter-all",
+            Self::Errors => "diagnostics-errors",
+            Self::Warnings => "diagnostics-warnings",
+            Self::Info => "diagnostics-info",
         }
     }
 
@@ -430,9 +428,6 @@ struct DocumentToolbarLabel;
 
 #[derive(Component)]
 struct DiagnosticsFilterButton(DiagnosticsFilter);
-
-#[derive(Component)]
-struct LocalizedText(&'static str);
 
 #[derive(Component)]
 struct DiagnosticRow;
@@ -1398,15 +1393,16 @@ fn spawn_profiler_workspace(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     state: &ProfilerState,
+    localizer: &Localizer,
 ) {
     let status = if session
         .pending_change
         .as_ref()
         .is_some_and(|pending| !pending.can_apply)
     {
-        "CPU REFERENCE  ·  LAST VALID EFFECT"
+        "profiler-status-last-valid"
     } else {
-        "CPU REFERENCE  ·  LIVE"
+        "profiler-status-live"
     };
     parent
         .spawn(Node {
@@ -1432,7 +1428,7 @@ fn spawn_profiler_workspace(
                 ))
                 .with_children(|header| {
                     header.spawn((
-                        Text::new("EFFECT PROFILE"),
+                        Text::new(localizer.text("profiler-effect-profile")),
                         TextFont {
                             font_size: FontSize::Px(10.0),
                             ..default()
@@ -1453,21 +1449,21 @@ fn spawn_profiler_workspace(
                         BackgroundColor(Color::srgb(0.35, 0.88, 0.57)),
                     ));
                     header.spawn((
-                        Text::new(status),
+                        Text::new(localizer.text(status)),
                         TextFont {
                             font_size: FontSize::Px(9.0),
                             ..default()
                         },
                         TextColor(theme::TEXT_FAINT),
                     ));
-                    spawn_profiler_reset_button(header);
+                    spawn_profiler_reset_button(header, localizer);
                 });
 
             let Some(profile) = &state.profile else {
                 spawn_diagnostics_empty_state(
                     panel,
-                    "WAITING FOR PREVIEW",
-                    "Profiler data appears after the first evaluated frame.",
+                    &localizer.text("profiler-waiting"),
+                    &localizer.text("profiler-waiting-description"),
                     theme::TEXT_MUTED,
                 );
                 return;
@@ -1495,24 +1491,25 @@ fn spawn_profiler_workspace(
                             ..default()
                         },
                         |content| {
-                            spawn_profiler_metric_grid(content, profile);
-                            spawn_profiler_history(content, state);
-                            spawn_profiler_emitters(content, profile);
-                            spawn_profiler_availability(content, profile);
+                            spawn_profiler_metric_grid(content, profile, localizer);
+                            spawn_profiler_history(content, state, localizer);
+                            spawn_profiler_emitters(content, profile, localizer);
+                            spawn_profiler_availability(content, profile, localizer);
                         },
                     );
                 });
         });
 }
 
-fn spawn_profiler_reset_button(parent: &mut ChildSpawnerCommands) {
+fn spawn_profiler_reset_button(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
+    let label = localizer.text("profiler-reset-peaks");
     parent
         .spawn_empty()
         .apply_scene(ui_shell::feathers_button())
         .insert((
             EditorAction::ResetProfilerPeaks,
             FeathersActionButton,
-            AccessibleLabel("Reset profiler peaks".into()),
+            AccessibleLabel(label.clone()),
             Node {
                 height: Val::Px(24.0),
                 padding: UiRect::horizontal(Val::Px(8.0)),
@@ -1524,7 +1521,7 @@ fn spawn_profiler_reset_button(parent: &mut ChildSpawnerCommands) {
         ))
         .with_children(|button| {
             button.spawn((
-                Text::new("RESET PEAKS"),
+                Text::new(label),
                 TextFont {
                     font_size: FontSize::Px(9.0),
                     ..default()
@@ -1535,7 +1532,11 @@ fn spawn_profiler_reset_button(parent: &mut ChildSpawnerCommands) {
         });
 }
 
-fn spawn_profiler_metric_grid(parent: &mut ChildSpawnerCommands, profile: &EffectProfile) {
+fn spawn_profiler_metric_grid(
+    parent: &mut ChildSpawnerCommands,
+    profile: &EffectProfile,
+    localizer: &Localizer,
+) {
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -1557,7 +1558,7 @@ fn spawn_profiler_metric_grid(parent: &mut ChildSpawnerCommands, profile: &Effec
                 ProfilerMetric::Dispatches,
                 ProfilerMetric::BufferMemory,
             ] {
-                spawn_profiler_metric_card(grid, profile, metric);
+                spawn_profiler_metric_card(grid, profile, metric, localizer);
             }
         });
 }
@@ -1566,6 +1567,7 @@ fn spawn_profiler_metric_card(
     parent: &mut ChildSpawnerCommands,
     profile: &EffectProfile,
     metric: ProfilerMetric,
+    localizer: &Localizer,
 ) {
     let (value, source) = profiler_metric_display(profile, metric);
     parent
@@ -1598,7 +1600,7 @@ fn spawn_profiler_metric_card(
                 TextColor(theme::TEXT),
             ));
             card.spawn((
-                Text::new(profiler_metric_name(metric)),
+                Text::new(localizer.text(profiler_metric_message(metric))),
                 TextFont {
                     font_size: FontSize::Px(8.0),
                     ..default()
@@ -1610,7 +1612,7 @@ fn spawn_profiler_metric_card(
                     metric,
                     part: ProfilerMetricPart::Source,
                 },
-                Text::new(profile_source_label(source)),
+                Text::new(profile_source_label(source, localizer)),
                 TextFont {
                     font_size: FontSize::Px(8.0),
                     ..default()
@@ -1620,11 +1622,15 @@ fn spawn_profiler_metric_card(
         });
 }
 
-fn spawn_profiler_history(parent: &mut ChildSpawnerCommands, state: &ProfilerState) {
-    spawn_compiled_section(parent, "CPU UPDATE HISTORY", |section| {
+fn spawn_profiler_history(
+    parent: &mut ChildSpawnerCommands,
+    state: &ProfilerState,
+    localizer: &Localizer,
+) {
+    spawn_compiled_section(parent, &localizer.text("profiler-cpu-history"), |section| {
         section.spawn((
             ProfilerHistorySummary,
-            Text::new(profiler_history_summary(&state.cpu_history_ns)),
+            Text::new(profiler_history_summary(&state.cpu_history_ns, localizer)),
             TextFont {
                 font_size: FontSize::Px(9.0),
                 ..default()
@@ -1657,8 +1663,12 @@ fn spawn_profiler_history(parent: &mut ChildSpawnerCommands, state: &ProfilerSta
     });
 }
 
-fn spawn_profiler_emitters(parent: &mut ChildSpawnerCommands, profile: &EffectProfile) {
-    spawn_compiled_section(parent, "EMITTERS", |section| {
+fn spawn_profiler_emitters(
+    parent: &mut ChildSpawnerCommands,
+    profile: &EffectProfile,
+    localizer: &Localizer,
+) {
+    spawn_compiled_section(parent, &localizer.text("profiler-emitters"), |section| {
         for (index, emitter) in profile.emitters.iter().enumerate() {
             section
                 .spawn((
@@ -1700,7 +1710,7 @@ fn spawn_profiler_emitters(parent: &mut ChildSpawnerCommands, profile: &EffectPr
                     ));
                     row.spawn((
                         ProfilerEmitterValue(index),
-                        Text::new(profiler_emitter_value(emitter)),
+                        Text::new(profiler_emitter_value(emitter, localizer)),
                         TextFont {
                             font_size: FontSize::Px(9.0),
                             ..default()
@@ -1712,40 +1722,48 @@ fn spawn_profiler_emitters(parent: &mut ChildSpawnerCommands, profile: &EffectPr
     });
 }
 
-fn spawn_profiler_availability(parent: &mut ChildSpawnerCommands, profile: &EffectProfile) {
-    spawn_compiled_section(parent, "MEASUREMENT AVAILABILITY", |section| {
-        spawn_compiled_label_value(
-            section,
-            "MEASURED",
-            "CPU update time, live particles, submitted instances, and peak particles",
-        );
-        spawn_compiled_label_value(
-            section,
-            "ESTIMATED",
-            "draw calls, dispatches, and runtime buffer memory from the compiled plan",
-        );
-        if profile.gpu_time_ns.source() == ProfileValueSource::Unavailable {
+fn spawn_profiler_availability(
+    parent: &mut ChildSpawnerCommands,
+    profile: &EffectProfile,
+    localizer: &Localizer,
+) {
+    spawn_compiled_section(
+        parent,
+        &localizer.text("profiler-measurement-availability"),
+        |section| {
             spawn_compiled_label_value(
                 section,
-                "UNAVAILABLE",
-                "GPU time, overdraw, and collision timing require backend instrumentation",
+                &localizer.text("profiler-source-measured"),
+                &localizer.text("profiler-measured-description"),
             );
-        }
-    });
+            spawn_compiled_label_value(
+                section,
+                &localizer.text("profiler-source-estimated"),
+                &localizer.text("profiler-estimated-description"),
+            );
+            if profile.gpu_time_ns.source() == ProfileValueSource::Unavailable {
+                spawn_compiled_label_value(
+                    section,
+                    &localizer.text("profiler-source-unavailable"),
+                    &localizer.text("profiler-unavailable-description"),
+                );
+            }
+        },
+    );
 }
 
-fn profiler_metric_name(metric: ProfilerMetric) -> &'static str {
+fn profiler_metric_message(metric: ProfilerMetric) -> &'static str {
     match metric {
-        ProfilerMetric::CpuTime => "CPU UPDATE",
-        ProfilerMetric::GpuTime => "GPU TIME",
-        ProfilerMetric::AliveParticles => "LIVE PARTICLES",
-        ProfilerMetric::SubmittedInstances => "SUBMITTED INSTANCES",
-        ProfilerMetric::PeakParticles => "PEAK PARTICLES",
-        ProfilerMetric::ParticleCapacity => "CAPACITY",
-        ProfilerMetric::Emitters => "EMITTERS",
-        ProfilerMetric::DrawCalls => "DRAW CALLS",
-        ProfilerMetric::Dispatches => "DISPATCHES",
-        ProfilerMetric::BufferMemory => "BUFFER MEMORY",
+        ProfilerMetric::CpuTime => "profiler-metric-cpu-update",
+        ProfilerMetric::GpuTime => "profiler-metric-gpu-time",
+        ProfilerMetric::AliveParticles => "profiler-metric-live-particles",
+        ProfilerMetric::SubmittedInstances => "profiler-metric-submitted-instances",
+        ProfilerMetric::PeakParticles => "profiler-metric-peak-particles",
+        ProfilerMetric::ParticleCapacity => "profiler-metric-capacity",
+        ProfilerMetric::Emitters => "profiler-metric-emitters",
+        ProfilerMetric::DrawCalls => "profiler-metric-draw-calls",
+        ProfilerMetric::Dispatches => "profiler-metric-dispatches",
+        ProfilerMetric::BufferMemory => "profiler-metric-buffer-memory",
     }
 }
 
@@ -1804,12 +1822,12 @@ fn format_profile_memory(value: ProfileValue<u64>) -> (String, ProfileValueSourc
     (display, source)
 }
 
-fn profile_source_label(source: ProfileValueSource) -> &'static str {
-    match source {
-        ProfileValueSource::Measured => "MEASURED",
-        ProfileValueSource::Estimated => "ESTIMATED",
-        ProfileValueSource::Unavailable => "UNAVAILABLE",
-    }
+fn profile_source_label(source: ProfileValueSource, localizer: &Localizer) -> String {
+    localizer.text(match source {
+        ProfileValueSource::Measured => "profiler-source-measured",
+        ProfileValueSource::Estimated => "profiler-source-estimated",
+        ProfileValueSource::Unavailable => "profiler-source-unavailable",
+    })
 }
 
 fn profile_source_color(source: ProfileValueSource) -> Color {
@@ -1820,26 +1838,35 @@ fn profile_source_color(source: ProfileValueSource) -> Color {
     }
 }
 
-fn profiler_emitter_value(emitter: &aestra_runtime::EmitterProfile) -> String {
-    format!(
-        "{} LIVE  ·  {} PEAK  ·  {} CAP",
-        emitter.alive_particles, emitter.peak_particles, emitter.particle_capacity
-    )
+fn profiler_emitter_value(
+    emitter: &aestra_runtime::EmitterProfile,
+    localizer: &Localizer,
+) -> String {
+    let mut args = FluentArgs::new();
+    args.set("live", emitter.alive_particles);
+    args.set("peak", emitter.peak_particles);
+    args.set("capacity", emitter.particle_capacity);
+    localizer.text_with("profiler-emitter-summary", &args)
 }
 
-fn profiler_history_summary(history: &VecDeque<u64>) -> String {
+fn profiler_history_summary(history: &VecDeque<u64>, localizer: &Localizer) -> String {
     if history.is_empty() {
-        return "Collecting samples…".into();
+        return localizer.text("profiler-history-collecting");
     }
     let total = history.iter().copied().map(u128::from).sum::<u128>();
     let average = (total / history.len() as u128).min(u128::from(u64::MAX)) as u64;
     let maximum = history.iter().copied().max().unwrap_or_default();
-    format!(
-        "{} FRAMES  ·  AVG {}  ·  MAX {}",
-        history.len(),
+    let mut args = FluentArgs::new();
+    args.set("count", history.len());
+    args.set(
+        "average",
         format_profile_duration(ProfileValue::Measured(average)).0,
-        format_profile_duration(ProfileValue::Measured(maximum)).0
-    )
+    );
+    args.set(
+        "maximum",
+        format_profile_duration(ProfileValue::Measured(maximum)).0,
+    );
+    localizer.text_with("profiler-history-summary", &args)
 }
 
 fn remember_scroll_positions(
@@ -2427,6 +2454,7 @@ fn spawn_diagnostics_workspace(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     state: &DiagnosticsPanelState,
+    localizer: &Localizer,
 ) {
     let current = &session.diagnostics.diagnostics;
     let pending = session
@@ -2476,7 +2504,7 @@ fn spawn_diagnostics_workspace(
                 ))
                 .with_children(|header| {
                     header.spawn((
-                        Text::new("VALIDATION"),
+                        Text::new(localizer.text("diagnostics-validation")),
                         TextFont {
                             font_size: FontSize::Px(10.0),
                             ..default()
@@ -2487,14 +2515,27 @@ fn spawn_diagnostics_workspace(
                         flex_grow: 1.0,
                         ..default()
                     });
-                    spawn_diagnostic_count(header, errors, "ERRORS", Color::srgb(1.0, 0.38, 0.32));
+                    spawn_diagnostic_count(
+                        header,
+                        errors,
+                        "diagnostics-errors",
+                        Color::srgb(1.0, 0.38, 0.32),
+                        localizer,
+                    );
                     spawn_diagnostic_count(
                         header,
                         warnings,
-                        "WARNINGS",
+                        "diagnostics-warnings",
                         Color::srgb(1.0, 0.74, 0.30),
+                        localizer,
                     );
-                    spawn_diagnostic_count(header, info, "INFO", Color::srgb(0.45, 0.70, 1.0));
+                    spawn_diagnostic_count(
+                        header,
+                        info,
+                        "diagnostics-info",
+                        Color::srgb(0.45, 0.70, 1.0),
+                        localizer,
+                    );
                 });
             panel
                 .spawn((
@@ -2523,6 +2564,7 @@ fn spawn_diagnostics_workspace(
                             filter,
                             state.filter == filter,
                             count,
+                            localizer,
                         );
                     }
                 });
@@ -2530,8 +2572,8 @@ fn spawn_diagnostics_workspace(
             if errors + warnings + info == 0 {
                 spawn_diagnostics_empty_state(
                     panel,
-                    "NO ISSUES",
-                    "The working effect passes semantic and compiler validation.",
+                    &localizer.text("diagnostics-no-issues"),
+                    &localizer.text("diagnostics-no-issues-description"),
                     Color::srgb(0.35, 0.88, 0.57),
                 );
                 return;
@@ -2539,8 +2581,8 @@ fn spawn_diagnostics_workspace(
             if visible == 0 {
                 spawn_diagnostics_empty_state(
                     panel,
-                    "NO MATCHES",
-                    "No diagnostics match the selected severity filter.",
+                    &localizer.text("diagnostics-no-matches"),
+                    &localizer.text("diagnostics-no-matches-description"),
                     theme::TEXT_MUTED,
                 );
                 return;
@@ -2570,18 +2612,20 @@ fn spawn_diagnostics_workspace(
                         |list| {
                             spawn_diagnostic_section(
                                 list,
-                                "WORKING EFFECT",
+                                &localizer.text("diagnostics-working-effect"),
                                 &session.diagnostics,
                                 DiagnosticSource::Current,
                                 state.filter,
+                                localizer,
                             );
                             if let Some(pending) = &session.pending_change {
                                 spawn_diagnostic_section(
                                     list,
-                                    "PENDING TRANSACTION",
+                                    &localizer.text("diagnostics-pending-transaction"),
                                     &pending.diagnostics,
                                     DiagnosticSource::Pending,
                                     state.filter,
+                                    localizer,
                                 );
                             }
                         },
@@ -2595,7 +2639,9 @@ fn spawn_diagnostics_filter_button(
     filter: DiagnosticsFilter,
     selected: bool,
     count: usize,
+    localizer: &Localizer,
 ) {
+    let label = format!("{} {count}", localizer.text(filter.message_id()));
     let mut button = parent.spawn_empty();
     if selected {
         button.apply_scene(ui_shell::feathers_primary_button());
@@ -2607,7 +2653,7 @@ fn spawn_diagnostics_filter_button(
             EditorAction::SetDiagnosticsFilter(filter),
             DiagnosticsFilterButton(filter),
             FeathersActionButton,
-            AccessibleLabel(format!("{} {count}", filter.label())),
+            AccessibleLabel(label.clone()),
             Node {
                 height: Val::Px(24.0),
                 padding: UiRect::horizontal(Val::Px(8.0)),
@@ -2619,7 +2665,7 @@ fn spawn_diagnostics_filter_button(
         ))
         .with_children(|button| {
             button.spawn((
-                Text::new(format!("{} {count}", filter.label())),
+                Text::new(label),
                 TextFont {
                     font_size: FontSize::Px(9.0),
                     ..default()
@@ -2640,6 +2686,7 @@ fn spawn_diagnostic_section(
     report: &ValidationReport,
     source: DiagnosticSource,
     filter: DiagnosticsFilter,
+    localizer: &Localizer,
 ) {
     if !report
         .diagnostics
@@ -2664,7 +2711,7 @@ fn spawn_diagnostic_section(
         if !filter.matches(diagnostic.severity) {
             continue;
         }
-        spawn_diagnostic_row(parent, diagnostic, source, index);
+        spawn_diagnostic_row(parent, diagnostic, source, index, localizer);
     }
 }
 
@@ -2673,8 +2720,10 @@ fn spawn_diagnostic_row(
     diagnostic: &Diagnostic,
     source: DiagnosticSource,
     index: usize,
+    localizer: &Localizer,
 ) {
-    let (label, color) = diagnostic_severity_style(diagnostic.severity);
+    let (label, color) = diagnostic_severity_style(diagnostic.severity, localizer);
+    let code = localizer.text(diagnostic_code_message(diagnostic.code));
     parent
         .spawn((
             Button,
@@ -2712,7 +2761,7 @@ fn spawn_diagnostic_row(
             })
             .with_children(|content| {
                 content.spawn((
-                    Text::new(format!("{label}  ·  {:?}", diagnostic.code)),
+                    Text::new(format!("{label}  ·  {code}")),
                     TextFont {
                         font_size: FontSize::Px(9.0),
                         ..default()
@@ -2778,22 +2827,51 @@ fn spawn_diagnostics_empty_state(
         });
 }
 
-fn diagnostic_severity_style(severity: DiagnosticSeverity) -> (&'static str, Color) {
-    match severity {
-        DiagnosticSeverity::Error => ("ERROR", Color::srgb(1.0, 0.38, 0.32)),
-        DiagnosticSeverity::Warning => ("WARNING", Color::srgb(1.0, 0.74, 0.30)),
-        DiagnosticSeverity::Info => ("INFO", Color::srgb(0.45, 0.70, 1.0)),
+fn diagnostic_severity_style(
+    severity: DiagnosticSeverity,
+    localizer: &Localizer,
+) -> (String, Color) {
+    let (message, color) = match severity {
+        DiagnosticSeverity::Error => ("diagnostics-severity-error", Color::srgb(1.0, 0.38, 0.32)),
+        DiagnosticSeverity::Warning => {
+            ("diagnostics-severity-warning", Color::srgb(1.0, 0.74, 0.30))
+        }
+        DiagnosticSeverity::Info => ("diagnostics-severity-info", Color::srgb(0.45, 0.70, 1.0)),
+    };
+    (localizer.text(message), color)
+}
+
+fn diagnostic_code_message(code: DiagnosticCode) -> &'static str {
+    match code {
+        DiagnosticCode::UnsupportedFormat => "diagnostics-code-unsupported-format",
+        DiagnosticCode::NilId => "diagnostics-code-nil-id",
+        DiagnosticCode::DuplicateId => "diagnostics-code-duplicate-id",
+        DiagnosticCode::InvalidDuration => "diagnostics-code-invalid-duration",
+        DiagnosticCode::InvalidTiming => "diagnostics-code-invalid-timing",
+        DiagnosticCode::InvalidCapacity => "diagnostics-code-invalid-capacity",
+        DiagnosticCode::MissingModule => "diagnostics-code-missing-module",
+        DiagnosticCode::DuplicateModule => "diagnostics-code-duplicate-module",
+        DiagnosticCode::StageMismatch => "diagnostics-code-stage-mismatch",
+        DiagnosticCode::InvalidValue => "diagnostics-code-invalid-value",
+        DiagnosticCode::MissingRenderer => "diagnostics-code-missing-renderer",
+        DiagnosticCode::InvalidReference => "diagnostics-code-invalid-reference",
+        DiagnosticCode::UnknownModule => "diagnostics-code-unknown-module",
+        DiagnosticCode::UnsupportedRenderer => "diagnostics-code-unsupported-renderer",
+        DiagnosticCode::MissingAttribute => "diagnostics-code-missing-attribute",
+        DiagnosticCode::UnknownParameter => "diagnostics-code-unknown-parameter",
+        DiagnosticCode::ParameterTypeMismatch => "diagnostics-code-parameter-type-mismatch",
     }
 }
 
 fn spawn_diagnostic_count(
     parent: &mut ChildSpawnerCommands,
     count: usize,
-    label: &str,
+    message_id: &str,
     active_color: Color,
+    localizer: &Localizer,
 ) {
     parent.spawn((
-        Text::new(format!("{count} {label}")),
+        Text::new(format!("{count} {}", localizer.text(message_id))),
         TextFont {
             font_size: FontSize::Px(9.0),
             ..default()
@@ -3816,6 +3894,7 @@ fn handle_buttons(
         ResMut<ProfilerState>,
         ResMut<EditorSettings>,
         ResMut<SettingsPersistence>,
+        Res<Localizer>,
         ResMut<PreviewCameraController>,
         ResMut<PreviewDisplayState>,
     ),
@@ -3833,6 +3912,7 @@ fn handle_buttons(
         mut profiler,
         mut settings,
         mut settings_persistence,
+        localizer,
         mut preview_camera,
         mut preview_display,
     ) = editor_resources;
@@ -4131,7 +4211,7 @@ fn handle_buttons(
                     }
                     EditorAction::ResetProfilerPeaks => {
                         profiler.reset_peaks();
-                        session.status = "Profiler peaks and history reset".into();
+                        session.status = localizer.text("profiler-reset-status");
                     }
                     EditorAction::SelectDockPanel(panel) => {
                         if layout.activate(panel) {
@@ -4540,6 +4620,7 @@ fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
 
 fn update_profiler_labels(
     profiler: Res<ProfilerState>,
+    localizer: Res<Localizer>,
     mut labels: Query<
         (
             &mut Text,
@@ -4556,7 +4637,7 @@ fn update_profiler_labels(
     >,
     mut bars: Query<(&ProfilerHistoryBar, &mut Node, &mut BackgroundColor)>,
 ) {
-    if !profiler.is_changed() {
+    if !profiler.is_changed() && !localizer.is_changed() {
         return;
     }
     if let Some(profile) = &profiler.profile {
@@ -4569,16 +4650,16 @@ fn update_profiler_labels(
                         color.0 = theme::TEXT;
                     }
                     ProfilerMetricPart::Source => {
-                        text.0 = profile_source_label(source).into();
+                        text.0 = profile_source_label(source, &localizer);
                         color.0 = profile_source_color(source);
                     }
                 }
             } else if let Some(emitter) = emitter {
                 if let Some(profile) = profile.emitters.get(emitter.0) {
-                    text.0 = profiler_emitter_value(profile);
+                    text.0 = profiler_emitter_value(profile, &localizer);
                 }
             } else if summary.is_some() {
-                text.0 = profiler_history_summary(&profiler.cpu_history_ns);
+                text.0 = profiler_history_summary(&profiler.cpu_history_ns, &localizer);
             }
         }
     }
@@ -4610,24 +4691,6 @@ fn update_profiler_labels(
         } else {
             theme::ACCENT_DIM
         };
-    }
-}
-
-fn update_localized_text(
-    localizer: Res<Localizer>,
-    mut labels: Query<(&LocalizedText, &mut Text), Without<AboutDescription>>,
-    mut about: Query<&mut Text, (With<AboutDescription>, Without<LocalizedText>)>,
-) {
-    if !localizer.is_changed() {
-        return;
-    }
-    for (message, mut text) in &mut labels {
-        text.0 = localizer.text(message.0);
-    }
-    let mut args = FluentArgs::new();
-    args.set("version", env!("CARGO_PKG_VERSION"));
-    for mut text in &mut about {
-        text.0 = localizer.text_with("about-description", &args);
     }
 }
 
@@ -5090,24 +5153,5 @@ mod tests {
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
         assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
-    }
-
-    #[test]
-    fn localized_text_updates_when_the_locale_changes() {
-        let mut app = App::new();
-        app.insert_resource(Localizer::new("en-US").unwrap());
-        app.add_systems(Update, update_localized_text);
-        let label = app
-            .world_mut()
-            .spawn((LocalizedText("menu-file"), Text::new("stale")))
-            .id();
-        app.update();
-        assert_eq!(app.world().get::<Text>(label).unwrap().0, "File");
-
-        app.world_mut()
-            .resource_mut::<Localizer>()
-            .set_locale("fr-FR");
-        app.update();
-        assert_eq!(app.world().get::<Text>(label).unwrap().0, "Fichier");
     }
 }

@@ -62,7 +62,10 @@ architecture vision; this file is the shorter delivery plan.
   includes debounced atomic recovery snapshots, startup restore/discard,
   stale-snapshot cleanup, save/discard cleanup, and persisted autosave enablement and
   interval controls. The
-  remaining M5 work is localization of the other deep authoring workspaces.
+  diagnostics and profiler workspaces now use stable Fluent messages for their editor-owned
+  content while retaining exact compiler details and asset-authored emitter names. The
+  remaining M5 work is localization of curves, generated-plan presentation, changes, and
+  other deep authoring workspaces.
 - M6 renderer, material, and asset breadth: in progress. Renderers now reference stable,
   reusable material definitions instead of owning presentation state. The first sprite
   material domain compiles blend state, typed softness/tint inputs, explicit particle-color
@@ -125,9 +128,13 @@ Complete this milestone before expanding the editor or renderer feature surface 
    `EditorSettingsUiPlugin`, with focused activation and constraint tests. Document creation/opening/saving,
    application exit, window-close confirmation, recovery discovery, autosave, and
    cleanup now run through `EditorPersistencePlugin` and a shared `DocumentAction`
-   contract used by menus, keyboard shortcuts, and project-effect rows. This keeps
-   `main.rs` focused on composition and startup wiring. Next extract localization
-   application wiring and localize the remaining deep workspaces.
+   contract used by menus, keyboard shortcuts, and project-effect rows.
+   `EditorLocalizationPlugin` now owns Fluent resource setup and live generic-text
+   synchronization. Diagnostics and profiler chrome, states, metrics, severities, and
+   diagnostic-code titles use complete `en-US` and `fr-FR` catalogs; technical compiler
+   detail, semantic paths, and asset-authored names remain unchanged. This keeps
+   `main.rs` focused on composition and startup wiring. Next localize the remaining deep
+   authoring workspaces, then close the remaining shell decomposition seams.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.

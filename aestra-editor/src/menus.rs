@@ -2,6 +2,7 @@
 
 use crate::*;
 use bevy::ui_widgets::Activate;
+use fluent_bundle::FluentArgs;
 
 const SUBMENU_HOVER_DELAY: Duration = Duration::from_millis(250);
 

@@ -1,4 +1,5 @@
-use bevy::prelude::Resource;
+use crate::menus::AboutDescription;
+use bevy::prelude::*;
 use fluent_bundle::{FluentArgs, FluentResource, concurrent::FluentBundle};
 use std::collections::BTreeMap;
 use unic_langid::LanguageIdentifier;
@@ -9,8 +10,41 @@ const FR_FR_SOURCE: &str = include_str!("../locales/fr-FR/editor.ftl");
 
 pub(crate) const SUPPORTED_LOCALES: [&str; 2] = ["en-US", "fr-FR"];
 
+pub(crate) struct EditorLocalizationPlugin {
+    locale: &'static str,
+}
+
+impl EditorLocalizationPlugin {
+    pub(crate) fn new(requested_locale: &str) -> Self {
+        Self {
+            locale: resolve_locale(requested_locale),
+        }
+    }
+
+    pub(crate) fn locale(&self) -> &'static str {
+        self.locale
+    }
+}
+
+impl Plugin for EditorLocalizationPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(
+            Localizer::new(self.locale).expect("embedded Fluent catalogs must be valid"),
+        )
+        .add_systems(Update, update_localized_text.in_set(LocalizationSet::Sync));
+    }
+}
+
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum LocalizationSet {
+    Sync,
+}
+
+#[derive(Component)]
+pub(crate) struct LocalizedText(pub(crate) &'static str);
+
 #[cfg(test)]
-const SHELL_MESSAGE_IDS: &[&str] = &[
+const EDITOR_MESSAGE_IDS: &[&str] = &[
     "menu-file",
     "menu-edit",
     "menu-view",
@@ -128,6 +162,66 @@ const SHELL_MESSAGE_IDS: &[&str] = &[
     "inspector-input-opacity-over-life-description",
     "inspector-input-color-over-life",
     "inspector-input-color-over-life-description",
+    "diagnostics-validation",
+    "diagnostics-filter-all",
+    "diagnostics-errors",
+    "diagnostics-warnings",
+    "diagnostics-info",
+    "diagnostics-no-issues",
+    "diagnostics-no-issues-description",
+    "diagnostics-no-matches",
+    "diagnostics-no-matches-description",
+    "diagnostics-working-effect",
+    "diagnostics-pending-transaction",
+    "diagnostics-severity-error",
+    "diagnostics-severity-warning",
+    "diagnostics-severity-info",
+    "diagnostics-code-unsupported-format",
+    "diagnostics-code-nil-id",
+    "diagnostics-code-duplicate-id",
+    "diagnostics-code-invalid-duration",
+    "diagnostics-code-invalid-timing",
+    "diagnostics-code-invalid-capacity",
+    "diagnostics-code-missing-module",
+    "diagnostics-code-duplicate-module",
+    "diagnostics-code-stage-mismatch",
+    "diagnostics-code-invalid-value",
+    "diagnostics-code-missing-renderer",
+    "diagnostics-code-invalid-reference",
+    "diagnostics-code-unknown-module",
+    "diagnostics-code-unsupported-renderer",
+    "diagnostics-code-missing-attribute",
+    "diagnostics-code-unknown-parameter",
+    "diagnostics-code-parameter-type-mismatch",
+    "profiler-effect-profile",
+    "profiler-status-last-valid",
+    "profiler-status-live",
+    "profiler-reset-peaks",
+    "profiler-reset-status",
+    "profiler-waiting",
+    "profiler-waiting-description",
+    "profiler-metric-cpu-update",
+    "profiler-metric-gpu-time",
+    "profiler-metric-live-particles",
+    "profiler-metric-submitted-instances",
+    "profiler-metric-peak-particles",
+    "profiler-metric-capacity",
+    "profiler-metric-emitters",
+    "profiler-metric-draw-calls",
+    "profiler-metric-dispatches",
+    "profiler-metric-buffer-memory",
+    "profiler-source-measured",
+    "profiler-source-estimated",
+    "profiler-source-unavailable",
+    "profiler-cpu-history",
+    "profiler-history-collecting",
+    "profiler-history-summary",
+    "profiler-emitter-summary",
+    "profiler-emitters",
+    "profiler-measurement-availability",
+    "profiler-measured-description",
+    "profiler-estimated-description",
+    "profiler-unavailable-description",
 ];
 
 #[derive(Resource)]
@@ -193,13 +287,31 @@ impl Localizer {
     #[cfg(test)]
     fn missing_messages(&self, locale: &str) -> Vec<&'static str> {
         let Some(bundle) = self.bundles.get(locale) else {
-            return SHELL_MESSAGE_IDS.to_vec();
+            return EDITOR_MESSAGE_IDS.to_vec();
         };
-        SHELL_MESSAGE_IDS
+        EDITOR_MESSAGE_IDS
             .iter()
             .copied()
             .filter(|id| !bundle.has_message(id))
             .collect()
+    }
+}
+
+fn update_localized_text(
+    localizer: Res<Localizer>,
+    mut labels: Query<(&LocalizedText, &mut Text), Without<AboutDescription>>,
+    mut about: Query<&mut Text, (With<AboutDescription>, Without<LocalizedText>)>,
+) {
+    if !localizer.is_changed() {
+        return;
+    }
+    for (message, mut text) in &mut labels {
+        text.0 = localizer.text(message.0);
+    }
+    let mut args = FluentArgs::new();
+    args.set("version", env!("CARGO_PKG_VERSION"));
+    for mut text in &mut about {
+        text.0 = localizer.text_with("about-description", &args);
     }
 }
 
@@ -244,7 +356,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_shell_message_exists_in_every_catalog() {
+    fn every_editor_message_exists_in_every_catalog() {
         let localizer = Localizer::new("en-US").unwrap();
         for locale in SUPPORTED_LOCALES {
             assert_eq!(localizer.missing_messages(locale), Vec::<&str>::new());
@@ -296,5 +408,46 @@ mod tests {
             locale: "fr-FR",
         };
         assert_eq!(localizer.text("menu-file"), "File");
+    }
+
+    #[test]
+    fn localized_text_updates_when_the_locale_changes() {
+        let mut app = App::new();
+        app.add_plugins(EditorLocalizationPlugin::new("en-US"));
+        let label = app
+            .world_mut()
+            .spawn((LocalizedText("menu-file"), Text::new("stale")))
+            .id();
+        app.update();
+        assert_eq!(app.world().get::<Text>(label).unwrap().0, "File");
+
+        app.world_mut()
+            .resource_mut::<Localizer>()
+            .set_locale("fr-FR");
+        app.update();
+        assert_eq!(app.world().get::<Text>(label).unwrap().0, "Fichier");
+    }
+
+    #[test]
+    fn deep_workspace_messages_and_arguments_are_localized() {
+        let localizer = Localizer::new("fr-FR").unwrap();
+        assert_eq!(
+            localizer.text("diagnostics-code-invalid-value"),
+            "Valeur non valide"
+        );
+        assert_eq!(
+            localizer.text("profiler-metric-live-particles"),
+            "PARTICULES ACTIVES"
+        );
+
+        let mut args = FluentArgs::new();
+        args.set("count", 12_u32);
+        args.set("average", "1,2 ms");
+        args.set("maximum", "2,4 ms");
+        let summary = localizer.text_with("profiler-history-summary", &args);
+        assert!(summary.contains("12"));
+        assert!(summary.contains("IMAGES"));
+        assert!(summary.contains("MOY."));
+        assert!(summary.contains("1,2 ms"));
     }
 }

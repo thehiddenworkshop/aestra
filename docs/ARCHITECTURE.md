@@ -117,10 +117,12 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   the plugin owns startup recovery, open/save/save-as/exit workflows, unsaved-change
   confirmation, recovery autosave and cleanup, and primary-window close handling.
   `recovery.rs` remains the atomic snapshot storage boundary.
-- Resolves editor-facing text through Fluent bundles with stable semantic message IDs,
-  an embedded complete English fallback, live locale switching, and the selected locale
-  persisted in editor settings. Asset-authored names, paths, and generated code remain
-  locale-independent.
+- Resolves editor-facing text through `EditorLocalizationPlugin` and Fluent bundles
+  with stable semantic message IDs, an embedded complete English fallback, live locale
+  switching, and the selected locale persisted in editor settings. Diagnostics retain
+  exact compiler detail and semantic paths while localizing workspace chrome, severity,
+  and stable diagnostic-code titles. Asset-authored names, paths, and generated code
+  remain locale-independent.
 - Projects structured validation reports into a dockable diagnostics workspace with
   severity filtering and semantic-path navigation; the persistent footer exposes
   compile health and opens that workspace directly.
@@ -211,7 +213,8 @@ The current file format is version 2. Prototype version 1 is intentionally unsup
 - [x] Fluent editor-shell localization with catalog validation, fallback, and live locale switching
 - [x] localized built-in Inspector module inputs and descriptions
 - [x] semantic emitter transforms with undoable Inspector and viewport gizmo editing
-- [ ] localized diagnostics, profiler, and remaining authoring workspace content
+- [x] localized diagnostics and profiler workspace content
+- [ ] localized remaining authoring workspace content
 - [x] persistent recursive pane resizing and dockable authoring-panel tab stacks
 - [x] persisted native floating panel windows with redocking
 

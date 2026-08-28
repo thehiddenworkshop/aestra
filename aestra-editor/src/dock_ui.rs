@@ -364,10 +364,17 @@ fn spawn_panel_content(
             spawn_curves_workspace(parent, sources.session, sources.registry, workspace);
         }
         DockPanel::Diagnostics => {
-            spawn_diagnostics_workspace(parent, sources.session, sources.diagnostics_panel);
+            spawn_diagnostics_workspace(
+                parent,
+                sources.session,
+                sources.diagnostics_panel,
+                sources.localizer,
+            );
         }
         DockPanel::GeneratedCode => spawn_generated_code_workspace(parent, sources.session),
-        DockPanel::Profiler => spawn_profiler_workspace(parent, sources.session, sources.profiler),
+        DockPanel::Profiler => {
+            spawn_profiler_workspace(parent, sources.session, sources.profiler, sources.localizer)
+        }
         DockPanel::Changes => spawn_changes_workspace(parent, sources.session),
         DockPanel::Settings => spawn_settings_workspace(
             parent,
