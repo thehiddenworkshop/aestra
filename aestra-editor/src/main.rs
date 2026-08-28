@@ -82,7 +82,7 @@ use docking::{
 use feathers::button::queue_action_activation as queue_feathers_action_activation;
 pub(crate) use feathers::scenes as ui_shell;
 #[cfg(test)]
-use feathers::scroll::vertical_scrollbar_needed;
+use feathers::scroll::scrollbar_needed;
 use feathers::{
     AestraFeathersPlugin, AestraFeathersSet,
     button::{
@@ -327,8 +327,8 @@ mod tests {
 
     #[test]
     fn scrollbar_only_appears_for_overflowing_content() {
-        assert!(!vertical_scrollbar_needed(320.0, 320.0));
-        assert!(!vertical_scrollbar_needed(320.0, 320.4));
-        assert!(vertical_scrollbar_needed(320.0, 321.0));
+        assert!(!scrollbar_needed(320.0, 320.0));
+        assert!(!scrollbar_needed(320.0, 320.4));
+        assert!(scrollbar_needed(320.0, 321.0));
     }
 }

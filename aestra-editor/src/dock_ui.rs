@@ -742,10 +742,16 @@ fn resize_workspace_pane(
     let Ok(parent_node) = queries.computed.get(parent.parent()) else {
         return;
     };
-    let scale = window.scale_factor().max(0.01);
+    let scale = window.scale_factor();
     let (delta, span) = match splitter.axis {
-        DockAxis::Horizontal => (drag.delta.x / scale, parent_node.size().x / scale),
-        DockAxis::Vertical => (drag.delta.y / scale, parent_node.size().y / scale),
+        DockAxis::Horizontal => (
+            screen_delta_to_logical(drag.delta.x, scale),
+            parent_node.size().x,
+        ),
+        DockAxis::Vertical => (
+            screen_delta_to_logical(drag.delta.y, scale),
+            parent_node.size().y,
+        ),
     };
     if !layout.resize_split(splitter.node, delta, span) {
         return;
@@ -765,6 +771,10 @@ fn resize_workspace_pane(
     if let Ok(mut color) = queries.colors.get_mut(drag.event_target()) {
         color.0 = theme::SPLITTER_HOVER;
     }
+}
+
+fn screen_delta_to_logical(delta: f32, scale_factor: f32) -> f32 {
+    delta / scale_factor.max(0.01)
 }
 
 fn find_dock_node(node: &DockNode, target: DockNodeId) -> Option<&DockNode> {
@@ -1251,5 +1261,12 @@ mod tests {
             }),
             SystemCursorIcon::NsResize
         );
+    }
+
+    #[test]
+    fn splitter_drag_converts_screen_pixels_to_logical_ui_units() {
+        assert_eq!(screen_delta_to_logical(24.0, 1.0), 24.0);
+        assert_eq!(screen_delta_to_logical(24.0, 1.5), 16.0);
+        assert_eq!(screen_delta_to_logical(-30.0, 2.0), -15.0);
     }
 }

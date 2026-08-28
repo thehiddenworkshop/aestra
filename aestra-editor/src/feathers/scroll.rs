@@ -4,7 +4,7 @@ use super::scenes;
 use crate::ScrollMemoryKey;
 use bevy::{
     prelude::*,
-    ui_widgets::{ScrollArea, Scrollbar},
+    ui_widgets::{ControlOrientation, ScrollArea, Scrollbar},
 };
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -26,7 +26,10 @@ pub(crate) fn spawn_vertical_scroll_area(
     target
 }
 
-fn spawn_vertical_scrollbar(parent: &mut ChildSpawnerCommands, target: Entity) {
+pub(crate) fn spawn_vertical_scrollbar(
+    parent: &mut ChildSpawnerCommands,
+    target: Entity,
+) -> Entity {
     parent
         .spawn_empty()
         .apply_scene(scenes::feathers_vertical_scrollbar(target))
@@ -36,25 +39,47 @@ fn spawn_vertical_scrollbar(parent: &mut ChildSpawnerCommands, target: Entity) {
             display: Display::None,
             padding: UiRect::horizontal(Val::Px(3.0)),
             ..default()
-        });
+        })
+        .id()
 }
 
-pub(crate) fn vertical_scrollbar_needed(viewport_height: f32, content_height: f32) -> bool {
-    content_height > viewport_height + 0.5
+pub(crate) fn spawn_horizontal_scrollbar(
+    parent: &mut ChildSpawnerCommands,
+    target: Entity,
+) -> Entity {
+    parent
+        .spawn_empty()
+        .apply_scene(scenes::feathers_horizontal_scrollbar(target))
+        .insert(Node {
+            width: Val::Percent(100.0),
+            height: Val::Px(10.0),
+            display: Display::None,
+            padding: UiRect::vertical(Val::Px(3.0)),
+            ..default()
+        })
+        .id()
+}
+
+pub(crate) fn scrollbar_needed(viewport_extent: f32, content_extent: f32) -> bool {
+    content_extent > viewport_extent + 0.5
 }
 
 pub(crate) fn update_scrollbar_visibility(
-    scroll_areas: Query<&ComputedNode, With<ScrollArea>>,
+    scroll_targets: Query<&ComputedNode>,
     mut scrollbars: Query<(&Scrollbar, &mut Node), Without<ScrollArea>>,
 ) {
     for (scrollbar, mut node) in &mut scrollbars {
-        let Ok(viewport) = scroll_areas.get(scrollbar.target) else {
+        let Ok(viewport) = scroll_targets.get(scrollbar.target) else {
             continue;
         };
-        node.display = if vertical_scrollbar_needed(viewport.size().y, viewport.content_size().y) {
-            Display::Flex
-        } else {
-            Display::None
+        let needed = match scrollbar.orientation {
+            ControlOrientation::Vertical => {
+                scrollbar_needed(viewport.size().y, viewport.content_size().y)
+            }
+            ControlOrientation::Horizontal => {
+                scrollbar_needed(viewport.size().x, viewport.content_size().x)
+            }
         };
+        node.display = if needed { Display::Flex } else { Display::None };
     }
 }

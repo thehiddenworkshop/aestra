@@ -12,6 +12,8 @@ use fluent_bundle::FluentArgs;
 use serde::{Deserialize, Serialize};
 use std::{fs, io, path::PathBuf};
 
+const DEFAULT_TOP_SPLIT_RATIO: f32 = 0.64;
+
 /// Owns the editor's docking lifecycle while panel content remains supplied by the editor shell.
 ///
 /// The persistent [`WorkspaceLayout`] is deliberately separate from transient pointer state. This
@@ -671,7 +673,7 @@ impl Default for WorkspaceLayout {
         let center_right = DockNode::split(5, DockAxis::Horizontal, 0.68, viewport, inspector);
         let top = DockNode::split(6, DockAxis::Horizontal, 0.17, assets, center_right);
         Self {
-            root: DockNode::split(7, DockAxis::Vertical, 0.71, top, bottom),
+            root: DockNode::split(7, DockAxis::Vertical, DEFAULT_TOP_SPLIT_RATIO, top, bottom),
             floating: Vec::new(),
             next_node_id: 8,
         }
@@ -1165,6 +1167,32 @@ mod tests {
         let layout = WorkspaceLayout::default();
         let source = ron::to_string(&layout).unwrap();
         assert_eq!(ron::from_str::<WorkspaceLayout>(&source).unwrap(), layout);
+    }
+
+    #[test]
+    fn default_workspace_reserves_professional_choreography_height() {
+        let layout = WorkspaceLayout::default();
+        let DockNode::Split { axis, ratio, .. } = layout.root else {
+            panic!("default workspace root should be a split");
+        };
+        assert_eq!(axis, DockAxis::Vertical);
+        assert!((ratio - DEFAULT_TOP_SPLIT_RATIO).abs() < f32::EPSILON);
+        assert!((1.0 - ratio - 0.36).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn serialized_workspace_preserves_an_existing_user_split() {
+        let mut layout = WorkspaceLayout::default();
+        let DockNode::Split { ratio, .. } = &mut layout.root else {
+            panic!("default workspace root should be a split");
+        };
+        *ratio = 0.73;
+        let source = ron::to_string(&layout).unwrap();
+        let restored = ron::from_str::<WorkspaceLayout>(&source).unwrap();
+        let DockNode::Split { ratio, .. } = restored.root else {
+            panic!("restored workspace root should be a split");
+        };
+        assert_eq!(ratio, 0.73);
     }
 
     #[test]

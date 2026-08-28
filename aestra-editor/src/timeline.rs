@@ -1,3 +1,4 @@
+use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
 use crate::{
     ComboOption, CurvesState, DockPanel, EditorNativeControl, EditorTooltip, FeathersActionButton,
     Localizer, MenuState, ModulePaletteState, PendingFeathersActivation, TransportAction,
@@ -6,6 +7,8 @@ use crate::{
 };
 use aestra_authoring::{EffectCommand, EffectTransaction};
 use aestra_bevy::EmitterId;
+#[cfg(test)]
+use bevy::ui_widgets::{ControlOrientation, Scrollbar};
 use bevy::{
     feathers::cursor::{EntityCursor, OverrideCursor},
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
@@ -63,7 +66,8 @@ impl Plugin for TimelinePlugin {
                 (
                     update_timeline_time_label,
                     update_timeline_visuals,
-                    update_timeline_scrollbar,
+                    sync_timeline_vertical_scroll,
+                    sync_timeline_horizontal_scroll,
                     update_track_header_hover_actions,
                 )
                     .chain()
@@ -391,6 +395,26 @@ mod tests {
     }
 
     #[test]
+    fn trim_handles_only_appear_for_real_boundaries_inside_the_view() {
+        let view = TimelineView {
+            start: 2.0,
+            end: 2.1,
+        };
+        assert!(!timeline_boundary_is_visible(0.0, view));
+        assert!(timeline_boundary_is_visible(2.0, view));
+        assert!(timeline_boundary_is_visible(2.05, view));
+        assert!(timeline_boundary_is_visible(2.1, view));
+        assert!(!timeline_boundary_is_visible(2.8, view));
+    }
+
+    #[test]
+    fn timeline_drag_converts_screen_pixels_to_logical_ui_units() {
+        assert_eq!(screen_distance_to_logical(24.0, 1.0), 24.0);
+        assert_eq!(screen_distance_to_logical(24.0, 1.5), 16.0);
+        assert_eq!(screen_distance_to_logical(-30.0, 2.0), -15.0);
+    }
+
+    #[test]
     fn timeline_zoom_keeps_the_time_under_the_pointer() {
         let mut state = TimelineState::default();
         state.frame_all(10.0);
@@ -419,6 +443,20 @@ mod tests {
         state.pan_by(20.0, 8.0);
         assert_eq!(state.view.start, 6.0);
         assert_eq!(state.view.end, 8.0);
+    }
+
+    #[test]
+    fn synchronized_vertical_scroll_prefers_tracks_and_clamps_to_overflow() {
+        assert_eq!(resolved_vertical_scroll(12.0, None, None, 90.0), 12.0);
+        assert_eq!(resolved_vertical_scroll(12.0, Some(28.0), None, 90.0), 28.0);
+        assert_eq!(
+            resolved_vertical_scroll(12.0, Some(28.0), Some(44.0), 90.0),
+            44.0
+        );
+        assert_eq!(
+            resolved_vertical_scroll(12.0, None, Some(144.0), 90.0),
+            90.0
+        );
     }
 
     #[test]
@@ -461,7 +499,7 @@ mod tests {
         app.insert_resource(timeline);
         app.add_systems(
             Update,
-            (update_timeline_visuals, update_timeline_scrollbar).chain(),
+            (update_timeline_visuals, sync_timeline_horizontal_scroll).chain(),
         );
 
         app.update();
@@ -537,6 +575,8 @@ mod tests {
         let emitter_count = session.effect.emitters.len();
         let duration = session.playback_duration();
         let mut app = App::new();
+        let mut timeline = TimelineState::framed(duration);
+        timeline.vertical_scroll = 72.0;
         app.add_plugins((
             MinimalPlugins,
             AssetPlugin::default(),
@@ -545,7 +585,7 @@ mod tests {
         ))
         .init_asset::<Image>()
         .insert_resource(session)
-        .insert_resource(TimelineState::framed(duration))
+        .insert_resource(timeline)
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline);
 
@@ -598,6 +638,99 @@ mod tests {
         };
         assert_eq!(disabled, 1);
         assert_eq!(diagnostics, 1);
+
+        let (panes, track_target) = {
+            let world = app.world_mut();
+            let mut query = world.query::<(Entity, &TimelineVerticalPane, &ScrollPosition)>();
+            let panes = query
+                .iter(world)
+                .map(|(entity, kind, position)| (entity, *kind, position.y))
+                .collect::<Vec<_>>();
+            let track_target = panes
+                .iter()
+                .find(|(_, kind, _)| *kind == TimelineVerticalPane::Tracks)
+                .map(|(entity, _, _)| *entity)
+                .unwrap();
+            (panes, track_target)
+        };
+        assert_eq!(panes.len(), 2);
+        assert!(panes.iter().all(|(_, _, offset)| *offset == 72.0));
+        let horizontal_target = {
+            let world = app.world_mut();
+            let mut query =
+                world.query_filtered::<Entity, With<TimelineHorizontalScrollViewport>>();
+            query.single(world).unwrap()
+        };
+        let scrollbar_targets = {
+            let world = app.world_mut();
+            let mut query = world.query::<&Scrollbar>();
+            query
+                .iter(world)
+                .map(|scrollbar| (scrollbar.orientation, scrollbar.target))
+                .collect::<Vec<_>>()
+        };
+        assert!(scrollbar_targets.contains(&(ControlOrientation::Vertical, track_target)));
+        assert!(scrollbar_targets.contains(&(ControlOrientation::Horizontal, horizontal_target)));
+        assert_eq!(scrollbar_targets.len(), 2);
+
+        let constrained_ancestors = {
+            let world = app.world_mut();
+            let mut bodies = world.query_filtered::<&Node, With<TimelineBody>>();
+            let body = bodies.single(world).unwrap().min_height;
+            let mut headers = world.query_filtered::<&Node, With<TimelineHeaderColumn>>();
+            let header = headers.single(world).unwrap().min_height;
+            let mut canvases = world.query_filtered::<&Node, With<TimelineCanvas>>();
+            let canvas = canvases.single(world).unwrap().min_height;
+            [body, header, canvas]
+        };
+        assert_eq!(constrained_ancestors, [Val::Px(0.0); 3]);
+
+        let (
+            gutter_height,
+            scrollbar_position,
+            scrollbar_height,
+            scrollbar_padding,
+            horizontal_scrollbar_gutter,
+            vertical_gutter_width,
+            vertical_gutter_border,
+        ) = {
+            let world = app.world_mut();
+            let mut gutters = world.query_filtered::<&Node, With<TimelineHorizontalGutter>>();
+            let gutter_height = gutters.single(world).unwrap().height;
+            let mut scrollbars = world.query::<(&Scrollbar, &Node)>();
+            let (_, scrollbar) = scrollbars
+                .iter(world)
+                .find(|(scrollbar, _)| scrollbar.orientation == ControlOrientation::Horizontal)
+                .unwrap();
+            let scrollbar_layout = (scrollbar.position_type, scrollbar.height, scrollbar.padding);
+            let mut scrollbar_gutters =
+                world.query_filtered::<&Node, With<TimelineHorizontalScrollbarGutter>>();
+            let horizontal_scrollbar_gutter = scrollbar_gutters.single(world).unwrap();
+            let horizontal_scrollbar_gutter = (
+                horizontal_scrollbar_gutter.height,
+                horizontal_scrollbar_gutter.border.top,
+            );
+            let mut vertical_gutters =
+                world.query_filtered::<&Node, With<TimelineVerticalScrollbarGutter>>();
+            let vertical_gutter = vertical_gutters.single(world).unwrap();
+            (
+                gutter_height,
+                scrollbar_layout.0,
+                scrollbar_layout.1,
+                scrollbar_layout.2,
+                horizontal_scrollbar_gutter,
+                vertical_gutter.width,
+                vertical_gutter.border.left,
+            )
+        };
+        assert_eq!(gutter_height, Val::Px(15.0));
+        assert_eq!(scrollbar_position, PositionType::Relative);
+        assert_eq!(scrollbar_height, Val::Px(10.0));
+        assert_eq!(scrollbar_padding.top, Val::Px(3.0));
+        assert_eq!(scrollbar_padding.bottom, Val::Px(3.0));
+        assert_eq!(horizontal_scrollbar_gutter, (Val::Px(15.0), Val::Px(1.0)));
+        assert_eq!(vertical_gutter_width, Val::Px(15.0));
+        assert_eq!(vertical_gutter_border, Val::Px(1.0));
     }
 
     #[test]
@@ -787,8 +920,22 @@ fn update_timeline_visuals(
     session: Res<EditorSession>,
     mut state: ResMut<TimelineState>,
     canvases: Query<&ComputedNode, With<TimelineCanvas>>,
-    mut clips: Query<(&TimelineClip, &mut Node), Without<Playhead>>,
-    mut playheads: Query<&mut Node, (With<Playhead>, Without<TimelineClip>)>,
+    mut clips: Query<
+        (&TimelineClip, &mut Node),
+        (Without<Playhead>, Without<TimelineClipInteraction>),
+    >,
+    mut clip_controls: Query<
+        (&TimelineClipInteraction, &mut Node),
+        (Without<TimelineClip>, Without<Playhead>),
+    >,
+    mut playheads: Query<
+        &mut Node,
+        (
+            With<Playhead>,
+            Without<TimelineClip>,
+            Without<TimelineClipInteraction>,
+        ),
+    >,
     mut guides: Query<
         &mut Node,
         (
@@ -796,6 +943,7 @@ fn update_timeline_visuals(
             Without<TimelineClip>,
             Without<Playhead>,
             Without<TimelineRulerTick>,
+            Without<TimelineClipInteraction>,
         ),
     >,
     mut ticks: Query<
@@ -804,6 +952,7 @@ fn update_timeline_visuals(
             Without<TimelineClip>,
             Without<Playhead>,
             Without<TimelineSnapGuide>,
+            Without<TimelineClipInteraction>,
         ),
     >,
     mut texts: Query<&mut Text>,
@@ -845,6 +994,34 @@ fn update_timeline_visuals(
             Val::Percent(((visible_end - visible_start) / view.span() * 100.0).clamp(0.05, 100.0));
     }
 
+    for (control, mut node) in &mut clip_controls {
+        let Some(emitter) = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == control.emitter)
+        else {
+            node.display = Display::None;
+            continue;
+        };
+        let (start, duration) = state
+            .drag
+            .filter(|drag| drag.emitter == control.emitter)
+            .map_or((emitter.start_time, emitter.duration), |drag| {
+                (drag.current_start, drag.current_duration)
+            });
+        let boundary_visible = match control.kind {
+            TimelineDragKind::Move => true,
+            TimelineDragKind::TrimStart => timeline_boundary_is_visible(start, view),
+            TimelineDragKind::TrimEnd => timeline_boundary_is_visible(start + duration, view),
+        };
+        node.display = if boundary_visible {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
     let playhead_position = view.normalized_time(session.time());
     for mut node in &mut playheads {
         node.display = if (0.0..=1.0).contains(&playhead_position) {
@@ -883,38 +1060,134 @@ fn update_timeline_visuals(
     }
 }
 
-fn update_timeline_scrollbar(
+fn sync_timeline_horizontal_scroll(
     session: Res<EditorSession>,
-    state: Res<TimelineState>,
-    mut tracks: Query<
+    mut state: ResMut<TimelineState>,
+    mut viewports: Query<
+        (&ComputedNode, &mut ScrollPosition),
+        With<TimelineHorizontalScrollViewport>,
+    >,
+    mut contents: Query<
         &mut Node,
         (
-            With<TimelineScrollbarTrack>,
-            Without<TimelineScrollbarThumb>,
+            With<TimelineHorizontalScrollContent>,
+            Without<TimelineHorizontalGutter>,
+            Without<TimelineHorizontalScrollbarGutter>,
         ),
     >,
-    mut thumbs: Query<
+    mut gutters: Query<
         &mut Node,
         (
-            With<TimelineScrollbarThumb>,
-            Without<TimelineScrollbarTrack>,
+            Or<(
+                With<TimelineHorizontalGutter>,
+                With<TimelineHorizontalScrollbarGutter>,
+            )>,
+            Without<TimelineHorizontalScrollContent>,
         ),
     >,
 ) {
     let duration = session.playback_duration().max(0.05);
-    let visible_ratio = (state.view.span() / duration).clamp(0.0, 1.0);
-    let overflow = visible_ratio < 0.999;
-    for mut node in &mut tracks {
-        node.display = if overflow {
+    let span = state.view.span().clamp(0.001, duration);
+    let overflow = span < duration * 0.999;
+    for mut content in &mut contents {
+        content.width = Val::Percent((duration / span * 100.0).clamp(100.0, 100_000.0));
+    }
+    for mut gutter in &mut gutters {
+        gutter.display = if overflow {
             Display::Flex
         } else {
             Display::None
         };
     }
-    for mut node in &mut thumbs {
-        node.left = Val::Percent((state.view.start / duration * 100.0).clamp(0.0, 100.0));
-        node.width = Val::Percent((visible_ratio * 100.0).clamp(2.0, 100.0));
+
+    let Ok((computed, mut position)) = viewports.single_mut() else {
+        return;
+    };
+    let maximum = (computed.content_size().x - computed.size().x).max(0.0);
+    let scrollable_time = (duration - span).max(0.0);
+    if !position.is_added() && position.is_changed() && maximum > 0.5 {
+        let start = (position.x / maximum).clamp(0.0, 1.0) * scrollable_time;
+        state.view.start = start;
+        state.view.end = start + span;
     }
+    let desired = if scrollable_time > 0.0 && maximum > 0.5 {
+        (state.view.start / scrollable_time).clamp(0.0, 1.0) * maximum
+    } else {
+        0.0
+    };
+    if (position.x - desired).abs() > 0.01 || position.y.abs() > 0.01 {
+        position.0 = Vec2::new(desired, 0.0);
+    }
+}
+
+fn sync_timeline_vertical_scroll(
+    mut state: ResMut<TimelineState>,
+    mut panes: Query<(&TimelineVerticalPane, &ComputedNode, &mut ScrollPosition)>,
+    mut gutters: Query<&mut Node, With<TimelineVerticalScrollbarGutter>>,
+) {
+    let mut changed_header = None;
+    let mut changed_tracks = None;
+    for (kind, computed, position) in &mut panes {
+        if position.is_added() || !position.is_changed() || computed.size().y <= 0.5 {
+            continue;
+        }
+        let maximum = (computed.content_size().y - computed.size().y).max(0.0);
+        let value = position.y.clamp(0.0, maximum);
+        match kind {
+            TimelineVerticalPane::Headers => changed_header = Some(value),
+            TimelineVerticalPane::Tracks => changed_tracks = Some(value),
+        }
+    }
+
+    let maximum = panes
+        .iter()
+        .filter(|(kind, computed, _)| {
+            **kind == TimelineVerticalPane::Tracks && computed.size().y > 0.5
+        })
+        .map(|(_, computed, _)| (computed.content_size().y - computed.size().y).max(0.0))
+        .next()
+        .or_else(|| {
+            panes
+                .iter()
+                .filter(|(kind, computed, _)| {
+                    **kind == TimelineVerticalPane::Headers && computed.size().y > 0.5
+                })
+                .map(|(_, computed, _)| (computed.content_size().y - computed.size().y).max(0.0))
+                .next()
+        });
+    let Some(maximum) = maximum else {
+        return;
+    };
+    for mut gutter in &mut gutters {
+        gutter.display = if maximum > 0.5 {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    state.vertical_scroll = resolved_vertical_scroll(
+        state.vertical_scroll,
+        changed_header,
+        changed_tracks,
+        maximum,
+    );
+    for (_, _, mut position) in &mut panes {
+        if (position.y - state.vertical_scroll).abs() > 0.01 || position.x.abs() > 0.01 {
+            position.0 = Vec2::new(0.0, state.vertical_scroll);
+        }
+    }
+}
+
+fn resolved_vertical_scroll(
+    previous: f32,
+    changed_header: Option<f32>,
+    changed_tracks: Option<f32>,
+    maximum: f32,
+) -> f32 {
+    changed_tracks
+        .or(changed_header)
+        .unwrap_or(previous)
+        .clamp(0.0, maximum.max(0.0))
 }
 
 fn update_timeline_time_label(
@@ -1039,6 +1312,27 @@ fn snap_moved_timing(
 #[derive(Component)]
 struct TimelineCanvas;
 
+#[derive(Component)]
+struct TimelineBody;
+
+#[derive(Component)]
+struct TimelineHeaderColumn;
+
+#[derive(Component)]
+struct TimelineHorizontalGutter;
+
+#[derive(Component)]
+struct TimelineHorizontalScrollbarGutter;
+
+#[derive(Component)]
+struct TimelineVerticalScrollbarGutter;
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+enum TimelineVerticalPane {
+    Headers,
+    Tracks,
+}
+
 #[derive(Component, Clone, Copy)]
 struct EmitterTrackHeader {
     emitter: EmitterId,
@@ -1074,10 +1368,10 @@ struct TimelineRulerTick(usize);
 struct TimelineSnapGuide;
 
 #[derive(Component)]
-struct TimelineScrollbarTrack;
+struct TimelineHorizontalScrollViewport;
 
 #[derive(Component)]
-struct TimelineScrollbarThumb;
+struct TimelineHorizontalScrollContent;
 
 #[derive(Component)]
 struct Playhead;
@@ -1126,11 +1420,6 @@ struct TimelineDrag {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct TimelineScrollbarDrag {
-    view_start: f32,
-}
-
-#[derive(Clone, Copy, Debug)]
 struct TimelineView {
     start: f32,
     end: f32,
@@ -1157,8 +1446,8 @@ pub(crate) struct TimelineState {
     drag: Option<TimelineDrag>,
     snap_guide: Option<f32>,
     panning: bool,
-    scrollbar_drag: Option<TimelineScrollbarDrag>,
     context_emitter: Option<EmitterId>,
+    vertical_scroll: f32,
     known_duration: f32,
 }
 
@@ -1180,8 +1469,8 @@ impl TimelineState {
             drag: None,
             snap_guide: None,
             panning: false,
-            scrollbar_drag: None,
             context_emitter: None,
+            vertical_scroll: 0.0,
             known_duration: duration,
         }
     }
@@ -1265,6 +1554,7 @@ pub(crate) fn spawn_timeline(
                     Node {
                         width: Val::Percent(100.0),
                         height: Val::Px(38.0),
+                        flex_shrink: 0.0,
                         align_items: AlignItems::Center,
                         padding: UiRect::horizontal(Val::Px(14.0)),
                         column_gap: Val::Px(14.0),
@@ -1340,17 +1630,23 @@ pub(crate) fn spawn_timeline(
                     mini_button(header, "+", TimelineAction::AdjustEffectDuration(0.25));
                 });
             timeline
-                .spawn(Node {
-                    flex_grow: 1.0,
-                    width: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Row,
-                    ..default()
-                })
+                .spawn((
+                    TimelineBody,
+                    Node {
+                        flex_grow: 1.0,
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(0.0),
+                        flex_direction: FlexDirection::Row,
+                        ..default()
+                    },
+                ))
                 .with_children(|body| {
                     body.spawn((
+                        TimelineHeaderColumn,
                         Node {
                             width: Val::Px(224.0),
                             height: Val::Percent(100.0),
+                            min_height: Val::Px(0.0),
                             flex_direction: FlexDirection::Column,
                             border: UiRect::right(Val::Px(1.0)),
                             ..default()
@@ -1363,6 +1659,7 @@ pub(crate) fn spawn_timeline(
                             .spawn(Node {
                                 width: Val::Percent(100.0),
                                 height: Val::Px(25.0),
+                                flex_shrink: 0.0,
                                 padding: UiRect::horizontal(Val::Px(8.0)),
                                 align_items: AlignItems::Center,
                                 column_gap: Val::Px(6.0),
@@ -1390,19 +1687,56 @@ pub(crate) fn spawn_timeline(
                                         localizer.text("edit-add-emitter"),
                                     ));
                             });
-                        for (index, emitter) in session.effect.emitters.iter().enumerate() {
-                            spawn_emitter_track_header(
-                                labels,
-                                session,
-                                state,
-                                localizer,
-                                index,
-                                emitter.id,
-                                &emitter.name,
-                                emitter.enabled,
-                            );
-                        }
+                        labels
+                            .spawn((
+                                TimelineVerticalPane::Headers,
+                                RelativeCursorPosition::default(),
+                                ScrollPosition(Vec2::new(0.0, state.vertical_scroll)),
+                                Node {
+                                    flex_grow: 1.0,
+                                    min_height: Val::Px(0.0),
+                                    width: Val::Percent(100.0),
+                                    flex_direction: FlexDirection::Column,
+                                    overflow: Overflow::scroll_y(),
+                                    scrollbar_width: 0.0,
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|headers| {
+                                for (index, emitter) in session.effect.emitters.iter().enumerate() {
+                                    spawn_emitter_track_header(
+                                        headers,
+                                        session,
+                                        state,
+                                        localizer,
+                                        index,
+                                        emitter.id,
+                                        &emitter.name,
+                                        emitter.enabled,
+                                    );
+                                }
+                            });
+                        labels.spawn((
+                            TimelineHorizontalGutter,
+                            Node {
+                                display: if state.view.span()
+                                    < session.playback_duration().max(0.05) * 0.999
+                                {
+                                    Display::Flex
+                                } else {
+                                    Display::None
+                                },
+                                width: Val::Percent(100.0),
+                                height: Val::Px(15.0),
+                                flex_shrink: 0.0,
+                                border: UiRect::top(Val::Px(1.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme::PANEL_DARK),
+                            BorderColor::all(theme::BORDER),
+                        ));
                     });
+                    let mut vertical_scroll_target = None;
                     body.spawn((
                         Button,
                         EditorNativeControl,
@@ -1411,6 +1745,7 @@ pub(crate) fn spawn_timeline(
                         Node {
                             flex_grow: 1.0,
                             height: Val::Percent(100.0),
+                            min_height: Val::Px(0.0),
                             position_type: PositionType::Relative,
                             padding: UiRect::top(Val::Px(25.0)),
                             flex_direction: FlexDirection::Column,
@@ -1423,114 +1758,169 @@ pub(crate) fn spawn_timeline(
                     .observe(seek_timeline_on_drag)
                     .with_children(|tracks| {
                         spawn_ruler(tracks);
-                        for (index, emitter) in session.effect.emitters.iter().enumerate() {
-                            tracks
-                                .spawn(Node {
-                                    width: Val::Percent(100.0),
-                                    height: Val::Px(31.0),
-                                    position_type: PositionType::Relative,
-                                    border: UiRect::bottom(Val::Px(1.0)),
-                                    ..default()
-                                })
-                                .with_children(|track| {
-                                    track
-                                        .spawn((
-                                            TimelineClip {
-                                                emitter: emitter.id,
-                                            },
-                                            Node {
-                                                position_type: PositionType::Absolute,
-                                                left: Val::Percent(0.0),
-                                                top: Val::Px(5.0),
-                                                width: Val::Percent(1.0),
-                                                height: Val::Px(21.0),
-                                                border_radius: BorderRadius::all(Val::Px(3.0)),
-                                                border: UiRect::all(Val::Px(1.0)),
-                                                overflow: Overflow::clip(),
+                        vertical_scroll_target =
+                            Some(
+                                tracks
+                                    .spawn((
+                                        TimelineVerticalPane::Tracks,
+                                        ScrollPosition(Vec2::new(0.0, state.vertical_scroll)),
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            flex_grow: 1.0,
+                                            min_height: Val::Px(0.0),
+                                            flex_direction: FlexDirection::Column,
+                                            overflow: Overflow::scroll_y(),
+                                            scrollbar_width: 0.0,
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_children(|rows| {
+                                        for (index, emitter) in
+                                            session.effect.emitters.iter().enumerate()
+                                        {
+                                            rows.spawn(Node {
+                                                width: Val::Percent(100.0),
+                                                height: Val::Px(31.0),
+                                                flex_shrink: 0.0,
+                                                position_type: PositionType::Relative,
+                                                border: UiRect::bottom(Val::Px(1.0)),
                                                 ..default()
-                                            },
-                                            BackgroundColor(layer_color(index).with_alpha(0.28)),
-                                            BorderColor::all(layer_color(index)),
-                                        ))
-                                        .with_children(|clip| {
-                                            clip.spawn((
-                                                Button,
-                                                EditorNativeControl,
-                                                TimelineClipInteraction {
-                                                    emitter: emitter.id,
-                                                    kind: TimelineDragKind::Move,
-                                                },
-                                                ChoreographyAction::SelectEmitter(emitter.id),
-                                                EntityCursor::System(SystemCursorIcon::Grab),
-                                                Node {
-                                                    position_type: PositionType::Absolute,
-                                                    left: Val::Px(8.0),
-                                                    right: Val::Px(8.0),
-                                                    top: Val::Px(0.0),
-                                                    bottom: Val::Px(0.0),
-                                                    ..default()
-                                                },
-                                                BackgroundColor(Color::NONE),
-                                            ))
-                                            .observe(begin_timeline_clip_drag)
-                                            .observe(move_timeline_clip_drag)
-                                            .observe(finish_timeline_clip_drag)
-                                            .observe(select_timeline_clip)
-                                            .observe(stop_timeline_control_press);
-                                            for (kind, left, right) in [
-                                                (
-                                                    TimelineDragKind::TrimStart,
-                                                    Val::Px(0.0),
-                                                    Val::Auto,
-                                                ),
-                                                (
-                                                    TimelineDragKind::TrimEnd,
-                                                    Val::Auto,
-                                                    Val::Px(0.0),
-                                                ),
-                                            ] {
-                                                clip.spawn((
-                                                    Button,
-                                                    EditorNativeControl,
-                                                    TimelineClipInteraction {
-                                                        emitter: emitter.id,
-                                                        kind,
-                                                    },
-                                                    ChoreographyAction::SelectEmitter(emitter.id),
-                                                    EntityCursor::System(
-                                                        SystemCursorIcon::EwResize,
-                                                    ),
-                                                    Node {
-                                                        position_type: PositionType::Absolute,
-                                                        left,
-                                                        right,
-                                                        top: Val::Px(0.0),
-                                                        width: Val::Px(8.0),
-                                                        height: Val::Percent(100.0),
-                                                        align_items: AlignItems::Center,
-                                                        justify_content: JustifyContent::Center,
-                                                        ..default()
-                                                    },
-                                                    BackgroundColor(Color::NONE),
-                                                ))
-                                                .observe(begin_timeline_clip_drag)
-                                                .observe(move_timeline_clip_drag)
-                                                .observe(finish_timeline_clip_drag)
-                                                .observe(select_timeline_clip)
-                                                .observe(stop_timeline_control_press)
-                                                .with_child((
-                                                    Node {
-                                                        width: Val::Px(2.0),
-                                                        height: Val::Px(13.0),
-                                                        ..default()
-                                                    },
-                                                    BackgroundColor(layer_color(index)),
-                                                    Pickable::IGNORE,
-                                                ));
-                                            }
-                                        });
-                                });
-                        }
+                                            })
+                                            .with_children(|track| {
+                                                track
+                                                    .spawn((
+                                                        TimelineClip {
+                                                            emitter: emitter.id,
+                                                        },
+                                                        Node {
+                                                            position_type: PositionType::Absolute,
+                                                            left: Val::Percent(0.0),
+                                                            top: Val::Px(5.0),
+                                                            width: Val::Percent(1.0),
+                                                            height: Val::Px(21.0),
+                                                            border_radius: BorderRadius::all(
+                                                                Val::Px(3.0),
+                                                            ),
+                                                            border: UiRect::all(Val::Px(1.0)),
+                                                            overflow: Overflow::clip(),
+                                                            ..default()
+                                                        },
+                                                        BackgroundColor(
+                                                            layer_color(index).with_alpha(0.28),
+                                                        ),
+                                                        BorderColor::all(layer_color(index)),
+                                                    ))
+                                                    .with_children(|clip| {
+                                                        clip.spawn((
+                                                            Button,
+                                                            EditorNativeControl,
+                                                            TimelineClipInteraction {
+                                                                emitter: emitter.id,
+                                                                kind: TimelineDragKind::Move,
+                                                            },
+                                                            ChoreographyAction::SelectEmitter(
+                                                                emitter.id,
+                                                            ),
+                                                            EntityCursor::System(
+                                                                SystemCursorIcon::Grab,
+                                                            ),
+                                                            Node {
+                                                                position_type:
+                                                                    PositionType::Absolute,
+                                                                left: Val::Px(8.0),
+                                                                right: Val::Px(8.0),
+                                                                top: Val::Px(0.0),
+                                                                bottom: Val::Px(0.0),
+                                                                ..default()
+                                                            },
+                                                            BackgroundColor(Color::NONE),
+                                                        ))
+                                                        .observe(begin_timeline_clip_drag)
+                                                        .observe(move_timeline_clip_drag)
+                                                        .observe(finish_timeline_clip_drag)
+                                                        .observe(select_timeline_clip)
+                                                        .observe(stop_timeline_control_press);
+                                                        for (kind, left, right) in [
+                                                            (
+                                                                TimelineDragKind::TrimStart,
+                                                                Val::Px(0.0),
+                                                                Val::Auto,
+                                                            ),
+                                                            (
+                                                                TimelineDragKind::TrimEnd,
+                                                                Val::Auto,
+                                                                Val::Px(0.0),
+                                                            ),
+                                                        ] {
+                                                            let boundary = match kind {
+                                                                TimelineDragKind::TrimStart => {
+                                                                    emitter.start_time
+                                                                }
+                                                                TimelineDragKind::TrimEnd => {
+                                                                    emitter.start_time
+                                                                        + emitter.duration
+                                                                }
+                                                                TimelineDragKind::Move => {
+                                                                    unreachable!()
+                                                                }
+                                                            };
+                                                            clip.spawn((
+                                                                Button,
+                                                                EditorNativeControl,
+                                                                TimelineClipInteraction {
+                                                                    emitter: emitter.id,
+                                                                    kind,
+                                                                },
+                                                                ChoreographyAction::SelectEmitter(
+                                                                    emitter.id,
+                                                                ),
+                                                                EntityCursor::System(
+                                                                    SystemCursorIcon::EwResize,
+                                                                ),
+                                                                Node {
+                                                                    display: if timeline_boundary_is_visible(
+                                                                        boundary,
+                                                                        state.view,
+                                                                    ) {
+                                                                        Display::Flex
+                                                                    } else {
+                                                                        Display::None
+                                                                    },
+                                                                    position_type:
+                                                                        PositionType::Absolute,
+                                                                    left,
+                                                                    right,
+                                                                    top: Val::Px(0.0),
+                                                                    width: Val::Px(8.0),
+                                                                    height: Val::Percent(100.0),
+                                                                    align_items: AlignItems::Center,
+                                                                    justify_content:
+                                                                        JustifyContent::Center,
+                                                                    ..default()
+                                                                },
+                                                                BackgroundColor(Color::NONE),
+                                                            ))
+                                                            .observe(begin_timeline_clip_drag)
+                                                            .observe(move_timeline_clip_drag)
+                                                            .observe(finish_timeline_clip_drag)
+                                                            .observe(select_timeline_clip)
+                                                            .observe(stop_timeline_control_press)
+                                                            .with_child((
+                                                                Node {
+                                                                    width: Val::Px(2.0),
+                                                                    height: Val::Px(13.0),
+                                                                    ..default()
+                                                                },
+                                                                BackgroundColor(layer_color(index)),
+                                                                Pickable::IGNORE,
+                                                            ));
+                                                        }
+                                                    });
+                                            });
+                                        }
+                                    })
+                                    .id(),
+                            );
                         tracks.spawn((
                             TimelineSnapGuide,
                             Node {
@@ -1562,43 +1952,101 @@ pub(crate) fn spawn_timeline(
                         ));
                         tracks
                             .spawn((
-                                TimelineScrollbarTrack,
-                                RelativeCursorPosition::default(),
+                                TimelineHorizontalScrollbarGutter,
                                 Node {
                                     display: Display::None,
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(6.0),
-                                    right: Val::Px(6.0),
-                                    bottom: Val::Px(3.0),
-                                    height: Val::Px(10.0),
-                                    border_radius: BorderRadius::all(Val::Px(5.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(theme::PANEL_LIGHT.with_alpha(0.88)),
-                                ZIndex(5),
-                            ))
-                            .with_child((
-                                Button,
-                                EditorNativeControl,
-                                TimelineScrollbarThumb,
-                                EntityCursor::System(SystemCursorIcon::Grab),
-                                Node {
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Percent(0.0),
-                                    top: Val::Px(2.0),
                                     width: Val::Percent(100.0),
-                                    min_width: Val::Px(20.0),
-                                    height: Val::Px(6.0),
-                                    border_radius: BorderRadius::all(Val::Px(3.0)),
+                                    height: Val::Px(15.0),
+                                    flex_shrink: 0.0,
+                                    align_items: AlignItems::Stretch,
+                                    padding: UiRect {
+                                        top: Val::Px(4.0),
+                                        left: Val::Px(6.0),
+                                        right: Val::Px(6.0),
+                                        ..default()
+                                    },
+                                    border: UiRect::top(Val::Px(1.0)),
                                     ..default()
                                 },
-                                BackgroundColor(theme::TEXT_FAINT.with_alpha(0.75)),
+                                BackgroundColor(theme::PANEL_DARK),
+                                BorderColor::all(theme::BORDER),
                             ))
-                            .observe(begin_timeline_scrollbar_drag)
-                            .observe(move_timeline_scrollbar_drag)
-                            .observe(finish_timeline_scrollbar_drag)
-                            .observe(stop_timeline_control_press);
+                            .observe(stop_timeline_control_press)
+                            .observe(stop_timeline_control_drag)
+                            .with_children(|gutter| {
+                                let scroll_target = gutter
+                                    .spawn((
+                                        TimelineHorizontalScrollViewport,
+                                        ScrollPosition::default(),
+                                        Pickable::IGNORE,
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            left: Val::Px(0.0),
+                                            right: Val::Px(0.0),
+                                            top: Val::Px(0.0),
+                                            bottom: Val::Px(0.0),
+                                            overflow: Overflow::scroll_x(),
+                                            scrollbar_width: 0.0,
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_child((
+                                        TimelineHorizontalScrollContent,
+                                        Pickable::IGNORE,
+                                        Node {
+                                            width: Val::Percent(
+                                                (session.playback_duration().max(0.05)
+                                                    / state.view.span().max(0.001)
+                                                    * 100.0)
+                                                    .clamp(100.0, 100_000.0),
+                                            ),
+                                            height: Val::Px(1.0),
+                                            flex_shrink: 0.0,
+                                            ..default()
+                                        },
+                                    ))
+                                    .id();
+                                let scrollbar = spawn_horizontal_scrollbar(gutter, scroll_target);
+                                gutter
+                                    .commands()
+                                    .entity(scrollbar)
+                                    .observe(stop_timeline_control_press)
+                                    .observe(stop_timeline_control_drag);
+                            });
                     });
+                    if let Some(target) = vertical_scroll_target {
+                        body.spawn((
+                            TimelineVerticalScrollbarGutter,
+                            Node {
+                                display: Display::None,
+                                width: Val::Px(15.0),
+                                height: Val::Auto,
+                                flex_shrink: 0.0,
+                                align_self: AlignSelf::Stretch,
+                                align_items: AlignItems::Stretch,
+                                margin: UiRect {
+                                    top: Val::Px(25.0),
+                                    bottom: Val::Px(15.0),
+                                    ..default()
+                                },
+                                padding: UiRect::left(Val::Px(4.0)),
+                                border: UiRect::left(Val::Px(1.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme::PANEL_DARK),
+                            BorderColor::all(theme::BORDER),
+                        ))
+                        .with_children(|gutter| {
+                            let scrollbar = spawn_vertical_scrollbar(gutter, target);
+                            gutter.commands().entity(scrollbar).insert(Node {
+                                width: Val::Px(10.0),
+                                height: Val::Percent(100.0),
+                                display: Display::None,
+                                padding: UiRect::horizontal(Val::Px(3.0)),
+                                ..default()
+                            });
+                        });
+                    }
                 });
         });
 }
@@ -1628,6 +2076,7 @@ fn spawn_emitter_track_header(
         Node {
             width: Val::Percent(100.0),
             height: Val::Px(31.0),
+            flex_shrink: 0.0,
             padding: UiRect::horizontal(Val::Px(7.0)),
             align_items: AlignItems::Center,
             column_gap: Val::Px(6.0),
@@ -1859,13 +2308,21 @@ fn navigate_timeline(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     canvases: Query<(&RelativeCursorPosition, &ComputedNode), With<TimelineCanvas>>,
+    vertical_panes: Query<
+        (
+            &TimelineVerticalPane,
+            &RelativeCursorPosition,
+            &ComputedNode,
+        ),
+        Without<TimelineCanvas>,
+    >,
     mut session: ResMut<EditorSession>,
     mut state: ResMut<TimelineState>,
     mut override_cursor: ResMut<OverrideCursor>,
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
 ) {
     if keys.just_pressed(KeyCode::Escape) {
-        if state.drag.take().is_some() || state.scrollbar_drag.take().is_some() {
+        if state.drag.take().is_some() {
             state.snap_guide = None;
             override_cursor.0 = None;
             **cursor = CursorIcon::System(SystemCursorIcon::Default);
@@ -1894,13 +2351,31 @@ fn navigate_timeline(
         state.pan_by(delta_time, session.playback_duration());
     }
 
-    let scroll = wheel.read().fold(Vec2::ZERO, |sum, event| {
-        let scale = match event.unit {
-            MouseScrollUnit::Line => 1.0,
-            MouseScrollUnit::Pixel => 0.01,
-        };
-        sum + Vec2::new(event.x, event.y) * scale
-    });
+    let (scroll, vertical_scroll) =
+        wheel
+            .read()
+            .fold((Vec2::ZERO, 0.0), |(timeline_sum, vertical_sum), event| {
+                let timeline_scale = match event.unit {
+                    MouseScrollUnit::Line => 1.0,
+                    MouseScrollUnit::Pixel => 0.01,
+                };
+                let vertical_scale = match event.unit {
+                    MouseScrollUnit::Line => 21.0,
+                    MouseScrollUnit::Pixel => 1.0,
+                };
+                (
+                    timeline_sum + Vec2::new(event.x, event.y) * timeline_scale,
+                    vertical_sum + event.y * vertical_scale,
+                )
+            });
+    if let Some((_, _, computed)) = vertical_panes
+        .iter()
+        .find(|(kind, cursor, _)| **kind == TimelineVerticalPane::Headers && cursor.cursor_over())
+    {
+        let maximum = (computed.content_size().y - computed.size().y).max(0.0);
+        state.vertical_scroll = (state.vertical_scroll - vertical_scroll).clamp(0.0, maximum);
+        return;
+    }
     let Some((cursor, _)) = hovered else {
         return;
     };
@@ -1971,8 +2446,20 @@ fn timeline_cursor_fraction(relative_x: f32) -> f32 {
     (relative_x + 0.5).clamp(0.0, 1.0)
 }
 
+fn timeline_boundary_is_visible(time: f32, view: TimelineView) -> bool {
+    (view.start..=view.end).contains(&time)
+}
+
+fn screen_distance_to_logical(distance: f32, scale_factor: f32) -> f32 {
+    distance / scale_factor.max(0.01)
+}
+
 fn stop_timeline_control_press(mut press: On<Pointer<Press>>) {
     press.propagate(false);
+}
+
+fn stop_timeline_control_drag(mut drag: On<Pointer<Drag>>) {
+    drag.propagate(false);
 }
 
 fn begin_timeline_clip_drag(
@@ -2014,6 +2501,7 @@ fn move_timeline_clip_drag(
     mut drag_event: On<Pointer<Drag>>,
     targets: Query<&TimelineClipInteraction>,
     canvases: Query<&ComputedNode, With<TimelineCanvas>>,
+    window: Single<&Window, With<PrimaryWindow>>,
     session: Res<EditorSession>,
     mut state: ResMut<TimelineState>,
 ) {
@@ -2032,7 +2520,8 @@ fn move_timeline_clip_drag(
         .map(|canvas| canvas.size().x)
         .fold(0.0, f32::max)
         .max(1.0);
-    let pointer_time = drag_event.distance.x / width * state.view.span();
+    let logical_distance = screen_distance_to_logical(drag_event.distance.x, window.scale_factor());
+    let pointer_time = logical_distance / width * state.view.span();
     let mut snap_guide = state.snap_guide;
     update_timeline_drag(
         &mut drag,
@@ -2157,63 +2646,6 @@ fn timeline_system_cursor(kind: TimelineDragKind, active: bool) -> SystemCursorI
         TimelineDragKind::Move if active => SystemCursorIcon::Grabbing,
         TimelineDragKind::Move => SystemCursorIcon::Grab,
         TimelineDragKind::TrimStart | TimelineDragKind::TrimEnd => SystemCursorIcon::EwResize,
-    }
-}
-
-fn begin_timeline_scrollbar_drag(
-    drag: On<Pointer<DragStart>>,
-    thumbs: Query<(), With<TimelineScrollbarThumb>>,
-    mut state: ResMut<TimelineState>,
-    mut override_cursor: ResMut<OverrideCursor>,
-    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
-) {
-    if !thumbs.contains(drag.event_target()) {
-        return;
-    }
-    state.scrollbar_drag = Some(TimelineScrollbarDrag {
-        view_start: state.view.start,
-    });
-    override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
-    **cursor = CursorIcon::System(SystemCursorIcon::Grabbing);
-}
-
-fn move_timeline_scrollbar_drag(
-    mut drag: On<Pointer<Drag>>,
-    thumbs: Query<(), With<TimelineScrollbarThumb>>,
-    tracks: Query<&ComputedNode, With<TimelineScrollbarTrack>>,
-    session: Res<EditorSession>,
-    mut state: ResMut<TimelineState>,
-) {
-    if !thumbs.contains(drag.event_target()) {
-        return;
-    }
-    drag.propagate(false);
-    let Some(active) = state.scrollbar_drag else {
-        return;
-    };
-    let width = tracks
-        .iter()
-        .map(|track| track.size().x)
-        .fold(0.0, f32::max)
-        .max(1.0);
-    let delta = drag.distance.x / width * session.playback_duration();
-    let span = state.view.span();
-    state.view.start = active.view_start + delta;
-    state.view.end = state.view.start + span;
-    state.clamp_view(session.playback_duration());
-}
-
-fn finish_timeline_scrollbar_drag(
-    drag: On<Pointer<DragEnd>>,
-    thumbs: Query<(), With<TimelineScrollbarThumb>>,
-    mut state: ResMut<TimelineState>,
-    mut override_cursor: ResMut<OverrideCursor>,
-    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
-) {
-    if thumbs.contains(drag.event_target()) {
-        state.scrollbar_drag = None;
-        override_cursor.0 = None;
-        **cursor = CursorIcon::System(SystemCursorIcon::Grab);
     }
 }
 

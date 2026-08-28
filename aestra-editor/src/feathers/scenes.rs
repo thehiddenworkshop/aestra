@@ -180,6 +180,15 @@ pub(crate) fn feathers_vertical_scrollbar(target: Entity) -> impl Scene {
     }
 }
 
+pub(crate) fn feathers_horizontal_scrollbar(target: Entity) -> impl Scene {
+    bsn! {
+        @FeathersScrollbar {
+            @target: target,
+            @orientation: ControlOrientation::Horizontal,
+        }
+    }
+}
+
 pub(crate) fn feathers_menu() -> impl Scene {
     bsn! {
         @FeathersMenu
