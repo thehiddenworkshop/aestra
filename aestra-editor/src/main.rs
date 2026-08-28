@@ -1,3 +1,7 @@
+// Bevy ECS systems express disjoint resources and queries in their signatures. Keeping those
+// dependencies explicit is clearer than hiding them behind editor-specific parameter bundles.
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 mod assets;
 mod compiler_inspector;
 mod curves;

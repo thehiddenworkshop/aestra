@@ -850,10 +850,11 @@ fn reset_cursor(
     state: Res<ResizeState>,
     mut colors: Query<&mut BackgroundColor, With<DockSplitter>>,
 ) {
-    if splitters.contains(out.event_target()) && state.0.is_none() {
-        if let Ok(mut color) = colors.get_mut(out.event_target()) {
-            color.0 = theme::SPLITTER_GUTTER;
-        }
+    if splitters.contains(out.event_target())
+        && state.0.is_none()
+        && let Ok(mut color) = colors.get_mut(out.event_target())
+    {
+        color.0 = theme::SPLITTER_GUTTER;
     }
 }
 

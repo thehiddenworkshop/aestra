@@ -160,18 +160,22 @@ Complete this milestone before expanding the editor or renderer feature surface 
    UI prose. Inspector controls now emit a dedicated `InspectorAction` contract;
    `InspectorPlugin` owns module-palette navigation, module and renderer mutations,
    renderer configuration, persisted disclosure state, and localized validation/status
-   outcomes. This keeps `main.rs` focused on composition and startup wiring. Next establish
-   the automated quality gates below and add supported GPU smoke coverage.
-6. **Establish automated quality gates.** Run formatting, workspace checks, strict
-   Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
-   tolerant reference-image workflow for broader rendering regression coverage.
-7. **Refresh contributor documentation.** Mark the prototype assessment below as a
-   historical baseline or rewrite it to match the implemented semantic/compiler
+   outcomes. This keeps `main.rs` focused on composition and startup wiring.
+6. **Establish automated quality gates — complete.** Hosted Windows CI runs formatting,
+   workspace checks, strict Clippy, and tests. A separate scheduled/manual workflow targets
+   a self-hosted Windows runner labeled `gpu`, validates editor viewport composition and all
+   approved effect references on the native backend, and uploads captures and reports even
+   when validation fails.
+7. **Refresh contributor documentation — complete.** The README documents local quality
+   gates and GPU-runner requirements. The assessment below is retained explicitly as the
+   historical prototype baseline that motivated the implemented semantic/compiler
    architecture.
 
-## 1. Assessment of the current prototype
+## 1. Historical prototype assessment
 
-The existing vertical slice already proves several useful contracts:
+This assessment records the original vertical slice. It is retained as historical context;
+the milestone status and architecture sections above describe the current implementation.
+The prototype already proved several useful contracts:
 
 - three top-level products: `aestra-editor`, `aestra-bevy`, and `aestra-viewer`;
 - a versioned RON effect asset;

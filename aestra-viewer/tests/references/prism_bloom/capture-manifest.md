@@ -3,8 +3,9 @@
 - Frames: 8
 - Frame size: 960 x 540
 - Contact sheet: 3 columns x 3 rows
-- Sampling: evenly spaced at frame centers across the effect duration
-- Requested backend: Auto
+- Seed: `0xa3572a115eed0001`
+- Sampling: exact 60 Hz simulation frames [11, 32, 53, 74, 95, 116, 137, 158]
+- Requested backend: Gpu
 - Active backend: native GPU
 - Selection reason: compute, vertex storage, and indirect drawing are supported
 - Adapter: NVIDIA GeForce RTX 4070 SUPER (Vulkan, DiscreteGpu)

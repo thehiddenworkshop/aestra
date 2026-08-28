@@ -1,0 +1,69 @@
+name: GPU visual validation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpu-visual-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  native-gpu:
+    name: Native GPU smoke and references
+    runs-on: [self-hosted, windows, x64, gpu]
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate editor viewport composition
+        run: >-
+          cargo run --locked -p aestra-viewer --
+          --backend gpu
+          --editor-viewport-smoke target/visual-regression/editor-viewport-smoke
+          --frames 3
+
+      - name: Compare Prism Bloom reference
+        run: >-
+          cargo run --locked -p aestra-viewer --
+          --backend gpu
+          --effect assets/effects/prism_bloom.aestra.ron
+          --visual-test aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom
+          --frames 8
+
+      - name: Compare Ember Sigil reference
+        run: >-
+          cargo run --locked -p aestra-viewer --
+          --backend gpu
+          --effect assets/effects/ember_sigil.aestra.ron
+          --visual-test aestra-viewer/tests/references/ember_sigil target/visual-regression/ember-sigil
+          --frames 8
+
+      - name: Compare Plasma Burst reference
+        run: >-
+          cargo run --locked -p aestra-viewer --
+          --backend gpu
+          --effect assets/effects/plasma_burst.aestra.ron
+          --visual-test aestra-viewer/tests/references/plasma_burst target/visual-regression/plasma-burst
+          --frames 8
+
+      - name: Upload captures and regression reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gpu-visual-results-${{ github.run_attempt }}
+          path: target/visual-regression
+          if-no-files-found: error
+          retention-days: 14

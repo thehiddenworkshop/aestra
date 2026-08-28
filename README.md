@@ -102,6 +102,25 @@ visual change, regenerate the reference with:
 cargo run -p aestra-viewer -- --approve-visual-reference aestra-viewer/tests/references/prism_bloom --frames 8
 ```
 
+## Quality gates
+
+Before opening a pull request, run the same deterministic checks as hosted CI:
+
+```powershell
+cargo fmt --all -- --check
+cargo check --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+```
+
+The normal workflow runs on GitHub-hosted Windows runners. Native-GPU validation is
+separate because a software or headless adapter is not an equivalent rendering gate.
+It runs weekly or on demand on a self-hosted Windows x64 runner with the custom `gpu`
+label. That runner must have a current GitHub Actions runner, Rustup, and a Vulkan- or
+DirectX-capable GPU driver. The job validates the constrained editor viewport and all
+three approved effect references, then uploads captures, manifests, diffs, and reports
+as a retained workflow artifact.
+
 ## Bevy plugin
 
 ```rust

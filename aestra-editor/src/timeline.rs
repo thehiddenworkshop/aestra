@@ -70,10 +70,12 @@ mod tests {
 
     #[test]
     fn timeline_pan_stays_inside_the_effect() {
-        let mut state = TimelineState::default();
-        state.view = TimelineView {
-            start: 2.0,
-            end: 4.0,
+        let mut state = TimelineState {
+            view: TimelineView {
+                start: 2.0,
+                end: 4.0,
+            },
+            ..default()
         };
 
         state.pan_by(-10.0, 8.0);
@@ -969,12 +971,13 @@ fn navigate_timeline(
     if buttons.just_released(MouseButton::Middle) {
         state.panning = false;
     }
-    if state.panning && buttons.pressed(MouseButton::Middle) {
-        if let Some((_, canvas)) = hovered {
-            let width = canvas.size().x.max(1.0);
-            let delta_time = -pointer_delta.x / width * state.view.span();
-            state.pan_by(delta_time, session.playback_duration());
-        }
+    if state.panning
+        && buttons.pressed(MouseButton::Middle)
+        && let Some((_, canvas)) = hovered
+    {
+        let width = canvas.size().x.max(1.0);
+        let delta_time = -pointer_delta.x / width * state.view.span();
+        state.pan_by(delta_time, session.playback_duration());
     }
 
     let scroll = wheel.read().fold(Vec2::ZERO, |sum, event| {

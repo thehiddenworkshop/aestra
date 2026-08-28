@@ -5,7 +5,7 @@
 - Contact sheet: 3 columns x 3 rows
 - Seed: `0xa3572a115eed0001`
 - Sampling: exact 60 Hz simulation frames [8, 23, 38, 53, 68, 83, 98, 113]
-- Requested backend: Auto
+- Requested backend: Gpu
 - Active backend: native GPU
 - Selection reason: compute, vertex storage, and indirect drawing are supported
 - Adapter: NVIDIA GeForce RTX 4070 SUPER (Vulkan, DiscreteGpu)

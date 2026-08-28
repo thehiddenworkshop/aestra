@@ -852,7 +852,6 @@ pub(crate) fn emitter_transform_from_bevy(transform: &Transform) -> EmitterTrans
 }
 
 #[allow(clippy::too_many_arguments)]
-
 fn interact_shape_gizmo(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -2298,8 +2297,10 @@ mod tests {
     #[test]
     fn emitter_gizmo_previews_then_commits_one_undoable_transform() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let mut gizmo = TransformGizmoState::default();
-        gizmo.active = true;
+        let gizmo = TransformGizmoState {
+            active: true,
+            ..default()
+        };
         let mut app = App::new();
         app.insert_resource(session)
             .insert_resource(gizmo)
