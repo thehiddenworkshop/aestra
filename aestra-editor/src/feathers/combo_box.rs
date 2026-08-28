@@ -8,17 +8,17 @@ use bevy::{
     ui_widgets::popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
 };
 
-pub(crate) struct ComboOption {
+pub(crate) struct ComboOption<A = EditorAction> {
     pub(crate) label: String,
     pub(crate) selected: bool,
-    pub(crate) action: EditorAction,
+    pub(crate) action: A,
 }
 
-pub(crate) fn spawn_combo_control(
+pub(crate) fn spawn_combo_control<A: Component + Copy>(
     parent: &mut ChildSpawnerCommands,
     value: &str,
     accessible_label: &str,
-    options: &[ComboOption],
+    options: &[ComboOption<A>],
     width: f32,
 ) {
     parent
@@ -70,7 +70,10 @@ pub(crate) fn spawn_combo_control(
         });
 }
 
-fn spawn_combo_option(parent: &mut ChildSpawnerCommands, option: &ComboOption) {
+fn spawn_combo_option<A: Component + Copy>(
+    parent: &mut ChildSpawnerCommands,
+    option: &ComboOption<A>,
+) {
     parent
         .spawn_empty()
         .apply_scene(scenes::feathers_menu_item())
@@ -113,10 +116,10 @@ fn spawn_combo_option(parent: &mut ChildSpawnerCommands, option: &ComboOption) {
         });
 }
 
-pub(crate) fn spawn_action_menu(
+pub(crate) fn spawn_action_menu<A: Component + Copy>(
     parent: &mut ChildSpawnerCommands,
     accessible_label: &str,
-    options: &[ComboOption],
+    options: &[ComboOption<A>],
 ) {
     parent
         .spawn_empty()

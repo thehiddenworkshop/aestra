@@ -108,6 +108,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   persisted dock layout. A dockable Settings panel edits that dedicated document,
   applies supported values live, and protects malformed, unknown, or newer files from
   implicit replacement.
+- Runs Settings presentation and interaction through `EditorSettingsUiPlugin`. The
+  plugin owns category navigation, Feathers controls, locale selection, reset, and
+  live preference application; `settings.rs` remains the versioned persistence,
+  migration, validation, and atomic-replacement boundary.
 - Resolves editor-facing text through Fluent bundles with stable semantic message IDs,
   an embedded complete English fallback, live locale switching, and the selected locale
   persisted in editor settings. Asset-authored names, paths, and generated code remain

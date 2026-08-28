@@ -120,8 +120,11 @@ Complete this milestone before expanding the editor or renderer feature surface 
    separators, status surfaces, and scroll areas no longer live in `main.rs`. Menu chrome,
    popup behavior, delayed submenu opening, panel visibility synchronization, and tab
    context menus now run through `EditorMenusPlugin` with their own action contract and
-   focused tests. Next separate the Settings workspace UI, followed by persistence and
-   localization, while keeping `main.rs` as composition and startup wiring.
+   focused tests. Settings workspace construction, category navigation, locale/reset
+   actions, Feathers value observers, and live preference application now run through
+   `EditorSettingsUiPlugin`, with focused activation and constraint tests. Next extract
+   the remaining persistence and localization application wiring while keeping
+   `main.rs` as composition and startup wiring.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.

@@ -44,10 +44,10 @@ pub(crate) fn audit_action_controls(controls: Query<Entity, UnclassifiedEditorAc
     }
 }
 
-pub(crate) fn spawn_action_button(
+pub(crate) fn spawn_action_button<A: Component>(
     parent: &mut ChildSpawnerCommands,
     label: &str,
-    action: EditorAction,
+    action: A,
     primary: bool,
 ) {
     let mut button = parent.spawn_empty();
