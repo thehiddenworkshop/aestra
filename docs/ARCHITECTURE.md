@@ -133,9 +133,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   stable diagnostic-code titles, Assets, Timeline, Curves, Generated Code, Profiler, and
   Changes presentation. Asset-authored names, paths, IDs, and generated instructions
   remain locale-independent.
-- Projects structured validation reports into a dockable diagnostics workspace with
-  severity filtering and semantic-path navigation; the persistent footer exposes
-  compile health and opens that workspace directly.
+- Runs validation presentation through `EditorDiagnosticsPlugin`. The plugin owns the
+  dockable Diagnostics workspace, severity filtering, semantic-path navigation, and
+  the persistent compile-health footer action. Compiler validation remains an
+  `EditorSession` responsibility, so presentation cannot mutate or replace reports.
 - Projects the immutable compiler artifact into a dockable Generated Code workspace:
   execution stages, source-mapped instructions, particle layout, runtime parameter
   slots, renderer plans, optimization statistics, and the WESL backend entry points.
