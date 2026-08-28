@@ -104,9 +104,11 @@ Complete this milestone before expanding the editor or renderer feature surface 
    Profiles expose submitted instances alongside live particles, the buffer estimate
    includes the indirect command table, focused tests cover command/range isolation,
    and the native editor-viewport GPU smoke remains the visual acceptance gate.
-5. **Decompose the editor application.** Move viewport, timeline, inspector, docking,
-   menus, settings, persistence, and localization into domain plugins with explicit
-   resources and system sets. Keep `main.rs` as composition and startup wiring.
+5. **Decompose the editor application — in progress.** The timeline is the first
+   extracted domain plugin: it owns timeline state, widgets, interactions, visual
+   synchronization, and focused tests behind explicit input and visual system sets.
+   Move viewport and inspector next, then finish separating docking, menus, settings,
+   persistence, and localization. Keep `main.rs` as composition and startup wiring.
 6. **Establish automated quality gates.** Run formatting, workspace checks, strict
    Clippy, and tests in CI. Add at least one supported GPU visual smoke job and keep the
    tolerant reference-image workflow for broader rendering regression coverage.
