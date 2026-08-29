@@ -2146,7 +2146,16 @@ bodies move directly with timeline snapping; boundary handles trim the parent wi
 `source_offset` coherent and respecting parent and non-looping source bounds. The transient timing
 is reflected in the Inspector and commits as one undoable semantic command. Invalid, missing,
 direct-self, and transitive-cycle drops are rejected without mutating the document and retain visible
-feedback. Persisted preview-state semantics and Bevy/GPU preview integration remain in Phase F.
+feedback.
+
+The editor preview is now project-aware: it resolves and compiles the current root together with
+its transitive reusable-effect dependencies, then synchronizes one normal Bevy `EffectPlayer` for
+every active instance path. Referenced clips therefore use the same native-GPU, GPU-readback, and
+CPU-fallback presentation paths as root effects while parent time remains authoritative for play,
+seek, restart, source offsets, trimming, looping, and deterministic seed derivation. Root-level clip
+mute/solo state filters the live instance tree, transient trim timing is reflected immediately, and
+an unresolved dependency is named in the viewport without suppressing the otherwise valid root
+preview. Persisted preview-state semantics remain in Phase F.
 
 ## Phase G — Instance workflow and parameter overrides
 
@@ -2305,7 +2314,7 @@ all workspace presets
 - [x] Moving an EffectClip changes its semantic start time.
 - [x] EffectClip operations are undoable/redoable.
 - [x] EffectClip serialization is stable.
-- [ ] The referenced effect resolves, compiles, runs, seeks, and restarts deterministically.
+- [x] The referenced effect resolves, compiles, runs, seeks, and restarts deterministically.
 - [x] An EffectClip exposes its resolved source and timing window in the Inspector.
 - [ ] Missing references identify the unresolved asset and offer a repair path.
 - [x] Effect reference cycles are rejected with clear diagnostics.

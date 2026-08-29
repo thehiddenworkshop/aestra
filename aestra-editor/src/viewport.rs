@@ -2,6 +2,7 @@
 
 use crate::{
     EditorNativeControl, FeathersActionButton, MenuState, PendingFeathersActivation,
+    ProjectEffectCatalog,
     feathers::icon::load_svg_icon,
     feathers::tooltip::EditorTooltip,
     inspector::{ModulePaletteState, module_parameter},
@@ -10,14 +11,16 @@ use crate::{
     profiler::{ProfilerFrameSample, ProfilerState},
     session::EditorSession,
     settings::{EditorSettings, SettingsPersistence},
-    theme, ui_shell,
+    theme,
+    timeline::TimelineState,
+    ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    ActiveBackend, AestraSet, EffectPlayer, EffectRenderMode, EffectRuntimeStatus, EmitterId,
-    EmitterShape, EmitterTransform, ModuleId, Value,
+    ActiveBackend, AestraSet, EffectClipId, EffectPlayer, EffectRenderMode, EffectRuntimeStatus,
+    EmitterId, EmitterShape, EmitterTransform, ModuleId, Value,
 };
-use aestra_runtime::CompiledEffect;
+use aestra_runtime::{CompiledEffect, CompiledEffectProject};
 use bevy::{
     app::TransformGizmoRenderStep,
     camera::{Viewport, visibility::RenderLayers},
@@ -41,7 +44,7 @@ use bevy::{
 };
 use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 const DEFAULT_PREVIEW_PITCH: f32 = -0.35;
 const PREVIEW_GRID_SHADER_PATH: &str = "shaders/preview_grid.wesl";
@@ -67,6 +70,7 @@ impl Plugin for ViewportPlugin {
             .init_resource::<PreviewCameraController>()
             .init_resource::<PreviewNavigationState>()
             .init_resource::<PreviewDisplayState>()
+            .init_resource::<EditorPreviewProject>()
             .init_resource::<ShapeGizmoState>()
             .init_resource::<EmitterTransformGizmoInteraction>()
             .add_observer(queue_viewport_action_activation)
@@ -94,6 +98,7 @@ impl Plugin for ViewportPlugin {
             .add_systems(
                 Update,
                 (
+                    sync_project_preview,
                     sync_rendered_preview,
                     update_preview,
                     navigate_preview_camera,
@@ -438,6 +443,25 @@ struct TransformGizmoModeIcon(TransformGizmoMode);
 
 #[derive(Component)]
 struct PreviewEffectPlayer;
+
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+struct PreviewEffectInstancePath(Vec<EffectClipId>);
+
+#[derive(Resource, Default)]
+struct EditorPreviewProject {
+    source_root: Option<Arc<CompiledEffect>>,
+    project: Option<Arc<CompiledEffectProject>>,
+    error: Option<String>,
+    live_particle_count: usize,
+}
+
+#[derive(Clone)]
+struct DesiredPreviewInstance {
+    path: Vec<EffectClipId>,
+    effect: Arc<CompiledEffect>,
+    time: f32,
+    seed: u64,
+}
 
 #[derive(Component)]
 pub(crate) struct EmitterTransformGizmoProxy;
@@ -1596,12 +1620,26 @@ fn configure_preview_scene_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
 
 fn configured_preview_player(session: &EditorSession) -> Option<EffectPlayer> {
     let preview = session.preview.as_ref()?;
-    let mut player = EffectPlayer::from_compiled(preview.effect().clone());
+    Some(configured_preview_instance(
+        preview.effect().clone(),
+        session.time(),
+        session.preview_seed,
+        session.speed,
+    ))
+}
+
+fn configured_preview_instance(
+    effect: Arc<CompiledEffect>,
+    time: f32,
+    seed: u64,
+    speed: f32,
+) -> EffectPlayer {
+    let mut player = EffectPlayer::from_compiled(effect);
     player.playing = false;
-    player.speed = session.speed;
-    player.set_seed(session.preview_seed);
-    player.seek_frame(session.frame());
-    Some(player)
+    player.speed = speed;
+    player.set_seed(seed);
+    player.seek(time);
+    player
 }
 
 fn spawn_preview_effect_player(
@@ -1612,6 +1650,7 @@ fn spawn_preview_effect_player(
     if let Some(player) = configured_preview_player(session) {
         commands.spawn((
             PreviewEffectPlayer,
+            PreviewEffectInstancePath::default(),
             player,
             transform,
             RenderLayers::layer(0),
@@ -1798,13 +1837,20 @@ pub(crate) fn spawn_preview(
 
 fn update_viewport_status_label(
     session: Res<EditorSession>,
+    preview: Res<EditorPreviewProject>,
     preview_runtime: Query<Ref<EffectRuntimeStatus>, With<PreviewEffectPlayer>>,
     mut labels: Query<&mut Text, With<ParticleCountLabel>>,
 ) {
     let runtime_changed = preview_runtime
         .iter()
         .any(|runtime| runtime.is_added() || runtime.is_changed());
-    if !session.is_changed() && !runtime_changed {
+    if !session.is_changed() && !preview.is_changed() && !runtime_changed {
+        return;
+    }
+    if let Some(error) = &preview.error {
+        for mut text in &mut labels {
+            text.0 = format!("PREVIEW ERROR  |  {error}");
+        }
         return;
     }
     let backend = preview_runtime
@@ -1817,7 +1863,10 @@ fn update_viewport_status_label(
             ActiveBackend::CpuReference => "CPU FALLBACK",
         });
     for mut text in &mut labels {
-        text.0 = format!("{} LIVE PARTICLES  |  {backend}", session.samples.len());
+        text.0 = format!(
+            "{} LIVE PARTICLES  |  {backend}",
+            preview.live_particle_count
+        );
     }
 }
 
@@ -1966,45 +2015,204 @@ fn selected_shape_module(session: &EditorSession) -> Option<SelectedShapeModule>
     }
 }
 
+fn sync_project_preview(
+    session: Res<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut preview: ResMut<EditorPreviewProject>,
+) {
+    let Some(source_root) = session
+        .preview
+        .as_ref()
+        .map(|preview| preview.effect().clone())
+    else {
+        preview.source_root = None;
+        preview.project = None;
+        preview.error = None;
+        preview.live_particle_count = 0;
+        return;
+    };
+    if preview
+        .source_root
+        .as_ref()
+        .is_some_and(|current| Arc::ptr_eq(current, &source_root))
+        && !catalog.is_changed()
+    {
+        return;
+    }
+
+    preview.source_root = Some(source_root.clone());
+    match catalog.compile_project(&session.effect) {
+        Ok(mut project) => {
+            // The editor may be showing a transient root preview (for example a gizmo drag or
+            // root-emitter solo). Dependencies still come from the resolved project, while the
+            // root must remain exactly the artifact owned by the session.
+            project.root = source_root;
+            preview.project = Some(Arc::new(project));
+            preview.error = None;
+        }
+        Err(error) => {
+            preview.project = Some(Arc::new(CompiledEffectProject {
+                root: source_root,
+                dependencies: Default::default(),
+            }));
+            preview.error = Some(error);
+            preview.live_particle_count = 0;
+        }
+    }
+}
+
+fn desired_preview_instances(
+    preview: &EditorPreviewProject,
+    timeline: &TimelineState,
+    time: f32,
+    seed: u64,
+) -> Vec<DesiredPreviewInstance> {
+    let Some(project) = preview.project.as_deref() else {
+        return Vec::new();
+    };
+    let mut desired = Vec::new();
+    let mut path = Vec::new();
+    if !timeline.effect_clip_solo_active() {
+        desired.push(DesiredPreviewInstance {
+            path: Vec::new(),
+            effect: project.root.clone(),
+            time,
+            seed,
+        });
+    }
+    collect_effect_clip_instances(
+        project,
+        &project.root,
+        timeline,
+        time,
+        seed,
+        &mut path,
+        &mut desired,
+    );
+    desired
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_effect_clip_instances(
+    project: &CompiledEffectProject,
+    effect: &CompiledEffect,
+    timeline: &TimelineState,
+    parent_time: f32,
+    parent_seed: u64,
+    path: &mut Vec<EffectClipId>,
+    desired: &mut Vec<DesiredPreviewInstance>,
+) {
+    if path.len() >= 64 {
+        return;
+    }
+    let top_level = path.is_empty();
+    for clip in &effect.effect_clips {
+        if top_level && !timeline.effect_clip_is_audible(clip.source_clip) {
+            continue;
+        }
+        let Some(child) = project.effect(clip.source.id) else {
+            continue;
+        };
+        let (start_time, source_offset, duration) = if top_level {
+            timeline
+                .effect_clip_preview_timing(clip.source_clip)
+                .unwrap_or((clip.start_time, clip.source_offset, clip.duration))
+        } else {
+            (clip.start_time, clip.source_offset, clip.duration)
+        };
+        let Some(child_time) =
+            map_effect_clip_time(parent_time, start_time, source_offset, duration, child)
+        else {
+            continue;
+        };
+        let seed = clip.seed.resolve(parent_seed, clip.source_clip);
+        path.push(clip.source_clip);
+        desired.push(DesiredPreviewInstance {
+            path: path.clone(),
+            effect: child.clone(),
+            time: child_time,
+            seed,
+        });
+        collect_effect_clip_instances(project, child, timeline, child_time, seed, path, desired);
+        path.pop();
+    }
+}
+
+fn map_effect_clip_time(
+    parent_time: f32,
+    start_time: f32,
+    source_offset: f32,
+    duration: f32,
+    child: &CompiledEffect,
+) -> Option<f32> {
+    let elapsed = parent_time - start_time;
+    if elapsed < 0.0 || elapsed > duration {
+        return None;
+    }
+    let local = source_offset + elapsed;
+    Some(if child.looping && child.duration > 0.0 {
+        local.rem_euclid(child.duration)
+    } else {
+        local.clamp(0.0, child.duration.max(0.0))
+    })
+}
+
+fn spawn_preview_instance(commands: &mut Commands, desired: DesiredPreviewInstance, speed: f32) {
+    let player = configured_preview_instance(desired.effect, desired.time, desired.seed, speed);
+    commands.spawn((
+        PreviewEffectPlayer,
+        PreviewEffectInstancePath(desired.path),
+        player,
+        Transform::IDENTITY,
+        RenderLayers::layer(0),
+    ));
+}
+
 fn sync_rendered_preview(
     mut commands: Commands,
     session: Res<EditorSession>,
-    mut players: Query<(Entity, &mut EffectPlayer), With<PreviewEffectPlayer>>,
+    preview: Res<EditorPreviewProject>,
+    timeline: Res<TimelineState>,
+    mut players: Query<
+        (Entity, &PreviewEffectInstancePath, &mut EffectPlayer),
+        With<PreviewEffectPlayer>,
+    >,
 ) {
-    let desired = session
-        .preview
-        .as_ref()
-        .map(|preview| preview.effect().clone());
-    let Some(desired) = desired else {
-        for (entity, _) in &mut players {
+    let mut desired =
+        desired_preview_instances(&preview, &timeline, session.time(), session.preview_seed);
+    for (entity, path, mut player) in &mut players {
+        let Some(index) = desired.iter().position(|item| item.path == path.0) else {
             commands.entity(entity).despawn();
-        }
-        return;
-    };
-
-    let Some((entity, mut player)) = players.iter_mut().next() else {
-        spawn_preview_effect_player(&mut commands, &session, Transform::IDENTITY);
-        return;
-    };
-    if !std::sync::Arc::ptr_eq(player.effect(), &desired) {
-        if compiled_effects_differ_only_by_emitter_transforms(player.effect(), &desired) {
-            if let Some(replacement) = configured_preview_player(&session) {
-                *player = replacement;
+            continue;
+        };
+        let instance = desired.swap_remove(index);
+        if !Arc::ptr_eq(player.effect(), &instance.effect) {
+            if compiled_effects_differ_only_by_emitter_transforms(player.effect(), &instance.effect)
+            {
+                *player = configured_preview_instance(
+                    instance.effect,
+                    instance.time,
+                    instance.seed,
+                    session.speed,
+                );
+            } else {
+                commands.entity(entity).despawn();
+                spawn_preview_instance(&mut commands, instance, session.speed);
+                continue;
             }
-        } else {
-            commands.entity(entity).despawn();
-            spawn_preview_effect_player(&mut commands, &session, Transform::IDENTITY);
-            return;
+        }
+
+        player.playing = false;
+        player.speed = session.speed;
+        if player.instance.seed() != instance.seed {
+            player.set_seed(instance.seed);
+        }
+        if (player.elapsed() - instance.time).abs() > 0.5 / player.tick_rate() as f32 {
+            player.seek(instance.time);
         }
     }
-
-    player.playing = false;
-    player.speed = session.speed;
-    if player.instance.seed() != session.preview_seed {
-        player.set_seed(session.preview_seed);
-    }
-    if player.frame() != session.frame() {
-        player.seek_frame(session.frame());
+    for instance in desired {
+        spawn_preview_instance(&mut commands, instance, session.speed);
     }
 }
 
@@ -2022,7 +2230,12 @@ fn compiled_effects_differ_only_by_emitter_transforms(
     &normalized == desired
 }
 
-fn update_preview(mut session: ResMut<EditorSession>, mut profiler: ResMut<ProfilerState>) {
+fn update_preview(
+    mut session: ResMut<EditorSession>,
+    mut profiler: ResMut<ProfilerState>,
+    mut preview: ResMut<EditorPreviewProject>,
+    timeline: Res<TimelineState>,
+) {
     let compiled = session
         .preview
         .as_ref()
@@ -2032,6 +2245,21 @@ fn update_preview(mut session: ResMut<EditorSession>, mut profiler: ResMut<Profi
     session.evaluate_preview(&mut samples);
     let elapsed = started.elapsed();
     session.samples = samples;
+    let desired =
+        desired_preview_instances(&preview, &timeline, session.time(), session.preview_seed);
+    let mut instance_samples = Vec::new();
+    preview.live_particle_count = desired
+        .iter()
+        .map(|instance| {
+            aestra_runtime::evaluate(
+                &instance.effect,
+                instance.time,
+                instance.seed,
+                &mut instance_samples,
+            );
+            instance_samples.len()
+        })
+        .sum();
     if let Some(compiled) = compiled
         && profiler
             .ingest(ProfilerFrameSample::new(
@@ -2502,8 +2730,21 @@ mod tests {
 
         let mut app = App::new();
         app.insert_resource(session)
-            .add_systems(Update, sync_rendered_preview);
-        let player_entity = app.world_mut().spawn((PreviewEffectPlayer, player)).id();
+            .init_resource::<ProjectEffectCatalog>()
+            .init_resource::<EditorPreviewProject>()
+            .init_resource::<TimelineState>()
+            .add_systems(
+                Update,
+                (sync_project_preview, sync_rendered_preview).chain(),
+            );
+        let player_entity = app
+            .world_mut()
+            .spawn((
+                PreviewEffectPlayer,
+                PreviewEffectInstancePath::default(),
+                player,
+            ))
+            .id();
 
         app.update();
 
@@ -2537,5 +2778,150 @@ mod tests {
             current,
             &transformed
         ));
+    }
+
+    #[test]
+    fn project_preview_collects_active_effect_clips_with_local_time_and_seed() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut child = aestra_bevy::EffectAsset::new("Child", 1.0);
+        child
+            .emitters
+            .push(aestra_bevy::Emitter::basic_sprite("Child emitter", 1.0));
+        child
+            .save_ron(temporary.path().join("child.aestra.ron"))
+            .unwrap();
+
+        let mut root = aestra_bevy::EffectAsset::new("Root", 2.0);
+        let mut clip = aestra_bevy::EffectClip::new(child.id, 0.5, 1.0);
+        clip.source_offset = 0.1;
+        clip.seed = aestra_bevy::EffectClipSeed::Fixed(77);
+        let clip_id = clip.id;
+        root.effect_clips.push(clip);
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let project = Arc::new(catalog.compile_project(&root).unwrap());
+        let preview = EditorPreviewProject {
+            source_root: Some(project.root.clone()),
+            project: Some(project),
+            ..default()
+        };
+        let timeline = TimelineState::framed(root.duration);
+
+        let before = desired_preview_instances(&preview, &timeline, 0.25, 9);
+        assert_eq!(before.len(), 1, "the child must not run before its clip");
+
+        let active = desired_preview_instances(&preview, &timeline, 0.75, 9);
+        assert_eq!(active.len(), 2);
+        assert!(active[0].path.is_empty());
+        assert_eq!(active[1].path, vec![clip_id]);
+        assert_eq!(active[1].effect.source, child.id);
+        assert!((active[1].time - 0.35).abs() < 0.000_1);
+        assert_eq!(active[1].seed, 77);
+    }
+
+    #[test]
+    fn project_preview_error_identifies_a_missing_effect_reference() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let missing = aestra_bevy::EffectId::from_u128(0xfeed_cafe);
+        session
+            .effect
+            .effect_clips
+            .push(aestra_bevy::EffectClip::new(missing, 0.0, 0.5));
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(ProjectEffectCatalog::from_entries(Vec::new()))
+            .init_resource::<EditorPreviewProject>()
+            .add_systems(Update, sync_project_preview);
+
+        app.update();
+
+        let preview = app.world().resource::<EditorPreviewProject>();
+        let error = preview.error.as_deref().expect("missing source must fail");
+        assert!(error.contains(&missing.to_string()), "{error}");
+        assert!(
+            preview.project.is_some(),
+            "the valid root remains previewable"
+        );
+    }
+
+    #[test]
+    fn project_preview_players_follow_seek_and_restart_deterministically() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut child = aestra_bevy::EffectAsset::new("Child", 1.0);
+        child
+            .emitters
+            .push(aestra_bevy::Emitter::basic_sprite("Child emitter", 1.0));
+        child
+            .save_ron(temporary.path().join("child.aestra.ron"))
+            .unwrap();
+
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut clip = aestra_bevy::EffectClip::new(child.id, 0.5, 1.0);
+        clip.source_offset = 0.1;
+        clip.seed = aestra_bevy::EffectClipSeed::Fixed(77);
+        let clip_id = clip.id;
+        assert!(session.execute(
+            "Add child",
+            EffectCommand::AddEffectClip {
+                clip,
+                index: session.effect.effect_clips.len(),
+            },
+            false,
+        ));
+        session.seek_time(0.75);
+
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(ProjectEffectCatalog::scan(temporary.path()))
+            .init_resource::<EditorPreviewProject>()
+            .init_resource::<TimelineState>()
+            .add_systems(
+                Update,
+                (sync_project_preview, sync_rendered_preview).chain(),
+            );
+        app.update();
+
+        let child_state = {
+            let world = app.world_mut();
+            let mut players = world.query::<(&PreviewEffectInstancePath, &EffectPlayer)>();
+            let instances = players.iter(world).collect::<Vec<_>>();
+            assert_eq!(instances.len(), 2);
+            let (_, player) = instances
+                .into_iter()
+                .find(|(path, _)| path.0.as_slice() == [clip_id])
+                .expect("active clip must have a player");
+            (player.elapsed(), player.instance.seed())
+        };
+        assert!((child_state.0 - 0.35).abs() <= 1.0 / 60.0);
+        assert_eq!(child_state.1, 77);
+
+        app.world_mut()
+            .resource_mut::<EditorSession>()
+            .seek_time(0.25);
+        app.update();
+        assert_eq!(
+            app.world_mut()
+                .query::<&PreviewEffectInstancePath>()
+                .iter(app.world())
+                .count(),
+            1,
+            "seeking before the clip removes its player"
+        );
+
+        {
+            let mut session = app.world_mut().resource_mut::<EditorSession>();
+            session.restart();
+            session.seek_time(0.75);
+        }
+        app.update();
+        let replayed = {
+            let world = app.world_mut();
+            let mut players = world.query::<(&PreviewEffectInstancePath, &EffectPlayer)>();
+            players
+                .iter(world)
+                .find(|(path, _)| path.0.as_slice() == [clip_id])
+                .map(|(_, player)| (player.elapsed(), player.instance.seed()))
+                .expect("restarted clip must be active after seeking back into it")
+        };
+        assert_eq!(replayed, child_state);
     }
 }

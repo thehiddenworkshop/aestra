@@ -1,9 +1,11 @@
 //! Library workspace, project-effect catalog, and panel-local authoring actions.
 
 use crate::*;
+use aestra_compiler::{EffectCompiler, ProjectCompileError};
 use aestra_project::{
     ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectEffectEntry, ProjectEffectStatus,
 };
+use aestra_runtime::CompiledEffectProject;
 #[cfg(test)]
 use bevy::ui_widgets::ScrollArea;
 use bevy::{
@@ -105,6 +107,23 @@ impl ProjectEffectCatalog {
         self.index
             .load_effect(reference)
             .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn compile_project(
+        &self,
+        root: &EffectAsset,
+    ) -> Result<CompiledEffectProject, String> {
+        EffectCompiler::default()
+            .compile_project(root, &self.index)
+            .map_err(|error| match error {
+                ProjectCompileError::Dependencies(report) => report
+                    .diagnostics
+                    .into_iter()
+                    .map(|diagnostic| diagnostic.message)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+                error => error.to_string(),
+            })
     }
 
     fn availability(&self) -> &ProjectAssetIndexAvailability {

@@ -2975,6 +2975,15 @@ impl TimelineState {
             })
     }
 
+    pub(crate) fn effect_clip_is_audible(&self, clip: EffectClipId) -> bool {
+        !self.muted_effect_clips.contains(&clip)
+            && self.solo_effect_clip.is_none_or(|solo| solo == clip)
+    }
+
+    pub(crate) fn effect_clip_solo_active(&self) -> bool {
+        self.solo_effect_clip.is_some()
+    }
+
     pub(crate) fn frame_all(&mut self, duration: f32) {
         let duration = duration.max(0.05);
         self.view = TimelineView {
