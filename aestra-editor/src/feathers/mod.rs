@@ -7,6 +7,7 @@
 pub(crate) mod button;
 pub(crate) mod combo_box;
 pub(crate) mod field_row;
+pub(crate) mod icon;
 pub(crate) mod list_row;
 pub(crate) mod number_input;
 pub(crate) mod panel;

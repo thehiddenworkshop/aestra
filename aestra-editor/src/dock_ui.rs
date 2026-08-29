@@ -17,6 +17,7 @@ use fluent_bundle::FluentArgs;
 
 #[derive(Clone, Copy)]
 struct PanelSources<'a> {
+    asset_server: &'a AssetServer,
     session: &'a EditorSession,
     timeline: &'a TimelineState,
     catalog: &'a ProjectEffectCatalog,
@@ -33,6 +34,7 @@ struct PanelSources<'a> {
 
 #[derive(SystemParam)]
 pub(crate) struct DockUiResources<'w> {
+    asset_server: Res<'w, AssetServer>,
     catalog: Res<'w, ProjectEffectCatalog>,
     library: Res<'w, LibraryState>,
     layout: Res<'w, WorkspaceLayout>,
@@ -51,6 +53,7 @@ pub(crate) struct DockUiResources<'w> {
 impl<'w> DockUiResources<'w> {
     fn panel_sources<'a>(&'a self, session: &'a EditorSession) -> PanelSources<'a> {
         PanelSources {
+            asset_server: &self.asset_server,
             session,
             timeline: &self.timeline,
             catalog: &self.catalog,
@@ -352,7 +355,9 @@ fn spawn_panel_content(
     sources: PanelSources<'_>,
 ) {
     match panel {
-        DockPanel::Viewport => viewport::spawn_preview(parent, sources.localizer),
+        DockPanel::Viewport => {
+            viewport::spawn_preview(parent, sources.localizer, sources.asset_server)
+        }
         DockPanel::Assets => spawn_library(
             parent,
             sources.session,

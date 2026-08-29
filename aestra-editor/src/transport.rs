@@ -1,7 +1,10 @@
 //! Preview transport controls, shortcuts, playback advancement, and icon synchronization.
 
+use crate::feathers::icon::load_svg_icon;
 use crate::*;
 use bevy::ui_widgets::Activate;
+use bevy::{feathers::controls::ButtonVariant, ui::Selected};
+use bevy_resvg::prelude::{SvgColor, UiSvg};
 
 pub(crate) struct EditorTransportPlugin;
 
@@ -35,6 +38,7 @@ impl Plugin for EditorTransportPlugin {
 pub(crate) enum TransportAction {
     TogglePlayback,
     Stop,
+    ToggleLooping,
     Restart,
     StepFrame(i8),
     AdjustPreviewSeed(i8),
@@ -45,6 +49,9 @@ struct PlaybackPlayIcon;
 
 #[derive(Component)]
 struct PlaybackPauseIcon;
+
+#[derive(Component)]
+struct PlaybackLoopButton;
 
 fn queue_transport_action_activation(
     activate: On<Activate>,
@@ -115,8 +122,20 @@ fn handle_transport_buttons(
 
 fn execute_transport_action(action: On<TransportAction>, mut session: ResMut<EditorSession>) {
     match *action {
-        TransportAction::TogglePlayback => session.playing = !session.playing,
+        TransportAction::TogglePlayback => {
+            if session.playing {
+                session.playing = false;
+            } else if session.effect.looping {
+                session.playing = true;
+            } else {
+                session.restart();
+            }
+        }
         TransportAction::Stop => session.stop(),
+        TransportAction::ToggleLooping => {
+            let looping = !session.effect.looping;
+            session.set_effect_looping(looping);
+        }
         TransportAction::Restart => session.restart(),
         TransportAction::StepFrame(direction) => session.step_frame(direction),
         TransportAction::AdjustPreviewSeed(direction) => {
@@ -152,9 +171,12 @@ fn advance_playback(time: Res<Time>, mut session: ResMut<EditorSession>) {
 }
 
 fn update_transport_icons(
+    mut commands: Commands,
     session: Res<EditorSession>,
+    localizer: Res<Localizer>,
     mut play_icons: Query<&mut Node, (With<PlaybackPlayIcon>, Without<PlaybackPauseIcon>)>,
     mut pause_icons: Query<&mut Node, (With<PlaybackPauseIcon>, Without<PlaybackPlayIcon>)>,
+    mut loop_buttons: Query<(Entity, &mut ButtonVariant, Has<Selected>), With<PlaybackLoopButton>>,
 ) {
     if !session.is_changed() {
         return;
@@ -172,6 +194,30 @@ fn update_transport_icons(
         } else {
             Display::None
         };
+    }
+    let looping = session.effect.looping;
+    let loop_label = localizer.text(if looping {
+        "toolbar-loop-disable"
+    } else {
+        "toolbar-loop-enable"
+    });
+    for (entity, mut variant, selected) in &mut loop_buttons {
+        *variant = if looping {
+            ButtonVariant::Primary
+        } else {
+            ButtonVariant::Normal
+        };
+        if looping != selected {
+            if looping {
+                commands.entity(entity).insert(Selected);
+            } else {
+                commands.entity(entity).remove::<Selected>();
+            }
+        }
+        commands.entity(entity).insert((
+            AccessibleLabel(loop_label.clone()),
+            EditorTooltip::description(loop_label.clone()),
+        ));
     }
 }
 
@@ -196,6 +242,7 @@ pub(crate) fn spawn_transport_controls(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     parent
         .spawn((
@@ -219,20 +266,45 @@ pub(crate) fn spawn_transport_controls(
                 localizer,
             )
             .with_children(|button| {
-                spawn_play_icon(button, !session.playing);
-                spawn_pause_icon(button, session.playing);
+                spawn_transport_icon(
+                    button,
+                    asset_server,
+                    "icons/play.svg",
+                    14.0,
+                    !session.playing,
+                )
+                .insert(PlaybackPlayIcon);
+                spawn_transport_icon(
+                    button,
+                    asset_server,
+                    "icons/pause.svg",
+                    14.0,
+                    session.playing,
+                )
+                .insert(PlaybackPauseIcon);
             });
             transport_button(transport, "toolbar-stop", TransportAction::Stop, localizer)
-                .with_child((
-                    Node {
-                        width: Val::Px(10.0),
-                        height: Val::Px(10.0),
-                        border_radius: BorderRadius::all(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::TEXT),
-                    Pickable::IGNORE,
-                ));
+                .with_children(|button| {
+                    spawn_transport_icon(button, asset_server, "icons/stop.svg", 13.0, true);
+                });
+            let loop_message = if session.effect.looping {
+                "toolbar-loop-disable"
+            } else {
+                "toolbar-loop-enable"
+            };
+            let mut loop_button = transport_button(
+                transport,
+                loop_message,
+                TransportAction::ToggleLooping,
+                localizer,
+            );
+            loop_button.insert(PlaybackLoopButton);
+            if session.effect.looping {
+                loop_button.insert((Selected, ButtonVariant::Primary));
+            }
+            loop_button.with_children(|button| {
+                spawn_transport_icon(button, asset_server, "icons/loop.svg", 19.0, true);
+            });
         });
 }
 
@@ -249,6 +321,7 @@ fn transport_button<'a>(
             action,
             FeathersActionButton,
             AccessibleLabel(localizer.text(message_id)),
+            EditorTooltip::description(localizer.text(message_id)),
             Node {
                 width: Val::Px(28.0),
                 height: Val::Px(28.0),
@@ -261,78 +334,46 @@ fn transport_button<'a>(
     button
 }
 
-fn spawn_play_icon(parent: &mut ChildSpawnerCommands, visible: bool) {
-    parent
-        .spawn((
-            PlaybackPlayIcon,
-            Node {
-                display: if visible {
-                    Display::Flex
-                } else {
-                    Display::None
-                },
-                width: Val::Px(8.0),
-                height: Val::Px(14.0),
-                position_type: PositionType::Relative,
-                overflow: Overflow::clip(),
-                ..default()
+fn spawn_transport_icon<'a>(
+    parent: &'a mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    path: &'static str,
+    size: f32,
+    visible: bool,
+) -> EntityCommands<'a> {
+    let icon = load_svg_icon(asset_server, path);
+    parent.spawn((
+        Node {
+            display: if visible {
+                Display::Flex
+            } else {
+                Display::None
             },
-            Pickable::IGNORE,
-        ))
-        .with_child((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(-5.0),
-                top: Val::Px(2.0),
-                width: Val::Px(10.0),
-                height: Val::Px(10.0),
-                border_radius: BorderRadius::all(Val::Px(1.0)),
-                ..default()
-            },
-            UiTransform::from_rotation(Rot2::radians(std::f32::consts::FRAC_PI_4)),
-            BackgroundColor(theme::TEXT),
-            Pickable::IGNORE,
-        ));
-}
-
-fn spawn_pause_icon(parent: &mut ChildSpawnerCommands, visible: bool) {
-    parent
-        .spawn((
-            PlaybackPauseIcon,
-            Node {
-                display: if visible {
-                    Display::Flex
-                } else {
-                    Display::None
-                },
-                width: Val::Px(11.0),
-                height: Val::Px(13.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                column_gap: Val::Px(3.0),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ))
-        .with_children(|icon| {
-            for _ in 0..2 {
-                icon.spawn((
-                    Node {
-                        width: Val::Px(3.0),
-                        height: Val::Px(12.0),
-                        border_radius: BorderRadius::all(Val::Px(0.5)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::TEXT),
-                    Pickable::IGNORE,
-                ));
-            }
-        });
+            width: Val::Px(size),
+            height: Val::Px(size),
+            ..default()
+        },
+        UiSvg(icon),
+        SvgColor(theme::TEXT),
+        Pickable::IGNORE,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
+
+    fn spawn_test_transport(
+        mut commands: Commands,
+        asset_server: Res<AssetServer>,
+        session: Res<EditorSession>,
+        localizer: Res<Localizer>,
+    ) {
+        commands.spawn(Node::default()).with_children(|parent| {
+            spawn_transport_controls(parent, &session, &localizer, &asset_server);
+        });
+    }
 
     #[test]
     fn transport_actions_own_playback_mutations() {
@@ -351,6 +392,109 @@ mod tests {
         let session = app.world().resource::<EditorSession>();
         assert!(session.playing);
         assert_eq!(session.frame(), 0);
+
+        let original_looping = session.effect.looping;
+        app.world_mut().trigger(TransportAction::ToggleLooping);
+        app.update();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.looping, !original_looping);
+        assert!(session.can_undo());
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.looping,
+            original_looping
+        );
+
+        {
+            let mut session = app.world_mut().resource_mut::<EditorSession>();
+            assert!(session.set_effect_looping(false));
+            session.step_frame(1);
+            assert_eq!(session.frame(), 1);
+            assert!(!session.playing);
+        }
+        app.world_mut().trigger(TransportAction::TogglePlayback);
+        app.update();
+        let session = app.world().resource::<EditorSession>();
+        assert!(session.playing);
+        assert_eq!(session.frame(), 0);
+    }
+
+    #[test]
+    fn changing_looping_preserves_playback_position_and_running_state() {
+        let mut app = App::new();
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.advance_playback(0.1);
+        let frame = session.frame();
+        assert!(frame > 0);
+        assert!(session.playing);
+        app.insert_resource(session)
+            .add_observer(execute_transport_action);
+
+        app.world_mut().trigger(TransportAction::ToggleLooping);
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert!(!session.effect.looping);
+        assert!(session.playing);
+        assert_eq!(session.frame(), frame);
+    }
+
+    #[test]
+    fn enabled_loop_control_has_persistent_active_styling_and_metadata() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+            SvgPlugin,
+        ))
+        .init_asset::<Image>()
+        .insert_resource(EditorSession::from_embedded_sample(
+            EFFECT_SOURCE,
+            EFFECT_PATH,
+        ))
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_observer(execute_transport_action)
+        .add_systems(Startup, spawn_test_transport)
+        .add_systems(Update, update_transport_icons);
+
+        app.update();
+
+        let world = app.world_mut();
+        let mut query = world.query::<(
+            &TransportAction,
+            &ButtonVariant,
+            Has<Selected>,
+            &AccessibleLabel,
+            Has<EditorTooltip>,
+        )>();
+        let (_, variant, selected, label, tooltip) = query
+            .iter(world)
+            .find(|(action, _, _, _, _)| **action == TransportAction::ToggleLooping)
+            .unwrap();
+        assert_eq!(*variant, ButtonVariant::Primary);
+        assert!(selected);
+        assert_eq!(label.0, "Disable loop playback");
+        assert!(tooltip);
+
+        app.world_mut().trigger(TransportAction::ToggleLooping);
+        app.update();
+
+        let world = app.world_mut();
+        let mut query = world.query::<(
+            &TransportAction,
+            &ButtonVariant,
+            Has<Selected>,
+            &AccessibleLabel,
+        )>();
+        let (_, variant, selected, label) = query
+            .iter(world)
+            .find(|(action, _, _, _)| **action == TransportAction::ToggleLooping)
+            .unwrap();
+        assert_eq!(*variant, ButtonVariant::Normal);
+        assert!(!selected);
+        assert_eq!(label.0, "Enable loop playback");
     }
 
     #[test]

@@ -337,6 +337,30 @@ impl EditorSession {
         }
     }
 
+    fn restore_preview_frame(&mut self, frame: u64) {
+        let duration = self.playback_duration();
+        let frame = frame.min(self.clock.maximum_frame(duration));
+        match self.seek_mode() {
+            SimulationSeekMode::StatelessDirect => {
+                self.clock.seek_frame(frame, duration);
+                let time = self.time();
+                if let Some(preview) = &mut self.preview {
+                    preview.seek(time);
+                }
+                self.last_seek = direct_seek_plan(frame);
+            }
+            SimulationSeekMode::CheckpointRestore | SimulationSeekMode::RestartReplay => {
+                self.restart_for_replay();
+                self.replay_ticks(frame);
+                self.last_seek = SeekPlan {
+                    target_frame: frame,
+                    origin: SeekOrigin::Restart,
+                    replay_ticks: frame,
+                };
+            }
+        }
+    }
+
     fn record_checkpoint_if_due(&mut self) {
         if self.seek_mode() != SimulationSeekMode::CheckpointRestore
             || !self.checkpoints.policy().should_capture(self.frame())
@@ -752,11 +776,19 @@ impl EditorSession {
         if self.effect.looping == looping {
             return false;
         }
-        self.execute(
+        let frame = self.frame();
+        let playing = self.playing;
+        let changed = self.execute(
             "Changed effect looping",
             EffectCommand::SetEffectLooping { looping },
             true,
-        )
+        );
+        if changed {
+            self.restore_preview_frame(frame);
+            self.playing = playing;
+            self.status = "Changed effect looping".into();
+        }
+        changed
     }
 
     pub fn set_selected_emitter_name(&mut self, name: impl Into<String>) -> bool {

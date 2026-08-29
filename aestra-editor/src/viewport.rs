@@ -2,6 +2,7 @@
 
 use crate::{
     EditorNativeControl, FeathersActionButton, MenuState, PendingFeathersActivation,
+    feathers::icon::load_svg_icon,
     feathers::tooltip::EditorTooltip,
     inspector::{ModulePaletteState, module_parameter},
     localization::Localizer,
@@ -38,12 +39,15 @@ use bevy::{
     ui_widgets::Activate,
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
+use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 use std::time::Instant;
 
 const DEFAULT_PREVIEW_PITCH: f32 = -0.35;
 const PREVIEW_GRID_SHADER_PATH: &str = "shaders/preview_grid.wesl";
 const PREVIEW_GRID_Y: f32 = -0.05;
+const VIEWPORT_TOOL_BUTTON_SIZE: f32 = 28.0;
+const VIEWPORT_TOOL_ICON_SIZE: f32 = 20.0;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ViewportSet {
@@ -430,10 +434,7 @@ struct ShapeGizmoState {
 struct PreviewDisplayModeIcon(PreviewDisplayMode);
 
 #[derive(Component)]
-struct TransformGizmoModeFill(TransformGizmoMode);
-
-#[derive(Component)]
-struct TransformGizmoModeOutline(TransformGizmoMode);
+struct TransformGizmoModeIcon(TransformGizmoMode);
 
 #[derive(Component)]
 struct PreviewEffectPlayer;
@@ -719,32 +720,11 @@ fn sync_preview_display_mode(
 
 fn update_preview_display_controls(
     display: Res<PreviewDisplayState>,
-    mut icons: Query<(
-        &PreviewDisplayModeIcon,
-        &mut BackgroundColor,
-        &mut BorderColor,
-    )>,
+    mut icons: Query<(&PreviewDisplayModeIcon, &mut SvgColor)>,
 ) {
-    for (icon, mut background, mut border) in &mut icons {
+    for (icon, mut color) in &mut icons {
         let active = icon.0 == display.mode;
-        match icon.0 {
-            PreviewDisplayMode::Wireframe => {
-                background.0 = Color::NONE;
-                *border = BorderColor::all(if active {
-                    theme::ACCENT
-                } else {
-                    theme::TEXT_MUTED
-                });
-            }
-            PreviewDisplayMode::Rendered => {
-                background.0 = if active {
-                    theme::ACCENT
-                } else {
-                    theme::TEXT_MUTED
-                };
-                *border = BorderColor::all(Color::NONE);
-            }
-        }
+        color.0 = if active { theme::ACCENT } else { theme::TEXT };
     }
 }
 
@@ -753,8 +733,7 @@ fn update_transform_gizmo_controls(
     canvas: Single<&RelativeCursorPosition, With<PreviewCanvas>>,
     mut settings: ResMut<TransformGizmoSettings>,
     mut labels: Query<&mut Text, With<GizmoModeLabel>>,
-    mut fills: Query<(&TransformGizmoModeFill, &mut BackgroundColor)>,
-    mut outlines: Query<(&TransformGizmoModeOutline, &mut BorderColor)>,
+    mut icons: Query<(&TransformGizmoModeIcon, &mut SvgColor)>,
 ) {
     if canvas.cursor_over() && keys.just_pressed(KeyCode::KeyX) {
         settings.space = match settings.space {
@@ -774,19 +753,12 @@ fn update_transform_gizmo_controls(
     for mut label in &mut labels {
         **label = format!("{mode} · {space}");
     }
-    for (icon, mut color) in &mut fills {
+    for (icon, mut color) in &mut icons {
         color.0 = if icon.0 == settings.mode {
             theme::ACCENT
         } else {
-            theme::TEXT_MUTED
+            theme::TEXT
         };
-    }
-    for (icon, mut color) in &mut outlines {
-        *color = BorderColor::all(if icon.0 == settings.mode {
-            theme::ACCENT
-        } else {
-            theme::TEXT_MUTED
-        });
     }
 }
 
@@ -1647,7 +1619,11 @@ fn spawn_preview_effect_player(
     }
 }
 
-pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
+pub(crate) fn spawn_preview(
+    parent: &mut ChildSpawnerCommands,
+    localizer: &Localizer,
+    asset_server: &AssetServer,
+) {
     parent
         .spawn(())
         .apply_scene(ui_shell::viewport_pane())
@@ -1708,6 +1684,7 @@ pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Local
                                 "viewport-gizmo-move",
                                 "viewport-gizmo-move-description",
                                 localizer,
+                                asset_server,
                             );
                             spawn_transform_gizmo_tool_button(
                                 tools,
@@ -1715,6 +1692,7 @@ pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Local
                                 "viewport-gizmo-rotate",
                                 "viewport-gizmo-rotate-description",
                                 localizer,
+                                asset_server,
                             );
                             spawn_transform_gizmo_tool_button(
                                 tools,
@@ -1722,6 +1700,7 @@ pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Local
                                 "viewport-gizmo-scale",
                                 "viewport-gizmo-scale-description",
                                 localizer,
+                                asset_server,
                             );
                         });
                     canvas.spawn((
@@ -1771,6 +1750,7 @@ pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Local
                                 "viewport-frame-effect-description",
                                 ViewportToolIcon::Frame,
                                 localizer,
+                                asset_server,
                             );
                             tools.spawn((
                                 Node {
@@ -1791,6 +1771,7 @@ pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Local
                                 "viewport-wireframe-description",
                                 ViewportToolIcon::Wireframe,
                                 localizer,
+                                asset_server,
                             );
                             spawn_viewport_tool_button(
                                 tools,
@@ -1799,6 +1780,7 @@ pub(crate) fn spawn_preview(parent: &mut ChildSpawnerCommands, localizer: &Local
                                 "viewport-rendered-description",
                                 ViewportToolIcon::Rendered,
                                 localizer,
+                                asset_server,
                             );
                         });
                 });
@@ -1852,6 +1834,7 @@ fn spawn_transform_gizmo_tool_button(
     label_id: &'static str,
     description_id: &'static str,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     let label = localizer.text(label_id);
     let shortcut = match mode {
@@ -1868,100 +1851,23 @@ fn spawn_transform_gizmo_tool_button(
             AccessibleLabel(label.clone()),
             EditorTooltip::titled(label, localizer.text(description_id)).with_shortcut(shortcut),
             Node {
-                width: Val::Px(22.0),
-                min_width: Val::Px(22.0),
-                height: Val::Px(22.0),
+                width: Val::Px(VIEWPORT_TOOL_BUTTON_SIZE),
+                min_width: Val::Px(VIEWPORT_TOOL_BUTTON_SIZE),
+                height: Val::Px(VIEWPORT_TOOL_BUTTON_SIZE),
                 padding: UiRect::ZERO,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
             },
         ))
-        .with_children(|button| match mode {
-            TransformGizmoMode::Translate => {
-                button
-                    .spawn((
-                        Node {
-                            width: Val::Px(12.0),
-                            height: Val::Px(12.0),
-                            position_type: PositionType::Relative,
-                            ..default()
-                        },
-                        Pickable::IGNORE,
-                    ))
-                    .with_children(|icon| {
-                        icon.spawn((
-                            TransformGizmoModeFill(mode),
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(5.5),
-                                top: Val::Px(1.0),
-                                width: Val::Px(1.0),
-                                height: Val::Px(10.0),
-                                ..default()
-                            },
-                            BackgroundColor(theme::TEXT_MUTED),
-                            Pickable::IGNORE,
-                        ));
-                        icon.spawn((
-                            TransformGizmoModeFill(mode),
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(1.0),
-                                top: Val::Px(5.5),
-                                width: Val::Px(10.0),
-                                height: Val::Px(1.0),
-                                ..default()
-                            },
-                            BackgroundColor(theme::TEXT_MUTED),
-                            Pickable::IGNORE,
-                        ));
-                    });
-            }
-            TransformGizmoMode::Rotate => {
-                button.spawn((
-                    TransformGizmoModeOutline(mode),
-                    Node {
-                        width: Val::Px(12.0),
-                        height: Val::Px(12.0),
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::MAX,
-                        ..default()
-                    },
-                    BorderColor::all(theme::TEXT_MUTED),
-                    Pickable::IGNORE,
-                ));
-            }
-            TransformGizmoMode::Scale => {
-                button
-                    .spawn((
-                        TransformGizmoModeOutline(mode),
-                        Node {
-                            width: Val::Px(11.0),
-                            height: Val::Px(11.0),
-                            position_type: PositionType::Relative,
-                            border: UiRect::all(Val::Px(1.0)),
-                            ..default()
-                        },
-                        BorderColor::all(theme::TEXT_MUTED),
-                        Pickable::IGNORE,
-                    ))
-                    .with_children(|cube| {
-                        cube.spawn((
-                            TransformGizmoModeFill(mode),
-                            Node {
-                                position_type: PositionType::Absolute,
-                                right: Val::Px(-2.0),
-                                top: Val::Px(-2.0),
-                                width: Val::Px(4.0),
-                                height: Val::Px(4.0),
-                                ..default()
-                            },
-                            BackgroundColor(theme::TEXT_MUTED),
-                            Pickable::IGNORE,
-                        ));
-                    });
-            }
+        .with_children(|button| {
+            let path = match mode {
+                TransformGizmoMode::Translate => "icons/move.svg",
+                TransformGizmoMode::Rotate => "icons/rotate.svg",
+                TransformGizmoMode::Scale => "icons/scale.svg",
+            };
+            spawn_viewport_svg_icon(button, asset_server, path)
+                .insert(TransformGizmoModeIcon(mode));
         });
 }
 
@@ -1972,6 +1878,7 @@ fn spawn_viewport_tool_button(
     description_id: &'static str,
     icon: ViewportToolIcon,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     parent
         .spawn_empty()
@@ -1982,9 +1889,9 @@ fn spawn_viewport_tool_button(
             AccessibleLabel(localizer.text(label_id)),
             EditorTooltip::description(localizer.text(description_id)),
             Node {
-                width: Val::Px(22.0),
-                min_width: Val::Px(22.0),
-                height: Val::Px(22.0),
+                width: Val::Px(VIEWPORT_TOOL_BUTTON_SIZE),
+                min_width: Val::Px(VIEWPORT_TOOL_BUTTON_SIZE),
+                height: Val::Px(VIEWPORT_TOOL_BUTTON_SIZE),
                 padding: UiRect::ZERO,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
@@ -1993,32 +1900,7 @@ fn spawn_viewport_tool_button(
         ))
         .with_children(|button| match icon {
             ViewportToolIcon::Frame => {
-                button
-                    .spawn((
-                        Node {
-                            width: Val::Px(12.0),
-                            height: Val::Px(12.0),
-                            border: UiRect::all(Val::Px(1.0)),
-                            border_radius: BorderRadius::all(Val::Px(2.0)),
-                            align_items: AlignItems::Center,
-                            justify_content: JustifyContent::Center,
-                            ..default()
-                        },
-                        BorderColor::all(theme::TEXT_MUTED),
-                        Pickable::IGNORE,
-                    ))
-                    .with_children(|frame| {
-                        frame.spawn((
-                            Node {
-                                width: Val::Px(3.0),
-                                height: Val::Px(3.0),
-                                border_radius: BorderRadius::MAX,
-                                ..default()
-                            },
-                            BackgroundColor(theme::TEXT_MUTED),
-                            Pickable::IGNORE,
-                        ));
-                    });
+                spawn_viewport_svg_icon(button, asset_server, "icons/center-focus.svg");
             }
             ViewportToolIcon::Wireframe | ViewportToolIcon::Rendered => {
                 let mode = if matches!(icon, ViewportToolIcon::Wireframe) {
@@ -2026,21 +1908,33 @@ fn spawn_viewport_tool_button(
                 } else {
                     PreviewDisplayMode::Rendered
                 };
-                button.spawn((
-                    PreviewDisplayModeIcon(mode),
-                    Node {
-                        width: Val::Px(12.0),
-                        height: Val::Px(12.0),
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::MAX,
-                        ..default()
-                    },
-                    BackgroundColor(Color::NONE),
-                    BorderColor::all(theme::TEXT_MUTED),
-                    Pickable::IGNORE,
-                ));
+                let path = if mode == PreviewDisplayMode::Wireframe {
+                    "icons/wireframe.svg"
+                } else {
+                    "icons/solid.svg"
+                };
+                spawn_viewport_svg_icon(button, asset_server, path)
+                    .insert(PreviewDisplayModeIcon(mode));
             }
         });
+}
+
+fn spawn_viewport_svg_icon<'a>(
+    parent: &'a mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    path: &'static str,
+) -> EntityCommands<'a> {
+    let icon = load_svg_icon(asset_server, path);
+    parent.spawn((
+        Node {
+            width: Val::Px(VIEWPORT_TOOL_ICON_SIZE),
+            height: Val::Px(VIEWPORT_TOOL_ICON_SIZE),
+            ..default()
+        },
+        UiSvg(icon),
+        SvgColor(theme::TEXT),
+        Pickable::IGNORE,
+    ))
 }
 
 #[derive(Clone, Copy, Debug)]

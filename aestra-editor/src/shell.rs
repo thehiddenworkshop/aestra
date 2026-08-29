@@ -81,6 +81,7 @@ struct DocumentToolbarLabel;
 
 fn setup_editor(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     session: Res<EditorSession>,
     menu: Res<MenuState>,
     layout: Res<WorkspaceLayout>,
@@ -97,7 +98,14 @@ fn setup_editor(
         IsDefaultUiCamera,
         RenderLayers::layer(31),
     ));
-    spawn_editor_ui(&mut commands, &menu, &layout, &session, &localizer);
+    spawn_editor_ui(
+        &mut commands,
+        &menu,
+        &layout,
+        &session,
+        &localizer,
+        &asset_server,
+    );
     rendered.0 = session.ui_revision;
 }
 
@@ -131,13 +139,14 @@ fn spawn_editor_ui(
     layout: &WorkspaceLayout,
     session: &EditorSession,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     commands
         .spawn(EditorRoot)
         .apply_scene(ui_shell::editor_root())
         .with_children(|root| {
             spawn_menu_bar(root, session, menu, layout, localizer);
-            spawn_toolbar(root, session, localizer);
+            spawn_toolbar(root, session, localizer, asset_server);
             spawn_editor_content(root, menu, localizer);
             spawn_status_bar(root, session, localizer);
             spawn_about_overlay(root, menu.show_about, localizer);
@@ -162,6 +171,7 @@ fn spawn_toolbar(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     parent
         .spawn((
@@ -191,7 +201,7 @@ fn spawn_toolbar(
                     ..default()
                 },
             ));
-            spawn_transport_controls(bar, session, localizer);
+            spawn_transport_controls(bar, session, localizer, asset_server);
             bar.spawn(Node {
                 width: Val::Px(11.0),
                 height: Val::Px(26.0),

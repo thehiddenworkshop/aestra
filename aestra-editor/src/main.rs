@@ -62,6 +62,7 @@ use bevy::{
         WindowMoved, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
     },
 };
+use bevy_resvg::prelude::SvgPlugin;
 pub(crate) use changes::spawn_changes_workspace;
 use changes::{ChangesSet, EditorChangesPlugin};
 pub(crate) use compiler_inspector::spawn_compiler_inspector_workspace;
@@ -164,6 +165,7 @@ fn main() {
                     ..default()
                 }),
         )
+        .add_plugins(SvgPlugin)
         .add_plugins(AestraFeathersPlugin)
         .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
@@ -324,6 +326,23 @@ mod tests {
                     asset.path
                 );
             }
+        }
+        for icon in [
+            "play.svg",
+            "pause.svg",
+            "stop.svg",
+            "loop.svg",
+            "move.svg",
+            "rotate.svg",
+            "scale.svg",
+            "center-focus.svg",
+            "solid.svg",
+            "wireframe.svg",
+        ] {
+            assert!(
+                asset_root.join("icons").join(icon).is_file(),
+                "missing bundled transport icon {icon}"
+            );
         }
     }
 

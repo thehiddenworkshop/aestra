@@ -1642,10 +1642,6 @@ fn handle_document_toggle_change(
         commands.entity(change.source).remove::<Checked>();
     }
     let (changed, target) = match control {
-        DocumentToggleControl::EffectLooping => (
-            session.set_effect_looping(change.value),
-            localizer.text("inspector-effect-looping"),
-        ),
         DocumentToggleControl::EmitterEnabled => (
             session.set_selected_emitter_enabled(change.value),
             localizer.text("inspector-emitter-enabled"),
@@ -2765,13 +2761,6 @@ fn spawn_document_controls(
                 &localizer.text("inspector-effect-name-description"),
                 &session.effect.name,
                 DocumentTextControl::EffectName,
-            );
-            spawn_document_toggle(
-                card,
-                &localizer.text("inspector-effect-looping"),
-                &localizer.text("inspector-effect-looping-description"),
-                session.effect.looping,
-                DocumentToggleControl::EffectLooping,
             );
         });
 
@@ -4775,7 +4764,6 @@ enum DocumentTextControl {
 
 #[derive(Component, Debug, Clone, Copy)]
 enum DocumentToggleControl {
-    EffectLooping,
     EmitterEnabled,
 }
 
