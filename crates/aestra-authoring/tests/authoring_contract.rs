@@ -691,6 +691,57 @@ fn effect_clip_commands_are_serializable_and_reversible() {
 }
 
 #[test]
+fn effect_clip_transform_and_order_are_undoable_stable_id_edits() {
+    let mut effect = test_effect();
+    let first = EffectClip::new(EffectId::from_u128(0xC11D), 0.0, 1.0);
+    let first_id = first.id;
+    let second = EffectClip::new(EffectId::from_u128(0xC11E), 0.5, 1.0);
+    let second_id = second.id;
+    effect.effect_clips = vec![first, second];
+    let original = effect.clone();
+    let mut history = CommandHistory::default();
+    let transform = EmitterTransform {
+        translation: [10.0, 2.0, -3.0],
+        scale: [1.5, 1.5, 1.5],
+        ..Default::default()
+    };
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Transform clip",
+                EffectCommand::SetEffectClipTransform {
+                    id: first_id,
+                    transform,
+                },
+            ),
+        )
+        .unwrap();
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Reorder clips",
+                EffectCommand::MoveEffectClip {
+                    id: first_id,
+                    index: 1,
+                },
+            ),
+        )
+        .unwrap();
+
+    assert_eq!(effect.effect_clips[0].id, second_id);
+    assert_eq!(effect.effect_clips[1].id, first_id);
+    assert_eq!(effect.effect_clips[1].transform, transform);
+    history.undo(&mut effect).unwrap().unwrap();
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect, original);
+}
+
+#[test]
 fn invalid_effect_clip_edits_are_atomic_and_locked_clips_reject_edits() {
     let mut effect = test_effect();
     let clip = EffectClip::new(EffectId::from_u128(0xC11D), 0.25, 1.0);

@@ -448,6 +448,7 @@ impl EffectCompiler {
                     start_time: clip.start_time,
                     source_offset: clip.source_offset,
                     duration: clip.duration,
+                    transform: clip.transform,
                     seed: clip.seed,
                 })
                 .collect(),

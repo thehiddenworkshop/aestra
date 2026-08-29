@@ -146,6 +146,10 @@ fn apply_command(
             let previous = std::mem::replace(&mut effect.looping, *looping);
             vec![EffectCommand::SetEffectLooping { looping: previous }]
         }
+        EffectCommand::SetChoreographyOrder { order } => {
+            let previous = std::mem::replace(&mut effect.choreography_order, order.clone());
+            vec![EffectCommand::SetChoreographyOrder { order: previous }]
+        }
         EffectCommand::AddEffectClip { clip, index } => {
             checked_insert(
                 &mut effect.effect_clips,
@@ -159,6 +163,14 @@ fn apply_command(
             let index = effect_clip_index(effect, *id)?;
             let clip = effect.effect_clips.remove(index);
             vec![EffectCommand::AddEffectClip { clip, index }]
+        }
+        EffectCommand::MoveEffectClip { id, index } => {
+            let old_index = effect_clip_index(effect, *id)?;
+            checked_move(&mut effect.effect_clips, old_index, *index, "effect clips")?;
+            vec![EffectCommand::MoveEffectClip {
+                id: *id,
+                index: old_index,
+            }]
         }
         EffectCommand::SetEffectClipTiming {
             id,
@@ -184,6 +196,14 @@ fn apply_command(
             vec![EffectCommand::SetEffectClipSeed {
                 id: *id,
                 seed: previous,
+            }]
+        }
+        EffectCommand::SetEffectClipTransform { id, transform } => {
+            let clip = effect_clip_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut clip.transform, *transform);
+            vec![EffectCommand::SetEffectClipTransform {
+                id: *id,
+                transform: previous,
             }]
         }
         EffectCommand::AddParameter { parameter, index } => {

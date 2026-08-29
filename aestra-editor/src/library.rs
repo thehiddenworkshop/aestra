@@ -1030,6 +1030,7 @@ mod tests {
 
     fn spawn_pre_m6_acceptance_surface(
         mut commands: Commands,
+        asset_server: Res<AssetServer>,
         session: Res<EditorSession>,
         catalog: Res<ProjectEffectCatalog>,
         library: Res<LibraryState>,
@@ -1065,7 +1066,14 @@ mod tests {
                     ..default()
                 })
                 .with_children(|panel| {
-                    spawn_timeline(panel, &session, &timeline, &catalog, &localizer);
+                    spawn_timeline(
+                        panel,
+                        &session,
+                        &timeline,
+                        &catalog,
+                        &localizer,
+                        &asset_server,
+                    );
                 });
             });
     }
@@ -1406,6 +1414,7 @@ mod tests {
                 TextPlugin,
             ))
             .init_asset::<Image>()
+            .init_asset::<bevy_resvg::prelude::SvgFile>()
             .insert_resource(session)
             .insert_resource(catalog)
             .init_resource::<LibraryState>()

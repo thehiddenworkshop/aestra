@@ -2148,6 +2148,14 @@ is reflected in the Inspector and commits as one undoable semantic command. Inva
 direct-self, and transitive-cycle drops are rejected without mutating the document and retain visible
 feedback.
 
+Effect clips now use the same explicit reorder-grip interaction as local emitter tracks and can be
+placed before, between, or after local emitters. Reordering changes only a stable semantic
+choreography order and is one undoable command; timing and source identity do not change. Each clip
+also owns a backward-compatible, non-destructive instance transform. Position,
+rotation, and scale are editable with the Inspector's standard scrubbable numeric controls and the
+Viewport transform gizmo, serialize with the clip, compose through nested references, and transform
+the whole referenced effect without modifying its source asset.
+
 The editor preview is now project-aware: it resolves and compiles the current root together with
 its transitive reusable-effect dependencies, then synchronizes one normal Bevy `EffectPlayer` for
 every active instance path. Referenced clips therefore use the same native-GPU, GPU-readback, and
@@ -2312,10 +2320,12 @@ all workspace presets
 - [x] An Effect Asset can be dragged from the Library to the timeline.
 - [x] Dropping it creates a referenced EffectClip, not a destructive copy.
 - [x] Moving an EffectClip changes its semantic start time.
+- [x] EffectClip rows can be reordered with stable identity and undo/redo.
 - [x] EffectClip operations are undoable/redoable.
 - [x] EffectClip serialization is stable.
 - [x] The referenced effect resolves, compiles, runs, seeks, and restarts deterministically.
 - [x] An EffectClip exposes its resolved source and timing window in the Inspector.
+- [x] An EffectClip exposes an editable instance transform that affects the complete referenced effect.
 - [ ] Missing references identify the unresolved asset and offer a repair path.
 - [x] Effect reference cycles are rejected with clear diagnostics.
 - [ ] Moving or renaming a project asset through the Library preserves valid references.
@@ -2335,7 +2345,7 @@ After the MVP:
 - [ ] The user can explicitly edit the source asset.
 - [ ] The user can make an instance unique.
 - [ ] The user can add and move named markers.
-- [ ] Nested EffectClips can be expanded.
+- [x] Nested EffectClips can be expanded for read-only source inspection.
 - [ ] Breadcrumb navigation clearly indicates nested source editing.
 - [ ] Effect markers can be referenced by child clip timing.
 - [ ] Timeline events are supported.

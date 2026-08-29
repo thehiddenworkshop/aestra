@@ -43,6 +43,7 @@ impl Plugin for InspectorPlugin {
             .add_observer(handle_renderer_scalar_change)
             .add_observer(handle_renderer_toggle_change)
             .add_observer(handle_emitter_scalar_change)
+            .add_observer(handle_effect_clip_scalar_change)
             .add_observer(handle_inspector_integer_change)
             .add_observer(handle_inspector_scalar_change)
             .add_observer(handle_bounded_slider_change)
@@ -61,6 +62,7 @@ impl Plugin for InspectorPlugin {
                     (
                         sync_emitter_capacity_inputs,
                         sync_emitter_number_inputs,
+                        sync_effect_clip_number_inputs,
                         sync_inspector_number_inputs,
                         sync_inspector_slider_inputs,
                         sync_renderer_number_inputs,
@@ -1136,6 +1138,27 @@ mod tests {
             EmitterTransform::default()
         );
     }
+
+    #[test]
+    fn inspector_effect_clip_transform_is_semantic_and_undoable() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let clip = aestra_bevy::EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 1.0);
+        let clip_id = clip.id;
+        session.effect.effect_clips.push(clip);
+        let control = EffectClipNumberControl {
+            clip: clip_id,
+            control: EmitterNumberControl::Translation(0),
+        };
+        let command = effect_clip_transform_command(&session, control, 8.5).unwrap();
+
+        assert!(session.execute("Transformed effect clip", command, false));
+        assert_eq!(session.effect.effect_clips[0].transform.translation[0], 8.5);
+        session.undo();
+        assert_eq!(
+            session.effect.effect_clips[0].transform,
+            EmitterTransform::default()
+        );
+    }
 }
 fn scroll_inspector_to_focus(
     mut commands: Commands,
@@ -1348,6 +1371,35 @@ fn sync_emitter_number_inputs(
     }
 }
 
+fn sync_effect_clip_number_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    gizmo: Res<TransformGizmoState>,
+    interaction: Res<EmitterTransformGizmoInteraction>,
+    proxy: Query<Ref<Transform>, With<EmitterTransformGizmoProxy>>,
+    controls: Query<(Entity, Ref<EffectClipNumberControl>)>,
+) {
+    let live_transform = proxy
+        .single()
+        .ok()
+        .filter(|transform| (gizmo.active || interaction.is_active()) && transform.is_changed())
+        .map(|transform| emitter_transform_from_bevy(&transform));
+    for (entity, control) in &controls {
+        if !control.is_added() && live_transform.is_none() {
+            continue;
+        }
+        let value = live_transform
+            .and_then(|transform| emitter_transform_component_value(transform, control.control))
+            .or_else(|| effect_clip_number_input_value(&session, *control));
+        if let Some(value) = value {
+            commands.trigger(UpdateNumberInput {
+                entity,
+                value: NumberInputValue::F32(value),
+            });
+        }
+    }
+}
+
 fn emitter_number_input_value(session: &EditorSession, control: EmitterNumberControl) -> f32 {
     let transform = session.selected_layer().transform;
     match control {
@@ -1375,6 +1427,36 @@ fn emitter_transform_component_value(
         EmitterNumberControl::Scale(component) => Some(transform.scale[component as usize]),
         EmitterNumberControl::Start | EmitterNumberControl::Duration => None,
     }
+}
+
+fn effect_clip_number_input_value(
+    session: &EditorSession,
+    control: EffectClipNumberControl,
+) -> Option<f32> {
+    let clip = session
+        .effect
+        .effect_clips
+        .iter()
+        .find(|clip| clip.id == control.clip)?;
+    emitter_transform_component_value(clip.transform, control.control)
+}
+
+fn effect_clip_transform_command(
+    session: &EditorSession,
+    control: EffectClipNumberControl,
+    value: f32,
+) -> Option<EffectCommand> {
+    let clip = session
+        .effect
+        .effect_clips
+        .iter()
+        .find(|clip| clip.id == control.clip)?;
+    let mut transform = clip.transform;
+    set_emitter_transform_value(&mut transform, control.control, value)?;
+    Some(EffectCommand::SetEffectClipTransform {
+        id: control.clip,
+        transform,
+    })
 }
 
 fn set_emitter_transform_component(
@@ -1925,6 +2007,29 @@ fn handle_emitter_scalar_change(
     }
 }
 
+fn handle_effect_clip_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&EffectClipNumberControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let Some(current) = effect_clip_number_input_value(&session, *control) else {
+        return;
+    };
+    if (change.value - current).abs() <= f32::EPSILON {
+        return;
+    }
+    let Some(command) = effect_clip_transform_command(&session, *control, change.value) else {
+        return;
+    };
+    session.execute("Transformed effect clip", command, true);
+}
+
 fn decorate_numeric_scrub_inputs(
     mut commands: Commands,
     children: Query<&Children>,
@@ -1935,6 +2040,7 @@ fn decorate_numeric_scrub_inputs(
             Or<(
                 With<InspectorNumberControl>,
                 With<EmitterNumberControl>,
+                With<EffectClipNumberControl>,
                 With<RendererNumberControl>,
             )>,
         ),
@@ -1959,6 +2065,7 @@ fn begin_numeric_scrub(
     mut drag: On<Pointer<DragStart>>,
     inspector_controls: Query<&InspectorNumberControl>,
     emitter_controls: Query<&EmitterNumberControl>,
+    effect_clip_controls: Query<&EffectClipNumberControl>,
     renderer_controls: Query<&RendererNumberControl>,
     parents: Query<&ChildOf>,
     session: Res<EditorSession>,
@@ -1974,6 +2081,7 @@ fn begin_numeric_scrub(
         &parents,
         &inspector_controls,
         &emitter_controls,
+        &effect_clip_controls,
         &renderer_controls,
     ) else {
         return;
@@ -2091,6 +2199,7 @@ fn resolve_numeric_scrub_target(
     parents: &Query<&ChildOf>,
     inspector_controls: &Query<&InspectorNumberControl>,
     emitter_controls: &Query<&EmitterNumberControl>,
+    effect_clip_controls: &Query<&EffectClipNumberControl>,
     renderer_controls: &Query<&RendererNumberControl>,
 ) -> Option<(Entity, NumericScrubTarget)> {
     let mut candidate = entity;
@@ -2100,6 +2209,9 @@ fn resolve_numeric_scrub_target(
         }
         if let Ok(control) = emitter_controls.get(candidate) {
             return Some((candidate, NumericScrubTarget::Emitter(*control)));
+        }
+        if let Ok(control) = effect_clip_controls.get(candidate) {
+            return Some((candidate, NumericScrubTarget::EffectClip(*control)));
         }
         if let Ok(control) = renderer_controls.get(candidate) {
             return Some((candidate, NumericScrubTarget::Renderer(*control)));
@@ -2144,6 +2256,12 @@ fn numeric_scrub_step(target: NumericScrubTarget) -> f32 {
             EmitterNumberControl::Scale(_) => 0.05,
             EmitterNumberControl::Start | EmitterNumberControl::Duration => 0.05,
         },
+        NumericScrubTarget::EffectClip(control) => match control.control {
+            EmitterNumberControl::Translation(_) => 0.1,
+            EmitterNumberControl::Rotation(_) => 1.0,
+            EmitterNumberControl::Scale(_) => 0.05,
+            EmitterNumberControl::Start | EmitterNumberControl::Duration => 0.05,
+        },
         NumericScrubTarget::Renderer(control) => renderer_number_step(control),
     }
 }
@@ -2162,6 +2280,7 @@ fn numeric_scrub_value(session: &EditorSession, target: NumericScrubTarget) -> O
             inspector_number_input_value(session, control).map(number_input_value_as_f32)
         }
         NumericScrubTarget::Emitter(control) => Some(emitter_number_input_value(session, control)),
+        NumericScrubTarget::EffectClip(control) => effect_clip_number_input_value(session, control),
         NumericScrubTarget::Renderer(control) => renderer_number_input_value(session, control),
     }
 }
@@ -2250,6 +2369,11 @@ fn normalize_numeric_scrub_value_with_multiplier(
         ),
         NumericScrubTarget::Emitter(EmitterNumberControl::Scale(_)) => value.max(0.001),
         NumericScrubTarget::Emitter(_) => value,
+        NumericScrubTarget::EffectClip(EffectClipNumberControl {
+            control: EmitterNumberControl::Scale(_),
+            ..
+        }) => value.max(0.001),
+        NumericScrubTarget::EffectClip(_) => value,
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(_)) => value.max(0.0),
         NumericScrubTarget::Renderer(RendererNumberControl::Uv(renderer, component)) => {
             normalize_renderer_uv_scrub_value(session, renderer, component, value)
@@ -2339,6 +2463,9 @@ fn numeric_scrub_command(
                 id: session.selected_layer().id,
                 transform,
             })
+        }
+        NumericScrubTarget::EffectClip(control) => {
+            effect_clip_transform_command(session, control, value)
         }
         NumericScrubTarget::Renderer(control) => {
             renderer_numeric_scrub_command(session, control, value)
@@ -2431,6 +2558,11 @@ fn commit_numeric_scrub(
         NumericScrubTarget::Emitter(control) => {
             set_emitter_transform_component(session, control, value, true);
         }
+        NumericScrubTarget::EffectClip(control) => {
+            if let Some(command) = effect_clip_transform_command(session, control, value) {
+                session.execute("Transformed effect clip", command, true);
+            }
+        }
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(renderer)) => {
             session.set_renderer_softness(renderer, value);
         }
@@ -2463,6 +2595,7 @@ fn commit_bounded_slider(
             "Changed material softness".into()
         }
         NumericScrubTarget::Emitter(_) => "Changed emitter value".into(),
+        NumericScrubTarget::EffectClip(_) => "Changed effect clip transform".into(),
     };
     session.execute(label, command, false)
 }
@@ -2655,6 +2788,7 @@ fn spawn_read_only_inspector_shell(
     parent: &mut ChildSpawnerCommands,
     title: &str,
     localizer: &Localizer,
+    instance_editable: bool,
     body: impl FnOnce(&mut ChildSpawnerCommands),
 ) {
     parent
@@ -2669,7 +2803,11 @@ fn spawn_read_only_inspector_shell(
             panel_heading(
                 panel,
                 &localizer.text("inspector-referenced-effect-heading"),
-                &localizer.text("inspector-read-only"),
+                &localizer.text(if instance_editable {
+                    "inspector-instance-editable"
+                } else {
+                    "inspector-read-only"
+                }),
             );
             panel.spawn((
                 Text::new(title),
@@ -2861,7 +2999,7 @@ fn spawn_effect_clip_inspector(
     };
     let source_name = effect_clip_catalog_name(catalog, clip.source);
     let source = catalog.load_effect(clip.source).ok();
-    spawn_read_only_inspector_shell(parent, &source_name, localizer, |stack| {
+    spawn_read_only_inspector_shell(parent, &source_name, localizer, true, |stack| {
         spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
             spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
             let start = spawn_read_only_row(
@@ -2903,6 +3041,7 @@ fn spawn_effect_clip_inspector(
                 format!("{:?}", clip.seed),
             );
         });
+        spawn_effect_clip_transform_controls(stack, clip.id);
         spawn_read_only_card(stack, localizer.text("inspector-source-summary"), |card| {
             if let Some(source) = &source {
                 spawn_read_only_row(card, localizer.text("inspector-name"), &source.name);
@@ -2968,7 +3107,7 @@ fn spawn_referenced_emitter_inspector(
         return false;
     };
     let source_name = effect_clip_catalog_name(catalog, clip.source);
-    spawn_read_only_inspector_shell(parent, &emitter.name, localizer, |stack| {
+    spawn_read_only_inspector_shell(parent, &emitter.name, localizer, false, |stack| {
         spawn_read_only_card(stack, localizer.text("inspector-reference"), |card| {
             spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
             spawn_read_only_row(card, localizer.text("inspector-emitter"), &emitter.name);
@@ -3625,6 +3764,94 @@ fn spawn_emitter_transform_controls(parent: &mut ChildSpawnerCommands) {
                 EmitterNumberControl::Scale,
             );
         });
+}
+
+fn spawn_effect_clip_transform_controls(parent: &mut ChildSpawnerCommands, clip: EffectClipId) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::all(Val::Px(7.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Text::new("Instance Transform"),
+                ThemedText,
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+            ));
+            for (title, description, constructor) in [
+                (
+                    "Position",
+                    "Offset the complete referenced effect in parent-effect units.",
+                    EmitterNumberControl::Translation as fn(u8) -> EmitterNumberControl,
+                ),
+                (
+                    "Rotation",
+                    "Rotate the complete referenced effect in Euler degrees.",
+                    EmitterNumberControl::Rotation,
+                ),
+                (
+                    "Scale",
+                    "Scale the complete referenced effect instance.",
+                    EmitterNumberControl::Scale,
+                ),
+            ] {
+                spawn_effect_clip_transform_row(card, clip, title, description, constructor);
+            }
+        });
+}
+
+fn spawn_effect_clip_transform_row(
+    parent: &mut ChildSpawnerCommands,
+    clip: EffectClipId,
+    title: &str,
+    description: &str,
+    control: fn(u8) -> EmitterNumberControl,
+) {
+    crate::feathers::field_row::spawn_field_row(
+        parent,
+        crate::feathers::field_row::FieldRowProps::new(title)
+            .indented(0)
+            .with_control_min_width(150.0),
+        EditorTooltip::description(description),
+        |inputs| {
+            for (axis, component, color) in [
+                ("X", 0, tokens::TEXT_INPUT_X_AXIS),
+                ("Y", 1, tokens::TEXT_INPUT_Y_AXIS),
+                ("Z", 2, tokens::TEXT_INPUT_Z_AXIS),
+            ] {
+                inputs
+                    .spawn(Node {
+                        flex_grow: 1.0,
+                        flex_basis: Val::Px(0.0),
+                        min_width: Val::Px(44.0),
+                        ..default()
+                    })
+                    .with_children(|wrapper| {
+                        wrapper
+                            .spawn_empty()
+                            .apply_scene(ui_shell::feathers_labeled_scalar_input(axis, color))
+                            .insert((
+                                EffectClipNumberControl {
+                                    clip,
+                                    control: control(component),
+                                },
+                                AccessibleLabel(format!("{title} {axis}")),
+                            ));
+                    });
+            }
+        },
+    );
 }
 
 fn spawn_emitter_transform_row(
@@ -5232,6 +5459,12 @@ enum EmitterNumberControl {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
+struct EffectClipNumberControl {
+    clip: EffectClipId,
+    control: EmitterNumberControl,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
 enum DocumentTextControl {
     EffectName,
     EmitterName,
@@ -5252,6 +5485,7 @@ struct NumericScrubInput;
 enum NumericScrubTarget {
     Inspector(InspectorNumberControl),
     Emitter(EmitterNumberControl),
+    EffectClip(EffectClipNumberControl),
     Renderer(RendererNumberControl),
 }
 

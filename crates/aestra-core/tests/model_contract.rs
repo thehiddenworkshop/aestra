@@ -296,8 +296,12 @@ fn reusable_effect_clips_round_trip_without_bumping_the_v3_format() {
     let mut effect = EffectAsset::new("Composition", 3.0);
     let mut clip = EffectClip::new(child, 0.5, 1.5);
     clip.source_offset = 0.25;
+    clip.transform.translation = [3.0, 4.0, 5.0];
+    clip.transform.scale = [2.0, 2.0, 2.0];
     clip.seed = EffectClipSeed::Fixed(42);
+    let clip_id = clip.id;
     effect.effect_clips.push(clip);
+    effect.choreography_order = vec![aestra_core::ChoreographyTrackId::EffectClip(clip_id)];
 
     let encoded = effect.to_pretty_ron().unwrap();
     let decoded = EffectAsset::from_ron(&encoded).unwrap();
@@ -305,6 +309,30 @@ fn reusable_effect_clips_round_trip_without_bumping_the_v3_format() {
     assert_eq!(decoded, effect);
     assert_eq!(decoded.format_version, 3);
     assert!(encoded.contains("effect_clips"));
+    assert_eq!(
+        decoded.effect_clips[0].transform.translation,
+        [3.0, 4.0, 5.0]
+    );
+    assert_eq!(decoded.choreography_order, effect.choreography_order);
+}
+
+#[test]
+fn effect_clip_instance_transform_defaults_and_is_validated() {
+    let mut effect = EffectAsset::new("Composition", 2.0);
+    let clip = EffectClip::new(EffectId::from_u128(0xC11D), 0.0, 1.0);
+    assert_eq!(clip.transform, EmitterTransform::default());
+    effect.effect_clips.push(clip);
+    effect.effect_clips[0].transform.scale[1] = 0.0;
+    assert!(
+        effect
+            .validation_report()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.code == DiagnosticCode::InvalidValue
+                    && diagnostic.path.ends_with("effect_clips[0].transform")
+            })
+    );
 }
 
 #[test]

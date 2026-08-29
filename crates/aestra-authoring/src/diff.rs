@@ -55,6 +55,15 @@ impl EffectDiff {
                 after.looping,
             );
         }
+        if before.choreography_order != after.choreography_order {
+            modified(
+                &mut changes,
+                SemanticTarget::Effect(after.id),
+                "effect.choreography_order",
+                format!("{:?}", before.choreography_order),
+                format!("{:?}", after.choreography_order),
+            );
+        }
 
         diff_effect_clips(before, after, &mut changes);
 

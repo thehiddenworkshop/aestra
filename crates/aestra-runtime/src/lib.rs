@@ -486,6 +486,7 @@ pub struct CompiledEffectClip {
     pub start_time: f32,
     pub source_offset: f32,
     pub duration: f32,
+    pub transform: EmitterTransform,
     pub seed: EffectClipSeed,
 }
 

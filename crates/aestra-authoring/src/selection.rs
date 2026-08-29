@@ -284,6 +284,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         EffectCommand::SetEffectName { .. }
         | EffectCommand::SetEffectDuration { .. }
         | EffectCommand::SetEffectLooping { .. }
+        | EffectCommand::SetChoreographyOrder { .. }
         | EffectCommand::AddEffectClip { .. }
         | EffectCommand::AddEmitter { .. }
         | EffectCommand::AddParameter { .. }
@@ -295,8 +296,10 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetFlipbook { .. }
         | EffectCommand::AddEvent { .. } => (None, None),
         EffectCommand::RemoveEffectClip { id }
+        | EffectCommand::MoveEffectClip { id, .. }
         | EffectCommand::SetEffectClipTiming { id, .. }
-        | EffectCommand::SetEffectClipSeed { id, .. } => {
+        | EffectCommand::SetEffectClipSeed { id, .. }
+        | EffectCommand::SetEffectClipTransform { id, .. } => {
             (None, Some(SemanticTarget::EffectClip(*id)))
         }
         EffectCommand::RemoveParameter { id } => (None, Some(SemanticTarget::Parameter(*id))),

@@ -40,6 +40,10 @@ pub struct EffectAsset {
     pub events: Vec<EventLink>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effect_clips: Vec<EffectClip>,
+    /// Optional stable presentation order for top-level choreography rows.
+    /// Missing and stale entries are repaired by editor projections without changing runtime data.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choreography_order: Vec<ChoreographyTrackId>,
     #[serde(default)]
     pub dependencies: Vec<AssetId>,
     #[serde(default)]
@@ -61,6 +65,7 @@ impl EffectAsset {
             emitters: Vec::new(),
             events: Vec::new(),
             effect_clips: Vec::new(),
+            choreography_order: Vec::new(),
             dependencies: Vec::new(),
             metadata: BTreeMap::new(),
         }
@@ -406,6 +411,13 @@ impl EffectAsset {
     }
 }
 
+/// Stable identity of one top-level row in an effect choreography timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum ChoreographyTrackId {
+    EffectClip(EffectClipId),
+    Emitter(EmitterId),
+}
+
 fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     let parent = path
         .parent()
@@ -495,6 +507,9 @@ pub struct EffectClip {
     pub start_time: f32,
     pub source_offset: f32,
     pub duration: f32,
+    /// Non-destructive transform applied to the complete referenced effect instance.
+    #[serde(default, skip_serializing_if = "EmitterTransform::is_identity")]
+    pub transform: EmitterTransform,
     #[serde(default)]
     pub seed: EffectClipSeed,
 }
@@ -507,6 +522,7 @@ impl EffectClip {
             start_time,
             source_offset: 0.0,
             duration,
+            transform: EmitterTransform::default(),
             seed: EffectClipSeed::Inherit,
         }
     }
@@ -572,6 +588,13 @@ impl EffectClip {
                 "effect clip must fit inside the owning effect duration",
             ));
         }
+        if !self.transform.is_valid() {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                format!("{path}.transform"),
+                "effect clip transform must be finite, have positive scale, and use a normalized quaternion",
+            ));
+        }
     }
 }
 
@@ -617,6 +640,24 @@ impl Default for EmitterTransform {
             rotation: [0.0, 0.0, 0.0, 1.0],
             scale: [1.0; 3],
         }
+    }
+}
+
+impl EmitterTransform {
+    fn is_identity(&self) -> bool {
+        *self == Self::default()
+    }
+
+    fn is_valid(&self) -> bool {
+        let rotation_length_squared = self.rotation.iter().map(|value| value * value).sum::<f32>();
+        self.translation
+            .iter()
+            .chain(self.rotation.iter())
+            .chain(self.scale.iter())
+            .all(|value| value.is_finite())
+            && self.scale.iter().all(|value| *value > 0.0)
+            && rotation_length_squared.is_finite()
+            && (rotation_length_squared - 1.0).abs() <= 1.0e-3
     }
 }
 
@@ -898,23 +939,7 @@ impl Emitter {
                 "emitter display color components must be finite and between zero and one",
             ));
         }
-        let rotation_length_squared = self
-            .transform
-            .rotation
-            .iter()
-            .map(|value| value * value)
-            .sum::<f32>();
-        if self
-            .transform
-            .translation
-            .iter()
-            .chain(self.transform.rotation.iter())
-            .chain(self.transform.scale.iter())
-            .any(|value| !value.is_finite())
-            || self.transform.scale.iter().any(|value| *value <= 0.0)
-            || !rotation_length_squared.is_finite()
-            || (rotation_length_squared - 1.0).abs() > 1.0e-3
-        {
+        if !self.transform.is_valid() {
             report.push(Diagnostic::error(
                 DiagnosticCode::InvalidValue,
                 format!("{path}.transform"),

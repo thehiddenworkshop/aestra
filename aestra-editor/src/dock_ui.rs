@@ -383,6 +383,7 @@ fn spawn_panel_content(
             sources.timeline,
             sources.catalog,
             sources.localizer,
+            sources.asset_server,
         ),
         DockPanel::Curves => {
             spawn_curves_workspace(

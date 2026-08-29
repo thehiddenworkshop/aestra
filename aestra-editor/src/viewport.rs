@@ -461,6 +461,7 @@ struct DesiredPreviewInstance {
     effect: Arc<CompiledEffect>,
     time: f32,
     seed: u64,
+    transform: Transform,
 }
 
 #[derive(Component)]
@@ -470,8 +471,14 @@ pub(crate) struct EmitterTransformGizmoProxy;
 struct TransformGizmoVisualRoot;
 
 #[derive(Clone, Copy, Debug)]
+enum PreviewTransformTarget {
+    Emitter(EmitterId),
+    EffectClip(EffectClipId),
+}
+
+#[derive(Clone, Copy, Debug)]
 struct ActiveEmitterTransformGizmo {
-    emitter: EmitterId,
+    target: PreviewTransformTarget,
     original: EmitterTransform,
     current: EmitterTransform,
 }
@@ -792,14 +799,21 @@ fn sync_transform_gizmo_focus(
     shape_gizmo: Res<ShapeGizmoState>,
     proxies: Query<(Entity, Has<TransformGizmoFocus>), With<EmitterTransformGizmoProxy>>,
 ) {
-    let emitter = session.selected_layer().id;
-    let allowed = session.pending_change.is_none()
+    let target = selected_preview_transform(&session);
+    let allowed = target.is_some()
+        && session.pending_change.is_none()
         && shape_gizmo.hovered.is_none()
         && shape_gizmo.active.is_none()
         && !session
             .locks
             .is_locked(SemanticTarget::Effect(session.effect.id))
-        && !session.locks.is_locked(SemanticTarget::Emitter(emitter));
+        && !session.locks.is_locked(target.map_or(
+            SemanticTarget::Effect(session.effect.id),
+            |(target, _)| match target {
+                PreviewTransformTarget::Emitter(id) => SemanticTarget::Emitter(id),
+                PreviewTransformTarget::EffectClip(id) => SemanticTarget::EffectClip(id),
+            },
+        ));
     for (entity, has_focus) in &proxies {
         if allowed && !has_focus {
             commands.entity(entity).insert(TransformGizmoFocus);
@@ -818,7 +832,10 @@ fn sync_emitter_transform_proxy(
     if gizmo.active || interaction.active.is_some() {
         return;
     }
-    let desired = bevy_transform_from_emitter(session.selected_layer().transform);
+    let Some((_, authored)) = selected_preview_transform(&session) else {
+        return;
+    };
+    let desired = bevy_transform_from_emitter(authored);
     for mut transform in &mut proxies {
         if *transform != desired {
             *transform = desired;
@@ -837,21 +854,21 @@ fn update_emitter_transform_gizmo(
     };
     let current = emitter_transform_from_bevy(transform);
     if gizmo.active {
+        let Some((target, authored)) = selected_preview_transform(&session) else {
+            return;
+        };
         let active = interaction
             .active
-            .get_or_insert_with(|| ActiveEmitterTransformGizmo {
-                emitter: session.selected_layer().id,
-                original: session.selected_layer().transform,
-                current: session.selected_layer().transform,
+            .get_or_insert(ActiveEmitterTransformGizmo {
+                target,
+                original: authored,
+                current: authored,
             });
         if active.current != current {
             active.current = current;
             session.preview_interaction(EffectTransaction::single(
-                "Preview emitter transform",
-                EffectCommand::SetEmitterTransform {
-                    id: active.emitter,
-                    transform: current,
-                },
+                "Preview transform",
+                preview_transform_command(active.target, current),
             ));
         }
         return;
@@ -862,17 +879,47 @@ fn update_emitter_transform_gizmo(
     };
     if active.current != active.original {
         if !session.execute(
-            "Transformed emitter",
-            EffectCommand::SetEmitterTransform {
-                id: active.emitter,
-                transform: active.current,
+            match active.target {
+                PreviewTransformTarget::Emitter(_) => "Transformed emitter",
+                PreviewTransformTarget::EffectClip(_) => "Transformed effect clip",
             },
+            preview_transform_command(active.target, active.current),
             true,
         ) {
             session.restore_interaction_preview();
         }
     } else {
         session.restore_interaction_preview();
+    }
+}
+
+fn selected_preview_transform(
+    session: &EditorSession,
+) -> Option<(PreviewTransformTarget, EmitterTransform)> {
+    if let SemanticTarget::EffectClip(id) = session.selection.primary {
+        return session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == id)
+            .map(|clip| (PreviewTransformTarget::EffectClip(id), clip.transform));
+    }
+    let emitter = session.selected_layer();
+    Some((
+        PreviewTransformTarget::Emitter(emitter.id),
+        emitter.transform,
+    ))
+}
+
+fn preview_transform_command(
+    target: PreviewTransformTarget,
+    transform: EmitterTransform,
+) -> EffectCommand {
+    match target {
+        PreviewTransformTarget::Emitter(id) => EffectCommand::SetEmitterTransform { id, transform },
+        PreviewTransformTarget::EffectClip(id) => {
+            EffectCommand::SetEffectClipTransform { id, transform }
+        }
     }
 }
 
@@ -2078,6 +2125,7 @@ fn desired_preview_instances(
             effect: project.root.clone(),
             time,
             seed,
+            transform: Transform::IDENTITY,
         });
     }
     collect_effect_clip_instances(
@@ -2086,6 +2134,7 @@ fn desired_preview_instances(
         timeline,
         time,
         seed,
+        Transform::IDENTITY,
         &mut path,
         &mut desired,
     );
@@ -2099,6 +2148,7 @@ fn collect_effect_clip_instances(
     timeline: &TimelineState,
     parent_time: f32,
     parent_seed: u64,
+    parent_transform: Transform,
     path: &mut Vec<EffectClipId>,
     desired: &mut Vec<DesiredPreviewInstance>,
 ) {
@@ -2126,14 +2176,20 @@ fn collect_effect_clip_instances(
             continue;
         };
         let seed = clip.seed.resolve(parent_seed, clip.source_clip);
+        let local_transform = bevy_transform_from_emitter(clip.transform);
+        let transform =
+            Transform::from_matrix(parent_transform.to_matrix() * local_transform.to_matrix());
         path.push(clip.source_clip);
         desired.push(DesiredPreviewInstance {
             path: path.clone(),
             effect: child.clone(),
             time: child_time,
             seed,
+            transform,
         });
-        collect_effect_clip_instances(project, child, timeline, child_time, seed, path, desired);
+        collect_effect_clip_instances(
+            project, child, timeline, child_time, seed, transform, path, desired,
+        );
         path.pop();
     }
 }
@@ -2163,7 +2219,7 @@ fn spawn_preview_instance(commands: &mut Commands, desired: DesiredPreviewInstan
         PreviewEffectPlayer,
         PreviewEffectInstancePath(desired.path),
         player,
-        Transform::IDENTITY,
+        desired.transform,
         RenderLayers::layer(0),
     ));
 }
@@ -2174,18 +2230,26 @@ fn sync_rendered_preview(
     preview: Res<EditorPreviewProject>,
     timeline: Res<TimelineState>,
     mut players: Query<
-        (Entity, &PreviewEffectInstancePath, &mut EffectPlayer),
+        (
+            Entity,
+            &PreviewEffectInstancePath,
+            &mut EffectPlayer,
+            &mut Transform,
+        ),
         With<PreviewEffectPlayer>,
     >,
 ) {
     let mut desired =
         desired_preview_instances(&preview, &timeline, session.time(), session.preview_seed);
-    for (entity, path, mut player) in &mut players {
+    for (entity, path, mut player, mut transform) in &mut players {
         let Some(index) = desired.iter().position(|item| item.path == path.0) else {
             commands.entity(entity).despawn();
             continue;
         };
         let instance = desired.swap_remove(index);
+        if *transform != instance.transform {
+            *transform = instance.transform;
+        }
         if !Arc::ptr_eq(player.effect(), &instance.effect) {
             if compiled_effects_differ_only_by_emitter_transforms(player.effect(), &instance.effect)
             {
@@ -2226,6 +2290,13 @@ fn compiled_effects_differ_only_by_emitter_transforms(
     let mut normalized = current.clone();
     for (emitter, desired_emitter) in normalized.emitters.iter_mut().zip(&desired.emitters) {
         emitter.transform = desired_emitter.transform;
+    }
+    for (clip, desired_clip) in normalized
+        .effect_clips
+        .iter_mut()
+        .zip(&desired.effect_clips)
+    {
+        clip.transform = desired_clip.transform;
     }
     &normalized == desired
 }
@@ -2795,6 +2866,7 @@ mod tests {
         let mut clip = aestra_bevy::EffectClip::new(child.id, 0.5, 1.0);
         clip.source_offset = 0.1;
         clip.seed = aestra_bevy::EffectClipSeed::Fixed(77);
+        clip.transform.translation = [5.0, 2.0, -1.0];
         let clip_id = clip.id;
         root.effect_clips.push(clip);
         let catalog = ProjectEffectCatalog::scan(temporary.path());
@@ -2816,6 +2888,7 @@ mod tests {
         assert_eq!(active[1].effect.source, child.id);
         assert!((active[1].time - 0.35).abs() < 0.000_1);
         assert_eq!(active[1].seed, 77);
+        assert_eq!(active[1].transform.translation, Vec3::new(5.0, 2.0, -1.0));
     }
 
     #[test]
