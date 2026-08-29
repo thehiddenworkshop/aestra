@@ -64,6 +64,8 @@ impl Plugin for TimelinePlugin {
             .add_observer(activate_timeline_track_entry)
             .add_observer(handle_timeline_track_name_change)
             .add_observer(handle_timeline_track_color_change)
+            .add_observer(begin_project_effect_drag_preview)
+            .add_observer(finish_project_effect_drag_preview)
             .add_observer(reject_project_effect_drop)
             .add_observer(execute_choreography_action)
             .add_systems(
@@ -92,11 +94,12 @@ impl Plugin for TimelinePlugin {
                     update_timeline_time_label,
                     update_timeline_visuals,
                     update_effect_clip_visuals,
+                    update_effect_drop_insertion,
+                    sync_effect_drop_track_gap,
                     update_effect_drop_preview,
                     sync_timeline_vertical_scroll,
                     sync_timeline_horizontal_scroll,
                     update_track_header_hover_actions,
-                    update_effect_drop_insertion,
                     sync_emitter_reorder_hints,
                     sync_effect_clip_reorder_hints,
                     sync_timeline_track_drop_hints,
@@ -687,12 +690,11 @@ mod tests {
 
     #[test]
     fn effect_clip_placement_uses_pointer_time_and_fits_the_owner() {
-        assert_eq!(effect_clip_placement(0.75, 2.8, 1.0, 60), Some((0.75, 1.0)));
-        let (start, duration) = effect_clip_placement(2.8, 2.8, 1.0, 60).unwrap();
-        assert!((start - (2.8 - 1.0 / 60.0)).abs() < 0.000_1);
-        assert!((duration - 1.0 / 60.0).abs() < 0.000_1);
-        assert_eq!(effect_clip_placement(0.0, 0.0, 1.0, 60), None);
-        assert_eq!(effect_clip_placement(0.0, 2.8, 0.0, 60), None);
+        assert_eq!(effect_clip_placement(0.75, 2.8, 1.0), Some((0.75, 1.0)));
+        assert_eq!(effect_clip_placement(2.8, 2.8, 1.0), Some((1.8, 1.0)));
+        assert_eq!(effect_clip_placement(1.0, 2.8, 4.0), Some((0.0, 2.8)));
+        assert_eq!(effect_clip_placement(0.0, 0.0, 1.0), None);
+        assert_eq!(effect_clip_placement(0.0, 2.8, 0.0), None);
     }
 
     #[test]
@@ -739,12 +741,119 @@ mod tests {
     }
 
     #[test]
-    fn library_drop_insertion_line_is_synchronized_across_both_timeline_halves() {
+    fn library_drop_ghost_uses_the_selected_insertion_row() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let state = TimelineState::framed(session.playback_duration());
+        let catalog = ProjectEffectCatalog::from_entries(Vec::new());
+        let order = normalized_choreography_order(&session.effect);
+        let first = order[0];
+        let second = order[1];
+
+        assert_eq!(
+            choreography_insertion_grid_row(&session.effect, &state, &catalog, Some((first, true)),),
+            1
+        );
+        assert_eq!(
+            choreography_insertion_grid_row(
+                &session.effect,
+                &state,
+                &catalog,
+                Some((second, true)),
+            ),
+            2
+        );
+        assert_eq!(
+            choreography_insertion_grid_row(
+                &session.effect,
+                &state,
+                &catalog,
+                Some((second, false)),
+            ),
+            3
+        );
+        assert_eq!(
+            choreography_insertion_grid_row(&session.effect, &state, &catalog, None),
+            order.len() as i16 + 1
+        );
+    }
+
+    #[test]
+    fn library_drop_ghost_reserves_a_synchronized_track_gap() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let order = normalized_choreography_order(&session.effect);
+        let mut state = TimelineState::framed(session.playback_duration());
+        state.effect_drop_preview = Some(EffectDropPreview {
+            source_duration: 1.0,
+            display_name: "Reusable effect".into(),
+        });
+        state.effect_drop_insertion = Some((order[1], true));
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(state)
+            .insert_resource(ProjectEffectCatalog::from_entries(Vec::new()))
+            .add_systems(Update, sync_effect_drop_track_gap);
+        let first = app
+            .world_mut()
+            .spawn((
+                TimelineChoreographyGridRow(1),
+                Node {
+                    grid_row: GridPlacement::start(1),
+                    ..default()
+                },
+            ))
+            .id();
+        let second = app
+            .world_mut()
+            .spawn((
+                TimelineChoreographyGridRow(2),
+                Node {
+                    grid_row: GridPlacement::start(2),
+                    ..default()
+                },
+            ))
+            .id();
+        let spacer = app
+            .world_mut()
+            .spawn((TimelineEffectDropSpacer, Node::default()))
+            .id();
+
+        app.update();
+
+        assert_eq!(
+            app.world().get::<Node>(first).unwrap().grid_row,
+            GridPlacement::start(1)
+        );
+        assert_eq!(
+            app.world().get::<Node>(second).unwrap().grid_row,
+            GridPlacement::start(3)
+        );
+        let spacer_node = app.world().get::<Node>(spacer).unwrap();
+        assert_eq!(spacer_node.display, Display::Flex);
+        assert_eq!(spacer_node.grid_row, GridPlacement::start(2));
+
+        app.world_mut()
+            .resource_mut::<TimelineState>()
+            .effect_drop_preview = None;
+        app.update();
+
+        assert_eq!(
+            app.world().get::<Node>(second).unwrap().grid_row,
+            GridPlacement::start(2)
+        );
+        assert_eq!(
+            app.world().get::<Node>(spacer).unwrap().display,
+            Display::None
+        );
+    }
+
+    #[test]
+    fn library_drop_uses_the_reserved_gap_without_track_edge_highlights() {
         let emitter = EmitterId::new();
         let track = ChoreographyTrackId::Emitter(emitter);
         let state = TimelineState {
             effect_drop_preview: Some(EffectDropPreview {
                 source_duration: 1.0,
+                display_name: "Reusable effect".into(),
             }),
             ..default()
         };
@@ -791,19 +900,67 @@ mod tests {
         );
         assert_eq!(
             app.world().get::<Node>(left).unwrap().border.top,
-            Val::Px(3.0)
+            Val::Px(0.0)
         );
         assert_eq!(
             app.world().get::<Node>(right).unwrap().border.top,
-            Val::Px(3.0)
+            Val::Px(0.0)
         );
-        assert_eq!(
+        assert_ne!(
             app.world().get::<BorderColor>(left).unwrap().top,
             theme::DOCK_TARGET
         );
-        assert_eq!(
+        assert_ne!(
             app.world().get::<BorderColor>(right).unwrap().top,
             theme::DOCK_TARGET
+        );
+    }
+
+    #[test]
+    fn library_drop_insertion_stays_stable_while_crossing_the_open_gap() {
+        let track = ChoreographyTrackId::Emitter(EmitterId::new());
+        let state = TimelineState {
+            effect_drop_preview: Some(EffectDropPreview {
+                source_duration: 1.0,
+                display_name: "Reusable effect".into(),
+            }),
+            effect_drop_insertion: Some((track, true)),
+            ..default()
+        };
+        let mut app = App::new();
+        app.insert_resource(state)
+            .add_systems(Update, update_effect_drop_insertion);
+        let spacer = app
+            .world_mut()
+            .spawn((
+                TimelineEffectDropSpacer,
+                RelativeCursorPosition {
+                    cursor_over: true,
+                    normalized: Some(Vec2::ZERO),
+                },
+            ))
+            .id();
+
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<TimelineState>()
+                .effect_drop_insertion,
+            Some((track, true))
+        );
+
+        app.world_mut()
+            .get_mut::<RelativeCursorPosition>(spacer)
+            .unwrap()
+            .cursor_over = false;
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<TimelineState>()
+                .effect_drop_insertion,
+            None
         );
     }
 
@@ -1787,6 +1944,18 @@ mod tests {
             query.iter(world).count()
         };
         assert_eq!(drop_rows, emitter_count + 1);
+        let drop_spacers = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<
+                (&RelativeCursorPosition, &Pickable),
+                With<TimelineEffectDropSpacer>,
+            >();
+            query
+                .iter(world)
+                .map(|(_, pickable)| *pickable)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(drop_spacers, vec![Pickable::IGNORE; 2]);
         let effect_clip_interactions = {
             let world = app.world_mut();
             let mut query = world.query::<&TimelineEffectClipInteraction>();
@@ -2553,12 +2722,14 @@ fn update_effect_clip_visuals(
 fn update_effect_drop_preview(
     session: Res<EditorSession>,
     state: Res<TimelineState>,
+    catalog: Res<ProjectEffectCatalog>,
     canvases: Query<&RelativeCursorPosition, With<TimelineCanvas>>,
     mut previews: Query<&mut Node, With<TimelineEffectDropPreview>>,
+    mut labels: Query<&mut Text, With<TimelineEffectDropPreviewLabel>>,
 ) {
     let cursor = canvases.single().ok().and_then(|cursor| cursor.normalized);
     for mut node in &mut previews {
-        let (Some(preview), Some(cursor)) = (state.effect_drop_preview, cursor) else {
+        let (Some(preview), Some(cursor)) = (state.effect_drop_preview.as_ref(), cursor) else {
             node.display = Display::None;
             continue;
         };
@@ -2567,7 +2738,6 @@ fn update_effect_drop_preview(
             pointer_time,
             session.playback_duration(),
             preview.source_duration,
-            session.clock.tick_rate(),
         ) else {
             node.display = Display::None;
             continue;
@@ -2575,6 +2745,16 @@ fn update_effect_drop_preview(
         node.display = Display::Flex;
         node.left = Val::Percent(state.view.normalized_time(start) * 100.0);
         node.width = Val::Percent((duration / state.view.span() * 100.0).clamp(0.05, 100.0));
+        let (_, insertion_offset) = choreography_insertion_layout(
+            &session.effect,
+            &state,
+            &catalog,
+            state.effect_drop_insertion,
+        );
+        node.top = Val::Px((29.0 + insertion_offset - state.vertical_scroll).max(29.0));
+        for mut label in &mut labels {
+            label.0.clone_from(&preview.display_name);
+        }
     }
 }
 
@@ -2942,6 +3122,15 @@ struct TimelineDropFeedbackMessage;
 struct TimelineEffectDropPreview;
 
 #[derive(Component)]
+struct TimelineEffectDropPreviewLabel;
+
+#[derive(Component)]
+struct TimelineEffectDropSpacer;
+
+#[derive(Component, Clone, Copy)]
+struct TimelineChoreographyGridRow(i16);
+
+#[derive(Component)]
 struct TimelineBody;
 
 #[derive(Component)]
@@ -3148,9 +3337,10 @@ struct EffectClipTimelineDrag {
     source_looping: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct EffectDropPreview {
     source_duration: f32,
+    display_name: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3377,6 +3567,7 @@ fn spawn_effect_clip_track_header(
         TimelineTrackHeader {
             track: ChoreographyTrackId::EffectClip(clip.id),
         },
+        TimelineChoreographyGridRow(grid_row),
         RelativeCursorPosition::default(),
         ChoreographyAction::SelectEffectClip(clip.id),
         AccessibleLabel(label.clone()),
@@ -3571,6 +3762,7 @@ fn spawn_referenced_emitter_track_header(
         ListItem,
         KeyboardNavigableListRow,
         ReferencedEmitterTrackHeader,
+        TimelineChoreographyGridRow(grid_row),
         ChoreographyAction::SelectEffectClipEmitter {
             clip,
             emitter: emitter.id,
@@ -3958,6 +4150,7 @@ pub(crate) fn spawn_timeline(
                                         asset_server,
                                     );
                                 }
+                                spawn_effect_drop_spacer(headers);
                             });
                         labels.spawn((
                             TimelineHorizontalGutter,
@@ -4052,6 +4245,7 @@ pub(crate) fn spawn_timeline(
                                                         clip.id,
                                                     ),
                                                 },
+                                                TimelineChoreographyGridRow(grid_row),
                                                 RelativeCursorPosition::default(),
                                                 Node {
                                                     width: Val::Percent(100.0),
@@ -4271,15 +4465,20 @@ pub(crate) fn spawn_timeline(
                                                         emitter.id,
                                                         emitter.display_color,
                                                     );
-                                                    rows.spawn(Node {
-                                                        width: Val::Percent(100.0),
-                                                        height: Val::Px(27.0),
-                                                        flex_shrink: 0.0,
-                                                        position_type: PositionType::Relative,
-                                                        border: UiRect::bottom(Val::Px(1.0)),
-                                                        grid_row: GridPlacement::start(child_grid_row),
-                                                        ..default()
-                                                    })
+                                                    rows.spawn((
+                                                        TimelineChoreographyGridRow(child_grid_row),
+                                                        Node {
+                                                            width: Val::Percent(100.0),
+                                                            height: Val::Px(27.0),
+                                                            flex_shrink: 0.0,
+                                                            position_type: PositionType::Relative,
+                                                            border: UiRect::bottom(Val::Px(1.0)),
+                                                            grid_row: GridPlacement::start(
+                                                                child_grid_row,
+                                                            ),
+                                                            ..default()
+                                                        },
+                                                    ))
                                                     .with_children(|track| {
                                                         if let Some((start_time, duration)) = timing {
                                                             let mut child_node = Node {
@@ -4405,6 +4604,7 @@ pub(crate) fn spawn_timeline(
                                                 TimelineTrackDropRow {
                                                     track: ChoreographyTrackId::Emitter(emitter.id),
                                                 },
+                                                TimelineChoreographyGridRow(grid_row),
                                                 RelativeCursorPosition::default(),
                                                 Node {
                                                     width: Val::Percent(100.0),
@@ -4597,6 +4797,7 @@ pub(crate) fn spawn_timeline(
                                                     });
                                             });
                                         }
+                                        spawn_effect_drop_spacer(rows);
                                     })
                                     .id(),
                             );
@@ -4652,7 +4853,8 @@ pub(crate) fn spawn_timeline(
                                 Pickable::IGNORE,
                             ))
                             .with_child((
-                                Text::new(localizer.text("timeline-drop-effect-preview")),
+                                TimelineEffectDropPreviewLabel,
+                                Text::new(""),
                                 TextFont {
                                     font_size: FontSize::Px(9.0),
                                     ..default()
@@ -4850,6 +5052,7 @@ fn spawn_emitter_track_header(
         TimelineTrackHeader {
             track: ChoreographyTrackId::Emitter(emitter),
         },
+        TimelineChoreographyGridRow(grid_row),
         ChoreographyAction::SelectEmitter(emitter),
         AccessibleLabel(accessible_label),
         RelativeCursorPosition::default(),
@@ -5398,6 +5601,22 @@ fn color_components(color: Color) -> [f32; 4] {
     [color.red, color.green, color.blue, color.alpha]
 }
 
+fn spawn_effect_drop_spacer(parent: &mut ChildSpawnerCommands) {
+    parent.spawn((
+        TimelineEffectDropSpacer,
+        RelativeCursorPosition::default(),
+        Pickable::IGNORE,
+        Node {
+            display: Display::None,
+            width: Val::Percent(100.0),
+            height: Val::Px(31.0),
+            flex_shrink: 0.0,
+            grid_row: GridPlacement::start(1),
+            ..default()
+        },
+    ));
+}
+
 fn spawn_ruler(parent: &mut ChildSpawnerCommands) {
     for index in 0..32 {
         parent
@@ -5645,18 +5864,7 @@ fn show_invalid_timeline_drop_feedback(
     let Some(row) = dragged_project_effect(enter.dragged, &rows, &parents) else {
         return;
     };
-    let preview = catalog
-        .entry(row)
-        .and_then(|entry| entry.reference)
-        .and_then(|reference| {
-            catalog
-                .effect_for_placement(&session.effect, reference)
-                .ok()
-                .map(|source| EffectDropPreview {
-                    source_duration: source.duration,
-                })
-        });
-    state.effect_drop_preview = preview;
+    state.effect_drop_preview = project_effect_drop_preview(row, &catalog, &session);
     for (mut feedback, mut node) in &mut feedback {
         feedback.rejected = false;
         feedback.timer.reset();
@@ -5671,7 +5879,6 @@ fn hide_invalid_timeline_drop_feedback(
     rows: Query<&ProjectEffectRow>,
     parents: Query<&ChildOf>,
     mut feedback: Query<(&TimelineInvalidDropFeedback, &mut Node)>,
-    mut state: ResMut<TimelineState>,
 ) {
     if dragged_project_effect(leave.dragged, &rows, &parents).is_none() {
         return;
@@ -5681,9 +5888,54 @@ fn hide_invalid_timeline_drop_feedback(
             node.display = Display::None;
         }
     }
+    leave.propagate(false);
+}
+
+fn begin_project_effect_drag_preview(
+    drag: On<Pointer<DragStart>>,
+    rows: Query<&ProjectEffectRow>,
+    parents: Query<&ChildOf>,
+    catalog: Res<ProjectEffectCatalog>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+) {
+    let Some(row) = dragged_project_effect(drag.entity, &rows, &parents) else {
+        return;
+    };
+    state.effect_drop_preview = project_effect_drop_preview(row, &catalog, &session);
+    state.effect_drop_insertion = None;
+}
+
+fn finish_project_effect_drag_preview(
+    drag: On<Pointer<DragEnd>>,
+    rows: Query<&ProjectEffectRow>,
+    parents: Query<&ChildOf>,
+    mut state: ResMut<TimelineState>,
+) {
+    if dragged_project_effect(drag.entity, &rows, &parents).is_none() {
+        return;
+    }
     state.effect_drop_preview = None;
     state.effect_drop_insertion = None;
-    leave.propagate(false);
+}
+
+fn project_effect_drop_preview(
+    row: ProjectEffectEntryId,
+    catalog: &ProjectEffectCatalog,
+    session: &EditorSession,
+) -> Option<EffectDropPreview> {
+    catalog.entry(row).and_then(|entry| {
+        let display_name = entry.display_name.clone();
+        entry.reference.and_then(|reference| {
+            catalog
+                .effect_for_placement(&session.effect, reference)
+                .ok()
+                .map(|source| EffectDropPreview {
+                    source_duration: source.duration,
+                    display_name,
+                })
+        })
+    })
 }
 
 fn drop_project_effect_on_timeline(
@@ -5771,13 +6023,9 @@ fn insert_project_effect_clip(
         .ok_or_else(|| "the Library entry is not a valid effect asset".to_string())?;
     let display_name = entry.display_name.clone();
     let source = catalog.effect_for_placement(&session.effect, reference)?;
-    let (start_time, duration) = effect_clip_placement(
-        pointer_time,
-        session.playback_duration(),
-        source.duration,
-        session.clock.tick_rate(),
-    )
-    .ok_or_else(|| "there is no room for this effect at the drop position".to_string())?;
+    let (start_time, duration) =
+        effect_clip_placement(pointer_time, session.playback_duration(), source.duration)
+            .ok_or_else(|| "there is no room for this effect at the drop position".to_string())?;
     let clip = EffectClip::new(reference, start_time, duration);
     let clip_id = clip.id;
     let index = session.effect.effect_clips.len();
@@ -5824,13 +6072,48 @@ fn update_effect_drop_insertion(
     mut state: ResMut<TimelineState>,
     headers: Query<(&TimelineTrackHeader, &RelativeCursorPosition)>,
     rows: Query<(&TimelineTrackDropRow, &RelativeCursorPosition)>,
+    spacers: Query<&RelativeCursorPosition, With<TimelineEffectDropSpacer>>,
 ) {
-    state.effect_drop_insertion = if state.effect_drop_preview.is_some() {
-        hovered_timeline_header_insertion(&headers)
-            .or_else(|| hovered_timeline_track_row_insertion(&rows))
-    } else {
-        None
-    };
+    if state.effect_drop_preview.is_none() {
+        state.effect_drop_insertion = None;
+        return;
+    }
+    let hovered = hovered_timeline_header_insertion(&headers)
+        .or_else(|| hovered_timeline_track_row_insertion(&rows));
+    if hovered.is_some() {
+        state.effect_drop_insertion = hovered;
+    } else if !spacers.iter().any(RelativeCursorPosition::cursor_over) {
+        state.effect_drop_insertion = None;
+    }
+}
+
+fn sync_effect_drop_track_gap(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut rows: Query<(&TimelineChoreographyGridRow, &mut Node), Without<TimelineEffectDropSpacer>>,
+    mut spacers: Query<&mut Node, With<TimelineEffectDropSpacer>>,
+) {
+    let insertion_row = state.effect_drop_preview.as_ref().map(|_| {
+        choreography_insertion_grid_row(
+            &session.effect,
+            &state,
+            &catalog,
+            state.effect_drop_insertion,
+        )
+    });
+    for (base, mut node) in &mut rows {
+        let row = base.0 + i16::from(insertion_row.is_some_and(|insertion| base.0 >= insertion));
+        node.grid_row = GridPlacement::start(row);
+    }
+    for mut node in &mut spacers {
+        let Some(insertion_row) = insertion_row else {
+            node.display = Display::None;
+            continue;
+        };
+        node.display = Display::Flex;
+        node.grid_row = GridPlacement::start(insertion_row);
+    }
 }
 
 fn timeline_insertion_for_cursor(
@@ -5901,7 +6184,6 @@ fn effect_clip_placement(
     pointer_time: f32,
     owner_duration: f32,
     source_duration: f32,
-    tick_rate: u32,
 ) -> Option<(f32, f32)> {
     if !owner_duration.is_finite()
         || owner_duration <= 0.0
@@ -5910,12 +6192,9 @@ fn effect_clip_placement(
     {
         return None;
     }
-    let minimum = (1.0 / tick_rate.max(1) as f32)
-        .min(source_duration)
-        .min(owner_duration);
-    let start = pointer_time.clamp(0.0, (owner_duration - minimum).max(0.0));
-    let duration = source_duration.min(owner_duration - start);
-    (duration > 0.0).then_some((start, duration))
+    let duration = source_duration.min(owner_duration);
+    let start = pointer_time.clamp(0.0, owner_duration - duration);
+    Some((start, duration))
 }
 
 fn tick_invalid_timeline_drop_feedback(
@@ -6058,6 +6337,44 @@ fn choreography_grid_row(
         }
     }
     row
+}
+
+fn choreography_insertion_grid_row(
+    effect: &EffectAsset,
+    state: &TimelineState,
+    catalog: &ProjectEffectCatalog,
+    insertion: Option<(ChoreographyTrackId, bool)>,
+) -> i16 {
+    choreography_insertion_layout(effect, state, catalog, insertion).0
+}
+
+fn choreography_insertion_layout(
+    effect: &EffectAsset,
+    state: &TimelineState,
+    catalog: &ProjectEffectCatalog,
+    insertion: Option<(ChoreographyTrackId, bool)>,
+) -> (i16, f32) {
+    let order = normalized_choreography_order(effect);
+    let insertion_index = insertion.map_or(order.len(), |(target, before)| {
+        choreography_insertion_index(&order, target, before)
+    });
+    let mut row = 1_i16;
+    let mut offset = 0.0;
+    for track in order.into_iter().take(insertion_index) {
+        row = row.saturating_add(1);
+        offset += 31.0;
+        if let ChoreographyTrackId::EffectClip(id) = track
+            && state.expanded_effect_clips.contains(&id)
+            && let Some(clip) = effect.effect_clips.iter().find(|clip| clip.id == id)
+        {
+            let child_count = catalog
+                .load_effect(clip.source)
+                .map_or(0, |source| source.emitters.len());
+            row = row.saturating_add(child_count.min(i16::MAX as usize) as i16);
+            offset += child_count as f32 * 27.0;
+        }
+    }
+    (row, offset)
 }
 
 fn track_reorder_index(
@@ -6357,10 +6674,7 @@ fn sync_effect_clip_reorder_hints(
         border.top = base;
         border.bottom = base;
         let target = ChoreographyTrackId::EffectClip(header.clip);
-        if let Some((insertion_target, before)) = state.effect_drop_insertion {
-            if insertion_target == target {
-                apply_timeline_insertion_border(before, &mut node, &mut border);
-            }
+        if state.effect_drop_preview.is_some() {
             continue;
         }
         let dragging = state
@@ -6395,10 +6709,7 @@ fn sync_emitter_reorder_hints(
         border.bottom = base;
 
         let target = ChoreographyTrackId::Emitter(header.emitter);
-        if let Some((insertion_target, before)) = state.effect_drop_insertion {
-            if insertion_target == target {
-                apply_timeline_insertion_border(before, &mut node, &mut border);
-            }
+        if state.effect_drop_preview.is_some() {
             continue;
         }
         let dragging = state
@@ -6421,20 +6732,14 @@ fn sync_emitter_reorder_hints(
 }
 
 fn sync_timeline_track_drop_hints(
-    state: Res<TimelineState>,
-    mut rows: Query<(&TimelineTrackDropRow, &mut Node, &mut BorderColor)>,
+    mut rows: Query<(&mut Node, &mut BorderColor), With<TimelineTrackDropRow>>,
 ) {
     let base = theme::BORDER.with_alpha(0.45);
-    for (row, mut node, mut border) in &mut rows {
+    for (mut node, mut border) in &mut rows {
         node.border.top = Val::Px(0.0);
         node.border.bottom = Val::Px(1.0);
         border.top = base;
         border.bottom = base;
-        if let Some((target, before)) = state.effect_drop_insertion
-            && target == row.track
-        {
-            apply_timeline_insertion_border(before, &mut node, &mut border);
-        }
     }
 }
 
