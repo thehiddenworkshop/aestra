@@ -92,8 +92,11 @@ architecture vision; this file is the shorter delivery plan.
   as an effect reference. The first semantic composition slice now adds backward-compatible v3
   `EffectClip` serialization, local timing validation, transitive dependency resolution and cycle
   diagnostics, project compilation, child-time mapping, deterministic clip seeds, and nested CPU
-  reference execution with instance provenance. Timeline commands/UI and Bevy/GPU child rendering
-  remain, alongside usage graphs, file watching, repair workflows, and preview-cache identity.
+  reference execution with instance provenance. `aestra-authoring` now provides atomic EffectClip
+  create/delete/timing/seed commands, semantic selection and locks, granular diffs, selection
+  repair, and stable undo/redo. Timeline drag/drop, clip presentation and Inspector UI, plus
+  Bevy/GPU child rendering remain, alongside usage graphs, file watching, repair workflows, and
+  preview-cache identity.
 
 ## Stability-hardening milestone
 

@@ -1,7 +1,7 @@
 use aestra_core::{
-    ColorKey, CurveKey, EffectParameter, Emitter, EmitterId, EmitterTransform, EventId, EventLink,
-    FlipbookDefinition, MaterialDefinition, MaterialId, ModuleId, ModuleInstance, RendererId,
-    RendererInstance, RendererProperties, Value,
+    ColorKey, CurveKey, EffectClip, EffectClipId, EffectClipSeed, EffectParameter, Emitter,
+    EmitterId, EmitterTransform, EventId, EventLink, FlipbookDefinition, MaterialDefinition,
+    MaterialId, ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +15,23 @@ pub enum EffectCommand {
     },
     SetEffectLooping {
         looping: bool,
+    },
+    AddEffectClip {
+        clip: EffectClip,
+        index: usize,
+    },
+    RemoveEffectClip {
+        id: EffectClipId,
+    },
+    SetEffectClipTiming {
+        id: EffectClipId,
+        start_time: f32,
+        source_offset: f32,
+        duration: f32,
+    },
+    SetEffectClipSeed {
+        id: EffectClipId,
+        seed: EffectClipSeed,
     },
     AddParameter {
         parameter: EffectParameter,

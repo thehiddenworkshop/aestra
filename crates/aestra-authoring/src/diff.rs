@@ -1,5 +1,5 @@
 use crate::SemanticTarget;
-use aestra_core::{EffectAsset, Emitter, ModuleInstance, RendererInstance};
+use aestra_core::{EffectAsset, EffectClip, Emitter, ModuleInstance, RendererInstance};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -55,6 +55,8 @@ impl EffectDiff {
                 after.looping,
             );
         }
+
+        diff_effect_clips(before, after, &mut changes);
 
         let before_emitters = indexed_emitters(before);
         let after_emitters = indexed_emitters(after);
@@ -135,6 +137,60 @@ impl EffectDiff {
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }
+}
+
+fn diff_effect_clips(before: &EffectAsset, after: &EffectAsset, changes: &mut Vec<SemanticChange>) {
+    let before_clips = indexed_effect_clips(&before.effect_clips);
+    let after_clips = indexed_effect_clips(&after.effect_clips);
+    for (id, (index, clip)) in &before_clips {
+        let target = SemanticTarget::EffectClip(*id);
+        let Some((after_index, after_clip)) = after_clips.get(id) else {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Removed,
+                target,
+                path: format!("effect.effect_clips[{index}]"),
+                before: Some(clip.source.to_string()),
+                after: None,
+            });
+            continue;
+        };
+        if index != after_index {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Moved,
+                target,
+                path: "effect.effect_clips".into(),
+                before: Some(index.to_string()),
+                after: Some(after_index.to_string()),
+            });
+        }
+        if clip != after_clip {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Modified,
+                target,
+                path: "effect_clip".into(),
+                before: Some(effect_clip_summary(clip)),
+                after: Some(effect_clip_summary(after_clip)),
+            });
+        }
+    }
+    for (id, (index, clip)) in &after_clips {
+        if !before_clips.contains_key(id) {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Added,
+                target: SemanticTarget::EffectClip(*id),
+                path: format!("effect.effect_clips[{index}]"),
+                before: None,
+                after: Some(clip.source.to_string()),
+            });
+        }
+    }
+}
+
+fn effect_clip_summary(clip: &EffectClip) -> String {
+    format!(
+        "source={} start={} offset={} duration={} seed={:?}",
+        clip.source, clip.start_time, clip.source_offset, clip.duration, clip.seed
+    )
 }
 
 fn diff_emitter(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticChange>) {
@@ -303,6 +359,16 @@ fn indexed_emitters(effect: &EffectAsset) -> BTreeMap<aestra_core::EmitterId, (u
         .iter()
         .enumerate()
         .map(|(index, emitter)| (emitter.id, (index, emitter)))
+        .collect()
+}
+
+fn indexed_effect_clips(
+    clips: &[EffectClip],
+) -> BTreeMap<aestra_core::EffectClipId, (usize, &EffectClip)> {
+    clips
+        .iter()
+        .enumerate()
+        .map(|(index, clip)| (clip.id, (index, clip)))
         .collect()
 }
 

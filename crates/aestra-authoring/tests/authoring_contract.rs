@@ -1,11 +1,11 @@
 use aestra_authoring::{
-    CommandError, CommandExecutor, CommandHistory, EffectCommand, EffectTransaction, LockState,
-    Selection, SemanticTarget,
+    ChangeKind, CommandError, CommandExecutor, CommandHistory, EffectCommand, EffectTransaction,
+    LockState, Selection, SemanticTarget,
 };
 use aestra_core::{
-    BlendMode, ColorKey, CurveKey, EffectAsset, EffectParameter, Emitter, EmitterTransform,
-    EventId, EventLink, EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
-    ParameterId, ScalarRange, Value,
+    BlendMode, ColorKey, CurveKey, EffectAsset, EffectClip, EffectClipSeed, EffectId,
+    EffectParameter, Emitter, EmitterTransform, EventId, EventLink, EventTrigger,
+    MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, ParameterId, ScalarRange, Value,
 };
 
 fn test_effect() -> EffectAsset {
@@ -616,4 +616,142 @@ fn emitter_display_color_is_semantic_and_reversible() {
 
     history.undo(&mut effect).unwrap().unwrap();
     assert_eq!(effect, original);
+}
+
+#[test]
+fn effect_clip_commands_are_serializable_and_reversible() {
+    let mut effect = test_effect();
+    let clip = EffectClip::new(EffectId::from_u128(0xC11D), 0.25, 1.0);
+    let clip_id = clip.id;
+    let mut history = CommandHistory::default();
+
+    let added = history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Add reusable effect",
+                EffectCommand::AddEffectClip { clip, index: 0 },
+            ),
+        )
+        .unwrap();
+    assert!(added.changes.iter().any(|change| {
+        change.kind == ChangeKind::Added && change.target == SemanticTarget::EffectClip(clip_id)
+    }));
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Move reusable effect",
+                EffectCommand::SetEffectClipTiming {
+                    id: clip_id,
+                    start_time: 0.5,
+                    source_offset: 0.25,
+                    duration: 1.25,
+                },
+            ),
+        )
+        .unwrap();
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Set reusable effect seed",
+                EffectCommand::SetEffectClipSeed {
+                    id: clip_id,
+                    seed: EffectClipSeed::Fixed(77),
+                },
+            ),
+        )
+        .unwrap();
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+    assert_eq!(decoded.effect_clips, effect.effect_clips);
+    assert_eq!(effect.effect_clips[0].start_time, 0.5);
+    assert_eq!(effect.effect_clips[0].source_offset, 0.25);
+    assert_eq!(effect.effect_clips[0].duration, 1.25);
+    assert_eq!(effect.effect_clips[0].seed, EffectClipSeed::Fixed(77));
+
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect.effect_clips[0].seed, EffectClipSeed::Inherit);
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect.effect_clips[0].start_time, 0.25);
+    history.undo(&mut effect).unwrap().unwrap();
+    assert!(effect.effect_clips.is_empty());
+
+    history.redo(&mut effect).unwrap().unwrap();
+    history.redo(&mut effect).unwrap().unwrap();
+    history.redo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect.effect_clips[0].id, clip_id);
+    assert_eq!(effect.effect_clips[0].seed, EffectClipSeed::Fixed(77));
+}
+
+#[test]
+fn invalid_effect_clip_edits_are_atomic_and_locked_clips_reject_edits() {
+    let mut effect = test_effect();
+    let clip = EffectClip::new(EffectId::from_u128(0xC11D), 0.25, 1.0);
+    let clip_id = clip.id;
+    effect.effect_clips.push(clip);
+    let before = effect.clone();
+
+    let invalid = EffectTransaction::single(
+        "Move outside effect",
+        EffectCommand::SetEffectClipTiming {
+            id: clip_id,
+            start_time: 1.5,
+            source_offset: 0.0,
+            duration: 1.0,
+        },
+    );
+    assert!(matches!(
+        CommandExecutor::execute(&mut effect, &LockState::default(), &invalid),
+        Err(CommandError::Validation(_))
+    ));
+    assert_eq!(effect, before);
+
+    let mut locks = LockState::default();
+    locks.lock(SemanticTarget::EffectClip(clip_id));
+    let locked = EffectTransaction::single(
+        "Change seed",
+        EffectCommand::SetEffectClipSeed {
+            id: clip_id,
+            seed: EffectClipSeed::Fixed(1),
+        },
+    );
+    assert!(matches!(
+        CommandExecutor::execute(&mut effect, &locks, &locked),
+        Err(CommandError::Locked {
+            target: SemanticTarget::EffectClip(id)
+        }) if id == clip_id
+    ));
+    assert_eq!(effect, before);
+}
+
+#[test]
+fn effect_clip_selection_repairs_after_deletion() {
+    let mut effect = test_effect();
+    let clip = EffectClip::new(EffectId::from_u128(0xC11D), 0.0, 1.0);
+    let clip_id = clip.id;
+    effect.effect_clips.push(clip);
+    let mut selection = Selection::for_effect(&effect);
+    selection.select_effect_clip(clip_id);
+    assert_eq!(selection.effect_clip(), Some(clip_id));
+
+    CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::single(
+            "Delete reusable effect",
+            EffectCommand::RemoveEffectClip { id: clip_id },
+        ),
+    )
+    .unwrap();
+    selection.repair(&effect);
+
+    assert_eq!(selection.effect_clip(), None);
+    assert_eq!(selection.emitter(&effect), Some(effect.emitters[0].id));
 }

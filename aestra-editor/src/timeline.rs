@@ -5,8 +5,7 @@ use crate::{
     ComboOption, CurvesState, DockPanel, EditorNativeControl, EditorTooltip, FeathersActionButton,
     KeyboardNavigableList, KeyboardNavigableListRow, Localizer, MenuState, ModulePaletteState,
     PendingFeathersActivation, TransportAction, WorkspaceLayout, mini_button, reveal_dock_panel,
-    session::EditorSession, spawn_combo_control, spawn_feathers_action_button, spawn_text_input,
-    theme, ui_shell,
+    session::EditorSession, spawn_combo_control, spawn_text_input, theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction};
 use aestra_bevy::EmitterId;
@@ -16,6 +15,7 @@ use bevy::{
     feathers::{
         controls::ButtonVariant,
         cursor::{EntityCursor, OverrideCursor},
+        theme::ThemedText,
     },
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     input_focus::{InputFocus, tab_navigation::TabIndex},
@@ -63,7 +63,7 @@ impl Plugin for TimelinePlugin {
                 (
                     choreography_keyboard_input,
                     navigate_timeline,
-                    dismiss_timeline_color_picker,
+                    dismiss_timeline_popovers,
                 )
                     .chain()
                     .in_set(TimelineSet::Input),
@@ -493,6 +493,15 @@ mod tests {
             position.side == PopoverSide::Bottom && position.align == PopoverAlign::Start
         }));
     }
+
+    #[test]
+    fn timeline_popovers_close_only_for_primary_clicks_outside_their_surface() {
+        assert!(should_dismiss_timeline_popover(true, false, true));
+        assert!(!should_dismiss_timeline_popover(true, true, true));
+        assert!(!should_dismiss_timeline_popover(true, false, false));
+        assert!(!should_dismiss_timeline_popover(false, false, true));
+    }
+
     use crate::{EFFECT_PATH, EFFECT_SOURCE, LibraryState};
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
@@ -789,6 +798,97 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(chip_color, Color::srgba(0.28, 0.78, 0.45, 1.0));
+    }
+
+    #[test]
+    fn track_actions_keep_the_name_layout_stable_and_menus_escape_scroll_clipping() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.effect.emitters[0].id;
+        let mut state = TimelineState::framed(session.playback_duration());
+        state.context_emitter = Some(emitter);
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .init_asset::<Image>()
+        .insert_resource(session)
+        .insert_resource(state)
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_systems(Startup, spawn_test_timeline)
+        .add_systems(Update, update_track_header_hover_actions);
+
+        app.update();
+
+        let header = {
+            let world = app.world_mut();
+            let mut query = world.query::<(Entity, &EmitterTrackHeader)>();
+            query
+                .iter(world)
+                .find_map(|(entity, header)| (header.emitter == emitter).then_some(entity))
+                .unwrap()
+        };
+        let actions = {
+            let world = app.world_mut();
+            let children = world.get::<Children>(header).unwrap();
+            children
+                .iter()
+                .find(|child| world.get::<EmitterTrackHoverActions>(*child).is_some())
+                .unwrap()
+        };
+        assert_eq!(
+            app.world().get::<Node>(actions).unwrap().width,
+            Val::Px(28.0)
+        );
+        assert_eq!(
+            *app.world().get::<Visibility>(actions).unwrap(),
+            Visibility::Inherited
+        );
+
+        app.world_mut()
+            .entity_mut(header)
+            .insert(Interaction::Hovered);
+        app.update();
+        app.world_mut().entity_mut(header).insert(Interaction::None);
+        app.update();
+        assert_eq!(
+            *app.world().get::<Visibility>(actions).unwrap(),
+            Visibility::Inherited,
+            "leaving the row must not hide its open context menu"
+        );
+
+        let menu_layer = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<(
+                &GlobalZIndex,
+                Option<&OverrideClip>,
+                &Popover,
+                &BackgroundColor,
+                &Node,
+            ), With<EmitterTrackContextMenu>>();
+            let (z_index, override_clip, popover, background, node) = query.single(world).unwrap();
+            (
+                z_index.0,
+                override_clip.is_some(),
+                popover.positions[0].side,
+                popover.positions[0].align,
+                background.0,
+                node.row_gap,
+            )
+        };
+        assert_eq!(
+            menu_layer,
+            (
+                250,
+                true,
+                PopoverSide::Right,
+                PopoverAlign::Start,
+                theme::MENU,
+                Val::Px(0.0),
+            )
+        );
     }
 
     #[test]
@@ -1930,6 +2030,9 @@ struct EmitterTrackHoverActions;
 #[derive(Component)]
 struct EmitterTrackContextMenu;
 
+#[derive(Component)]
+struct EmitterTrackContextMenuTrigger;
+
 #[derive(Component, Clone, Copy)]
 struct TimelineClip {
     emitter: EmitterId,
@@ -3007,24 +3110,15 @@ fn spawn_emitter_track_header(
             }
             row.spawn((
                 EmitterTrackHoverActions,
+                Visibility::Hidden,
                 Node {
-                    display: Display::None,
+                    width: Val::Px(28.0),
+                    flex_shrink: 0.0,
                     align_items: AlignItems::Center,
-                    column_gap: Val::Px(2.0),
                     ..default()
                 },
             ))
             .with_children(|actions| {
-                let duplicate = mini_button(
-                    actions,
-                    "D",
-                    ChoreographyAction::DuplicateEmitter(Some(emitter)),
-                );
-                describe_timeline_control(
-                    actions,
-                    duplicate,
-                    localizer.text("edit-duplicate-emitter"),
-                );
                 let more = mini_button(
                     actions,
                     "...",
@@ -3035,10 +3129,16 @@ fn spawn_emitter_track_header(
                     more,
                     localizer.text("timeline-more-emitter-actions"),
                 );
+                actions.commands().entity(more).insert((
+                    EmitterTrackContextMenuTrigger,
+                    RelativeCursorPosition::default(),
+                ));
+                if state.context_emitter == Some(emitter) {
+                    actions.commands().entity(more).with_children(|button| {
+                        spawn_emitter_context_menu(button, localizer, emitter, enabled, soloed);
+                    });
+                }
             });
-            if state.context_emitter == Some(emitter) {
-                spawn_emitter_context_menu(row, localizer, emitter, enabled, soloed);
-            }
         });
 }
 
@@ -3052,58 +3152,109 @@ fn spawn_emitter_context_menu(
     parent
         .spawn((
             EmitterTrackContextMenu,
+            Popover {
+                positions: vec![
+                    PopoverPlacement {
+                        side: PopoverSide::Right,
+                        align: PopoverAlign::Start,
+                        gap: 4.0,
+                    },
+                    PopoverPlacement {
+                        side: PopoverSide::Bottom,
+                        align: PopoverAlign::End,
+                        gap: 4.0,
+                    },
+                    PopoverPlacement {
+                        side: PopoverSide::Top,
+                        align: PopoverAlign::End,
+                        gap: 4.0,
+                    },
+                    PopoverPlacement {
+                        side: PopoverSide::Left,
+                        align: PopoverAlign::Start,
+                        gap: 4.0,
+                    },
+                ],
+                window_margin: 8.0,
+            },
+            RelativeCursorPosition::default(),
+            OverrideClip,
+            GlobalZIndex(250),
             Node {
                 position_type: PositionType::Absolute,
-                right: Val::Px(4.0),
-                top: Val::Px(27.0),
-                width: Val::Px(168.0),
-                padding: UiRect::all(Val::Px(4.0)),
+                width: Val::Px(184.0),
+                padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(2.0),
                 border: UiRect::all(Val::Px(1.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
             },
-            BackgroundColor(theme::PANEL_LIGHT),
+            BackgroundColor(theme::MENU),
             BorderColor::all(theme::BORDER_BRIGHT),
-            ZIndex(20),
+            BoxShadow::new(
+                Color::srgba(0.0, 0.0, 0.0, 0.62),
+                Val::Px(0.0),
+                Val::Px(2.0),
+                Val::Px(3.0),
+                Val::Px(5.0),
+            ),
         ))
         .with_children(|menu| {
-            spawn_feathers_action_button(
+            spawn_emitter_context_menu_item(
                 menu,
                 &localizer.text(if enabled {
-                    "timeline-mute-emitter"
+                    "timeline-menu-mute"
                 } else {
-                    "timeline-unmute-emitter"
+                    "timeline-menu-unmute"
                 }),
                 ChoreographyAction::SetEmitterEnabled {
                     emitter,
                     enabled: !enabled,
                 },
-                false,
             );
-            spawn_feathers_action_button(
+            spawn_emitter_context_menu_item(
                 menu,
                 &localizer.text(if soloed {
-                    "timeline-unsolo-emitter"
+                    "timeline-menu-unsolo"
                 } else {
-                    "timeline-solo-emitter"
+                    "timeline-menu-solo"
                 }),
                 ChoreographyAction::ToggleEmitterSolo(emitter),
-                false,
             );
-            spawn_feathers_action_button(
+            spawn_emitter_context_menu_item(
                 menu,
-                &localizer.text("edit-duplicate-emitter"),
+                &localizer.text("timeline-menu-duplicate"),
                 ChoreographyAction::DuplicateEmitter(Some(emitter)),
-                false,
             );
-            spawn_feathers_action_button(
+            spawn_emitter_context_menu_item(
                 menu,
-                &localizer.text("edit-delete-emitter"),
+                &localizer.text("timeline-menu-delete"),
                 ChoreographyAction::DeleteEmitter(Some(emitter)),
-                false,
             );
+        });
+}
+
+fn spawn_emitter_context_menu_item(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    action: ChoreographyAction,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu_item())
+        .insert((
+            Interaction::None,
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.to_owned()),
+        ))
+        .with_children(|item| {
+            item.spawn((
+                Text::new(label),
+                ThemedText,
+                TextLayout::no_wrap(),
+                Pickable::IGNORE,
+            ));
         });
 }
 
@@ -3353,26 +3504,62 @@ fn navigate_timeline(
     }
 }
 
-fn dismiss_timeline_color_picker(
+fn dismiss_timeline_popovers(
     buttons: Res<ButtonInput<MouseButton>>,
-    surfaces: Query<
+    color_surfaces: Query<
         &RelativeCursorPosition,
         Or<(
             With<EmitterTrackColorChip>,
             With<EmitterTrackColorPickerPopover>,
         )>,
     >,
+    menu_surfaces: Query<
+        &RelativeCursorPosition,
+        Or<(
+            With<EmitterTrackContextMenuTrigger>,
+            With<EmitterTrackContextMenu>,
+        )>,
+    >,
     mut state: ResMut<TimelineState>,
     mut session: ResMut<EditorSession>,
 ) {
-    if state.color_picker_emitter.is_none() || !buttons.just_pressed(MouseButton::Left) {
+    let primary_pressed = buttons.just_pressed(MouseButton::Left);
+    if !primary_pressed {
         return;
     }
-    if surfaces.iter().any(RelativeCursorPosition::cursor_over) {
+
+    let dismiss_color = should_dismiss_timeline_popover(
+        state.color_picker_emitter.is_some(),
+        color_surfaces
+            .iter()
+            .any(RelativeCursorPosition::cursor_over),
+        primary_pressed,
+    );
+    let dismiss_menu = should_dismiss_timeline_popover(
+        state.context_emitter.is_some(),
+        menu_surfaces
+            .iter()
+            .any(RelativeCursorPosition::cursor_over),
+        primary_pressed,
+    );
+    if !dismiss_color && !dismiss_menu {
         return;
     }
-    state.color_picker_emitter = None;
+    if dismiss_color {
+        state.color_picker_emitter = None;
+    }
+    if dismiss_menu {
+        state.context_emitter = None;
+    }
     session.ui_revision += 1;
+}
+
+fn should_dismiss_timeline_popover(
+    open: bool,
+    pointer_over_surface: bool,
+    primary_pressed: bool,
+) -> bool {
+    open && primary_pressed && !pointer_over_surface
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -3703,18 +3890,21 @@ fn open_timeline_track_context_menu(
 }
 
 fn update_track_header_hover_actions(
-    headers: Query<(&Interaction, &Children), (With<EmitterTrackHeader>, Changed<Interaction>)>,
-    mut action_groups: Query<&mut Node, With<EmitterTrackHoverActions>>,
+    headers: Query<(&Interaction, &Children, &EmitterTrackHeader), Changed<Interaction>>,
+    mut action_groups: Query<&mut Visibility, With<EmitterTrackHoverActions>>,
+    state: Res<TimelineState>,
 ) {
-    for (interaction, children) in &headers {
+    for (interaction, children, header) in &headers {
         for child in children.iter() {
-            let Ok(mut node) = action_groups.get_mut(child) else {
+            let Ok(mut visibility) = action_groups.get_mut(child) else {
                 continue;
             };
-            node.display = if *interaction == Interaction::None {
-                Display::None
+            *visibility = if *interaction != Interaction::None
+                || state.context_emitter == Some(header.emitter)
+            {
+                Visibility::Inherited
             } else {
-                Display::Flex
+                Visibility::Hidden
             };
         }
     }

@@ -1,7 +1,7 @@
 use crate::EffectCommand;
 use aestra_core::{
-    CurveId, EffectAsset, EffectId, EmitterId, EventId, GradientId, ModuleId, ModuleParameters,
-    ParameterId, RendererId,
+    CurveId, EffectAsset, EffectClipId, EffectId, EmitterId, EventId, GradientId, ModuleId,
+    ModuleParameters, ParameterId, RendererId,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fmt};
@@ -9,6 +9,7 @@ use std::{collections::BTreeSet, fmt};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SemanticTarget {
     Effect(EffectId),
+    EffectClip(EffectClipId),
     Parameter(ParameterId),
     Emitter(EmitterId),
     Module(ModuleId),
@@ -22,6 +23,7 @@ impl fmt::Display for SemanticTarget {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Effect(id) => write!(formatter, "effect {id}"),
+            Self::EffectClip(id) => write!(formatter, "effect clip {id}"),
             Self::Parameter(id) => write!(formatter, "parameter {id}"),
             Self::Emitter(id) => write!(formatter, "emitter {id}"),
             Self::Module(id) => write!(formatter, "module {id}"),
@@ -51,6 +53,17 @@ impl Selection {
 
     pub fn select_emitter(&mut self, id: EmitterId) {
         self.primary = SemanticTarget::Emitter(id);
+    }
+
+    pub fn select_effect_clip(&mut self, id: EffectClipId) {
+        self.primary = SemanticTarget::EffectClip(id);
+    }
+
+    pub fn effect_clip(&self) -> Option<EffectClipId> {
+        match self.primary {
+            SemanticTarget::EffectClip(id) => Some(id),
+            _ => None,
+        }
     }
 
     pub fn emitter(&self, effect: &EffectAsset) -> Option<EmitterId> {
@@ -271,6 +284,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         EffectCommand::SetEffectName { .. }
         | EffectCommand::SetEffectDuration { .. }
         | EffectCommand::SetEffectLooping { .. }
+        | EffectCommand::AddEffectClip { .. }
         | EffectCommand::AddEmitter { .. }
         | EffectCommand::AddParameter { .. }
         | EffectCommand::AddMaterial { .. }
@@ -280,6 +294,11 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::RemoveFlipbook { .. }
         | EffectCommand::SetFlipbook { .. }
         | EffectCommand::AddEvent { .. } => (None, None),
+        EffectCommand::RemoveEffectClip { id }
+        | EffectCommand::SetEffectClipTiming { id, .. }
+        | EffectCommand::SetEffectClipSeed { id, .. } => {
+            (None, Some(SemanticTarget::EffectClip(*id)))
+        }
         EffectCommand::RemoveParameter { id } => (None, Some(SemanticTarget::Parameter(*id))),
         EffectCommand::RemoveEmitter { id }
         | EffectCommand::MoveEmitter { id, .. }
@@ -355,6 +374,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
 fn target_exists(target: SemanticTarget, effect: &EffectAsset) -> bool {
     match target {
         SemanticTarget::Effect(id) => effect.id == id,
+        SemanticTarget::EffectClip(id) => effect.effect_clips.iter().any(|clip| clip.id == id),
         SemanticTarget::Parameter(id) => effect.parameters.iter().any(|item| item.id == id),
         SemanticTarget::Emitter(id) => effect.emitters.iter().any(|item| item.id == id),
         SemanticTarget::Module(id) => effect

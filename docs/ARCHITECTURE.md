@@ -92,6 +92,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 ### `aestra-authoring`
 
 - Owns semantic commands, atomic transactions, inverse-command history, locks, selection, and diffs.
+- Treats reusable effect clips as stable semantic targets with atomic create, delete, timing, and
+  seed commands; clip locks, diffs, selection repair, and undo/redo never depend on timeline rows.
 - Executes independently of Bevy UI so scripts and future AI clients use the same path as the editor.
 - Validates a complete transaction before replacing the working document.
 - Stores forward and inverse commands for undo/redo rather than document snapshots.

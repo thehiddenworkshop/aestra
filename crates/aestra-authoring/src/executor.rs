@@ -1,7 +1,7 @@
 use crate::{EffectCommand, EffectDiff, EffectTransaction, LockState, SemanticTarget};
 use aestra_core::{
-    DiagnosticCode, EffectAsset, Emitter, EmitterId, MaterialId, ModuleId, ModuleParameters,
-    RendererId, ValidationReport, Value,
+    DiagnosticCode, EffectAsset, EffectClip, EffectClipId, Emitter, EmitterId, MaterialId,
+    ModuleId, ModuleParameters, RendererId, ValidationReport, Value,
 };
 use thiserror::Error;
 
@@ -145,6 +145,46 @@ fn apply_command(
         EffectCommand::SetEffectLooping { looping } => {
             let previous = std::mem::replace(&mut effect.looping, *looping);
             vec![EffectCommand::SetEffectLooping { looping: previous }]
+        }
+        EffectCommand::AddEffectClip { clip, index } => {
+            checked_insert(
+                &mut effect.effect_clips,
+                *index,
+                clip.clone(),
+                "effect clips",
+            )?;
+            vec![EffectCommand::RemoveEffectClip { id: clip.id }]
+        }
+        EffectCommand::RemoveEffectClip { id } => {
+            let index = effect_clip_index(effect, *id)?;
+            let clip = effect.effect_clips.remove(index);
+            vec![EffectCommand::AddEffectClip { clip, index }]
+        }
+        EffectCommand::SetEffectClipTiming {
+            id,
+            start_time,
+            source_offset,
+            duration,
+        } => {
+            let clip = effect_clip_mut(effect, *id)?;
+            let previous = (clip.start_time, clip.source_offset, clip.duration);
+            clip.start_time = *start_time;
+            clip.source_offset = *source_offset;
+            clip.duration = *duration;
+            vec![EffectCommand::SetEffectClipTiming {
+                id: *id,
+                start_time: previous.0,
+                source_offset: previous.1,
+                duration: previous.2,
+            }]
+        }
+        EffectCommand::SetEffectClipSeed { id, seed } => {
+            let clip = effect_clip_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut clip.seed, *seed);
+            vec![EffectCommand::SetEffectClipSeed {
+                id: *id,
+                seed: previous,
+            }]
         }
         EffectCommand::AddParameter { parameter, index } => {
             checked_insert(
@@ -786,6 +826,25 @@ fn emitter_index(effect: &EffectAsset, id: EmitterId) -> Result<usize, CommandEr
         .iter()
         .position(|emitter| emitter.id == id)
         .ok_or_else(|| not_found("emitter", &id))
+}
+
+fn effect_clip_index(effect: &EffectAsset, id: EffectClipId) -> Result<usize, CommandError> {
+    effect
+        .effect_clips
+        .iter()
+        .position(|clip| clip.id == id)
+        .ok_or_else(|| not_found("effect clip", &id))
+}
+
+fn effect_clip_mut(
+    effect: &mut EffectAsset,
+    id: EffectClipId,
+) -> Result<&mut EffectClip, CommandError> {
+    effect
+        .effect_clips
+        .iter_mut()
+        .find(|clip| clip.id == id)
+        .ok_or_else(|| not_found("effect clip", &id))
 }
 
 fn material_index(effect: &EffectAsset, id: MaterialId) -> Result<usize, CommandError> {

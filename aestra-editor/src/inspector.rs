@@ -444,6 +444,7 @@ fn preview_renderer_deletion(session: &mut EditorSession, renderer: RendererId) 
 fn semantic_target_exists(effect: &EffectAsset, target: SemanticTarget) -> bool {
     match target {
         SemanticTarget::Effect(id) => effect.id == id,
+        SemanticTarget::EffectClip(id) => effect.effect_clips.iter().any(|clip| clip.id == id),
         SemanticTarget::Parameter(id) => effect.parameters.iter().any(|value| value.id == id),
         SemanticTarget::Emitter(id) => effect.emitters.iter().any(|emitter| emitter.id == id),
         SemanticTarget::Module(id) => effect

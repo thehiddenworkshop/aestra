@@ -2135,6 +2135,12 @@ The first Inspector shows the resolved source, placement start, source offset, p
 duration, seed behavior, and validation state. Add trimming, looping, and time scaling
 after basic placement is stable.
 
+Status: the command-layer slice is complete. `EffectClipId` is a first-class selection, lock, and
+diff target. Atomic create, delete, timing, and seed commands preserve identity through undo/redo,
+reject invalid edits without mutating the document, and repair stale selection after deletion.
+Library drag/drop, timeline clip presentation/direct manipulation, Inspector fields, and Bevy/GPU
+preview integration remain in Phase F.
+
 ## Phase G — Instance workflow and parameter overrides
 
 Expose reusable effect parameters and allow instance overrides.
