@@ -1,6 +1,6 @@
 # Aestra — Pre-M6 Professional UI Implementation Plan
 
-Status: Slice 6 in progress; keyboard navigation and focus foundation complete
+Status: Slice 6 in progress; keyboard navigation and accessibility/state audit complete
 
 This document turns the pre-M6 portion of
 `aestra_ui_choreography_library_ux_plan.md` into a repository-specific delivery plan.
@@ -384,8 +384,10 @@ Work:
 
 1. Replace passive label text with interactive `EmitterTrackHeader` rows keyed by
    `EmitterId`.
-2. Add selected, disabled, and diagnostic visual states using icon plus style, not color
-   alone. Preview Solo/Lock controls remain deferred until their state contract is defined.
+2. Add selected, muted, soloed, and diagnostic visual states using icon plus style, not
+   color alone. Mute remains an authored, undoable emitter-enabled change; Solo is explicitly
+   preview-only and never dirties or rewrites the effect asset. Lock remains deferred until
+   its editing-state contract is defined.
 3. Selecting a header or its clip uses one `ChoreographyAction::SelectEmitter(EmitterId)`
    path and clears incompatible curve selection consistently.
 4. Move add, duplicate, delete, and enabled actions from Library into `TimelinePlugin`.
@@ -446,14 +448,19 @@ Progress:
 
 - complete: native list-box traversal, Enter activation, auto-scroll, and visible keyboard
   focus for Library project entries and Timeline track headers;
-- remaining: accessibility/status audit, invalid-drop feedback, compact-layout audit,
-  acceptance scenario, and architecture/implementation documentation.
+- complete: semantic labels and tooltips for compact Timeline controls and clip handles,
+  detailed invalid/unsupported Library descriptions, explicit unavailable catalog state,
+  and Mute/Solo track controls with distinct authored/preview-only semantics;
+- remaining: invalid-drop feedback, compact-layout audit, acceptance scenario, and
+  architecture/implementation documentation.
 
 Work:
 
 1. Add keyboard traversal and focus visuals for Library entries and track headers.
 2. Add tooltips and accessible labels for icon-only controls and statuses.
-3. Define and show explicit empty, loading, invalid, and unavailable states.
+3. Define and show explicit empty, invalid, and unavailable states. Do not show a synthetic
+   loading state while catalog discovery remains synchronous; add loading only with a real
+   asynchronous discovery lifecycle.
 4. Add invalid-drop feedback hooks without advertising Effect-to-Timeline creation before
    M6 supports it.
 5. Audit compact sizing, truncation, tooltip overflow, and narrow-panel behavior.

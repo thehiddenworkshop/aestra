@@ -64,6 +64,13 @@ pub(crate) struct ProjectEffectEntry {
 #[derive(Resource)]
 pub(crate) struct ProjectEffectCatalog {
     entries: Vec<ProjectEffectEntry>,
+    availability: ProjectEffectCatalogAvailability,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProjectEffectCatalogAvailability {
+    Ready,
+    Unavailable { root: PathBuf, message: String },
 }
 
 impl Default for ProjectEffectCatalog {
@@ -75,9 +82,19 @@ impl Default for ProjectEffectCatalog {
 impl ProjectEffectCatalog {
     pub(crate) fn scan(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref();
-        let mut paths = fs::read_dir(root)
-            .into_iter()
-            .flatten()
+        let directory = match fs::read_dir(root) {
+            Ok(directory) => directory,
+            Err(error) => {
+                return Self {
+                    entries: Vec::new(),
+                    availability: ProjectEffectCatalogAvailability::Unavailable {
+                        root: root.to_owned(),
+                        message: error.to_string(),
+                    },
+                };
+            }
+        };
+        let mut paths = directory
             .filter_map(Result::ok)
             .map(|entry| entry.path())
             .filter(|path| path.extension().is_some_and(|extension| extension == "ron"))
@@ -125,7 +142,10 @@ impl ProjectEffectCatalog {
                 .cmp(&right.display_name.to_lowercase())
                 .then_with(|| left.path.cmp(&right.path))
         });
-        Self { entries }
+        Self {
+            entries,
+            availability: ProjectEffectCatalogAvailability::Ready,
+        }
     }
 
     pub(crate) fn entries(&self) -> &[ProjectEffectEntry] {
@@ -140,6 +160,14 @@ impl ProjectEffectCatalog {
         self.entry(id)
             .filter(|entry| entry.status.is_openable())
             .map(|entry| entry.path.as_path())
+    }
+
+    #[cfg(test)]
+    fn from_entries(entries: Vec<ProjectEffectEntry>) -> Self {
+        Self {
+            entries,
+            availability: ProjectEffectCatalogAvailability::Ready,
+        }
     }
 }
 
@@ -236,6 +264,9 @@ struct LibraryCatalogEmpty;
 struct LibraryNoResults;
 
 #[derive(Component)]
+struct LibraryCatalogUnavailable;
+
+#[derive(Component)]
 struct LibraryProjectEffectsSection;
 
 #[derive(Component)]
@@ -296,6 +327,7 @@ fn sync_library_filtering(
         Option<&ProjectEffectRow>,
         Has<LibraryCatalogEmpty>,
         Has<LibraryNoResults>,
+        Has<LibraryCatalogUnavailable>,
     )>,
     mut counts: Query<&mut Text, With<LibraryProjectCount>>,
     localizer: Res<Localizer>,
@@ -308,7 +340,11 @@ fn sync_library_filtering(
         .iter()
         .filter(|entry| state.matches_project_effect(entry))
         .count();
-    for (entity, mut node, row, catalog_empty, no_results) in &mut nodes {
+    let catalog_ready = matches!(
+        catalog.availability,
+        ProjectEffectCatalogAvailability::Ready
+    );
+    for (entity, mut node, row, catalog_empty, no_results, unavailable) in &mut nodes {
         if let Some(row) = row {
             let visible = catalog
                 .entry(row.0)
@@ -324,22 +360,32 @@ fn sync_library_filtering(
                 commands.entity(entity).remove::<ListItem>();
             }
         } else if catalog_empty {
-            node.display = if catalog.entries().is_empty() {
+            node.display = if catalog_ready && catalog.entries().is_empty() {
                 Display::Flex
             } else {
                 Display::None
             };
         } else if no_results {
-            node.display = if !catalog.entries().is_empty() && visible_count == 0 {
+            node.display = if catalog_ready && !catalog.entries().is_empty() && visible_count == 0 {
                 Display::Flex
             } else {
                 Display::None
             };
+        } else if unavailable {
+            node.display = if catalog_ready {
+                Display::None
+            } else {
+                Display::Flex
+            };
         }
     }
-    let mut args = FluentArgs::new();
-    args.set("count", visible_count);
-    let text = localizer.text_with("assets-found", &args);
+    let text = if catalog_ready {
+        let mut args = FluentArgs::new();
+        args.set("count", visible_count);
+        localizer.text_with("assets-found", &args)
+    } else {
+        localizer.text("library-unavailable-meta")
+    };
     for mut count in &mut counts {
         count.0.clone_from(&text);
     }
@@ -358,10 +404,18 @@ fn spawn_project_effects(
         .count();
     let mut args = FluentArgs::new();
     args.set("count", visible_count);
+    let project_meta = if matches!(
+        catalog.availability,
+        ProjectEffectCatalogAvailability::Ready
+    ) {
+        localizer.text_with("assets-found", &args)
+    } else {
+        localizer.text("library-unavailable-meta")
+    };
     let section = spawn_list_section_header(
         panel,
         &localizer.text("assets-project-effects"),
-        &localizer.text_with("assets-found", &args),
+        &project_meta,
     );
     panel
         .commands()
@@ -432,6 +486,15 @@ fn spawn_project_effects(
         &localizer.text("library-empty-title"),
         &localizer.text("library-empty-message"),
         theme::TEXT_MUTED,
+        if matches!(
+            catalog.availability,
+            ProjectEffectCatalogAvailability::Ready
+        ) && catalog.entries().is_empty()
+        {
+            Display::Flex
+        } else {
+            Display::None
+        },
     );
     panel
         .commands()
@@ -442,8 +505,54 @@ fn spawn_project_effects(
         &localizer.text("library-no-results-title"),
         &localizer.text("library-no-results-message"),
         theme::TEXT_MUTED,
+        if matches!(
+            catalog.availability,
+            ProjectEffectCatalogAvailability::Ready
+        ) && !catalog.entries().is_empty()
+            && visible_count == 0
+        {
+            Display::Flex
+        } else {
+            Display::None
+        },
     );
     panel.commands().entity(no_results).insert(LibraryNoResults);
+    let (unavailable_message, unavailable_tooltip) = match &catalog.availability {
+        ProjectEffectCatalogAvailability::Ready => {
+            let mut args = FluentArgs::new();
+            args.set("path", DEFAULT_PROJECT_EFFECT_ROOT);
+            let message = localizer.text_with("library-unavailable-message", &args);
+            (message.clone(), EditorTooltip::description(message))
+        }
+        ProjectEffectCatalogAvailability::Unavailable { root, message } => {
+            let path = root.display().to_string();
+            let mut args = FluentArgs::new();
+            args.set("path", path.as_str());
+            (
+                localizer.text_with("library-unavailable-message", &args),
+                EditorTooltip::titled(localizer.text("library-unavailable-title"), message)
+                    .with_footer(path),
+            )
+        }
+    };
+    let unavailable = spawn_list_empty_state(
+        panel,
+        &localizer.text("library-unavailable-title"),
+        &unavailable_message,
+        theme::ACCENT,
+        if matches!(
+            catalog.availability,
+            ProjectEffectCatalogAvailability::Unavailable { .. }
+        ) {
+            Display::Flex
+        } else {
+            Display::None
+        },
+    );
+    panel
+        .commands()
+        .entity(unavailable)
+        .insert((LibraryCatalogUnavailable, unavailable_tooltip));
 }
 
 fn project_effect_accessible_label(entry: &ProjectEffectEntry, localizer: &Localizer) -> String {
@@ -453,16 +562,19 @@ fn project_effect_accessible_label(entry: &ProjectEffectEntry, localizer: &Local
             args.set("name", entry.display_name.as_str());
             localizer.text_with("library-open-effect", &args)
         }
-        ProjectEffectStatus::Invalid { .. } => format!(
-            "{}, {}",
-            entry.display_name,
-            localizer.text("library-status-invalid")
-        ),
-        ProjectEffectStatus::Unsupported { .. } => format!(
-            "{}, {}",
-            entry.display_name,
-            localizer.text("library-status-unsupported")
-        ),
+        ProjectEffectStatus::Invalid { ref message } => {
+            let mut args = FluentArgs::new();
+            args.set("name", entry.display_name.as_str());
+            args.set("message", message.as_str());
+            localizer.text_with("library-invalid-accessible", &args)
+        }
+        ProjectEffectStatus::Unsupported { found, current } => {
+            let mut args = FluentArgs::new();
+            args.set("name", entry.display_name.as_str());
+            args.set("found", i64::from(found));
+            args.set("current", i64::from(current));
+            localizer.text_with("library-unsupported-accessible", &args)
+        }
     }
 }
 
@@ -855,6 +967,25 @@ mod tests {
         let catalog = ProjectEffectCatalog::scan(temporary.path());
 
         assert!(catalog.entries().is_empty());
+        assert_eq!(
+            catalog.availability,
+            ProjectEffectCatalogAvailability::Ready
+        );
+    }
+
+    #[test]
+    fn missing_project_catalog_is_reported_as_unavailable() {
+        let temporary = tempfile::tempdir().unwrap();
+        let missing = temporary.path().join("missing-effects");
+
+        let catalog = ProjectEffectCatalog::scan(&missing);
+
+        assert!(catalog.entries().is_empty());
+        assert!(matches!(
+            catalog.availability,
+            ProjectEffectCatalogAvailability::Unavailable { ref root, ref message }
+                if root == &missing && !message.is_empty()
+        ));
     }
 
     #[test]
@@ -948,33 +1079,31 @@ mod tests {
         let valid_id = ProjectEffectEntryId(1);
         let invalid_id = ProjectEffectEntryId(2);
         let unsupported_id = ProjectEffectEntryId(3);
-        let catalog = ProjectEffectCatalog {
-            entries: vec![
-                ProjectEffectEntry {
-                    id: valid_id,
-                    display_name: "Prism Bloom".into(),
-                    path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
-                    status: ProjectEffectStatus::Valid,
+        let catalog = ProjectEffectCatalog::from_entries(vec![
+            ProjectEffectEntry {
+                id: valid_id,
+                display_name: "Prism Bloom".into(),
+                path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
+                status: ProjectEffectStatus::Valid,
+            },
+            ProjectEffectEntry {
+                id: invalid_id,
+                display_name: "Broken Effect".into(),
+                path: PathBuf::from("assets/effects/broken.aestra.ron"),
+                status: ProjectEffectStatus::Invalid {
+                    message: "Invalid RON fixture".into(),
                 },
-                ProjectEffectEntry {
-                    id: invalid_id,
-                    display_name: "Broken Effect".into(),
-                    path: PathBuf::from("assets/effects/broken.aestra.ron"),
-                    status: ProjectEffectStatus::Invalid {
-                        message: "Invalid RON fixture".into(),
-                    },
+            },
+            ProjectEffectEntry {
+                id: unsupported_id,
+                display_name: "Future Effect".into(),
+                path: PathBuf::from("assets/effects/future.aestra.ron"),
+                status: ProjectEffectStatus::Unsupported {
+                    found: 99,
+                    current: aestra_bevy::CURRENT_FORMAT_VERSION,
                 },
-                ProjectEffectEntry {
-                    id: unsupported_id,
-                    display_name: "Future Effect".into(),
-                    path: PathBuf::from("assets/effects/future.aestra.ron"),
-                    status: ProjectEffectStatus::Unsupported {
-                        found: 99,
-                        current: aestra_bevy::CURRENT_FORMAT_VERSION,
-                    },
-                },
-            ],
-        };
+            },
+        ]);
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
@@ -999,6 +1128,7 @@ mod tests {
         assert_eq!(marker_count::<ListBox>(&mut app), 1);
         assert_eq!(marker_count::<ScrollArea>(&mut app), 1);
         assert_eq!(marker_count::<KeyboardNavigableList>(&mut app), 1);
+        assert_eq!(marker_count::<LibraryCatalogUnavailable>(&mut app), 1);
 
         let rows = {
             let world = app.world_mut();
@@ -1046,6 +1176,16 @@ mod tests {
             assert!(status.5);
             assert!(status.6);
         }
+        assert!(
+            rows.iter()
+                .find(|row| row.0 == invalid_id)
+                .unwrap()
+                .4
+                .contains("Invalid RON fixture")
+        );
+        let unsupported_label = &rows.iter().find(|row| row.0 == unsupported_id).unwrap().4;
+        assert!(unsupported_label.contains("99"));
+        assert!(unsupported_label.contains(&aestra_bevy::CURRENT_FORMAT_VERSION.to_string()));
 
         let exposes_raw_id = {
             let world = app.world_mut();
@@ -1157,22 +1297,20 @@ mod tests {
     fn filtering_updates_existing_rows_count_and_empty_state_in_place() {
         let first_id = ProjectEffectEntryId(1);
         let second_id = ProjectEffectEntryId(2);
-        let catalog = ProjectEffectCatalog {
-            entries: vec![
-                ProjectEffectEntry {
-                    id: first_id,
-                    display_name: "Prism Bloom".into(),
-                    path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
-                    status: ProjectEffectStatus::Valid,
-                },
-                ProjectEffectEntry {
-                    id: second_id,
-                    display_name: "Plasma Burst".into(),
-                    path: PathBuf::from("assets/effects/plasma_burst.aestra.ron"),
-                    status: ProjectEffectStatus::Valid,
-                },
-            ],
-        };
+        let catalog = ProjectEffectCatalog::from_entries(vec![
+            ProjectEffectEntry {
+                id: first_id,
+                display_name: "Prism Bloom".into(),
+                path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
+                status: ProjectEffectStatus::Valid,
+            },
+            ProjectEffectEntry {
+                id: second_id,
+                display_name: "Plasma Burst".into(),
+                path: PathBuf::from("assets/effects/plasma_burst.aestra.ron"),
+                status: ProjectEffectStatus::Valid,
+            },
+        ]);
         let mut app = App::new();
         app.insert_resource(catalog)
             .init_resource::<LibraryState>()
@@ -1197,6 +1335,10 @@ mod tests {
         let no_results = app
             .world_mut()
             .spawn((LibraryNoResults, Node::default()))
+            .id();
+        let unavailable = app
+            .world_mut()
+            .spawn((LibraryCatalogUnavailable, Node::default()))
             .id();
         app.update();
 
@@ -1247,6 +1389,29 @@ mod tests {
         );
         assert!(app.world().entities().contains(prism));
         assert!(app.world().entities().contains(plasma));
+
+        {
+            let mut catalog = app.world_mut().resource_mut::<ProjectEffectCatalog>();
+            catalog.entries.clear();
+            catalog.availability = ProjectEffectCatalogAvailability::Unavailable {
+                root: PathBuf::from("assets/effects"),
+                message: "permission denied".into(),
+            };
+        }
+        app.update();
+
+        assert_eq!(
+            app.world().get::<Node>(catalog_empty).unwrap().display,
+            Display::None
+        );
+        assert_eq!(
+            app.world().get::<Node>(no_results).unwrap().display,
+            Display::None
+        );
+        assert_eq!(
+            app.world().get::<Node>(unavailable).unwrap().display,
+            Display::Flex
+        );
     }
 
     fn app_with_session(session: EditorSession) -> App {
@@ -1303,14 +1468,14 @@ mod tests {
         let expected_id = ProjectEffectEntryId(42);
         let mut app = App::new();
         app.insert_resource(session)
-            .insert_resource(ProjectEffectCatalog {
-                entries: vec![ProjectEffectEntry {
+            .insert_resource(ProjectEffectCatalog::from_entries(vec![
+                ProjectEffectEntry {
                     id: expected_id,
                     display_name: "Injected".into(),
                     path: PathBuf::from("virtual/injected.aestra.ron"),
                     status: ProjectEffectStatus::Valid,
-                }],
-            })
+                },
+            ]))
             .init_resource::<CurvesState>()
             .init_resource::<WorkspaceLayout>()
             .init_resource::<MenuState>()

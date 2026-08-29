@@ -53,6 +53,7 @@ pub(crate) struct EditorSession {
     pub pending_change: Option<PendingChange>,
     pub clock: PlaybackClock,
     pub preview_seed: u64,
+    pub solo_emitter: Option<EmitterId>,
     pub playing: bool,
     pub speed: f32,
     pub dirty: bool,
@@ -87,6 +88,7 @@ impl EditorSession {
             pending_change: None,
             clock: PlaybackClock::default(),
             preview_seed,
+            solo_emitter: None,
             playing: true,
             speed: 1.0,
             dirty: false,
@@ -210,6 +212,23 @@ impl EditorSession {
         }
         self.status = format!("Preview seed {:#018x}", self.preview_seed);
         self.ui_revision += 1;
+    }
+
+    pub fn toggle_preview_solo(&mut self, emitter: EmitterId) -> bool {
+        if !self.effect.emitters.iter().any(|item| item.id == emitter) {
+            return false;
+        }
+        self.solo_emitter = (self.solo_emitter != Some(emitter)).then_some(emitter);
+        self.checkpoints.clear();
+        self.clock.restart();
+        self.refresh_preview();
+        self.status = if self.solo_emitter.is_some() {
+            "Soloing emitter in preview".into()
+        } else {
+            "Emitter solo cleared".into()
+        };
+        self.ui_revision += 1;
+        true
     }
 
     pub fn advance_playback(&mut self, delta_seconds: f32) {
@@ -358,6 +377,7 @@ impl EditorSession {
 
     pub fn new_effect(&mut self) {
         self.effect = blank_effect();
+        self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
         self.preview = Some(
             compile_preview(&self.effect, self.preview_seed).expect("blank effect must compile"),
@@ -382,6 +402,7 @@ impl EditorSession {
         let preview = compile_preview(&effect, self.preview_seed)?;
         self.saved_effect = Some(effect.clone());
         self.effect = effect;
+        self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
         self.preview = Some(preview);
         self.source_path = Some(path.to_owned());
@@ -404,6 +425,7 @@ impl EditorSession {
             .as_deref()
             .and_then(|path| EffectAsset::load_ron(path).ok());
         self.effect = effect;
+        self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
         self.preview = preview;
         self.source_path = source_path;
@@ -507,7 +529,9 @@ impl EditorSession {
             Ok(preview) => preview,
             Err(_) => return false,
         };
-        let Ok(runtime_preview) = compile_preview(preview.candidate(), self.preview_seed) else {
+        let Ok(runtime_preview) =
+            compile_preview_with_solo(preview.candidate(), self.preview_seed, self.solo_emitter)
+        else {
             return false;
         };
         self.preview = Some(runtime_preview);
@@ -529,8 +553,11 @@ impl EditorSession {
                 return false;
             }
         };
-        let (diagnostics, can_apply) = match compile_preview(preview.candidate(), self.preview_seed)
-        {
+        let (diagnostics, can_apply) = match compile_preview_with_solo(
+            preview.candidate(),
+            self.preview_seed,
+            self.solo_emitter,
+        ) {
             Ok(runtime_preview) => {
                 self.preview = Some(runtime_preview);
                 self.samples.clear();
@@ -538,7 +565,9 @@ impl EditorSession {
                 (preview.candidate().validation_report(), true)
             }
             Err(error) => {
-                self.preview = compile_preview(&self.effect, self.preview_seed).ok();
+                self.preview =
+                    compile_preview_with_solo(&self.effect, self.preview_seed, self.solo_emitter)
+                        .ok();
                 (error.report().clone(), false)
             }
         };
@@ -1508,7 +1537,16 @@ impl EditorSession {
     }
 
     fn refresh_preview(&mut self) {
-        match compile_preview(&self.effect, self.preview_seed) {
+        if self.solo_emitter.is_some_and(|solo| {
+            !self
+                .effect
+                .emitters
+                .iter()
+                .any(|emitter| emitter.id == solo)
+        }) {
+            self.solo_emitter = None;
+        }
+        match compile_preview_with_solo(&self.effect, self.preview_seed, self.solo_emitter) {
             Ok(preview) => {
                 self.preview = Some(preview);
                 self.diagnostics = self.effect.validation_report();
@@ -1532,6 +1570,21 @@ impl EditorSession {
 fn compile_preview(effect: &EffectAsset, seed: u64) -> Result<EffectInstance, CompileError> {
     let compiled = EffectCompiler::default().compile(effect)?;
     Ok(EffectInstance::with_seed(Arc::new(compiled), seed))
+}
+
+fn compile_preview_with_solo(
+    effect: &EffectAsset,
+    seed: u64,
+    solo_emitter: Option<EmitterId>,
+) -> Result<EffectInstance, CompileError> {
+    let Some(solo_emitter) = solo_emitter else {
+        return compile_preview(effect, seed);
+    };
+    let mut preview_effect = effect.clone();
+    for emitter in &mut preview_effect.emitters {
+        emitter.enabled &= emitter.id == solo_emitter;
+    }
+    compile_preview(&preview_effect, seed)
 }
 
 fn direct_seek_plan(frame: u64) -> SeekPlan {

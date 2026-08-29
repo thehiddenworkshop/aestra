@@ -227,10 +227,12 @@ pub(crate) fn spawn_list_empty_state(
     title: &str,
     message: &str,
     color: Color,
+    display: Display,
 ) -> Entity {
     let mut empty = parent.spawn((
         CompactListEmptyState,
         Node {
+            display,
             width: Val::Percent(100.0),
             min_height: Val::Px(64.0),
             padding: UiRect::all(Val::Px(10.0)),
@@ -297,6 +299,7 @@ mod tests {
                 "No matching effects",
                 "Try another search.",
                 theme::TEXT_MUTED,
+                Display::Flex,
             );
         });
     }

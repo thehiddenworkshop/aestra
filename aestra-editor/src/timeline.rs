@@ -10,7 +10,10 @@ use aestra_bevy::EmitterId;
 #[cfg(test)]
 use bevy::ui_widgets::{ControlOrientation, Scrollbar};
 use bevy::{
-    feathers::cursor::{EntityCursor, OverrideCursor},
+    feathers::{
+        controls::ButtonVariant,
+        cursor::{EntityCursor, OverrideCursor},
+    },
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     input_focus::{InputFocus, tab_navigation::TabIndex},
     picking::{
@@ -91,6 +94,7 @@ pub(crate) enum ChoreographyAction {
     DuplicateEmitter(Option<EmitterId>),
     DeleteEmitter(Option<EmitterId>),
     SetEmitterEnabled { emitter: EmitterId, enabled: bool },
+    ToggleEmitterSolo(EmitterId),
     ToggleEmitterMenu(EmitterId),
 }
 
@@ -272,6 +276,11 @@ fn execute_choreography_action(
         ChoreographyAction::SetEmitterEnabled { emitter, enabled } => {
             if select_choreography_target(&mut session, Some(emitter)) {
                 session.set_selected_emitter_enabled(enabled);
+                curves.clear();
+            }
+        }
+        ChoreographyAction::ToggleEmitterSolo(emitter) => {
+            if session.toggle_preview_solo(emitter) {
                 curves.clear();
             }
         }
@@ -601,6 +610,8 @@ mod tests {
     fn track_headers_and_clips_expose_the_same_stable_selection_actions() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         session.effect.emitters[1].enabled = false;
+        let solo = session.effect.emitters[0].id;
+        assert!(session.toggle_preview_solo(solo));
         session.diagnostics.push(aestra_bevy::Diagnostic::error(
             aestra_bevy::DiagnosticCode::InvalidTiming,
             "effect.emitters[1].duration",
@@ -655,11 +666,18 @@ mod tests {
         };
         let clips = {
             let world = app.world_mut();
-            let mut query = world.query::<(&TimelineClipInteraction, &ChoreographyAction)>();
+            let mut query = world.query::<(
+                &TimelineClipInteraction,
+                &ChoreographyAction,
+                &AccessibleLabel,
+                Has<EditorTooltip>,
+            )>();
             query
                 .iter(world)
-                .filter(|(clip, _)| clip.kind == TimelineDragKind::Move)
-                .map(|(clip, action)| (clip.emitter, *action))
+                .filter(|(clip, _, _, _)| clip.kind == TimelineDragKind::Move)
+                .map(|(clip, action, label, tooltip)| {
+                    (clip.emitter, *action, label.0.clone(), tooltip)
+                })
                 .collect::<Vec<_>>()
         };
         assert_eq!(headers.len(), emitter_count);
@@ -674,8 +692,80 @@ mod tests {
                 clips.iter().find(|clip| clip.0 == emitter).unwrap().1,
                 action
             );
+            let clip = clips.iter().find(|clip| clip.0 == emitter).unwrap();
+            assert!(!clip.2.is_empty());
+            assert!(clip.3);
             assert!(!label.is_empty());
         }
+        let track_controls = {
+            let world = app.world_mut();
+            let mut query = world.query::<(
+                &ChoreographyAction,
+                &AccessibleLabel,
+                Has<EditorTooltip>,
+                &ButtonVariant,
+                Has<Selected>,
+            )>();
+            query
+                .iter(world)
+                .filter(|(action, _, _, _, _)| {
+                    matches!(
+                        action,
+                        ChoreographyAction::SetEmitterEnabled { .. }
+                            | ChoreographyAction::ToggleEmitterSolo(_)
+                    )
+                })
+                .map(|(action, label, tooltip, variant, selected)| {
+                    (*action, label.0.clone(), tooltip, variant.clone(), selected)
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(track_controls.len(), emitter_count * 2);
+        assert!(
+            track_controls
+                .iter()
+                .all(|(_, label, tooltip, _, _)| *tooltip && label != "M" && label != "S")
+        );
+        assert_eq!(
+            track_controls
+                .iter()
+                .filter(|(_, _, _, variant, selected)| {
+                    *selected && *variant == ButtonVariant::Primary
+                })
+                .count(),
+            2
+        );
+        let timeline_icon_controls = {
+            let world = app.world_mut();
+            let mut transport =
+                world.query::<(&TransportAction, &AccessibleLabel, Has<EditorTooltip>)>();
+            transport
+                .iter(world)
+                .map(|(_, label, tooltip)| (label.0.clone(), tooltip))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(timeline_icon_controls.len(), 4);
+        assert!(timeline_icon_controls.iter().all(|(label, tooltip)| {
+            *tooltip && !matches!(label.as_str(), "<" | ">" | "+" | "-")
+        }));
+        let clip_controls = {
+            let world = app.world_mut();
+            let mut query = world.query::<(
+                &TimelineClipInteraction,
+                &AccessibleLabel,
+                Has<EditorTooltip>,
+            )>();
+            query
+                .iter(world)
+                .map(|(_, label, tooltip)| (label.0.clone(), tooltip))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(clip_controls.len(), emitter_count * 3);
+        assert!(
+            clip_controls
+                .iter()
+                .all(|(label, tooltip)| *tooltip && !label.is_empty())
+        );
         let disabled = {
             let world = app.world_mut();
             let mut query = world.query_filtered::<Entity, With<EmitterTrackDisabled>>();
@@ -926,6 +1016,44 @@ mod tests {
             .find(|emitter| emitter.id == original.id)
             .unwrap();
         assert_eq!(restored.enabled, original.enabled);
+    }
+
+    #[test]
+    fn emitter_solo_is_preview_only_and_isolates_runtime_output() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let target = session.effect.emitters[1].id;
+        let original_effect = session.effect.clone();
+        let mut app = choreography_app(session);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::ToggleEmitterSolo(target));
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.solo_emitter, Some(target));
+        assert_eq!(session.effect, original_effect);
+        assert!(!session.dirty);
+        let preview = session.preview.as_ref().unwrap().effect();
+        assert!(
+            preview
+                .emitters
+                .iter()
+                .find(|emitter| emitter.source == target)
+                .unwrap()
+                .enabled
+        );
+        assert!(
+            preview
+                .emitters
+                .iter()
+                .filter(|emitter| emitter.source != target)
+                .all(|emitter| !emitter.enabled)
+        );
+
+        app.world_mut()
+            .trigger(ChoreographyAction::ToggleEmitterSolo(target));
+        app.update();
+        assert_eq!(app.world().resource::<EditorSession>().solo_emitter, None);
     }
 
     #[test]
@@ -1620,6 +1748,23 @@ impl TimelineState {
     }
 }
 
+fn describe_timeline_control(
+    parent: &mut ChildSpawnerCommands,
+    entity: Entity,
+    description: String,
+) {
+    parent.commands().entity(entity).insert((
+        AccessibleLabel(description.clone()),
+        EditorTooltip::description(description),
+    ));
+}
+
+fn emitter_timing_label(localizer: &Localizer, message_id: &str, name: &str) -> String {
+    let mut args = FluentArgs::new();
+    args.set("name", name);
+    localizer.text_with(message_id, &args)
+}
+
 pub(crate) fn spawn_timeline(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -1659,8 +1804,18 @@ pub(crate) fn spawn_timeline(
                         },
                         TextColor(theme::ACCENT),
                     ));
-                    mini_button(header, "<", TransportAction::StepFrame(-1));
-                    mini_button(header, ">", TransportAction::StepFrame(1));
+                    let previous = mini_button(header, "<", TransportAction::StepFrame(-1));
+                    describe_timeline_control(
+                        header,
+                        previous,
+                        localizer.text("timeline-previous-frame"),
+                    );
+                    let next = mini_button(header, ">", TransportAction::StepFrame(1));
+                    describe_timeline_control(
+                        header,
+                        next,
+                        localizer.text("timeline-next-frame"),
+                    );
                     mini_button(
                         header,
                         &localizer.text("timeline-frame-all"),
@@ -1699,8 +1854,20 @@ pub(crate) fn spawn_timeline(
                         },
                         TextColor(theme::TEXT_FAINT),
                     ));
-                    mini_button(header, "-", TransportAction::AdjustPreviewSeed(-1));
-                    mini_button(header, "+", TransportAction::AdjustPreviewSeed(1));
+                    let decrease_seed =
+                        mini_button(header, "-", TransportAction::AdjustPreviewSeed(-1));
+                    describe_timeline_control(
+                        header,
+                        decrease_seed,
+                        localizer.text("timeline-decrease-seed"),
+                    );
+                    let increase_seed =
+                        mini_button(header, "+", TransportAction::AdjustPreviewSeed(1));
+                    describe_timeline_control(
+                        header,
+                        increase_seed,
+                        localizer.text("timeline-increase-seed"),
+                    );
                     header.spawn((
                         Text::new(format!(
                             "{} {:.2}s",
@@ -1713,8 +1880,20 @@ pub(crate) fn spawn_timeline(
                         },
                         TextColor(theme::TEXT_MUTED),
                     ));
-                    mini_button(header, "-", TimelineAction::AdjustEffectDuration(-0.25));
-                    mini_button(header, "+", TimelineAction::AdjustEffectDuration(0.25));
+                    let decrease_duration =
+                        mini_button(header, "-", TimelineAction::AdjustEffectDuration(-0.25));
+                    describe_timeline_control(
+                        header,
+                        decrease_duration,
+                        localizer.text("timeline-decrease-duration"),
+                    );
+                    let increase_duration =
+                        mini_button(header, "+", TimelineAction::AdjustEffectDuration(0.25));
+                    describe_timeline_control(
+                        header,
+                        increase_duration,
+                        localizer.text("timeline-increase-duration"),
+                    );
                 });
             timeline
                 .spawn((
@@ -1767,12 +1946,11 @@ pub(crate) fn spawn_timeline(
                                     ..default()
                                 });
                                 let add = mini_button(toolbar, "+", ChoreographyAction::AddEmitter);
-                                toolbar
-                                    .commands()
-                                    .entity(add)
-                                    .insert(EditorTooltip::description(
-                                        localizer.text("edit-add-emitter"),
-                                    ));
+                                describe_timeline_control(
+                                    toolbar,
+                                    add,
+                                    localizer.text("edit-add-emitter"),
+                                );
                             });
                         labels
                             .spawn((
@@ -1833,6 +2011,7 @@ pub(crate) fn spawn_timeline(
                         Button,
                         EditorNativeControl,
                         TimelineCanvas,
+                        AccessibleLabel(localizer.text("timeline-canvas-accessible")),
                         RelativeCursorPosition::default(),
                         Node {
                             flex_grow: 1.0,
@@ -1879,6 +2058,15 @@ pub(crate) fn spawn_timeline(
                                                 ..default()
                                             })
                                             .with_children(|track| {
+                                                let audible_in_preview = emitter.enabled
+                                                    && session
+                                                        .solo_emitter
+                                                        .is_none_or(|solo| solo == emitter.id);
+                                                let move_label = emitter_timing_label(
+                                                    localizer,
+                                                    "timeline-move-emitter-clip",
+                                                    &emitter.name,
+                                                );
                                                 track
                                                     .spawn((
                                                         TimelineClip {
@@ -1898,9 +2086,19 @@ pub(crate) fn spawn_timeline(
                                                             ..default()
                                                         },
                                                         BackgroundColor(
-                                                            layer_color(index).with_alpha(0.28),
+                                                            layer_color(index).with_alpha(
+                                                                if audible_in_preview {
+                                                                    0.28
+                                                                } else {
+                                                                    0.10
+                                                                },
+                                                            ),
                                                         ),
-                                                        BorderColor::all(layer_color(index)),
+                                                        BorderColor::all(
+                                                            layer_color(index).with_alpha(
+                                                                if audible_in_preview { 1.0 } else { 0.45 },
+                                                            ),
+                                                        ),
                                                     ))
                                                     .with_children(|clip| {
                                                         clip.spawn((
@@ -1913,6 +2111,8 @@ pub(crate) fn spawn_timeline(
                                                             ChoreographyAction::SelectEmitter(
                                                                 emitter.id,
                                                             ),
+                                                            AccessibleLabel(move_label.clone()),
+                                                            EditorTooltip::description(move_label),
                                                             EntityCursor::System(
                                                                 SystemCursorIcon::Grab,
                                                             ),
@@ -1944,6 +2144,22 @@ pub(crate) fn spawn_timeline(
                                                                 Val::Px(0.0),
                                                             ),
                                                         ] {
+                                                            let boundary_label =
+                                                                emitter_timing_label(
+                                                                    localizer,
+                                                                    match kind {
+                                                                        TimelineDragKind::TrimStart => {
+                                                                            "timeline-trim-emitter-start"
+                                                                        }
+                                                                        TimelineDragKind::TrimEnd => {
+                                                                            "timeline-trim-emitter-end"
+                                                                        }
+                                                                        TimelineDragKind::Move => {
+                                                                            unreachable!()
+                                                                        }
+                                                                    },
+                                                                    &emitter.name,
+                                                                );
                                                             let boundary = match kind {
                                                                 TimelineDragKind::TrimStart => {
                                                                     emitter.start_time
@@ -1965,6 +2181,12 @@ pub(crate) fn spawn_timeline(
                                                                 },
                                                                 ChoreographyAction::SelectEmitter(
                                                                     emitter.id,
+                                                                ),
+                                                                AccessibleLabel(
+                                                                    boundary_label.clone(),
+                                                                ),
+                                                                EditorTooltip::description(
+                                                                    boundary_label,
                                                                 ),
                                                                 EntityCursor::System(
                                                                     SystemCursorIcon::EwResize,
@@ -2158,7 +2380,16 @@ fn spawn_emitter_track_header(
     let diagnostic = emitter_has_diagnostic(session, index);
     let mut args = FluentArgs::new();
     args.set("name", name);
-    let accessible_label = localizer.text_with("timeline-select-emitter", &args);
+    let soloed = session.solo_emitter == Some(emitter);
+    let state_message = match (enabled, soloed, session.solo_emitter.is_some()) {
+        (false, true, _) => "timeline-emitter-muted-soloed-status",
+        (true, true, _) => "timeline-emitter-soloed-status",
+        (true, false, true) => "timeline-emitter-suppressed-status",
+        (true, false, false) => "timeline-emitter-enabled-status",
+        (false, false, _) => "timeline-emitter-muted-status",
+    };
+    args.set("state", localizer.text(state_message));
+    let accessible_label = localizer.text_with("timeline-select-emitter-status", &args);
     let mut header = parent.spawn((
         Button,
         EditorNativeControl,
@@ -2207,29 +2438,53 @@ fn spawn_emitter_track_header(
                 BackgroundColor(layer_color(index)),
                 Pickable::IGNORE,
             ));
-            let toggle_label = if enabled { "ON" } else { "OFF" };
-            let toggle = mini_button(
+            let muted = !enabled;
+            let mute = mini_button(
                 row,
-                toggle_label,
+                "M",
                 ChoreographyAction::SetEmitterEnabled {
                     emitter,
                     enabled: !enabled,
                 },
             );
-            row.commands()
-                .entity(toggle)
-                .insert(EditorTooltip::description(localizer.text(if enabled {
-                    "timeline-disable-emitter"
-                } else {
-                    "timeline-enable-emitter"
-                })));
+            let mute_label = localizer.text(if muted {
+                "timeline-unmute-emitter"
+            } else {
+                "timeline-mute-emitter"
+            });
+            row.commands().entity(mute).insert((
+                AccessibleLabel(mute_label.clone()),
+                EditorTooltip::description(mute_label),
+            ));
+            if muted {
+                row.commands()
+                    .entity(mute)
+                    .insert((Selected, ButtonVariant::Primary));
+            }
+            let solo = mini_button(row, "S", ChoreographyAction::ToggleEmitterSolo(emitter));
+            let solo_label = localizer.text(if soloed {
+                "timeline-unsolo-emitter"
+            } else {
+                "timeline-solo-emitter"
+            });
+            row.commands().entity(solo).insert((
+                AccessibleLabel(solo_label.clone()),
+                EditorTooltip::description(solo_label),
+            ));
+            if soloed {
+                row.commands()
+                    .entity(solo)
+                    .insert((Selected, ButtonVariant::Primary));
+            }
             row.spawn((
                 Text::new(format!("{:02}  {name}", index + 1)),
                 TextFont {
                     font_size: FontSize::Px(10.0),
                     ..default()
                 },
-                TextColor(if enabled {
+                TextColor(if soloed {
+                    theme::TEXT
+                } else if enabled && session.solo_emitter.is_none() {
                     theme::TEXT_MUTED
                 } else {
                     theme::TEXT_FAINT
@@ -2249,6 +2504,7 @@ fn spawn_emitter_track_header(
                         ..default()
                     },
                     TextColor(theme::ACCENT),
+                    AccessibleLabel(localizer.text("timeline-emitter-diagnostic")),
                     EditorTooltip::description(localizer.text("timeline-emitter-diagnostic")),
                 ));
             }
@@ -2267,26 +2523,24 @@ fn spawn_emitter_track_header(
                     "D",
                     ChoreographyAction::DuplicateEmitter(Some(emitter)),
                 );
-                actions
-                    .commands()
-                    .entity(duplicate)
-                    .insert(EditorTooltip::description(
-                        localizer.text("edit-duplicate-emitter"),
-                    ));
+                describe_timeline_control(
+                    actions,
+                    duplicate,
+                    localizer.text("edit-duplicate-emitter"),
+                );
                 let more = mini_button(
                     actions,
                     "...",
                     ChoreographyAction::ToggleEmitterMenu(emitter),
                 );
-                actions
-                    .commands()
-                    .entity(more)
-                    .insert(EditorTooltip::description(
-                        localizer.text("timeline-more-emitter-actions"),
-                    ));
+                describe_timeline_control(
+                    actions,
+                    more,
+                    localizer.text("timeline-more-emitter-actions"),
+                );
             });
             if state.context_emitter == Some(emitter) {
-                spawn_emitter_context_menu(row, localizer, emitter, enabled);
+                spawn_emitter_context_menu(row, localizer, emitter, enabled, soloed);
             }
         });
 }
@@ -2296,6 +2550,7 @@ fn spawn_emitter_context_menu(
     localizer: &Localizer,
     emitter: EmitterId,
     enabled: bool,
+    soloed: bool,
 ) {
     parent
         .spawn((
@@ -2320,14 +2575,24 @@ fn spawn_emitter_context_menu(
             spawn_feathers_action_button(
                 menu,
                 &localizer.text(if enabled {
-                    "timeline-disable-emitter"
+                    "timeline-mute-emitter"
                 } else {
-                    "timeline-enable-emitter"
+                    "timeline-unmute-emitter"
                 }),
                 ChoreographyAction::SetEmitterEnabled {
                     emitter,
                     enabled: !enabled,
                 },
+                false,
+            );
+            spawn_feathers_action_button(
+                menu,
+                &localizer.text(if soloed {
+                    "timeline-unsolo-emitter"
+                } else {
+                    "timeline-solo-emitter"
+                }),
+                ChoreographyAction::ToggleEmitterSolo(emitter),
                 false,
             );
             spawn_feathers_action_button(
