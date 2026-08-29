@@ -1286,6 +1286,7 @@ mod tests {
     fn timeline_timing_commit_is_one_undoable_command() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let emitter = session.effect.emitters[0].clone();
+        let ui_revision = session.ui_revision;
 
         assert!(session.set_emitter_timing(
             emitter.id,
@@ -1294,6 +1295,7 @@ mod tests {
             "Moved emitter on timeline",
         ));
         assert!(session.can_undo());
+        assert_eq!(session.ui_revision, ui_revision);
         session.undo();
 
         let restored = session
@@ -1766,13 +1768,19 @@ mod tests {
         );
         let effect_clip_bars = {
             let world = app.world_mut();
-            let mut query = world.query::<&TimelineEffectClip>();
+            let mut query = world.query::<(&TimelineEffectClip, &Node)>();
             query
                 .iter(world)
-                .filter(|marker| marker.clip == effect_clip_id)
-                .count()
+                .filter(|(marker, _)| marker.clip == effect_clip_id)
+                .map(|(_, node)| (node.left, node.width))
+                .collect::<Vec<_>>()
         };
-        assert_eq!(effect_clip_bars, 1);
+        assert_eq!(effect_clip_bars.len(), 1);
+        let (Val::Percent(left), Val::Percent(width)) = effect_clip_bars[0] else {
+            panic!("effect clips should spawn with percentage geometry");
+        };
+        assert!((left - 0.2 / duration * 100.0).abs() < 0.000_1);
+        assert!((width - 0.6 / duration * 100.0).abs() < 0.000_1);
         let drop_rows = {
             let world = app.world_mut();
             let mut query = world.query::<&TimelineTrackDropRow>();
@@ -2382,17 +2390,7 @@ fn update_timeline_visuals(
             .map_or((emitter.start_time, emitter.duration), |drag| {
                 (drag.current_start, drag.current_duration)
             });
-        let end = start + duration;
-        let visible_start = start.max(view.start);
-        let visible_end = end.min(view.end);
-        if visible_end <= visible_start {
-            node.display = Display::None;
-            continue;
-        }
-        node.display = Display::Flex;
-        node.left = Val::Percent(view.normalized_time(visible_start) * 100.0);
-        node.width =
-            Val::Percent(((visible_end - visible_start) / view.span() * 100.0).clamp(0.05, 100.0));
+        apply_timeline_bar_geometry(&mut node, start, duration, view);
     }
 
     for (control, mut node) in &mut clip_controls {
@@ -2497,16 +2495,7 @@ fn update_effect_clip_visuals(
             .map_or((clip.start_time, clip.duration), |drag| {
                 (drag.current_start, drag.current_duration)
             });
-        let visible_start = start_time.max(view.start);
-        let visible_end = (start_time + duration).min(view.end);
-        if visible_end <= visible_start {
-            node.display = Display::None;
-            continue;
-        }
-        node.display = Display::Flex;
-        node.left = Val::Percent(view.normalized_time(visible_start) * 100.0);
-        node.width =
-            Val::Percent(((visible_end - visible_start) / view.span() * 100.0).clamp(0.05, 100.0));
+        apply_timeline_bar_geometry(&mut node, start_time, duration, view);
     }
     for (control, mut node) in &mut controls {
         let Some(clip) = session
@@ -2557,16 +2546,7 @@ fn update_effect_clip_visuals(
         }
         let start_time = clip_start + source_start - source_offset;
         let duration = source_end - source_start;
-        let visible_start = start_time.max(view.start);
-        let visible_end = (start_time + duration).min(view.end);
-        if visible_end <= visible_start {
-            node.display = Display::None;
-            continue;
-        }
-        node.display = Display::Flex;
-        node.left = Val::Percent(view.normalized_time(visible_start) * 100.0);
-        node.width =
-            Val::Percent(((visible_end - visible_start) / view.span() * 100.0).clamp(0.05, 100.0));
+        apply_timeline_bar_geometry(&mut node, start_time, duration, view);
     }
 }
 
@@ -4085,28 +4065,33 @@ pub(crate) fn spawn_timeline(
                                                 BorderColor::all(theme::BORDER.with_alpha(0.45)),
                                             ))
                                             .with_children(|track| {
+                                                let mut clip_node = Node {
+                                                    position_type: PositionType::Absolute,
+                                                    left: Val::Percent(0.0),
+                                                    top: Val::Px(4.0),
+                                                    width: Val::Percent(1.0),
+                                                    height: Val::Px(23.0),
+                                                    align_items: AlignItems::Center,
+                                                    padding: UiRect::horizontal(Val::Px(8.0)),
+                                                    border_radius: BorderRadius::all(Val::Px(4.0)),
+                                                    border: UiRect::all(Val::Px(if selected {
+                                                        2.0
+                                                    } else {
+                                                        1.0
+                                                    })),
+                                                    overflow: Overflow::clip(),
+                                                    ..default()
+                                                };
+                                                apply_timeline_bar_geometry(
+                                                    &mut clip_node,
+                                                    clip.start_time,
+                                                    clip.duration,
+                                                    state.view,
+                                                );
                                                 track
                                                     .spawn((
                                                         TimelineEffectClip { clip: clip.id },
-                                                        Node {
-                                                            position_type: PositionType::Absolute,
-                                                            left: Val::Percent(0.0),
-                                                            top: Val::Px(4.0),
-                                                            width: Val::Percent(1.0),
-                                                            height: Val::Px(23.0),
-                                                            align_items: AlignItems::Center,
-                                                            padding: UiRect::horizontal(Val::Px(8.0)),
-                                                            border_radius: BorderRadius::all(
-                                                                Val::Px(4.0),
-                                                            ),
-                                                            border: UiRect::all(Val::Px(if selected {
-                                                                2.0
-                                                            } else {
-                                                                1.0
-                                                            })),
-                                                            overflow: Overflow::clip(),
-                                                            ..default()
-                                                        },
+                                                        clip_node,
                                                         BackgroundColor(color.with_alpha(
                                                             if muted || suppressed {
                                                                 0.10
@@ -4296,7 +4281,37 @@ pub(crate) fn spawn_timeline(
                                                         ..default()
                                                     })
                                                     .with_children(|track| {
-                                                        if timing.is_some() {
+                                                        if let Some((start_time, duration)) = timing {
+                                                            let mut child_node = Node {
+                                                                position_type:
+                                                                    PositionType::Absolute,
+                                                                left: Val::Percent(0.0),
+                                                                top: Val::Px(4.0),
+                                                                width: Val::Percent(1.0),
+                                                                height: Val::Px(19.0),
+                                                                align_items: AlignItems::Center,
+                                                                padding: UiRect::horizontal(
+                                                                    Val::Px(7.0),
+                                                                ),
+                                                                border_radius: BorderRadius::all(
+                                                                    Val::Px(3.0),
+                                                                ),
+                                                                border: UiRect::all(Val::Px(
+                                                                    if child_selected {
+                                                                        2.0
+                                                                    } else {
+                                                                        1.0
+                                                                    },
+                                                                )),
+                                                                overflow: Overflow::clip(),
+                                                                ..default()
+                                                            };
+                                                            apply_timeline_bar_geometry(
+                                                                &mut child_node,
+                                                                start_time,
+                                                                duration,
+                                                                state.view,
+                                                            );
                                                             track
                                                                 .spawn((
                                                                     TimelineReferencedEmitter {
@@ -4306,32 +4321,7 @@ pub(crate) fn spawn_timeline(
                                                                         source_duration:
                                                                             emitter.duration,
                                                                     },
-                                                                    Node {
-                                                                        position_type:
-                                                                            PositionType::Absolute,
-                                                                        left: Val::Percent(0.0),
-                                                                        top: Val::Px(4.0),
-                                                                        width: Val::Percent(1.0),
-                                                                        height: Val::Px(19.0),
-                                                                        align_items:
-                                                                            AlignItems::Center,
-                                                                        padding: UiRect::horizontal(
-                                                                            Val::Px(7.0),
-                                                                        ),
-                                                                        border_radius:
-                                                                            BorderRadius::all(
-                                                                                Val::Px(3.0),
-                                                                            ),
-                                                                        border: UiRect::all(Val::Px(
-                                                                            if child_selected {
-                                                                                2.0
-                                                                            } else {
-                                                                                1.0
-                                                                            },
-                                                                        )),
-                                                                        overflow: Overflow::clip(),
-                                                                        ..default()
-                                                                    },
+                                                                    child_node,
                                                                     BackgroundColor(
                                                                         child_color.with_alpha(
                                                                             if muted || suppressed {
@@ -4437,24 +4427,29 @@ pub(crate) fn spawn_timeline(
                                                     "timeline-move-emitter-clip",
                                                     &emitter.name,
                                                 );
+                                                let mut clip_node = Node {
+                                                    position_type: PositionType::Absolute,
+                                                    left: Val::Percent(0.0),
+                                                    top: Val::Px(5.0),
+                                                    width: Val::Percent(1.0),
+                                                    height: Val::Px(21.0),
+                                                    border_radius: BorderRadius::all(Val::Px(3.0)),
+                                                    border: UiRect::all(Val::Px(1.0)),
+                                                    overflow: Overflow::clip(),
+                                                    ..default()
+                                                };
+                                                apply_timeline_bar_geometry(
+                                                    &mut clip_node,
+                                                    emitter.start_time,
+                                                    emitter.duration,
+                                                    state.view,
+                                                );
                                                 track
                                                     .spawn((
                                                         TimelineClip {
                                                             emitter: emitter.id,
                                                         },
-                                                        Node {
-                                                            position_type: PositionType::Absolute,
-                                                            left: Val::Percent(0.0),
-                                                            top: Val::Px(5.0),
-                                                            width: Val::Percent(1.0),
-                                                            height: Val::Px(21.0),
-                                                            border_radius: BorderRadius::all(
-                                                                Val::Px(3.0),
-                                                            ),
-                                                            border: UiRect::all(Val::Px(1.0)),
-                                                            overflow: Overflow::clip(),
-                                                            ..default()
-                                                        },
+                                                        clip_node,
                                                         BackgroundColor(
                                                             layer_color(emitter.id, emitter.display_color).with_alpha(
                                                                 if audible_in_preview {
@@ -5989,6 +5984,24 @@ fn timeline_cursor_fraction(relative_x: f32) -> f32 {
 
 fn timeline_boundary_is_visible(time: f32, view: TimelineView) -> bool {
     (view.start..=view.end).contains(&time)
+}
+
+fn apply_timeline_bar_geometry(
+    node: &mut Node,
+    start_time: f32,
+    duration: f32,
+    view: TimelineView,
+) {
+    let visible_start = start_time.max(view.start);
+    let visible_end = (start_time + duration).min(view.end);
+    if visible_end <= visible_start {
+        node.display = Display::None;
+        return;
+    }
+    node.display = Display::Flex;
+    node.left = Val::Percent(view.normalized_time(visible_start) * 100.0);
+    node.width =
+        Val::Percent(((visible_end - visible_start) / view.span() * 100.0).clamp(0.05, 100.0));
 }
 
 fn normalized_choreography_order(effect: &EffectAsset) -> Vec<ChoreographyTrackId> {

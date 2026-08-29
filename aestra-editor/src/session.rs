@@ -1551,7 +1551,7 @@ impl EditorSession {
                 start_time,
                 duration,
             },
-            true,
+            false,
         )
     }
 
