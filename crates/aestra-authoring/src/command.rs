@@ -64,6 +64,10 @@ pub enum EffectCommand {
         id: EmitterId,
         enabled: bool,
     },
+    SetEmitterDisplayColor {
+        id: EmitterId,
+        color: Option<[f32; 4]>,
+    },
     SetEmitterTransform {
         id: EmitterId,
         transform: EmitterTransform,

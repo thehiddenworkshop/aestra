@@ -1,6 +1,6 @@
 # Aestra — Pre-M6 Professional UI Implementation Plan
 
-Status: Slice 6 in progress; keyboard navigation and accessibility/state audit complete
+Status: Complete; all six pre-M6 slices and the professional acceptance gate are implemented
 
 This document turns the pre-M6 portion of
 `aestra_ui_choreography_library_ux_plan.md` into a repository-specific delivery plan.
@@ -451,8 +451,10 @@ Progress:
 - complete: semantic labels and tooltips for compact Timeline controls and clip handles,
   detailed invalid/unsupported Library descriptions, explicit unavailable catalog state,
   and Mute/Solo track controls with distinct authored/preview-only semantics;
-- remaining: invalid-drop feedback, compact-layout audit, acceptance scenario, and
-  architecture/implementation documentation.
+- complete: explicit non-mutating project-effect drop rejection on the pre-M6 Timeline;
+- complete: compact Library/Timeline shrink, truncation, and overflow contracts;
+- complete: automated blank/current-document compact-width UI composition coverage;
+- complete: architecture and implementation ownership documentation.
 
 Work:
 
@@ -544,8 +546,17 @@ Pre-M6 UI foundation is complete when:
 - many emitter rows can be navigated with synchronized vertical scrolling;
 - the first-run/reset layout gives choreography approximately 35–40% vertical space;
 - existing user layouts are preserved;
+- unsupported project-effect drops explain the M6 boundary without mutating the document;
+- compact Library and Timeline compositions remain bounded and usable at narrow widths;
 - all existing authoring, persistence, preview, and localization behavior remains green;
 - no effect-format, compiler, runtime, or migration change was required.
 
 After this gate, M6 can begin with the project asset index/resolver and minimal referenced
 `EffectClip` vertical slice defined in the UX direction document.
+
+Post-gate polish adds Ardour-style inline emitter naming to Timeline track headers and an
+optional persisted emitter display color edited from an anchored native Feathers picker with
+RGB/HSL channels, alpha, editable RGBA hex, and live track preview. These are undoable semantic
+authoring fields; the latter is a backward-compatible
+version-3 presentation hint and does not affect the compiler, simulation, renderer, or legacy
+migration contract.

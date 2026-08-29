@@ -1,9 +1,12 @@
+use crate::feathers::color_picker::{ColorPickerLabels, spawn_color_picker};
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
+use crate::library::ProjectEffectRow;
 use crate::{
     ComboOption, CurvesState, DockPanel, EditorNativeControl, EditorTooltip, FeathersActionButton,
     KeyboardNavigableList, KeyboardNavigableListRow, Localizer, MenuState, ModulePaletteState,
     PendingFeathersActivation, TransportAction, WorkspaceLayout, mini_button, reveal_dock_panel,
-    session::EditorSession, spawn_combo_control, spawn_feathers_action_button, theme,
+    session::EditorSession, spawn_combo_control, spawn_feathers_action_button, spawn_text_input,
+    theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction};
 use aestra_bevy::EmitterId;
@@ -17,13 +20,16 @@ use bevy::{
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     input_focus::{InputFocus, tab_navigation::TabIndex},
     picking::{
-        events::{Click, Drag, DragEnd, DragStart, Pointer, Press},
+        events::{Click, Drag, DragDrop, DragEnd, DragEnter, DragLeave, DragStart, Pointer, Press},
         pointer::PointerButton,
     },
     prelude::*,
     text::EditableText,
     ui::{RelativeCursorPosition, Selected},
-    ui_widgets::{Activate, ListBox, ListItem, ScrollArea, ValueChange},
+    ui_widgets::{
+        Activate, ListBox, ListItem, ScrollArea, ValueChange,
+        popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
+    },
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
 use fluent_bundle::FluentArgs;
@@ -48,10 +54,17 @@ impl Plugin for TimelinePlugin {
             .add_observer(execute_timeline_action)
             .add_observer(queue_choreography_action_activation)
             .add_observer(activate_timeline_track_entry)
+            .add_observer(handle_timeline_track_name_change)
+            .add_observer(handle_timeline_track_color_change)
+            .add_observer(reject_project_effect_drop)
             .add_observer(execute_choreography_action)
             .add_systems(
                 Update,
-                (choreography_keyboard_input, navigate_timeline)
+                (
+                    choreography_keyboard_input,
+                    navigate_timeline,
+                    dismiss_timeline_color_picker,
+                )
                     .chain()
                     .in_set(TimelineSet::Input),
             )
@@ -73,6 +86,7 @@ impl Plugin for TimelinePlugin {
                     sync_timeline_vertical_scroll,
                     sync_timeline_horizontal_scroll,
                     update_track_header_hover_actions,
+                    tick_invalid_timeline_drop_feedback,
                 )
                     .chain()
                     .in_set(TimelineSet::Visuals),
@@ -96,6 +110,7 @@ pub(crate) enum ChoreographyAction {
     SetEmitterEnabled { emitter: EmitterId, enabled: bool },
     ToggleEmitterSolo(EmitterId),
     ToggleEmitterMenu(EmitterId),
+    ToggleEmitterColorPicker(EmitterId),
 }
 
 fn queue_timeline_action_activation(
@@ -132,6 +147,63 @@ fn activate_timeline_track_entry(
         && let Ok(action) = actions.get(change.value)
     {
         commands.trigger(*action);
+    }
+}
+
+fn handle_timeline_track_name_change(
+    change: On<ValueChange<String>>,
+    controls: Query<&TimelineTrackNameControl>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let name = change.value.trim();
+    if name.is_empty() {
+        session.status = localizer.text("timeline-emitter-name-required");
+        session.ui_revision += 1;
+        return;
+    }
+    if session.set_emitter_name(control.emitter, name) {
+        let mut args = FluentArgs::new();
+        args.set("name", name);
+        session.status = localizer.text_with("timeline-emitter-renamed", &args);
+    }
+}
+
+fn handle_timeline_track_color_change(
+    change: On<ValueChange<Option<[f32; 4]>>>,
+    controls: Query<&EmitterTrackColorPicker>,
+    mut swatches: Query<(&EmitterTrackColorSwatch, &mut BackgroundColor)>,
+    mut clips: Query<(&TimelineClip, &mut BackgroundColor), Without<EmitterTrackColorSwatch>>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if let Some([red, green, blue, alpha]) = change.value {
+        let preview = Color::srgba(red, green, blue, alpha);
+        for (swatch, mut color) in &mut swatches {
+            if swatch.emitter == control.emitter {
+                color.0 = preview;
+            }
+        }
+        for (clip, mut color) in &mut clips {
+            if clip.emitter == control.emitter {
+                color.0 = preview;
+            }
+        }
+    }
+    if !change.is_final {
+        return;
+    }
+    if session.set_emitter_display_color(control.emitter, change.value) {
+        session.status = localizer.text("timeline-emitter-color-updated");
     }
 }
 
@@ -234,6 +306,7 @@ fn execute_choreography_action(
             session.select_emitter(emitter);
             curves.clear();
         }
+        state.color_picker_emitter = None;
         state.context_emitter = (state.context_emitter != Some(emitter)).then_some(emitter);
         if session.ui_revision == revision {
             session.ui_revision += 1;
@@ -241,8 +314,29 @@ fn execute_choreography_action(
         return;
     }
 
+    if let ChoreographyAction::ToggleEmitterColorPicker(emitter) = *action {
+        let revision = session.ui_revision;
+        if session
+            .effect
+            .emitters
+            .iter()
+            .any(|item| item.id == emitter)
+        {
+            session.select_emitter(emitter);
+            curves.clear();
+        }
+        state.context_emitter = None;
+        state.color_picker_emitter =
+            (state.color_picker_emitter != Some(emitter)).then_some(emitter);
+        if session.ui_revision == revision {
+            session.ui_revision += 1;
+        }
+        return;
+    }
+
     let revision = session.ui_revision;
-    let closed_context_menu = state.context_emitter.take().is_some();
+    let closed_context_menu =
+        state.context_emitter.take().is_some() | state.color_picker_emitter.take().is_some();
     match *action {
         ChoreographyAction::SelectEmitter(emitter) => {
             if session
@@ -284,7 +378,8 @@ fn execute_choreography_action(
                 curves.clear();
             }
         }
-        ChoreographyAction::ToggleEmitterMenu(_) => unreachable!(),
+        ChoreographyAction::ToggleEmitterMenu(_)
+        | ChoreographyAction::ToggleEmitterColorPicker(_) => unreachable!(),
     }
     if closed_context_menu && session.ui_revision == revision {
         session.ui_revision += 1;
@@ -384,6 +479,20 @@ fn audit_timeline_controls(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn color_picker_prefers_upward_alignment_near_the_window_bottom() {
+        let positions = color_picker_popover_positions();
+
+        assert_eq!(positions[0].side, PopoverSide::Right);
+        assert_eq!(positions[0].align, PopoverAlign::End);
+        assert!(positions.iter().any(|position| {
+            position.side == PopoverSide::Top && position.align == PopoverAlign::Start
+        }));
+        assert!(positions.iter().any(|position| {
+            position.side == PopoverSide::Bottom && position.align == PopoverAlign::Start
+        }));
+    }
     use crate::{EFFECT_PATH, EFFECT_SOURCE, LibraryState};
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
@@ -549,6 +658,44 @@ mod tests {
     }
 
     #[test]
+    fn rejected_project_effect_drop_is_feedback_only() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let original = session.effect.clone();
+        let original_revision = session.ui_revision;
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(reject_project_effect_drop);
+        let feedback = app
+            .world_mut()
+            .spawn((TimelineInvalidDropFeedback::default(), Node::default()))
+            .id();
+
+        app.world_mut().trigger(RejectProjectEffectDrop);
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect, original);
+        assert_eq!(session.ui_revision, original_revision);
+        assert!(!session.dirty);
+        assert!(!session.can_undo());
+        assert_eq!(
+            session.status,
+            "This effect cannot be placed on the timeline yet"
+        );
+        let feedback_state = app
+            .world()
+            .get::<TimelineInvalidDropFeedback>(feedback)
+            .unwrap();
+        assert!(feedback_state.rejected);
+        assert!(!feedback_state.timer.is_paused());
+        assert_eq!(
+            app.world().get::<Node>(feedback).unwrap().display,
+            Display::Flex
+        );
+    }
+
+    #[test]
     fn timeline_actions_own_duration_snap_and_framing() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let initial_duration = session.effect.duration;
@@ -583,6 +730,170 @@ mod tests {
         let state = app.world().resource::<TimelineState>();
         assert_eq!(state.view.start, 0.0);
         assert_eq!(state.view.end, initial_duration + 0.25);
+    }
+
+    #[test]
+    fn authored_names_and_display_color_are_projected_into_the_timeline() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        assert!(session.set_effect_name("Renamed Effect"));
+        assert!(session.set_selected_emitter_name("Renamed Emitter"));
+        let emitter = session.selected_layer().id;
+        let authored_color = [0.28, 0.78, 0.45, 1.0];
+        assert!(session.set_emitter_display_color(emitter, Some(authored_color)));
+        let duration = session.playback_duration();
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .init_asset::<Image>()
+        .insert_resource(session)
+        .insert_resource(TimelineState::framed(duration))
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_systems(Startup, spawn_test_timeline);
+
+        app.update();
+
+        let heading = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&Text, With<TimelineEffectHeading>>();
+            query.single(world).unwrap().0.clone()
+        };
+        assert!(heading.contains("Renamed Effect"));
+        assert!(heading.ends_with(" · EMITTERS"));
+        let renamed_track = {
+            let world = app.world_mut();
+            let mut controls = world.query::<(&TimelineTrackNameControl, &Children)>();
+            let mut names = world.query::<&EditableText>();
+            controls
+                .iter(world)
+                .find(|(control, _)| control.emitter == emitter)
+                .and_then(|(_, children)| {
+                    children
+                        .iter()
+                        .find_map(|child| names.get(world, child).ok())
+                })
+                .map(|name| name.value().to_string())
+        };
+        assert_eq!(renamed_track.as_deref(), Some("Renamed Emitter"));
+        let chip_color = {
+            let world = app.world_mut();
+            let mut query =
+                world.query_filtered::<&BackgroundColor, With<EmitterTrackColorSwatch>>();
+            query
+                .iter(world)
+                .find(|color| color.0 == Color::srgba(0.28, 0.78, 0.45, 1.0))
+                .map(|color| color.0)
+                .unwrap()
+        };
+        assert_eq!(chip_color, Color::srgba(0.28, 0.78, 0.45, 1.0));
+    }
+
+    #[test]
+    fn inline_track_name_edit_is_undoable_and_rejects_empty_names() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.selected_layer().id;
+        let original = session.selected_layer().name.clone();
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(handle_timeline_track_name_change);
+        let control = app
+            .world_mut()
+            .spawn(TimelineTrackNameControl { emitter })
+            .id();
+
+        app.world_mut().trigger(ValueChange {
+            source: control,
+            value: "Timeline Rename".to_owned(),
+            is_final: true,
+        });
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .selected_layer()
+                .name,
+            "Timeline Rename"
+        );
+
+        app.world_mut().trigger(ValueChange {
+            source: control,
+            value: "   ".to_owned(),
+            is_final: true,
+        });
+        app.update();
+        let mut session = app.world_mut().resource_mut::<EditorSession>();
+        assert_eq!(session.selected_layer().name, "Timeline Rename");
+        assert_eq!(session.status, "An emitter track name is required");
+        session.undo();
+        assert_eq!(session.selected_layer().name, original);
+    }
+
+    #[test]
+    fn timeline_color_picker_targets_the_track_and_commits_one_semantic_edit() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.effect.emitters[2].id;
+        let mut app = choreography_app(session);
+        app.add_observer(handle_timeline_track_color_change);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::ToggleEmitterColorPicker(emitter));
+        app.update();
+        assert_eq!(
+            app.world().resource::<TimelineState>().color_picker_emitter,
+            Some(emitter)
+        );
+        assert_eq!(
+            app.world().resource::<EditorSession>().selected_layer().id,
+            emitter
+        );
+
+        let picker = app
+            .world_mut()
+            .spawn(EmitterTrackColorPicker { emitter })
+            .id();
+        let swatch = app
+            .world_mut()
+            .spawn((
+                EmitterTrackColorSwatch { emitter },
+                BackgroundColor(Color::BLACK),
+            ))
+            .id();
+        let color = [0.13, 0.62, 0.91, 1.0];
+        app.world_mut().trigger(ValueChange {
+            source: picker,
+            value: Some(color),
+            is_final: false,
+        });
+        app.update();
+        assert_eq!(
+            app.world().get::<BackgroundColor>(swatch).unwrap().0,
+            Color::srgba(color[0], color[1], color[2], color[3])
+        );
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .selected_layer()
+                .display_color,
+            None
+        );
+        assert!(!app.world().resource::<EditorSession>().can_undo());
+
+        app.world_mut().trigger(ValueChange {
+            source: picker,
+            value: Some(color),
+            is_final: true,
+        });
+        app.update();
+
+        let mut session = app.world_mut().resource_mut::<EditorSession>();
+        assert_eq!(session.selected_layer().display_color, Some(color));
+        assert!(session.can_undo());
+        session.undo();
+        assert_eq!(session.selected_layer().display_color, None);
     }
 
     #[test]
@@ -827,14 +1138,24 @@ mod tests {
         let constrained_ancestors = {
             let world = app.world_mut();
             let mut bodies = world.query_filtered::<&Node, With<TimelineBody>>();
-            let body = bodies.single(world).unwrap().min_height;
+            let body = bodies.single(world).unwrap();
+            let body_constraints = (body.min_width, body.min_height, body.overflow);
             let mut headers = world.query_filtered::<&Node, With<TimelineHeaderColumn>>();
-            let header = headers.single(world).unwrap().min_height;
+            let header = headers.single(world).unwrap();
+            let header_constraints = (header.min_width, header.min_height);
             let mut canvases = world.query_filtered::<&Node, With<TimelineCanvas>>();
-            let canvas = canvases.single(world).unwrap().min_height;
-            [body, header, canvas]
+            let canvas = canvases.single(world).unwrap();
+            let canvas_constraints = (canvas.min_width, canvas.min_height);
+            (body_constraints, header_constraints, canvas_constraints)
         };
-        assert_eq!(constrained_ancestors, [Val::Px(0.0); 3]);
+        assert_eq!(
+            constrained_ancestors,
+            (
+                (Val::Px(0.0), Val::Px(0.0), Overflow::clip()),
+                (Val::Px(0.0), Val::Px(0.0)),
+                (Val::Px(0.0), Val::Px(0.0)),
+            )
+        );
 
         let (
             gutter_height,
@@ -1528,10 +1849,33 @@ fn snap_moved_timing(
 struct TimelineCanvas;
 
 #[derive(Component)]
+struct TimelineInvalidDropFeedback {
+    timer: Timer,
+    rejected: bool,
+}
+
+impl Default for TimelineInvalidDropFeedback {
+    fn default() -> Self {
+        let mut timer = Timer::from_seconds(1.6, TimerMode::Once);
+        timer.pause();
+        Self {
+            timer,
+            rejected: false,
+        }
+    }
+}
+
+#[derive(Event)]
+struct RejectProjectEffectDrop;
+
+#[derive(Component)]
 struct TimelineBody;
 
 #[derive(Component)]
 struct TimelineHeaderColumn;
+
+#[derive(Component)]
+struct TimelineEffectHeading;
 
 #[derive(Component)]
 struct TimelineHorizontalGutter;
@@ -1553,11 +1897,32 @@ struct EmitterTrackHeader {
     emitter: EmitterId,
 }
 
+#[derive(Component, Clone, Copy)]
+struct TimelineTrackNameControl {
+    emitter: EmitterId,
+}
+
 #[derive(Component)]
 struct EmitterTrackDiagnostic;
 
 #[derive(Component)]
 struct EmitterTrackDisabled;
+
+#[derive(Component)]
+struct EmitterTrackColorChip;
+
+#[derive(Component)]
+struct EmitterTrackColorSwatch {
+    emitter: EmitterId,
+}
+
+#[derive(Component)]
+struct EmitterTrackColorPicker {
+    emitter: EmitterId,
+}
+
+#[derive(Component)]
+struct EmitterTrackColorPickerPopover;
 
 #[derive(Component)]
 struct EmitterTrackHoverActions;
@@ -1662,6 +2027,7 @@ pub(crate) struct TimelineState {
     snap_guide: Option<f32>,
     panning: bool,
     context_emitter: Option<EmitterId>,
+    color_picker_emitter: Option<EmitterId>,
     vertical_scroll: f32,
     known_duration: f32,
 }
@@ -1673,7 +2039,7 @@ impl Default for TimelineState {
 }
 
 impl TimelineState {
-    fn framed(duration: f32) -> Self {
+    pub(crate) fn framed(duration: f32) -> Self {
         let duration = duration.max(0.05);
         Self {
             view: TimelineView {
@@ -1685,6 +2051,7 @@ impl TimelineState {
             snap_guide: None,
             panning: false,
             context_emitter: None,
+            color_picker_emitter: None,
             vertical_scroll: 0.0,
             known_duration: duration,
         }
@@ -1765,6 +2132,12 @@ fn emitter_timing_label(localizer: &Localizer, message_id: &str, name: &str) -> 
     localizer.text_with(message_id, &args)
 }
 
+fn timeline_effect_heading(localizer: &Localizer, name: &str) -> String {
+    let mut args = FluentArgs::new();
+    args.set("name", name);
+    localizer.text_with("timeline-effect-emitters", &args)
+}
+
 pub(crate) fn spawn_timeline(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -1785,11 +2158,13 @@ pub(crate) fn spawn_timeline(
                 .spawn((
                     Node {
                         width: Val::Percent(100.0),
+                        min_width: Val::Px(0.0),
                         height: Val::Px(38.0),
                         flex_shrink: 0.0,
                         align_items: AlignItems::Center,
                         padding: UiRect::horizontal(Val::Px(14.0)),
                         column_gap: Val::Px(14.0),
+                        overflow: Overflow::clip(),
                         ..default()
                     },
                     BackgroundColor(theme::PANEL_LIGHT),
@@ -1901,8 +2276,10 @@ pub(crate) fn spawn_timeline(
                     Node {
                         flex_grow: 1.0,
                         width: Val::Percent(100.0),
+                        min_width: Val::Px(0.0),
                         min_height: Val::Px(0.0),
                         flex_direction: FlexDirection::Row,
+                        overflow: Overflow::clip(),
                         ..default()
                     },
                 ))
@@ -1911,6 +2288,7 @@ pub(crate) fn spawn_timeline(
                         TimelineHeaderColumn,
                         Node {
                             width: Val::Px(224.0),
+                            min_width: Val::Px(0.0),
                             height: Val::Percent(100.0),
                             min_height: Val::Px(0.0),
                             flex_direction: FlexDirection::Column,
@@ -1933,12 +2311,20 @@ pub(crate) fn spawn_timeline(
                             })
                             .with_children(|toolbar| {
                                 toolbar.spawn((
-                                    Text::new(localizer.text("timeline-emitters")),
+                                    Text::new(timeline_effect_heading(localizer, &session.effect.name)),
+                                    TimelineEffectHeading,
                                     TextFont {
                                         font_size: FontSize::Px(9.0),
                                         ..default()
                                     },
                                     TextColor(theme::TEXT_FAINT),
+                                    TextLayout::no_wrap(),
+                                    Node {
+                                        min_width: Val::Px(0.0),
+                                        flex_shrink: 1.0,
+                                        overflow: Overflow::clip(),
+                                        ..default()
+                                    },
                                     Pickable::IGNORE,
                                 ));
                                 toolbar.spawn(Node {
@@ -1983,6 +2369,7 @@ pub(crate) fn spawn_timeline(
                                         emitter.id,
                                         &emitter.name,
                                         emitter.enabled,
+                                        emitter.display_color,
                                     );
                                 }
                             });
@@ -2015,6 +2402,7 @@ pub(crate) fn spawn_timeline(
                         RelativeCursorPosition::default(),
                         Node {
                             flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
                             height: Val::Percent(100.0),
                             min_height: Val::Px(0.0),
                             position_type: PositionType::Relative,
@@ -2027,6 +2415,9 @@ pub(crate) fn spawn_timeline(
                     ))
                     .observe(seek_timeline_on_press)
                     .observe(seek_timeline_on_drag)
+                    .observe(show_invalid_timeline_drop_feedback)
+                    .observe(hide_invalid_timeline_drop_feedback)
+                    .observe(drop_project_effect_on_timeline)
                     .with_children(|tracks| {
                         spawn_ruler(tracks);
                         vertical_scroll_target =
@@ -2086,7 +2477,7 @@ pub(crate) fn spawn_timeline(
                                                             ..default()
                                                         },
                                                         BackgroundColor(
-                                                            layer_color(index).with_alpha(
+                                                            layer_color(index, emitter.display_color).with_alpha(
                                                                 if audible_in_preview {
                                                                     0.28
                                                                 } else {
@@ -2095,7 +2486,7 @@ pub(crate) fn spawn_timeline(
                                                             ),
                                                         ),
                                                         BorderColor::all(
-                                                            layer_color(index).with_alpha(
+                                                            layer_color(index, emitter.display_color).with_alpha(
                                                                 if audible_in_preview { 1.0 } else { 0.45 },
                                                             ),
                                                         ),
@@ -2225,7 +2616,7 @@ pub(crate) fn spawn_timeline(
                                                                     height: Val::Px(13.0),
                                                                     ..default()
                                                                 },
-                                                                BackgroundColor(layer_color(index)),
+                                                                BackgroundColor(layer_color(index, emitter.display_color)),
                                                                 Pickable::IGNORE,
                                                             ));
                                                         }
@@ -2264,6 +2655,59 @@ pub(crate) fn spawn_timeline(
                             Pickable::IGNORE,
                             ZIndex(2),
                         ));
+                        tracks
+                            .spawn((
+                                TimelineInvalidDropFeedback::default(),
+                                AccessibleLabel(
+                                    localizer.text("timeline-drop-effect-unsupported-title"),
+                                ),
+                                Node {
+                                    display: Display::None,
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(10.0),
+                                    right: Val::Px(10.0),
+                                    top: Val::Px(10.0),
+                                    bottom: Val::Px(10.0),
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::Center,
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(5.0),
+                                    padding: UiRect::all(Val::Px(16.0)),
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    border_radius: BorderRadius::all(Val::Px(4.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(theme::PANEL_DARK.with_alpha(0.94)),
+                                BorderColor::all(theme::ACCENT),
+                                Pickable::IGNORE,
+                                ZIndex(4),
+                            ))
+                            .with_children(|feedback| {
+                                feedback.spawn((
+                                    Text::new(
+                                        localizer.text("timeline-drop-effect-unsupported-title"),
+                                    ),
+                                    TextFont {
+                                        font_size: FontSize::Px(12.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::ACCENT),
+                                    TextLayout::justify(Justify::Center),
+                                    Pickable::IGNORE,
+                                ));
+                                feedback.spawn((
+                                    Text::new(localizer.text(
+                                        "timeline-drop-effect-unsupported-message",
+                                    )),
+                                    TextFont {
+                                        font_size: FontSize::Px(10.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::TEXT_MUTED),
+                                    TextLayout::justify(Justify::Center),
+                                    Pickable::IGNORE,
+                                ));
+                            });
                         tracks
                             .spawn((
                                 TimelineHorizontalScrollbarGutter,
@@ -2375,6 +2819,7 @@ fn spawn_emitter_track_header(
     emitter: EmitterId,
     name: &str,
     enabled: bool,
+    display_color: Option<[f32; 4]>,
 ) {
     let selected = session.selected_layer().id == emitter;
     let diagnostic = emitter_has_diagnostic(session, index);
@@ -2400,6 +2845,7 @@ fn spawn_emitter_track_header(
         AccessibleLabel(accessible_label),
         Node {
             width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
             height: Val::Px(31.0),
             flex_shrink: 0.0,
             padding: UiRect::horizontal(Val::Px(7.0)),
@@ -2428,16 +2874,57 @@ fn spawn_emitter_track_header(
     header
         .observe(open_timeline_track_context_menu)
         .with_children(|row| {
-            row.spawn((
-                Node {
-                    width: Val::Px(4.0),
-                    height: Val::Px(19.0),
-                    border_radius: BorderRadius::all(Val::Px(2.0)),
-                    ..default()
-                },
-                BackgroundColor(layer_color(index)),
-                Pickable::IGNORE,
-            ));
+            let track_color = layer_color(index, display_color);
+            let color_label =
+                emitter_timing_label(localizer, "timeline-change-emitter-color", name);
+            let mut color_button = row.spawn_empty();
+            color_button
+                .apply_scene(ui_shell::feathers_plain_button())
+                .insert((
+                    EmitterTrackColorChip,
+                    RelativeCursorPosition::default(),
+                    FeathersActionButton,
+                    ChoreographyAction::ToggleEmitterColorPicker(emitter),
+                    AccessibleLabel(color_label.clone()),
+                    EditorTooltip::description(color_label),
+                    Node {
+                        width: Val::Px(18.0),
+                        height: Val::Px(21.0),
+                        flex_shrink: 0.0,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        padding: UiRect::all(Val::Px(3.0)),
+                        border_radius: BorderRadius::all(Val::Px(3.0)),
+                        ..default()
+                    },
+                ));
+            if state.color_picker_emitter == Some(emitter) {
+                color_button.insert((Selected, ButtonVariant::Primary));
+            }
+            color_button.with_children(|chip| {
+                chip.spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        border: UiRect::all(Val::Px(1.0)),
+                        border_radius: BorderRadius::all(Val::Px(2.0)),
+                        ..default()
+                    },
+                    BackgroundColor(track_color),
+                    BorderColor::all(theme::BORDER_BRIGHT),
+                    EmitterTrackColorSwatch { emitter },
+                    Pickable::IGNORE,
+                ));
+                if state.color_picker_emitter == Some(emitter) {
+                    spawn_emitter_color_picker(
+                        chip,
+                        localizer,
+                        emitter,
+                        display_color,
+                        color_components(layer_color(index, None)),
+                    );
+                }
+            });
             let muted = !enabled;
             let mute = mini_button(
                 row,
@@ -2477,24 +2964,34 @@ fn spawn_emitter_track_header(
                     .insert((Selected, ButtonVariant::Primary));
             }
             row.spawn((
-                Text::new(format!("{:02}  {name}", index + 1)),
+                Text::new(format!("{:02}", index + 1)),
                 TextFont {
-                    font_size: FontSize::Px(10.0),
+                    font_size: FontSize::Px(9.0),
                     ..default()
                 },
-                TextColor(if soloed {
-                    theme::TEXT
-                } else if enabled && session.solo_emitter.is_none() {
-                    theme::TEXT_MUTED
-                } else {
-                    theme::TEXT_FAINT
-                }),
+                TextColor(theme::TEXT_FAINT),
                 Node {
-                    min_width: Val::Px(0.0),
-                    flex_grow: 1.0,
+                    flex_shrink: 0.0,
                     ..default()
                 },
                 Pickable::IGNORE,
+            ));
+            let rename_label = emitter_timing_label(localizer, "timeline-rename-emitter", name);
+            let name_control = spawn_text_input(
+                row,
+                name,
+                &rename_label,
+                TimelineTrackNameControl { emitter },
+            );
+            row.commands().entity(name_control).insert((
+                Node {
+                    min_width: Val::Px(0.0),
+                    height: Val::Px(23.0),
+                    flex_grow: 1.0,
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                EditorTooltip::description(rename_label),
             ));
             if diagnostic {
                 row.spawn((
@@ -2610,6 +3107,95 @@ fn spawn_emitter_context_menu(
         });
 }
 
+fn spawn_emitter_color_picker(
+    parent: &mut ChildSpawnerCommands,
+    localizer: &Localizer,
+    emitter: EmitterId,
+    display_color: Option<[f32; 4]>,
+    automatic_color: [f32; 4],
+) {
+    parent
+        .spawn((
+            Popover {
+                positions: color_picker_popover_positions(),
+                window_margin: 9.0,
+            },
+            EmitterTrackColorPickerPopover,
+            RelativeCursorPosition::default(),
+            OverrideClip,
+            GlobalZIndex(260),
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Px(258.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(7.0),
+                padding: UiRect::all(Val::Px(9.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(5.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER_BRIGHT),
+            BoxShadow::new(
+                Color::srgba(0.0, 0.0, 0.0, 0.62),
+                Val::Px(0.0),
+                Val::Px(2.0),
+                Val::Px(3.0),
+                Val::Px(5.0),
+            ),
+        ))
+        .with_children(|popup| {
+            popup.spawn((
+                Text::new(localizer.text("timeline-color-picker-title")),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+            spawn_color_picker(
+                popup,
+                display_color,
+                automatic_color,
+                ColorPickerLabels {
+                    accessible: localizer.text("timeline-color-picker-accessible"),
+                    hue_saturation: localizer.text("timeline-color-picker-hue-saturation"),
+                    lightness: localizer.text("timeline-color-picker-lightness"),
+                    alpha: localizer.text("timeline-color-picker-alpha"),
+                    automatic: localizer.text("timeline-color-picker-auto"),
+                    rgb: localizer.text("timeline-color-picker-rgb"),
+                    hsl: localizer.text("timeline-color-picker-hsl"),
+                    red: localizer.text("timeline-color-picker-red"),
+                    green: localizer.text("timeline-color-picker-green"),
+                    blue: localizer.text("timeline-color-picker-blue"),
+                    hue: localizer.text("timeline-color-picker-hue"),
+                    saturation: localizer.text("timeline-color-picker-saturation"),
+                    hex: localizer.text("timeline-color-picker-hex"),
+                },
+                EmitterTrackColorPicker { emitter },
+            );
+        });
+}
+
+fn color_picker_popover_positions() -> Vec<PopoverPlacement> {
+    [
+        (PopoverSide::Right, PopoverAlign::End),
+        (PopoverSide::Left, PopoverAlign::End),
+        (PopoverSide::Top, PopoverAlign::Start),
+        (PopoverSide::Right, PopoverAlign::Start),
+        (PopoverSide::Left, PopoverAlign::Start),
+        (PopoverSide::Bottom, PopoverAlign::Start),
+    ]
+    .into_iter()
+    .map(|(side, align)| PopoverPlacement {
+        side,
+        align,
+        gap: 7.0,
+    })
+    .collect()
+}
+
 fn emitter_has_diagnostic(session: &EditorSession, index: usize) -> bool {
     let prefix = format!("effect.emitters[{index}]");
     session
@@ -2619,13 +3205,21 @@ fn emitter_has_diagnostic(session: &EditorSession, index: usize) -> bool {
         .any(|diagnostic| diagnostic.path.starts_with(&prefix))
 }
 
-fn layer_color(index: usize) -> Color {
+fn layer_color(index: usize, display_color: Option<[f32; 4]>) -> Color {
+    if let Some([red, green, blue, alpha]) = display_color {
+        return Color::srgba(red, green, blue, alpha);
+    }
     match index % 4 {
         0 => Color::srgb(0.48, 0.31, 0.98),
         1 => Color::srgb(0.17, 0.75, 0.95),
         2 => Color::srgb(0.98, 0.47, 0.21),
         _ => Color::srgb(0.84, 0.29, 0.72),
     }
+}
+
+fn color_components(color: Color) -> [f32; 4] {
+    let color = color.to_srgba();
+    [color.red, color.green, color.blue, color.alpha]
 }
 
 fn spawn_ruler(parent: &mut ChildSpawnerCommands) {
@@ -2681,7 +3275,7 @@ fn navigate_timeline(
             override_cursor.0 = None;
             **cursor = CursorIcon::System(SystemCursorIcon::Default);
         }
-        if state.context_emitter.take().is_some() {
+        if state.context_emitter.take().is_some() | state.color_picker_emitter.take().is_some() {
             session.ui_revision += 1;
         }
     }
@@ -2759,6 +3353,28 @@ fn navigate_timeline(
     }
 }
 
+fn dismiss_timeline_color_picker(
+    buttons: Res<ButtonInput<MouseButton>>,
+    surfaces: Query<
+        &RelativeCursorPosition,
+        Or<(
+            With<EmitterTrackColorChip>,
+            With<EmitterTrackColorPickerPopover>,
+        )>,
+    >,
+    mut state: ResMut<TimelineState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if state.color_picker_emitter.is_none() || !buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+    if surfaces.iter().any(RelativeCursorPosition::cursor_over) {
+        return;
+    }
+    state.color_picker_emitter = None;
+    session.ui_revision += 1;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum TimelineWheelIntent {
     ScrollTracks(f32),
@@ -2786,6 +3402,102 @@ fn timeline_wheel_intent(
     }
 }
 
+fn is_project_effect_drag(
+    mut entity: Entity,
+    rows: &Query<(), With<ProjectEffectRow>>,
+    parents: &Query<&ChildOf>,
+) -> bool {
+    loop {
+        if rows.contains(entity) {
+            return true;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return false;
+        };
+        entity = parent.parent();
+    }
+}
+
+fn show_invalid_timeline_drop_feedback(
+    mut enter: On<Pointer<DragEnter>>,
+    rows: Query<(), With<ProjectEffectRow>>,
+    parents: Query<&ChildOf>,
+    mut feedback: Query<(&mut TimelineInvalidDropFeedback, &mut Node)>,
+) {
+    if !is_project_effect_drag(enter.dragged, &rows, &parents) {
+        return;
+    }
+    for (mut feedback, mut node) in &mut feedback {
+        feedback.rejected = false;
+        feedback.timer.reset();
+        feedback.timer.pause();
+        node.display = Display::Flex;
+    }
+    enter.propagate(false);
+}
+
+fn hide_invalid_timeline_drop_feedback(
+    mut leave: On<Pointer<DragLeave>>,
+    rows: Query<(), With<ProjectEffectRow>>,
+    parents: Query<&ChildOf>,
+    mut feedback: Query<(&TimelineInvalidDropFeedback, &mut Node)>,
+) {
+    if !is_project_effect_drag(leave.dragged, &rows, &parents) {
+        return;
+    }
+    for (feedback, mut node) in &mut feedback {
+        if !feedback.rejected {
+            node.display = Display::None;
+        }
+    }
+    leave.propagate(false);
+}
+
+fn drop_project_effect_on_timeline(
+    mut drop: On<Pointer<DragDrop>>,
+    rows: Query<(), With<ProjectEffectRow>>,
+    parents: Query<&ChildOf>,
+    mut commands: Commands,
+) {
+    if !is_project_effect_drag(drop.dropped, &rows, &parents) {
+        return;
+    }
+    commands.trigger(RejectProjectEffectDrop);
+    drop.propagate(false);
+}
+
+fn reject_project_effect_drop(
+    _drop: On<RejectProjectEffectDrop>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+    mut feedback: Query<(&mut TimelineInvalidDropFeedback, &mut Node)>,
+) {
+    session.status = localizer.text("timeline-drop-effect-unsupported-status");
+    for (mut feedback, mut node) in &mut feedback {
+        feedback.rejected = true;
+        feedback.timer.reset();
+        feedback.timer.unpause();
+        node.display = Display::Flex;
+    }
+}
+
+fn tick_invalid_timeline_drop_feedback(
+    time: Res<Time>,
+    mut feedback: Query<(&mut TimelineInvalidDropFeedback, &mut Node)>,
+) {
+    for (mut feedback, mut node) in &mut feedback {
+        if feedback.timer.is_paused() {
+            continue;
+        }
+        feedback.timer.tick(time.delta());
+        if feedback.timer.just_finished() {
+            feedback.rejected = false;
+            feedback.timer.pause();
+            node.display = Display::None;
+        }
+    }
+}
+
 fn seek_timeline_on_press(
     press: On<Pointer<Press>>,
     timelines: Query<&RelativeCursorPosition, With<TimelineCanvas>>,
@@ -2793,7 +3505,7 @@ fn seek_timeline_on_press(
     mut session: ResMut<EditorSession>,
 ) {
     if press.button == PointerButton::Primary {
-        if state.context_emitter.take().is_some() {
+        if state.context_emitter.take().is_some() | state.color_picker_emitter.take().is_some() {
             session.ui_revision += 1;
         }
         seek_timeline_to_pointer(press.event_target(), &timelines, &state, &mut session);

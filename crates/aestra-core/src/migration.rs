@@ -167,6 +167,7 @@ fn migrate_v2_emitter(
         id: emitter.id,
         name: emitter.name,
         enabled: emitter.enabled,
+        display_color: None,
         transform: EmitterTransform::default(),
         start_time: emitter.start_time,
         duration: emitter.duration,

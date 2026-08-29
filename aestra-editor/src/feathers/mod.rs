@@ -5,6 +5,7 @@
 //! activation bridge, or overflow behavior.
 
 pub(crate) mod button;
+pub(crate) mod color_picker;
 pub(crate) mod combo_box;
 pub(crate) mod field_row;
 pub(crate) mod icon;
@@ -37,7 +38,16 @@ impl Plugin for AestraFeathersPlugin {
         app.add_plugins(FeathersPlugins)
             .insert_resource(theme::feathers_theme())
             .init_resource::<tooltip::TooltipState>()
+            .init_resource::<number_input::NumberScrubState>()
             .add_observer(button::queue_action_activation)
+            .add_observer(color_picker::handle_color_plane_change)
+            .add_observer(color_picker::handle_color_lightness_change)
+            .add_observer(color_picker::handle_color_alpha_change)
+            .add_observer(color_picker::handle_color_channel_change)
+            .add_observer(color_picker::handle_color_hex_change)
+            .add_observer(number_input::begin_number_scrub)
+            .add_observer(number_input::update_number_scrub)
+            .add_observer(number_input::finish_number_scrub)
             .add_observer(text_input::emit_text_change)
             .add_observer(text_input::submit_text_on_enter)
             .add_observer(text_input::submit_text_on_focus_loss)
@@ -52,6 +62,8 @@ impl Plugin for AestraFeathersPlugin {
                 Update,
                 (
                     list_row::update_keyboard_list_focus_visuals,
+                    color_picker::sync_color_picker_visuals,
+                    number_input::decorate_scrubbable_numbers,
                     scroll::update_scrollbar_visibility,
                     search_field::sync_search_clear_visibility,
                     tooltip::update_tooltip,

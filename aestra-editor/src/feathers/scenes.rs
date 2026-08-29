@@ -1,10 +1,11 @@
 use crate::theme;
 use bevy::{
     feathers::controls::{
-        ButtonVariant, FeathersButton, FeathersCheckbox, FeathersMenu, FeathersMenuButton,
-        FeathersMenuDivider, FeathersMenuItem, FeathersMenuPopup, FeathersNumberInput,
-        FeathersScrollbar, FeathersSlider, FeathersTextInput, FeathersTextInputContainer,
-        FeathersToolButton, NumberFormat,
+        ButtonVariant, ColorChannel, FeathersButton, FeathersCheckbox, FeathersColorPlane,
+        FeathersColorSlider, FeathersMenu, FeathersMenuButton, FeathersMenuDivider,
+        FeathersMenuItem, FeathersMenuPopup, FeathersNumberInput, FeathersScrollbar,
+        FeathersSlider, FeathersTextInput, FeathersTextInputContainer, FeathersToolButton,
+        NumberFormat,
     },
     feathers::theme::ThemeToken,
     prelude::*,
@@ -155,6 +156,21 @@ pub(crate) fn feathers_slider(value: f32, min: f32, max: f32) -> impl Scene {
             @value: value,
             @min: min,
             @max: max,
+        }
+    }
+}
+
+pub(crate) fn feathers_hue_saturation_plane() -> impl Scene {
+    bsn! {
+        @FeathersColorPlane::HueSaturation
+    }
+}
+
+pub(crate) fn feathers_color_slider(value: f32, channel: ColorChannel) -> impl Scene {
+    bsn! {
+        @FeathersColorSlider {
+            @value: value,
+            @channel: channel,
         }
     }
 }

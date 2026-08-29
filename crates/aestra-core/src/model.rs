@@ -428,6 +428,10 @@ pub struct Emitter {
     pub id: EmitterId,
     pub name: String,
     pub enabled: bool,
+    /// Optional authoring color used to identify this emitter in editor choreography views.
+    /// Runtime simulation and rendering intentionally ignore this presentation hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_color: Option<[f32; 4]>,
     pub transform: EmitterTransform,
     pub start_time: f32,
     pub duration: f32,
@@ -462,6 +466,7 @@ impl Emitter {
             id: EmitterId::new(),
             name: name.into(),
             enabled: true,
+            display_color: None,
             transform: EmitterTransform::default(),
             start_time: 0.0,
             duration,
@@ -720,6 +725,17 @@ impl Emitter {
                 DiagnosticCode::InvalidCapacity,
                 format!("{path}.max_particles"),
                 "emitter capacity must be greater than zero",
+            ));
+        }
+        if self.display_color.is_some_and(|color| {
+            color
+                .iter()
+                .any(|component| !component.is_finite() || !(0.0..=1.0).contains(component))
+        }) {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                format!("{path}.display_color"),
+                "emitter display color components must be finite and between zero and one",
             ));
         }
         let rotation_length_squared = self

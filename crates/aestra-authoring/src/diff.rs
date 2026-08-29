@@ -178,6 +178,15 @@ fn diff_emitter(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticCha
             after.max_particles,
         );
     }
+    if before.display_color != after.display_color {
+        modified(
+            changes,
+            target,
+            "emitter.display_color",
+            format!("{:?}", before.display_color),
+            format!("{:?}", after.display_color),
+        );
+    }
     diff_modules(before, after, changes);
     diff_renderers(before, after, changes);
 }

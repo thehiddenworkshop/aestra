@@ -275,6 +275,14 @@ fn apply_command(
                 enabled: previous,
             }]
         }
+        EffectCommand::SetEmitterDisplayColor { id, color } => {
+            let emitter = emitter_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut emitter.display_color, *color);
+            vec![EffectCommand::SetEmitterDisplayColor {
+                id: *id,
+                color: previous,
+            }]
+        }
         EffectCommand::SetEmitterTransform { id, transform } => {
             let emitter = emitter_mut(effect, *id)?;
             let previous = std::mem::replace(&mut emitter.transform, *transform);

@@ -441,7 +441,19 @@ Before M6 semantic composition begins, the editor-only professional UI foundatio
 specified in `aestra_ui_pre_m6_implementation_plan.md`. It separates the project Library
 from current-document resources, moves emitter hierarchy/actions into choreography track
 headers, adds searchable catalog state and synchronized timeline overflow, and changes no
-effect format, compiler, runtime, or migration contract.
+effect format, compiler, runtime, or migration contract. This foundation is complete:
+shared compact-list and search widgets constrain narrow layouts, Library and Timeline use
+keyboard-accessible semantic rows, unsupported project-effect drops provide localized
+non-mutating feedback, and automated blank/current-document composition coverage protects
+the pre-M6 boundary. M6 can therefore begin at the project asset index/resolver rather
+than extending editor-local catalog or emitter semantics.
+
+A follow-up choreography polish slice makes emitter names directly editable in Timeline
+track headers and persists an optional emitter display color. The color is edited directly
+from each track's anchored Bevy Feathers color picker, including RGB/HSL channels, alpha,
+editable RGBA hex, and live track preview. Both edits use semantic commands with undo/redo;
+Inspector and Timeline therefore project the same name state. The color is
+backward-compatible authoring metadata and is deliberately ignored by the compiler and runtime.
 
 Persistent settings slice:
 

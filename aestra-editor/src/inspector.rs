@@ -499,6 +499,41 @@ mod tests {
     }
 
     #[test]
+    fn effect_and_emitter_names_are_editable_semantic_fields() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let original_effect_name = session.effect.name.clone();
+        let original_emitter_name = session.selected_layer().name.clone();
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(test_localizer())
+            .add_observer(handle_document_text_change);
+        let effect_name = app.world_mut().spawn(DocumentTextControl::EffectName).id();
+        let emitter_name = app.world_mut().spawn(DocumentTextControl::EmitterName).id();
+
+        app.world_mut().trigger(ValueChange {
+            source: effect_name,
+            value: "Renamed Effect".to_owned(),
+            is_final: true,
+        });
+        app.world_mut().trigger(ValueChange {
+            source: emitter_name,
+            value: "Renamed Emitter".to_owned(),
+            is_final: true,
+        });
+        app.update();
+
+        let mut session = app.world_mut().resource_mut::<EditorSession>();
+        assert_eq!(session.effect.name, "Renamed Effect");
+        assert_eq!(session.selected_layer().name, "Renamed Emitter");
+        assert!(session.dirty);
+        assert!(session.can_undo());
+        session.undo();
+        session.undo();
+        assert_eq!(session.effect.name, original_effect_name);
+        assert_eq!(session.selected_layer().name, original_emitter_name);
+    }
+
+    #[test]
     fn inspector_action_activation_uses_the_feathers_contract() {
         let mut app = App::new();
         app.add_observer(queue_inspector_action_activation);

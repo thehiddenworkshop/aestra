@@ -116,10 +116,12 @@ fn spawn_list_row_content(
         Node {
             min_height: Val::Px(if secondary.is_some() { 42.0 } else { 34.0 }),
             width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
             padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
             align_items: AlignItems::Center,
             column_gap: Val::Px(8.0),
             border_radius: BorderRadius::all(Val::Px(3.0)),
+            overflow: Overflow::clip(),
             ..default()
         },
         BackgroundColor(theme::PANEL_DARK),
@@ -131,6 +133,7 @@ fn spawn_list_row_content(
             flex_grow: 1.0,
             flex_direction: FlexDirection::Column,
             row_gap: Val::Px(2.0),
+            overflow: Overflow::clip(),
             ..default()
         })
         .with_children(|labels| {
@@ -141,6 +144,13 @@ fn spawn_list_row_content(
                     ..default()
                 },
                 TextColor(theme::TEXT_MUTED),
+                TextLayout::no_wrap(),
+                Node {
+                    width: Val::Percent(100.0),
+                    min_width: Val::Px(0.0),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
                 Pickable::IGNORE,
             ));
             if let Some(secondary) = secondary {
@@ -151,6 +161,13 @@ fn spawn_list_row_content(
                         ..default()
                     },
                     TextColor(theme::TEXT_FAINT),
+                    TextLayout::no_wrap(),
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_width: Val::Px(0.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
                     Pickable::IGNORE,
                 ));
             }
@@ -163,6 +180,11 @@ fn spawn_list_row_content(
                     ..default()
                 },
                 TextColor(status.color),
+                TextLayout::no_wrap(),
+                Node {
+                    flex_shrink: 0.0,
+                    ..default()
+                },
                 Pickable::IGNORE,
             ));
         }
@@ -186,8 +208,10 @@ pub(crate) fn spawn_list_section_header(
         Node {
             min_height: Val::Px(28.0),
             width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
             padding: UiRect::horizontal(Val::Px(9.0)),
             align_items: AlignItems::Center,
+            overflow: Overflow::clip(),
             ..default()
         },
     ));
@@ -200,6 +224,13 @@ pub(crate) fn spawn_list_section_header(
                 ..default()
             },
             TextColor(theme::TEXT_MUTED),
+            TextLayout::no_wrap(),
+            Node {
+                min_width: Val::Px(0.0),
+                flex_shrink: 1.0,
+                overflow: Overflow::clip(),
+                ..default()
+            },
         ));
         row.spawn(Node {
             flex_grow: 1.0,
@@ -213,6 +244,11 @@ pub(crate) fn spawn_list_section_header(
                     ..default()
                 },
                 TextColor(theme::TEXT_FAINT),
+                TextLayout::no_wrap(),
+                Node {
+                    flex_shrink: 0.0,
+                    ..default()
+                },
             ))
             .id();
     });
@@ -234,6 +270,7 @@ pub(crate) fn spawn_list_empty_state(
         Node {
             display,
             width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
             min_height: Val::Px(64.0),
             padding: UiRect::all(Val::Px(10.0)),
             align_items: AlignItems::Center,
@@ -336,6 +373,51 @@ mod tests {
         assert_eq!(row_count, 2);
         assert_eq!(header_count, 1);
         assert_eq!(empty_count, 1);
+    }
+
+    #[test]
+    fn compact_list_content_can_shrink_without_leaking_into_adjacent_panels() {
+        let mut app = App::new();
+        app.add_systems(Startup, spawn_test_widgets);
+        app.update();
+
+        let row_layouts = {
+            let world = app.world_mut();
+            let mut rows = world.query_filtered::<&Node, With<CompactListRow>>();
+            rows.iter(world)
+                .map(|node| (node.min_width, node.overflow))
+                .collect::<Vec<_>>()
+        };
+        assert!(!row_layouts.is_empty());
+        assert!(row_layouts.iter().all(|(minimum, overflow)| {
+            *minimum == Val::Px(0.0) && *overflow == Overflow::clip()
+        }));
+
+        let text_layouts = {
+            let world = app.world_mut();
+            let mut labels = world.query::<(&Text, &TextLayout)>();
+            labels
+                .iter(world)
+                .filter(|(text, _)| {
+                    matches!(
+                        text.0.as_str(),
+                        "Prism Bloom"
+                            | "assets/effects/prism_bloom.aestra.ron"
+                            | "Broken Effect"
+                            | "INVALID"
+                            | "PROJECT EFFECTS"
+                            | "2 FOUND"
+                    )
+                })
+                .map(|(_, layout)| layout.linebreak)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(text_layouts.len(), 6);
+        assert!(
+            text_layouts
+                .iter()
+                .all(|linebreak| *linebreak == LineBreak::NoWrap)
+        );
     }
 
     #[test]

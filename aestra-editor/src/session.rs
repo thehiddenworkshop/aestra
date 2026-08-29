@@ -792,17 +792,23 @@ impl EditorSession {
     }
 
     pub fn set_selected_emitter_name(&mut self, name: impl Into<String>) -> bool {
-        let emitter = self.selected_layer();
+        self.set_emitter_name(self.selected_layer().id, name)
+    }
+
+    pub fn set_emitter_name(&mut self, id: EmitterId, name: impl Into<String>) -> bool {
         let name = name.into();
-        if emitter.name == name {
+        if self
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == id)
+            .is_none_or(|emitter| emitter.name == name)
+        {
             return false;
         }
         self.execute(
             "Renamed emitter",
-            EffectCommand::SetEmitterName {
-                id: emitter.id,
-                name,
-            },
+            EffectCommand::SetEmitterName { id, name },
             true,
         )
     }
@@ -818,6 +824,23 @@ impl EditorSession {
                 id: emitter.id,
                 enabled,
             },
+            true,
+        )
+    }
+
+    pub fn set_emitter_display_color(&mut self, id: EmitterId, color: Option<[f32; 4]>) -> bool {
+        if self
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == id)
+            .is_none_or(|emitter| emitter.display_color == color)
+        {
+            return false;
+        }
+        self.execute(
+            "Changed emitter display color",
+            EffectCommand::SetEmitterDisplayColor { id, color },
             true,
         )
     }

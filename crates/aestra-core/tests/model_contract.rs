@@ -19,6 +19,30 @@ fn semantic_ids_survive_round_trip() {
 }
 
 #[test]
+fn emitter_display_color_is_optional_validated_authoring_metadata() {
+    let mut effect = EffectAsset::new("Colored Timeline", 1.5);
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.5);
+    emitter.display_color = Some([0.25, 0.5, 0.75, 1.0]);
+    effect.emitters.push(emitter);
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    assert!(encoded.contains("display_color"));
+    assert_eq!(EffectAsset::from_ron(&encoded).unwrap(), effect);
+
+    effect.emitters[0].display_color = Some([1.2, 0.5, 0.75, 1.0]);
+    assert!(
+        effect
+            .validation_report()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.code == DiagnosticCode::InvalidValue
+                    && diagnostic.path.ends_with("emitters[0].display_color")
+            })
+    );
+}
+
+#[test]
 fn flipbooks_validate_texture_frames_and_round_trip() {
     let mut effect = EffectAsset::new("Flipbook", 1.0);
     let texture = AssetDefinition::texture("Atlas", "textures/atlas.png");

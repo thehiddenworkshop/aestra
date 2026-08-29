@@ -588,3 +588,32 @@ fn stale_or_locked_previews_never_mutate_the_document() {
     ));
     assert_eq!(effect, locked_before);
 }
+
+#[test]
+fn emitter_display_color_is_semantic_and_reversible() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let original = effect.clone();
+    let mut history = CommandHistory::default();
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Change timeline color",
+                EffectCommand::SetEmitterDisplayColor {
+                    id: emitter,
+                    color: Some([0.25, 0.5, 0.75, 1.0]),
+                },
+            ),
+        )
+        .unwrap();
+    assert_eq!(
+        effect.emitters[0].display_color,
+        Some([0.25, 0.5, 0.75, 1.0])
+    );
+
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect, original);
+}

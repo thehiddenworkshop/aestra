@@ -14,9 +14,10 @@ domain-specific state and semantic commands.
 | --- | --- |
 | `button` | Editor-action buttons, tool buttons, activation bridging, and action-control auditing |
 | `combo_box` | Data-driven combo options and compact action menus |
+| `color_picker` | HSL plane, lightness/alpha sliders, RGB/HSL channels, editable RGBA hex, preview, and automatic reset |
 | `field_row` | Compact, wrapping label/control columns for inspector-like forms |
 | `list_row` | Compact action/status rows, section headers, and empty result surfaces |
-| `number_input` | Shared precision, modifier, formatting, and delta policy for scrub inputs |
+| `number_input` | Reusable Blender-style horizontal scrubbing plus shared precision, modifier, formatting, and delta policy |
 | `panel` | Reusable panel heading chrome |
 | `panel_card` | Remembered collapsible cards with semantic-key persistence and header/body slots |
 | `scenes` | BSN scenes for the editor shell and upstream Bevy Feathers controls |

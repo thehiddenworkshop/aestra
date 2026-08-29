@@ -252,7 +252,7 @@ struct AssetButtonLabel;
 struct LibrarySearchInput;
 
 #[derive(Component)]
-struct ProjectEffectRow(ProjectEffectEntryId);
+pub(crate) struct ProjectEffectRow(ProjectEffectEntryId);
 
 #[derive(Component)]
 struct LibraryProjectCount;
@@ -892,7 +892,9 @@ fn execute_library_action(action: On<LibraryAction>, mut session: ResMut<EditorS
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feathers::list_row::CompactListRow;
     use crate::session::blank_effect;
+    use crate::timeline::{TimelineState, spawn_timeline};
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
     #[derive(Resource, Default)]
@@ -915,6 +917,48 @@ mod tests {
         commands.spawn(Node::default()).with_children(|parent| {
             spawn_library(parent, &session, &catalog, &state, &localizer);
         });
+    }
+
+    fn spawn_pre_m6_acceptance_surface(
+        mut commands: Commands,
+        session: Res<EditorSession>,
+        catalog: Res<ProjectEffectCatalog>,
+        library: Res<LibraryState>,
+        timeline: Res<TimelineState>,
+        localizer: Res<Localizer>,
+    ) {
+        commands
+            .spawn(Node {
+                width: Val::Px(536.0),
+                height: Val::Px(320.0),
+                min_width: Val::Px(0.0),
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Row,
+                overflow: Overflow::clip(),
+                ..default()
+            })
+            .with_children(|root| {
+                root.spawn(Node {
+                    width: Val::Px(176.0),
+                    min_width: Val::Px(0.0),
+                    height: Val::Percent(100.0),
+                    overflow: Overflow::clip(),
+                    ..default()
+                })
+                .with_children(|panel| {
+                    spawn_library(panel, &session, &catalog, &library, &localizer);
+                });
+                root.spawn(Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    height: Val::Percent(100.0),
+                    overflow: Overflow::clip(),
+                    ..default()
+                })
+                .with_children(|panel| {
+                    spawn_timeline(panel, &session, &timeline, &localizer);
+                });
+            });
     }
 
     fn marker_count<T: Component>(app: &mut App) -> usize {
@@ -1193,6 +1237,57 @@ mod tests {
             query.iter(world).any(|text| text.0.contains(&effect_id))
         };
         assert!(!exposes_raw_id);
+    }
+
+    #[test]
+    fn blank_and_current_document_surfaces_compose_at_compact_width() {
+        for blank in [true, false] {
+            let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+            if blank {
+                session.new_effect();
+            }
+            let emitter_count = session.effect.emitters.len();
+            let duration = session.playback_duration();
+            let catalog = ProjectEffectCatalog::from_entries(vec![ProjectEffectEntry {
+                id: ProjectEffectEntryId(1),
+                display_name: "Prism Bloom".into(),
+                path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
+                status: ProjectEffectStatus::Valid,
+            }]);
+            let mut app = App::new();
+            app.add_plugins((
+                MinimalPlugins,
+                AssetPlugin::default(),
+                ScenePlugin,
+                TextPlugin,
+            ))
+            .init_asset::<Image>()
+            .insert_resource(session)
+            .insert_resource(catalog)
+            .init_resource::<LibraryState>()
+            .insert_resource(TimelineState::framed(duration))
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_systems(Startup, spawn_pre_m6_acceptance_surface);
+
+            app.update();
+
+            assert_eq!(marker_count::<LibraryProjectEffectsSection>(&mut app), 1);
+            assert_eq!(marker_count::<LibraryCurrentResourcesSection>(&mut app), 1);
+            assert_eq!(marker_count::<ProjectEffectRow>(&mut app), 1);
+            let track_headers = {
+                let world = app.world_mut();
+                let mut query = world.query_filtered::<
+                    &ChoreographyAction,
+                    (With<ListItem>, With<KeyboardNavigableListRow>),
+                >();
+                query
+                    .iter(world)
+                    .filter(|action| matches!(action, ChoreographyAction::SelectEmitter(_)))
+                    .count()
+            };
+            assert_eq!(track_headers, emitter_count);
+            assert!(marker_count::<CompactListRow>(&mut app) >= 1);
+        }
     }
 
     #[test]

@@ -112,11 +112,26 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   plugin owns category navigation, Feathers controls, locale selection, reset, and
   live preference application; `settings.rs` remains the versioned persistence,
   migration, validation, and atomic-replacement boundary.
-- Runs the Assets workspace through `EditorAssetsPlugin`. The plugin owns project-effect
-  catalog discovery, asset/material/flipbook/layer presentation, layer-selection styling,
-  and panel-local authoring actions. Opening a catalog entry emits the shared
-  `DocumentAction` contract so document replacement and unsaved-change protection remain
-  exclusively owned by persistence.
+- Runs the Library workspace through `EditorLibraryPlugin`. The plugin owns synchronous
+  project-effect catalog discovery and search plus clearly separated current-document
+  resource projections; it does not own the emitter hierarchy. Opening a valid catalog
+  entry emits the shared `DocumentAction` contract so document replacement and
+  unsaved-change protection remain exclusively owned by persistence. Invalid and
+  unsupported catalog entries remain inspectable, localized status rows rather than
+  actionable document controls.
+- Runs emitter hierarchy, inline track naming, selection, timing, authored track color,
+  Mute/Solo preview state, overflow, and track navigation through `TimelinePlugin`.
+  Stable emitter IDs connect track headers and clips to semantic commands, so Timeline
+  and Inspector naming stay synchronized through the same undoable document field. Track
+  swatches open an anchored picker composed from Bevy Feathers' shader-backed color plane,
+  lightness/alpha sliders, RGB/HSL number inputs, and editable RGBA hex input. Intermediate
+  values preview directly on the track; only final picker values enter semantic undo history.
+  Before M6 composition exists, a project-effect drag over the
+  Timeline produces explicit transient rejection feedback; the drop path cannot mutate
+  the effect, history, dirty state, or selection and does not create a synthetic clip.
+- Keeps compact Library rows and Timeline panes shrinkable with clipped, non-wrapping
+  labels and reserved native scrollbar gutters. Automated composition coverage exercises
+  blank and current documents at constrained width without adding a GPU requirement to CI.
 - Runs effect-property authoring through `InspectorPlugin`. Inspector controls emit the
   dedicated `InspectorAction` contract; the plugin owns module-palette navigation,
   effect/emitter identity and execution settings, typed emitter-event links, module and
@@ -212,6 +227,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 The format begins with effect-level duration and looping, then emitters with independent start/duration windows. Each emitter contains:
 
 - an explicit simulation domain;
+- an optional editor display color used consistently by choreography views and ignored by
+  simulation, compilation, and rendering;
 - ordered modules assigned to explicit execution stages;
 - module inputs with authored fallback values and optional typed effect-parameter bindings;
 - stable IDs for modules, curves, gradients, and renderer instances;
