@@ -84,7 +84,13 @@ architecture vision; this file is the shorter delivery plan.
   flipbooks now add explicit atlas frames, particle-age/effect-time animation,
   forward/reverse/ping-pong playback, looping, deterministic random starts, native WESL,
   CPU/readback parity, authoring controls, and a viewer example. Procedural recipes,
-  mesh/ribbon production paths, renderer sorting, and richer material domains remain.
+  mesh/ribbon production paths, renderer sorting, and richer material domains remain. The first
+  reusable-composition foundation is also complete: `aestra-project` recursively indexes project
+  effects, resolves typed `EffectAssetRef` values through persisted `EffectId`, preserves identity
+  across source moves, and reports missing, duplicate, invalid, unsupported, and unavailable
+  sources structurally. The Library now consumes that shared index instead of using its path hash
+  as an effect reference. Dependency/usage graphs, file watching, repair workflows, preview-cache
+  identity, and semantic `EffectClip` composition remain.
 
 ## Stability-hardening milestone
 
@@ -258,6 +264,7 @@ aestra-bevy/                   Public Bevy integration and GPU backend
 aestra-viewer/                 Playback, capture, and analysis product
 crates/
   aestra-core/                 Semantic source model, IDs, values, diagnostics
+  aestra-project/              Project asset index, typed references, source resolution
   aestra-compiler/             Validation, lowering, IR, optimization, artifacts
   aestra-runtime/              Runtime contracts and deterministic CPU backend
   aestra-authoring/            Commands, transactions, history, diff, locks
@@ -271,10 +278,11 @@ Dependency direction:
 aestra-core
     ^
     +-- aestra-authoring
+    +-- aestra-project
     +-- aestra-compiler ----> aestra-runtime ----> aestra-bevy
     +-- aestra-graph -----------^
 
-aestra-editor ----> authoring + compiler + runtime/Bevy preview
+aestra-editor ----> project + authoring + compiler + runtime/Bevy preview
 aestra-viewer ----> compiler + runtime/Bevy playback
 ```
 

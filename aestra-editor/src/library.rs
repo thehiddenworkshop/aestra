@@ -1,14 +1,15 @@
 //! Library workspace, project-effect catalog, and panel-local authoring actions.
 
 use crate::*;
+use aestra_project::{
+    ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectEffectEntry, ProjectEffectStatus,
+};
 use bevy::ui_widgets::Activate;
 #[cfg(test)]
 use bevy::ui_widgets::ScrollArea;
-use std::{
-    collections::HashSet,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::Path;
+#[cfg(test)]
+use std::{fs, path::PathBuf};
 
 const DEFAULT_PROJECT_EFFECT_ROOT: &str = "assets/effects";
 
@@ -37,40 +38,9 @@ impl Plugin for EditorLibraryPlugin {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct ProjectEffectEntryId(u64);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ProjectEffectStatus {
-    Valid,
-    Invalid { message: String },
-    Unsupported { found: u32, current: u32 },
-}
-
-impl ProjectEffectStatus {
-    fn is_openable(&self) -> bool {
-        matches!(self, Self::Valid)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct ProjectEffectEntry {
-    pub(crate) id: ProjectEffectEntryId,
-    display_name: String,
-    path: PathBuf,
-    status: ProjectEffectStatus,
-}
-
 #[derive(Resource)]
 pub(crate) struct ProjectEffectCatalog {
-    entries: Vec<ProjectEffectEntry>,
-    availability: ProjectEffectCatalogAvailability,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ProjectEffectCatalogAvailability {
-    Ready,
-    Unavailable { root: PathBuf, message: String },
+    index: ProjectAssetIndex,
 }
 
 impl Default for ProjectEffectCatalog {
@@ -81,105 +51,36 @@ impl Default for ProjectEffectCatalog {
 
 impl ProjectEffectCatalog {
     pub(crate) fn scan(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref();
-        let directory = match fs::read_dir(root) {
-            Ok(directory) => directory,
-            Err(error) => {
-                return Self {
-                    entries: Vec::new(),
-                    availability: ProjectEffectCatalogAvailability::Unavailable {
-                        root: root.to_owned(),
-                        message: error.to_string(),
-                    },
-                };
-            }
-        };
-        let mut paths = directory
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().is_some_and(|extension| extension == "ron"))
-            .collect::<Vec<_>>();
-        paths.sort();
-
-        let mut used_ids = HashSet::new();
-        let mut entries = paths
-            .into_iter()
-            .map(|path| {
-                let mut id = stable_entry_id(root, &path);
-                while !used_ids.insert(id) {
-                    id.0 = id.0.wrapping_add(1);
-                }
-                let fallback_name = path
-                    .file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .unwrap_or("Unnamed effect")
-                    .trim_end_matches(".aestra")
-                    .replace(['_', '-'], " ");
-                let (display_name, status) = match EffectAsset::load_ron(&path) {
-                    Ok(effect) => (effect.name, ProjectEffectStatus::Valid),
-                    Err(aestra_bevy::AssetError::UnsupportedFormat { found, current }) => (
-                        fallback_name,
-                        ProjectEffectStatus::Unsupported { found, current },
-                    ),
-                    Err(error) => (
-                        fallback_name,
-                        ProjectEffectStatus::Invalid {
-                            message: error.to_string(),
-                        },
-                    ),
-                };
-                ProjectEffectEntry {
-                    id,
-                    display_name,
-                    path,
-                    status,
-                }
-            })
-            .collect::<Vec<_>>();
-        entries.sort_by(|left, right| {
-            left.display_name
-                .to_lowercase()
-                .cmp(&right.display_name.to_lowercase())
-                .then_with(|| left.path.cmp(&right.path))
-        });
         Self {
-            entries,
-            availability: ProjectEffectCatalogAvailability::Ready,
+            index: ProjectAssetIndex::scan(root),
         }
     }
 
     pub(crate) fn entries(&self) -> &[ProjectEffectEntry] {
-        &self.entries
+        self.index.effects()
     }
 
     pub(crate) fn entry(&self, id: ProjectEffectEntryId) -> Option<&ProjectEffectEntry> {
-        self.entries.iter().find(|entry| entry.id == id)
+        self.index.entry(id)
     }
 
-    pub(crate) fn openable_path(&self, id: ProjectEffectEntryId) -> Option<&Path> {
-        self.entry(id)
-            .filter(|entry| entry.status.is_openable())
+    pub(crate) fn openable_path(&self, reference: EffectAssetRef) -> Option<&Path> {
+        self.index
+            .resolve(reference)
+            .ok()
             .map(|entry| entry.path.as_path())
+    }
+
+    fn availability(&self) -> &ProjectAssetIndexAvailability {
+        self.index.availability()
     }
 
     #[cfg(test)]
     fn from_entries(entries: Vec<ProjectEffectEntry>) -> Self {
         Self {
-            entries,
-            availability: ProjectEffectCatalogAvailability::Ready,
+            index: ProjectAssetIndex::from_entries("virtual", entries),
         }
     }
-}
-
-fn stable_entry_id(root: &Path, path: &Path) -> ProjectEffectEntryId {
-    let relative = path.strip_prefix(root).unwrap_or(path);
-    let normalized = relative.to_string_lossy().replace('\\', "/").to_lowercase();
-    let mut hash = 0xcbf29ce484222325_u64;
-    for byte in normalized.bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    ProjectEffectEntryId(hash)
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -340,10 +241,7 @@ fn sync_library_filtering(
         .iter()
         .filter(|entry| state.matches_project_effect(entry))
         .count();
-    let catalog_ready = matches!(
-        catalog.availability,
-        ProjectEffectCatalogAvailability::Ready
-    );
+    let catalog_ready = matches!(catalog.availability(), ProjectAssetIndexAvailability::Ready);
     for (entity, mut node, row, catalog_empty, no_results, unavailable) in &mut nodes {
         if let Some(row) = row {
             let visible = catalog
@@ -404,10 +302,7 @@ fn spawn_project_effects(
         .count();
     let mut args = FluentArgs::new();
     args.set("count", visible_count);
-    let project_meta = if matches!(
-        catalog.availability,
-        ProjectEffectCatalogAvailability::Ready
-    ) {
+    let project_meta = if matches!(catalog.availability(), ProjectAssetIndexAvailability::Ready) {
         localizer.text_with("assets-found", &args)
     } else {
         localizer.text("library-unavailable-meta")
@@ -451,7 +346,21 @@ fn spawn_project_effects(
                 Some(&source),
                 None,
                 &accessible_label,
-                DocumentAction::OpenCatalog(entry.id),
+                DocumentAction::OpenCatalog(
+                    entry
+                        .reference
+                        .expect("a valid indexed effect has a semantic reference"),
+                ),
+            ),
+            ProjectEffectStatus::DuplicateId { .. } => spawn_status_list_row(
+                panel,
+                &entry.display_name,
+                Some(&source),
+                ListRowStatus {
+                    label: &localizer.text("library-status-duplicate-id"),
+                    color: theme::ACCENT,
+                },
+                &accessible_label,
             ),
             ProjectEffectStatus::Invalid { .. } => spawn_status_list_row(
                 panel,
@@ -486,10 +395,8 @@ fn spawn_project_effects(
         &localizer.text("library-empty-title"),
         &localizer.text("library-empty-message"),
         theme::TEXT_MUTED,
-        if matches!(
-            catalog.availability,
-            ProjectEffectCatalogAvailability::Ready
-        ) && catalog.entries().is_empty()
+        if matches!(catalog.availability(), ProjectAssetIndexAvailability::Ready)
+            && catalog.entries().is_empty()
         {
             Display::Flex
         } else {
@@ -505,10 +412,8 @@ fn spawn_project_effects(
         &localizer.text("library-no-results-title"),
         &localizer.text("library-no-results-message"),
         theme::TEXT_MUTED,
-        if matches!(
-            catalog.availability,
-            ProjectEffectCatalogAvailability::Ready
-        ) && !catalog.entries().is_empty()
+        if matches!(catalog.availability(), ProjectAssetIndexAvailability::Ready)
+            && !catalog.entries().is_empty()
             && visible_count == 0
         {
             Display::Flex
@@ -517,14 +422,14 @@ fn spawn_project_effects(
         },
     );
     panel.commands().entity(no_results).insert(LibraryNoResults);
-    let (unavailable_message, unavailable_tooltip) = match &catalog.availability {
-        ProjectEffectCatalogAvailability::Ready => {
+    let (unavailable_message, unavailable_tooltip) = match catalog.availability() {
+        ProjectAssetIndexAvailability::Ready => {
             let mut args = FluentArgs::new();
             args.set("path", DEFAULT_PROJECT_EFFECT_ROOT);
             let message = localizer.text_with("library-unavailable-message", &args);
             (message.clone(), EditorTooltip::description(message))
         }
-        ProjectEffectCatalogAvailability::Unavailable { root, message } => {
+        ProjectAssetIndexAvailability::Unavailable { root, message } => {
             let path = root.display().to_string();
             let mut args = FluentArgs::new();
             args.set("path", path.as_str());
@@ -541,8 +446,8 @@ fn spawn_project_effects(
         &unavailable_message,
         theme::ACCENT,
         if matches!(
-            catalog.availability,
-            ProjectEffectCatalogAvailability::Unavailable { .. }
+            catalog.availability(),
+            ProjectAssetIndexAvailability::Unavailable { .. }
         ) {
             Display::Flex
         } else {
@@ -568,6 +473,16 @@ fn project_effect_accessible_label(entry: &ProjectEffectEntry, localizer: &Local
             args.set("message", message.as_str());
             localizer.text_with("library-invalid-accessible", &args)
         }
+        ProjectEffectStatus::DuplicateId {
+            reference,
+            ref sources,
+        } => {
+            let mut args = FluentArgs::new();
+            args.set("name", entry.display_name.as_str());
+            args.set("id", reference.id.to_string());
+            args.set("count", sources.len() as i64);
+            localizer.text_with("library-duplicate-id-accessible", &args)
+        }
         ProjectEffectStatus::Unsupported { found, current } => {
             let mut args = FluentArgs::new();
             args.set("name", entry.display_name.as_str());
@@ -592,6 +507,16 @@ fn project_effect_tooltip(entry: &ProjectEffectEntry, localizer: &Localizer) -> 
         ProjectEffectStatus::Invalid { message } => {
             EditorTooltip::titled(localizer.text("library-status-invalid"), message)
                 .with_footer(source)
+        }
+        ProjectEffectStatus::DuplicateId { reference, sources } => {
+            let mut args = FluentArgs::new();
+            args.set("id", reference.id.to_string());
+            args.set("count", sources.len() as i64);
+            EditorTooltip::titled(
+                localizer.text("library-status-duplicate-id"),
+                localizer.text_with("library-duplicate-id-description", &args),
+            )
+            .with_footer(source)
         }
         ProjectEffectStatus::Unsupported { found, current } => {
             let mut args = FluentArgs::new();
@@ -973,8 +898,16 @@ mod tests {
         effect.save_ron(path).expect("effect fixture should save");
     }
 
+    fn test_source_id(value: u64) -> ProjectEffectEntryId {
+        ProjectEffectEntryId::from_u64(value)
+    }
+
+    fn test_effect_ref(value: u128) -> EffectAssetRef {
+        EffectAssetRef::new(aestra_bevy::EffectId::from_u128(value))
+    }
+
     #[test]
-    fn project_catalog_is_sorted_and_ids_are_stable_across_scans() {
+    fn project_catalog_is_sorted_and_source_rows_are_stable_across_scans() {
         let temporary = tempfile::tempdir().unwrap();
         write_effect(&temporary.path().join("zeta.aestra.ron"), "Zeta");
         write_effect(&temporary.path().join("alpha.aestra.ron"), "Alpha");
@@ -1012,8 +945,8 @@ mod tests {
 
         assert!(catalog.entries().is_empty());
         assert_eq!(
-            catalog.availability,
-            ProjectEffectCatalogAvailability::Ready
+            catalog.availability(),
+            &ProjectAssetIndexAvailability::Ready
         );
     }
 
@@ -1026,8 +959,8 @@ mod tests {
 
         assert!(catalog.entries().is_empty());
         assert!(matches!(
-            catalog.availability,
-            ProjectEffectCatalogAvailability::Unavailable { ref root, ref message }
+            catalog.availability(),
+            ProjectAssetIndexAvailability::Unavailable { root, message }
                 if root == &missing && !message.is_empty()
         ));
     }
@@ -1076,15 +1009,37 @@ mod tests {
                 current: aestra_bevy::CURRENT_FORMAT_VERSION,
             }
         );
-        assert_eq!(catalog.openable_path(valid.id), Some(valid_path.as_path()));
-        assert_eq!(catalog.openable_path(invalid.id), None);
-        assert_eq!(catalog.openable_path(unsupported.id), None);
+        assert_eq!(
+            catalog.openable_path(valid.reference.unwrap()),
+            Some(valid_path.as_path())
+        );
+        assert!(invalid.reference.is_none());
+        assert!(unsupported.reference.is_none());
+    }
+
+    #[test]
+    fn duplicate_effect_ids_are_visible_but_not_openable() {
+        let temporary = tempfile::tempdir().unwrap();
+        write_effect(&temporary.path().join("one.aestra.ron"), "One");
+        write_effect(&temporary.path().join("two.aestra.ron"), "Two");
+
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let reference = catalog.entries()[0].reference.unwrap();
+
+        assert!(
+            catalog
+                .entries()
+                .iter()
+                .all(|entry| matches!(entry.status, ProjectEffectStatus::DuplicateId { .. }))
+        );
+        assert_eq!(catalog.openable_path(reference), None);
     }
 
     #[test]
     fn library_state_filters_project_effects_by_query_origin_and_kind() {
         let entry = ProjectEffectEntry {
-            id: ProjectEffectEntryId(1),
+            id: test_source_id(1),
+            reference: Some(test_effect_ref(101)),
             display_name: "Prism Bloom".into(),
             path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
             status: ProjectEffectStatus::Valid,
@@ -1120,18 +1075,21 @@ mod tests {
     fn library_composition_separates_project_resources_and_choreography() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let effect_id = session.effect.id.to_string();
-        let valid_id = ProjectEffectEntryId(1);
-        let invalid_id = ProjectEffectEntryId(2);
-        let unsupported_id = ProjectEffectEntryId(3);
+        let valid_id = test_source_id(1);
+        let invalid_id = test_source_id(2);
+        let unsupported_id = test_source_id(3);
+        let valid_reference = test_effect_ref(102);
         let catalog = ProjectEffectCatalog::from_entries(vec![
             ProjectEffectEntry {
                 id: valid_id,
+                reference: Some(valid_reference),
                 display_name: "Prism Bloom".into(),
                 path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
                 status: ProjectEffectStatus::Valid,
             },
             ProjectEffectEntry {
                 id: invalid_id,
+                reference: None,
                 display_name: "Broken Effect".into(),
                 path: PathBuf::from("assets/effects/broken.aestra.ron"),
                 status: ProjectEffectStatus::Invalid {
@@ -1140,6 +1098,7 @@ mod tests {
             },
             ProjectEffectEntry {
                 id: unsupported_id,
+                reference: None,
                 display_name: "Future Effect".into(),
                 path: PathBuf::from("assets/effects/future.aestra.ron"),
                 status: ProjectEffectStatus::Unsupported {
@@ -1205,7 +1164,7 @@ mod tests {
         assert_eq!(rows.len(), 3);
         let valid = rows.iter().find(|row| row.0 == valid_id).unwrap();
         assert!(valid.1);
-        assert_eq!(valid.2, Some(DocumentAction::OpenCatalog(valid_id)));
+        assert_eq!(valid.2, Some(DocumentAction::OpenCatalog(valid_reference)));
         assert!(valid.3);
         assert!(valid.4.starts_with("Open "));
         assert!(valid.4.contains("Prism Bloom"));
@@ -1249,7 +1208,8 @@ mod tests {
             let emitter_count = session.effect.emitters.len();
             let duration = session.playback_duration();
             let catalog = ProjectEffectCatalog::from_entries(vec![ProjectEffectEntry {
-                id: ProjectEffectEntryId(1),
+                id: test_source_id(1),
+                reference: Some(test_effect_ref(103)),
                 display_name: "Prism Bloom".into(),
                 path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
                 status: ProjectEffectStatus::Valid,
@@ -1297,10 +1257,11 @@ mod tests {
             .add_observer(activate_library_list_entry)
             .add_observer(capture_document_action);
         let list = app.world_mut().spawn(KeyboardNavigableList).id();
-        let id = ProjectEffectEntryId(42);
+        let id = test_source_id(42);
+        let reference = test_effect_ref(104);
         let row = app
             .world_mut()
-            .spawn((ProjectEffectRow(id), DocumentAction::OpenCatalog(id)))
+            .spawn((ProjectEffectRow(id), DocumentAction::OpenCatalog(reference)))
             .id();
 
         app.world_mut().trigger(ValueChange::<Entity> {
@@ -1312,7 +1273,7 @@ mod tests {
 
         assert_eq!(
             app.world().resource::<CapturedDocumentAction>().0,
-            Some(DocumentAction::OpenCatalog(id))
+            Some(DocumentAction::OpenCatalog(reference))
         );
     }
 
@@ -1390,17 +1351,19 @@ mod tests {
 
     #[test]
     fn filtering_updates_existing_rows_count_and_empty_state_in_place() {
-        let first_id = ProjectEffectEntryId(1);
-        let second_id = ProjectEffectEntryId(2);
+        let first_id = test_source_id(1);
+        let second_id = test_source_id(2);
         let catalog = ProjectEffectCatalog::from_entries(vec![
             ProjectEffectEntry {
                 id: first_id,
+                reference: Some(test_effect_ref(105)),
                 display_name: "Prism Bloom".into(),
                 path: PathBuf::from("assets/effects/prism_bloom.aestra.ron"),
                 status: ProjectEffectStatus::Valid,
             },
             ProjectEffectEntry {
                 id: second_id,
+                reference: Some(test_effect_ref(106)),
                 display_name: "Plasma Burst".into(),
                 path: PathBuf::from("assets/effects/plasma_burst.aestra.ron"),
                 status: ProjectEffectStatus::Valid,
@@ -1487,11 +1450,7 @@ mod tests {
 
         {
             let mut catalog = app.world_mut().resource_mut::<ProjectEffectCatalog>();
-            catalog.entries.clear();
-            catalog.availability = ProjectEffectCatalogAvailability::Unavailable {
-                root: PathBuf::from("assets/effects"),
-                message: "permission denied".into(),
-            };
+            *catalog = ProjectEffectCatalog::scan("missing-test-effects");
         }
         app.update();
 
@@ -1560,12 +1519,13 @@ mod tests {
     #[test]
     fn library_plugin_preserves_an_injected_project_catalog() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let expected_id = ProjectEffectEntryId(42);
+        let expected_id = test_source_id(42);
         let mut app = App::new();
         app.insert_resource(session)
             .insert_resource(ProjectEffectCatalog::from_entries(vec![
                 ProjectEffectEntry {
                     id: expected_id,
+                    reference: Some(test_effect_ref(107)),
                     display_name: "Injected".into(),
                     path: PathBuf::from("virtual/injected.aestra.ron"),
                     status: ProjectEffectStatus::Valid,

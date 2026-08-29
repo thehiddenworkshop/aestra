@@ -48,7 +48,7 @@ impl Plugin for EditorPersistencePlugin {
 pub(crate) enum DocumentAction {
     New,
     Open,
-    OpenCatalog(ProjectEffectEntryId),
+    OpenCatalog(EffectAssetRef),
     Save,
     SaveAs,
     Exit,
@@ -806,7 +806,7 @@ mod tests {
         effect.name = "Catalog Effect".into();
         effect.save_ron(&path).unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
-        let id = catalog.entries()[0].id;
+        let reference = catalog.entries()[0].reference.unwrap();
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let autosave = AutosaveState::new(&session, true);
         let mut app = App::new();
@@ -822,7 +822,8 @@ mod tests {
             .insert_resource(Localizer::new("en-US").unwrap())
             .add_observer(execute_document_action);
 
-        app.world_mut().trigger(DocumentAction::OpenCatalog(id));
+        app.world_mut()
+            .trigger(DocumentAction::OpenCatalog(reference));
         app.update();
 
         let session = app.world().resource::<EditorSession>();
@@ -831,11 +832,11 @@ mod tests {
     }
 
     #[test]
-    fn invalid_catalog_action_cannot_replace_the_document() {
+    fn unresolvable_catalog_reference_cannot_replace_the_document() {
         let temporary = tempfile::tempdir().unwrap();
         fs::write(temporary.path().join("broken.aestra.ron"), "not RON").unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
-        let id = catalog.entries()[0].id;
+        let missing_reference = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xBAD));
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let original_id = session.effect.id;
         let autosave = AutosaveState::new(&session, true);
@@ -852,7 +853,8 @@ mod tests {
             .insert_resource(Localizer::new("en-US").unwrap())
             .add_observer(execute_document_action);
 
-        app.world_mut().trigger(DocumentAction::OpenCatalog(id));
+        app.world_mut()
+            .trigger(DocumentAction::OpenCatalog(missing_reference));
         app.update();
 
         assert_eq!(

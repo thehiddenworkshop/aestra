@@ -11,6 +11,7 @@ repository.workspace = true
 aestra-authoring = { path = "../crates/aestra-authoring" }
 aestra-bevy = { path = "../aestra-bevy" }
 aestra-compiler = { path = "../crates/aestra-compiler" }
+aestra-project = { path = "../crates/aestra-project" }
 aestra-runtime = { path = "../crates/aestra-runtime" }
 bevy.workspace = true
 bevy_resvg.workspace = true

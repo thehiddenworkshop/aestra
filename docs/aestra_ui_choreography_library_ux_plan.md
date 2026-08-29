@@ -2082,6 +2082,13 @@ preview cache identity
 
 This is the semantic boundary between the pre-M6 UX foundation and M6 composition.
 
+Status: the first resolver slice is complete. `aestra-project` owns recursive effect discovery,
+typed `EffectAssetRef`, persisted-`EffectId` resolution, deterministic source rows, and structured
+missing/duplicate/invalid/unsupported/unavailable outcomes. The Library consumes this index and no
+longer treats its path-derived row key as semantic effect identity. Dependency and usage graphs,
+rename/move commands, repair UI, automatic file watching, and preview-cache identity remain in Phase D; the
+minimal `EffectClip` model remains Phase E.
+
 ## Phase E — Minimal reusable Effect composition
 
 Plan:

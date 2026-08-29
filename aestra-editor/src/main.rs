@@ -34,6 +34,7 @@ use aestra_bevy::{
     ModuleParameters, RendererId, RendererProperties, StageKind, Value,
 };
 use aestra_compiler::ModuleMetadata;
+pub(crate) use aestra_project::{EffectAssetRef, ProjectSourceId as ProjectEffectEntryId};
 #[cfg(test)]
 use bevy::ui_widgets::Activate;
 use bevy::{
@@ -108,7 +109,7 @@ pub(crate) use history::HistoryAction;
 use history::{EditorHistoryPlugin, HistorySet};
 use inspector::*;
 use library::{EditorLibraryPlugin, LibrarySet};
-pub(crate) use library::{LibraryState, ProjectEffectCatalog, ProjectEffectEntryId, spawn_library};
+pub(crate) use library::{LibraryState, ProjectEffectCatalog, spawn_library};
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
 pub(crate) use menus::{DocumentMenuLabel, MenuState, TabContextMenu};

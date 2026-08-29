@@ -18,6 +18,14 @@ consuming the shared theme foundation.
 
 ```text
 Authoring UI (Bevy UI)
+              │ discovers/resolves
+              ▼
+Project asset index (aestra-project)
+              │ loads stable EffectId references
+              ▼
+EffectAsset + validation (aestra-core)
+
+Authoring UI (Bevy UI)
               │ submits
               ▼
 Semantic commands + transactions (aestra-authoring)
@@ -38,6 +46,16 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Owns stable serialized authoring data and format versions.
 - Validates assets at import/save boundaries.
 - Has no dependency on Bevy, editor UI, or an AI provider.
+
+### `aestra-project`
+
+- Owns engine-independent project source discovery and typed asset-reference resolution.
+- Uses the persisted `EffectId` inside an effect as semantic identity; paths are locations and may
+  change without invalidating `EffectAssetRef`.
+- Retains invalid and unsupported files as indexed sources, rejects duplicate effect IDs as
+  ambiguous, and returns structured missing/duplicate/unavailable resolution errors.
+- Exposes source-row IDs only for addressing files that cannot provide a valid semantic ID. Those
+  IDs are never serialized into effect dependencies.
 
 ### `aestra-bevy`
 
@@ -112,13 +130,14 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   plugin owns category navigation, Feathers controls, locale selection, reset, and
   live preference application; `settings.rs` remains the versioned persistence,
   migration, validation, and atomic-replacement boundary.
-- Runs the Library workspace through `EditorLibraryPlugin`. The plugin owns synchronous
-  project-effect catalog discovery and search plus clearly separated current-document
+- Runs the Library workspace through `EditorLibraryPlugin`. The plugin projects the shared
+  `aestra-project` index into Bevy resources and owns search plus clearly separated current-document
   resource projections; it does not own the emitter hierarchy. Opening a valid catalog
-  entry emits the shared `DocumentAction` contract so document replacement and
+  entry resolves a typed `EffectAssetRef` before emitting the shared `DocumentAction` contract, so
+  source moves retain identity while document replacement and
   unsaved-change protection remain exclusively owned by persistence. Invalid and
-  unsupported catalog entries remain inspectable, localized status rows rather than
-  actionable document controls.
+  unsupported catalog entries remain inspectable, localized status rows rather than actionable
+  document controls; duplicate effect IDs are visible but deliberately non-resolvable.
 - Runs emitter hierarchy, inline track naming, selection, timing, authored track color,
   Mute/Solo preview state, overflow, and track navigation through `TimelinePlugin`.
   Stable emitter IDs connect track headers and clips to semantic commands, so Timeline
