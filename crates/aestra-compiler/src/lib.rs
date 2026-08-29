@@ -9,14 +9,18 @@ use aestra_core::{
     ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_SPRITE,
     RendererProperties, ScalarRange, SpriteColorSource, StageKind, ValidationReport,
 };
+use aestra_project::{ProjectAssetIndex, ProjectDependencyReport};
 use aestra_runtime::{
-    CompiledAsset, CompiledCurve, CompiledEffect, CompiledEmitter, CompiledFlipbook,
-    CompiledGradient, CompiledMaterial, CompiledParameter, ExecutionPlan, Expression, Instruction,
-    IrLocation, MaterialColorPlan, OptimizationStats, ParameterSlot, ParticleAttribute,
-    ParticleLayout, RendererPlan, RendererPlanKind, RuntimeParameterValue, RuntimeStage,
-    RuntimeValue, SimulationSeekMode,
+    CompiledAsset, CompiledCurve, CompiledEffect, CompiledEffectClip, CompiledEffectProject,
+    CompiledEmitter, CompiledFlipbook, CompiledGradient, CompiledMaterial, CompiledParameter,
+    ExecutionPlan, Expression, Instruction, IrLocation, MaterialColorPlan, OptimizationStats,
+    ParameterSlot, ParticleAttribute, ParticleLayout, RendererPlan, RendererPlanKind,
+    RuntimeParameterValue, RuntimeStage, RuntimeValue, SimulationSeekMode,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -156,6 +160,18 @@ pub enum CompileError {
     Validation(ValidationReport),
 }
 
+#[derive(Debug, Error)]
+pub enum ProjectCompileError {
+    #[error(transparent)]
+    Dependencies(#[from] ProjectDependencyReport),
+    #[error("failed to compile effect {effect}: {source}")]
+    Effect {
+        effect: aestra_core::EffectId,
+        #[source]
+        source: CompileError,
+    },
+}
+
 impl CompileError {
     pub fn report(&self) -> &ValidationReport {
         match self {
@@ -183,6 +199,29 @@ impl EffectCompiler {
 
     pub fn registry(&self) -> &ModuleRegistry {
         &self.registry
+    }
+
+    /// Resolves and compiles a root effect together with all transitive reusable effects.
+    pub fn compile_project(
+        &self,
+        root: &EffectAsset,
+        index: &ProjectAssetIndex,
+    ) -> Result<CompiledEffectProject, ProjectCompileError> {
+        let resolved = index.resolve_effect_project(root)?;
+        let root = Arc::new(self.compile(&resolved.root).map_err(|source| {
+            ProjectCompileError::Effect {
+                effect: resolved.root.id,
+                source,
+            }
+        })?);
+        let mut dependencies = BTreeMap::new();
+        for (id, effect) in resolved.dependencies {
+            let compiled = self
+                .compile(&effect)
+                .map_err(|source| ProjectCompileError::Effect { effect: id, source })?;
+            dependencies.insert(id, Arc::new(compiled));
+        }
+        Ok(CompiledEffectProject { root, dependencies })
     }
 
     pub fn compile(&self, asset: &EffectAsset) -> Result<CompiledEffect, CompileError> {
@@ -400,6 +439,18 @@ impl EffectCompiler {
                 .map(|emitter| emitter.max_particles as usize)
                 .sum(),
             emitters,
+            effect_clips: asset
+                .effect_clips
+                .iter()
+                .map(|clip| CompiledEffectClip {
+                    source_clip: clip.id,
+                    source: clip.source,
+                    start_time: clip.start_time,
+                    source_offset: clip.source_offset,
+                    duration: clip.duration,
+                    seed: clip.seed,
+                })
+                .collect(),
             source_map,
             optimizations,
         })

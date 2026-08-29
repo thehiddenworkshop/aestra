@@ -89,8 +89,11 @@ architecture vision; this file is the shorter delivery plan.
   effects, resolves typed `EffectAssetRef` values through persisted `EffectId`, preserves identity
   across source moves, and reports missing, duplicate, invalid, unsupported, and unavailable
   sources structurally. The Library now consumes that shared index instead of using its path hash
-  as an effect reference. Dependency/usage graphs, file watching, repair workflows, preview-cache
-  identity, and semantic `EffectClip` composition remain.
+  as an effect reference. The first semantic composition slice now adds backward-compatible v3
+  `EffectClip` serialization, local timing validation, transitive dependency resolution and cycle
+  diagnostics, project compilation, child-time mapping, deterministic clip seeds, and nested CPU
+  reference execution with instance provenance. Timeline commands/UI and Bevy/GPU child rendering
+  remain, alongside usage graphs, file watching, repair workflows, and preview-cache identity.
 
 ## Stability-hardening milestone
 

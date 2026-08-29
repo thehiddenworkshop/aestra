@@ -10,9 +10,9 @@ pub use checkpoint::{
 pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource};
 
 use aestra_core::{
-    AssetId, AssetKind, BlendMode, Curve, EffectId, EmitterId, EmitterShape, EmitterTransform,
-    FlipbookPlaybackMode, FlipbookTimeSource, Gradient, MaterialId, ModuleId, ParameterId,
-    RendererId, ScalarRange, UvRect, Value, ValueType,
+    AssetId, AssetKind, BlendMode, Curve, EffectAssetRef, EffectClipId, EffectClipSeed, EffectId,
+    EmitterId, EmitterShape, EmitterTransform, FlipbookPlaybackMode, FlipbookTimeSource, Gradient,
+    MaterialId, ModuleId, ParameterId, RendererId, ScalarRange, UvRect, Value, ValueType,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -472,9 +472,118 @@ pub struct CompiledEffect {
     pub parameter_slots: BTreeMap<ParameterId, ParameterSlot>,
     pub particle_layout: ParticleLayout,
     pub emitters: Vec<CompiledEmitter>,
+    pub effect_clips: Vec<CompiledEffectClip>,
     pub max_particles: usize,
     pub source_map: BTreeMap<ModuleId, IrLocation>,
     pub optimizations: OptimizationStats,
+}
+
+/// Compiled timing and deterministic-instance metadata for one reusable child effect.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledEffectClip {
+    pub source_clip: EffectClipId,
+    pub source: EffectAssetRef,
+    pub start_time: f32,
+    pub source_offset: f32,
+    pub duration: f32,
+    pub seed: EffectClipSeed,
+}
+
+impl CompiledEffectClip {
+    pub fn map_time(&self, parent_time: f32, child: &CompiledEffect) -> Option<f32> {
+        let elapsed = parent_time - self.start_time;
+        if elapsed < 0.0 || elapsed > self.duration {
+            return None;
+        }
+        let local = self.source_offset + elapsed;
+        Some(if child.looping && child.duration > 0.0 {
+            local.rem_euclid(child.duration)
+        } else {
+            local.clamp(0.0, child.duration.max(0.0))
+        })
+    }
+}
+
+/// A compiled root plus the unique effects needed to execute all of its reusable clips.
+#[derive(Debug, Clone)]
+pub struct CompiledEffectProject {
+    pub root: Arc<CompiledEffect>,
+    pub dependencies: BTreeMap<EffectId, Arc<CompiledEffect>>,
+}
+
+impl CompiledEffectProject {
+    pub fn effect(&self, id: EffectId) -> Option<&Arc<CompiledEffect>> {
+        if self.root.source == id {
+            Some(&self.root)
+        } else {
+            self.dependencies.get(&id)
+        }
+    }
+
+    /// Deterministically evaluates the root and every active nested clip.
+    pub fn evaluate(&self, time: f32, seed: u64, output: &mut Vec<ProjectParticleSample>) {
+        output.clear();
+        let mut path = Vec::new();
+        evaluate_project_effect(self, &self.root, time, seed, &mut path, output);
+    }
+}
+
+/// One reference-runtime sample with enough provenance to render or profile a nested instance.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectParticleSample {
+    pub effect: EffectId,
+    pub instance_path: Vec<EffectClipId>,
+    pub particle: ParticleSample,
+}
+
+fn evaluate_project_effect(
+    project: &CompiledEffectProject,
+    effect: &CompiledEffect,
+    time: f32,
+    seed: u64,
+    path: &mut Vec<EffectClipId>,
+    output: &mut Vec<ProjectParticleSample>,
+) {
+    // Project compilation rejects dependency cycles. Keep manually assembled runtime projects
+    // bounded as a final defense against malformed external data.
+    if path.len() >= 64 {
+        return;
+    }
+    let effect_time = if effect.looping {
+        time.rem_euclid(effect.duration)
+    } else {
+        time.clamp(0.0, effect.duration)
+    };
+    let mut local_samples = Vec::new();
+    evaluate(effect, effect_time, seed, &mut local_samples);
+    output.extend(
+        local_samples
+            .into_iter()
+            .map(|particle| ProjectParticleSample {
+                effect: effect.source,
+                instance_path: path.clone(),
+                particle,
+            }),
+    );
+
+    for clip in &effect.effect_clips {
+        let Some(child) = project.dependencies.get(&clip.source.id) else {
+            continue;
+        };
+        let Some(child_time) = clip.map_time(effect_time, child) else {
+            continue;
+        };
+        path.push(clip.source_clip);
+        evaluate_project_effect(
+            project,
+            child,
+            child_time,
+            clip.seed.resolve(seed, clip.source_clip),
+            path,
+            output,
+        );
+        path.pop();
+    }
 }
 
 impl CompiledEffect {

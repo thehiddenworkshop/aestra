@@ -525,6 +525,7 @@ fn diagnostic_code_message(code: DiagnosticCode) -> &'static str {
         DiagnosticCode::InvalidValue => "diagnostics-code-invalid-value",
         DiagnosticCode::MissingRenderer => "diagnostics-code-missing-renderer",
         DiagnosticCode::InvalidReference => "diagnostics-code-invalid-reference",
+        DiagnosticCode::ReferenceCycle => "diagnostics-code-reference-cycle",
         DiagnosticCode::UnknownModule => "diagnostics-code-unknown-module",
         DiagnosticCode::UnsupportedRenderer => "diagnostics-code-unsupported-renderer",
         DiagnosticCode::MissingAttribute => "diagnostics-code-missing-attribute",

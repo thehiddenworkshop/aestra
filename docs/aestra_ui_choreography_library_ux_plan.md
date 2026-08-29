@@ -2083,11 +2083,12 @@ preview cache identity
 This is the semantic boundary between the pre-M6 UX foundation and M6 composition.
 
 Status: the first resolver slice is complete. `aestra-project` owns recursive effect discovery,
-typed `EffectAssetRef`, persisted-`EffectId` resolution, deterministic source rows, and structured
+persisted-`EffectId` resolution for typed `EffectAssetRef` values, deterministic source rows, and structured
 missing/duplicate/invalid/unsupported/unavailable outcomes. The Library consumes this index and no
-longer treats its path-derived row key as semantic effect identity. Dependency and usage graphs,
+longer treats its path-derived row key as semantic effect identity. Transitive dependency resolution
+and cycle reporting are complete. Usage graphs,
 rename/move commands, repair UI, automatic file watching, and preview-cache identity remain in Phase D; the
-minimal `EffectClip` model remains Phase E.
+EffectClip authoring workflow remains Phase F.
 
 ## Phase E — Minimal reusable Effect composition
 
@@ -2108,6 +2109,13 @@ compiler/runtime child-effect execution
 deterministic seed behavior
 save/load and migrations
 ```
+
+Status: the engine-independent Phase E foundation is complete. Format-v3 assets can persist an
+optional `EffectClip` list without invalidating existing v3 sources. Core validation covers clip
+identity and local timing; `aestra-project` resolves transitive dependencies and rejects cycles;
+the compiler emits a resolved project; and the reference runtime maps clip time and deterministic
+seed policy while preserving nested instance provenance. Bevy/GPU presentation intentionally
+remains with the Phase F integration rather than bypassing the semantic command workflow.
 
 ## Phase F — EffectClip UI
 

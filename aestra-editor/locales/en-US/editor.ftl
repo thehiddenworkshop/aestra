@@ -424,6 +424,7 @@ diagnostics-code-stage-mismatch = Stage mismatch
 diagnostics-code-invalid-value = Invalid value
 diagnostics-code-missing-renderer = Missing renderer
 diagnostics-code-invalid-reference = Invalid reference
+diagnostics-code-reference-cycle = Reference cycle
 diagnostics-code-unknown-module = Unknown module
 diagnostics-code-unsupported-renderer = Unsupported renderer
 diagnostics-code-missing-attribute = Missing attribute

@@ -424,6 +424,7 @@ diagnostics-code-stage-mismatch = Étape incompatible
 diagnostics-code-invalid-value = Valeur non valide
 diagnostics-code-missing-renderer = Moteur de rendu manquant
 diagnostics-code-invalid-reference = Référence non valide
+diagnostics-code-reference-cycle = Cycle de références
 diagnostics-code-unknown-module = Module inconnu
 diagnostics-code-unsupported-renderer = Moteur de rendu non pris en charge
 diagnostics-code-missing-attribute = Attribut manquant

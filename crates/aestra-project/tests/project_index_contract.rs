@@ -1,7 +1,7 @@
-use aestra_core::{CURRENT_FORMAT_VERSION, EffectAsset, EffectId};
+use aestra_core::{CURRENT_FORMAT_VERSION, EffectAsset, EffectClip, EffectId};
 use aestra_project::{
-    EffectAssetRef, ProjectAssetDiagnosticCode, ProjectAssetIndex, ProjectEffectStatus,
-    ResolveEffectError,
+    EffectAssetRef, ProjectAssetDiagnosticCode, ProjectAssetIndex, ProjectDependencyDiagnosticCode,
+    ProjectEffectStatus, ResolveEffectError,
 };
 use std::fs;
 
@@ -77,6 +77,22 @@ fn missing_effect_references_return_a_structured_error() {
 }
 
 #[test]
+fn source_identity_changes_after_indexing_are_rejected() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("effect.aestra.ron");
+    let original = EffectId::from_u128(0x111);
+    write_effect(&path, original, "Original");
+    let index = ProjectAssetIndex::scan(temporary.path());
+
+    write_effect(&path, EffectId::from_u128(0x222), "Replacement");
+
+    assert!(matches!(
+        index.load_effect(EffectAssetRef::new(original)),
+        Err(ResolveEffectError::SourceChanged { .. })
+    ));
+}
+
+#[test]
 fn invalid_and_future_assets_remain_visible_with_diagnostics() {
     let temporary = tempfile::tempdir().unwrap();
     fs::write(temporary.path().join("broken.aestra.ron"), "not RON").unwrap();
@@ -115,5 +131,113 @@ fn invalid_and_future_assets_remain_visible_with_diagnostics() {
             .diagnostics()
             .iter()
             .any(|diagnostic| diagnostic.code == ProjectAssetDiagnosticCode::UnsupportedFormat)
+    );
+}
+
+#[test]
+fn transitive_effect_dependencies_resolve_once_by_stable_identity() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root_id = EffectId::from_u128(0x100);
+    let child_id = EffectId::from_u128(0x200);
+    let grandchild_id = EffectId::from_u128(0x300);
+
+    let mut grandchild = EffectAsset::new("Grandchild", 1.0);
+    grandchild.id = grandchild_id;
+    grandchild
+        .save_ron(temporary.path().join("grandchild.aestra.ron"))
+        .unwrap();
+    let mut child = EffectAsset::new("Child", 1.0);
+    child.id = child_id;
+    child
+        .effect_clips
+        .push(EffectClip::new(grandchild_id, 0.0, 1.0));
+    child
+        .save_ron(temporary.path().join("child.aestra.ron"))
+        .unwrap();
+    let mut root = EffectAsset::new("Root", 1.0);
+    root.id = root_id;
+    root.effect_clips.push(EffectClip::new(child_id, 0.0, 1.0));
+
+    let index = ProjectAssetIndex::scan(temporary.path());
+    let resolved = index.resolve_effect_project(&root).unwrap();
+
+    assert_eq!(resolved.dependencies.len(), 2);
+    assert_eq!(resolved.effect(child_id).unwrap().name, "Child");
+    assert_eq!(resolved.effect(grandchild_id).unwrap().name, "Grandchild");
+}
+
+#[test]
+fn missing_transitive_references_identify_the_owning_clip() {
+    let temporary = tempfile::tempdir().unwrap();
+    let missing = EffectId::from_u128(0x5155);
+    let mut root = EffectAsset::new("Root", 1.0);
+    root.effect_clips.push(EffectClip::new(missing, 0.0, 1.0));
+    let clip_id = root.effect_clips[0].id;
+
+    let report = ProjectAssetIndex::scan(temporary.path())
+        .resolve_effect_project(&root)
+        .unwrap_err();
+
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == ProjectDependencyDiagnosticCode::Missing
+            && diagnostic.owner == root.id
+            && diagnostic.clip == clip_id
+            && diagnostic.reference.id == missing
+    }));
+}
+
+#[test]
+fn indirect_effect_reference_cycles_are_rejected_with_the_cycle_path() {
+    let temporary = tempfile::tempdir().unwrap();
+    let first_id = EffectId::from_u128(0xA);
+    let second_id = EffectId::from_u128(0xB);
+    let mut first = EffectAsset::new("First", 1.0);
+    first.id = first_id;
+    first
+        .effect_clips
+        .push(EffectClip::new(second_id, 0.0, 1.0));
+    let mut second = EffectAsset::new("Second", 1.0);
+    second.id = second_id;
+    second
+        .effect_clips
+        .push(EffectClip::new(first_id, 0.0, 1.0));
+    first
+        .save_ron(temporary.path().join("first.aestra.ron"))
+        .unwrap();
+    second
+        .save_ron(temporary.path().join("second.aestra.ron"))
+        .unwrap();
+
+    let report = ProjectAssetIndex::scan(temporary.path())
+        .resolve_effect_project(&first)
+        .unwrap_err();
+
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == ProjectDependencyDiagnosticCode::Cycle
+            && diagnostic.cycle == [first_id, second_id, first_id]
+    }));
+}
+
+#[test]
+fn clips_cannot_overrun_a_non_looping_source_window() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut child = EffectAsset::new("Finite", 1.0);
+    child.looping = false;
+    child
+        .save_ron(temporary.path().join("finite.aestra.ron"))
+        .unwrap();
+    let mut root = EffectAsset::new("Root", 2.0);
+    let mut clip = EffectClip::new(child.id, 0.0, 1.0);
+    clip.source_offset = 0.5;
+    root.effect_clips.push(clip);
+
+    let report = ProjectAssetIndex::scan(temporary.path())
+        .resolve_effect_project(&root)
+        .unwrap_err();
+
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == ProjectDependencyDiagnosticCode::InvalidTiming
+        })
     );
 }

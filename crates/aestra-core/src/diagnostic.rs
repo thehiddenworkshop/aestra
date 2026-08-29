@@ -22,6 +22,7 @@ pub enum DiagnosticCode {
     InvalidValue,
     MissingRenderer,
     InvalidReference,
+    ReferenceCycle,
     UnknownModule,
     UnsupportedRenderer,
     MissingAttribute,

@@ -1,6 +1,6 @@
 use crate::{
-    AssetId, CurveId, Diagnostic, DiagnosticCode, EffectId, EmitterId, EventId, GradientId,
-    MaterialId, ModuleId, ParameterId, RendererId, ValidationReport,
+    AssetId, CurveId, Diagnostic, DiagnosticCode, EffectClipId, EffectId, EmitterId, EventId,
+    GradientId, MaterialId, ModuleId, ParameterId, RendererId, ValidationReport,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs, io::Write, path::Path};
@@ -38,6 +38,8 @@ pub struct EffectAsset {
     pub emitters: Vec<Emitter>,
     #[serde(default)]
     pub events: Vec<EventLink>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effect_clips: Vec<EffectClip>,
     #[serde(default)]
     pub dependencies: Vec<AssetId>,
     #[serde(default)]
@@ -58,6 +60,7 @@ impl EffectAsset {
             parameters: Vec::new(),
             emitters: Vec::new(),
             events: Vec::new(),
+            effect_clips: Vec::new(),
             dependencies: Vec::new(),
             metadata: BTreeMap::new(),
         }
@@ -243,6 +246,16 @@ impl EffectAsset {
                 ));
             }
         }
+        for (index, clip) in self.effect_clips.iter().enumerate() {
+            let path = format!("effect.effect_clips[{index}]");
+            register_id(
+                &mut report,
+                &mut semantic_ids,
+                clip.id.as_uuid().as_u128(),
+                format!("{path}.id"),
+            );
+            clip.validate(&path, self, &mut report);
+        }
         for (material_index, material) in self.materials.iter().enumerate() {
             let path = format!("effect.materials[{material_index}].properties");
             let MaterialProperties::Sprite {
@@ -421,6 +434,153 @@ pub struct EffectParameter {
     pub name: String,
     pub default: Value,
     pub exposed: bool,
+}
+
+/// A stable, serializable reference to a reusable effect asset.
+///
+/// Project discovery and source-path resolution are deliberately owned by `aestra-project`;
+/// this value lives in the semantic crate so authored assets can persist references without
+/// introducing a dependency from the source model back to the project layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct EffectAssetRef {
+    pub id: EffectId,
+}
+
+impl EffectAssetRef {
+    pub const fn new(id: EffectId) -> Self {
+        Self { id }
+    }
+}
+
+impl From<EffectId> for EffectAssetRef {
+    fn from(id: EffectId) -> Self {
+        Self::new(id)
+    }
+}
+
+impl std::fmt::Display for EffectAssetRef {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.id.fmt(formatter)
+    }
+}
+
+/// Determines the deterministic random seed used by one reusable effect instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum EffectClipSeed {
+    /// Derive a stable child seed from the parent instance seed and clip identity.
+    #[default]
+    Inherit,
+    /// Use the exact authored seed, independent of the parent instance.
+    Fixed(u64),
+}
+
+impl EffectClipSeed {
+    pub fn resolve(self, parent_seed: u64, clip: EffectClipId) -> u64 {
+        match self {
+            Self::Fixed(seed) => seed,
+            Self::Inherit => {
+                let id = clip.as_uuid().as_u128();
+                mix_seed(parent_seed ^ id as u64 ^ (id >> 64) as u64)
+            }
+        }
+    }
+}
+
+/// A timed, non-destructive instance of another project effect.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EffectClip {
+    pub id: EffectClipId,
+    pub source: EffectAssetRef,
+    pub start_time: f32,
+    pub source_offset: f32,
+    pub duration: f32,
+    #[serde(default)]
+    pub seed: EffectClipSeed,
+}
+
+impl EffectClip {
+    pub fn new(source: impl Into<EffectAssetRef>, start_time: f32, duration: f32) -> Self {
+        Self {
+            id: EffectClipId::new(),
+            source: source.into(),
+            start_time,
+            source_offset: 0.0,
+            duration,
+            seed: EffectClipSeed::Inherit,
+        }
+    }
+
+    /// Maps parent effect time into the referenced effect's local time.
+    pub fn map_time(
+        &self,
+        parent_time: f32,
+        source_duration: f32,
+        source_looping: bool,
+    ) -> Option<f32> {
+        let elapsed = parent_time - self.start_time;
+        if elapsed < 0.0 || elapsed > self.duration {
+            return None;
+        }
+        let local = self.source_offset + elapsed;
+        Some(if source_looping && source_duration > 0.0 {
+            local.rem_euclid(source_duration)
+        } else {
+            local.clamp(0.0, source_duration.max(0.0))
+        })
+    }
+
+    fn validate(&self, path: &str, owner: &EffectAsset, report: &mut ValidationReport) {
+        if self.source.id.is_nil() {
+            report.push(Diagnostic::error(
+                DiagnosticCode::NilId,
+                format!("{path}.source"),
+                "effect clip source ID cannot be nil",
+            ));
+        }
+        if self.source.id == owner.id {
+            report.push(Diagnostic::error(
+                DiagnosticCode::ReferenceCycle,
+                format!("{path}.source"),
+                "effect cannot directly reference itself",
+            ));
+        }
+        if !self.start_time.is_finite() || self.start_time < 0.0 {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidTiming,
+                format!("{path}.start_time"),
+                "effect clip start time must be finite and non-negative",
+            ));
+        }
+        if !self.source_offset.is_finite() || self.source_offset < 0.0 {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidTiming,
+                format!("{path}.source_offset"),
+                "effect clip source offset must be finite and non-negative",
+            ));
+        }
+        if !self.duration.is_finite() || self.duration <= 0.0 {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidDuration,
+                format!("{path}.duration"),
+                "effect clip duration must be positive and finite",
+            ));
+        } else if self.start_time.is_finite() && self.start_time + self.duration > owner.duration {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidTiming,
+                path,
+                "effect clip must fit inside the owning effect duration",
+            ));
+        }
+    }
+}
+
+fn mix_seed(mut value: u64) -> u64 {
+    value ^= value >> 30;
+    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 27;
+    value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -1,9 +1,10 @@
 use aestra_compiler::{EffectCompiler, ModuleRegistry};
 use aestra_core::{
-    DiagnosticCode, EffectAsset, EffectParameter, Emitter, MODULE_EMISSION, MaterialInput,
-    MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, ScalarRange,
-    StageKind, Value,
+    DiagnosticCode, EffectAsset, EffectClip, EffectClipSeed, EffectParameter, Emitter,
+    MODULE_EMISSION, MaterialInput, MaterialProperties, ModuleInstance, ModuleParameters,
+    ModuleTypeId, ParameterId, ScalarRange, StageKind, Value,
 };
+use aestra_project::ProjectAssetIndex;
 use aestra_runtime::{
     EffectInstance, Expression, Instruction, ParameterError, ParticleAttribute, RendererPlanKind,
     RuntimeStage, SimulationSeekMode,
@@ -317,4 +318,43 @@ fn parameterized_effect(exposed: bool) -> (EffectAsset, ParameterId) {
     asset.parameters.push(parameter);
     asset.emitters.push(emitter);
     (asset, parameter_id)
+}
+
+#[test]
+fn project_compilation_resolves_and_executes_timed_child_effects() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut child = EffectAsset::new("Child", 1.0);
+    child
+        .emitters
+        .push(Emitter::basic_sprite("Child emitter", 1.0));
+    child
+        .save_ron(temporary.path().join("child.aestra.ron"))
+        .unwrap();
+
+    let mut root = EffectAsset::new("Root", 2.0);
+    let mut clip = EffectClip::new(child.id, 0.5, 1.0);
+    clip.source_offset = 0.1;
+    clip.seed = EffectClipSeed::Fixed(77);
+    let clip_id = clip.id;
+    root.effect_clips.push(clip);
+
+    let project = EffectCompiler::default()
+        .compile_project(&root, &ProjectAssetIndex::scan(temporary.path()))
+        .unwrap();
+    assert_eq!(project.dependencies.len(), 1);
+    assert_eq!(project.root.effect_clips[0].source.id, child.id);
+
+    let mut before = Vec::new();
+    project.evaluate(0.25, 1, &mut before);
+    assert!(before.is_empty());
+
+    let mut first = Vec::new();
+    let mut second = Vec::new();
+    project.evaluate(0.75, 1, &mut first);
+    project.evaluate(0.75, 999, &mut second);
+    assert!(!first.is_empty());
+    assert_eq!(first, second);
+    assert!(first.iter().all(|sample| {
+        sample.effect == child.id && sample.instance_path.as_slice() == [clip_id]
+    }));
 }

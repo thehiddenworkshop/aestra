@@ -21,7 +21,7 @@ Authoring UI (Bevy UI)
               │ discovers/resolves
               ▼
 Project asset index (aestra-project)
-              │ loads stable EffectId references
+              │ loads stable EffectAssetRef dependencies
               ▼
 EffectAsset + validation (aestra-core)
 
@@ -44,6 +44,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 ### `aestra-core`
 
 - Owns stable serialized authoring data and format versions.
+- Owns the engine-independent `EffectClip` and serializable `EffectAssetRef` value types; project
+  source discovery remains outside the semantic model.
 - Validates assets at import/save boundaries.
 - Has no dependency on Bevy, editor UI, or an AI provider.
 
@@ -56,6 +58,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   ambiguous, and returns structured missing/duplicate/unavailable resolution errors.
 - Exposes source-row IDs only for addressing files that cannot provide a valid semantic ID. Those
   IDs are never serialized into effect dependencies.
+- Resolves complete transitive effect dependency sets and rejects missing, ambiguous, changed, or
+  cyclic references with the owning effect and clip identity preserved in structured diagnostics.
 
 ### `aestra-bevy`
 
@@ -70,11 +74,14 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Validates stages, supported renderer capabilities, and particle attribute flow.
 - Lowers authored constants and parameter bindings into immutable typed expressions.
 - Compiles curves and gradients, folds constants, removes dead particle storage, and retains source mapping.
+- Compiles an indexed effect project into a root plan plus its unique transitive child-effect plans.
 
 ### `aestra-runtime`
 
 - Owns `CompiledEffect`, `EffectInstance`, particle layouts, and execution instructions.
 - Interprets compiled effects deterministically for a seed and time without Bevy.
+- Maps active `EffectClip` windows into child-effect time, derives stable per-instance seeds, and
+  returns nested CPU-reference samples with effect and clip-path provenance.
 - Owns the fixed-step playback clock and bounded, context-keyed checkpoint contract
   shared by games, editor preview, viewer playback, and visual capture. Compiled
   effects declare direct seek, checkpoint restore, or restart-and-replay semantics so
@@ -145,7 +152,7 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   swatches open an anchored picker composed from Bevy Feathers' shader-backed color plane,
   lightness/alpha sliders, RGB/HSL number inputs, and editable RGBA hex input. Intermediate
   values preview directly on the track; only final picker values enter semantic undo history.
-  Before M6 composition exists, a project-effect drag over the
+  Before EffectClip authoring UI exists, a project-effect drag over the
   Timeline produces explicit transient rejection feedback; the drop path cannot mutate
   the effect, history, dirty state, or selection and does not create a synthetic clip.
 - Keeps compact Library rows and Timeline panes shrinkable with clipped, non-wrapping

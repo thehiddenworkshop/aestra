@@ -5,11 +5,12 @@
 //! reference. [`ProjectSourceId`] exists only to identify rows and diagnostics for source files
 //! that may be invalid and therefore have no readable semantic ID.
 
-use aestra_core::{AssetError, EffectAsset, EffectId};
+pub use aestra_core::EffectAssetRef;
+use aestra_core::{AssetError, EffectAsset, EffectClipId, EffectId};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt, fs,
+    fs,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -23,32 +24,9 @@ pub enum ProjectAssetId {
     Effect(EffectId),
 }
 
-/// A typed, serializable reference to a reusable effect asset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct EffectAssetRef {
-    pub id: EffectId,
-}
-
-impl EffectAssetRef {
-    pub const fn new(id: EffectId) -> Self {
-        Self { id }
-    }
-
-    pub const fn asset_id(self) -> ProjectAssetId {
-        ProjectAssetId::Effect(self.id)
-    }
-}
-
-impl From<EffectId> for EffectAssetRef {
-    fn from(id: EffectId) -> Self {
-        Self::new(id)
-    }
-}
-
-impl fmt::Display for EffectAssetRef {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.id.fmt(formatter)
+impl From<EffectAssetRef> for ProjectAssetId {
+    fn from(reference: EffectAssetRef) -> Self {
+        Self::Effect(reference.id)
     }
 }
 
@@ -286,6 +264,60 @@ impl ProjectAssetIndex {
         }
     }
 
+    /// Resolves and loads the latest source contents for one reusable effect reference.
+    pub fn load_effect(
+        &self,
+        reference: EffectAssetRef,
+    ) -> Result<EffectAsset, ResolveEffectError> {
+        let entry = self.resolve(reference)?;
+        let effect = EffectAsset::load_ron(&entry.path).map_err(|error| {
+            ResolveEffectError::SourceChanged {
+                reference,
+                path: entry.path.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        if effect.id != reference.id {
+            return Err(ResolveEffectError::SourceChanged {
+                reference,
+                path: entry.path.clone(),
+                message: format!(
+                    "indexed effect ID {} was replaced by {}",
+                    reference.id, effect.id
+                ),
+            });
+        }
+        Ok(effect)
+    }
+
+    /// Resolves the complete transitive dependency set for an authored root effect.
+    ///
+    /// The root may contain unsaved edits and therefore does not need to be the same bytes as the
+    /// indexed source with the same ID. Every referenced child is loaded through the stable index.
+    pub fn resolve_effect_project(
+        &self,
+        root: &EffectAsset,
+    ) -> Result<ResolvedEffectProject, ProjectDependencyReport> {
+        let mut resolver = DependencyResolver {
+            index: self,
+            resolved: BTreeMap::new(),
+            visiting: Vec::new(),
+            visited: BTreeSet::new(),
+            diagnostics: Vec::new(),
+        };
+        resolver.visit(root);
+        if resolver.diagnostics.is_empty() {
+            Ok(ResolvedEffectProject {
+                root: root.clone(),
+                dependencies: resolver.resolved,
+            })
+        } else {
+            Err(ProjectDependencyReport {
+                diagnostics: resolver.diagnostics,
+            })
+        }
+    }
+
     pub fn refresh(&mut self) {
         *self = Self::scan(self.root.clone());
     }
@@ -307,6 +339,142 @@ pub enum ResolveEffectError {
         reference: EffectAssetRef,
         path: PathBuf,
     },
+    #[error("effect asset {reference} changed after indexing at {path}: {message}")]
+    SourceChanged {
+        reference: EffectAssetRef,
+        path: PathBuf,
+        message: String,
+    },
+}
+
+/// A root effect plus every unique reusable effect it transitively references.
+#[derive(Debug, Clone)]
+pub struct ResolvedEffectProject {
+    pub root: EffectAsset,
+    pub dependencies: BTreeMap<EffectId, EffectAsset>,
+}
+
+impl ResolvedEffectProject {
+    pub fn effect(&self, id: EffectId) -> Option<&EffectAsset> {
+        if self.root.id == id {
+            Some(&self.root)
+        } else {
+            self.dependencies.get(&id)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectDependencyDiagnosticCode {
+    Missing,
+    Duplicate,
+    Unresolvable,
+    IndexUnavailable,
+    SourceChanged,
+    InvalidTiming,
+    Cycle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectDependencyDiagnostic {
+    pub code: ProjectDependencyDiagnosticCode,
+    pub owner: EffectId,
+    pub clip: EffectClipId,
+    pub reference: EffectAssetRef,
+    pub cycle: Vec<EffectId>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("effect dependency resolution failed with {count} diagnostic(s)", count = .diagnostics.len())]
+pub struct ProjectDependencyReport {
+    pub diagnostics: Vec<ProjectDependencyDiagnostic>,
+}
+
+struct DependencyResolver<'a> {
+    index: &'a ProjectAssetIndex,
+    resolved: BTreeMap<EffectId, EffectAsset>,
+    visiting: Vec<EffectId>,
+    visited: BTreeSet<EffectId>,
+    diagnostics: Vec<ProjectDependencyDiagnostic>,
+}
+
+impl DependencyResolver<'_> {
+    fn visit(&mut self, effect: &EffectAsset) {
+        if self.visited.contains(&effect.id) {
+            return;
+        }
+        self.visiting.push(effect.id);
+        for clip in &effect.effect_clips {
+            let reference = clip.source;
+            if let Some(cycle_start) = self
+                .visiting
+                .iter()
+                .position(|candidate| *candidate == reference.id)
+            {
+                let mut cycle = self.visiting[cycle_start..].to_vec();
+                cycle.push(reference.id);
+                self.diagnostics.push(ProjectDependencyDiagnostic {
+                    code: ProjectDependencyDiagnosticCode::Cycle,
+                    owner: effect.id,
+                    clip: clip.id,
+                    reference,
+                    message: format!("effect reference cycle detected: {cycle:?}"),
+                    cycle,
+                });
+                continue;
+            }
+
+            let child = match self.index.load_effect(reference) {
+                Ok(child) => child,
+                Err(error) => {
+                    self.diagnostics.push(ProjectDependencyDiagnostic {
+                        code: dependency_code(&error),
+                        owner: effect.id,
+                        clip: clip.id,
+                        reference,
+                        cycle: Vec::new(),
+                        message: error.to_string(),
+                    });
+                    continue;
+                }
+            };
+            if !child.looping && clip.source_offset + clip.duration > child.duration {
+                self.diagnostics.push(ProjectDependencyDiagnostic {
+                    code: ProjectDependencyDiagnosticCode::InvalidTiming,
+                    owner: effect.id,
+                    clip: clip.id,
+                    reference,
+                    cycle: Vec::new(),
+                    message: format!(
+                        "effect clip source window {}..{} exceeds non-looping effect duration {}",
+                        clip.source_offset,
+                        clip.source_offset + clip.duration,
+                        child.duration
+                    ),
+                });
+                continue;
+            }
+            self.resolved
+                .entry(child.id)
+                .or_insert_with(|| child.clone());
+            self.visit(&child);
+        }
+        self.visiting.pop();
+        self.visited.insert(effect.id);
+    }
+}
+
+fn dependency_code(error: &ResolveEffectError) -> ProjectDependencyDiagnosticCode {
+    match error {
+        ResolveEffectError::IndexUnavailable { .. } => {
+            ProjectDependencyDiagnosticCode::IndexUnavailable
+        }
+        ResolveEffectError::Missing { .. } => ProjectDependencyDiagnosticCode::Missing,
+        ResolveEffectError::Duplicate { .. } => ProjectDependencyDiagnosticCode::Duplicate,
+        ResolveEffectError::Unresolvable { .. } => ProjectDependencyDiagnosticCode::Unresolvable,
+        ResolveEffectError::SourceChanged { .. } => ProjectDependencyDiagnosticCode::SourceChanged,
+    }
 }
 
 fn collect_effect_sources(
@@ -435,7 +603,7 @@ mod tests {
         let id = EffectId::from_u128(42);
         let reference = EffectAssetRef::new(id);
 
-        assert_eq!(reference.asset_id(), ProjectAssetId::Effect(id));
+        assert_eq!(ProjectAssetId::from(reference), ProjectAssetId::Effect(id));
     }
 
     #[test]

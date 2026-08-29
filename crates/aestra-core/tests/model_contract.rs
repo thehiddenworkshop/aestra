@@ -1,7 +1,8 @@
 use aestra_core::{
-    AssetDefinition, DiagnosticCode, EffectAsset, EffectParameter, Emitter, EmitterId,
-    EmitterShape, EmitterTransform, FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE,
-    MaterialProperties, ModuleParameters, ParameterId, RendererInstance, ScalarRange, Value,
+    AssetDefinition, DiagnosticCode, EffectAsset, EffectClip, EffectClipSeed, EffectId,
+    EffectParameter, Emitter, EmitterId, EmitterShape, EmitterTransform, FlipbookDefinition,
+    MODULE_EMISSION, MODULE_SHAPE, MaterialProperties, ModuleParameters, ParameterId,
+    RendererInstance, ScalarRange, Value,
 };
 
 #[test]
@@ -287,4 +288,72 @@ fn emitter_transforms_round_trip_and_reject_degenerate_values() {
     assert!(report.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == DiagnosticCode::InvalidValue && diagnostic.path.ends_with("transform")
     }));
+}
+
+#[test]
+fn reusable_effect_clips_round_trip_without_bumping_the_v3_format() {
+    let child = EffectId::from_u128(0xC11D);
+    let mut effect = EffectAsset::new("Composition", 3.0);
+    let mut clip = EffectClip::new(child, 0.5, 1.5);
+    clip.source_offset = 0.25;
+    clip.seed = EffectClipSeed::Fixed(42);
+    effect.effect_clips.push(clip);
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+
+    assert_eq!(decoded, effect);
+    assert_eq!(decoded.format_version, 3);
+    assert!(encoded.contains("effect_clips"));
+}
+
+#[test]
+fn existing_v3_sources_without_effect_clips_remain_compatible() {
+    let effect = EffectAsset::new("Legacy v3", 1.0);
+    let encoded = effect.to_pretty_ron().unwrap();
+
+    assert!(!encoded.contains("effect_clips"));
+    assert!(
+        EffectAsset::from_ron(&encoded)
+            .unwrap()
+            .effect_clips
+            .is_empty()
+    );
+}
+
+#[test]
+fn effect_clip_timing_and_direct_self_references_are_validated() {
+    let mut effect = EffectAsset::new("Invalid composition", 1.0);
+    let mut clip = EffectClip::new(effect.id, 0.75, 0.5);
+    clip.source_offset = -1.0;
+    effect.effect_clips.push(clip);
+
+    let report = effect.validation_report();
+
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::ReferenceCycle
+            && diagnostic.path.ends_with("effect_clips[0].source")
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidTiming
+            && diagnostic.path.ends_with("effect_clips[0].source_offset")
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidTiming
+            && diagnostic.path.ends_with("effect_clips[0]")
+    }));
+}
+
+#[test]
+fn effect_clip_time_mapping_and_seed_derivation_are_deterministic() {
+    let clip = EffectClip::new(EffectId::from_u128(2), 1.0, 2.0);
+
+    assert_eq!(clip.map_time(0.5, 4.0, false), None);
+    assert_eq!(clip.map_time(1.5, 4.0, false), Some(0.5));
+    assert_eq!(clip.map_time(3.0, 1.5, true), Some(0.5));
+    assert_eq!(
+        EffectClipSeed::Inherit.resolve(9, clip.id),
+        EffectClipSeed::Inherit.resolve(9, clip.id)
+    );
+    assert_eq!(EffectClipSeed::Fixed(77).resolve(9, clip.id), 77);
 }
