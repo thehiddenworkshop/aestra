@@ -4,9 +4,14 @@ use crate::*;
 use aestra_project::{
     ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectEffectEntry, ProjectEffectStatus,
 };
-use bevy::ui_widgets::Activate;
 #[cfg(test)]
 use bevy::ui_widgets::ScrollArea;
+use bevy::{
+    feathers::cursor::EntityCursor,
+    picking::events::{Drag, DragEnd, DragStart, Pointer},
+    ui_widgets::Activate,
+    window::SystemCursorIcon,
+};
 use std::path::Path;
 #[cfg(test)]
 use std::{fs, path::PathBuf};
@@ -30,6 +35,9 @@ impl Plugin for EditorLibraryPlugin {
             .add_observer(activate_library_list_entry)
             .add_observer(execute_library_action)
             .add_observer(update_library_query)
+            .add_observer(begin_project_effect_drag)
+            .add_observer(update_project_effect_drag)
+            .add_observer(end_project_effect_drag)
             .add_systems(
                 Update,
                 handle_library_action_buttons.in_set(LibrarySet::Actions),
@@ -71,12 +79,40 @@ impl ProjectEffectCatalog {
             .map(|entry| entry.path.as_path())
     }
 
+    pub(crate) fn effect_for_placement(
+        &self,
+        owner: &EffectAsset,
+        reference: EffectAssetRef,
+    ) -> Result<EffectAsset, String> {
+        if reference.id == owner.id {
+            return Err("an effect cannot reference itself".into());
+        }
+        let source = self
+            .index
+            .load_effect(reference)
+            .map_err(|error| error.to_string())?;
+        let project = self
+            .index
+            .resolve_effect_project(&source)
+            .map_err(|error| error.to_string())?;
+        if project.effect(owner.id).is_some() {
+            return Err("placing this effect would create a reference cycle".into());
+        }
+        Ok(source)
+    }
+
+    pub(crate) fn load_effect(&self, reference: EffectAssetRef) -> Result<EffectAsset, String> {
+        self.index
+            .load_effect(reference)
+            .map_err(|error| error.to_string())
+    }
+
     fn availability(&self) -> &ProjectAssetIndexAvailability {
         self.index.availability()
     }
 
     #[cfg(test)]
-    fn from_entries(entries: Vec<ProjectEffectEntry>) -> Self {
+    pub(crate) fn from_entries(entries: Vec<ProjectEffectEntry>) -> Self {
         Self {
             index: ProjectAssetIndex::from_entries("virtual", entries),
         }
@@ -153,7 +189,16 @@ struct AssetButtonLabel;
 struct LibrarySearchInput;
 
 #[derive(Component)]
+struct ProjectEffectDragGhost;
+
+#[derive(Component, Clone, Copy)]
 pub(crate) struct ProjectEffectRow(ProjectEffectEntryId);
+
+impl ProjectEffectRow {
+    pub(crate) fn id(self) -> ProjectEffectEntryId {
+        self.0
+    }
+}
 
 #[derive(Component)]
 struct LibraryProjectCount;
@@ -215,6 +260,120 @@ fn activate_library_list_entry(
         && let Ok(action) = actions.get(change.value)
     {
         commands.trigger(*action);
+    }
+}
+
+fn begin_project_effect_drag(
+    drag: On<Pointer<DragStart>>,
+    rows: Query<&ProjectEffectRow>,
+    parents: Query<&ChildOf>,
+    catalog: Res<ProjectEffectCatalog>,
+    ghosts: Query<Entity, With<ProjectEffectDragGhost>>,
+    mut commands: Commands,
+) {
+    let Some(row) = project_effect_row_from_entity(drag.event_target(), &rows, &parents) else {
+        return;
+    };
+    let Some(entry) = catalog.entry(row.id()) else {
+        return;
+    };
+    for ghost in &ghosts {
+        commands.entity(ghost).despawn();
+    }
+    let position = drag.pointer_location.position + Vec2::new(14.0, 14.0);
+    commands
+        .spawn((
+            ProjectEffectDragGhost,
+            GlobalZIndex(400),
+            Pickable::IGNORE,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(position.x),
+                top: Val::Px(position.y),
+                max_width: Val::Px(260.0),
+                padding: UiRect::axes(Val::Px(10.0), Val::Px(7.0)),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(7.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_LIGHT.with_alpha(0.97)),
+            BorderColor::all(theme::ACCENT),
+        ))
+        .with_children(|ghost| {
+            ghost
+                .spawn((
+                    Node {
+                        width: Val::Px(18.0),
+                        height: Val::Px(18.0),
+                        flex_shrink: 0.0,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        border_radius: BorderRadius::all(Val::Px(3.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::ACCENT),
+                    Pickable::IGNORE,
+                ))
+                .with_child((
+                    Text::new("FX"),
+                    TextFont {
+                        font_size: FontSize::Px(8.0),
+                        ..default()
+                    },
+                    TextColor(theme::PANEL_DARK),
+                    Pickable::IGNORE,
+                ));
+            ghost.spawn((
+                Text::new(&entry.display_name),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                TextLayout::no_wrap(),
+                Node {
+                    min_width: Val::Px(0.0),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+fn project_effect_row_from_entity<'a>(
+    mut entity: Entity,
+    rows: &'a Query<&ProjectEffectRow>,
+    parents: &Query<&ChildOf>,
+) -> Option<&'a ProjectEffectRow> {
+    loop {
+        if let Ok(row) = rows.get(entity) {
+            return Some(row);
+        }
+        entity = parents.get(entity).ok()?.parent();
+    }
+}
+
+fn update_project_effect_drag(
+    drag: On<Pointer<Drag>>,
+    mut ghosts: Query<&mut Node, With<ProjectEffectDragGhost>>,
+) {
+    let position = drag.pointer_location.position + Vec2::new(14.0, 14.0);
+    for mut node in &mut ghosts {
+        node.left = Val::Px(position.x);
+        node.top = Val::Px(position.y);
+    }
+}
+
+fn end_project_effect_drag(
+    _drag: On<Pointer<DragEnd>>,
+    ghosts: Query<Entity, With<ProjectEffectDragGhost>>,
+    mut commands: Commands,
+) {
+    for ghost in &ghosts {
+        commands.entity(ghost).despawn();
     }
 }
 
@@ -389,6 +548,12 @@ fn spawn_project_effects(
             KeyboardNavigableListRow,
             project_effect_tooltip(entry, localizer),
         ));
+        if matches!(entry.status, ProjectEffectStatus::Valid) {
+            panel
+                .commands()
+                .entity(row)
+                .insert(EntityCursor::System(SystemCursorIcon::Grab));
+        }
     }
     let catalog_empty = spawn_list_empty_state(
         panel,
@@ -881,7 +1046,7 @@ mod tests {
                     ..default()
                 })
                 .with_children(|panel| {
-                    spawn_timeline(panel, &session, &timeline, &localizer);
+                    spawn_timeline(panel, &session, &timeline, &catalog, &localizer);
                 });
             });
     }
@@ -1479,6 +1644,39 @@ mod tests {
             .insert_resource(Localizer::new("en-US").expect("test locale should load"))
             .add_plugins(EditorLibraryPlugin);
         app
+    }
+
+    #[test]
+    fn project_catalog_rejects_self_and_transitive_effect_cycles() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut owner = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
+        owner.name = "Owner".into();
+        owner.effect_clips.clear();
+        let mut child = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        child.id = aestra_bevy::EffectId::from_u128(0xc41d);
+        child.name = "Child".into();
+        child.effect_clips = vec![aestra_bevy::EffectClip::new(
+            EffectAssetRef::new(owner.id),
+            0.0,
+            0.5,
+        )];
+        owner
+            .save_ron(temporary.path().join("owner.aestra.ron"))
+            .unwrap();
+        child
+            .save_ron(temporary.path().join("child.aestra.ron"))
+            .unwrap();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+
+        let self_error = catalog
+            .effect_for_placement(&owner, EffectAssetRef::new(owner.id))
+            .unwrap_err();
+        assert!(self_error.contains("cannot reference itself"));
+        let cycle_error = catalog
+            .effect_for_placement(&owner, EffectAssetRef::new(child.id))
+            .unwrap_err();
+        assert!(cycle_error.contains("reference cycle"));
     }
 
     #[test]

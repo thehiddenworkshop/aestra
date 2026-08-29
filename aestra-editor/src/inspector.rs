@@ -5,7 +5,9 @@ use crate::feathers::panel_card::{
     PanelCardProps, RememberedPanelCard, spawn_panel_card as spawn_remembered_panel_card,
 };
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
+use crate::timeline::{EffectClipChildSelection, TimelineState};
 use crate::*;
+use aestra_bevy::EffectClipId;
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use bevy::{
     ui::InteractionDisabled,
@@ -63,6 +65,7 @@ impl Plugin for InspectorPlugin {
                         sync_inspector_slider_inputs,
                         sync_renderer_number_inputs,
                         sync_renderer_slider_inputs,
+                        sync_effect_clip_inspector_timing,
                     )
                         .chain(),
                     scroll_inspector_to_focus,
@@ -2648,6 +2651,430 @@ fn clamp_inspector_number(value: f32, min: Option<f32>, max: Option<f32>) -> Opt
     Some(max.map_or(value, |max| value.min(max)))
 }
 
+fn spawn_read_only_inspector_shell(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    localizer: &Localizer,
+    body: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_grow: 1.0,
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
+        .with_children(|panel| {
+            panel_heading(
+                panel,
+                &localizer.text("inspector-referenced-effect-heading"),
+                &localizer.text("inspector-read-only"),
+            );
+            panel.spawn((
+                Text::new(title),
+                InspectorTitle,
+                TextFont {
+                    font_size: FontSize::Px(17.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Node {
+                    margin: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                    ..default()
+                },
+            ));
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_height: Val::Px(0.0),
+                    min_width: Val::Px(0.0),
+                    ..default()
+                })
+                .with_children(|container| {
+                    spawn_vertical_scroll_area(
+                        container,
+                        ScrollMemoryKey::Inspector,
+                        Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(7.0),
+                            padding: UiRect::all(Val::Px(8.0)),
+                            ..default()
+                        },
+                        body,
+                    );
+                });
+        });
+}
+
+fn spawn_read_only_card(
+    parent: &mut ChildSpawnerCommands,
+    heading: impl Into<String>,
+    body: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::all(Val::Px(8.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Text::new(heading),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+            body(card);
+        });
+}
+
+fn spawn_read_only_row(
+    parent: &mut ChildSpawnerCommands,
+    label: impl Into<String>,
+    value: impl Into<String>,
+) -> Entity {
+    let mut value_entity = None;
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            align_items: AlignItems::Start,
+            column_gap: Val::Px(8.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+                Node {
+                    width: Val::Px(92.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            value_entity = Some(
+                row.spawn((
+                    Text::new(value),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_MUTED),
+                    Node {
+                        min_width: Val::Px(0.0),
+                        flex_grow: 1.0,
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .id(),
+            );
+        });
+    value_entity.expect("read-only rows always spawn a value")
+}
+
+#[derive(Component, Clone, Copy)]
+struct EffectClipInspectorTimingText {
+    clip: EffectClipId,
+    field: EffectClipInspectorTimingField,
+}
+
+#[derive(Clone, Copy)]
+enum EffectClipInspectorTimingField {
+    Start,
+    SourceOffset,
+    Duration,
+}
+
+fn sync_effect_clip_inspector_timing(
+    session: Res<EditorSession>,
+    timeline: Option<Res<TimelineState>>,
+    mut texts: Query<(&EffectClipInspectorTimingText, &mut Text)>,
+) {
+    for (marker, mut text) in &mut texts {
+        let timing = timeline
+            .as_ref()
+            .and_then(|state| state.effect_clip_preview_timing(marker.clip))
+            .or_else(|| {
+                session
+                    .effect
+                    .effect_clips
+                    .iter()
+                    .find(|clip| clip.id == marker.clip)
+                    .map(|clip| (clip.start_time, clip.source_offset, clip.duration))
+            });
+        let Some((start, source_offset, duration)) = timing else {
+            continue;
+        };
+        let value = match marker.field {
+            EffectClipInspectorTimingField::Start => start,
+            EffectClipInspectorTimingField::SourceOffset => source_offset,
+            EffectClipInspectorTimingField::Duration => duration,
+        };
+        text.0 = format!("{value:.3} s");
+    }
+}
+
+fn effect_clip_catalog_name(catalog: &ProjectEffectCatalog, source: EffectAssetRef) -> String {
+    catalog
+        .entries()
+        .iter()
+        .find(|entry| entry.reference == Some(source))
+        .map_or_else(|| source.id.to_string(), |entry| entry.display_name.clone())
+}
+
+fn spawn_effect_clip_inspector(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+    id: EffectClipId,
+) -> bool {
+    let Some(clip) = session
+        .effect
+        .effect_clips
+        .iter()
+        .find(|clip| clip.id == id)
+    else {
+        return false;
+    };
+    let source_name = effect_clip_catalog_name(catalog, clip.source);
+    let source = catalog.load_effect(clip.source).ok();
+    spawn_read_only_inspector_shell(parent, &source_name, localizer, |stack| {
+        spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
+            spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
+            let start = spawn_read_only_row(
+                card,
+                localizer.text("inspector-start"),
+                format!("{:.3} s", clip.start_time),
+            );
+            card.commands()
+                .entity(start)
+                .insert(EffectClipInspectorTimingText {
+                    clip: clip.id,
+                    field: EffectClipInspectorTimingField::Start,
+                });
+            let source_offset = spawn_read_only_row(
+                card,
+                localizer.text("inspector-source-offset"),
+                format!("{:.3} s", clip.source_offset),
+            );
+            card.commands()
+                .entity(source_offset)
+                .insert(EffectClipInspectorTimingText {
+                    clip: clip.id,
+                    field: EffectClipInspectorTimingField::SourceOffset,
+                });
+            let duration = spawn_read_only_row(
+                card,
+                localizer.text("inspector-duration"),
+                format!("{:.3} s", clip.duration),
+            );
+            card.commands()
+                .entity(duration)
+                .insert(EffectClipInspectorTimingText {
+                    clip: clip.id,
+                    field: EffectClipInspectorTimingField::Duration,
+                });
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-seed"),
+                format!("{:?}", clip.seed),
+            );
+        });
+        spawn_read_only_card(stack, localizer.text("inspector-source-summary"), |card| {
+            if let Some(source) = &source {
+                spawn_read_only_row(card, localizer.text("inspector-name"), &source.name);
+                spawn_read_only_row(
+                    card,
+                    localizer.text("inspector-duration"),
+                    format!("{:.3} s", source.duration),
+                );
+                spawn_read_only_row(
+                    card,
+                    localizer.text("inspector-emitters"),
+                    source.emitters.len().to_string(),
+                );
+                spawn_read_only_row(
+                    card,
+                    localizer.text("inspector-looping"),
+                    source.looping.to_string(),
+                );
+            } else {
+                spawn_read_only_row(
+                    card,
+                    localizer.text("inspector-status"),
+                    localizer.text("inspector-source-unavailable"),
+                );
+            }
+        });
+        stack.spawn((
+            Text::new(localizer.text("inspector-effect-clip-read-only-description")),
+            TextFont {
+                font_size: FontSize::Px(9.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_FAINT),
+            Pickable::IGNORE,
+        ));
+    });
+    true
+}
+
+fn spawn_referenced_emitter_inspector(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+    selection: EffectClipChildSelection,
+) -> bool {
+    let Some(clip) = session
+        .effect
+        .effect_clips
+        .iter()
+        .find(|clip| clip.id == selection.clip)
+    else {
+        return false;
+    };
+    let Ok(source) = catalog.load_effect(clip.source) else {
+        return false;
+    };
+    let Some(emitter) = source
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == selection.emitter)
+    else {
+        return false;
+    };
+    let source_name = effect_clip_catalog_name(catalog, clip.source);
+    spawn_read_only_inspector_shell(parent, &emitter.name, localizer, |stack| {
+        spawn_read_only_card(stack, localizer.text("inspector-reference"), |card| {
+            spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
+            spawn_read_only_row(card, localizer.text("inspector-emitter"), &emitter.name);
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-mode"),
+                localizer.text("inspector-read-only"),
+            );
+        });
+        spawn_read_only_card(stack, localizer.text("inspector-emitter"), |card| {
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-enabled"),
+                emitter.enabled.to_string(),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-capacity"),
+                emitter.max_particles.to_string(),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-start"),
+                format!("{:.3} s", emitter.start_time),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-duration"),
+                format!("{:.3} s", emitter.duration),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-domain"),
+                format!("{:?}", emitter.simulation_domain),
+            );
+        });
+        spawn_read_only_card(stack, localizer.text("inspector-transform"), |card| {
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-position"),
+                format!(
+                    "{:.3}, {:.3}, {:.3}",
+                    emitter.transform.translation[0],
+                    emitter.transform.translation[1],
+                    emitter.transform.translation[2]
+                ),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-rotation"),
+                format!(
+                    "{:.3}, {:.3}, {:.3}, {:.3}",
+                    emitter.transform.rotation[0],
+                    emitter.transform.rotation[1],
+                    emitter.transform.rotation[2],
+                    emitter.transform.rotation[3]
+                ),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-scale"),
+                format!(
+                    "{:.3}, {:.3}, {:.3}",
+                    emitter.transform.scale[0],
+                    emitter.transform.scale[1],
+                    emitter.transform.scale[2]
+                ),
+            );
+        });
+        for module in &emitter.modules {
+            spawn_read_only_card(stack, &module.module_type.0, |card| {
+                spawn_read_only_row(
+                    card,
+                    localizer.text("inspector-stage"),
+                    format!("{:?}", module.stage),
+                );
+                spawn_read_only_row(
+                    card,
+                    localizer.text("inspector-enabled"),
+                    module.enabled.to_string(),
+                );
+                spawn_read_only_row(
+                    card,
+                    localizer.text("inspector-parameters"),
+                    format!("{:?}", module.parameters),
+                );
+            });
+        }
+        for renderer in &emitter.renderers {
+            spawn_read_only_card(stack, &renderer.renderer_type.0, |card| {
+                spawn_read_only_row(
+                    card,
+                    localizer.text("inspector-enabled"),
+                    renderer.enabled.to_string(),
+                );
+                spawn_read_only_row(
+                    card,
+                    localizer.text("inspector-properties"),
+                    format!("{:?}", renderer.properties),
+                );
+            });
+        }
+    });
+    true
+}
+
 pub(crate) fn spawn_inspector(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -2655,7 +3082,19 @@ pub(crate) fn spawn_inspector(
     palette: &ModulePaletteState,
     localizer: &Localizer,
     settings: &EditorSettings,
+    catalog: &ProjectEffectCatalog,
+    timeline: &TimelineState,
 ) {
+    if let Some(selection) = timeline.inspected_child
+        && spawn_referenced_emitter_inspector(parent, session, catalog, localizer, selection)
+    {
+        return;
+    }
+    if let SemanticTarget::EffectClip(clip) = session.selection.primary
+        && spawn_effect_clip_inspector(parent, session, catalog, localizer, clip)
+    {
+        return;
+    }
     let layer = session.selected_layer();
     let emitter_index = session.selected_layer_index();
     parent

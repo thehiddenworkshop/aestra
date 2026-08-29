@@ -1,14 +1,15 @@
 use crate::feathers::color_picker::{ColorPickerLabels, spawn_color_picker};
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
-use crate::library::ProjectEffectRow;
+use crate::library::{ProjectEffectCatalog, ProjectEffectRow};
 use crate::{
     ComboOption, CurvesState, DockPanel, EditorNativeControl, EditorTooltip, FeathersActionButton,
     KeyboardNavigableList, KeyboardNavigableListRow, Localizer, MenuState, ModulePaletteState,
-    PendingFeathersActivation, TransportAction, WorkspaceLayout, mini_button, reveal_dock_panel,
-    session::EditorSession, spawn_combo_control, spawn_text_input, theme, ui_shell,
+    PendingFeathersActivation, ProjectEffectEntryId, TransportAction, WorkspaceLayout, mini_button,
+    reveal_dock_panel, session::EditorSession, spawn_combo_control, spawn_text_input, theme,
+    ui_shell,
 };
-use aestra_authoring::{EffectCommand, EffectTransaction};
-use aestra_bevy::EmitterId;
+use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
+use aestra_bevy::{EffectAssetRef, EffectClip, EffectClipId, Emitter, EmitterId};
 #[cfg(test)]
 use bevy::ui_widgets::{ControlOrientation, Scrollbar};
 use bevy::{
@@ -33,6 +34,7 @@ use bevy::{
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
 use fluent_bundle::FluentArgs;
+use std::collections::BTreeSet;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum TimelineSet {
@@ -83,6 +85,8 @@ impl Plugin for TimelinePlugin {
                 (
                     update_timeline_time_label,
                     update_timeline_visuals,
+                    update_effect_clip_visuals,
+                    update_effect_drop_preview,
                     sync_timeline_vertical_scroll,
                     sync_timeline_horizontal_scroll,
                     update_track_header_hover_actions,
@@ -105,10 +109,23 @@ pub(crate) enum TimelineAction {
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChoreographyAction {
     SelectEmitter(EmitterId),
+    SelectEffectClip(EffectClipId),
+    SelectEffectClipEmitter {
+        clip: EffectClipId,
+        emitter: EmitterId,
+    },
+    ToggleEffectClipExpanded(EffectClipId),
+    ToggleEffectClipMuted(EffectClipId),
+    ToggleEffectClipSolo(EffectClipId),
+    ToggleEffectClipMenu(EffectClipId),
+    DeleteEffectClip(EffectClipId),
     AddEmitter,
     DuplicateEmitter(Option<EmitterId>),
     DeleteEmitter(Option<EmitterId>),
-    SetEmitterEnabled { emitter: EmitterId, enabled: bool },
+    SetEmitterEnabled {
+        emitter: EmitterId,
+        enabled: bool,
+    },
     ToggleEmitterSolo(EmitterId),
     ToggleEmitterMenu(EmitterId),
     ToggleEmitterColorPicker(EmitterId),
@@ -141,7 +158,14 @@ fn queue_choreography_action_activation(
 fn activate_timeline_track_entry(
     change: On<ValueChange<Entity>>,
     lists: Query<(), With<KeyboardNavigableList>>,
-    actions: Query<&ChoreographyAction, With<EmitterTrackHeader>>,
+    actions: Query<
+        &ChoreographyAction,
+        Or<(
+            With<EmitterTrackHeader>,
+            With<EffectClipTrackHeader>,
+            With<ReferencedEmitterTrackHeader>,
+        )>,
+    >,
     mut commands: Commands,
 ) {
     if lists.contains(change.source)
@@ -294,8 +318,29 @@ fn execute_choreography_action(
     mut curves: ResMut<CurvesState>,
     mut layout: ResMut<WorkspaceLayout>,
     mut state: ResMut<TimelineState>,
+    catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
 ) {
+    if let ChoreographyAction::ToggleEffectClipMenu(clip) = *action {
+        let revision = session.ui_revision;
+        if session
+            .effect
+            .effect_clips
+            .iter()
+            .any(|item| item.id == clip)
+        {
+            session.select_effect_clip(clip);
+            curves.clear();
+        }
+        state.inspected_child = None;
+        state.context_emitter = None;
+        state.color_picker_emitter = None;
+        state.context_effect_clip = (state.context_effect_clip != Some(clip)).then_some(clip);
+        if session.ui_revision == revision {
+            session.ui_revision += 1;
+        }
+        return;
+    }
     if let ChoreographyAction::ToggleEmitterMenu(emitter) = *action {
         let revision = session.ui_revision;
         if session
@@ -336,8 +381,9 @@ fn execute_choreography_action(
     }
 
     let revision = session.ui_revision;
-    let closed_context_menu =
-        state.context_emitter.take().is_some() | state.color_picker_emitter.take().is_some();
+    let closed_context_menu = state.context_emitter.take().is_some()
+        | state.color_picker_emitter.take().is_some()
+        | state.context_effect_clip.take().is_some();
     match *action {
         ChoreographyAction::SelectEmitter(emitter) => {
             if session
@@ -347,6 +393,80 @@ fn execute_choreography_action(
                 .any(|item| item.id == emitter)
             {
                 session.select_emitter(emitter);
+                state.inspected_child = None;
+                curves.clear();
+            }
+        }
+        ChoreographyAction::SelectEffectClip(clip) => {
+            if session
+                .effect
+                .effect_clips
+                .iter()
+                .any(|item| item.id == clip)
+            {
+                let changed = session.select_effect_clip(clip);
+                let had_child = state.inspected_child.take().is_some();
+                state.inspected_child = None;
+                curves.clear();
+                if had_child && !changed {
+                    session.ui_revision += 1;
+                }
+            }
+        }
+        ChoreographyAction::SelectEffectClipEmitter { clip, emitter } => {
+            let source = session
+                .effect
+                .effect_clips
+                .iter()
+                .find(|item| item.id == clip)
+                .and_then(|item| catalog.load_effect(item.source).ok());
+            if source
+                .as_ref()
+                .is_some_and(|effect| effect.emitters.iter().any(|item| item.id == emitter))
+            {
+                session.selection.select_effect_clip(clip);
+                state.inspected_child = Some(EffectClipChildSelection { clip, emitter });
+                session.status = localizer.text("timeline-selected-referenced-emitter");
+                session.ui_revision += 1;
+                curves.clear();
+            }
+        }
+        ChoreographyAction::ToggleEffectClipExpanded(clip) => {
+            if !state.expanded_effect_clips.remove(&clip) {
+                state.expanded_effect_clips.insert(clip);
+            } else if state
+                .inspected_child
+                .is_some_and(|child| child.clip == clip)
+            {
+                state.inspected_child = None;
+            }
+            session.ui_revision += 1;
+        }
+        ChoreographyAction::ToggleEffectClipMuted(clip) => {
+            if !state.muted_effect_clips.remove(&clip) {
+                state.muted_effect_clips.insert(clip);
+            }
+            session.status = localizer.text("timeline-effect-clip-preview-updated");
+            session.ui_revision += 1;
+        }
+        ChoreographyAction::ToggleEffectClipSolo(clip) => {
+            state.solo_effect_clip = (state.solo_effect_clip != Some(clip)).then_some(clip);
+            session.status = localizer.text("timeline-effect-clip-preview-updated");
+            session.ui_revision += 1;
+        }
+        ChoreographyAction::DeleteEffectClip(clip) => {
+            if session.execute(
+                localizer.text("timeline-delete-effect-clip-command"),
+                EffectCommand::RemoveEffectClip { id: clip },
+                true,
+            ) {
+                state.expanded_effect_clips.remove(&clip);
+                state.muted_effect_clips.remove(&clip);
+                if state.solo_effect_clip == Some(clip) {
+                    state.solo_effect_clip = None;
+                }
+                state.context_effect_clip = None;
+                state.inspected_child = None;
                 curves.clear();
             }
         }
@@ -380,7 +500,8 @@ fn execute_choreography_action(
             }
         }
         ChoreographyAction::ToggleEmitterMenu(_)
-        | ChoreographyAction::ToggleEmitterColorPicker(_) => unreachable!(),
+        | ChoreographyAction::ToggleEmitterColorPicker(_)
+        | ChoreographyAction::ToggleEffectClipMenu(_) => unreachable!(),
     }
     if closed_context_menu && session.ui_revision == revision {
         session.ui_revision += 1;
@@ -388,8 +509,9 @@ fn execute_choreography_action(
 }
 
 fn select_choreography_target(session: &mut EditorSession, target: Option<EmitterId>) -> bool {
-    let Some(target) = target else {
-        return true;
+    let Some(target) = target.or_else(|| session.selection.emitter(&session.effect)) else {
+        session.status = "The selected timeline item is not an emitter".into();
+        return false;
     };
     if !session
         .effect
@@ -420,6 +542,8 @@ fn choreography_keyboard_input(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     palette: Res<ModulePaletteState>,
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
     timelines: Query<(), With<TimelineCanvas>>,
     focus: Option<Res<InputFocus>>,
     editable_text: Query<(), With<EditableText>>,
@@ -439,7 +563,13 @@ fn choreography_keyboard_input(
         commands.trigger(ChoreographyAction::DuplicateEmitter(None));
     }
     if keys.just_pressed(KeyCode::Delete) {
-        commands.trigger(ChoreographyAction::DeleteEmitter(None));
+        if state.inspected_child.is_none()
+            && let SemanticTarget::EffectClip(clip) = session.selection.primary
+        {
+            commands.trigger(ChoreographyAction::DeleteEffectClip(clip));
+        } else if state.inspected_child.is_none() {
+            commands.trigger(ChoreographyAction::DeleteEmitter(None));
+        }
     }
 }
 
@@ -510,10 +640,11 @@ mod tests {
         mut commands: Commands,
         session: Res<EditorSession>,
         state: Res<TimelineState>,
+        catalog: Res<ProjectEffectCatalog>,
         localizer: Res<Localizer>,
     ) {
         commands.spawn(Node::default()).with_children(|parent| {
-            spawn_timeline(parent, &session, &state, &localizer);
+            spawn_timeline(parent, &session, &state, &catalog, &localizer);
         });
     }
 
@@ -522,6 +653,7 @@ mod tests {
         let duration = session.playback_duration();
         app.insert_resource(session)
             .insert_resource(TimelineState::framed(duration))
+            .insert_resource(ProjectEffectCatalog::from_entries(Vec::new()))
             .init_resource::<CurvesState>()
             .init_resource::<WorkspaceLayout>()
             .insert_resource(Localizer::new("en-US").unwrap())
@@ -534,6 +666,244 @@ mod tests {
         assert_eq!(timeline_cursor_fraction(-0.5), 0.0);
         assert_eq!(timeline_cursor_fraction(0.0), 0.5);
         assert_eq!(timeline_cursor_fraction(0.5), 1.0);
+    }
+
+    #[test]
+    fn effect_clip_placement_uses_pointer_time_and_fits_the_owner() {
+        assert_eq!(effect_clip_placement(0.75, 2.8, 1.0, 60), Some((0.75, 1.0)));
+        let (start, duration) = effect_clip_placement(2.8, 2.8, 1.0, 60).unwrap();
+        assert!((start - (2.8 - 1.0 / 60.0)).abs() < 0.000_1);
+        assert!((duration - 1.0 / 60.0).abs() < 0.000_1);
+        assert_eq!(effect_clip_placement(0.0, 0.0, 1.0, 60), None);
+        assert_eq!(effect_clip_placement(0.0, 2.8, 0.0, 60), None);
+    }
+
+    #[test]
+    fn effect_clip_creation_selection_and_undo_preserve_semantic_identity() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let fallback_emitter = session.effect.emitters[0].id;
+        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
+        let clip = EffectClip::new(source, 0.4, 0.8);
+        let id = clip.id;
+
+        assert!(session.execute(
+            "Added effect clip",
+            EffectCommand::AddEffectClip { clip, index: 0 },
+            true,
+        ));
+        assert!(session.select_effect_clip(id));
+        assert_eq!(session.selection.primary, SemanticTarget::EffectClip(id));
+        assert_eq!(session.selected_layer().id, fallback_emitter);
+        assert!(!select_choreography_target(&mut session, None));
+        assert_eq!(session.effect.emitters[0].id, fallback_emitter);
+
+        session.undo();
+        assert!(session.effect.effect_clips.is_empty());
+        assert_eq!(
+            session.selection.primary,
+            SemanticTarget::Emitter(fallback_emitter)
+        );
+        session.redo();
+        assert_eq!(session.effect.effect_clips[0].id, id);
+        assert_eq!(session.effect.effect_clips[0].source, source);
+    }
+
+    #[test]
+    fn referenced_emitter_timing_is_clipped_and_mapped_into_parent_time() {
+        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
+        let mut clip = EffectClip::new(source, 1.0, 2.0);
+        clip.source_offset = 0.5;
+        let mut emitter = Emitter::basic_sprite("Child", 2.0);
+        emitter.start_time = 0.25;
+        emitter.duration = 1.5;
+
+        let (start, duration) = mapped_referenced_emitter_timing(&clip, &emitter).unwrap();
+        assert!((start - 1.0).abs() < 0.000_1);
+        assert!((duration - 1.25).abs() < 0.000_1);
+
+        emitter.start_time = 4.0;
+        assert!(mapped_referenced_emitter_timing(&clip, &emitter).is_none());
+    }
+
+    #[test]
+    fn effect_clip_track_state_toggles_and_delete_are_coherent() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
+        let clip = EffectClip::new(source, 0.2, 0.7);
+        let id = clip.id;
+        assert!(session.execute(
+            "Added effect clip",
+            EffectCommand::AddEffectClip { clip, index: 0 },
+            true,
+        ));
+        let mut app = choreography_app(session);
+
+        app.world_mut()
+            .commands()
+            .trigger(ChoreographyAction::ToggleEffectClipExpanded(id));
+        app.update();
+        assert!(
+            app.world()
+                .resource::<TimelineState>()
+                .expanded_effect_clips
+                .contains(&id)
+        );
+
+        app.world_mut()
+            .commands()
+            .trigger(ChoreographyAction::ToggleEffectClipMuted(id));
+        app.world_mut()
+            .commands()
+            .trigger(ChoreographyAction::ToggleEffectClipSolo(id));
+        app.update();
+        let state = app.world().resource::<TimelineState>();
+        assert!(state.muted_effect_clips.contains(&id));
+        assert_eq!(state.solo_effect_clip, Some(id));
+
+        app.world_mut()
+            .commands()
+            .trigger(ChoreographyAction::DeleteEffectClip(id));
+        app.update();
+        let state = app.world().resource::<TimelineState>();
+        assert!(!state.expanded_effect_clips.contains(&id));
+        assert!(!state.muted_effect_clips.contains(&id));
+        assert_eq!(state.solo_effect_clip, None);
+        assert!(
+            app.world()
+                .resource::<EditorSession>()
+                .effect
+                .effect_clips
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn effect_clip_drag_maps_parent_and_source_windows_with_bounds() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let clip = EffectClipId::new();
+        let view = TimelineView {
+            start: 0.0,
+            end: session.playback_duration(),
+        };
+        let mut guide = None;
+        let base = EffectClipTimelineDrag {
+            clip,
+            kind: TimelineDragKind::Move,
+            pointer_start: 0.0,
+            original_start: 0.4,
+            original_source_offset: 0.2,
+            original_duration: 0.8,
+            current_start: 0.4,
+            current_source_offset: 0.2,
+            current_duration: 0.8,
+            source_duration: 1.0,
+            source_looping: false,
+        };
+
+        let mut moved = base;
+        update_effect_clip_timeline_drag(
+            &mut moved,
+            0.3,
+            &session,
+            TimelineSnapMode::None,
+            view,
+            1_000.0,
+            &mut guide,
+        );
+        assert!((moved.current_start - 0.7).abs() < 0.000_1);
+        assert!((moved.current_source_offset - 0.2).abs() < 0.000_1);
+        assert!((moved.current_duration - 0.8).abs() < 0.000_1);
+
+        let mut trimmed_start = EffectClipTimelineDrag {
+            kind: TimelineDragKind::TrimStart,
+            ..base
+        };
+        update_effect_clip_timeline_drag(
+            &mut trimmed_start,
+            0.25,
+            &session,
+            TimelineSnapMode::None,
+            view,
+            1_000.0,
+            &mut guide,
+        );
+        assert!((trimmed_start.current_start - 0.65).abs() < 0.000_1);
+        assert!((trimmed_start.current_source_offset - 0.45).abs() < 0.000_1);
+        assert!((trimmed_start.current_duration - 0.55).abs() < 0.000_1);
+
+        let mut expanded_start = EffectClipTimelineDrag {
+            kind: TimelineDragKind::TrimStart,
+            ..base
+        };
+        update_effect_clip_timeline_drag(
+            &mut expanded_start,
+            -1.0,
+            &session,
+            TimelineSnapMode::None,
+            view,
+            1_000.0,
+            &mut guide,
+        );
+        assert!((expanded_start.current_start - 0.2).abs() < 0.000_1);
+        assert!(expanded_start.current_source_offset.abs() < 0.000_1);
+        assert!((expanded_start.current_duration - 1.0).abs() < 0.000_1);
+
+        let mut trimmed_end = EffectClipTimelineDrag {
+            kind: TimelineDragKind::TrimEnd,
+            original_duration: 0.5,
+            current_duration: 0.5,
+            ..base
+        };
+        update_effect_clip_timeline_drag(
+            &mut trimmed_end,
+            2.0,
+            &session,
+            TimelineSnapMode::None,
+            view,
+            1_000.0,
+            &mut guide,
+        );
+        assert!((trimmed_end.current_duration - 0.8).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn effect_clip_drag_commit_is_one_undoable_timing_command() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xbeef));
+        let mut clip = EffectClip::new(source, 0.4, 0.8);
+        clip.source_offset = 0.2;
+        let id = clip.id;
+        assert!(session.execute(
+            "Added effect clip",
+            EffectCommand::AddEffectClip { clip, index: 0 },
+            true,
+        ));
+        let drag = EffectClipTimelineDrag {
+            clip: id,
+            kind: TimelineDragKind::TrimStart,
+            pointer_start: 0.0,
+            original_start: 0.4,
+            original_source_offset: 0.2,
+            original_duration: 0.8,
+            current_start: 0.6,
+            current_source_offset: 0.4,
+            current_duration: 0.6,
+            source_duration: 1.2,
+            source_looping: false,
+        };
+        let localizer = Localizer::new("en-US").unwrap();
+
+        commit_effect_clip_timeline_drag(&mut session, drag, &localizer);
+        let clip = &session.effect.effect_clips[0];
+        assert!((clip.start_time - 0.6).abs() < 0.000_1);
+        assert!((clip.source_offset - 0.4).abs() < 0.000_1);
+        assert!((clip.duration - 0.6).abs() < 0.000_1);
+
+        session.undo();
+        let clip = &session.effect.effect_clips[0];
+        assert!((clip.start_time - 0.4).abs() < 0.000_1);
+        assert!((clip.source_offset - 0.2).abs() < 0.000_1);
+        assert!((clip.duration - 0.8).abs() < 0.000_1);
     }
 
     #[test]
@@ -740,7 +1110,9 @@ mod tests {
             .spawn((TimelineInvalidDropFeedback::default(), Node::default()))
             .id();
 
-        app.world_mut().trigger(RejectProjectEffectDrop);
+        app.world_mut().trigger(RejectProjectEffectDrop {
+            reason: "reference cycle".into(),
+        });
         app.update();
 
         let session = app.world().resource::<EditorSession>();
@@ -748,10 +1120,8 @@ mod tests {
         assert_eq!(session.ui_revision, original_revision);
         assert!(!session.dirty);
         assert!(!session.can_undo());
-        assert_eq!(
-            session.status,
-            "This effect cannot be placed on the timeline yet"
-        );
+        assert!(session.status.starts_with("Effect clip was not added:"));
+        assert!(session.status.contains("reference cycle"));
         let feedback_state = app
             .world()
             .get::<TimelineInvalidDropFeedback>(feedback)
@@ -820,6 +1190,7 @@ mod tests {
         .init_asset::<Image>()
         .insert_resource(session)
         .insert_resource(TimelineState::framed(duration))
+        .init_resource::<ProjectEffectCatalog>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline);
 
@@ -831,7 +1202,7 @@ mod tests {
             query.single(world).unwrap().0.clone()
         };
         assert!(heading.contains("Renamed Effect"));
-        assert!(heading.ends_with(" · EMITTERS"));
+        assert!(heading.ends_with(" · CHOREOGRAPHY"));
         let renamed_track = {
             let world = app.world_mut();
             let mut controls = world.query::<(&TimelineTrackNameControl, &Children)>();
@@ -889,6 +1260,7 @@ mod tests {
         .init_asset::<Image>()
         .insert_resource(session)
         .insert_resource(state)
+        .init_resource::<ProjectEffectCatalog>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline)
         .add_systems(Update, update_track_header_hover_actions);
@@ -1093,6 +1465,13 @@ mod tests {
     #[test]
     fn track_headers_and_clips_expose_the_same_stable_selection_actions() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let effect_clip = EffectClip::new(
+            EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xcafe)),
+            0.2,
+            0.6,
+        );
+        let effect_clip_id = effect_clip.id;
+        session.effect.effect_clips.push(effect_clip);
         session.effect.emitters[1].enabled = false;
         let solo = session.effect.emitters[0].id;
         assert!(session.toggle_preview_solo(solo));
@@ -1115,10 +1494,44 @@ mod tests {
         .init_asset::<Image>()
         .insert_resource(session)
         .insert_resource(timeline)
+        .init_resource::<ProjectEffectCatalog>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline);
 
         app.update();
+
+        let effect_clip_headers = {
+            let world = app.world_mut();
+            let mut query =
+                world.query_filtered::<&ChoreographyAction, With<EffectClipTrackHeader>>();
+            query
+                .iter(world)
+                .filter(|action| **action == ChoreographyAction::SelectEffectClip(effect_clip_id))
+                .count()
+        };
+        assert_eq!(effect_clip_headers, 1);
+        let effect_clip_bars = {
+            let world = app.world_mut();
+            let mut query = world.query::<&TimelineEffectClip>();
+            query
+                .iter(world)
+                .filter(|marker| marker.clip == effect_clip_id)
+                .count()
+        };
+        assert_eq!(effect_clip_bars, 1);
+        let effect_clip_interactions = {
+            let world = app.world_mut();
+            let mut query = world.query::<&TimelineEffectClipInteraction>();
+            query
+                .iter(world)
+                .filter(|interaction| interaction.clip == effect_clip_id)
+                .map(|interaction| interaction.kind)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(effect_clip_interactions.len(), 3);
+        assert!(effect_clip_interactions.contains(&TimelineDragKind::Move));
+        assert!(effect_clip_interactions.contains(&TimelineDragKind::TrimStart));
+        assert!(effect_clip_interactions.contains(&TimelineDragKind::TrimEnd));
 
         let headers = {
             let world = app.world_mut();
@@ -1769,6 +2182,143 @@ fn update_timeline_visuals(
     }
 }
 
+fn update_effect_clip_visuals(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    mut clips: Query<
+        (&TimelineEffectClip, &mut Node),
+        (
+            Without<TimelineReferencedEmitter>,
+            Without<TimelineEffectClipInteraction>,
+        ),
+    >,
+    mut controls: Query<
+        (&TimelineEffectClipInteraction, &mut Node),
+        (
+            Without<TimelineEffectClip>,
+            Without<TimelineReferencedEmitter>,
+        ),
+    >,
+    mut children: Query<(&TimelineReferencedEmitter, &mut Node), Without<TimelineEffectClip>>,
+) {
+    let view = state.view;
+    for (marker, mut node) in &mut clips {
+        let Some(clip) = session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == marker.clip)
+        else {
+            node.display = Display::None;
+            continue;
+        };
+        let (start_time, duration) = state
+            .effect_clip_drag
+            .filter(|drag| drag.clip == marker.clip)
+            .map_or((clip.start_time, clip.duration), |drag| {
+                (drag.current_start, drag.current_duration)
+            });
+        let visible_start = start_time.max(view.start);
+        let visible_end = (start_time + duration).min(view.end);
+        if visible_end <= visible_start {
+            node.display = Display::None;
+            continue;
+        }
+        node.display = Display::Flex;
+        node.left = Val::Percent(view.normalized_time(visible_start) * 100.0);
+        node.width =
+            Val::Percent(((visible_end - visible_start) / view.span() * 100.0).clamp(0.05, 100.0));
+    }
+    for (control, mut node) in &mut controls {
+        let Some(clip) = session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == control.clip)
+        else {
+            node.display = Display::None;
+            continue;
+        };
+        let (start_time, duration) = state
+            .effect_clip_drag
+            .filter(|drag| drag.clip == control.clip)
+            .map_or((clip.start_time, clip.duration), |drag| {
+                (drag.current_start, drag.current_duration)
+            });
+        let boundary_visible = match control.kind {
+            TimelineDragKind::Move => true,
+            TimelineDragKind::TrimStart => timeline_boundary_is_visible(start_time, view),
+            TimelineDragKind::TrimEnd => timeline_boundary_is_visible(start_time + duration, view),
+        };
+        node.display = if boundary_visible {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for (marker, mut node) in &mut children {
+        let Some(clip) = session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == marker.clip)
+        else {
+            node.display = Display::None;
+            continue;
+        };
+        let (clip_start, source_offset, clip_duration) = state
+            .effect_clip_preview_timing(marker.clip)
+            .unwrap_or((clip.start_time, clip.source_offset, clip.duration));
+        let source_start = marker.source_start.max(source_offset);
+        let source_end =
+            (marker.source_start + marker.source_duration).min(source_offset + clip_duration);
+        if source_end <= source_start {
+            node.display = Display::None;
+            continue;
+        }
+        let start_time = clip_start + source_start - source_offset;
+        let duration = source_end - source_start;
+        let visible_start = start_time.max(view.start);
+        let visible_end = (start_time + duration).min(view.end);
+        if visible_end <= visible_start {
+            node.display = Display::None;
+            continue;
+        }
+        node.display = Display::Flex;
+        node.left = Val::Percent(view.normalized_time(visible_start) * 100.0);
+        node.width =
+            Val::Percent(((visible_end - visible_start) / view.span() * 100.0).clamp(0.05, 100.0));
+    }
+}
+
+fn update_effect_drop_preview(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    canvases: Query<&RelativeCursorPosition, With<TimelineCanvas>>,
+    mut previews: Query<&mut Node, With<TimelineEffectDropPreview>>,
+) {
+    let cursor = canvases.single().ok().and_then(|cursor| cursor.normalized);
+    for mut node in &mut previews {
+        let (Some(preview), Some(cursor)) = (state.effect_drop_preview, cursor) else {
+            node.display = Display::None;
+            continue;
+        };
+        let pointer_time = state.view.time_at(timeline_cursor_fraction(cursor.x));
+        let Some((start, duration)) = effect_clip_placement(
+            pointer_time,
+            session.playback_duration(),
+            preview.source_duration,
+            session.clock.tick_rate(),
+        ) else {
+            node.display = Display::None;
+            continue;
+        };
+        node.display = Display::Flex;
+        node.left = Val::Percent(state.view.normalized_time(start) * 100.0);
+        node.width = Val::Percent((duration / state.view.span() * 100.0).clamp(0.05, 100.0));
+    }
+}
+
 fn sync_timeline_horizontal_scroll(
     session: Res<EditorSession>,
     mut state: ResMut<TimelineState>,
@@ -1992,6 +2542,83 @@ fn snap_timeline_boundary(
     }
 }
 
+fn snap_effect_clip_boundary(
+    candidate: f32,
+    clip: EffectClipId,
+    session: &EditorSession,
+    mode: TimelineSnapMode,
+    view: TimelineView,
+    canvas_width: f32,
+) -> (f32, Option<f32>) {
+    match mode {
+        TimelineSnapMode::None => (candidate, None),
+        TimelineSnapMode::Frames => {
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let snapped = (candidate / frame).round() * frame;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Seconds => {
+            let interval = nice_timeline_step(view.span(), canvas_width) / 5.0;
+            let snapped = (candidate / interval).round() * interval;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Smart => {
+            let threshold = view.span() / canvas_width.max(1.0) * 9.0;
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let mut targets = vec![
+                0.0,
+                session.playback_duration(),
+                session.time(),
+                (candidate / frame).round() * frame,
+            ];
+            for emitter in &session.effect.emitters {
+                targets.push(emitter.start_time);
+                targets.push(emitter.start_time + emitter.duration);
+            }
+            for other in &session.effect.effect_clips {
+                if other.id != clip {
+                    targets.push(other.start_time);
+                    targets.push(other.start_time + other.duration);
+                }
+            }
+            let nearest = targets.into_iter().min_by(|left, right| {
+                (candidate - *left)
+                    .abs()
+                    .total_cmp(&(candidate - *right).abs())
+            });
+            nearest
+                .filter(|target| (candidate - *target).abs() <= threshold)
+                .map_or((candidate, None), |target| (target, Some(target)))
+        }
+    }
+}
+
+fn snap_effect_clip_moved_timing(
+    start: f32,
+    duration: f32,
+    clip: EffectClipId,
+    session: &EditorSession,
+    mode: TimelineSnapMode,
+    view: TimelineView,
+    canvas_width: f32,
+) -> (f32, Option<f32>) {
+    let start_snap = snap_effect_clip_boundary(start, clip, session, mode, view, canvas_width);
+    if mode != TimelineSnapMode::Smart {
+        return start_snap;
+    }
+    let end = start + duration;
+    let end_snap = snap_effect_clip_boundary(end, clip, session, mode, view, canvas_width);
+    let start_delta = (start_snap.0 - start).abs();
+    let end_delta = (end_snap.0 - end).abs();
+    match (start_snap.1, end_snap.1) {
+        (None, Some(guide)) => (start + end_snap.0 - end, Some(guide)),
+        (Some(_), Some(guide)) if end_delta < start_delta => {
+            (start + end_snap.0 - end, Some(guide))
+        }
+        _ => start_snap,
+    }
+}
+
 fn snap_moved_timing(
     start: f32,
     duration: f32,
@@ -2039,7 +2666,18 @@ impl Default for TimelineInvalidDropFeedback {
 }
 
 #[derive(Event)]
-struct RejectProjectEffectDrop;
+struct RejectProjectEffectDrop {
+    reason: String,
+}
+
+#[derive(Component)]
+struct TimelineDropFeedbackTitle;
+
+#[derive(Component)]
+struct TimelineDropFeedbackMessage;
+
+#[derive(Component)]
+struct TimelineEffectDropPreview;
 
 #[derive(Component)]
 struct TimelineBody;
@@ -2069,6 +2707,18 @@ enum TimelineVerticalPane {
 struct EmitterTrackHeader {
     emitter: EmitterId,
 }
+
+#[derive(Component)]
+struct EffectClipTrackHeader;
+
+#[derive(Component, Clone, Copy)]
+struct ReferencedEmitterTrackHeader;
+
+#[derive(Component)]
+struct EffectClipTrackContextMenu;
+
+#[derive(Component)]
+struct EffectClipTrackContextMenuTrigger;
 
 #[derive(Component, Clone, Copy)]
 struct EmitterTrackReorderHandle {
@@ -2121,6 +2771,30 @@ struct TimelineClipInteraction {
     emitter: EmitterId,
     kind: TimelineDragKind,
 }
+
+#[derive(Component, Clone, Copy)]
+struct TimelineEffectClip {
+    clip: EffectClipId,
+}
+
+#[derive(Component)]
+struct TimelineEffectClipControl;
+
+#[derive(Component, Clone, Copy)]
+struct TimelineEffectClipInteraction {
+    clip: EffectClipId,
+    kind: TimelineDragKind,
+}
+
+#[derive(Component, Clone, Copy)]
+struct TimelineReferencedEmitter {
+    clip: EffectClipId,
+    source_start: f32,
+    source_duration: f32,
+}
+
+#[derive(Component)]
+struct TimelineReferencedEmitterControl;
 
 #[derive(Component)]
 struct TimelineRulerTick(usize);
@@ -2181,6 +2855,32 @@ struct TimelineDrag {
 }
 
 #[derive(Clone, Copy, Debug)]
+struct EffectClipTimelineDrag {
+    clip: EffectClipId,
+    kind: TimelineDragKind,
+    pointer_start: f32,
+    original_start: f32,
+    original_source_offset: f32,
+    original_duration: f32,
+    current_start: f32,
+    current_source_offset: f32,
+    current_duration: f32,
+    source_duration: f32,
+    source_looping: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct EffectDropPreview {
+    source_duration: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct EffectClipChildSelection {
+    pub(crate) clip: EffectClipId,
+    pub(crate) emitter: EmitterId,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct TimelineView {
     start: f32,
     end: f32,
@@ -2205,11 +2905,18 @@ pub(crate) struct TimelineState {
     view: TimelineView,
     snap: TimelineSnapMode,
     drag: Option<TimelineDrag>,
+    effect_clip_drag: Option<EffectClipTimelineDrag>,
     snap_guide: Option<f32>,
     panning: bool,
     context_emitter: Option<EmitterId>,
     color_picker_emitter: Option<EmitterId>,
     reorder_drag: Option<EmitterId>,
+    expanded_effect_clips: BTreeSet<EffectClipId>,
+    muted_effect_clips: BTreeSet<EffectClipId>,
+    solo_effect_clip: Option<EffectClipId>,
+    context_effect_clip: Option<EffectClipId>,
+    pub(crate) inspected_child: Option<EffectClipChildSelection>,
+    effect_drop_preview: Option<EffectDropPreview>,
     vertical_scroll: f32,
     known_duration: f32,
 }
@@ -2230,11 +2937,18 @@ impl TimelineState {
             },
             snap: TimelineSnapMode::Smart,
             drag: None,
+            effect_clip_drag: None,
             snap_guide: None,
             panning: false,
             context_emitter: None,
             color_picker_emitter: None,
             reorder_drag: None,
+            expanded_effect_clips: BTreeSet::new(),
+            muted_effect_clips: BTreeSet::new(),
+            solo_effect_clip: None,
+            context_effect_clip: None,
+            inspected_child: None,
+            effect_drop_preview: None,
             vertical_scroll: 0.0,
             known_duration: duration,
         }
@@ -2247,6 +2961,18 @@ impl TimelineState {
         self.snap = snap;
         self.snap_guide = None;
         true
+    }
+
+    pub(crate) fn effect_clip_preview_timing(&self, clip: EffectClipId) -> Option<(f32, f32, f32)> {
+        self.effect_clip_drag
+            .filter(|drag| drag.clip == clip)
+            .map(|drag| {
+                (
+                    drag.current_start,
+                    drag.current_source_offset,
+                    drag.current_duration,
+                )
+            })
     }
 
     pub(crate) fn frame_all(&mut self, duration: f32) {
@@ -2321,10 +3047,310 @@ fn timeline_effect_heading(localizer: &Localizer, name: &str) -> String {
     localizer.text_with("timeline-effect-emitters", &args)
 }
 
+fn effect_clip_source_name(catalog: &ProjectEffectCatalog, source: EffectAssetRef) -> String {
+    catalog
+        .entries()
+        .iter()
+        .find(|entry| entry.reference == Some(source))
+        .map_or_else(
+            || format!("Missing effect {}", source.id),
+            |entry| entry.display_name.clone(),
+        )
+}
+
+fn spawn_effect_clip_track_header(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    state: &TimelineState,
+    localizer: &Localizer,
+    clip: &EffectClip,
+    source_name: &str,
+    child_count: usize,
+) {
+    let selected = session.selection.primary == SemanticTarget::EffectClip(clip.id);
+    let expanded = state.expanded_effect_clips.contains(&clip.id);
+    let muted = state.muted_effect_clips.contains(&clip.id);
+    let soloed = state.solo_effect_clip == Some(clip.id);
+    let mut args = FluentArgs::new();
+    args.set("name", source_name);
+    let label = localizer.text_with("timeline-select-effect-clip", &args);
+    let mut header = parent.spawn((
+        Button,
+        EditorNativeControl,
+        ListItem,
+        KeyboardNavigableListRow,
+        EffectClipTrackHeader,
+        ChoreographyAction::SelectEffectClip(clip.id),
+        AccessibleLabel(label.clone()),
+        EditorTooltip::description(label),
+        Node {
+            width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            height: Val::Px(31.0),
+            flex_shrink: 0.0,
+            padding: UiRect::horizontal(Val::Px(7.0)),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(5.0),
+            border: UiRect::bottom(Val::Px(1.0)),
+            ..default()
+        },
+        BackgroundColor(if selected {
+            theme::SELECTION
+        } else {
+            theme::PANEL_DARK
+        }),
+        BorderColor::all(theme::BORDER.with_alpha(0.55)),
+    ));
+    if selected {
+        header.insert(Selected);
+    }
+    header.with_children(|row| {
+        let disclosure = mini_button(
+            row,
+            if expanded { "v" } else { ">" },
+            ChoreographyAction::ToggleEffectClipExpanded(clip.id),
+        );
+        let disclosure_label = localizer.text(if expanded {
+            "timeline-collapse-effect-clip"
+        } else {
+            "timeline-expand-effect-clip"
+        });
+        row.commands().entity(disclosure).insert((
+            AccessibleLabel(disclosure_label.clone()),
+            EditorTooltip::description(disclosure_label),
+            Node {
+                width: Val::Px(18.0),
+                height: Val::Px(21.0),
+                flex_shrink: 0.0,
+                ..default()
+            },
+        ));
+        row.spawn((
+            Node {
+                width: Val::Px(14.0),
+                height: Val::Px(14.0),
+                flex_shrink: 0.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(effect_reference_color(clip.source)),
+            Pickable::IGNORE,
+        ))
+        .with_child((
+            Text::new("FX"),
+            TextFont {
+                font_size: FontSize::Px(7.0),
+                ..default()
+            },
+            TextColor(theme::PANEL_DARK),
+            Pickable::IGNORE,
+        ));
+        let mute = mini_button(row, "M", ChoreographyAction::ToggleEffectClipMuted(clip.id));
+        let mute_label = localizer.text(if muted {
+            "timeline-unmute-effect-clip"
+        } else {
+            "timeline-mute-effect-clip"
+        });
+        row.commands().entity(mute).insert((
+            AccessibleLabel(mute_label.clone()),
+            EditorTooltip::description(mute_label),
+        ));
+        if muted {
+            row.commands()
+                .entity(mute)
+                .insert((Selected, ButtonVariant::Primary));
+        }
+        let solo = mini_button(row, "S", ChoreographyAction::ToggleEffectClipSolo(clip.id));
+        let solo_label = localizer.text(if soloed {
+            "timeline-unsolo-effect-clip"
+        } else {
+            "timeline-solo-effect-clip"
+        });
+        row.commands().entity(solo).insert((
+            AccessibleLabel(solo_label.clone()),
+            EditorTooltip::description(solo_label),
+        ));
+        if soloed {
+            row.commands()
+                .entity(solo)
+                .insert((Selected, ButtonVariant::Primary));
+        }
+        row.spawn((
+            Text::new(source_name),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(theme::TEXT),
+            TextLayout::no_wrap(),
+            Node {
+                min_width: Val::Px(0.0),
+                flex_shrink: 1.0,
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ));
+        row.spawn((
+            Text::new(child_count.to_string()),
+            TextFont {
+                font_size: FontSize::Px(8.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_FAINT),
+            Pickable::IGNORE,
+        ));
+        let more = mini_button(
+            row,
+            "...",
+            ChoreographyAction::ToggleEffectClipMenu(clip.id),
+        );
+        describe_timeline_control(
+            row,
+            more,
+            localizer.text("timeline-more-effect-clip-actions"),
+        );
+        row.commands().entity(more).insert((
+            EffectClipTrackContextMenuTrigger,
+            RelativeCursorPosition::default(),
+        ));
+        if state.context_effect_clip == Some(clip.id) {
+            row.commands().entity(more).with_children(|button| {
+                spawn_effect_clip_context_menu(button, localizer, clip.id, muted, soloed);
+            });
+        }
+    });
+}
+
+fn spawn_referenced_emitter_track_header(
+    parent: &mut ChildSpawnerCommands,
+    state: &TimelineState,
+    localizer: &Localizer,
+    clip: EffectClipId,
+    emitter: &Emitter,
+    index: usize,
+) {
+    let selected = state.inspected_child
+        == Some(EffectClipChildSelection {
+            clip,
+            emitter: emitter.id,
+        });
+    let mut args = FluentArgs::new();
+    args.set("name", emitter.name.as_str());
+    let label = localizer.text_with("timeline-inspect-referenced-emitter", &args);
+    let color = layer_color(emitter.id, emitter.display_color);
+    let mut header = parent.spawn((
+        Button,
+        EditorNativeControl,
+        ListItem,
+        KeyboardNavigableListRow,
+        ReferencedEmitterTrackHeader,
+        ChoreographyAction::SelectEffectClipEmitter {
+            clip,
+            emitter: emitter.id,
+        },
+        AccessibleLabel(label.clone()),
+        EditorTooltip::description(label),
+        Node {
+            width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            height: Val::Px(27.0),
+            flex_shrink: 0.0,
+            padding: UiRect::new(Val::Px(29.0), Val::Px(7.0), Val::Px(0.0), Val::Px(0.0)),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(6.0),
+            border: UiRect::bottom(Val::Px(1.0)),
+            ..default()
+        },
+        BackgroundColor(if selected {
+            theme::SELECTION.with_alpha(0.75)
+        } else {
+            theme::PANEL_DARK
+        }),
+        BorderColor::all(theme::BORDER.with_alpha(0.4)),
+    ));
+    if selected {
+        header.insert(Selected);
+    }
+    header.with_children(|row| {
+        row.spawn((
+            Text::new("└"),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_FAINT),
+            Pickable::IGNORE,
+        ));
+        row.spawn((
+            Node {
+                width: Val::Px(9.0),
+                height: Val::Px(9.0),
+                flex_shrink: 0.0,
+                border_radius: BorderRadius::all(Val::Px(2.0)),
+                ..default()
+            },
+            BackgroundColor(color),
+            Pickable::IGNORE,
+        ));
+        row.spawn((
+            Text::new(format!("{:02}", index + 1)),
+            TextFont {
+                font_size: FontSize::Px(8.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_FAINT),
+            Pickable::IGNORE,
+        ));
+        row.spawn((
+            Text::new(&emitter.name),
+            TextFont {
+                font_size: FontSize::Px(9.0),
+                ..default()
+            },
+            TextColor(if emitter.enabled {
+                theme::TEXT_MUTED
+            } else {
+                theme::TEXT_FAINT
+            }),
+            TextLayout::no_wrap(),
+            Node {
+                min_width: Val::Px(0.0),
+                flex_grow: 1.0,
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ));
+        row.spawn((
+            Text::new(localizer.text("timeline-read-only-short")),
+            TextFont {
+                font_size: FontSize::Px(7.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_FAINT),
+            Pickable::IGNORE,
+        ));
+    });
+}
+
+fn mapped_referenced_emitter_timing(clip: &EffectClip, emitter: &Emitter) -> Option<(f32, f32)> {
+    let source_start = emitter.start_time.max(clip.source_offset);
+    let source_end =
+        (emitter.start_time + emitter.duration).min(clip.source_offset + clip.duration);
+    (source_end > source_start).then_some((
+        clip.start_time + source_start - clip.source_offset,
+        source_end - source_start,
+    ))
+}
+
 pub(crate) fn spawn_timeline(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     state: &TimelineState,
+    catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
 ) {
     parent
@@ -2542,6 +3568,33 @@ pub(crate) fn spawn_timeline(
                                 },
                             ))
                             .with_children(|headers| {
+                                for clip in &session.effect.effect_clips {
+                                    let source_name = effect_clip_source_name(catalog, clip.source);
+                                    let source = catalog.load_effect(clip.source).ok();
+                                    spawn_effect_clip_track_header(
+                                        headers,
+                                        session,
+                                        state,
+                                        localizer,
+                                        clip,
+                                        &source_name,
+                                        source.as_ref().map_or(0, |effect| effect.emitters.len()),
+                                    );
+                                    if state.expanded_effect_clips.contains(&clip.id)
+                                        && let Some(source) = source
+                                    {
+                                        for (index, emitter) in source.emitters.iter().enumerate() {
+                                            spawn_referenced_emitter_track_header(
+                                                headers,
+                                                state,
+                                                localizer,
+                                                clip.id,
+                                                emitter,
+                                                index,
+                                            );
+                                        }
+                                    }
+                                }
                                 for (index, emitter) in session.effect.emitters.iter().enumerate() {
                                     spawn_emitter_track_header(
                                         headers,
@@ -2620,6 +3673,345 @@ pub(crate) fn spawn_timeline(
                                         },
                                     ))
                                     .with_children(|rows| {
+                                        for clip in &session.effect.effect_clips {
+                                            let source_name =
+                                                effect_clip_source_name(catalog, clip.source);
+                                            let selected = session.selection.primary
+                                                == SemanticTarget::EffectClip(clip.id);
+                                            let color = effect_reference_color(clip.source);
+                                            let muted = state.muted_effect_clips.contains(&clip.id);
+                                            let suppressed = state
+                                                .solo_effect_clip
+                                                .is_some_and(|solo| solo != clip.id);
+                                            let mut args = FluentArgs::new();
+                                            args.set("name", source_name.as_str());
+                                            let move_label = localizer
+                                                .text_with("timeline-move-effect-clip", &args);
+                                            rows.spawn(Node {
+                                                width: Val::Percent(100.0),
+                                                height: Val::Px(31.0),
+                                                flex_shrink: 0.0,
+                                                position_type: PositionType::Relative,
+                                                border: UiRect::bottom(Val::Px(1.0)),
+                                                ..default()
+                                            })
+                                            .with_children(|track| {
+                                                track
+                                                    .spawn((
+                                                        TimelineEffectClip { clip: clip.id },
+                                                        Node {
+                                                            position_type: PositionType::Absolute,
+                                                            left: Val::Percent(0.0),
+                                                            top: Val::Px(4.0),
+                                                            width: Val::Percent(1.0),
+                                                            height: Val::Px(23.0),
+                                                            align_items: AlignItems::Center,
+                                                            padding: UiRect::horizontal(Val::Px(8.0)),
+                                                            border_radius: BorderRadius::all(
+                                                                Val::Px(4.0),
+                                                            ),
+                                                            border: UiRect::all(Val::Px(if selected {
+                                                                2.0
+                                                            } else {
+                                                                1.0
+                                                            })),
+                                                            overflow: Overflow::clip(),
+                                                            ..default()
+                                                        },
+                                                        BackgroundColor(color.with_alpha(
+                                                            if muted || suppressed {
+                                                                0.10
+                                                            } else if selected {
+                                                                0.42
+                                                            } else {
+                                                                0.25
+                                                            },
+                                                        )),
+                                                        BorderColor::all(if selected {
+                                                            theme::TEXT
+                                                        } else {
+                                                            color
+                                                        }),
+                                                    ))
+                                                    .with_children(|bar| {
+                                                        bar.spawn((
+                                                            Button,
+                                                            EditorNativeControl,
+                                                            TimelineEffectClipControl,
+                                                            TimelineEffectClipInteraction {
+                                                                clip: clip.id,
+                                                                kind: TimelineDragKind::Move,
+                                                            },
+                                                            ChoreographyAction::SelectEffectClip(
+                                                                clip.id,
+                                                            ),
+                                                            AccessibleLabel(move_label.clone()),
+                                                            EditorTooltip::description(
+                                                                move_label,
+                                                            ),
+                                                            EntityCursor::System(
+                                                                SystemCursorIcon::Grab,
+                                                            ),
+                                                            Node {
+                                                                position_type:
+                                                                    PositionType::Absolute,
+                                                                left: Val::Px(8.0),
+                                                                right: Val::Px(8.0),
+                                                                top: Val::Px(0.0),
+                                                                bottom: Val::Px(0.0),
+                                                                ..default()
+                                                            },
+                                                            BackgroundColor(Color::NONE),
+                                                        ))
+                                                        .observe(begin_effect_clip_timeline_drag)
+                                                        .observe(move_effect_clip_timeline_drag)
+                                                        .observe(finish_effect_clip_timeline_drag)
+                                                        .observe(select_timeline_effect_clip)
+                                                        .observe(stop_timeline_control_press);
+                                                        bar.spawn((
+                                                            Text::new(source_name.clone()),
+                                                            TextFont {
+                                                                font_size: FontSize::Px(9.0),
+                                                                ..default()
+                                                            },
+                                                            TextColor(theme::TEXT),
+                                                            TextLayout::no_wrap(),
+                                                            Node {
+                                                                min_width: Val::Px(0.0),
+                                                                overflow: Overflow::clip(),
+                                                                ..default()
+                                                            },
+                                                            Pickable::IGNORE,
+                                                        ));
+                                                        for (kind, left, right, message_id) in [
+                                                            (
+                                                                TimelineDragKind::TrimStart,
+                                                                Val::Px(0.0),
+                                                                Val::Auto,
+                                                                "timeline-trim-effect-clip-start",
+                                                            ),
+                                                            (
+                                                                TimelineDragKind::TrimEnd,
+                                                                Val::Auto,
+                                                                Val::Px(0.0),
+                                                                "timeline-trim-effect-clip-end",
+                                                            ),
+                                                        ] {
+                                                            let trim_label = localizer
+                                                                .text_with(message_id, &args);
+                                                            let boundary = match kind {
+                                                                TimelineDragKind::TrimStart => {
+                                                                    clip.start_time
+                                                                }
+                                                                TimelineDragKind::TrimEnd => {
+                                                                    clip.start_time + clip.duration
+                                                                }
+                                                                TimelineDragKind::Move => {
+                                                                    unreachable!()
+                                                                }
+                                                            };
+                                                            bar.spawn((
+                                                                Button,
+                                                                EditorNativeControl,
+                                                                TimelineEffectClipControl,
+                                                                TimelineEffectClipInteraction {
+                                                                    clip: clip.id,
+                                                                    kind,
+                                                                },
+                                                                ChoreographyAction::SelectEffectClip(
+                                                                    clip.id,
+                                                                ),
+                                                                AccessibleLabel(
+                                                                    trim_label.clone(),
+                                                                ),
+                                                                EditorTooltip::description(
+                                                                    trim_label,
+                                                                ),
+                                                                EntityCursor::System(
+                                                                    SystemCursorIcon::EwResize,
+                                                                ),
+                                                                Node {
+                                                                    display: if timeline_boundary_is_visible(
+                                                                        boundary,
+                                                                        state.view,
+                                                                    ) {
+                                                                        Display::Flex
+                                                                    } else {
+                                                                        Display::None
+                                                                    },
+                                                                    position_type:
+                                                                        PositionType::Absolute,
+                                                                    left,
+                                                                    right,
+                                                                    top: Val::Px(0.0),
+                                                                    width: Val::Px(8.0),
+                                                                    height: Val::Percent(100.0),
+                                                                    align_items: AlignItems::Center,
+                                                                    justify_content:
+                                                                        JustifyContent::Center,
+                                                                    ..default()
+                                                                },
+                                                                BackgroundColor(Color::NONE),
+                                                            ))
+                                                            .observe(
+                                                                begin_effect_clip_timeline_drag,
+                                                            )
+                                                            .observe(
+                                                                move_effect_clip_timeline_drag,
+                                                            )
+                                                            .observe(
+                                                                finish_effect_clip_timeline_drag,
+                                                            )
+                                                            .observe(select_timeline_effect_clip)
+                                                            .observe(stop_timeline_control_press)
+                                                            .with_child((
+                                                                Node {
+                                                                    width: Val::Px(2.0),
+                                                                    height: Val::Px(13.0),
+                                                                    border_radius:
+                                                                        BorderRadius::all(
+                                                                            Val::Px(1.0),
+                                                                        ),
+                                                                    ..default()
+                                                                },
+                                                                BackgroundColor(theme::TEXT),
+                                                                Pickable::IGNORE,
+                                                            ));
+                                                        }
+                                                    });
+                                            });
+                                            if state.expanded_effect_clips.contains(&clip.id)
+                                                && let Ok(source) = catalog.load_effect(clip.source)
+                                            {
+                                                for emitter in &source.emitters {
+                                                    let timing = mapped_referenced_emitter_timing(
+                                                        clip, emitter,
+                                                    );
+                                                    let child_selected = state.inspected_child
+                                                        == Some(EffectClipChildSelection {
+                                                            clip: clip.id,
+                                                            emitter: emitter.id,
+                                                        });
+                                                    let child_color = layer_color(
+                                                        emitter.id,
+                                                        emitter.display_color,
+                                                    );
+                                                    rows.spawn(Node {
+                                                        width: Val::Percent(100.0),
+                                                        height: Val::Px(27.0),
+                                                        flex_shrink: 0.0,
+                                                        position_type: PositionType::Relative,
+                                                        border: UiRect::bottom(Val::Px(1.0)),
+                                                        ..default()
+                                                    })
+                                                    .with_children(|track| {
+                                                        if timing.is_some() {
+                                                            track
+                                                                .spawn((
+                                                                    TimelineReferencedEmitter {
+                                                                        clip: clip.id,
+                                                                        source_start:
+                                                                            emitter.start_time,
+                                                                        source_duration:
+                                                                            emitter.duration,
+                                                                    },
+                                                                    Node {
+                                                                        position_type:
+                                                                            PositionType::Absolute,
+                                                                        left: Val::Percent(0.0),
+                                                                        top: Val::Px(4.0),
+                                                                        width: Val::Percent(1.0),
+                                                                        height: Val::Px(19.0),
+                                                                        align_items:
+                                                                            AlignItems::Center,
+                                                                        padding: UiRect::horizontal(
+                                                                            Val::Px(7.0),
+                                                                        ),
+                                                                        border_radius:
+                                                                            BorderRadius::all(
+                                                                                Val::Px(3.0),
+                                                                            ),
+                                                                        border: UiRect::all(Val::Px(
+                                                                            if child_selected {
+                                                                                2.0
+                                                                            } else {
+                                                                                1.0
+                                                                            },
+                                                                        )),
+                                                                        overflow: Overflow::clip(),
+                                                                        ..default()
+                                                                    },
+                                                                    BackgroundColor(
+                                                                        child_color.with_alpha(
+                                                                            if muted || suppressed {
+                                                                                0.08
+                                                                            } else {
+                                                                                0.20
+                                                                            },
+                                                                        ),
+                                                                    ),
+                                                                    BorderColor::all(
+                                                                        if child_selected {
+                                                                            theme::TEXT
+                                                                        } else {
+                                                                            child_color.with_alpha(
+                                                                                0.75,
+                                                                            )
+                                                                        },
+                                                                    ),
+                                                                ))
+                                                                .with_children(|bar| {
+                                                                    bar.spawn((
+                                                                        Button,
+                                                                        EditorNativeControl,
+                                                                        TimelineReferencedEmitterControl,
+                                                                        ChoreographyAction::SelectEffectClipEmitter {
+                                                                            clip: clip.id,
+                                                                            emitter: emitter.id,
+                                                                        },
+                                                                        AccessibleLabel(
+                                                                            localizer.text(
+                                                                                "timeline-inspect-referenced-emitter-bar",
+                                                                            ),
+                                                                        ),
+                                                                        Node {
+                                                                            position_type:
+                                                                                PositionType::Absolute,
+                                                                            left: Val::Px(0.0),
+                                                                            right: Val::Px(0.0),
+                                                                            top: Val::Px(0.0),
+                                                                            bottom: Val::Px(0.0),
+                                                                            ..default()
+                                                                        },
+                                                                        BackgroundColor(Color::NONE),
+                                                                    ))
+                                                                    .observe(
+                                                                        select_timeline_referenced_emitter,
+                                                                    )
+                                                                    .observe(stop_timeline_control_press);
+                                                                    bar.spawn((
+                                                                        Text::new(&emitter.name),
+                                                                        TextFont {
+                                                                            font_size:
+                                                                                FontSize::Px(8.0),
+                                                                            ..default()
+                                                                        },
+                                                                        TextColor(theme::TEXT_MUTED),
+                                                                        TextLayout::no_wrap(),
+                                                                        Node {
+                                                                            min_width: Val::Px(0.0),
+                                                                            overflow:
+                                                                                Overflow::clip(),
+                                                                            ..default()
+                                                                        },
+                                                                        Pickable::IGNORE,
+                                                                    ));
+                                                                });
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
                                         for emitter in &session.effect.emitters {
                                             rows.spawn(Node {
                                                 width: Val::Percent(100.0),
@@ -2838,9 +4230,41 @@ pub(crate) fn spawn_timeline(
                         ));
                         tracks
                             .spawn((
+                                TimelineEffectDropPreview,
+                                Node {
+                                    display: Display::None,
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Percent(0.0),
+                                    top: Val::Px(30.0),
+                                    width: Val::Percent(1.0),
+                                    height: Val::Px(23.0),
+                                    padding: UiRect::horizontal(Val::Px(8.0)),
+                                    align_items: AlignItems::Center,
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    border_radius: BorderRadius::all(Val::Px(4.0)),
+                                    overflow: Overflow::clip(),
+                                    ..default()
+                                },
+                                BackgroundColor(theme::ACCENT.with_alpha(0.32)),
+                                BorderColor::all(theme::ACCENT),
+                                ZIndex(4),
+                                Pickable::IGNORE,
+                            ))
+                            .with_child((
+                                Text::new(localizer.text("timeline-drop-effect-preview")),
+                                TextFont {
+                                    font_size: FontSize::Px(9.0),
+                                    ..default()
+                                },
+                                TextColor(theme::TEXT),
+                                TextLayout::no_wrap(),
+                                Pickable::IGNORE,
+                            ));
+                        tracks
+                            .spawn((
                                 TimelineInvalidDropFeedback::default(),
                                 AccessibleLabel(
-                                    localizer.text("timeline-drop-effect-unsupported-title"),
+                                    localizer.text("timeline-drop-effect-ready-title"),
                                 ),
                                 Node {
                                     display: Display::None,
@@ -2865,9 +4289,8 @@ pub(crate) fn spawn_timeline(
                             ))
                             .with_children(|feedback| {
                                 feedback.spawn((
-                                    Text::new(
-                                        localizer.text("timeline-drop-effect-unsupported-title"),
-                                    ),
+                                    Text::new(localizer.text("timeline-drop-effect-ready-title")),
+                                    TimelineDropFeedbackTitle,
                                     TextFont {
                                         font_size: FontSize::Px(12.0),
                                         ..default()
@@ -2877,9 +4300,8 @@ pub(crate) fn spawn_timeline(
                                     Pickable::IGNORE,
                                 ));
                                 feedback.spawn((
-                                    Text::new(localizer.text(
-                                        "timeline-drop-effect-unsupported-message",
-                                    )),
+                                    Text::new(localizer.text("timeline-drop-effect-ready-message")),
+                                    TimelineDropFeedbackMessage,
                                     TextFont {
                                         font_size: FontSize::Px(10.0),
                                         ..default()
@@ -3002,7 +4424,7 @@ fn spawn_emitter_track_header(
     enabled: bool,
     display_color: Option<[f32; 4]>,
 ) {
-    let selected = session.selected_layer().id == emitter;
+    let selected = session.selection.primary == SemanticTarget::Emitter(emitter);
     let diagnostic = emitter_has_diagnostic(session, index);
     let mut args = FluentArgs::new();
     args.set("name", name);
@@ -3373,6 +4795,85 @@ fn spawn_emitter_context_menu(
         });
 }
 
+fn spawn_effect_clip_context_menu(
+    parent: &mut ChildSpawnerCommands,
+    localizer: &Localizer,
+    clip: EffectClipId,
+    muted: bool,
+    soloed: bool,
+) {
+    parent
+        .spawn((
+            EffectClipTrackContextMenu,
+            Popover {
+                positions: vec![
+                    PopoverPlacement {
+                        side: PopoverSide::Right,
+                        align: PopoverAlign::Start,
+                        gap: 4.0,
+                    },
+                    PopoverPlacement {
+                        side: PopoverSide::Bottom,
+                        align: PopoverAlign::End,
+                        gap: 4.0,
+                    },
+                    PopoverPlacement {
+                        side: PopoverSide::Top,
+                        align: PopoverAlign::End,
+                        gap: 4.0,
+                    },
+                ],
+                window_margin: 8.0,
+            },
+            RelativeCursorPosition::default(),
+            OverrideClip,
+            GlobalZIndex(250),
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Px(184.0),
+                padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
+                flex_direction: FlexDirection::Column,
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(theme::MENU),
+            BorderColor::all(theme::BORDER_BRIGHT),
+            BoxShadow::new(
+                Color::srgba(0.0, 0.0, 0.0, 0.62),
+                Val::Px(0.0),
+                Val::Px(2.0),
+                Val::Px(3.0),
+                Val::Px(5.0),
+            ),
+        ))
+        .with_children(|menu| {
+            spawn_emitter_context_menu_item(
+                menu,
+                &localizer.text(if muted {
+                    "timeline-menu-unmute"
+                } else {
+                    "timeline-menu-mute"
+                }),
+                ChoreographyAction::ToggleEffectClipMuted(clip),
+            );
+            spawn_emitter_context_menu_item(
+                menu,
+                &localizer.text(if soloed {
+                    "timeline-menu-unsolo"
+                } else {
+                    "timeline-menu-solo"
+                }),
+                ChoreographyAction::ToggleEffectClipSolo(clip),
+            );
+            spawn_emitter_context_menu_item(
+                menu,
+                &localizer.text("timeline-menu-delete"),
+                ChoreographyAction::DeleteEffectClip(clip),
+            );
+        });
+}
+
 fn spawn_emitter_context_menu_item(
     parent: &mut ChildSpawnerCommands,
     label: &str,
@@ -3509,6 +5010,17 @@ fn layer_color(emitter: EmitterId, display_color: Option<[f32; 4]>) -> Color {
     }
 }
 
+fn effect_reference_color(source: EffectAssetRef) -> Color {
+    let id = source.id.as_uuid().as_u128();
+    let palette_index = (id ^ (id >> 32) ^ (id >> 64) ^ (id >> 96)) as usize % 4;
+    match palette_index {
+        0 => Color::srgb(0.40, 0.72, 0.98),
+        1 => Color::srgb(0.55, 0.82, 0.45),
+        2 => Color::srgb(0.96, 0.65, 0.27),
+        _ => Color::srgb(0.72, 0.47, 0.98),
+    }
+}
+
 fn color_components(color: Color) -> [f32; 4] {
     let color = color.to_srgba();
     [color.red, color.green, color.blue, color.alpha]
@@ -3562,7 +5074,7 @@ fn navigate_timeline(
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
 ) {
     if keys.just_pressed(KeyCode::Escape) {
-        if state.drag.take().is_some() {
+        if state.drag.take().is_some() | state.effect_clip_drag.take().is_some() {
             state.snap_guide = None;
             override_cursor.0 = None;
             **cursor = CursorIcon::System(SystemCursorIcon::Default);
@@ -3659,6 +5171,8 @@ fn dismiss_timeline_popovers(
         Or<(
             With<EmitterTrackContextMenuTrigger>,
             With<EmitterTrackContextMenu>,
+            With<EffectClipTrackContextMenuTrigger>,
+            With<EffectClipTrackContextMenu>,
         )>,
     >,
     mut state: ResMut<TimelineState>,
@@ -3677,7 +5191,7 @@ fn dismiss_timeline_popovers(
         primary_pressed,
     );
     let dismiss_menu = should_dismiss_timeline_popover(
-        state.context_emitter.is_some(),
+        state.context_emitter.is_some() || state.context_effect_clip.is_some(),
         menu_surfaces
             .iter()
             .any(RelativeCursorPosition::cursor_over),
@@ -3691,6 +5205,7 @@ fn dismiss_timeline_popovers(
     }
     if dismiss_menu {
         state.context_emitter = None;
+        state.context_effect_clip = None;
     }
     session.ui_revision += 1;
 }
@@ -3730,17 +5245,17 @@ fn timeline_wheel_intent(
     }
 }
 
-fn is_project_effect_drag(
+fn dragged_project_effect(
     mut entity: Entity,
-    rows: &Query<(), With<ProjectEffectRow>>,
+    rows: &Query<&ProjectEffectRow>,
     parents: &Query<&ChildOf>,
-) -> bool {
+) -> Option<ProjectEffectEntryId> {
     loop {
-        if rows.contains(entity) {
-            return true;
+        if let Ok(row) = rows.get(entity) {
+            return Some(row.id());
         }
         let Ok(parent) = parents.get(entity) else {
-            return false;
+            return None;
         };
         entity = parent.parent();
     }
@@ -3748,29 +5263,66 @@ fn is_project_effect_drag(
 
 fn show_invalid_timeline_drop_feedback(
     mut enter: On<Pointer<DragEnter>>,
-    rows: Query<(), With<ProjectEffectRow>>,
+    rows: Query<&ProjectEffectRow>,
     parents: Query<&ChildOf>,
     mut feedback: Query<(&mut TimelineInvalidDropFeedback, &mut Node)>,
+    mut titles: Query<
+        &mut Text,
+        (
+            With<TimelineDropFeedbackTitle>,
+            Without<TimelineDropFeedbackMessage>,
+        ),
+    >,
+    mut messages: Query<
+        &mut Text,
+        (
+            With<TimelineDropFeedbackMessage>,
+            Without<TimelineDropFeedbackTitle>,
+        ),
+    >,
+    catalog: Res<ProjectEffectCatalog>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    localizer: Res<Localizer>,
 ) {
-    if !is_project_effect_drag(enter.dragged, &rows, &parents) {
+    let Some(row) = dragged_project_effect(enter.dragged, &rows, &parents) else {
         return;
-    }
+    };
+    let preview = catalog
+        .entry(row)
+        .and_then(|entry| entry.reference)
+        .and_then(|reference| {
+            catalog
+                .effect_for_placement(&session.effect, reference)
+                .ok()
+                .map(|source| EffectDropPreview {
+                    source_duration: source.duration,
+                })
+        });
+    state.effect_drop_preview = preview;
     for (mut feedback, mut node) in &mut feedback {
         feedback.rejected = false;
         feedback.timer.reset();
         feedback.timer.pause();
         node.display = Display::Flex;
     }
+    for mut text in &mut titles {
+        text.0 = localizer.text("timeline-drop-effect-ready-title");
+    }
+    for mut text in &mut messages {
+        text.0 = localizer.text("timeline-drop-effect-ready-message");
+    }
     enter.propagate(false);
 }
 
 fn hide_invalid_timeline_drop_feedback(
     mut leave: On<Pointer<DragLeave>>,
-    rows: Query<(), With<ProjectEffectRow>>,
+    rows: Query<&ProjectEffectRow>,
     parents: Query<&ChildOf>,
     mut feedback: Query<(&TimelineInvalidDropFeedback, &mut Node)>,
+    mut state: ResMut<TimelineState>,
 ) {
-    if !is_project_effect_drag(leave.dragged, &rows, &parents) {
+    if dragged_project_effect(leave.dragged, &rows, &parents).is_none() {
         return;
     }
     for (feedback, mut node) in &mut feedback {
@@ -3778,35 +5330,134 @@ fn hide_invalid_timeline_drop_feedback(
             node.display = Display::None;
         }
     }
+    state.effect_drop_preview = None;
     leave.propagate(false);
 }
 
 fn drop_project_effect_on_timeline(
     mut drop: On<Pointer<DragDrop>>,
-    rows: Query<(), With<ProjectEffectRow>>,
+    rows: Query<&ProjectEffectRow>,
     parents: Query<&ChildOf>,
-    mut commands: Commands,
-) {
-    if !is_project_effect_drag(drop.dropped, &rows, &parents) {
-        return;
-    }
-    commands.trigger(RejectProjectEffectDrop);
-    drop.propagate(false);
-}
-
-fn reject_project_effect_drop(
-    _drop: On<RejectProjectEffectDrop>,
+    canvases: Query<&RelativeCursorPosition, With<TimelineCanvas>>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut state: ResMut<TimelineState>,
     mut session: ResMut<EditorSession>,
     localizer: Res<Localizer>,
     mut feedback: Query<(&mut TimelineInvalidDropFeedback, &mut Node)>,
+    mut commands: Commands,
 ) {
-    session.status = localizer.text("timeline-drop-effect-unsupported-status");
+    let Some(source_row) = dragged_project_effect(drop.dropped, &rows, &parents) else {
+        return;
+    };
+    drop.propagate(false);
+    state.effect_drop_preview = None;
+
+    let result = (|| {
+        let entry = catalog
+            .entry(source_row)
+            .ok_or_else(|| "the Library entry no longer exists".to_string())?;
+        let reference = entry
+            .reference
+            .ok_or_else(|| "the Library entry is not a valid effect asset".to_string())?;
+        let source = catalog.effect_for_placement(&session.effect, reference)?;
+        let cursor = canvases
+            .single()
+            .ok()
+            .and_then(|cursor| cursor.normalized)
+            .ok_or_else(|| "the drop position is outside the timeline".to_string())?;
+        let pointer_time = state.view.time_at(timeline_cursor_fraction(cursor.x));
+        let (start_time, duration) = effect_clip_placement(
+            pointer_time,
+            session.playback_duration(),
+            source.duration,
+            session.clock.tick_rate(),
+        )
+        .ok_or_else(|| "there is no room for this effect at the drop position".to_string())?;
+        let clip = EffectClip::new(reference, start_time, duration);
+        let clip_id = clip.id;
+        let index = session.effect.effect_clips.len();
+        if !session.execute(
+            localizer.text("timeline-add-effect-clip-command"),
+            EffectCommand::AddEffectClip { clip, index },
+            true,
+        ) {
+            return Err(session.status.clone());
+        }
+        session.select_effect_clip(clip_id);
+        let mut args = FluentArgs::new();
+        args.set("name", entry.display_name.as_str());
+        session.status = localizer.text_with("timeline-effect-clip-added", &args);
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => {
+            for (mut feedback, mut node) in &mut feedback {
+                feedback.rejected = false;
+                feedback.timer.pause();
+                node.display = Display::None;
+            }
+        }
+        Err(reason) => commands.trigger(RejectProjectEffectDrop { reason }),
+    }
+}
+
+fn reject_project_effect_drop(
+    drop: On<RejectProjectEffectDrop>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+    mut feedback: Query<(&mut TimelineInvalidDropFeedback, &mut Node)>,
+    mut titles: Query<
+        &mut Text,
+        (
+            With<TimelineDropFeedbackTitle>,
+            Without<TimelineDropFeedbackMessage>,
+        ),
+    >,
+    mut messages: Query<
+        &mut Text,
+        (
+            With<TimelineDropFeedbackMessage>,
+            Without<TimelineDropFeedbackTitle>,
+        ),
+    >,
+) {
+    let mut args = FluentArgs::new();
+    args.set("reason", drop.reason.as_str());
+    session.status = localizer.text_with("timeline-drop-effect-rejected-status", &args);
     for (mut feedback, mut node) in &mut feedback {
         feedback.rejected = true;
         feedback.timer.reset();
         feedback.timer.unpause();
         node.display = Display::Flex;
     }
+    for mut text in &mut titles {
+        text.0 = localizer.text("timeline-drop-effect-rejected-title");
+    }
+    for mut text in &mut messages {
+        text.0 = drop.reason.clone();
+    }
+}
+
+fn effect_clip_placement(
+    pointer_time: f32,
+    owner_duration: f32,
+    source_duration: f32,
+    tick_rate: u32,
+) -> Option<(f32, f32)> {
+    if !owner_duration.is_finite()
+        || owner_duration <= 0.0
+        || !source_duration.is_finite()
+        || source_duration <= 0.0
+    {
+        return None;
+    }
+    let minimum = (1.0 / tick_rate.max(1) as f32)
+        .min(source_duration)
+        .min(owner_duration);
+    let start = pointer_time.clamp(0.0, (owner_duration - minimum).max(0.0));
+    let duration = source_duration.min(owner_duration - start);
+    (duration > 0.0).then_some((start, duration))
 }
 
 fn tick_invalid_timeline_drop_feedback(
@@ -3833,7 +5484,10 @@ fn seek_timeline_on_press(
     mut session: ResMut<EditorSession>,
 ) {
     if press.button == PointerButton::Primary {
-        if state.context_emitter.take().is_some() | state.color_picker_emitter.take().is_some() {
+        if state.context_emitter.take().is_some()
+            | state.color_picker_emitter.take().is_some()
+            | state.context_effect_clip.take().is_some()
+        {
             session.ui_revision += 1;
         }
         seek_timeline_to_pointer(press.event_target(), &timelines, &state, &mut session);
@@ -4141,6 +5795,145 @@ fn finish_timeline_clip_drag(
     commands.trigger(ChoreographyAction::SelectEmitter(target.emitter));
 }
 
+fn begin_effect_clip_timeline_drag(
+    drag: On<Pointer<DragStart>>,
+    targets: Query<&TimelineEffectClipInteraction>,
+    session: Res<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(target) = targets.get(drag.event_target()) else {
+        return;
+    };
+    let Some(clip) = session
+        .effect
+        .effect_clips
+        .iter()
+        .find(|clip| clip.id == target.clip)
+    else {
+        return;
+    };
+    let source = catalog.load_effect(clip.source).ok();
+    state.drag = None;
+    state.effect_clip_drag = Some(EffectClipTimelineDrag {
+        clip: clip.id,
+        kind: target.kind,
+        pointer_start: 0.0,
+        original_start: clip.start_time,
+        original_source_offset: clip.source_offset,
+        original_duration: clip.duration,
+        current_start: clip.start_time,
+        current_source_offset: clip.source_offset,
+        current_duration: clip.duration,
+        source_duration: source
+            .as_ref()
+            .map_or(clip.source_offset + clip.duration, |effect| effect.duration),
+        source_looping: source.as_ref().is_some_and(|effect| effect.looping),
+    });
+    override_cursor.0 = Some(EntityCursor::System(timeline_system_cursor(
+        target.kind,
+        true,
+    )));
+    **cursor = timeline_drag_cursor(target.kind, true);
+}
+
+fn move_effect_clip_timeline_drag(
+    mut drag_event: On<Pointer<Drag>>,
+    targets: Query<&TimelineEffectClipInteraction>,
+    canvases: Query<&ComputedNode, With<TimelineCanvas>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+) {
+    let Ok(target) = targets.get(drag_event.event_target()) else {
+        return;
+    };
+    drag_event.propagate(false);
+    let Some(mut drag) = state.effect_clip_drag else {
+        return;
+    };
+    if drag.clip != target.clip || drag.kind != target.kind {
+        return;
+    }
+    let width = canvases
+        .iter()
+        .map(|canvas| canvas.size().x)
+        .fold(0.0, f32::max)
+        .max(1.0);
+    let logical_distance = screen_distance_to_logical(drag_event.distance.x, window.scale_factor());
+    let pointer_time = logical_distance / width * state.view.span();
+    let mut snap_guide = state.snap_guide;
+    update_effect_clip_timeline_drag(
+        &mut drag,
+        pointer_time,
+        &session,
+        state.snap,
+        state.view,
+        width,
+        &mut snap_guide,
+    );
+    state.effect_clip_drag = Some(drag);
+    state.snap_guide = snap_guide;
+}
+
+fn finish_effect_clip_timeline_drag(
+    drag_event: On<Pointer<DragEnd>>,
+    targets: Query<&TimelineEffectClipInteraction>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    localizer: Res<Localizer>,
+    mut commands: Commands,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(target) = targets.get(drag_event.event_target()) else {
+        return;
+    };
+    let Some(drag) = state.effect_clip_drag.take() else {
+        return;
+    };
+    if drag.clip != target.clip || drag.kind != target.kind {
+        state.effect_clip_drag = Some(drag);
+        return;
+    }
+    state.snap_guide = None;
+    override_cursor.0 = None;
+    **cursor = timeline_drag_cursor(target.kind, false);
+    commit_effect_clip_timeline_drag(&mut session, drag, &localizer);
+    commands.trigger(ChoreographyAction::SelectEffectClip(target.clip));
+}
+
+fn commit_effect_clip_timeline_drag(
+    session: &mut EditorSession,
+    drag: EffectClipTimelineDrag,
+    localizer: &Localizer,
+) {
+    let changed = (drag.current_start - drag.original_start).abs() > 0.000_1
+        || (drag.current_source_offset - drag.original_source_offset).abs() > 0.000_1
+        || (drag.current_duration - drag.original_duration).abs() > 0.000_1;
+    if !changed {
+        return;
+    }
+    let label = localizer.text(match drag.kind {
+        TimelineDragKind::Move => "timeline-move-effect-clip-command",
+        TimelineDragKind::TrimStart | TimelineDragKind::TrimEnd => {
+            "timeline-trim-effect-clip-command"
+        }
+    });
+    session.execute(
+        label,
+        EffectCommand::SetEffectClipTiming {
+            id: drag.clip,
+            start_time: drag.current_start,
+            source_offset: drag.current_source_offset,
+            duration: drag.current_duration,
+        },
+        true,
+    );
+}
+
 fn commit_timeline_drag(session: &mut EditorSession, drag: TimelineDrag) {
     let changed = (drag.current_start - drag.original_start).abs() > 0.000_1
         || (drag.current_duration - drag.original_duration).abs() > 0.000_1;
@@ -4163,6 +5956,32 @@ fn commit_timeline_drag(session: &mut EditorSession, drag: TimelineDrag) {
 fn select_timeline_clip(
     click: On<Pointer<Click>>,
     actions: Query<&ChoreographyAction, With<TimelineClipInteraction>>,
+    mut commands: Commands,
+) {
+    let Ok(action) = actions.get(click.event_target()) else {
+        return;
+    };
+    if click.button == PointerButton::Primary {
+        commands.trigger(*action);
+    }
+}
+
+fn select_timeline_effect_clip(
+    click: On<Pointer<Click>>,
+    actions: Query<&ChoreographyAction, With<TimelineEffectClipControl>>,
+    mut commands: Commands,
+) {
+    let Ok(action) = actions.get(click.event_target()) else {
+        return;
+    };
+    if click.button == PointerButton::Primary {
+        commands.trigger(*action);
+    }
+}
+
+fn select_timeline_referenced_emitter(
+    click: On<Pointer<Click>>,
+    actions: Query<&ChoreographyAction, With<TimelineReferencedEmitterControl>>,
     mut commands: Commands,
 ) {
     let Ok(action) = actions.get(click.event_target()) else {
@@ -4268,6 +6087,73 @@ fn update_timeline_drag(
             let end = end.clamp(drag.original_start + minimum_duration, effect_duration);
             drag.current_start = drag.original_start;
             drag.current_duration = end - drag.original_start;
+            *snap_guide = guide;
+        }
+    }
+}
+
+fn update_effect_clip_timeline_drag(
+    drag: &mut EffectClipTimelineDrag,
+    pointer_time: f32,
+    session: &EditorSession,
+    snap: TimelineSnapMode,
+    view: TimelineView,
+    canvas_width: f32,
+    snap_guide: &mut Option<f32>,
+) {
+    let effect_duration = session.playback_duration();
+    let minimum_duration = (1.0 / session.clock.tick_rate().max(1) as f32).max(0.001);
+    let pointer_delta = pointer_time - drag.pointer_start;
+    *snap_guide = None;
+    match drag.kind {
+        TimelineDragKind::Move => {
+            let maximum_start = (effect_duration - drag.original_duration).max(0.0);
+            let unsnapped = (drag.original_start + pointer_delta).clamp(0.0, maximum_start);
+            let (start, guide) = snap_effect_clip_moved_timing(
+                unsnapped,
+                drag.original_duration,
+                drag.clip,
+                session,
+                snap,
+                view,
+                canvas_width,
+            );
+            drag.current_start = start.clamp(0.0, maximum_start);
+            drag.current_source_offset = drag.original_source_offset;
+            drag.current_duration = drag.original_duration;
+            *snap_guide = guide;
+        }
+        TimelineDragKind::TrimStart => {
+            let end = drag.original_start + drag.original_duration;
+            let minimum_start = (drag.original_start - drag.original_source_offset).max(0.0);
+            let maximum_start = (end - minimum_duration).max(minimum_start);
+            let unsnapped =
+                (drag.original_start + pointer_delta).clamp(minimum_start, maximum_start);
+            let (start, guide) =
+                snap_effect_clip_boundary(unsnapped, drag.clip, session, snap, view, canvas_width);
+            drag.current_start = start.clamp(minimum_start, maximum_start);
+            let delta = drag.current_start - drag.original_start;
+            drag.current_source_offset = (drag.original_source_offset + delta).max(0.0);
+            drag.current_duration = (drag.original_duration - delta).max(minimum_duration);
+            *snap_guide = guide;
+        }
+        TimelineDragKind::TrimEnd => {
+            let source_maximum = if drag.source_looping {
+                effect_duration
+            } else {
+                drag.original_start
+                    + (drag.source_duration - drag.original_source_offset).max(minimum_duration)
+            };
+            let maximum_end = effect_duration.min(source_maximum);
+            let minimum_end = drag.original_start + minimum_duration;
+            let unsnapped = (drag.original_start + drag.original_duration + pointer_delta)
+                .clamp(minimum_end, maximum_end.max(minimum_end));
+            let (end, guide) =
+                snap_effect_clip_boundary(unsnapped, drag.clip, session, snap, view, canvas_width);
+            let end = end.clamp(minimum_end, maximum_end.max(minimum_end));
+            drag.current_start = drag.original_start;
+            drag.current_source_offset = drag.original_source_offset;
+            drag.current_duration = (end - drag.original_start).max(minimum_duration);
             *snap_guide = guide;
         }
     }

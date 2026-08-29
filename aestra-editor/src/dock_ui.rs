@@ -373,11 +373,17 @@ fn spawn_panel_content(
                 sources.palette,
                 sources.localizer,
                 sources.settings,
+                sources.catalog,
+                sources.timeline,
             );
         }
-        DockPanel::Timeline => {
-            timeline::spawn_timeline(parent, sources.session, sources.timeline, sources.localizer)
-        }
+        DockPanel::Timeline => timeline::spawn_timeline(
+            parent,
+            sources.session,
+            sources.timeline,
+            sources.catalog,
+            sources.localizer,
+        ),
         DockPanel::Curves => {
             spawn_curves_workspace(
                 parent,

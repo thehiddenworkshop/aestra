@@ -2135,11 +2135,18 @@ The first Inspector shows the resolved source, placement start, source offset, p
 duration, seed behavior, and validation state. Add trimming, looping, and time scaling
 after basic placement is stable.
 
-Status: the command-layer slice is complete. `EffectClipId` is a first-class selection, lock, and
-diff target. Atomic create, delete, timing, and seed commands preserve identity through undo/redo,
-reject invalid edits without mutating the document, and repair stale selection after deletion.
-Library drag/drop, timeline clip presentation/direct manipulation, Inspector fields, and Bevy/GPU
-preview integration remain in Phase F.
+Status: the command layer and first Library-to-Timeline UI slice are complete. `EffectClipId` is a
+first-class selection, lock, and diff target. Dragging a resolvable project effect onto the timeline
+creates a referenced clip at the pointer time, clamps its initial window to the owning effect,
+shows a cursor-following drag ghost and provisional timeline bar, projects a distinct effect-instance
+row and clip, selects it semantically, and preserves identity through create undo/redo. Effect clips
+have preview mute/solo and contextual deletion controls, expand into their resolved source emitters,
+and expose both clip metadata and child emitter/module data through a read-only Inspector. Clip
+bodies move directly with timeline snapping; boundary handles trim the parent window while keeping
+`source_offset` coherent and respecting parent and non-looping source bounds. The transient timing
+is reflected in the Inspector and commits as one undoable semantic command. Invalid, missing,
+direct-self, and transitive-cycle drops are rejected without mutating the document and retain visible
+feedback. Persisted preview-state semantics and Bevy/GPU preview integration remain in Phase F.
 
 ## Phase G — Instance workflow and parameter overrides
 
@@ -2293,15 +2300,15 @@ all workspace presets
 ## M6 reusable-composition acceptance
 
 - [ ] Reusable Effect Assets are discoverable through the project asset index.
-- [ ] An Effect Asset can be dragged from the Library to the timeline.
-- [ ] Dropping it creates a referenced EffectClip, not a destructive copy.
-- [ ] Moving an EffectClip changes its semantic start time.
-- [ ] EffectClip operations are undoable/redoable.
-- [ ] EffectClip serialization is stable.
+- [x] An Effect Asset can be dragged from the Library to the timeline.
+- [x] Dropping it creates a referenced EffectClip, not a destructive copy.
+- [x] Moving an EffectClip changes its semantic start time.
+- [x] EffectClip operations are undoable/redoable.
+- [x] EffectClip serialization is stable.
 - [ ] The referenced effect resolves, compiles, runs, seeks, and restarts deterministically.
-- [ ] An EffectClip exposes its resolved source and timing window in the Inspector.
+- [x] An EffectClip exposes its resolved source and timing window in the Inspector.
 - [ ] Missing references identify the unresolved asset and offer a repair path.
-- [ ] Effect reference cycles are rejected with clear diagnostics.
+- [x] Effect reference cycles are rejected with clear diagnostics.
 - [ ] Moving or renaming a project asset through the Library preserves valid references.
 - [ ] Existing emitter/module editing remains functional.
 - [ ] Existing preview/runtime behavior remains functional.

@@ -3,11 +3,11 @@ use aestra_authoring::{
     LockState, Selection, TransactionPreview,
 };
 use aestra_bevy::{
-    AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, Emitter, EmitterId,
-    EmitterTransform, EventId, EventLink, EventTrigger, FlipbookDefinition, FlipbookPlaybackMode,
-    FlipbookTimeSource, MaterialDefinition, MaterialId, MaterialInput, MaterialProperties,
-    ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties, ValidationReport,
-    Value,
+    AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, EffectClipId,
+    Emitter, EmitterId, EmitterTransform, EventId, EventLink, EventTrigger, FlipbookDefinition,
+    FlipbookPlaybackMode, FlipbookTimeSource, MaterialDefinition, MaterialId, MaterialInput,
+    MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties,
+    ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
@@ -714,7 +714,8 @@ impl EditorSession {
         let id = self
             .selection
             .emitter(&self.effect)
-            .expect("the editor always keeps an emitter selected");
+            .or_else(|| self.effect.emitters.first().map(|emitter| emitter.id))
+            .expect("the editor always contains at least one emitter");
         self.effect
             .emitters
             .iter()
@@ -737,6 +738,21 @@ impl EditorSession {
         let name = emitter.name.clone();
         self.selection.select_emitter(id);
         self.status = format!("Selected {name}");
+        self.ui_revision += 1;
+        true
+    }
+
+    pub fn select_effect_clip(&mut self, id: EffectClipId) -> bool {
+        let Some(clip) = self.effect.effect_clips.iter().find(|clip| clip.id == id) else {
+            self.status = "Effect clip no longer exists".into();
+            return false;
+        };
+        if self.selection.primary == aestra_authoring::SemanticTarget::EffectClip(id) {
+            return false;
+        }
+        let source = clip.source;
+        self.selection.select_effect_clip(id);
+        self.status = format!("Selected effect clip {source}");
         self.ui_revision += 1;
         true
     }
