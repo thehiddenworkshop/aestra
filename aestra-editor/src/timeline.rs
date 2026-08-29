@@ -1,9 +1,9 @@
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
 use crate::{
     ComboOption, CurvesState, DockPanel, EditorNativeControl, EditorTooltip, FeathersActionButton,
-    Localizer, MenuState, ModulePaletteState, PendingFeathersActivation, TransportAction,
-    WorkspaceLayout, mini_button, reveal_dock_panel, session::EditorSession, spawn_combo_control,
-    spawn_feathers_action_button, theme,
+    KeyboardNavigableList, KeyboardNavigableListRow, Localizer, MenuState, ModulePaletteState,
+    PendingFeathersActivation, TransportAction, WorkspaceLayout, mini_button, reveal_dock_panel,
+    session::EditorSession, spawn_combo_control, spawn_feathers_action_button, theme,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction};
 use aestra_bevy::EmitterId;
@@ -12,15 +12,15 @@ use bevy::ui_widgets::{ControlOrientation, Scrollbar};
 use bevy::{
     feathers::cursor::{EntityCursor, OverrideCursor},
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
-    input_focus::InputFocus,
+    input_focus::{InputFocus, tab_navigation::TabIndex},
     picking::{
         events::{Click, Drag, DragEnd, DragStart, Pointer, Press},
         pointer::PointerButton,
     },
     prelude::*,
     text::EditableText,
-    ui::RelativeCursorPosition,
-    ui_widgets::Activate,
+    ui::{RelativeCursorPosition, Selected},
+    ui_widgets::{Activate, ListBox, ListItem, ScrollArea, ValueChange},
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
 };
 use fluent_bundle::FluentArgs;
@@ -44,6 +44,7 @@ impl Plugin for TimelinePlugin {
             .add_observer(queue_timeline_action_activation)
             .add_observer(execute_timeline_action)
             .add_observer(queue_choreography_action_activation)
+            .add_observer(activate_timeline_track_entry)
             .add_observer(execute_choreography_action)
             .add_systems(
                 Update,
@@ -114,6 +115,19 @@ fn queue_choreography_action_activation(
         commands
             .entity(activate.entity)
             .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+fn activate_timeline_track_entry(
+    change: On<ValueChange<Entity>>,
+    lists: Query<(), With<KeyboardNavigableList>>,
+    actions: Query<&ChoreographyAction, With<EmitterTrackHeader>>,
+    mut commands: Commands,
+) {
+    if lists.contains(change.source)
+        && let Ok(action) = actions.get(change.value)
+    {
+        commands.trigger(*action);
     }
 }
 
@@ -446,6 +460,26 @@ mod tests {
     }
 
     #[test]
+    fn timeline_wheel_routes_scroll_pan_and_zoom_like_a_track_editor() {
+        assert_eq!(
+            timeline_wheel_intent(Vec2::new(0.0, -1.0), -21.0, false, false),
+            TimelineWheelIntent::ScrollTracks(-21.0)
+        );
+        assert_eq!(
+            timeline_wheel_intent(Vec2::new(0.0, -1.0), -21.0, false, true),
+            TimelineWheelIntent::PanTime(-1.0)
+        );
+        assert_eq!(
+            timeline_wheel_intent(Vec2::new(0.0, -1.0), -21.0, true, false),
+            TimelineWheelIntent::ZoomTime(-1.0)
+        );
+        assert_eq!(
+            timeline_wheel_intent(Vec2::new(2.0, 0.25), 5.25, false, false),
+            TimelineWheelIntent::PanTime(2.0)
+        );
+    }
+
+    #[test]
     fn synchronized_vertical_scroll_prefers_tracks_and_clamps_to_overflow() {
         assert_eq!(resolved_vertical_scroll(12.0, None, None, 90.0), 12.0);
         assert_eq!(resolved_vertical_scroll(12.0, Some(28.0), None, 90.0), 28.0);
@@ -598,12 +632,25 @@ mod tests {
                 &ChoreographyAction,
                 &AccessibleLabel,
                 Has<Button>,
+                Has<ListItem>,
+                Has<KeyboardNavigableListRow>,
+                Has<Selected>,
             )>();
             query
                 .iter(world)
-                .map(|(header, action, label, button)| {
-                    (header.emitter, *action, label.0.clone(), button)
-                })
+                .map(
+                    |(header, action, label, button, list_item, keyboard_row, selected)| {
+                        (
+                            header.emitter,
+                            *action,
+                            label.0.clone(),
+                            button,
+                            list_item,
+                            keyboard_row,
+                            selected,
+                        )
+                    },
+                )
                 .collect::<Vec<_>>()
         };
         let clips = {
@@ -617,8 +664,11 @@ mod tests {
         };
         assert_eq!(headers.len(), emitter_count);
         assert_eq!(clips.len(), emitter_count);
-        for (emitter, action, label, button) in headers {
+        assert_eq!(headers.iter().filter(|header| header.6).count(), 1);
+        for (emitter, action, label, button, list_item, keyboard_row, _) in headers {
             assert!(button);
+            assert!(list_item);
+            assert!(keyboard_row);
             assert_eq!(action, ChoreographyAction::SelectEmitter(emitter));
             assert_eq!(
                 clips.iter().find(|clip| clip.0 == emitter).unwrap().1,
@@ -655,6 +705,17 @@ mod tests {
         };
         assert_eq!(panes.len(), 2);
         assert!(panes.iter().all(|(_, _, offset)| *offset == 72.0));
+        let header_navigation = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<(
+                Has<ListBox>,
+                Has<ScrollArea>,
+                Has<KeyboardNavigableList>,
+                Has<TabIndex>,
+            ), With<TimelineVerticalPane>>();
+            query.iter(world).find(|(list, _, _, _)| *list).unwrap()
+        };
+        assert_eq!(header_navigation, (true, true, true, true));
         let horizontal_target = {
             let world = app.world_mut();
             let mut query =
@@ -764,6 +825,32 @@ mod tests {
             app.world().resource::<LibraryState>().query,
             "does not match anything"
         );
+    }
+
+    #[test]
+    fn track_list_value_change_selects_the_emitter_through_its_semantic_action() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let target = session.effect.emitters[2].id;
+        let mut app = choreography_app(session);
+        app.add_observer(activate_timeline_track_entry);
+        let list = app.world_mut().spawn(KeyboardNavigableList).id();
+        let row = app
+            .world_mut()
+            .spawn((
+                EmitterTrackHeader { emitter: target },
+                ChoreographyAction::SelectEmitter(target),
+            ))
+            .id();
+
+        app.world_mut().trigger(ValueChange::<Entity> {
+            source: list,
+            value: row,
+            is_final: true,
+        });
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.selection.emitter(&session.effect), Some(target));
     }
 
     #[test]
@@ -1692,6 +1779,11 @@ pub(crate) fn spawn_timeline(
                                 TimelineVerticalPane::Headers,
                                 RelativeCursorPosition::default(),
                                 ScrollPosition(Vec2::new(0.0, state.vertical_scroll)),
+                                ScrollArea,
+                                ListBox,
+                                KeyboardNavigableList,
+                                TabIndex(0),
+                                AccessibleLabel(localizer.text("timeline-emitters")),
                                 Node {
                                     flex_grow: 1.0,
                                     min_height: Val::Px(0.0),
@@ -2070,6 +2162,8 @@ fn spawn_emitter_track_header(
     let mut header = parent.spawn((
         Button,
         EditorNativeControl,
+        ListItem,
+        KeyboardNavigableListRow,
         EmitterTrackHeader { emitter },
         ChoreographyAction::SelectEmitter(emitter),
         AccessibleLabel(accessible_label),
@@ -2094,11 +2188,13 @@ fn spawn_emitter_track_header(
     if diagnostic {
         header.insert(EmitterTrackDiagnostic);
     }
+    if selected {
+        header.insert(Selected);
+    }
     if !enabled {
         header.insert(EmitterTrackDisabled);
     }
     header
-        .observe(select_timeline_track_header)
         .observe(open_timeline_track_context_menu)
         .with_children(|row| {
             row.spawn((
@@ -2308,14 +2404,7 @@ fn navigate_timeline(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     canvases: Query<(&RelativeCursorPosition, &ComputedNode), With<TimelineCanvas>>,
-    vertical_panes: Query<
-        (
-            &TimelineVerticalPane,
-            &RelativeCursorPosition,
-            &ComputedNode,
-        ),
-        Without<TimelineCanvas>,
-    >,
+    track_panes: Query<(&TimelineVerticalPane, &ComputedNode), Without<TimelineCanvas>>,
     mut session: ResMut<EditorSession>,
     mut state: ResMut<TimelineState>,
     mut override_cursor: ResMut<OverrideCursor>,
@@ -2351,54 +2440,84 @@ fn navigate_timeline(
         state.pan_by(delta_time, session.playback_duration());
     }
 
-    let (scroll, vertical_scroll) =
+    let (scroll, track_scroll) =
         wheel
             .read()
-            .fold((Vec2::ZERO, 0.0), |(timeline_sum, vertical_sum), event| {
-                let timeline_scale = match event.unit {
+            .fold((Vec2::ZERO, 0.0), |(time_sum, track_sum), event| {
+                let time_scale = match event.unit {
                     MouseScrollUnit::Line => 1.0,
                     MouseScrollUnit::Pixel => 0.01,
                 };
-                let vertical_scale = match event.unit {
+                let track_scale = match event.unit {
                     MouseScrollUnit::Line => 21.0,
                     MouseScrollUnit::Pixel => 1.0,
                 };
                 (
-                    timeline_sum + Vec2::new(event.x, event.y) * timeline_scale,
-                    vertical_sum + event.y * vertical_scale,
+                    time_sum + Vec2::new(event.x, event.y) * time_scale,
+                    track_sum + event.y * track_scale,
                 )
             });
-    if let Some((_, _, computed)) = vertical_panes
-        .iter()
-        .find(|(kind, cursor, _)| **kind == TimelineVerticalPane::Headers && cursor.cursor_over())
-    {
-        let maximum = (computed.content_size().y - computed.size().y).max(0.0);
-        state.vertical_scroll = (state.vertical_scroll - vertical_scroll).clamp(0.0, maximum);
-        return;
-    }
+    // The native ScrollArea on the header list owns vertical wheel scrolling. The synchronized
+    // pane system mirrors that offset to the track canvas on the same frame.
     let Some((cursor, _)) = hovered else {
         return;
     };
     if scroll == Vec2::ZERO {
         return;
     }
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    if shift {
-        let amount = if scroll.x.abs() > scroll.y.abs() {
-            scroll.x
-        } else {
-            scroll.y
-        };
-        let span = state.view.span();
-        state.pan_by(-amount * span * 0.08, session.playback_duration());
-    } else if let Some(position) = cursor.normalized {
-        let anchor = state.view.time_at(timeline_cursor_fraction(position.x));
-        state.zoom_at(
-            anchor,
-            0.82_f32.powf(scroll.y),
-            session.playback_duration(),
-            session.clock.tick_rate(),
-        );
+    match timeline_wheel_intent(scroll, track_scroll, control, shift) {
+        TimelineWheelIntent::ZoomTime(amount) => {
+            if let Some(position) = cursor.normalized {
+                let anchor = state.view.time_at(timeline_cursor_fraction(position.x));
+                state.zoom_at(
+                    anchor,
+                    0.82_f32.powf(amount),
+                    session.playback_duration(),
+                    session.clock.tick_rate(),
+                );
+            }
+        }
+        TimelineWheelIntent::PanTime(amount) => {
+            let span = state.view.span();
+            state.pan_by(-amount * span * 0.08, session.playback_duration());
+        }
+        TimelineWheelIntent::ScrollTracks(amount) => {
+            let maximum = track_panes
+                .iter()
+                .find(|(kind, _)| **kind == TimelineVerticalPane::Tracks)
+                .map(|(_, computed)| (computed.content_size().y - computed.size().y).max(0.0))
+                .unwrap_or(0.0);
+            state.vertical_scroll = (state.vertical_scroll - amount).clamp(0.0, maximum);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TimelineWheelIntent {
+    ScrollTracks(f32),
+    PanTime(f32),
+    ZoomTime(f32),
+}
+
+fn timeline_wheel_intent(
+    time_delta: Vec2,
+    track_delta: f32,
+    control: bool,
+    shift: bool,
+) -> TimelineWheelIntent {
+    let dominant = if time_delta.x.abs() > time_delta.y.abs() {
+        time_delta.x
+    } else {
+        time_delta.y
+    };
+    if control {
+        TimelineWheelIntent::ZoomTime(dominant)
+    } else if shift || time_delta.x.abs() > time_delta.y.abs() {
+        TimelineWheelIntent::PanTime(dominant)
+    } else {
+        TimelineWheelIntent::ScrollTracks(track_delta)
     }
 }
 
@@ -2586,19 +2705,6 @@ fn select_timeline_clip(
     mut commands: Commands,
 ) {
     let Ok(action) = actions.get(click.event_target()) else {
-        return;
-    };
-    if click.button == PointerButton::Primary {
-        commands.trigger(*action);
-    }
-}
-
-fn select_timeline_track_header(
-    click: On<Pointer<Click>>,
-    headers: Query<&ChoreographyAction, With<EmitterTrackHeader>>,
-    mut commands: Commands,
-) {
-    let Ok(action) = headers.get(click.event_target()) else {
         return;
     };
     if click.button == PointerButton::Primary {

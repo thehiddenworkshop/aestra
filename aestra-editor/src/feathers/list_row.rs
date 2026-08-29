@@ -2,7 +2,19 @@
 
 use super::button::EditorNativeControl;
 use crate::theme;
-use bevy::prelude::*;
+use bevy::{
+    input_focus::{InputFocus, InputFocusVisible},
+    prelude::*,
+    ui_widgets::ActiveDescendant,
+};
+
+/// Marks a headless list box that uses Aestra's shared keyboard-focus treatment.
+#[derive(Component)]
+pub(crate) struct KeyboardNavigableList;
+
+/// Marks a row whose active-descendant focus should be drawn by the editor widget layer.
+#[derive(Component)]
+pub(crate) struct KeyboardNavigableListRow;
 
 #[derive(Component)]
 pub(crate) struct CompactListRow;
@@ -12,6 +24,34 @@ pub(crate) struct CompactListSectionHeader;
 
 #[derive(Component)]
 pub(crate) struct CompactListEmptyState;
+
+pub(super) fn update_keyboard_list_focus_visuals(
+    focus: Res<InputFocus>,
+    focus_visible: Res<InputFocusVisible>,
+    lists: Query<&ActiveDescendant, With<KeyboardNavigableList>>,
+    rows: Query<(Entity, Has<Outline>), With<KeyboardNavigableListRow>>,
+    mut commands: Commands,
+) {
+    let active = focus
+        .get()
+        .filter(|_| focus_visible.0)
+        .and_then(|entity| lists.get(entity).ok())
+        .and_then(|descendant| descendant.0);
+
+    for (entity, has_outline) in &rows {
+        if Some(entity) == active {
+            if !has_outline {
+                commands.entity(entity).insert(Outline {
+                    color: theme::ACCENT,
+                    width: Val::Px(2.0),
+                    offset: Val::Px(-2.0),
+                });
+            }
+        } else if has_outline {
+            commands.entity(entity).remove::<Outline>();
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct ListRowStatus<'a> {
@@ -226,6 +266,7 @@ pub(crate) fn spawn_list_empty_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::input_focus::InputFocusVisible;
 
     #[derive(Component)]
     struct TestAction;
@@ -292,5 +333,31 @@ mod tests {
         assert_eq!(row_count, 2);
         assert_eq!(header_count, 1);
         assert_eq!(empty_count, 1);
+    }
+
+    #[test]
+    fn keyboard_active_descendant_gets_a_visible_non_layout_focus_ring() {
+        let mut app = App::new();
+        app.add_systems(Update, update_keyboard_list_focus_visuals);
+        let list = app.world_mut().spawn(KeyboardNavigableList).id();
+        let row = app
+            .world_mut()
+            .spawn((KeyboardNavigableListRow, Node::default(), ChildOf(list)))
+            .id();
+        app.world_mut()
+            .entity_mut(list)
+            .insert(ActiveDescendant(Some(row)));
+        app.insert_resource(InputFocus::from_entity(list));
+        app.insert_resource(InputFocusVisible(true));
+
+        app.update();
+
+        let outline = app.world().get::<Outline>(row).unwrap();
+        assert_eq!(outline.width, Val::Px(2.0));
+        assert_eq!(outline.offset, Val::Px(-2.0));
+
+        app.world_mut().resource_mut::<InputFocusVisible>().0 = false;
+        app.update();
+        assert!(app.world().get::<Outline>(row).is_none());
     }
 }

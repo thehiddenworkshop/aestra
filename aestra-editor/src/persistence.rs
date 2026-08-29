@@ -242,6 +242,7 @@ fn handle_document_action_buttons(
             &DocumentAction,
             Option<&FeathersActionButton>,
             Option<&PendingFeathersActivation>,
+            Has<ListItem>,
             &mut BackgroundColor,
         ),
         (
@@ -253,11 +254,19 @@ fn handle_document_action_buttons(
     mut menu: ResMut<MenuState>,
     mut session: ResMut<EditorSession>,
 ) {
-    for (entity, interaction, action, feathers, pending, mut background) in &mut interactions {
+    for (entity, interaction, action, feathers, pending, list_item, mut background) in
+        &mut interactions
+    {
         match *interaction {
             Interaction::Hovered if feathers.is_none() => background.0 = theme::BUTTON_HOVER,
             Interaction::None if feathers.is_none() => background.0 = theme::PANEL_DARK,
             Interaction::Pressed => {
+                // Library list rows activate through the ListBox ValueChange contract so mouse
+                // and keyboard input take the same semantic route exactly once.
+                if list_item {
+                    background.0 = theme::ACCENT_DIM;
+                    continue;
+                }
                 if feathers.is_some() {
                     if pending.is_none() {
                         continue;

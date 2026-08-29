@@ -1,6 +1,6 @@
 # Aestra — Pre-M6 Professional UI Implementation Plan
 
-Status: Slice 5 complete; Slice 6 is next
+Status: Slice 6 in progress; keyboard navigation and focus foundation complete
 
 This document turns the pre-M6 portion of
 `aestra_ui_choreography_library_ux_plan.md` into a repository-specific delivery plan.
@@ -441,6 +441,13 @@ Tests:
 ### Slice 6 — Professional interaction and acceptance pass
 
 Outcome: the pre-M6 UI foundation meets its complete ergonomic gate.
+
+Progress:
+
+- complete: native list-box traversal, Enter activation, auto-scroll, and visible keyboard
+  focus for Library project entries and Timeline track headers;
+- remaining: accessibility/status audit, invalid-drop feedback, compact-layout audit,
+  acceptance scenario, and architecture/implementation documentation.
 
 Work:
 

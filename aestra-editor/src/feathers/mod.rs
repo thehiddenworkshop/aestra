@@ -50,6 +50,7 @@ impl Plugin for AestraFeathersPlugin {
             .add_systems(
                 Update,
                 (
+                    list_row::update_keyboard_list_focus_visuals,
                     scroll::update_scrollbar_visibility,
                     search_field::sync_search_clear_visibility,
                     tooltip::update_tooltip,

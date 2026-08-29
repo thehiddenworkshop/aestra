@@ -2,6 +2,8 @@
 
 use crate::*;
 use bevy::ui_widgets::Activate;
+#[cfg(test)]
+use bevy::ui_widgets::ScrollArea;
 use std::{
     collections::HashSet,
     fs,
@@ -24,6 +26,7 @@ impl Plugin for EditorLibraryPlugin {
         app.init_resource::<ProjectEffectCatalog>()
             .init_resource::<LibraryState>()
             .add_observer(queue_library_action_activation)
+            .add_observer(activate_library_list_entry)
             .add_observer(execute_library_action)
             .add_observer(update_library_query)
             .add_systems(
@@ -270,10 +273,25 @@ fn update_library_query(
     state.query.clone_from(&change.value);
 }
 
+fn activate_library_list_entry(
+    change: On<ValueChange<Entity>>,
+    lists: Query<(), With<KeyboardNavigableList>>,
+    actions: Query<&DocumentAction, With<ProjectEffectRow>>,
+    mut commands: Commands,
+) {
+    if lists.contains(change.source)
+        && let Ok(action) = actions.get(change.value)
+    {
+        commands.trigger(*action);
+    }
+}
+
 fn sync_library_filtering(
+    mut commands: Commands,
     state: Res<LibraryState>,
     catalog: Res<ProjectEffectCatalog>,
     mut nodes: Query<(
+        Entity,
         &mut Node,
         Option<&ProjectEffectRow>,
         Has<LibraryCatalogEmpty>,
@@ -290,16 +308,21 @@ fn sync_library_filtering(
         .iter()
         .filter(|entry| state.matches_project_effect(entry))
         .count();
-    for (mut node, row, catalog_empty, no_results) in &mut nodes {
+    for (entity, mut node, row, catalog_empty, no_results) in &mut nodes {
         if let Some(row) = row {
-            node.display = if catalog
+            let visible = catalog
                 .entry(row.0)
-                .is_some_and(|entry| state.matches_project_effect(entry))
-            {
+                .is_some_and(|entry| state.matches_project_effect(entry));
+            node.display = if visible {
                 Display::Flex
             } else {
                 Display::None
             };
+            if visible {
+                commands.entity(entity).insert(ListItem);
+            } else {
+                commands.entity(entity).remove::<ListItem>();
+            }
         } else if catalog_empty {
             node.display = if catalog.entries().is_empty() {
                 Display::Flex
@@ -399,6 +422,8 @@ fn spawn_project_effects(
         };
         panel.commands().entity(row).insert((
             ProjectEffectRow(entry.id),
+            ListItem,
+            KeyboardNavigableListRow,
             project_effect_tooltip(entry, localizer),
         ));
     }
@@ -637,12 +662,30 @@ pub(crate) fn spawn_library(
             width: Val::Percent(100.0),
             flex_grow: 1.0,
             min_height: Val::Px(0.0),
-            flex_direction: FlexDirection::Column,
             ..default()
         })
-        .with_children(|panel| {
-            spawn_project_effects(panel, catalog, state, localizer);
-            spawn_current_document_resources(panel, session, localizer);
+        .with_children(|body| {
+            let list = spawn_vertical_scroll_area(
+                body,
+                ScrollMemoryKey::Library,
+                Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    min_height: Val::Px(0.0),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                |panel| {
+                    spawn_project_effects(panel, catalog, state, localizer);
+                    spawn_current_document_resources(panel, session, localizer);
+                },
+            );
+            body.commands().entity(list).insert((
+                ListBox,
+                KeyboardNavigableList,
+                TabIndex(0),
+                AccessibleLabel(localizer.text("assets-project-effects")),
+            ));
         });
 }
 
@@ -739,6 +782,16 @@ mod tests {
     use super::*;
     use crate::session::blank_effect;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
+
+    #[derive(Resource, Default)]
+    struct CapturedDocumentAction(Option<DocumentAction>);
+
+    fn capture_document_action(
+        action: On<DocumentAction>,
+        mut captured: ResMut<CapturedDocumentAction>,
+    ) {
+        captured.0 = Some(*action);
+    }
 
     fn spawn_test_library(
         mut commands: Commands,
@@ -943,6 +996,9 @@ mod tests {
         assert_eq!(marker_count::<LibraryMaterialsSection>(&mut app), 1);
         assert_eq!(marker_count::<LibraryFlipbooksSection>(&mut app), 1);
         assert_eq!(marker_count::<ChoreographyAction>(&mut app), 0);
+        assert_eq!(marker_count::<ListBox>(&mut app), 1);
+        assert_eq!(marker_count::<ScrollArea>(&mut app), 1);
+        assert_eq!(marker_count::<KeyboardNavigableList>(&mut app), 1);
 
         let rows = {
             let world = app.world_mut();
@@ -952,12 +1008,24 @@ mod tests {
                 Option<&DocumentAction>,
                 Has<EditorTooltip>,
                 &AccessibleLabel,
+                Has<ListItem>,
+                Has<KeyboardNavigableListRow>,
             )>();
             query
                 .iter(world)
-                .map(|(row, button, action, tooltip, label)| {
-                    (row.0, button, action.copied(), tooltip, label.0.clone())
-                })
+                .map(
+                    |(row, button, action, tooltip, label, list_item, keyboard_row)| {
+                        (
+                            row.0,
+                            button,
+                            action.copied(),
+                            tooltip,
+                            label.0.clone(),
+                            list_item,
+                            keyboard_row,
+                        )
+                    },
+                )
                 .collect::<Vec<_>>()
         };
         assert_eq!(rows.len(), 3);
@@ -967,12 +1035,16 @@ mod tests {
         assert!(valid.3);
         assert!(valid.4.starts_with("Open "));
         assert!(valid.4.contains("Prism Bloom"));
+        assert!(valid.5);
+        assert!(valid.6);
         for id in [invalid_id, unsupported_id] {
             let status = rows.iter().find(|row| row.0 == id).unwrap();
             assert!(!status.1);
             assert_eq!(status.2, None);
             assert!(status.3);
             assert!(!status.4.is_empty());
+            assert!(status.5);
+            assert!(status.6);
         }
 
         let exposes_raw_id = {
@@ -981,6 +1053,32 @@ mod tests {
             query.iter(world).any(|text| text.0.contains(&effect_id))
         };
         assert!(!exposes_raw_id);
+    }
+
+    #[test]
+    fn list_value_change_activates_the_entry_semantic_action() {
+        let mut app = App::new();
+        app.init_resource::<CapturedDocumentAction>()
+            .add_observer(activate_library_list_entry)
+            .add_observer(capture_document_action);
+        let list = app.world_mut().spawn(KeyboardNavigableList).id();
+        let id = ProjectEffectEntryId(42);
+        let row = app
+            .world_mut()
+            .spawn((ProjectEffectRow(id), DocumentAction::OpenCatalog(id)))
+            .id();
+
+        app.world_mut().trigger(ValueChange::<Entity> {
+            source: list,
+            value: row,
+            is_final: true,
+        });
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<CapturedDocumentAction>().0,
+            Some(DocumentAction::OpenCatalog(id))
+        );
     }
 
     #[test]
@@ -1113,6 +1211,8 @@ mod tests {
             app.world().get::<Node>(plasma).unwrap().display,
             Display::None
         );
+        assert!(app.world().get::<ListItem>(prism).is_some());
+        assert!(app.world().get::<ListItem>(plasma).is_none());
         let count_text = &app.world().get::<Text>(count).unwrap().0;
         assert!(count_text.contains('1'));
         assert!(count_text.ends_with(" FOUND"));
@@ -1136,6 +1236,8 @@ mod tests {
             app.world().get::<Node>(plasma).unwrap().display,
             Display::None
         );
+        assert!(app.world().get::<ListItem>(prism).is_none());
+        assert!(app.world().get::<ListItem>(plasma).is_none());
         let count_text = &app.world().get::<Text>(count).unwrap().0;
         assert!(count_text.contains('0'));
         assert!(count_text.ends_with(" FOUND"));
