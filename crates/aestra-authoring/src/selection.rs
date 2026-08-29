@@ -299,6 +299,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::MoveEffectClip { id, .. }
         | EffectCommand::SetEffectClipTiming { id, .. }
         | EffectCommand::SetEffectClipSeed { id, .. }
+        | EffectCommand::SetEffectClipSource { id, .. }
         | EffectCommand::SetEffectClipTransform { id, .. } => {
             (None, Some(SemanticTarget::EffectClip(*id)))
         }

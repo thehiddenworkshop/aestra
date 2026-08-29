@@ -24,6 +24,7 @@ struct PanelSources<'a> {
     library: &'a LibraryState,
     registry: &'a EditorModuleRegistry,
     palette: &'a ModulePaletteState,
+    repair: &'a EffectClipRepairState,
     diagnostics_panel: &'a DiagnosticsPanelState,
     profiler: &'a ProfilerState,
     settings: &'a EditorSettings,
@@ -40,6 +41,7 @@ pub(crate) struct DockUiResources<'w> {
     layout: Res<'w, WorkspaceLayout>,
     registry: Res<'w, EditorModuleRegistry>,
     palette: Res<'w, ModulePaletteState>,
+    repair: Res<'w, EffectClipRepairState>,
     diagnostics_panel: Res<'w, DiagnosticsPanelState>,
     profiler: Res<'w, ProfilerState>,
     settings: Res<'w, EditorSettings>,
@@ -60,6 +62,7 @@ impl<'w> DockUiResources<'w> {
             library: &self.library,
             registry: &self.registry,
             palette: &self.palette,
+            repair: &self.repair,
             diagnostics_panel: &self.diagnostics_panel,
             profiler: &self.profiler,
             settings: &self.settings,
@@ -375,6 +378,7 @@ fn spawn_panel_content(
                 sources.settings,
                 sources.catalog,
                 sources.timeline,
+                sources.repair,
             );
         }
         DockPanel::Timeline => timeline::spawn_timeline(
@@ -398,6 +402,7 @@ fn spawn_panel_content(
             spawn_diagnostics_workspace(
                 parent,
                 sources.session,
+                sources.catalog,
                 sources.diagnostics_panel,
                 sources.localizer,
             );

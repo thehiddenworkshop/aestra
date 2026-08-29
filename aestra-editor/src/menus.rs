@@ -843,6 +843,7 @@ fn dismiss_open_menus(
     mut session: ResMut<EditorSession>,
     mut activation_guard: ResMut<MenuActivationGuard>,
     menu_surfaces: Query<&RelativeCursorPosition, With<MenuSurface>>,
+    menu_items: Query<&Interaction, With<bevy::feathers::controls::FeathersMenuItem>>,
     menu_buttons: Query<(&Interaction, Has<Pressed>), With<MenuButton>>,
 ) {
     let menu_activated = std::mem::take(&mut activation_guard.0);
@@ -858,9 +859,16 @@ fn dismiss_open_menus(
     if menu_activated {
         return;
     }
+    // A Feathers menu item activates on pointer release. Its popup-level cursor position can lag
+    // the item by one frame after opening, so treating only the popup surface as "inside" can hide
+    // the menu on press before Feathers has a chance to emit `Activate`. The item interaction is
+    // authoritative while the pointer is over or pressing a row.
     let pointer_over_menu = menu_surfaces
         .iter()
-        .any(RelativeCursorPosition::cursor_over);
+        .any(RelativeCursorPosition::cursor_over)
+        || menu_items
+            .iter()
+            .any(|interaction| *interaction != Interaction::None);
     let menu_button_pressed = menu_buttons.iter().any(|(interaction, feathers_pressed)| {
         *interaction == Interaction::Pressed || feathers_pressed
     });
@@ -1008,6 +1016,35 @@ mod tests {
         ));
         app.world_mut()
             .spawn((MenuButton, Interaction::None, Pressed));
+        app.add_systems(Update, dismiss_open_menus);
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<MenuState>().open,
+            Some(MenuKind::File)
+        );
+    }
+
+    #[test]
+    fn feathers_menu_item_press_is_not_mistaken_for_an_outside_click() {
+        let mut app = App::new();
+        let mut mouse = ButtonInput::<MouseButton>::default();
+        mouse.press(MouseButton::Left);
+        app.insert_resource(mouse);
+        app.insert_resource(MenuState {
+            open: Some(MenuKind::File),
+            ..default()
+        });
+        app.init_resource::<MenuActivationGuard>();
+        app.insert_resource(EditorSession::from_embedded_sample(
+            EFFECT_SOURCE,
+            EFFECT_PATH,
+        ));
+        app.world_mut().spawn((
+            bevy::feathers::controls::FeathersMenuItem,
+            Interaction::Pressed,
+        ));
         app.add_systems(Update, dismiss_open_menus);
 
         app.update();

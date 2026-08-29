@@ -462,7 +462,13 @@ fn execute_choreography_action(
             session.ui_revision += 1;
         }
         ChoreographyAction::ToggleEffectClipSolo(clip) => {
-            state.solo_effect_clip = (state.solo_effect_clip != Some(clip)).then_some(clip);
+            let next_solo = (state.solo_effect_clip != Some(clip)).then_some(clip);
+            if next_solo.is_some()
+                && let Some(emitter) = session.solo_emitter
+            {
+                session.toggle_preview_solo(emitter);
+            }
+            state.solo_effect_clip = next_solo;
             session.status = localizer.text("timeline-effect-clip-preview-updated");
             session.ui_revision += 1;
         }
@@ -508,6 +514,9 @@ fn execute_choreography_action(
         }
         ChoreographyAction::ToggleEmitterSolo(emitter) => {
             if session.toggle_preview_solo(emitter) {
+                if session.solo_emitter.is_some() {
+                    state.solo_effect_clip = None;
+                }
                 curves.clear();
             }
         }
@@ -2383,7 +2392,13 @@ mod tests {
 
     #[test]
     fn emitter_solo_is_preview_only_and_isolates_runtime_output() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.effect_clips.clear();
+        session.effect.effect_clips.push(EffectClip::new(
+            EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0x5010)),
+            0.0,
+            1.0,
+        ));
         let target = session.effect.emitters[1].id;
         let original_effect = session.effect.clone();
         let mut app = choreography_app(session);
@@ -2412,11 +2427,59 @@ mod tests {
                 .filter(|emitter| emitter.source != target)
                 .all(|emitter| !emitter.enabled)
         );
+        assert!(
+            preview.effect_clips.is_empty(),
+            "soloing a local emitter must suppress referenced effect clips"
+        );
 
         app.world_mut()
             .trigger(ChoreographyAction::ToggleEmitterSolo(target));
         app.update();
         assert_eq!(app.world().resource::<EditorSession>().solo_emitter, None);
+    }
+
+    #[test]
+    fn emitter_and_effect_clip_solo_are_mutually_exclusive() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.effect_clips.clear();
+        let clip = EffectClip::new(
+            EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0x5010)),
+            0.0,
+            1.0,
+        );
+        let clip_id = clip.id;
+        session.effect.effect_clips.push(clip);
+        let emitter = session.effect.emitters[0].id;
+        let mut app = choreography_app(session);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::ToggleEffectClipSolo(clip_id));
+        app.update();
+        assert_eq!(
+            app.world().resource::<TimelineState>().solo_effect_clip,
+            Some(clip_id)
+        );
+
+        app.world_mut()
+            .trigger(ChoreographyAction::ToggleEmitterSolo(emitter));
+        app.update();
+        assert_eq!(
+            app.world().resource::<EditorSession>().solo_emitter,
+            Some(emitter)
+        );
+        assert_eq!(
+            app.world().resource::<TimelineState>().solo_effect_clip,
+            None
+        );
+
+        app.world_mut()
+            .trigger(ChoreographyAction::ToggleEffectClipSolo(clip_id));
+        app.update();
+        assert_eq!(app.world().resource::<EditorSession>().solo_emitter, None);
+        assert_eq!(
+            app.world().resource::<TimelineState>().solo_effect_clip,
+            Some(clip_id)
+        );
     }
 
     #[test]
@@ -4232,9 +4295,10 @@ pub(crate) fn spawn_timeline(
                                                 == SemanticTarget::EffectClip(clip.id);
                                             let color = effect_reference_color(clip.source);
                                             let muted = state.muted_effect_clips.contains(&clip.id);
-                                            let suppressed = state
-                                                .solo_effect_clip
-                                                .is_some_and(|solo| solo != clip.id);
+                                            let suppressed = session.solo_emitter.is_some()
+                                                || state
+                                                    .solo_effect_clip
+                                                    .is_some_and(|solo| solo != clip.id);
                                             let mut args = FluentArgs::new();
                                             args.set("name", source_name.as_str());
                                             let move_label = localizer

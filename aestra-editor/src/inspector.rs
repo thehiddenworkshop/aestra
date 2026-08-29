@@ -7,7 +7,7 @@ use crate::feathers::panel_card::{
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
 use crate::timeline::{EffectClipChildSelection, TimelineState};
 use crate::*;
-use aestra_bevy::EffectClipId;
+use aestra_bevy::{EffectClip, EffectClipId};
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use bevy::{
     ui::InteractionDisabled,
@@ -30,6 +30,7 @@ impl Plugin for InspectorPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()
+            .init_resource::<EffectClipRepairState>()
             .init_resource::<InspectorFocus>()
             .init_resource::<NumericScrubState>()
             .init_resource::<BoundedSliderState>()
@@ -44,6 +45,7 @@ impl Plugin for InspectorPlugin {
             .add_observer(handle_renderer_toggle_change)
             .add_observer(handle_emitter_scalar_change)
             .add_observer(handle_effect_clip_scalar_change)
+            .add_observer(update_effect_clip_repair_query)
             .add_observer(handle_inspector_integer_change)
             .add_observer(handle_inspector_scalar_change)
             .add_observer(handle_bounded_slider_change)
@@ -68,6 +70,7 @@ impl Plugin for InspectorPlugin {
                         sync_renderer_number_inputs,
                         sync_renderer_slider_inputs,
                         sync_effect_clip_inspector_timing,
+                        sync_effect_clip_repair_candidates,
                     )
                         .chain(),
                     scroll_inspector_to_focus,
@@ -109,7 +112,27 @@ pub(crate) enum InspectorAction {
         target: EmitterId,
     },
     DeleteEventLink(EventId),
+    RepairEffectClipSource {
+        clip: EffectClipId,
+        source: EffectAssetRef,
+    },
 }
+
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct EffectClipRepairState {
+    query: String,
+}
+
+#[derive(Component)]
+struct EffectClipRepairSearchInput;
+
+#[derive(Component, Debug, Clone)]
+struct EffectClipRepairCandidate {
+    search_text: String,
+}
+
+#[derive(Component)]
+struct EffectClipRepairEmpty;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum InspectorStatus {
@@ -130,6 +153,7 @@ enum InspectorStatus {
     EventDuplicate,
     EventSelfTarget,
     EventTargetMissing,
+    RepairRejected(String),
 }
 
 fn set_inspector_status(
@@ -192,6 +216,11 @@ fn localize_inspector_status(status: InspectorStatus, localizer: &Localizer) -> 
         InspectorStatus::EventTargetMissing => {
             return localizer.text("inspector-status-event-target-missing");
         }
+        InspectorStatus::RepairRejected(reason) => {
+            let mut args = FluentArgs::new();
+            args.set("reason", reason);
+            return localizer.text_with("inspector-repair-rejected", &args);
+        }
     };
     let mut args = FluentArgs::new();
     args.set(argument.0, argument.1);
@@ -207,6 +236,47 @@ fn queue_inspector_action_activation(
         commands
             .entity(activate.entity)
             .insert((PendingFeathersActivation, Interaction::Pressed));
+    }
+}
+
+fn update_effect_clip_repair_query(
+    change: On<ValueChange<String>>,
+    inputs: Query<(), With<EffectClipRepairSearchInput>>,
+    mut state: ResMut<EffectClipRepairState>,
+) {
+    if inputs.contains(change.source) && state.query != change.value {
+        state.query.clone_from(&change.value);
+    }
+}
+
+fn sync_effect_clip_repair_candidates(
+    state: Res<EffectClipRepairState>,
+    mut candidates: Query<(&EffectClipRepairCandidate, &mut Node)>,
+    mut empty_states: Query<
+        &mut Node,
+        (
+            With<EffectClipRepairEmpty>,
+            Without<EffectClipRepairCandidate>,
+        ),
+    >,
+) {
+    let query = state.query.trim().to_lowercase();
+    let mut visible = 0;
+    for (candidate, mut node) in &mut candidates {
+        let matches = query.is_empty() || candidate.search_text.contains(&query);
+        node.display = if matches {
+            visible += 1;
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for mut node in &mut empty_states {
+        node.display = if visible == 0 {
+            Display::Flex
+        } else {
+            Display::None
+        };
     }
 }
 
@@ -237,6 +307,8 @@ fn handle_inspector_actions(
     mut settings: ResMut<EditorSettings>,
     mut settings_persistence: ResMut<SettingsPersistence>,
     localizer: Res<Localizer>,
+    catalog: Option<Res<ProjectEffectCatalog>>,
+    mut repair: Option<ResMut<EffectClipRepairState>>,
 ) {
     for (entity, interaction, action, feathers_action, pending, disabled, mut background) in
         &mut actions
@@ -405,6 +477,41 @@ fn handle_inspector_actions(
                             );
                         }
                     }
+                    InspectorAction::RepairEffectClipSource { clip, source } => {
+                        let result = catalog
+                            .as_deref()
+                            .ok_or_else(|| "the project effect catalog is unavailable".to_owned())
+                            .and_then(|catalog| {
+                                let clip = session
+                                    .effect
+                                    .effect_clips
+                                    .iter()
+                                    .find(|candidate| candidate.id == clip)
+                                    .cloned()
+                                    .ok_or_else(|| {
+                                        "the effect clip is no longer available".to_owned()
+                                    })?;
+                                effect_clip_repair_source(catalog, &session.effect, &clip, source)
+                                    .map(|_| ())
+                            });
+                        match result {
+                            Ok(()) => {
+                                session.execute(
+                                    localizer.text("inspector-repair-effect-clip-command"),
+                                    EffectCommand::SetEffectClipSource { id: clip, source },
+                                    true,
+                                );
+                                if let Some(repair) = repair.as_deref_mut() {
+                                    repair.query.clear();
+                                }
+                            }
+                            Err(reason) => set_inspector_status(
+                                &mut session,
+                                &localizer,
+                                InspectorStatus::RepairRejected(reason),
+                            ),
+                        }
+                    }
                     InspectorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     InspectorAction::DeleteRenderer(id) => {
                         if preview_renderer_deletion(&mut session, id) {
@@ -499,9 +606,119 @@ pub(crate) fn focus_compiled_target(
 mod tests {
     use super::*;
     use crate::{EFFECT_PATH, EFFECT_SOURCE};
+    use aestra_bevy::EffectClipSeed;
 
     fn test_localizer() -> Localizer {
         Localizer::new("en-US").unwrap()
+    }
+
+    #[test]
+    fn repairing_a_clip_source_preserves_instance_state_and_is_undoable() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut replacement = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        replacement.id = aestra_bevy::EffectId::from_u128(0xc41d);
+        replacement.name = "Replacement".into();
+        replacement.duration = 4.0;
+        replacement.looping = false;
+        replacement.effect_clips.clear();
+        replacement
+            .save_ron(temporary.path().join("replacement.aestra.ron"))
+            .unwrap();
+
+        let missing = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xdead));
+        let replacement_ref = EffectAssetRef::new(replacement.id);
+        let mut owner = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
+        owner.effect_clips.clear();
+        let mut clip = EffectClip::new(missing, 0.75, 1.5);
+        clip.source_offset = 0.5;
+        clip.transform.translation = [2.0, -1.0, 3.5];
+        clip.seed = EffectClipSeed::Fixed(77);
+        let clip_id = clip.id;
+        owner.effect_clips.push(clip.clone());
+
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect = owner;
+        let original = session.effect.effect_clips[0].clone();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        assert!(
+            catalog
+                .effect_clip_dependency_error(&session.effect, clip_id)
+                .is_some()
+        );
+
+        let source = effect_clip_repair_source(
+            &catalog,
+            &session.effect,
+            &session.effect.effect_clips[0],
+            replacement_ref,
+        )
+        .unwrap();
+        assert_eq!(source.id, replacement.id);
+        assert!(session.execute(
+            "Repair effect clip reference",
+            EffectCommand::SetEffectClipSource {
+                id: clip_id,
+                source: replacement_ref,
+            },
+            true,
+        ));
+
+        let repaired = &session.effect.effect_clips[0];
+        assert_eq!(repaired.source, replacement_ref);
+        assert_eq!(repaired.id, original.id);
+        assert_eq!(repaired.start_time, original.start_time);
+        assert_eq!(repaired.source_offset, original.source_offset);
+        assert_eq!(repaired.duration, original.duration);
+        assert_eq!(repaired.transform, original.transform);
+        assert_eq!(repaired.seed, original.seed);
+
+        session.undo();
+        assert_eq!(session.effect.effect_clips[0], original);
+        session.redo();
+        assert_eq!(session.effect.effect_clips[0].source, replacement_ref);
+    }
+
+    #[test]
+    fn repair_candidates_reject_invalid_windows_and_reference_cycles() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut owner = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
+        owner.effect_clips.clear();
+        let missing = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xdead));
+        let mut clip = EffectClip::new(missing, 0.0, 2.5);
+        clip.source_offset = 0.75;
+        owner.effect_clips.push(clip.clone());
+
+        let mut short = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        short.id = aestra_bevy::EffectId::from_u128(0x5107);
+        short.name = "Short".into();
+        short.looping = false;
+        short.effect_clips.clear();
+        short
+            .save_ron(temporary.path().join("short.aestra.ron"))
+            .unwrap();
+
+        let mut cycle = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        cycle.id = aestra_bevy::EffectId::from_u128(0xc1c1e);
+        cycle.name = "Cycle".into();
+        cycle.effect_clips = vec![EffectClip::new(EffectAssetRef::new(owner.id), 0.0, 0.5)];
+        cycle
+            .save_ron(temporary.path().join("cycle.aestra.ron"))
+            .unwrap();
+        owner
+            .save_ron(temporary.path().join("owner.aestra.ron"))
+            .unwrap();
+
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let timing_error =
+            effect_clip_repair_source(&catalog, &owner, &clip, EffectAssetRef::new(short.id))
+                .unwrap_err();
+        assert!(timing_error.contains("beyond the source duration"));
+        assert!(
+            effect_clip_repair_source(&catalog, &owner, &clip, EffectAssetRef::new(cycle.id))
+                .is_err()
+        );
     }
 
     #[test]
@@ -2982,10 +3199,121 @@ fn effect_clip_catalog_name(catalog: &ProjectEffectCatalog, source: EffectAssetR
         .map_or_else(|| source.id.to_string(), |entry| entry.display_name.clone())
 }
 
+fn effect_clip_repair_source(
+    catalog: &ProjectEffectCatalog,
+    owner: &EffectAsset,
+    clip: &EffectClip,
+    source: EffectAssetRef,
+) -> Result<EffectAsset, String> {
+    if source == clip.source {
+        return Err("select a different source effect".into());
+    }
+    let source_effect = catalog.effect_for_placement(owner, source)?;
+    let source_end = clip.source_offset + clip.duration;
+    if !source_effect.looping && source_end > source_effect.duration + f32::EPSILON {
+        return Err(format!(
+            "the clip window ends at {source_end:.3} s, beyond the source duration of {:.3} s",
+            source_effect.duration
+        ));
+    }
+    Ok(source_effect)
+}
+
+fn repair_candidate_matches(query: &str, name: &str, path: &str) -> bool {
+    let query = query.trim().to_lowercase();
+    query.is_empty() || name.to_lowercase().contains(&query) || path.to_lowercase().contains(&query)
+}
+
+fn spawn_effect_clip_repair(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    repair: &EffectClipRepairState,
+    localizer: &Localizer,
+    clip: &EffectClip,
+    dependency_error: &str,
+) {
+    spawn_read_only_card(
+        parent,
+        localizer.text("inspector-repair-reference"),
+        |card| {
+            card.spawn((
+                Text::new(dependency_error),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::ACCENT),
+                Pickable::IGNORE,
+            ));
+            card.spawn(Node {
+                width: Val::Percent(100.0),
+                ..default()
+            })
+            .with_children(|search| {
+                spawn_search_field(
+                    search,
+                    &repair.query,
+                    &localizer.text("inspector-repair-search-placeholder"),
+                    &localizer.text("inspector-repair-search-clear"),
+                    EffectClipRepairSearchInput,
+                );
+            });
+
+            let mut compatible = 0;
+            for entry in catalog.entries() {
+                let Some(reference) = entry.reference else {
+                    continue;
+                };
+                if effect_clip_repair_source(catalog, &session.effect, clip, reference).is_err() {
+                    continue;
+                }
+                let path = entry.path.display().to_string();
+                let visible = repair_candidate_matches(&repair.query, &entry.display_name, &path);
+                let accessible = format!(
+                    "{} {}",
+                    localizer.text("inspector-repair-reference"),
+                    entry.display_name
+                );
+                let row = spawn_action_list_row(
+                    card,
+                    &entry.display_name,
+                    Some(&path),
+                    None,
+                    &accessible,
+                    InspectorAction::RepairEffectClipSource {
+                        clip: clip.id,
+                        source: reference,
+                    },
+                );
+                card.commands()
+                    .entity(row)
+                    .insert(EffectClipRepairCandidate {
+                        search_text: format!("{} {}", entry.display_name, path).to_lowercase(),
+                    });
+                compatible += usize::from(visible);
+            }
+            let empty = spawn_list_empty_state(
+                card,
+                &localizer.text("inspector-repair-no-results-title"),
+                &localizer.text("inspector-repair-no-results-message"),
+                theme::TEXT_MUTED,
+                if compatible == 0 {
+                    Display::Flex
+                } else {
+                    Display::None
+                },
+            );
+            card.commands().entity(empty).insert(EffectClipRepairEmpty);
+        },
+    );
+}
+
 fn spawn_effect_clip_inspector(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
+    repair: &EffectClipRepairState,
     localizer: &Localizer,
     id: EffectClipId,
 ) -> bool {
@@ -2999,6 +3327,7 @@ fn spawn_effect_clip_inspector(
     };
     let source_name = effect_clip_catalog_name(catalog, clip.source);
     let source = catalog.load_effect(clip.source).ok();
+    let dependency_error = catalog.effect_clip_dependency_error(&session.effect, clip.id);
     spawn_read_only_inspector_shell(parent, &source_name, localizer, true, |stack| {
         spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
             spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
@@ -3042,6 +3371,9 @@ fn spawn_effect_clip_inspector(
             );
         });
         spawn_effect_clip_transform_controls(stack, clip.id);
+        if let Some(error) = dependency_error.as_deref() {
+            spawn_effect_clip_repair(stack, session, catalog, repair, localizer, clip, error);
+        }
         spawn_read_only_card(stack, localizer.text("inspector-source-summary"), |card| {
             if let Some(source) = &source {
                 spawn_read_only_row(card, localizer.text("inspector-name"), &source.name);
@@ -3223,6 +3555,7 @@ pub(crate) fn spawn_inspector(
     settings: &EditorSettings,
     catalog: &ProjectEffectCatalog,
     timeline: &TimelineState,
+    repair: &EffectClipRepairState,
 ) {
     if let Some(selection) = timeline.inspected_child
         && spawn_referenced_emitter_inspector(parent, session, catalog, localizer, selection)
@@ -3230,7 +3563,7 @@ pub(crate) fn spawn_inspector(
         return;
     }
     if let SemanticTarget::EffectClip(clip) = session.selection.primary
-        && spawn_effect_clip_inspector(parent, session, catalog, localizer, clip)
+        && spawn_effect_clip_inspector(parent, session, catalog, repair, localizer, clip)
     {
         return;
     }

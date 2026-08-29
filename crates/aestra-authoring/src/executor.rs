@@ -198,6 +198,14 @@ fn apply_command(
                 seed: previous,
             }]
         }
+        EffectCommand::SetEffectClipSource { id, source } => {
+            let clip = effect_clip_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut clip.source, *source);
+            vec![EffectCommand::SetEffectClipSource {
+                id: *id,
+                source: previous,
+            }]
+        }
         EffectCommand::SetEffectClipTransform { id, transform } => {
             let clip = effect_clip_mut(effect, *id)?;
             let previous = std::mem::replace(&mut clip.transform, *transform);

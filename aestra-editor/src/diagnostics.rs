@@ -76,6 +76,7 @@ impl DiagnosticsFilter {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DiagnosticSource {
     Current,
+    Project,
     Pending,
 }
 
@@ -118,6 +119,7 @@ fn handle_diagnostics_actions(
     mut state: ResMut<DiagnosticsPanelState>,
     mut workspace: ResMut<CurvesState>,
     mut layout: ResMut<WorkspaceLayout>,
+    catalog: Option<Res<ProjectEffectCatalog>>,
 ) {
     for (entity, interaction, action, feathers, pending, mut background) in &mut actions {
         match *interaction {
@@ -146,7 +148,7 @@ fn handle_diagnostics_actions(
                         }
                     }
                     DiagnosticsAction::Select { source, index } => {
-                        if navigate_to_diagnostic(&mut session, source, index) {
+                        if navigate_to_diagnostic(&mut session, catalog.as_deref(), source, index) {
                             workspace.clear();
                             reveal_dock_panel(&mut layout, &mut session, DockPanel::Inspector);
                         }
@@ -161,16 +163,19 @@ fn handle_diagnostics_actions(
 pub(crate) fn spawn_diagnostics_workspace(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
     state: &DiagnosticsPanelState,
     localizer: &Localizer,
 ) {
     let current = &session.diagnostics.diagnostics;
+    let project_report = catalog.dependency_validation_report(&session.effect);
+    let project = &project_report.diagnostics;
     let pending = session
         .pending_change
         .as_ref()
         .map(|pending| pending.diagnostics.diagnostics.as_slice())
         .unwrap_or_default();
-    let all = current.iter().chain(pending.iter());
+    let all = current.iter().chain(project.iter()).chain(pending.iter());
     let errors = all
         .clone()
         .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
@@ -184,6 +189,7 @@ pub(crate) fn spawn_diagnostics_workspace(
         .count();
     let visible = current
         .iter()
+        .chain(project.iter())
         .chain(pending.iter())
         .filter(|diagnostic| state.filter.matches(diagnostic.severity))
         .count();
@@ -323,6 +329,14 @@ pub(crate) fn spawn_diagnostics_workspace(
                                 &localizer.text("diagnostics-working-effect"),
                                 &session.diagnostics,
                                 DiagnosticSource::Current,
+                                state.filter,
+                                localizer,
+                            );
+                            spawn_diagnostic_section(
+                                list,
+                                &localizer.text("diagnostics-project-references"),
+                                &project_report,
+                                DiagnosticSource::Project,
                                 state.filter,
                                 localizer,
                             );
@@ -604,6 +618,13 @@ pub(crate) fn spawn_compile_status(
 }
 
 fn compile_status(session: &EditorSession) -> (&'static str, Color) {
+    compile_status_with_project_errors(session, 0)
+}
+
+fn compile_status_with_project_errors(
+    session: &EditorSession,
+    project_errors: usize,
+) -> (&'static str, Color) {
     let current_errors = session
         .diagnostics
         .diagnostics
@@ -631,7 +652,7 @@ fn compile_status(session: &EditorSession) -> (&'static str, Color) {
         .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Warning)
         .count();
 
-    if current_errors > 0 {
+    if current_errors + project_errors > 0 {
         ("compile-failed", Color::srgb(1.0, 0.38, 0.32))
     } else if pending_errors > 0 {
         ("compile-preview-blocked", Color::srgb(1.0, 0.74, 0.30))
@@ -644,14 +665,21 @@ fn compile_status(session: &EditorSession) -> (&'static str, Color) {
 
 fn update_compile_status(
     session: Res<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
     mut labels: Query<(&mut Text, &mut TextColor), With<CompileStatusLabel>>,
     mut dots: Query<&mut BackgroundColor, With<CompileStatusDot>>,
 ) {
-    if !session.is_changed() && !localizer.is_changed() {
+    if !session.is_changed() && !catalog.is_changed() && !localizer.is_changed() {
         return;
     }
-    let (label, color) = compile_status(&session);
+    let project_errors = catalog
+        .dependency_validation_report(&session.effect)
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        .count();
+    let (label, color) = compile_status_with_project_errors(&session, project_errors);
     for (mut text, mut text_color) in &mut labels {
         text.0 = localizer.text(label);
         text_color.0 = color;
@@ -663,11 +691,17 @@ fn update_compile_status(
 
 fn navigate_to_diagnostic(
     session: &mut EditorSession,
+    catalog: Option<&ProjectEffectCatalog>,
     source: DiagnosticSource,
     index: usize,
 ) -> bool {
+    let project_report =
+        catalog.map(|catalog| catalog.dependency_validation_report(&session.effect));
     let diagnostic = match source {
         DiagnosticSource::Current => session.diagnostics.diagnostics.get(index),
+        DiagnosticSource::Project => project_report
+            .as_ref()
+            .and_then(|report| report.diagnostics.get(index)),
         DiagnosticSource::Pending => session
             .pending_change
             .as_ref()
@@ -695,6 +729,12 @@ fn navigate_to_diagnostic(
 }
 
 fn semantic_target_for_diagnostic_path(effect: &EffectAsset, path: &str) -> Option<SemanticTarget> {
+    if let Some(clip_index) = diagnostic_collection_index(path, "effect_clips") {
+        return effect
+            .effect_clips
+            .get(clip_index)
+            .map(|clip| SemanticTarget::EffectClip(clip.id));
+    }
     if let Some(emitter_index) = diagnostic_collection_index(path, "emitters") {
         let emitter = effect.emitters.get(emitter_index)?;
         if let Some(module_index) = diagnostic_collection_index(path, "modules") {
@@ -778,7 +818,10 @@ mod tests {
 
     #[test]
     fn diagnostic_paths_resolve_to_semantic_targets() {
-        let effect = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut effect = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let clip = aestra_bevy::EffectClip::new(aestra_bevy::EffectId::from_u128(0x5155), 0.0, 1.0);
+        let clip_id = clip.id;
+        effect.effect_clips.push(clip);
         let emitter = &effect.emitters[1];
         assert_eq!(
             semantic_target_for_diagnostic_path(&effect, "effect.emitters[1].duration"),
@@ -799,6 +842,10 @@ mod tests {
             Some(SemanticTarget::Renderer(emitter.renderers[0].id))
         );
         assert_eq!(
+            semantic_target_for_diagnostic_path(&effect, "effect.effect_clips[0].source"),
+            Some(SemanticTarget::EffectClip(clip_id))
+        );
+        assert_eq!(
             semantic_target_for_diagnostic_path(&effect, "not-a-semantic-path"),
             None
         );
@@ -816,6 +863,7 @@ mod tests {
 
         assert!(navigate_to_diagnostic(
             &mut session,
+            None,
             DiagnosticSource::Current,
             0,
         ));
@@ -828,6 +876,10 @@ mod tests {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let localizer = Localizer::new("en-US").unwrap();
         assert_eq!(localizer.text(compile_status(&session).0), "COMPILED");
+        assert_eq!(
+            localizer.text(compile_status_with_project_errors(&session, 1).0),
+            "COMPILE FAILED"
+        );
 
         session.diagnostics.push(Diagnostic::error(
             DiagnosticCode::InvalidDuration,

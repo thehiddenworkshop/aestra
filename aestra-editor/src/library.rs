@@ -1,9 +1,11 @@
 //! Library workspace, project-effect catalog, and panel-local authoring actions.
 
 use crate::*;
+use aestra_bevy::{Diagnostic, EffectClipId, ValidationReport};
 use aestra_compiler::{EffectCompiler, ProjectCompileError};
 use aestra_project::{
-    ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectEffectEntry, ProjectEffectStatus,
+    ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectDependencyDiagnosticCode,
+    ProjectEffectEntry, ProjectEffectStatus,
 };
 use aestra_runtime::CompiledEffectProject;
 #[cfg(test)]
@@ -124,6 +126,63 @@ impl ProjectEffectCatalog {
                     .join("; "),
                 error => error.to_string(),
             })
+    }
+
+    pub(crate) fn dependency_validation_report(&self, effect: &EffectAsset) -> ValidationReport {
+        let mut validation = ValidationReport::default();
+        let Err(report) = self.index.resolve_effect_project(effect) else {
+            return validation;
+        };
+        for diagnostic in report
+            .diagnostics
+            .into_iter()
+            .filter(|diagnostic| diagnostic.owner == effect.id)
+        {
+            let Some(index) = effect
+                .effect_clips
+                .iter()
+                .position(|clip| clip.id == diagnostic.clip)
+            else {
+                continue;
+            };
+            let code = match diagnostic.code {
+                ProjectDependencyDiagnosticCode::InvalidTiming => DiagnosticCode::InvalidTiming,
+                ProjectDependencyDiagnosticCode::Cycle => DiagnosticCode::ReferenceCycle,
+                ProjectDependencyDiagnosticCode::Missing
+                | ProjectDependencyDiagnosticCode::Duplicate
+                | ProjectDependencyDiagnosticCode::Unresolvable
+                | ProjectDependencyDiagnosticCode::IndexUnavailable
+                | ProjectDependencyDiagnosticCode::SourceChanged => {
+                    DiagnosticCode::InvalidReference
+                }
+            };
+            validation.push(Diagnostic::error(
+                code,
+                format!("effect.effect_clips[{index}].source"),
+                diagnostic.message,
+            ));
+        }
+        validation
+    }
+
+    pub(crate) fn effect_clip_dependency_error(
+        &self,
+        effect: &EffectAsset,
+        clip: EffectClipId,
+    ) -> Option<String> {
+        self.dependency_validation_report(effect)
+            .diagnostics
+            .into_iter()
+            .find(|diagnostic| {
+                effect
+                    .effect_clips
+                    .iter()
+                    .position(|candidate| candidate.id == clip)
+                    .is_some_and(|index| {
+                        diagnostic.path == format!("effect.effect_clips[{index}].source")
+                    })
+            })
+            .map(|diagnostic| diagnostic.message)
     }
 
     fn availability(&self) -> &ProjectAssetIndexAvailability {
@@ -1705,6 +1764,26 @@ mod tests {
             .effect_for_placement(&owner, EffectAssetRef::new(child.id))
             .unwrap_err();
         assert!(cycle_error.contains("reference cycle"));
+    }
+
+    #[test]
+    fn missing_project_references_are_projected_into_editor_diagnostics() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut owner = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
+        owner.effect_clips = vec![aestra_bevy::EffectClip::new(
+            EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xdead)),
+            0.25,
+            0.75,
+        )];
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+
+        let report = catalog.dependency_validation_report(&owner);
+
+        assert_eq!(report.diagnostics.len(), 1);
+        assert_eq!(report.diagnostics[0].code, DiagnosticCode::InvalidReference);
+        assert_eq!(report.diagnostics[0].path, "effect.effect_clips[0].source");
+        assert!(!report.diagnostics[0].message.is_empty());
     }
 
     #[test]

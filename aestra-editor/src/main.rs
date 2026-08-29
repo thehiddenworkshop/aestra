@@ -115,7 +115,10 @@ pub(crate) use localization::{LocalizedText, Localizer};
 pub(crate) use menus::{DocumentMenuLabel, MenuState, TabContextMenu};
 use menus::{EditorMenusPlugin, spawn_about_overlay, spawn_menu_bar, spawn_tab_context_menu};
 pub(crate) use persistence::persist_editor_settings;
-use persistence::{DocumentAction, EditorPersistencePlugin, PersistenceSet};
+use persistence::{
+    DocumentAction, DocumentProtectionState, EditorPersistencePlugin, PersistenceSet,
+    spawn_document_protection_overlay,
+};
 use profiler::{EditorProfilerPlugin, ProfilerSet};
 pub(crate) use profiler::{ProfilerState, spawn_profiler_workspace};
 use session::EditorSession;

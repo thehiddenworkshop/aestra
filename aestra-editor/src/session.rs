@@ -1655,6 +1655,9 @@ fn compile_preview_with_solo(
     for emitter in &mut preview_effect.emitters {
         emitter.enabled &= emitter.id == solo_emitter;
     }
+    // Effect clips are top-level tracks alongside local emitters. Soloing a local emitter must
+    // therefore suppress referenced effects as well as the other local emitters.
+    preview_effect.effect_clips.clear();
     compile_preview(&preview_effect, seed)
 }
 

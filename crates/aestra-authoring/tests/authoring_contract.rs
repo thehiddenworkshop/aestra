@@ -3,8 +3,8 @@ use aestra_authoring::{
     LockState, Selection, SemanticTarget,
 };
 use aestra_core::{
-    BlendMode, ColorKey, CurveKey, EffectAsset, EffectClip, EffectClipSeed, EffectId,
-    EffectParameter, Emitter, EmitterTransform, EventId, EventLink, EventTrigger,
+    BlendMode, ColorKey, CurveKey, EffectAsset, EffectAssetRef, EffectClip, EffectClipSeed,
+    EffectId, EffectParameter, Emitter, EmitterTransform, EventId, EventLink, EventTrigger,
     MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, ParameterId, ScalarRange, Value,
 };
 
@@ -623,6 +623,7 @@ fn effect_clip_commands_are_serializable_and_reversible() {
     let mut effect = test_effect();
     let clip = EffectClip::new(EffectId::from_u128(0xC11D), 0.25, 1.0);
     let clip_id = clip.id;
+    let replacement = EffectAssetRef::new(EffectId::from_u128(0xC11E));
     let mut history = CommandHistory::default();
 
     let added = history
@@ -659,6 +660,19 @@ fn effect_clip_commands_are_serializable_and_reversible() {
             &mut effect,
             &LockState::default(),
             EffectTransaction::single(
+                "Repair reusable effect source",
+                EffectCommand::SetEffectClipSource {
+                    id: clip_id,
+                    source: replacement,
+                },
+            ),
+        )
+        .unwrap();
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
                 "Set reusable effect seed",
                 EffectCommand::SetEffectClipSeed {
                     id: clip_id,
@@ -675,9 +689,15 @@ fn effect_clip_commands_are_serializable_and_reversible() {
     assert_eq!(effect.effect_clips[0].source_offset, 0.25);
     assert_eq!(effect.effect_clips[0].duration, 1.25);
     assert_eq!(effect.effect_clips[0].seed, EffectClipSeed::Fixed(77));
+    assert_eq!(effect.effect_clips[0].source, replacement);
 
     history.undo(&mut effect).unwrap().unwrap();
     assert_eq!(effect.effect_clips[0].seed, EffectClipSeed::Inherit);
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(
+        effect.effect_clips[0].source,
+        EffectAssetRef::new(EffectId::from_u128(0xC11D))
+    );
     history.undo(&mut effect).unwrap().unwrap();
     assert_eq!(effect.effect_clips[0].start_time, 0.25);
     history.undo(&mut effect).unwrap().unwrap();
@@ -686,8 +706,10 @@ fn effect_clip_commands_are_serializable_and_reversible() {
     history.redo(&mut effect).unwrap().unwrap();
     history.redo(&mut effect).unwrap().unwrap();
     history.redo(&mut effect).unwrap().unwrap();
+    history.redo(&mut effect).unwrap().unwrap();
     assert_eq!(effect.effect_clips[0].id, clip_id);
     assert_eq!(effect.effect_clips[0].seed, EffectClipSeed::Fixed(77));
+    assert_eq!(effect.effect_clips[0].source, replacement);
 }
 
 #[test]

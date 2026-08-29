@@ -86,6 +86,7 @@ fn setup_editor(
     menu: Res<MenuState>,
     layout: Res<WorkspaceLayout>,
     localizer: Res<Localizer>,
+    protection: Res<DocumentProtectionState>,
     mut rendered: ResMut<RenderedUiRevision>,
 ) {
     commands.spawn((
@@ -105,6 +106,7 @@ fn setup_editor(
         &session,
         &localizer,
         &asset_server,
+        &protection,
     );
     rendered.0 = session.ui_revision;
 }
@@ -140,6 +142,7 @@ fn spawn_editor_ui(
     session: &EditorSession,
     localizer: &Localizer,
     asset_server: &AssetServer,
+    protection: &DocumentProtectionState,
 ) {
     commands
         .spawn(EditorRoot)
@@ -150,6 +153,7 @@ fn spawn_editor_ui(
             spawn_editor_content(root, menu, localizer);
             spawn_status_bar(root, session, localizer);
             spawn_about_overlay(root, menu.show_about, localizer);
+            spawn_document_protection_overlay(root, protection, localizer);
         });
 }
 

@@ -1,8 +1,8 @@
 use aestra_core::{
-    ChoreographyTrackId, ColorKey, CurveKey, EffectClip, EffectClipId, EffectClipSeed,
-    EffectParameter, Emitter, EmitterId, EmitterTransform, EventId, EventLink, FlipbookDefinition,
-    MaterialDefinition, MaterialId, ModuleId, ModuleInstance, RendererId, RendererInstance,
-    RendererProperties, Value,
+    ChoreographyTrackId, ColorKey, CurveKey, EffectAssetRef, EffectClip, EffectClipId,
+    EffectClipSeed, EffectParameter, Emitter, EmitterId, EmitterTransform, EventId, EventLink,
+    FlipbookDefinition, MaterialDefinition, MaterialId, ModuleId, ModuleInstance, RendererId,
+    RendererInstance, RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,10 @@ pub enum EffectCommand {
     SetEffectClipSeed {
         id: EffectClipId,
         seed: EffectClipSeed,
+    },
+    SetEffectClipSource {
+        id: EffectClipId,
+        source: EffectAssetRef,
     },
     SetEffectClipTransform {
         id: EffectClipId,
