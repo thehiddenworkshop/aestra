@@ -86,6 +86,7 @@ impl Plugin for TimelinePlugin {
                     sync_timeline_vertical_scroll,
                     sync_timeline_horizontal_scroll,
                     update_track_header_hover_actions,
+                    sync_emitter_reorder_hints,
                     tick_invalid_timeline_drop_feedback,
                 )
                     .chain()
@@ -556,6 +557,65 @@ mod tests {
     }
 
     #[test]
+    fn emitter_reorder_uses_the_target_half_as_an_insertion_edge() {
+        assert_eq!(emitter_reorder_index(0, 2, true, 4), Some(1));
+        assert_eq!(emitter_reorder_index(0, 2, false, 4), Some(2));
+        assert_eq!(emitter_reorder_index(3, 1, true, 4), Some(1));
+        assert_eq!(emitter_reorder_index(3, 1, false, 4), Some(2));
+        assert_eq!(emitter_reorder_index(0, 1, true, 4), None);
+        assert_eq!(emitter_reorder_index(1, 0, false, 4), None);
+        assert_eq!(emitter_reorder_index(2, 2, true, 4), None);
+    }
+
+    #[test]
+    fn emitter_reorder_is_one_undoable_stable_id_edit() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let original = session
+            .effect
+            .emitters
+            .iter()
+            .map(|emitter| emitter.id)
+            .collect::<Vec<_>>();
+        let moved = original[0];
+        let automatic_colors = original
+            .iter()
+            .map(|id| (*id, layer_color(*id, None)))
+            .collect::<Vec<_>>();
+        session.select_emitter(moved);
+
+        assert!(session.execute(
+            "Reordered emitter tracks",
+            EffectCommand::MoveEmitter {
+                id: moved,
+                index: 2,
+            },
+            true,
+        ));
+        assert_eq!(session.effect.emitters[2].id, moved);
+        assert_eq!(session.selected_layer().id, moved);
+        for emitter in &session.effect.emitters {
+            let original_color = automatic_colors
+                .iter()
+                .find_map(|(id, color)| (*id == emitter.id).then_some(*color))
+                .unwrap();
+            assert_eq!(layer_color(emitter.id, None), original_color);
+        }
+
+        session.undo();
+        assert_eq!(
+            session
+                .effect
+                .emitters
+                .iter()
+                .map(|emitter| emitter.id)
+                .collect::<Vec<_>>(),
+            original
+        );
+        session.redo();
+        assert_eq!(session.effect.emitters[2].id, moved);
+    }
+
+    #[test]
     fn timeline_zoom_keeps_the_time_under_the_pointer() {
         let mut state = TimelineState::default();
         state.frame_all(10.0);
@@ -798,6 +858,19 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(chip_color, Color::srgba(0.28, 0.78, 0.45, 1.0));
+        let handle_count = {
+            let world = app.world_mut();
+            let mut query = world.query::<&EmitterTrackReorderHandle>();
+            query.iter(world).count()
+        };
+        assert_eq!(
+            handle_count,
+            app.world()
+                .resource::<EditorSession>()
+                .effect
+                .emitters
+                .len()
+        );
     }
 
     #[test]
@@ -1998,6 +2071,11 @@ struct EmitterTrackHeader {
 }
 
 #[derive(Component, Clone, Copy)]
+struct EmitterTrackReorderHandle {
+    emitter: EmitterId,
+}
+
+#[derive(Component, Clone, Copy)]
 struct TimelineTrackNameControl {
     emitter: EmitterId,
 }
@@ -2131,6 +2209,7 @@ pub(crate) struct TimelineState {
     panning: bool,
     context_emitter: Option<EmitterId>,
     color_picker_emitter: Option<EmitterId>,
+    reorder_drag: Option<EmitterId>,
     vertical_scroll: f32,
     known_duration: f32,
 }
@@ -2155,6 +2234,7 @@ impl TimelineState {
             panning: false,
             context_emitter: None,
             color_picker_emitter: None,
+            reorder_drag: None,
             vertical_scroll: 0.0,
             known_duration: duration,
         }
@@ -2390,7 +2470,7 @@ pub(crate) fn spawn_timeline(
                     body.spawn((
                         TimelineHeaderColumn,
                         Node {
-                            width: Val::Px(224.0),
+                            width: Val::Px(244.0),
                             min_width: Val::Px(0.0),
                             height: Val::Percent(100.0),
                             min_height: Val::Px(0.0),
@@ -2540,9 +2620,7 @@ pub(crate) fn spawn_timeline(
                                         },
                                     ))
                                     .with_children(|rows| {
-                                        for (index, emitter) in
-                                            session.effect.emitters.iter().enumerate()
-                                        {
+                                        for emitter in &session.effect.emitters {
                                             rows.spawn(Node {
                                                 width: Val::Percent(100.0),
                                                 height: Val::Px(31.0),
@@ -2580,7 +2658,7 @@ pub(crate) fn spawn_timeline(
                                                             ..default()
                                                         },
                                                         BackgroundColor(
-                                                            layer_color(index, emitter.display_color).with_alpha(
+                                                            layer_color(emitter.id, emitter.display_color).with_alpha(
                                                                 if audible_in_preview {
                                                                     0.28
                                                                 } else {
@@ -2589,7 +2667,7 @@ pub(crate) fn spawn_timeline(
                                                             ),
                                                         ),
                                                         BorderColor::all(
-                                                            layer_color(index, emitter.display_color).with_alpha(
+                                                            layer_color(emitter.id, emitter.display_color).with_alpha(
                                                                 if audible_in_preview { 1.0 } else { 0.45 },
                                                             ),
                                                         ),
@@ -2719,7 +2797,7 @@ pub(crate) fn spawn_timeline(
                                                                     height: Val::Px(13.0),
                                                                     ..default()
                                                                 },
-                                                                BackgroundColor(layer_color(index, emitter.display_color)),
+                                                                BackgroundColor(layer_color(emitter.id, emitter.display_color)),
                                                                 Pickable::IGNORE,
                                                             ));
                                                         }
@@ -2946,6 +3024,7 @@ fn spawn_emitter_track_header(
         EmitterTrackHeader { emitter },
         ChoreographyAction::SelectEmitter(emitter),
         AccessibleLabel(accessible_label),
+        RelativeCursorPosition::default(),
         Node {
             width: Val::Percent(100.0),
             min_width: Val::Px(0.0),
@@ -2976,8 +3055,68 @@ fn spawn_emitter_track_header(
     }
     header
         .observe(open_timeline_track_context_menu)
+        .observe(drop_emitter_track_reorder)
         .with_children(|row| {
-            let track_color = layer_color(index, display_color);
+            let reorder_label = emitter_timing_label(localizer, "timeline-reorder-emitter", name);
+            row.spawn((
+                Button,
+                EditorNativeControl,
+                EmitterTrackReorderHandle { emitter },
+                AccessibleLabel(reorder_label.clone()),
+                EditorTooltip::description(reorder_label),
+                EntityCursor::System(SystemCursorIcon::Grab),
+                Node {
+                    width: Val::Px(14.0),
+                    height: Val::Px(21.0),
+                    flex_shrink: 0.0,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+            ))
+            .observe(stop_timeline_control_press)
+            .observe(begin_emitter_track_reorder)
+            .observe(finish_emitter_track_reorder)
+            .with_children(|handle| {
+                handle
+                    .spawn((
+                        Node {
+                            width: Val::Px(8.0),
+                            height: Val::Px(14.0),
+                            flex_direction: FlexDirection::Column,
+                            justify_content: JustifyContent::SpaceEvenly,
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|grip| {
+                        for _ in 0..3 {
+                            grip.spawn((
+                                Node {
+                                    width: Val::Percent(100.0),
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    ..default()
+                                },
+                                Pickable::IGNORE,
+                            ))
+                            .with_children(|row| {
+                                for _ in 0..2 {
+                                    row.spawn((
+                                        Node {
+                                            width: Val::Px(2.0),
+                                            height: Val::Px(2.0),
+                                            border_radius: BorderRadius::all(Val::Px(1.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme::TEXT_FAINT),
+                                        Pickable::IGNORE,
+                                    ));
+                                }
+                            });
+                        }
+                    });
+            });
+            let track_color = layer_color(emitter, display_color);
             let color_label =
                 emitter_timing_label(localizer, "timeline-change-emitter-color", name);
             let mut color_button = row.spawn_empty();
@@ -3024,7 +3163,7 @@ fn spawn_emitter_track_header(
                         localizer,
                         emitter,
                         display_color,
-                        color_components(layer_color(index, None)),
+                        color_components(layer_color(emitter, None)),
                     );
                 }
             });
@@ -3356,11 +3495,13 @@ fn emitter_has_diagnostic(session: &EditorSession, index: usize) -> bool {
         .any(|diagnostic| diagnostic.path.starts_with(&prefix))
 }
 
-fn layer_color(index: usize, display_color: Option<[f32; 4]>) -> Color {
+fn layer_color(emitter: EmitterId, display_color: Option<[f32; 4]>) -> Color {
     if let Some([red, green, blue, alpha]) = display_color {
         return Color::srgba(red, green, blue, alpha);
     }
-    match index % 4 {
+    let id = emitter.as_uuid().as_u128();
+    let palette_index = (id ^ (id >> 32) ^ (id >> 64) ^ (id >> 96)) as usize % 4;
+    match palette_index {
         0 => Color::srgb(0.48, 0.31, 0.98),
         1 => Color::srgb(0.17, 0.75, 0.95),
         2 => Color::srgb(0.98, 0.47, 0.21),
@@ -3733,6 +3874,20 @@ fn timeline_boundary_is_visible(time: f32, view: TimelineView) -> bool {
     (view.start..=view.end).contains(&time)
 }
 
+fn emitter_reorder_index(
+    source_index: usize,
+    target_index: usize,
+    before: bool,
+    len: usize,
+) -> Option<usize> {
+    if len < 2 || source_index >= len || target_index >= len || source_index == target_index {
+        return None;
+    }
+    let insertion_boundary = target_index + usize::from(!before);
+    let final_index = insertion_boundary - usize::from(source_index < insertion_boundary);
+    (final_index != source_index).then_some(final_index.min(len - 1))
+}
+
 fn screen_distance_to_logical(distance: f32, scale_factor: f32) -> f32 {
     distance / scale_factor.max(0.01)
 }
@@ -3743,6 +3898,148 @@ fn stop_timeline_control_press(mut press: On<Pointer<Press>>) {
 
 fn stop_timeline_control_drag(mut drag: On<Pointer<Drag>>) {
     drag.propagate(false);
+}
+
+fn begin_emitter_track_reorder(
+    mut drag: On<Pointer<DragStart>>,
+    handles: Query<&EmitterTrackReorderHandle>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(handle) = handles.get(drag.event_target()) else {
+        return;
+    };
+    state.reorder_drag = Some(handle.emitter);
+    override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
+    **cursor = CursorIcon::System(SystemCursorIcon::Grabbing);
+    drag.propagate(false);
+}
+
+fn finish_emitter_track_reorder(
+    mut drag: On<Pointer<DragEnd>>,
+    handles: Query<&EmitterTrackReorderHandle>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    if !handles.contains(drag.event_target()) {
+        return;
+    }
+    state.reorder_drag = None;
+    override_cursor.0 = None;
+    **cursor = CursorIcon::System(SystemCursorIcon::Grab);
+    drag.propagate(false);
+}
+
+fn dragged_emitter(
+    mut entity: Entity,
+    handles: &Query<&EmitterTrackReorderHandle>,
+    parents: &Query<&ChildOf>,
+) -> Option<EmitterId> {
+    loop {
+        if let Ok(handle) = handles.get(entity) {
+            return Some(handle.emitter);
+        }
+        entity = parents.get(entity).ok()?.parent();
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn drop_emitter_track_reorder(
+    mut drop: On<Pointer<DragDrop>>,
+    headers: Query<(&EmitterTrackHeader, &RelativeCursorPosition)>,
+    handles: Query<&EmitterTrackReorderHandle>,
+    parents: Query<&ChildOf>,
+    mut state: ResMut<TimelineState>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let mut target_entity = drop.event_target();
+    let (target, relative_cursor) = loop {
+        if let Ok(header) = headers.get(target_entity) {
+            break header;
+        }
+        let Ok(parent) = parents.get(target_entity) else {
+            return;
+        };
+        target_entity = parent.parent();
+    };
+    let Some(source) = dragged_emitter(drop.dropped, &handles, &parents) else {
+        return;
+    };
+    drop.propagate(false);
+    state.reorder_drag = None;
+    override_cursor.0 = None;
+    **cursor = CursorIcon::System(SystemCursorIcon::Default);
+
+    let Some(source_index) = session
+        .effect
+        .emitters
+        .iter()
+        .position(|emitter| emitter.id == source)
+    else {
+        return;
+    };
+    let Some(target_index) = session
+        .effect
+        .emitters
+        .iter()
+        .position(|emitter| emitter.id == target.emitter)
+    else {
+        return;
+    };
+    let before = relative_cursor
+        .normalized
+        .is_none_or(|position| position.y < 0.0);
+    let Some(index) = emitter_reorder_index(
+        source_index,
+        target_index,
+        before,
+        session.effect.emitters.len(),
+    ) else {
+        return;
+    };
+    session.execute(
+        localizer.text("timeline-reordered-emitter"),
+        EffectCommand::MoveEmitter { id: source, index },
+        true,
+    );
+}
+
+fn sync_emitter_reorder_hints(
+    state: Res<TimelineState>,
+    mut headers: Query<(
+        &EmitterTrackHeader,
+        &RelativeCursorPosition,
+        &mut Node,
+        &mut BorderColor,
+    )>,
+) {
+    let base = theme::BORDER.with_alpha(0.55);
+    for (header, cursor, mut node, mut border) in &mut headers {
+        node.border.top = Val::Px(0.0);
+        node.border.bottom = Val::Px(1.0);
+        border.top = base;
+        border.bottom = base;
+
+        if state
+            .reorder_drag
+            .is_none_or(|source| source == header.emitter)
+            || !cursor.cursor_over()
+        {
+            continue;
+        }
+        if cursor.normalized.is_none_or(|position| position.y < 0.0) {
+            node.border.top = Val::Px(3.0);
+            border.top = theme::DOCK_TARGET;
+        } else {
+            node.border.bottom = Val::Px(3.0);
+            border.bottom = theme::DOCK_TARGET;
+        }
+    }
 }
 
 fn begin_timeline_clip_drag(

@@ -270,6 +270,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "timeline-menu-unsolo",
     "timeline-menu-duplicate",
     "timeline-menu-delete",
+    "timeline-reorder-emitter",
+    "timeline-reordered-emitter",
     "timeline-emitter-diagnostic",
     "timeline-snap-off",
     "timeline-snap-frames",
