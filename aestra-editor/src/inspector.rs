@@ -1371,10 +1371,26 @@ mod tests {
         let command = effect_clip_transform_command(&session, control, 8.5).unwrap();
 
         assert!(session.execute("Transformed effect clip", command, false));
-        assert_eq!(session.effect.effect_clips[0].transform.translation[0], 8.5);
+        assert_eq!(
+            session
+                .effect
+                .effect_clips
+                .iter()
+                .find(|clip| clip.id == clip_id)
+                .unwrap()
+                .transform
+                .translation[0],
+            8.5
+        );
         session.undo();
         assert_eq!(
-            session.effect.effect_clips[0].transform,
+            session
+                .effect
+                .effect_clips
+                .iter()
+                .find(|clip| clip.id == clip_id)
+                .unwrap()
+                .transform,
             EmitterTransform::default()
         );
     }

@@ -2983,6 +2983,7 @@ mod tests {
             .unwrap();
 
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.effect_clips.clear();
         let mut clip = aestra_bevy::EffectClip::new(child.id, 0.5, 1.0);
         clip.source_offset = 0.1;
         clip.seed = aestra_bevy::EffectClipSeed::Fixed(77);

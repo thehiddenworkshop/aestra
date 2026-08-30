@@ -819,6 +819,7 @@ mod tests {
     #[test]
     fn diagnostic_paths_resolve_to_semantic_targets() {
         let mut effect = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        effect.effect_clips.clear();
         let clip = aestra_bevy::EffectClip::new(aestra_bevy::EffectId::from_u128(0x5155), 0.0, 1.0);
         let clip_id = clip.id;
         effect.effect_clips.push(clip);

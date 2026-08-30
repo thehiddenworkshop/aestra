@@ -985,6 +985,7 @@ mod tests {
     #[test]
     fn effect_clip_creation_selection_and_undo_preserve_semantic_identity() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let original_clips = session.effect.effect_clips.clone();
         let fallback_emitter = session.effect.emitters[0].id;
         let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
         let clip = EffectClip::new(source, 0.4, 0.8);
@@ -1002,14 +1003,19 @@ mod tests {
         assert_eq!(session.effect.emitters[0].id, fallback_emitter);
 
         session.undo();
-        assert!(session.effect.effect_clips.is_empty());
+        assert_eq!(session.effect.effect_clips, original_clips);
         assert_eq!(
             session.selection.primary,
             SemanticTarget::Emitter(fallback_emitter)
         );
         session.redo();
-        assert_eq!(session.effect.effect_clips[0].id, id);
-        assert_eq!(session.effect.effect_clips[0].source, source);
+        let restored = session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == id)
+            .unwrap();
+        assert_eq!(restored.source, source);
     }
 
     #[test]
@@ -1394,6 +1400,8 @@ mod tests {
     #[test]
     fn effect_clip_can_reorder_across_local_emitter_tracks() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.effect_clips.clear();
+        session.effect.choreography_order.clear();
         let clip = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 0.8);
         let clip_id = clip.id;
         let emitter_id = session.effect.emitters[0].id;
@@ -1576,6 +1584,118 @@ mod tests {
         assert!(contents.iter().all(|(height, shrink)| {
             matches!(height, Val::Px(value) if *value > 0.0) && *shrink == 0.0
         }));
+    }
+
+    #[test]
+    fn recursive_clip_expansion_drives_rows_selection_and_vertical_overflow() {
+        let temporary = tempfile::tempdir().unwrap();
+
+        let mut leaf = EffectAsset::new("Leaf", 1.0);
+        let leaf_emitter = Emitter::basic_sprite("Leaf emitter", 1.0);
+        let leaf_emitter_id = leaf_emitter.id;
+        leaf.emitters.push(leaf_emitter);
+        leaf.save_ron(temporary.path().join("leaf.aestra.ron"))
+            .unwrap();
+
+        let mut child = EffectAsset::new("Child", 1.5);
+        child
+            .emitters
+            .push(Emitter::basic_sprite("Child emitter", 1.5));
+        let nested_clip = EffectClip::new(leaf.id, 0.2, 1.0);
+        let nested_clip_id = nested_clip.id;
+        child.effect_clips.push(nested_clip);
+        child.choreography_order = vec![
+            ChoreographyTrackId::EffectClip(nested_clip_id),
+            ChoreographyTrackId::Emitter(child.emitters[0].id),
+        ];
+        child
+            .save_ron(temporary.path().join("child.aestra.ron"))
+            .unwrap();
+
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.effect_clips.clear();
+        session.effect.choreography_order.clear();
+        let root_clip = EffectClip::new(child.id, 0.0, 1.5);
+        let root_clip_id = root_clip.id;
+        session.effect.effect_clips.push(root_clip.clone());
+        session.effect.choreography_order = vec![ChoreographyTrackId::EffectClip(root_clip_id)];
+        session.effect.choreography_order.extend(
+            session
+                .effect
+                .emitters
+                .iter()
+                .map(|emitter| ChoreographyTrackId::Emitter(emitter.id)),
+        );
+
+        let root_path = EffectClipPath::root_path(root_clip_id);
+        let nested_path = root_path.child(nested_clip_id);
+        let mut state = TimelineState::framed(session.playback_duration());
+        state.expanded_effect_clips.insert(root_path.clone());
+        state.expanded_effect_clips.insert(nested_path.clone());
+        let projections = referenced_track_projections(&catalog, &state, &root_clip);
+        assert_eq!(projections.len(), 3);
+        assert_eq!(projections[0].path, nested_path);
+        assert_eq!(projections[0].depth, 1);
+        assert_eq!(projections[1].path, nested_path);
+        assert_eq!(projections[1].depth, 2);
+        assert!(matches!(
+            &projections[1].kind,
+            ReferencedTrackKind::Emitter { emitter, .. } if emitter.id == leaf_emitter_id
+        ));
+
+        let expected_height = timeline_vertical_content_height(&session.effect, &state, &catalog);
+        assert!(expected_height > 180.0);
+        assert!(crate::feathers::scroll::scrollbar_needed(
+            180.0,
+            expected_height
+        ));
+
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .init_asset::<Image>()
+        .init_asset::<SvgFile>()
+        .insert_resource(session)
+        .insert_resource(state)
+        .insert_resource(catalog)
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_systems(Startup, spawn_test_timeline);
+        app.update();
+
+        let actions = {
+            let world = app.world_mut();
+            let mut query =
+                world.query_filtered::<&ChoreographyAction, With<ReferencedEmitterTrackHeader>>();
+            query.iter(world).cloned().collect::<Vec<_>>()
+        };
+        assert!(
+            actions.contains(&ChoreographyAction::SelectReferencedEffectClip(
+                nested_path.clone()
+            ))
+        );
+        assert!(
+            actions.contains(&ChoreographyAction::SelectEffectClipEmitter {
+                path: nested_path,
+                emitter: leaf_emitter_id,
+            })
+        );
+        let content_heights = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&Node, With<TimelineVerticalContent>>();
+            query
+                .iter(world)
+                .map(|node| node.min_height)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(content_heights.len(), 2);
+        assert!(content_heights.iter().all(
+            |height| matches!(height, Val::Px(value) if (*value - expected_height).abs() < 0.001)
+        ));
     }
 
     #[test]
@@ -1949,6 +2069,11 @@ mod tests {
     #[test]
     fn track_headers_and_clips_expose_the_same_stable_selection_actions() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.effect_clips.clear();
+        session
+            .effect
+            .choreography_order
+            .retain(|track| matches!(track, ChoreographyTrackId::Emitter(_)));
         let effect_clip = EffectClip::new(
             EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xcafe)),
             0.2,
