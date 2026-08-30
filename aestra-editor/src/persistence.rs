@@ -603,6 +603,9 @@ fn execute_protected_document_action(
                 session, settings, catalog, workspace, timeline, navigation, id, localizer,
             ) {
                 session.select_emitter(emitter);
+                if session.selection.primary == SemanticTarget::Emitter(emitter) {
+                    timeline.reveal_emitter(emitter);
+                }
             }
         }
         DocumentAction::BackToSource => {

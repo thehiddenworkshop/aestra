@@ -22,7 +22,7 @@ use bevy::{
         theme::ThemedText,
     },
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
-    input_focus::{InputFocus, tab_navigation::TabIndex},
+    input_focus::{FocusCause, InputFocus, InputFocusVisible, tab_navigation::TabIndex},
     picking::{
         events::{Click, Drag, DragDrop, DragEnd, DragEnter, DragLeave, DragStart, Pointer, Press},
         pointer::PointerButton,
@@ -31,7 +31,7 @@ use bevy::{
     text::EditableText,
     ui::{RelativeCursorPosition, Selected},
     ui_widgets::{
-        Activate, ListBox, ListItem, ScrollArea, ValueChange,
+        Activate, ActiveDescendant, ListBox, ListItem, ScrollArea, ScrollIntoView, ValueChange,
         popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
     },
     window::{CursorIcon, PrimaryWindow, SystemCursorIcon},
@@ -99,6 +99,7 @@ impl Plugin for TimelinePlugin {
                     update_effect_drop_insertion,
                     sync_effect_drop_track_gap,
                     update_effect_drop_preview,
+                    reveal_timeline_emitter,
                     sync_timeline_vertical_scroll,
                     sync_timeline_horizontal_scroll,
                     update_track_header_hover_actions,
@@ -1654,6 +1655,42 @@ mod tests {
         );
 
         app.update();
+    }
+
+    #[test]
+    fn emitter_reveal_waits_for_layout_then_focuses_the_timeline_row() {
+        let emitter = EmitterId::new();
+        let mut state = TimelineState::framed(1.0);
+        state.reveal_emitter(emitter);
+        let mut app = App::new();
+        app.insert_resource(state)
+            .init_resource::<InputFocus>()
+            .init_resource::<InputFocusVisible>()
+            .add_systems(Update, reveal_timeline_emitter);
+        let list = app
+            .world_mut()
+            .spawn((TimelineVerticalPane::Headers, ListBox))
+            .id();
+        let row = app
+            .world_mut()
+            .spawn((EmitterTrackHeader { emitter }, ChildOf(list)))
+            .id();
+
+        app.update();
+        assert_eq!(
+            app.world().resource::<TimelineState>().reveal_emitter,
+            Some(emitter)
+        );
+
+        app.update();
+
+        assert_eq!(app.world().resource::<TimelineState>().reveal_emitter, None);
+        assert_eq!(app.world().resource::<InputFocus>().get(), Some(list));
+        assert!(!app.world().resource::<InputFocusVisible>().0);
+        assert_eq!(
+            app.world().get::<ActiveDescendant>(list).unwrap().0,
+            Some(row)
+        );
     }
 
     #[test]
@@ -3236,6 +3273,38 @@ fn sync_timeline_horizontal_scroll(
     }
 }
 
+fn reveal_timeline_emitter(
+    mut commands: Commands,
+    mut state: ResMut<TimelineState>,
+    headers: Query<(Entity, &EmitterTrackHeader)>,
+    panes: Query<(Entity, &TimelineVerticalPane), With<ListBox>>,
+    mut focus: ResMut<InputFocus>,
+    mut focus_visible: ResMut<InputFocusVisible>,
+) {
+    let Some(target) = state.reveal_emitter else {
+        return;
+    };
+    if state.reveal_wait_frames > 0 {
+        state.reveal_wait_frames -= 1;
+        return;
+    }
+    let Some((row, _)) = headers.iter().find(|(_, header)| header.emitter == target) else {
+        return;
+    };
+    let Some((list, _)) = panes
+        .iter()
+        .find(|(_, pane)| **pane == TimelineVerticalPane::Headers)
+    else {
+        return;
+    };
+
+    commands.entity(list).insert(ActiveDescendant(Some(row)));
+    commands.trigger(ScrollIntoView { entity: row });
+    focus.set(list, FocusCause::Navigated);
+    focus_visible.0 = false;
+    state.reveal_emitter = None;
+}
+
 fn sync_timeline_vertical_scroll(
     mut state: ResMut<TimelineState>,
     mut panes: Query<(&TimelineVerticalPane, &ComputedNode, &mut ScrollPosition)>,
@@ -3864,6 +3933,8 @@ pub(crate) struct TimelineState {
     context_effect_clip: Option<EffectClipId>,
     pub(crate) inspected_child: Option<EffectClipChildSelection>,
     referenced_emitter_click: Option<ReferencedEmitterClick>,
+    reveal_emitter: Option<EmitterId>,
+    reveal_wait_frames: u8,
     effect_drop_preview: Option<EffectDropPreview>,
     effect_drop_insertion: Option<(ChoreographyTrackId, bool)>,
     vertical_scroll: f32,
@@ -3899,6 +3970,8 @@ impl TimelineState {
             context_effect_clip: None,
             inspected_child: None,
             referenced_emitter_click: None,
+            reveal_emitter: None,
+            reveal_wait_frames: 0,
             effect_drop_preview: None,
             effect_drop_insertion: None,
             vertical_scroll: 0.0,
@@ -3937,6 +4010,11 @@ impl TimelineState {
         self.snap = snap;
         self.snap_guide = None;
         true
+    }
+
+    pub(crate) fn reveal_emitter(&mut self, emitter: EmitterId) {
+        self.reveal_emitter = Some(emitter);
+        self.reveal_wait_frames = 1;
     }
 
     pub(crate) fn effect_clip_preview_timing(&self, clip: EffectClipId) -> Option<(f32, f32, f32)> {
