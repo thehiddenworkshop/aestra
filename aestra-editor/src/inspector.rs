@@ -5,7 +5,9 @@ use crate::feathers::panel_card::{
     PanelCardProps, RememberedPanelCard, spawn_panel_card as spawn_remembered_panel_card,
 };
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
-use crate::timeline::{EffectClipChildSelection, TimelineState};
+use crate::timeline::{
+    EffectClipChildSelection, EffectClipPath, TimelineState, resolve_effect_clip_path,
+};
 use crate::*;
 use aestra_bevy::{EffectClip, EffectClipId};
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
@@ -3418,23 +3420,16 @@ fn spawn_referenced_emitter_inspector(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
-    selection: EffectClipChildSelection,
+    path: &EffectClipPath,
+    selected_emitter: EmitterId,
 ) -> bool {
-    let Some(clip) = session
-        .effect
-        .effect_clips
-        .iter()
-        .find(|clip| clip.id == selection.clip)
-    else {
-        return false;
-    };
-    let Ok(source) = catalog.load_effect(clip.source) else {
+    let Some((clip, source)) = resolve_effect_clip_path(session, catalog, path) else {
         return false;
     };
     let Some(emitter) = source
         .emitters
         .iter()
-        .find(|emitter| emitter.id == selection.emitter)
+        .find(|emitter| emitter.id == selected_emitter)
     else {
         return false;
     };
@@ -3546,6 +3541,108 @@ fn spawn_referenced_emitter_inspector(
     true
 }
 
+fn spawn_referenced_effect_clip_inspector(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+    path: &EffectClipPath,
+) -> bool {
+    let Some((clip, source)) = resolve_effect_clip_path(session, catalog, path) else {
+        return false;
+    };
+    let source_name = effect_clip_catalog_name(catalog, clip.source);
+    spawn_read_only_inspector_shell(parent, &source_name, localizer, false, |stack| {
+        spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
+            spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-start"),
+                format!("{:.3} s", clip.start_time),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-source-offset"),
+                format!("{:.3} s", clip.source_offset),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-duration"),
+                format!("{:.3} s", clip.duration),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-seed"),
+                format!("{:?}", clip.seed),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-mode"),
+                localizer.text("inspector-read-only"),
+            );
+        });
+        spawn_read_only_card(stack, localizer.text("inspector-transform"), |card| {
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-position"),
+                format!(
+                    "{:.3}, {:.3}, {:.3}",
+                    clip.transform.translation[0],
+                    clip.transform.translation[1],
+                    clip.transform.translation[2]
+                ),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-rotation"),
+                format!(
+                    "{:.3}, {:.3}, {:.3}, {:.3}",
+                    clip.transform.rotation[0],
+                    clip.transform.rotation[1],
+                    clip.transform.rotation[2],
+                    clip.transform.rotation[3]
+                ),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-scale"),
+                format!(
+                    "{:.3}, {:.3}, {:.3}",
+                    clip.transform.scale[0], clip.transform.scale[1], clip.transform.scale[2]
+                ),
+            );
+        });
+        spawn_read_only_card(stack, localizer.text("inspector-source-summary"), |card| {
+            spawn_read_only_row(card, localizer.text("inspector-name"), &source.name);
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-duration"),
+                format!("{:.3} s", source.duration),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-emitters"),
+                source.emitters.len().to_string(),
+            );
+            spawn_read_only_row(
+                card,
+                localizer.text("inspector-looping"),
+                source.looping.to_string(),
+            );
+        });
+        stack.spawn((
+            Text::new(localizer.text("inspector-effect-clip-read-only-description")),
+            TextFont {
+                font_size: FontSize::Px(9.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_FAINT),
+            Pickable::IGNORE,
+        ));
+    });
+    true
+}
+
 pub(crate) fn spawn_inspector(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -3557,10 +3654,20 @@ pub(crate) fn spawn_inspector(
     timeline: &TimelineState,
     repair: &EffectClipRepairState,
 ) {
-    if let Some(selection) = timeline.inspected_child
-        && spawn_referenced_emitter_inspector(parent, session, catalog, localizer, selection)
-    {
-        return;
+    if let Some(selection) = timeline.inspected_child.as_ref() {
+        let spawned = match selection {
+            EffectClipChildSelection::EffectClip { path } => {
+                spawn_referenced_effect_clip_inspector(parent, session, catalog, localizer, path)
+            }
+            EffectClipChildSelection::Emitter { path, emitter } => {
+                spawn_referenced_emitter_inspector(
+                    parent, session, catalog, localizer, path, *emitter,
+                )
+            }
+        };
+        if spawned {
+            return;
+        }
     }
     if let SemanticTarget::EffectClip(clip) = session.selection.primary
         && spawn_effect_clip_inspector(parent, session, catalog, repair, localizer, clip)

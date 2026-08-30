@@ -420,6 +420,7 @@ timeline-inspect-referenced-emitter = Inspecter l’émetteur référencé { $na
 timeline-inspect-referenced-emitter-bar = Inspecter cet émetteur référencé (lecture seule)
 timeline-read-only-short = LECTURE SEULE
 timeline-selected-referenced-emitter = Émetteur référencé sélectionné en lecture seule
+timeline-selected-referenced-effect = Clip d’effet imbriqué sélectionné en lecture seule
 timeline-effect-clip-preview-updated = État d’aperçu de l’effet référencé mis à jour
 timeline-delete-effect-clip-command = Clip d’effet référencé supprimé
 timeline-move-emitter-clip = Déplacer le timing de { $name }

@@ -118,15 +118,16 @@ pub(crate) enum TimelineAction {
     FrameAll,
 }
 
-#[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Component, Event, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ChoreographyAction {
     SelectEmitter(EmitterId),
     SelectEffectClip(EffectClipId),
     SelectEffectClipEmitter {
-        clip: EffectClipId,
+        path: EffectClipPath,
         emitter: EmitterId,
     },
-    ToggleEffectClipExpanded(EffectClipId),
+    SelectReferencedEffectClip(EffectClipPath),
+    ToggleEffectClipExpanded(EffectClipPath),
     ToggleEffectClipMuted(EffectClipId),
     ToggleEffectClipSolo(EffectClipId),
     ToggleEffectClipMenu(EffectClipId),
@@ -183,7 +184,7 @@ fn activate_timeline_track_entry(
     if lists.contains(change.source)
         && let Ok(action) = actions.get(change.value)
     {
-        commands.trigger(*action);
+        commands.trigger(action.clone());
     }
 }
 
@@ -271,7 +272,7 @@ fn handle_timeline_action_buttons(
         if menu.tab_context.take().is_some() {
             session.ui_revision += 1;
         }
-        commands.trigger(*action);
+        commands.trigger(action.clone());
     }
 }
 
@@ -302,7 +303,7 @@ fn handle_choreography_action_buttons(
         if menu.tab_context.take().is_some() {
             session.ui_revision += 1;
         }
-        commands.trigger(*action);
+        commands.trigger(action.clone());
     }
 }
 
@@ -333,7 +334,7 @@ fn execute_choreography_action(
     catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
 ) {
-    if let ChoreographyAction::ToggleEffectClipMenu(clip) = *action {
+    if let ChoreographyAction::ToggleEffectClipMenu(clip) = action.clone() {
         let revision = session.ui_revision;
         if session
             .effect
@@ -353,7 +354,7 @@ fn execute_choreography_action(
         }
         return;
     }
-    if let ChoreographyAction::ToggleEmitterMenu(emitter) = *action {
+    if let ChoreographyAction::ToggleEmitterMenu(emitter) = action.clone() {
         let revision = session.ui_revision;
         if session
             .effect
@@ -372,7 +373,7 @@ fn execute_choreography_action(
         return;
     }
 
-    if let ChoreographyAction::ToggleEmitterColorPicker(emitter) = *action {
+    if let ChoreographyAction::ToggleEmitterColorPicker(emitter) = action.clone() {
         let revision = session.ui_revision;
         if session
             .effect
@@ -396,7 +397,7 @@ fn execute_choreography_action(
     let closed_context_menu = state.context_emitter.take().is_some()
         | state.color_picker_emitter.take().is_some()
         | state.context_effect_clip.take().is_some();
-    match *action {
+    match action.clone() {
         ChoreographyAction::SelectEmitter(emitter) => {
             if session
                 .effect
@@ -425,30 +426,36 @@ fn execute_choreography_action(
                 }
             }
         }
-        ChoreographyAction::SelectEffectClipEmitter { clip, emitter } => {
-            let source = session
-                .effect
-                .effect_clips
-                .iter()
-                .find(|item| item.id == clip)
-                .and_then(|item| catalog.load_effect(item.source).ok());
+        ChoreographyAction::SelectEffectClipEmitter { path, emitter } => {
+            let source =
+                resolve_effect_clip_path(&session, &catalog, &path).map(|(_, source)| source);
             if source
                 .as_ref()
                 .is_some_and(|effect| effect.emitters.iter().any(|item| item.id == emitter))
             {
-                session.selection.select_effect_clip(clip);
-                state.inspected_child = Some(EffectClipChildSelection { clip, emitter });
+                session.selection.select_effect_clip(path.root());
+                state.inspected_child = Some(EffectClipChildSelection::Emitter { path, emitter });
                 session.status = localizer.text("timeline-selected-referenced-emitter");
                 session.ui_revision += 1;
                 curves.clear();
             }
         }
-        ChoreographyAction::ToggleEffectClipExpanded(clip) => {
-            if !state.expanded_effect_clips.remove(&clip) {
-                state.expanded_effect_clips.insert(clip);
+        ChoreographyAction::SelectReferencedEffectClip(path) => {
+            if resolve_effect_clip_path(&session, &catalog, &path).is_some() {
+                session.selection.select_effect_clip(path.root());
+                state.inspected_child = Some(EffectClipChildSelection::EffectClip { path });
+                session.status = localizer.text("timeline-selected-referenced-effect");
+                session.ui_revision += 1;
+                curves.clear();
+            }
+        }
+        ChoreographyAction::ToggleEffectClipExpanded(path) => {
+            if !state.expanded_effect_clips.remove(&path) {
+                state.expanded_effect_clips.insert(path);
             } else if state
                 .inspected_child
-                .is_some_and(|child| child.clip == clip)
+                .as_ref()
+                .is_some_and(|child| child.is_descendant_of(&path))
             {
                 state.inspected_child = None;
             }
@@ -478,7 +485,9 @@ fn execute_choreography_action(
                 EffectCommand::RemoveEffectClip { id: clip },
                 true,
             ) {
-                state.expanded_effect_clips.remove(&clip);
+                state
+                    .expanded_effect_clips
+                    .retain(|path| path.root() != clip);
                 state.muted_effect_clips.remove(&clip);
                 if state.solo_effect_clip == Some(clip) {
                     state.solo_effect_clip = None;
@@ -1021,6 +1030,44 @@ mod tests {
     }
 
     #[test]
+    fn nested_reference_timing_is_clipped_through_every_ancestor() {
+        let root = ReferencedTimingContext {
+            root_source_start: 0.5,
+            local_source_offset: 0.5,
+            duration: 2.0,
+        };
+        let (nested_clip, clipped_offset) = map_referenced_interval(root, 0.25, 1.5).unwrap();
+        assert!((nested_clip.root_source_start - 0.5).abs() < 0.000_1);
+        assert!((nested_clip.duration - 1.25).abs() < 0.000_1);
+        assert!((clipped_offset - 0.25).abs() < 0.000_1);
+
+        let nested_source = ReferencedTimingContext {
+            root_source_start: nested_clip.root_source_start,
+            local_source_offset: 0.2 + clipped_offset,
+            duration: nested_clip.duration,
+        };
+        let (nested_emitter, _) = map_referenced_interval(nested_source, 0.4, 1.0).unwrap();
+        assert!((nested_emitter.root_source_start - 0.5).abs() < 0.000_1);
+        assert!((nested_emitter.duration - 0.95).abs() < 0.000_1);
+        assert!(map_referenced_interval(nested_source, 2.0, 0.25).is_none());
+    }
+
+    #[test]
+    fn effect_clip_paths_distinguish_reused_nested_sources() {
+        let root = EffectClipPath::root_path(EffectClipId::new());
+        let first_branch = root.child(EffectClipId::new());
+        let second_branch = root.child(EffectClipId::new());
+        let shared_source_clip = EffectClipId::new();
+        let first_leaf = first_branch.child(shared_source_clip);
+        let second_leaf = second_branch.child(shared_source_clip);
+
+        assert_ne!(first_leaf, second_leaf);
+        assert!(first_leaf.starts_with(&root));
+        assert!(first_leaf.starts_with(&first_branch));
+        assert!(!first_leaf.starts_with(&second_branch));
+    }
+
+    #[test]
     fn effect_clip_track_state_toggles_and_delete_are_coherent() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
@@ -1035,13 +1082,15 @@ mod tests {
 
         app.world_mut()
             .commands()
-            .trigger(ChoreographyAction::ToggleEffectClipExpanded(id));
+            .trigger(ChoreographyAction::ToggleEffectClipExpanded(
+                EffectClipPath::root_path(id),
+            ));
         app.update();
         assert!(
             app.world()
                 .resource::<TimelineState>()
                 .expanded_effect_clips
-                .contains(&id)
+                .contains(&EffectClipPath::root_path(id))
         );
 
         app.world_mut()
@@ -1060,15 +1109,20 @@ mod tests {
             .trigger(ChoreographyAction::DeleteEffectClip(id));
         app.update();
         let state = app.world().resource::<TimelineState>();
-        assert!(!state.expanded_effect_clips.contains(&id));
+        assert!(
+            !state
+                .expanded_effect_clips
+                .contains(&EffectClipPath::root_path(id))
+        );
         assert!(!state.muted_effect_clips.contains(&id));
         assert_eq!(state.solo_effect_clip, None);
         assert!(
-            app.world()
+            !app.world()
                 .resource::<EditorSession>()
                 .effect
                 .effect_clips
-                .is_empty()
+                .iter()
+                .any(|clip| clip.id == id)
         );
     }
 
@@ -1487,6 +1541,41 @@ mod tests {
         );
 
         app.update();
+    }
+
+    #[test]
+    fn vertical_scroll_panes_measure_an_explicit_grid_content_extent() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let duration = session.playback_duration();
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .init_asset::<Image>()
+        .init_asset::<SvgFile>()
+        .insert_resource(session)
+        .insert_resource(TimelineState::framed(duration))
+        .init_resource::<ProjectEffectCatalog>()
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_systems(Startup, spawn_test_timeline);
+
+        app.update();
+
+        let contents = {
+            let world = app.world_mut();
+            let mut query = world.query::<(&TimelineVerticalContent, &Node)>();
+            query
+                .iter(world)
+                .map(|(_, node)| (node.min_height, node.flex_shrink))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(contents.len(), 2);
+        assert!(contents.iter().all(|(height, shrink)| {
+            matches!(height, Val::Px(value) if *value > 0.0) && *shrink == 0.0
+        }));
     }
 
     #[test]
@@ -1996,7 +2085,7 @@ mod tests {
                     |(header, action, label, button, list_item, keyboard_row, selected)| {
                         (
                             header.emitter,
-                            *action,
+                            action.clone(),
                             label.0.clone(),
                             button,
                             list_item,
@@ -2019,7 +2108,7 @@ mod tests {
                 .iter(world)
                 .filter(|(clip, _, _, _)| clip.kind == TimelineDragKind::Move)
                 .map(|(clip, action, label, tooltip)| {
-                    (clip.emitter, *action, label.0.clone(), tooltip)
+                    (clip.emitter, action.clone(), label.0.clone(), tooltip)
                 })
                 .collect::<Vec<_>>()
         };
@@ -2059,7 +2148,13 @@ mod tests {
                     )
                 })
                 .map(|(action, label, tooltip, variant, selected)| {
-                    (*action, label.0.clone(), tooltip, variant.clone(), selected)
+                    (
+                        action.clone(),
+                        label.0.clone(),
+                        tooltip,
+                        variant.clone(),
+                        selected,
+                    )
                 })
                 .collect::<Vec<_>>()
         };
@@ -2157,6 +2252,24 @@ mod tests {
         assert!(pane_layout.iter().any(|(pane, _, drop_target)| {
             *pane == TimelineVerticalPane::Headers && *drop_target
         }));
+        let vertical_contents = {
+            let world = app.world_mut();
+            let mut query = world.query::<(&TimelineVerticalContent, &Node)>();
+            query
+                .iter(world)
+                .map(|(_, node)| (node.min_height, node.display, node.flex_shrink))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(vertical_contents.len(), 2);
+        assert!(
+            vertical_contents
+                .iter()
+                .all(|(min_height, display, shrink)| {
+                    matches!(min_height, Val::Px(height) if *height > 0.0)
+                        && *display == Display::Grid
+                        && *shrink == 0.0
+                })
+        );
         let header_navigation = {
             let world = app.world_mut();
             let mut query = world.query_filtered::<(
@@ -3218,6 +3331,9 @@ enum TimelineVerticalPane {
 }
 
 #[derive(Component, Clone, Copy)]
+struct TimelineVerticalContent;
+
+#[derive(Component, Clone, Copy)]
 struct EmitterTrackHeader {
     emitter: EmitterId,
 }
@@ -3406,10 +3522,50 @@ struct EffectDropPreview {
     display_name: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct EffectClipChildSelection {
-    pub(crate) clip: EffectClipId,
-    pub(crate) emitter: EmitterId,
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct EffectClipPath(Vec<EffectClipId>);
+
+impl EffectClipPath {
+    fn root_path(clip: EffectClipId) -> Self {
+        Self(vec![clip])
+    }
+
+    fn child(&self, clip: EffectClipId) -> Self {
+        let mut path = self.0.clone();
+        path.push(clip);
+        Self(path)
+    }
+
+    pub(crate) fn root(&self) -> EffectClipId {
+        self.0[0]
+    }
+
+    pub(crate) fn ids(&self) -> &[EffectClipId] {
+        &self.0
+    }
+
+    fn starts_with(&self, ancestor: &Self) -> bool {
+        self.0.starts_with(&ancestor.0)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum EffectClipChildSelection {
+    EffectClip {
+        path: EffectClipPath,
+    },
+    Emitter {
+        path: EffectClipPath,
+        emitter: EmitterId,
+    },
+}
+
+impl EffectClipChildSelection {
+    fn is_descendant_of(&self, ancestor: &EffectClipPath) -> bool {
+        match self {
+            Self::EffectClip { path } | Self::Emitter { path, .. } => path.starts_with(ancestor),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -3444,7 +3600,7 @@ pub(crate) struct TimelineState {
     color_picker_emitter: Option<EmitterId>,
     reorder_drag: Option<EmitterId>,
     effect_clip_reorder_drag: Option<EffectClipId>,
-    expanded_effect_clips: BTreeSet<EffectClipId>,
+    expanded_effect_clips: BTreeSet<EffectClipPath>,
     muted_effect_clips: BTreeSet<EffectClipId>,
     solo_effect_clip: Option<EffectClipId>,
     context_effect_clip: Option<EffectClipId>,
@@ -3603,6 +3759,211 @@ fn effect_clip_source_name(catalog: &ProjectEffectCatalog, source: EffectAssetRe
         )
 }
 
+pub(crate) fn resolve_effect_clip_path(
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    path: &EffectClipPath,
+) -> Option<(EffectClip, EffectAsset)> {
+    let (root, descendants) = path.ids().split_first()?;
+    let mut clip = session
+        .effect
+        .effect_clips
+        .iter()
+        .find(|clip| clip.id == *root)?
+        .clone();
+    let mut source = catalog.load_effect(clip.source).ok()?;
+    for id in descendants {
+        clip = source
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == *id)?
+            .clone();
+        source = catalog.load_effect(clip.source).ok()?;
+    }
+    Some((clip, source))
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ReferencedTimingContext {
+    root_source_start: f32,
+    local_source_offset: f32,
+    duration: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ReferencedTrackTiming {
+    root_source_start: f32,
+    duration: f32,
+}
+
+#[derive(Clone, Debug)]
+enum ReferencedTrackKind {
+    EffectClip {
+        clip: EffectClip,
+        source_name: String,
+        child_count: usize,
+    },
+    Emitter {
+        emitter: Emitter,
+        index: usize,
+    },
+}
+
+#[derive(Clone, Debug)]
+struct ReferencedTrackProjection {
+    path: EffectClipPath,
+    depth: usize,
+    timing: Option<ReferencedTrackTiming>,
+    kind: ReferencedTrackKind,
+}
+
+fn map_referenced_interval(
+    context: ReferencedTimingContext,
+    item_start: f32,
+    item_duration: f32,
+) -> Option<(ReferencedTrackTiming, f32)> {
+    let source_start = item_start.max(context.local_source_offset);
+    let source_end =
+        (item_start + item_duration).min(context.local_source_offset + context.duration);
+    (source_end > source_start).then_some((
+        ReferencedTrackTiming {
+            root_source_start: context.root_source_start + source_start
+                - context.local_source_offset,
+            duration: source_end - source_start,
+        },
+        source_start - item_start,
+    ))
+}
+
+fn append_referenced_track_projections(
+    rows: &mut Vec<ReferencedTrackProjection>,
+    catalog: &ProjectEffectCatalog,
+    state: &TimelineState,
+    source: &EffectAsset,
+    parent_path: &EffectClipPath,
+    context: Option<ReferencedTimingContext>,
+    depth: usize,
+) {
+    for track in normalized_choreography_order(source) {
+        match track {
+            ChoreographyTrackId::EffectClip(id) => {
+                let Some(clip) = source.effect_clips.iter().find(|clip| clip.id == id) else {
+                    continue;
+                };
+                let path = parent_path.child(clip.id);
+                let mapped = context.and_then(|context| {
+                    map_referenced_interval(context, clip.start_time, clip.duration)
+                });
+                let child_source = catalog.load_effect(clip.source).ok();
+                let child_count = child_source.as_ref().map_or(0, |effect| {
+                    effect.effect_clips.len() + effect.emitters.len()
+                });
+                rows.push(ReferencedTrackProjection {
+                    path: path.clone(),
+                    depth,
+                    timing: mapped.map(|(timing, _)| timing),
+                    kind: ReferencedTrackKind::EffectClip {
+                        clip: clip.clone(),
+                        source_name: effect_clip_source_name(catalog, clip.source),
+                        child_count,
+                    },
+                });
+                if state.expanded_effect_clips.contains(&path)
+                    && let Some(child_source) = child_source
+                {
+                    let child_context =
+                        mapped.map(|(timing, clipped_offset)| ReferencedTimingContext {
+                            root_source_start: timing.root_source_start,
+                            local_source_offset: clip.source_offset + clipped_offset,
+                            duration: timing.duration,
+                        });
+                    append_referenced_track_projections(
+                        rows,
+                        catalog,
+                        state,
+                        &child_source,
+                        &path,
+                        child_context,
+                        depth + 1,
+                    );
+                }
+            }
+            ChoreographyTrackId::Emitter(id) => {
+                let Some((index, emitter)) = source
+                    .emitters
+                    .iter()
+                    .enumerate()
+                    .find(|(_, emitter)| emitter.id == id)
+                else {
+                    continue;
+                };
+                rows.push(ReferencedTrackProjection {
+                    path: parent_path.clone(),
+                    depth,
+                    timing: context
+                        .and_then(|context| {
+                            map_referenced_interval(context, emitter.start_time, emitter.duration)
+                        })
+                        .map(|(timing, _)| timing),
+                    kind: ReferencedTrackKind::Emitter {
+                        emitter: emitter.clone(),
+                        index,
+                    },
+                });
+            }
+        }
+    }
+}
+
+fn referenced_track_projections(
+    catalog: &ProjectEffectCatalog,
+    state: &TimelineState,
+    clip: &EffectClip,
+) -> Vec<ReferencedTrackProjection> {
+    let path = EffectClipPath::root_path(clip.id);
+    if !state.expanded_effect_clips.contains(&path) {
+        return Vec::new();
+    }
+    let Ok(source) = catalog.load_effect(clip.source) else {
+        return Vec::new();
+    };
+    let mut rows = Vec::new();
+    append_referenced_track_projections(
+        &mut rows,
+        catalog,
+        state,
+        &source,
+        &path,
+        Some(ReferencedTimingContext {
+            root_source_start: clip.source_offset,
+            local_source_offset: clip.source_offset,
+            duration: clip.duration,
+        }),
+        1,
+    );
+    rows
+}
+
+fn timeline_vertical_content_height(
+    effect: &EffectAsset,
+    state: &TimelineState,
+    catalog: &ProjectEffectCatalog,
+) -> f32 {
+    let mut height = 0.0;
+    for track in normalized_choreography_order(effect) {
+        height += 31.0;
+        if let ChoreographyTrackId::EffectClip(id) = track
+            && let Some(clip) = effect.effect_clips.iter().find(|clip| clip.id == id)
+        {
+            height += referenced_track_projections(catalog, state, clip).len() as f32 * 27.0;
+        }
+    }
+    if state.effect_drop_preview.is_some() {
+        height += 31.0;
+    }
+    height
+}
+
 fn spawn_effect_clip_track_header(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -3615,7 +3976,8 @@ fn spawn_effect_clip_track_header(
     asset_server: &AssetServer,
 ) {
     let selected = session.selection.primary == SemanticTarget::EffectClip(clip.id);
-    let expanded = state.expanded_effect_clips.contains(&clip.id);
+    let path = EffectClipPath::root_path(clip.id);
+    let expanded = state.expanded_effect_clips.contains(&path);
     let muted = state.muted_effect_clips.contains(&clip.id);
     let soloed = state.solo_effect_clip == Some(clip.id);
     let mut args = FluentArgs::new();
@@ -3663,11 +4025,7 @@ fn spawn_effect_clip_track_header(
         let reorder_label =
             emitter_timing_label(localizer, "timeline-reorder-effect-clip", source_name);
         spawn_effect_clip_reorder_handle(row, clip.id, reorder_label, asset_server);
-        let disclosure = mini_button(
-            row,
-            "",
-            ChoreographyAction::ToggleEffectClipExpanded(clip.id),
-        );
+        let disclosure = mini_button(row, "", ChoreographyAction::ToggleEffectClipExpanded(path));
         let disclosure_label = localizer.text(if expanded {
             "timeline-collapse-effect-clip"
         } else {
@@ -3805,14 +4163,15 @@ fn spawn_referenced_emitter_track_header(
     parent: &mut ChildSpawnerCommands,
     state: &TimelineState,
     localizer: &Localizer,
-    clip: EffectClipId,
+    path: &EffectClipPath,
+    depth: usize,
     emitter: &Emitter,
     index: usize,
     grid_row: i16,
 ) {
-    let selected = state.inspected_child
-        == Some(EffectClipChildSelection {
-            clip,
+    let selected = state.inspected_child.as_ref()
+        == Some(&EffectClipChildSelection::Emitter {
+            path: path.clone(),
             emitter: emitter.id,
         });
     let mut args = FluentArgs::new();
@@ -3827,7 +4186,7 @@ fn spawn_referenced_emitter_track_header(
         ReferencedEmitterTrackHeader,
         TimelineChoreographyGridRow(grid_row),
         ChoreographyAction::SelectEffectClipEmitter {
-            clip,
+            path: path.clone(),
             emitter: emitter.id,
         },
         AccessibleLabel(label.clone()),
@@ -3837,7 +4196,12 @@ fn spawn_referenced_emitter_track_header(
             min_width: Val::Px(0.0),
             height: Val::Px(27.0),
             flex_shrink: 0.0,
-            padding: UiRect::new(Val::Px(29.0), Val::Px(7.0), Val::Px(0.0), Val::Px(0.0)),
+            padding: UiRect::new(
+                Val::Px(7.0 + depth as f32 * 22.0),
+                Val::Px(7.0),
+                Val::Px(0.0),
+                Val::Px(0.0),
+            ),
             align_items: AlignItems::Center,
             column_gap: Val::Px(6.0),
             border: UiRect::bottom(Val::Px(1.0)),
@@ -3916,14 +4280,291 @@ fn spawn_referenced_emitter_track_header(
     });
 }
 
+fn spawn_referenced_effect_clip_track_header(
+    parent: &mut ChildSpawnerCommands,
+    state: &TimelineState,
+    localizer: &Localizer,
+    path: &EffectClipPath,
+    depth: usize,
+    clip: &EffectClip,
+    source_name: &str,
+    child_count: usize,
+    grid_row: i16,
+    asset_server: &AssetServer,
+) {
+    let selected = state.inspected_child.as_ref()
+        == Some(&EffectClipChildSelection::EffectClip { path: path.clone() });
+    let expanded = state.expanded_effect_clips.contains(path);
+    let label = emitter_timing_label(localizer, "timeline-select-effect-clip", source_name);
+    let mut header = parent.spawn((
+        Button,
+        EditorNativeControl,
+        ListItem,
+        KeyboardNavigableListRow,
+        ReferencedEmitterTrackHeader,
+        TimelineChoreographyGridRow(grid_row),
+        ChoreographyAction::SelectReferencedEffectClip(path.clone()),
+        AccessibleLabel(label.clone()),
+        EditorTooltip::description(label),
+        Node {
+            width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            height: Val::Px(27.0),
+            flex_shrink: 0.0,
+            padding: UiRect::new(
+                Val::Px(7.0 + depth as f32 * 22.0),
+                Val::Px(7.0),
+                Val::Px(0.0),
+                Val::Px(0.0),
+            ),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(5.0),
+            border: UiRect::bottom(Val::Px(1.0)),
+            grid_row: GridPlacement::start(grid_row),
+            ..default()
+        },
+        BackgroundColor(if selected {
+            theme::SELECTION.with_alpha(0.75)
+        } else {
+            theme::PANEL_DARK
+        }),
+        BorderColor::all(theme::BORDER.with_alpha(0.4)),
+    ));
+    if selected {
+        header.insert(Selected);
+    }
+    header.with_children(|row| {
+        let disclosure = mini_button(
+            row,
+            "",
+            ChoreographyAction::ToggleEffectClipExpanded(path.clone()),
+        );
+        row.commands().entity(disclosure).insert(Node {
+            display: if child_count > 0 {
+                Display::Flex
+            } else {
+                Display::None
+            },
+            width: Val::Px(20.0),
+            height: Val::Px(21.0),
+            flex_shrink: 0.0,
+            ..default()
+        });
+        row.commands().entity(disclosure).with_children(|button| {
+            button.spawn((
+                Node {
+                    width: Val::Px(16.0),
+                    height: Val::Px(16.0),
+                    ..default()
+                },
+                UiSvg(load_svg_icon(
+                    asset_server,
+                    if expanded {
+                        "icons/chevron-down.svg"
+                    } else {
+                        "icons/chevron-right.svg"
+                    },
+                )),
+                SvgColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+        });
+        row.spawn((
+            Node {
+                width: Val::Px(13.0),
+                height: Val::Px(13.0),
+                flex_shrink: 0.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(effect_reference_color(clip.source)),
+            Pickable::IGNORE,
+        ))
+        .with_child((
+            Text::new("FX"),
+            TextFont {
+                font_size: FontSize::Px(7.0),
+                ..default()
+            },
+            TextColor(theme::PANEL_DARK),
+            Pickable::IGNORE,
+        ));
+        row.spawn((
+            Text::new(source_name),
+            TextFont {
+                font_size: FontSize::Px(9.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_MUTED),
+            TextLayout::no_wrap(),
+            Node {
+                min_width: Val::Px(0.0),
+                flex_grow: 1.0,
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ));
+        row.spawn((
+            Text::new(localizer.text("timeline-read-only-short")),
+            TextFont {
+                font_size: FontSize::Px(7.0),
+                ..default()
+            },
+            TextColor(theme::TEXT_FAINT),
+            Pickable::IGNORE,
+        ));
+    });
+}
+
+#[cfg(test)]
 fn mapped_referenced_emitter_timing(clip: &EffectClip, emitter: &Emitter) -> Option<(f32, f32)> {
-    let source_start = emitter.start_time.max(clip.source_offset);
-    let source_end =
-        (emitter.start_time + emitter.duration).min(clip.source_offset + clip.duration);
-    (source_end > source_start).then_some((
-        clip.start_time + source_start - clip.source_offset,
-        source_end - source_start,
-    ))
+    map_referenced_interval(
+        ReferencedTimingContext {
+            root_source_start: clip.source_offset,
+            local_source_offset: clip.source_offset,
+            duration: clip.duration,
+        },
+        emitter.start_time,
+        emitter.duration,
+    )
+    .map(|(timing, _)| {
+        (
+            clip.start_time + timing.root_source_start - clip.source_offset,
+            timing.duration,
+        )
+    })
+}
+
+fn spawn_referenced_track_row(
+    parent: &mut ChildSpawnerCommands,
+    state: &TimelineState,
+    localizer: &Localizer,
+    root_clip: &EffectClip,
+    projection: &ReferencedTrackProjection,
+    muted: bool,
+    suppressed: bool,
+    grid_row: i16,
+) {
+    let (selected, color, name, action) = match &projection.kind {
+        ReferencedTrackKind::EffectClip {
+            clip, source_name, ..
+        } => (
+            state.inspected_child.as_ref()
+                == Some(&EffectClipChildSelection::EffectClip {
+                    path: projection.path.clone(),
+                }),
+            effect_reference_color(clip.source),
+            source_name.as_str(),
+            ChoreographyAction::SelectReferencedEffectClip(projection.path.clone()),
+        ),
+        ReferencedTrackKind::Emitter { emitter, .. } => (
+            state.inspected_child.as_ref()
+                == Some(&EffectClipChildSelection::Emitter {
+                    path: projection.path.clone(),
+                    emitter: emitter.id,
+                }),
+            layer_color(emitter.id, emitter.display_color),
+            emitter.name.as_str(),
+            ChoreographyAction::SelectEffectClipEmitter {
+                path: projection.path.clone(),
+                emitter: emitter.id,
+            },
+        ),
+    };
+    parent
+        .spawn((
+            TimelineChoreographyGridRow(grid_row),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(27.0),
+                flex_shrink: 0.0,
+                position_type: PositionType::Relative,
+                border: UiRect::bottom(Val::Px(1.0)),
+                grid_row: GridPlacement::start(grid_row),
+                ..default()
+            },
+        ))
+        .with_children(|track| {
+            let Some(timing) = projection.timing else {
+                return;
+            };
+            let mut child_node = Node {
+                position_type: PositionType::Absolute,
+                left: Val::Percent(0.0),
+                top: Val::Px(4.0),
+                width: Val::Percent(1.0),
+                height: Val::Px(19.0),
+                align_items: AlignItems::Center,
+                padding: UiRect::horizontal(Val::Px(7.0)),
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                border: UiRect::all(Val::Px(if selected { 2.0 } else { 1.0 })),
+                overflow: Overflow::clip(),
+                ..default()
+            };
+            apply_timeline_bar_geometry(
+                &mut child_node,
+                root_clip.start_time + timing.root_source_start - root_clip.source_offset,
+                timing.duration,
+                state.view,
+            );
+            track
+                .spawn((
+                    TimelineReferencedEmitter {
+                        clip: root_clip.id,
+                        source_start: timing.root_source_start,
+                        source_duration: timing.duration,
+                    },
+                    child_node,
+                    BackgroundColor(color.with_alpha(if muted || suppressed {
+                        0.08
+                    } else {
+                        0.20
+                    })),
+                    BorderColor::all(if selected {
+                        theme::TEXT
+                    } else {
+                        color.with_alpha(0.75)
+                    }),
+                ))
+                .with_children(|bar| {
+                    bar.spawn((
+                        Button,
+                        EditorNativeControl,
+                        TimelineReferencedEmitterControl,
+                        action,
+                        AccessibleLabel(localizer.text("timeline-inspect-referenced-emitter-bar")),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(0.0),
+                            right: Val::Px(0.0),
+                            top: Val::Px(0.0),
+                            bottom: Val::Px(0.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::NONE),
+                    ))
+                    .observe(select_timeline_referenced_emitter)
+                    .observe(stop_timeline_control_press);
+                    bar.spawn((
+                        Text::new(name),
+                        TextFont {
+                            font_size: FontSize::Px(8.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                        TextLayout::no_wrap(),
+                        Node {
+                            min_width: Val::Px(0.0),
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ));
+                });
+        });
 }
 
 pub(crate) fn spawn_timeline(
@@ -3934,6 +4575,7 @@ pub(crate) fn spawn_timeline(
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
+    let vertical_content_height = timeline_vertical_content_height(&session.effect, state, catalog);
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -4143,9 +4785,7 @@ pub(crate) fn spawn_timeline(
                                     flex_grow: 1.0,
                                     min_height: Val::Px(0.0),
                                     width: Val::Percent(100.0),
-                                    display: Display::Grid,
-                                    grid_template_columns: vec![GridTrack::flex(1.0)],
-                                    grid_auto_rows: vec![GridTrack::auto()],
+                                    flex_direction: FlexDirection::Column,
                                     align_content: AlignContent::Start,
                                     overflow: Overflow::scroll_y(),
                                     scrollbar_width: 0.0,
@@ -4155,7 +4795,22 @@ pub(crate) fn spawn_timeline(
                             .observe(show_invalid_timeline_drop_feedback)
                             .observe(hide_invalid_timeline_drop_feedback)
                             .observe(drop_project_effect_on_track_headers)
-                            .with_children(|headers| {
+                            .with_children(|viewport| {
+                                viewport
+                                    .spawn((
+                                        TimelineVerticalContent,
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            min_height: Val::Px(vertical_content_height),
+                                            flex_shrink: 0.0,
+                                            display: Display::Grid,
+                                            grid_template_columns: vec![GridTrack::flex(1.0)],
+                                            grid_auto_rows: vec![GridTrack::auto()],
+                                            align_content: AlignContent::Start,
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_children(|headers| {
                                 for clip in &session.effect.effect_clips {
                                     let grid_row = choreography_grid_row(
                                         &session.effect,
@@ -4172,23 +4827,47 @@ pub(crate) fn spawn_timeline(
                                         localizer,
                                         clip,
                                         &source_name,
-                                        source.as_ref().map_or(0, |effect| effect.emitters.len()),
+                                        source.as_ref().map_or(0, |effect| {
+                                            effect.effect_clips.len() + effect.emitters.len()
+                                        }),
                                         grid_row,
                                         asset_server,
                                     );
-                                    if state.expanded_effect_clips.contains(&clip.id)
-                                        && let Some(source) = source
+                                    for (index, projection) in
+                                        referenced_track_projections(catalog, state, clip)
+                                            .iter()
+                                            .enumerate()
                                     {
-                                        for (index, emitter) in source.emitters.iter().enumerate() {
-                                            spawn_referenced_emitter_track_header(
+                                        let child_grid_row = grid_row + index as i16 + 1;
+                                        match &projection.kind {
+                                            ReferencedTrackKind::EffectClip {
+                                                clip,
+                                                source_name,
+                                                child_count,
+                                            } => spawn_referenced_effect_clip_track_header(
                                                 headers,
                                                 state,
                                                 localizer,
-                                                clip.id,
-                                                emitter,
-                                                index,
-                                                grid_row + index as i16 + 1,
-                                            );
+                                                &projection.path,
+                                                projection.depth,
+                                                clip,
+                                                source_name,
+                                                *child_count,
+                                                child_grid_row,
+                                                asset_server,
+                                            ),
+                                            ReferencedTrackKind::Emitter { emitter, index } => {
+                                                spawn_referenced_emitter_track_header(
+                                                    headers,
+                                                    state,
+                                                    localizer,
+                                                    &projection.path,
+                                                    projection.depth,
+                                                    emitter,
+                                                    *index,
+                                                    child_grid_row,
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -4213,7 +4892,8 @@ pub(crate) fn spawn_timeline(
                                         asset_server,
                                     );
                                 }
-                                spawn_effect_drop_spacer(headers);
+                                        spawn_effect_drop_spacer(headers);
+                                    });
                             });
                         labels.spawn((
                             TimelineHorizontalGutter,
@@ -4272,16 +4952,29 @@ pub(crate) fn spawn_timeline(
                                             width: Val::Percent(100.0),
                                             flex_grow: 1.0,
                                             min_height: Val::Px(0.0),
-                                            display: Display::Grid,
-                                            grid_template_columns: vec![GridTrack::flex(1.0)],
-                                            grid_auto_rows: vec![GridTrack::auto()],
+                                            flex_direction: FlexDirection::Column,
                                             align_content: AlignContent::Start,
                                             overflow: Overflow::scroll_y(),
                                             scrollbar_width: 0.0,
                                             ..default()
                                         },
                                     ))
-                                    .with_children(|rows| {
+                                    .with_children(|viewport| {
+                                        viewport
+                                            .spawn((
+                                                TimelineVerticalContent,
+                                                Node {
+                                                    width: Val::Percent(100.0),
+                                                    min_height: Val::Px(vertical_content_height),
+                                                    flex_shrink: 0.0,
+                                                    display: Display::Grid,
+                                                    grid_template_columns: vec![GridTrack::flex(1.0)],
+                                                    grid_auto_rows: vec![GridTrack::auto()],
+                                                    align_content: AlignContent::Start,
+                                                    ..default()
+                                                },
+                                            ))
+                                            .with_children(|rows| {
                                         for clip in &session.effect.effect_clips {
                                             let grid_row = choreography_grid_row(
                                                 &session.effect,
@@ -4512,149 +5205,21 @@ pub(crate) fn spawn_timeline(
                                                         }
                                                     });
                                             });
-                                            if state.expanded_effect_clips.contains(&clip.id)
-                                                && let Ok(source) = catalog.load_effect(clip.source)
+                                            for (index, projection) in
+                                                referenced_track_projections(catalog, state, clip)
+                                                    .iter()
+                                                    .enumerate()
                                             {
-                                                let mut child_grid_row = grid_row + 1;
-                                                for emitter in &source.emitters {
-                                                    let timing = mapped_referenced_emitter_timing(
-                                                        clip, emitter,
-                                                    );
-                                                    let child_selected = state.inspected_child
-                                                        == Some(EffectClipChildSelection {
-                                                            clip: clip.id,
-                                                            emitter: emitter.id,
-                                                        });
-                                                    let child_color = layer_color(
-                                                        emitter.id,
-                                                        emitter.display_color,
-                                                    );
-                                                    rows.spawn((
-                                                        TimelineChoreographyGridRow(child_grid_row),
-                                                        Node {
-                                                            width: Val::Percent(100.0),
-                                                            height: Val::Px(27.0),
-                                                            flex_shrink: 0.0,
-                                                            position_type: PositionType::Relative,
-                                                            border: UiRect::bottom(Val::Px(1.0)),
-                                                            grid_row: GridPlacement::start(
-                                                                child_grid_row,
-                                                            ),
-                                                            ..default()
-                                                        },
-                                                    ))
-                                                    .with_children(|track| {
-                                                        if let Some((start_time, duration)) = timing {
-                                                            let mut child_node = Node {
-                                                                position_type:
-                                                                    PositionType::Absolute,
-                                                                left: Val::Percent(0.0),
-                                                                top: Val::Px(4.0),
-                                                                width: Val::Percent(1.0),
-                                                                height: Val::Px(19.0),
-                                                                align_items: AlignItems::Center,
-                                                                padding: UiRect::horizontal(
-                                                                    Val::Px(7.0),
-                                                                ),
-                                                                border_radius: BorderRadius::all(
-                                                                    Val::Px(3.0),
-                                                                ),
-                                                                border: UiRect::all(Val::Px(
-                                                                    if child_selected {
-                                                                        2.0
-                                                                    } else {
-                                                                        1.0
-                                                                    },
-                                                                )),
-                                                                overflow: Overflow::clip(),
-                                                                ..default()
-                                                            };
-                                                            apply_timeline_bar_geometry(
-                                                                &mut child_node,
-                                                                start_time,
-                                                                duration,
-                                                                state.view,
-                                                            );
-                                                            track
-                                                                .spawn((
-                                                                    TimelineReferencedEmitter {
-                                                                        clip: clip.id,
-                                                                        source_start:
-                                                                            emitter.start_time,
-                                                                        source_duration:
-                                                                            emitter.duration,
-                                                                    },
-                                                                    child_node,
-                                                                    BackgroundColor(
-                                                                        child_color.with_alpha(
-                                                                            if muted || suppressed {
-                                                                                0.08
-                                                                            } else {
-                                                                                0.20
-                                                                            },
-                                                                        ),
-                                                                    ),
-                                                                    BorderColor::all(
-                                                                        if child_selected {
-                                                                            theme::TEXT
-                                                                        } else {
-                                                                            child_color.with_alpha(
-                                                                                0.75,
-                                                                            )
-                                                                        },
-                                                                    ),
-                                                                ))
-                                                                .with_children(|bar| {
-                                                                    bar.spawn((
-                                                                        Button,
-                                                                        EditorNativeControl,
-                                                                        TimelineReferencedEmitterControl,
-                                                                        ChoreographyAction::SelectEffectClipEmitter {
-                                                                            clip: clip.id,
-                                                                            emitter: emitter.id,
-                                                                        },
-                                                                        AccessibleLabel(
-                                                                            localizer.text(
-                                                                                "timeline-inspect-referenced-emitter-bar",
-                                                                            ),
-                                                                        ),
-                                                                        Node {
-                                                                            position_type:
-                                                                                PositionType::Absolute,
-                                                                            left: Val::Px(0.0),
-                                                                            right: Val::Px(0.0),
-                                                                            top: Val::Px(0.0),
-                                                                            bottom: Val::Px(0.0),
-                                                                            ..default()
-                                                                        },
-                                                                        BackgroundColor(Color::NONE),
-                                                                    ))
-                                                                    .observe(
-                                                                        select_timeline_referenced_emitter,
-                                                                    )
-                                                                    .observe(stop_timeline_control_press);
-                                                                    bar.spawn((
-                                                                        Text::new(&emitter.name),
-                                                                        TextFont {
-                                                                            font_size:
-                                                                                FontSize::Px(8.0),
-                                                                            ..default()
-                                                                        },
-                                                                        TextColor(theme::TEXT_MUTED),
-                                                                        TextLayout::no_wrap(),
-                                                                        Node {
-                                                                            min_width: Val::Px(0.0),
-                                                                            overflow:
-                                                                                Overflow::clip(),
-                                                                            ..default()
-                                                                        },
-                                                                        Pickable::IGNORE,
-                                                                    ));
-                                                                });
-                                                        }
-                                                    });
-                                                    child_grid_row = child_grid_row.saturating_add(1);
-                                                }
+                                                spawn_referenced_track_row(
+                                                    rows,
+                                                    state,
+                                                    localizer,
+                                                    clip,
+                                                    projection,
+                                                    muted,
+                                                    suppressed,
+                                                    grid_row + index as i16 + 1,
+                                                );
                                             }
                                         }
                                         for emitter in &session.effect.emitters {
@@ -4861,7 +5426,8 @@ pub(crate) fn spawn_timeline(
                                                     });
                                             });
                                         }
-                                        spawn_effect_drop_spacer(rows);
+                                                spawn_effect_drop_spacer(rows);
+                                            });
                                     })
                                     .id(),
                             );
@@ -6391,12 +6957,9 @@ fn choreography_grid_row(
         }
         row = row.saturating_add(1);
         if let ChoreographyTrackId::EffectClip(id) = track
-            && state.expanded_effect_clips.contains(&id)
             && let Some(clip) = effect.effect_clips.iter().find(|clip| clip.id == id)
         {
-            let child_count = catalog
-                .load_effect(clip.source)
-                .map_or(0, |source| source.emitters.len());
+            let child_count = referenced_track_projections(catalog, state, clip).len();
             row = row.saturating_add(child_count.min(i16::MAX as usize) as i16);
         }
     }
@@ -6428,12 +6991,9 @@ fn choreography_insertion_layout(
         row = row.saturating_add(1);
         offset += 31.0;
         if let ChoreographyTrackId::EffectClip(id) = track
-            && state.expanded_effect_clips.contains(&id)
             && let Some(clip) = effect.effect_clips.iter().find(|clip| clip.id == id)
         {
-            let child_count = catalog
-                .load_effect(clip.source)
-                .map_or(0, |source| source.emitters.len());
+            let child_count = referenced_track_projections(catalog, state, clip).len();
             row = row.saturating_add(child_count.min(i16::MAX as usize) as i16);
             offset += child_count as f32 * 27.0;
         }
@@ -7083,7 +7643,7 @@ fn select_timeline_clip(
         return;
     };
     if click.button == PointerButton::Primary {
-        commands.trigger(*action);
+        commands.trigger(action.clone());
     }
 }
 
@@ -7096,7 +7656,7 @@ fn select_timeline_effect_clip(
         return;
     };
     if click.button == PointerButton::Primary {
-        commands.trigger(*action);
+        commands.trigger(action.clone());
     }
 }
 
@@ -7109,7 +7669,7 @@ fn select_timeline_referenced_emitter(
         return;
     };
     if click.button == PointerButton::Primary {
-        commands.trigger(*action);
+        commands.trigger(action.clone());
     }
 }
 

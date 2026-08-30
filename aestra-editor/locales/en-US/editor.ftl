@@ -420,6 +420,7 @@ timeline-inspect-referenced-emitter = Inspect referenced emitter { $name }
 timeline-inspect-referenced-emitter-bar = Inspect this referenced emitter (read only)
 timeline-read-only-short = READ ONLY
 timeline-selected-referenced-emitter = Selected referenced emitter in read-only mode
+timeline-selected-referenced-effect = Selected nested effect clip in read-only mode
 timeline-effect-clip-preview-updated = Updated referenced effect preview state
 timeline-delete-effect-clip-command = Deleted referenced effect clip
 timeline-move-emitter-clip = Move timing for { $name }
