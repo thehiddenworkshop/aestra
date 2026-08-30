@@ -1,9 +1,9 @@
 use aestra_core::{
     AssetDefinition, AssetId, ChoreographyTrackId, ColorKey, CurveKey, EffectAssetRef, EffectClip,
     EffectClipId, EffectClipSeed, EffectMarker, EffectParameter, Emitter, EmitterId,
-    EmitterTransform, EventId, EventLink, FlipbookDefinition, MarkerId, MaterialDefinition,
-    MaterialId, ModuleId, ModuleInstance, ParameterId, RendererId, RendererInstance,
-    RendererProperties, Value,
+    EmitterTransform, EventId, EventLink, FlipbookDefinition, MarkerId, MarkerTimeReference,
+    MaterialDefinition, MaterialId, ModuleId, ModuleInstance, ParameterId, RendererId,
+    RendererInstance, RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,10 @@ pub enum EffectCommand {
         start_time: f32,
         source_offset: f32,
         duration: f32,
+    },
+    SetEffectClipStartReference {
+        id: EffectClipId,
+        reference: Option<MarkerTimeReference>,
     },
     SetEffectClipSeed {
         id: EffectClipId,
@@ -145,6 +149,10 @@ pub enum EffectCommand {
         id: EmitterId,
         start_time: f32,
         duration: f32,
+    },
+    SetEmitterStartReference {
+        id: EmitterId,
+        reference: Option<MarkerTimeReference>,
     },
     SetEmitterCapacity {
         id: EmitterId,

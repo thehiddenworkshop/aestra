@@ -11,7 +11,8 @@ use crate::timeline::{
 };
 use crate::*;
 use aestra_bevy::{
-    EffectAsset, EffectClip, EffectClipId, EffectParameter, MarkerId, ParameterId, ValueType,
+    EffectAsset, EffectClip, EffectClipId, EffectParameter, MarkerId, MarkerTimeReference,
+    ParameterId, ValueType,
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use bevy::{
@@ -53,6 +54,7 @@ impl Plugin for PropertiesPlugin {
             .add_observer(handle_emitter_scalar_change)
             .add_observer(handle_effect_clip_scalar_change)
             .add_observer(handle_marker_scalar_change)
+            .add_observer(handle_start_reference_offset_change)
             .add_observer(handle_effect_clip_parameter_integer_change)
             .add_observer(handle_effect_clip_parameter_scalar_change)
             .add_observer(handle_effect_clip_parameter_text_change)
@@ -78,6 +80,7 @@ impl Plugin for PropertiesPlugin {
                         sync_emitter_number_inputs,
                         sync_effect_clip_number_inputs,
                         sync_marker_number_inputs,
+                        sync_start_reference_offset_inputs,
                         sync_effect_clip_parameter_number_inputs,
                         sync_properties_number_inputs,
                         sync_properties_slider_inputs,
@@ -96,6 +99,12 @@ impl Plugin for PropertiesPlugin {
                     .in_set(PropertiesSet::Sync),
             );
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StartReferenceTarget {
+    Emitter(EmitterId),
+    EffectClip(EffectClipId),
 }
 
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
@@ -128,6 +137,10 @@ pub(crate) enum PropertiesAction {
     },
     DeleteEventLink(EventId),
     DeleteMarker(MarkerId),
+    SetStartReference {
+        target: StartReferenceTarget,
+        marker: Option<MarkerId>,
+    },
     RepairEffectClipSource {
         clip: EffectClipId,
         source: EffectAssetRef,
@@ -508,6 +521,9 @@ fn handle_properties_actions(
                             true,
                         );
                     }
+                    PropertiesAction::SetStartReference { target, marker } => {
+                        set_start_reference(&mut session, target, marker, &localizer);
+                    }
                     PropertiesAction::RepairEffectClipSource { clip, source } => {
                         let result = catalog
                             .as_deref()
@@ -791,7 +807,7 @@ pub(crate) fn focus_compiled_target(
 mod tests {
     use super::*;
     use crate::{EFFECT_PATH, EFFECT_SOURCE};
-    use aestra_bevy::EffectClipSeed;
+    use aestra_bevy::{EffectClipSeed, EffectMarker};
 
     fn test_localizer() -> Localizer {
         Localizer::new("en-US").unwrap()
@@ -1691,6 +1707,52 @@ mod tests {
     }
 
     #[test]
+    fn marker_offset_scrub_preserves_binding_and_commits_one_undoable_edit() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.selected_layer().id;
+        assert!(session.execute(
+            "Shorten emitter",
+            EffectCommand::SetEmitterTiming {
+                id: emitter,
+                start_time: 0.0,
+                duration: 1.0,
+            },
+            true,
+        ));
+        let marker = EffectMarker::new("Impact", 0.5);
+        let marker_id = marker.id;
+        assert!(session.execute(
+            "Add marker",
+            EffectCommand::AddMarker { marker, index: 0 },
+            true,
+        ));
+        set_start_reference(
+            &mut session,
+            StartReferenceTarget::Emitter(emitter),
+            Some(marker_id),
+            &test_localizer(),
+        );
+        let target = NumericScrubTarget::StartReferenceOffset(StartReferenceOffsetControl {
+            target: StartReferenceTarget::Emitter(emitter),
+        });
+        let original = session.selected_layer().start_reference.unwrap();
+
+        assert_eq!(numeric_scrub_step(target), 0.05);
+        assert!(preview_numeric_scrub(&mut session, target, 0.25));
+        assert_eq!(session.selected_layer().start_reference, Some(original));
+        commit_numeric_scrub(&mut session, target, 0.25, &test_localizer());
+        assert_eq!(
+            session.selected_layer().start_reference.unwrap().offset,
+            0.25
+        );
+        assert_eq!(session.selected_layer().start_time, 0.75);
+
+        session.undo();
+        assert_eq!(session.selected_layer().start_reference, Some(original));
+        assert_eq!(session.selected_layer().start_time, 0.0);
+    }
+
+    #[test]
     fn bounded_slider_commit_preserves_the_properties_tree_and_is_undoable() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
@@ -2302,6 +2364,22 @@ fn sync_marker_number_inputs(
     }
 }
 
+fn sync_start_reference_offset_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &StartReferenceOffsetControl), Added<StartReferenceOffsetControl>>,
+) {
+    for (entity, control) in &controls {
+        let reference = start_reference(&session, control.target);
+        if let Some(reference) = reference {
+            commands.trigger(UpdateNumberInput {
+                entity,
+                value: NumberInputValue::F32(reference.offset),
+            });
+        }
+    }
+}
+
 fn sync_effect_clip_parameter_number_inputs(
     mut commands: Commands,
     controls: Query<
@@ -2710,6 +2788,146 @@ fn handle_marker_scalar_change(
             id: control.0,
             time,
         },
+        true,
+    );
+}
+
+fn handle_start_reference_offset_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&StartReferenceOffsetControl>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let Some(mut reference) = start_reference(&session, control.target) else {
+        return;
+    };
+    let offset = normalize_start_reference_offset(&session, control.target, change.value);
+    if (reference.offset - offset).abs() <= f32::EPSILON {
+        return;
+    }
+    reference.offset = offset;
+    execute_start_reference(&mut session, control.target, Some(reference), &localizer);
+}
+
+fn start_reference(
+    session: &EditorSession,
+    target: StartReferenceTarget,
+) -> Option<MarkerTimeReference> {
+    match target {
+        StartReferenceTarget::Emitter(id) => session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == id)
+            .and_then(|emitter| emitter.start_reference),
+        StartReferenceTarget::EffectClip(id) => session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == id)
+            .and_then(|clip| clip.start_reference),
+    }
+}
+
+fn target_start_time(session: &EditorSession, target: StartReferenceTarget) -> Option<f32> {
+    match target {
+        StartReferenceTarget::Emitter(id) => session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == id)
+            .map(|emitter| emitter.start_time),
+        StartReferenceTarget::EffectClip(id) => session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == id)
+            .map(|clip| clip.start_time),
+    }
+}
+
+fn target_duration(session: &EditorSession, target: StartReferenceTarget) -> Option<f32> {
+    match target {
+        StartReferenceTarget::Emitter(id) => session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == id)
+            .map(|emitter| emitter.duration),
+        StartReferenceTarget::EffectClip(id) => session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == id)
+            .map(|clip| clip.duration),
+    }
+}
+
+fn normalize_start_reference_offset(
+    session: &EditorSession,
+    target: StartReferenceTarget,
+    offset: f32,
+) -> f32 {
+    let Some(reference) = start_reference(session, target) else {
+        return offset;
+    };
+    let Some(marker_time) = session
+        .effect
+        .markers
+        .iter()
+        .find(|marker| marker.id == reference.marker)
+        .map(|marker| marker.time)
+    else {
+        return offset;
+    };
+    let duration = target_duration(session, target).unwrap_or_default();
+    let min_offset = -marker_time;
+    let max_offset = session.effect.duration - duration - marker_time;
+    offset.clamp(min_offset, max_offset.max(min_offset))
+}
+
+fn set_start_reference(
+    session: &mut EditorSession,
+    target: StartReferenceTarget,
+    marker: Option<MarkerId>,
+    localizer: &Localizer,
+) {
+    let reference = marker.and_then(|marker| {
+        let start = target_start_time(session, target)?;
+        let marker_time = session
+            .effect
+            .markers
+            .iter()
+            .find(|candidate| candidate.id == marker)?
+            .time;
+        Some(MarkerTimeReference::new(marker, start - marker_time))
+    });
+    execute_start_reference(session, target, reference, localizer);
+}
+
+fn execute_start_reference(
+    session: &mut EditorSession,
+    target: StartReferenceTarget,
+    reference: Option<MarkerTimeReference>,
+    localizer: &Localizer,
+) {
+    let command = match target {
+        StartReferenceTarget::Emitter(id) => {
+            EffectCommand::SetEmitterStartReference { id, reference }
+        }
+        StartReferenceTarget::EffectClip(id) => {
+            EffectCommand::SetEffectClipStartReference { id, reference }
+        }
+    };
+    session.execute(
+        &localizer.text("properties-start-reference-command"),
+        command,
         true,
     );
 }
@@ -3267,6 +3485,7 @@ fn decorate_numeric_scrub_inputs(
                 With<EffectClipNumberControl>,
                 With<EffectClipParameterNumberControl>,
                 With<RendererNumberControl>,
+                With<StartReferenceOffsetControl>,
             )>,
         ),
     >,
@@ -3293,6 +3512,7 @@ fn begin_numeric_scrub(
     effect_clip_controls: Query<&EffectClipNumberControl>,
     effect_clip_parameter_controls: Query<&EffectClipParameterNumberControl>,
     renderer_controls: Query<&RendererNumberControl>,
+    start_reference_controls: Query<&StartReferenceOffsetControl>,
     parents: Query<&ChildOf>,
     session: Res<EditorSession>,
     mut state: ResMut<NumericScrubState>,
@@ -3310,6 +3530,7 @@ fn begin_numeric_scrub(
         &effect_clip_controls,
         &effect_clip_parameter_controls,
         &renderer_controls,
+        &start_reference_controls,
     ) else {
         return;
     };
@@ -3429,6 +3650,7 @@ fn resolve_numeric_scrub_target(
     effect_clip_controls: &Query<&EffectClipNumberControl>,
     effect_clip_parameter_controls: &Query<&EffectClipParameterNumberControl>,
     renderer_controls: &Query<&RendererNumberControl>,
+    start_reference_controls: &Query<&StartReferenceOffsetControl>,
 ) -> Option<(Entity, NumericScrubTarget)> {
     let mut candidate = entity;
     for _ in 0..4 {
@@ -3448,6 +3670,12 @@ fn resolve_numeric_scrub_target(
         }
         if let Ok(control) = renderer_controls.get(candidate) {
             return Some((candidate, NumericScrubTarget::Renderer(*control)));
+        }
+        if let Ok(control) = start_reference_controls.get(candidate) {
+            return Some((
+                candidate,
+                NumericScrubTarget::StartReferenceOffset(*control),
+            ));
         }
         candidate = parents.get(candidate).ok()?.parent();
     }
@@ -3503,6 +3731,7 @@ fn numeric_scrub_step(target: NumericScrubTarget) -> f32 {
             }
         }
         NumericScrubTarget::Renderer(control) => renderer_number_step(control),
+        NumericScrubTarget::StartReferenceOffset(_) => 0.05,
     }
 }
 
@@ -3525,6 +3754,9 @@ fn numeric_scrub_value(session: &EditorSession, target: NumericScrubTarget) -> O
             Some(control.values[control.component as usize])
         }
         NumericScrubTarget::Renderer(control) => renderer_number_input_value(session, control),
+        NumericScrubTarget::StartReferenceOffset(control) => {
+            start_reference(session, control.target).map(|reference| reference.offset)
+        }
     }
 }
 
@@ -3633,6 +3865,9 @@ fn normalize_numeric_scrub_value_with_multiplier(
         NumericScrubTarget::Renderer(RendererNumberControl::FlipbookFrameRate(_)) => {
             value.clamp(1.0, 120.0)
         }
+        NumericScrubTarget::StartReferenceOffset(control) => {
+            normalize_start_reference_offset(session, control.target, value)
+        }
     };
     round_numeric_scrub_value(target, normalized, multiplier)
 }
@@ -3728,6 +3963,22 @@ fn numeric_scrub_command(
         }
         NumericScrubTarget::Renderer(control) => {
             renderer_numeric_scrub_command(session, control, value)
+        }
+        NumericScrubTarget::StartReferenceOffset(control) => {
+            let mut reference = start_reference(session, control.target)?;
+            reference.offset = value;
+            Some(match control.target {
+                StartReferenceTarget::Emitter(id) => EffectCommand::SetEmitterStartReference {
+                    id,
+                    reference: Some(reference),
+                },
+                StartReferenceTarget::EffectClip(id) => {
+                    EffectCommand::SetEffectClipStartReference {
+                        id,
+                        reference: Some(reference),
+                    }
+                }
+            })
         }
     }
 }
@@ -3840,6 +4091,15 @@ fn commit_numeric_scrub(
         NumericScrubTarget::Renderer(RendererNumberControl::FlipbookFrameRate(renderer)) => {
             session.set_flipbook_frame_rate(renderer, value);
         }
+        NumericScrubTarget::StartReferenceOffset(_) => {
+            if let Some(command) = numeric_scrub_command(session, target, value) {
+                session.execute(
+                    localizer.text("properties-start-reference-command"),
+                    command,
+                    true,
+                );
+            }
+        }
     }
 }
 
@@ -3865,6 +4125,7 @@ fn commit_bounded_slider(
         NumericScrubTarget::Emitter(_) => "Changed emitter value".into(),
         NumericScrubTarget::EffectClip(_) => "Changed effect clip transform".into(),
         NumericScrubTarget::EffectClipParameter(_) => "Changed instance parameter".into(),
+        NumericScrubTarget::StartReferenceOffset(_) => "Changed marker offset".into(),
     };
     session.execute(label, command, false)
 }
@@ -4932,6 +5193,12 @@ fn spawn_effect_clip_properties(
         );
         spawn_read_only_card(stack, localizer.text("properties-effect-clip"), |card| {
             spawn_read_only_row(card, localizer.text("properties-source"), &source_name);
+            spawn_start_reference_controls(
+                card,
+                session,
+                StartReferenceTarget::EffectClip(clip.id),
+                localizer,
+            );
             let start = spawn_read_only_row(
                 card,
                 localizer.text("properties-start"),
@@ -5397,7 +5664,7 @@ pub(crate) fn spawn_properties(
                         |stack| {
                     spawn_document_controls(stack, session, localizer);
                     spawn_emitter_transform_controls(stack);
-                    spawn_emitter_timing_controls(stack);
+                    spawn_emitter_timing_controls(stack, session, localizer);
                     spawn_event_links(stack, session, localizer);
                     for stage in StackStage::ALL {
                         spawn_stage_header(stack, stage);
@@ -5882,7 +6149,107 @@ pub(crate) fn toggle_persisted_properties_section(
     true
 }
 
-fn spawn_emitter_timing_controls(parent: &mut ChildSpawnerCommands) {
+fn spawn_start_reference_controls(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    target: StartReferenceTarget,
+    localizer: &Localizer,
+) {
+    let reference = start_reference(session, target);
+    let fallback_marker = reference
+        .map(|reference| reference.marker)
+        .or_else(|| session.effect.markers.first().map(|marker| marker.id));
+    let mut mode_options = vec![ComboOption {
+        label: localizer.text("properties-start-mode-absolute"),
+        selected: reference.is_none(),
+        action: PropertiesAction::SetStartReference {
+            target,
+            marker: None,
+        },
+    }];
+    if let Some(marker) = fallback_marker {
+        mode_options.push(ComboOption {
+            label: localizer.text("properties-start-mode-marker"),
+            selected: reference.is_some(),
+            action: PropertiesAction::SetStartReference {
+                target,
+                marker: Some(marker),
+            },
+        });
+    }
+    let current_mode = if reference.is_some() {
+        localizer.text("properties-start-mode-marker")
+    } else {
+        localizer.text("properties-start-mode-absolute")
+    };
+    spawn_properties_combo_row(
+        parent,
+        &localizer.text("properties-start-mode"),
+        &current_mode,
+        &mode_options,
+        Some(&localizer.text("properties-start-mode-description")),
+    );
+
+    let Some(reference) = reference else {
+        return;
+    };
+    let marker_options = session
+        .effect
+        .markers
+        .iter()
+        .map(|marker| ComboOption {
+            label: marker.name.clone(),
+            selected: marker.id == reference.marker,
+            action: PropertiesAction::SetStartReference {
+                target,
+                marker: Some(marker.id),
+            },
+        })
+        .collect::<Vec<_>>();
+    let marker_name = session
+        .effect
+        .markers
+        .iter()
+        .find(|marker| marker.id == reference.marker)
+        .map_or_else(
+            || reference.marker.to_string(),
+            |marker| marker.name.clone(),
+        );
+    spawn_properties_combo_row(
+        parent,
+        &localizer.text("properties-start-marker"),
+        &marker_name,
+        &marker_options,
+        Some(&localizer.text("properties-start-marker-description")),
+    );
+    crate::feathers::field_row::spawn_field_row(
+        parent,
+        crate::feathers::field_row::FieldRowProps::new(localizer.text("properties-start-offset"))
+            .with_control_min_width(150.0),
+        EditorTooltip::description(localizer.text("properties-start-offset-description")),
+        |controls| {
+            controls
+                .spawn_empty()
+                .apply_scene(ui_shell::feathers_scalar_input())
+                .insert((
+                    StartReferenceOffsetControl { target },
+                    AccessibleLabel(localizer.text("properties-start-offset")),
+                ));
+        },
+    );
+}
+
+fn spawn_emitter_timing_controls(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
+    spawn_start_reference_controls(
+        parent,
+        session,
+        StartReferenceTarget::Emitter(session.selected_layer().id),
+        localizer,
+    );
     parent
         .spawn((
             EditorTooltip::description("Start offset and active duration for this emitter."),
@@ -7793,6 +8160,11 @@ enum DocumentTextControl {
 struct MarkerNumberControl(MarkerId);
 
 #[derive(Component, Debug, Clone, Copy)]
+struct StartReferenceOffsetControl {
+    target: StartReferenceTarget,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
 enum DocumentToggleControl {
     EmitterEnabled,
 }
@@ -7810,6 +8182,7 @@ enum NumericScrubTarget {
     EffectClip(EffectClipNumberControl),
     EffectClipParameter(EffectClipParameterScrubControl),
     Renderer(RendererNumberControl),
+    StartReferenceOffset(StartReferenceOffsetControl),
 }
 
 #[derive(Debug, Clone, Copy)]

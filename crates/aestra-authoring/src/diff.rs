@@ -275,13 +275,22 @@ fn diff_emitter(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticCha
             format!("{:?}", after.transform),
         );
     }
-    if before.start_time != after.start_time || before.duration != after.duration {
+    if before.start_time != after.start_time
+        || before.start_reference != after.start_reference
+        || before.duration != after.duration
+    {
         modified(
             changes,
             target,
             "emitter.timing",
-            format!("{}..{}", before.start_time, before.duration),
-            format!("{}..{}", after.start_time, after.duration),
+            format!(
+                "{} ({:?})..{}",
+                before.start_time, before.start_reference, before.duration
+            ),
+            format!(
+                "{} ({:?})..{}",
+                after.start_time, after.start_reference, after.duration
+            ),
         );
     }
     if before.max_particles != after.max_particles {

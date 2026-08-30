@@ -173,6 +173,7 @@ fn migrate_v2_emitter(
         display_color: None,
         transform: EmitterTransform::default(),
         start_time: emitter.start_time,
+        start_reference: None,
         duration: emitter.duration,
         max_particles: emitter.max_particles,
         simulation_domain: emitter.simulation_domain,

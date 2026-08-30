@@ -175,6 +175,20 @@ fn apply_command(
         EffectCommand::SetMarkerTime { id, time } => {
             let marker = marker_mut(effect, *id)?;
             let previous = std::mem::replace(&mut marker.time, *time);
+            for emitter in &mut effect.emitters {
+                if let Some(reference) = emitter.start_reference
+                    && reference.marker == *id
+                {
+                    emitter.start_time = *time + reference.offset;
+                }
+            }
+            for clip in &mut effect.effect_clips {
+                if let Some(reference) = clip.start_reference
+                    && reference.marker == *id
+                {
+                    clip.start_time = *time + reference.offset;
+                }
+            }
             vec![EffectCommand::SetMarkerTime {
                 id: *id,
                 time: previous,
@@ -208,9 +222,19 @@ fn apply_command(
             source_offset,
             duration,
         } => {
+            let marker_time = effect
+                .effect_clips
+                .iter()
+                .find(|clip| clip.id == *id)
+                .and_then(|clip| clip.start_reference)
+                .map(|reference| marker_time(effect, reference.marker))
+                .transpose()?;
             let clip = effect_clip_mut(effect, *id)?;
             let previous = (clip.start_time, clip.source_offset, clip.duration);
             clip.start_time = *start_time;
+            if let (Some(reference), Some(marker_time)) = (&mut clip.start_reference, marker_time) {
+                reference.offset = *start_time - marker_time;
+            }
             clip.source_offset = *source_offset;
             clip.duration = *duration;
             vec![EffectCommand::SetEffectClipTiming {
@@ -219,6 +243,32 @@ fn apply_command(
                 source_offset: previous.1,
                 duration: previous.2,
             }]
+        }
+        EffectCommand::SetEffectClipStartReference { id, reference } => {
+            let resolved = reference
+                .map(|reference| {
+                    marker_time(effect, reference.marker).map(|time| time + reference.offset)
+                })
+                .transpose()?;
+            let clip = effect_clip_mut(effect, *id)?;
+            let previous_reference = clip.start_reference;
+            let previous_timing = (clip.start_time, clip.source_offset, clip.duration);
+            clip.start_reference = *reference;
+            if let Some(resolved) = resolved {
+                clip.start_time = resolved;
+            }
+            vec![
+                EffectCommand::SetEffectClipStartReference {
+                    id: *id,
+                    reference: previous_reference,
+                },
+                EffectCommand::SetEffectClipTiming {
+                    id: *id,
+                    start_time: previous_timing.0,
+                    source_offset: previous_timing.1,
+                    duration: previous_timing.2,
+                },
+            ]
         }
         EffectCommand::SetEffectClipSeed { id, seed } => {
             let clip = effect_clip_mut(effect, *id)?;
@@ -452,15 +502,52 @@ fn apply_command(
             start_time,
             duration,
         } => {
+            let marker_time = effect
+                .emitters
+                .iter()
+                .find(|emitter| emitter.id == *id)
+                .and_then(|emitter| emitter.start_reference)
+                .map(|reference| marker_time(effect, reference.marker))
+                .transpose()?;
             let emitter = emitter_mut(effect, *id)?;
             let previous = (emitter.start_time, emitter.duration);
             emitter.start_time = *start_time;
+            if let (Some(reference), Some(marker_time)) =
+                (&mut emitter.start_reference, marker_time)
+            {
+                reference.offset = *start_time - marker_time;
+            }
             emitter.duration = *duration;
             vec![EffectCommand::SetEmitterTiming {
                 id: *id,
                 start_time: previous.0,
                 duration: previous.1,
             }]
+        }
+        EffectCommand::SetEmitterStartReference { id, reference } => {
+            let resolved = reference
+                .map(|reference| {
+                    marker_time(effect, reference.marker).map(|time| time + reference.offset)
+                })
+                .transpose()?;
+            let emitter = emitter_mut(effect, *id)?;
+            let previous_reference = emitter.start_reference;
+            let previous_timing = (emitter.start_time, emitter.duration);
+            emitter.start_reference = *reference;
+            if let Some(resolved) = resolved {
+                emitter.start_time = resolved;
+            }
+            vec![
+                EffectCommand::SetEmitterStartReference {
+                    id: *id,
+                    reference: previous_reference,
+                },
+                EffectCommand::SetEmitterTiming {
+                    id: *id,
+                    start_time: previous_timing.0,
+                    duration: previous_timing.1,
+                },
+            ]
         }
         EffectCommand::SetEmitterCapacity { id, max_particles } => {
             let emitter = emitter_mut(effect, *id)?;
@@ -968,6 +1055,15 @@ fn marker_index(effect: &EffectAsset, id: aestra_core::MarkerId) -> Result<usize
         .markers
         .iter()
         .position(|marker| marker.id == id)
+        .ok_or_else(|| not_found("marker", &id))
+}
+
+fn marker_time(effect: &EffectAsset, id: aestra_core::MarkerId) -> Result<f32, CommandError> {
+    effect
+        .markers
+        .iter()
+        .find(|marker| marker.id == id)
+        .map(|marker| marker.time)
         .ok_or_else(|| not_found("marker", &id))
 }
 

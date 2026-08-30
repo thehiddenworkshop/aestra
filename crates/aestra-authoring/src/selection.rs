@@ -151,6 +151,31 @@ impl LockState {
             }
         }
 
+        if let EffectCommand::SetMarkerTime { id, .. } = command {
+            for emitter in &effect.emitters {
+                if emitter
+                    .start_reference
+                    .is_some_and(|reference| reference.marker == *id)
+                {
+                    let target = SemanticTarget::Emitter(emitter.id);
+                    if self.is_locked(target) {
+                        return Some(target);
+                    }
+                }
+            }
+            for clip in &effect.effect_clips {
+                if clip
+                    .start_reference
+                    .is_some_and(|reference| reference.marker == *id)
+                {
+                    let target = SemanticTarget::EffectClip(clip.id);
+                    if self.is_locked(target) {
+                        return Some(target);
+                    }
+                }
+            }
+        }
+
         if let EffectCommand::SetModuleParameter {
             emitter,
             module,
@@ -307,6 +332,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         EffectCommand::RemoveEffectClip { id }
         | EffectCommand::MoveEffectClip { id, .. }
         | EffectCommand::SetEffectClipTiming { id, .. }
+        | EffectCommand::SetEffectClipStartReference { id, .. }
         | EffectCommand::SetEffectClipSeed { id, .. }
         | EffectCommand::SetEffectClipSource { id, .. }
         | EffectCommand::SetEffectClipTransform { id, .. }
@@ -327,6 +353,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetEmitterDisplayColor { id, .. }
         | EffectCommand::SetEmitterTransform { id, .. }
         | EffectCommand::SetEmitterTiming { id, .. }
+        | EffectCommand::SetEmitterStartReference { id, .. }
         | EffectCommand::SetEmitterCapacity { id, .. } => {
             (Some(*id), Some(SemanticTarget::Emitter(*id)))
         }

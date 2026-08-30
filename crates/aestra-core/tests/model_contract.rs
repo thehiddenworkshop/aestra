@@ -1,8 +1,8 @@
 use aestra_core::{
     AssetDefinition, DiagnosticCode, EffectAsset, EffectClip, EffectClipSeed, EffectId,
     EffectMarker, EffectParameter, Emitter, EmitterId, EmitterShape, EmitterTransform,
-    FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE, MaterialProperties, ModuleParameters,
-    ParameterId, RendererInstance, ScalarRange, Value,
+    FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE, MarkerTimeReference, MaterialProperties,
+    ModuleParameters, ParameterId, RendererInstance, ScalarRange, Value,
 };
 
 #[test]
@@ -41,6 +41,49 @@ fn timeline_markers_round_trip_and_validate_the_effect_range() {
             .any(|diagnostic| {
                 diagnostic.code == DiagnosticCode::InvalidValue
                     && diagnostic.path == "effect.markers[0].time"
+            })
+    );
+}
+
+#[test]
+fn marker_relative_starts_round_trip_and_reject_missing_or_stale_resolution() {
+    let mut effect = EffectAsset::new("Relative", 2.0);
+    let marker = EffectMarker::new("Impact", 0.75);
+    let marker_id = marker.id;
+    effect.markers.push(marker);
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
+    emitter.start_time = 1.0;
+    emitter.start_reference = Some(MarkerTimeReference::new(marker_id, 0.25));
+    effect.emitters.push(emitter);
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+    assert_eq!(decoded, effect);
+    assert!(decoded.validation_report().is_valid());
+
+    effect.emitters[0].start_time = 1.1;
+    assert!(
+        effect
+            .validation_report()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.code == DiagnosticCode::InvalidTiming
+                    && diagnostic.path == "effect.emitters[0].start_reference"
+            })
+    );
+
+    effect.emitters[0].start_time = 1.0;
+    effect.emitters[0].start_reference =
+        Some(MarkerTimeReference::new(aestra_core::MarkerId::new(), 0.25));
+    assert!(
+        effect
+            .validation_report()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.code == DiagnosticCode::InvalidReference
+                    && diagnostic.path == "effect.emitters[0].start_reference.marker"
             })
     );
 }

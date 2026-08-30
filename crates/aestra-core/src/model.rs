@@ -158,6 +158,13 @@ impl EffectAsset {
         for (index, emitter) in self.emitters.iter().enumerate() {
             let emitter_path = format!("effect.emitters[{index}]");
             emitter.validate(&emitter_path, self.duration, &mut report, &mut semantic_ids);
+            validate_marker_time_reference(
+                emitter.start_reference,
+                emitter.start_time,
+                &format!("{emitter_path}.start_reference"),
+                self,
+                &mut report,
+            );
             for (renderer_index, renderer) in emitter.renderers.iter().enumerate() {
                 let path = format!("{emitter_path}.renderers[{renderer_index}].material");
                 match self
@@ -447,6 +454,73 @@ pub struct EffectMarker {
     pub time: f32,
 }
 
+/// Optional semantic anchor for an emitter or effect-clip start time.
+///
+/// `start_time` remains the resolved value consumed by runtimes; authoring commands keep it in
+/// sync with `marker + offset` so existing compiled/runtime representations stay deterministic.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct MarkerTimeReference {
+    pub marker: MarkerId,
+    pub offset: f32,
+}
+
+impl MarkerTimeReference {
+    pub const fn new(marker: MarkerId, offset: f32) -> Self {
+        Self { marker, offset }
+    }
+}
+
+fn validate_marker_time_reference(
+    reference: Option<MarkerTimeReference>,
+    resolved_time: f32,
+    path: &str,
+    owner: &EffectAsset,
+    report: &mut ValidationReport,
+) {
+    let Some(reference) = reference else {
+        return;
+    };
+    let Some(marker) = owner
+        .markers
+        .iter()
+        .find(|marker| marker.id == reference.marker)
+    else {
+        report.push(Diagnostic::error(
+            DiagnosticCode::InvalidReference,
+            format!("{path}.marker"),
+            format!(
+                "start timing references missing marker {}",
+                reference.marker
+            ),
+        ));
+        return;
+    };
+    if !reference.offset.is_finite() {
+        report.push(Diagnostic::error(
+            DiagnosticCode::InvalidTiming,
+            format!("{path}.offset"),
+            "marker-relative offset must be finite",
+        ));
+        return;
+    }
+    let expected = marker.time + reference.offset;
+    if !expected.is_finite() || expected < 0.0 {
+        report.push(Diagnostic::error(
+            DiagnosticCode::InvalidTiming,
+            path,
+            "marker-relative start must resolve to a finite, non-negative time",
+        ));
+    } else if (expected - resolved_time).abs() > 1.0e-4 {
+        report.push(Diagnostic::error(
+            DiagnosticCode::InvalidTiming,
+            path,
+            format!(
+                "resolved start time {resolved_time} does not match marker-relative time {expected}"
+            ),
+        ));
+    }
+}
+
 impl EffectMarker {
     pub fn new(name: impl Into<String>, time: f32) -> Self {
         Self {
@@ -551,6 +625,8 @@ pub struct EffectClip {
     pub id: EffectClipId,
     pub source: EffectAssetRef,
     pub start_time: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_reference: Option<MarkerTimeReference>,
     pub source_offset: f32,
     pub duration: f32,
     /// Non-destructive transform applied to the complete referenced effect instance.
@@ -569,6 +645,7 @@ impl EffectClip {
             id: EffectClipId::new(),
             source: source.into(),
             start_time,
+            start_reference: None,
             source_offset: 0.0,
             duration,
             transform: EmitterTransform::default(),
@@ -624,6 +701,13 @@ impl EffectClip {
                 "effect clip start time must be finite and non-negative",
             ));
         }
+        validate_marker_time_reference(
+            self.start_reference,
+            self.start_time,
+            &format!("{path}.start_reference"),
+            owner,
+            report,
+        );
         if !self.source_offset.is_finite() || self.source_offset < 0.0 {
             report.push(Diagnostic::error(
                 DiagnosticCode::InvalidTiming,
@@ -684,6 +768,8 @@ pub struct Emitter {
     pub display_color: Option<[f32; 4]>,
     pub transform: EmitterTransform,
     pub start_time: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_reference: Option<MarkerTimeReference>,
     pub duration: f32,
     pub max_particles: u32,
     pub simulation_domain: SimulationDomain,
@@ -737,6 +823,7 @@ impl Emitter {
             display_color: None,
             transform: EmitterTransform::default(),
             start_time: 0.0,
+            start_reference: None,
             duration,
             max_particles: 128,
             simulation_domain: SimulationDomain::Particle,

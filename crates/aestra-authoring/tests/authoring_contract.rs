@@ -5,8 +5,8 @@ use aestra_authoring::{
 use aestra_core::{
     BlendMode, ColorKey, CurveKey, EffectAsset, EffectAssetRef, EffectClip, EffectClipSeed,
     EffectId, EffectMarker, EffectParameter, Emitter, EmitterTransform, EventId, EventLink,
-    EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, ParameterId, ScalarRange,
-    Value,
+    EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, MarkerTimeReference,
+    ParameterId, ScalarRange, Value,
 };
 
 fn test_effect() -> EffectAsset {
@@ -76,6 +76,128 @@ fn timeline_markers_are_stable_undoable_semantic_objects() {
             target: SemanticTarget::Marker(locked)
         }) if locked == id
     ));
+}
+
+#[test]
+fn marker_relative_starts_follow_markers_and_timeline_edits_preserve_binding() {
+    let mut effect = test_effect();
+    let marker = EffectMarker::new("Impact", 0.5);
+    let marker_id = marker.id;
+    effect.markers.push(marker);
+    let emitter = effect.emitters[0].id;
+    let clip = EffectClip::new(EffectId::from_u128(0xC11D), 0.4, 0.5);
+    let clip_id = clip.id;
+    effect.effect_clips.push(clip);
+    let mut history = CommandHistory::default();
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::new(
+                "Bind starts",
+                vec![
+                    EffectCommand::SetEmitterTiming {
+                        id: emitter,
+                        start_time: 0.0,
+                        duration: 1.0,
+                    },
+                    EffectCommand::SetEmitterStartReference {
+                        id: emitter,
+                        reference: Some(MarkerTimeReference::new(marker_id, -0.25)),
+                    },
+                    EffectCommand::SetEffectClipStartReference {
+                        id: clip_id,
+                        reference: Some(MarkerTimeReference::new(marker_id, 0.1)),
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+    assert_eq!(effect.emitters[0].start_time, 0.25);
+    assert!((effect.effect_clips[0].start_time - 0.6).abs() < 0.000_1);
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Move marker",
+                EffectCommand::SetMarkerTime {
+                    id: marker_id,
+                    time: 0.8,
+                },
+            ),
+        )
+        .unwrap();
+    assert!((effect.emitters[0].start_time - 0.55).abs() < 0.000_1);
+    assert!((effect.effect_clips[0].start_time - 0.9).abs() < 0.000_1);
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Drag bound emitter",
+                EffectCommand::SetEmitterTiming {
+                    id: emitter,
+                    start_time: 0.7,
+                    duration: 1.0,
+                },
+            ),
+        )
+        .unwrap();
+    assert!((effect.emitters[0].start_reference.unwrap().offset + 0.1).abs() < 0.000_1);
+
+    CommandExecutor::execute(
+        &mut effect,
+        &LockState::default(),
+        &EffectTransaction::single(
+            "Move marker again",
+            EffectCommand::SetMarkerTime {
+                id: marker_id,
+                time: 1.0,
+            },
+        ),
+    )
+    .unwrap();
+    assert!((effect.emitters[0].start_time - 0.9).abs() < 0.000_1);
+    assert!((effect.effect_clips[0].start_time - 1.1).abs() < 0.000_1);
+
+    let before_locked_move = effect.clone();
+    let mut locks = LockState::default();
+    locks.lock(SemanticTarget::Emitter(emitter));
+    assert!(matches!(
+        CommandExecutor::execute(
+            &mut effect,
+            &locks,
+            &EffectTransaction::single(
+                "Move marker with locked binding",
+                EffectCommand::SetMarkerTime {
+                    id: marker_id,
+                    time: 0.9,
+                },
+            ),
+        ),
+        Err(CommandError::Locked {
+            target: SemanticTarget::Emitter(locked)
+        }) if locked == emitter
+    ));
+    assert_eq!(effect, before_locked_move);
+
+    let before = effect.clone();
+    assert!(matches!(
+        CommandExecutor::execute(
+            &mut effect,
+            &LockState::default(),
+            &EffectTransaction::single(
+                "Delete referenced marker",
+                EffectCommand::RemoveMarker { id: marker_id },
+            ),
+        ),
+        Err(CommandError::Validation(_))
+    ));
+    assert_eq!(effect, before);
 }
 
 #[test]

@@ -2375,7 +2375,7 @@ After the MVP:
 - [x] The user can add, select, rename, move, and delete named markers with snapping and undo/redo.
 - [x] Nested EffectClips can be expanded for read-only source inspection.
 - [x] Breadcrumb navigation clearly indicates nested source editing.
-- [ ] Effect markers can be referenced by child clip timing.
+- [x] Effect markers can drive emitter and child clip start timing with an authored offset.
 - [ ] Timeline events are supported.
 - [ ] Automation lanes use the same semantic curves as the Curves editor.
 - [ ] `Create Reusable Effect from Selection` works.
@@ -2385,7 +2385,7 @@ After the MVP:
 - [ ] Timeline panel can be maximized.
 - [ ] Curated workspaces are available.
 - [ ] Track controls expose authored Enabled plus clearly defined preview Solo/Lock state; Mute is added only with explicit persistence semantics.
-- [ ] Marker-relative edits remain stable when marker times change.
+- [x] Marker-relative edits remain stable when marker times change.
 
 ---
 
