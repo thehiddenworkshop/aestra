@@ -143,6 +143,9 @@ fn main() {
 Each player receives an `EffectProfiler` component. It exposes measured CPU and
 particle statistics alongside compiler-estimated draw, dispatch, and buffer costs;
 unsupported measurements such as GPU time remain explicitly unavailable.
+Timed semantic notifications are emitted as `AestraChoreographyEvent` observer events. Their
+typed payloads are intentionally distinct from emitter-to-emitter particle lifecycle links, so
+gameplay, audio, and camera systems can subscribe without polling playback time.
 Texture paths in an effect's asset registry are relative to the consuming Bevy
 application's `AssetPlugin` root. Missing files use a visible checkerboard fallback
 and are reported through the effect profile instead of silently removing the draw.

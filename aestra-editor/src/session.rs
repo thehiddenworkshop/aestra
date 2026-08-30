@@ -788,6 +788,26 @@ impl EditorSession {
         true
     }
 
+    pub fn select_choreography_event(&mut self, id: aestra_bevy::ChoreographyEventId) -> bool {
+        let Some(event) = self
+            .effect
+            .choreography_events
+            .iter()
+            .find(|event| event.id == id)
+        else {
+            self.status = "Choreography event no longer exists".into();
+            return false;
+        };
+        if self.selection.primary == aestra_authoring::SemanticTarget::ChoreographyEvent(id) {
+            return false;
+        }
+        let name = event.name.clone();
+        self.selection.select_choreography_event(id);
+        self.status = format!("Selected choreography event {name}");
+        self.ui_revision += 1;
+        true
+    }
+
     pub fn add_layer(&mut self) {
         let index = self.effect.emitters.len();
         let mut emitter = default_layer(index);

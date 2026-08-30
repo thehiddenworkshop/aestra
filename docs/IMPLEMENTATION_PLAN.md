@@ -104,9 +104,11 @@ architecture vision; this file is the shorter delivery plan.
   property-level public toggles, in-place source defaults, instance overrides, and
   reset-to-source. Explode now replaces a referenced clip with editable local emitters, imports
   the resources they require, bakes valid instance overrides, and preserves the clip's visible
-  timing and transform in one undoable transaction. Usage graphs, reusable extraction,
+  timing and transform in one undoable transaction. Named timeline markers now provide stable,
+  marker-relative anchors for emitters, clips, and choreography events. Typed choreography events
+  have a dedicated timeline lane, transactional Properties editing, compiler artifacts, and
+  deterministic interval dispatch across loop boundaries. Usage graphs, reusable extraction,
   preview-cache identity,
-  markers/events,
   procedural recipes, mesh/ribbon production paths, renderer sorting, and richer material domains
   remain.
 

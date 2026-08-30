@@ -189,9 +189,89 @@ fn apply_command(
                     clip.start_time = *time + reference.offset;
                 }
             }
+            for event in &mut effect.choreography_events {
+                if let Some(reference) = event.time_reference
+                    && reference.marker == *id
+                {
+                    event.time = *time + reference.offset;
+                }
+            }
             vec![EffectCommand::SetMarkerTime {
                 id: *id,
                 time: previous,
+            }]
+        }
+        EffectCommand::AddChoreographyEvent { event, index } => {
+            checked_insert(
+                &mut effect.choreography_events,
+                *index,
+                event.clone(),
+                "choreography events",
+            )?;
+            vec![EffectCommand::RemoveChoreographyEvent { id: event.id }]
+        }
+        EffectCommand::RemoveChoreographyEvent { id } => {
+            let index = choreography_event_index(effect, *id)?;
+            let event = effect.choreography_events.remove(index);
+            vec![EffectCommand::AddChoreographyEvent { event, index }]
+        }
+        EffectCommand::SetChoreographyEventName { id, name } => {
+            let event = choreography_event_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut event.name, name.clone());
+            vec![EffectCommand::SetChoreographyEventName {
+                id: *id,
+                name: previous,
+            }]
+        }
+        EffectCommand::SetChoreographyEventTime { id, time } => {
+            let marker_time = effect
+                .choreography_events
+                .iter()
+                .find(|event| event.id == *id)
+                .and_then(|event| event.time_reference)
+                .map(|reference| marker_time(effect, reference.marker))
+                .transpose()?;
+            let event = choreography_event_mut(effect, *id)?;
+            let previous = event.time;
+            event.time = *time;
+            if let (Some(reference), Some(marker_time)) = (&mut event.time_reference, marker_time) {
+                reference.offset = *time - marker_time;
+            }
+            vec![EffectCommand::SetChoreographyEventTime {
+                id: *id,
+                time: previous,
+            }]
+        }
+        EffectCommand::SetChoreographyEventTimeReference { id, reference } => {
+            let resolved = reference
+                .map(|reference| {
+                    marker_time(effect, reference.marker).map(|time| time + reference.offset)
+                })
+                .transpose()?;
+            let event = choreography_event_mut(effect, *id)?;
+            let previous_reference = event.time_reference;
+            let previous_time = event.time;
+            event.time_reference = *reference;
+            if let Some(resolved) = resolved {
+                event.time = resolved;
+            }
+            vec![
+                EffectCommand::SetChoreographyEventTimeReference {
+                    id: *id,
+                    reference: previous_reference,
+                },
+                EffectCommand::SetChoreographyEventTime {
+                    id: *id,
+                    time: previous_time,
+                },
+            ]
+        }
+        EffectCommand::SetChoreographyEventPayload { id, payload } => {
+            let event = choreography_event_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut event.payload, payload.clone());
+            vec![EffectCommand::SetChoreographyEventPayload {
+                id: *id,
+                payload: previous,
             }]
         }
         EffectCommand::AddEffectClip { clip, index } => {
@@ -1056,6 +1136,28 @@ fn marker_index(effect: &EffectAsset, id: aestra_core::MarkerId) -> Result<usize
         .iter()
         .position(|marker| marker.id == id)
         .ok_or_else(|| not_found("marker", &id))
+}
+
+fn choreography_event_index(
+    effect: &EffectAsset,
+    id: aestra_core::ChoreographyEventId,
+) -> Result<usize, CommandError> {
+    effect
+        .choreography_events
+        .iter()
+        .position(|event| event.id == id)
+        .ok_or_else(|| not_found("choreography event", &id))
+}
+
+fn choreography_event_mut(
+    effect: &mut EffectAsset,
+    id: aestra_core::ChoreographyEventId,
+) -> Result<&mut aestra_core::ChoreographyEvent, CommandError> {
+    effect
+        .choreography_events
+        .iter_mut()
+        .find(|event| event.id == id)
+        .ok_or_else(|| not_found("choreography event", &id))
 }
 
 fn marker_time(effect: &EffectAsset, id: aestra_core::MarkerId) -> Result<f32, CommandError> {

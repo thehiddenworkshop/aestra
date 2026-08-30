@@ -2376,7 +2376,9 @@ After the MVP:
 - [x] Nested EffectClips can be expanded for read-only source inspection.
 - [x] Breadcrumb navigation clearly indicates nested source editing.
 - [x] Effect markers can drive emitter and child clip start timing with an authored offset.
-- [ ] Timeline events are supported.
+- [x] Timeline events are first-class, typed, marker-relative choreography objects with a
+      dedicated lane, transactional editing, Properties controls, and deterministic runtime
+      dispatch.
 - [ ] Automation lanes use the same semantic curves as the Curves editor.
 - [ ] `Create Reusable Effect from Selection` works.
 - [ ] Reusable emitter extraction works.

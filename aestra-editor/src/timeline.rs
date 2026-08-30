@@ -15,8 +15,9 @@ use crate::{
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    ChoreographyTrackId, EffectAsset, EffectAssetRef, EffectClip, EffectClipId, EffectMarker,
-    Emitter, EmitterId, MarkerId,
+    ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload, ChoreographyTrackId,
+    EffectAsset, EffectAssetRef, EffectClip, EffectClipId, EffectMarker, Emitter, EmitterId,
+    MarkerId,
 };
 #[cfg(test)]
 use bevy::ui_widgets::{ControlOrientation, Scrollbar};
@@ -100,6 +101,7 @@ impl Plugin for TimelinePlugin {
                     update_timeline_time_label,
                     update_timeline_visuals,
                     update_timeline_marker_visuals,
+                    update_choreography_event_visuals,
                     update_effect_clip_visuals,
                     update_effect_drop_insertion,
                     sync_effect_drop_track_gap,
@@ -126,6 +128,8 @@ pub(crate) enum TimelineAction {
     FrameAll,
     AddMarker,
     SelectMarker(MarkerId),
+    AddChoreographyEvent,
+    SelectChoreographyEvent(ChoreographyEventId),
 }
 
 #[derive(Component, Event, Debug, Clone, PartialEq, Eq)]
@@ -333,6 +337,28 @@ fn execute_timeline_action(
         }
         TimelineAction::SelectMarker(id) => {
             session.select_marker(id);
+            state.inspected_child = None;
+        }
+        TimelineAction::AddChoreographyEvent => {
+            let index = session.effect.choreography_events.len();
+            let event = ChoreographyEvent::new(
+                format!("Event {}", index + 1),
+                session.time(),
+                ChoreographyEventPayload::GameplayNotify {
+                    topic: String::new(),
+                },
+            );
+            let id = event.id;
+            if session.execute(
+                "Added choreography event",
+                EffectCommand::AddChoreographyEvent { event, index },
+                true,
+            ) {
+                session.select_choreography_event(id);
+            }
+        }
+        TimelineAction::SelectChoreographyEvent(id) => {
+            session.select_choreography_event(id);
             state.inspected_child = None;
         }
     }
@@ -1884,6 +1910,7 @@ mod tests {
     #[test]
     fn add_marker_action_creates_and_selects_one_undoable_marker() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let initial_count = session.effect.markers.len();
         session.seek_time(0.75);
         let mut app = App::new();
         app.insert_resource(session)
@@ -1895,11 +1922,42 @@ mod tests {
         app.update();
 
         let session = app.world().resource::<EditorSession>();
-        assert_eq!(session.effect.markers.len(), 1);
-        let marker = &session.effect.markers[0];
-        assert_eq!(marker.name, "Marker 1");
+        assert_eq!(session.effect.markers.len(), initial_count + 1);
+        let marker = session.effect.markers.last().unwrap();
+        assert_eq!(marker.name, format!("Marker {}", initial_count + 1));
         assert!((marker.time - 0.75).abs() < 0.000_1);
         assert_eq!(session.selection.primary, SemanticTarget::Marker(marker.id));
+        assert!(session.can_undo());
+    }
+
+    #[test]
+    fn add_choreography_event_action_creates_and_selects_one_undoable_event() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let initial_count = session.effect.choreography_events.len();
+        session.seek_time(0.75);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(TimelineState::framed(2.8))
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(execute_timeline_action);
+
+        app.world_mut()
+            .trigger(TimelineAction::AddChoreographyEvent);
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.choreography_events.len(), initial_count + 1);
+        let event = session.effect.choreography_events.last().unwrap();
+        assert_eq!(event.name, format!("Event {}", initial_count + 1));
+        assert!((event.time - 0.75).abs() < 0.000_1);
+        assert!(matches!(
+            event.payload,
+            ChoreographyEventPayload::GameplayNotify { ref topic } if topic.is_empty()
+        ));
+        assert_eq!(
+            session.selection.primary,
+            SemanticTarget::ChoreographyEvent(event.id)
+        );
         assert!(session.can_undo());
     }
 
@@ -3071,6 +3129,35 @@ fn update_timeline_marker_visuals(
     }
 }
 
+fn update_choreography_event_visuals(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    mut events: Query<(&TimelineChoreographyEvent, &mut Node)>,
+) {
+    for (control, mut node) in &mut events {
+        let Some(event) = session
+            .effect
+            .choreography_events
+            .iter()
+            .find(|event| event.id == control.event)
+        else {
+            node.display = Display::None;
+            continue;
+        };
+        let time = state
+            .choreography_event_drag
+            .filter(|drag| drag.event == event.id)
+            .map_or(event.time, |drag| drag.current_time);
+        let position = state.view.normalized_time(time);
+        node.display = if (0.0..=1.0).contains(&position) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        node.left = Val::Percent(position.clamp(0.0, 1.0) * 100.0);
+    }
+}
+
 fn update_effect_clip_visuals(
     session: Res<EditorSession>,
     state: Res<TimelineState>,
@@ -3561,6 +3648,56 @@ fn snap_marker_time(
     }
 }
 
+fn snap_choreography_event_time(
+    candidate: f32,
+    event: ChoreographyEventId,
+    session: &EditorSession,
+    mode: TimelineSnapMode,
+    view: TimelineView,
+    canvas_width: f32,
+) -> (f32, Option<f32>) {
+    match mode {
+        TimelineSnapMode::None => (candidate, None),
+        TimelineSnapMode::Frames => {
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let snapped = (candidate / frame).round() * frame;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Seconds => {
+            let interval = nice_timeline_step(view.span(), canvas_width) / 5.0;
+            let snapped = (candidate / interval).round() * interval;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Smart => {
+            let threshold = view.span() / canvas_width.max(1.0) * 9.0;
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let mut targets = vec![
+                0.0,
+                session.playback_duration(),
+                session.time(),
+                (candidate / frame).round() * frame,
+            ];
+            targets.extend(session.effect.markers.iter().map(|marker| marker.time));
+            targets.extend(
+                session
+                    .effect
+                    .choreography_events
+                    .iter()
+                    .filter(|other| other.id != event)
+                    .map(|other| other.time),
+            );
+            let nearest = targets.into_iter().min_by(|left, right| {
+                (candidate - *left)
+                    .abs()
+                    .total_cmp(&(candidate - *right).abs())
+            });
+            nearest
+                .filter(|target| (candidate - *target).abs() <= threshold)
+                .map_or((candidate, None), |target| (target, Some(target)))
+        }
+    }
+}
+
 fn snap_effect_clip_moved_timing(
     start: f32,
     duration: f32,
@@ -3624,6 +3761,18 @@ struct TimelineMarker {
 #[derive(Clone, Copy, Debug)]
 struct TimelineMarkerDrag {
     marker: MarkerId,
+    original_time: f32,
+    current_time: f32,
+}
+
+#[derive(Component, Clone, Copy)]
+struct TimelineChoreographyEvent {
+    event: ChoreographyEventId,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TimelineChoreographyEventDrag {
+    event: ChoreographyEventId,
     original_time: f32,
     current_time: f32,
 }
@@ -3971,6 +4120,7 @@ pub(crate) struct TimelineState {
     drag: Option<TimelineDrag>,
     effect_clip_drag: Option<EffectClipTimelineDrag>,
     marker_drag: Option<TimelineMarkerDrag>,
+    choreography_event_drag: Option<TimelineChoreographyEventDrag>,
     snap_guide: Option<f32>,
     panning: bool,
     context_emitter: Option<EmitterId>,
@@ -4012,6 +4162,7 @@ impl TimelineState {
             drag: None,
             effect_clip_drag: None,
             marker_drag: None,
+            choreography_event_drag: None,
             snap_guide: None,
             panning: false,
             context_emitter: None,
@@ -5041,6 +5192,11 @@ pub(crate) fn spawn_timeline(
                         &localizer.text("timeline-add-marker"),
                         TimelineAction::AddMarker,
                     );
+                    mini_button(
+                        header,
+                        &localizer.text("timeline-add-event"),
+                        TimelineAction::AddChoreographyEvent,
+                    );
                     let snap_options = TimelineSnapMode::ALL
                         .into_iter()
                         .map(|mode| ComboOption {
@@ -5183,6 +5339,23 @@ pub(crate) fn spawn_timeline(
                                     localizer.text("edit-add-emitter"),
                                 );
                             });
+                        labels.spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                height: Val::Px(28.0),
+                                flex_shrink: 0.0,
+                                padding: UiRect::horizontal(Val::Px(8.0)),
+                                align_items: AlignItems::Center,
+                                border: UiRect::top(Val::Px(1.0)),
+                                ..default()
+                            },
+                            BorderColor::all(theme::BORDER),
+                        )).with_child((
+                            Text::new(localizer.text("timeline-events-lane")),
+                            TextFont { font_size: FontSize::Px(9.0), ..default() },
+                            TextColor(theme::TEXT_MUTED),
+                            Pickable::IGNORE,
+                        ));
                         labels
                             .spawn((
                                 TimelineVerticalPane::Headers,
@@ -5340,7 +5513,7 @@ pub(crate) fn spawn_timeline(
                             height: Val::Percent(100.0),
                             min_height: Val::Px(0.0),
                             position_type: PositionType::Relative,
-                            padding: UiRect::top(Val::Px(25.0)),
+                            padding: UiRect::top(Val::Px(53.0)),
                             flex_direction: FlexDirection::Column,
                             overflow: Overflow::clip(),
                             ..default()
@@ -5354,6 +5527,7 @@ pub(crate) fn spawn_timeline(
                     .observe(drop_project_effect_on_timeline)
                     .with_children(|tracks| {
                         spawn_ruler(tracks, session, localizer);
+                        spawn_choreography_event_lane(tracks, session, localizer);
                         vertical_scroll_target =
                             Some(
                                 tracks
@@ -6635,6 +6809,77 @@ fn spawn_ruler(parent: &mut ChildSpawnerCommands, session: &EditorSession, local
     }
 }
 
+fn spawn_choreography_event_lane(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                top: Val::Px(25.0),
+                height: Val::Px(28.0),
+                border: UiRect::vertical(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK.with_alpha(0.72)),
+            BorderColor::all(theme::BORDER),
+        ))
+        .with_children(|lane| {
+            for event in &session.effect.choreography_events {
+                let selected =
+                    session.selection.primary == SemanticTarget::ChoreographyEvent(event.id);
+                lane.spawn((
+                    Button,
+                    EditorNativeControl,
+                    TimelineChoreographyEvent { event: event.id },
+                    TimelineAction::SelectChoreographyEvent(event.id),
+                    AccessibleLabel(format!(
+                        "{} {}",
+                        localizer.text("timeline-event"),
+                        event.name
+                    )),
+                    EditorTooltip::description(format!("{} · {:.3}s", event.name, event.time)),
+                    EntityCursor::System(SystemCursorIcon::Grab),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        display: Display::None,
+                        left: Val::Percent(0.0),
+                        top: Val::Px(4.0),
+                        width: Val::Px(18.0),
+                        height: Val::Px(18.0),
+                        margin: UiRect::left(Val::Px(-9.0)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        border: UiRect::all(Val::Px(if selected { 2.0 } else { 1.0 })),
+                        border_radius: BorderRadius::all(Val::Px(3.0)),
+                        ..default()
+                    },
+                    BackgroundColor(if selected {
+                        theme::ACCENT
+                    } else {
+                        theme::ACCENT_DIM
+                    }),
+                    BorderColor::all(if selected { theme::TEXT } else { theme::ACCENT }),
+                    Text::new("◆"),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT),
+                ))
+                .observe(select_choreography_event)
+                .observe(stop_timeline_control_press)
+                .observe(begin_choreography_event_drag)
+                .observe(move_choreography_event_drag)
+                .observe(finish_choreography_event_drag);
+            }
+        });
+}
+
 fn navigate_timeline(
     mut wheel: MessageReader<MouseWheel>,
     mut motion: MessageReader<MouseMotion>,
@@ -6651,6 +6896,7 @@ fn navigate_timeline(
         if state.drag.take().is_some()
             | state.effect_clip_drag.take().is_some()
             | state.marker_drag.take().is_some()
+            | state.choreography_event_drag.take().is_some()
         {
             state.snap_guide = None;
             override_cursor.0 = None;
@@ -7871,7 +8117,7 @@ fn finish_timeline_marker_drag(
     **cursor = CursorIcon::System(SystemCursorIcon::Grab);
     if (drag.current_time - drag.original_time).abs() > 0.000_1 {
         session.execute(
-            &localizer.text("timeline-move-marker-command"),
+            localizer.text("timeline-move-marker-command"),
             EffectCommand::SetMarkerTime {
                 id: drag.marker,
                 time: drag.current_time,
@@ -7880,6 +8126,118 @@ fn finish_timeline_marker_drag(
         );
     }
     commands.trigger(TimelineAction::SelectMarker(drag.marker));
+}
+
+fn select_choreography_event(
+    mut click: On<Pointer<Click>>,
+    events: Query<&TimelineChoreographyEvent>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let Ok(event) = events.get(click.event_target()) else {
+        return;
+    };
+    commands.trigger(TimelineAction::SelectChoreographyEvent(event.event));
+    click.propagate(false);
+}
+
+fn begin_choreography_event_drag(
+    drag: On<Pointer<DragStart>>,
+    events: Query<&TimelineChoreographyEvent>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(control) = events.get(drag.event_target()) else {
+        return;
+    };
+    let Some(event) = session
+        .effect
+        .choreography_events
+        .iter()
+        .find(|event| event.id == control.event)
+    else {
+        return;
+    };
+    state.choreography_event_drag = Some(TimelineChoreographyEventDrag {
+        event: event.id,
+        original_time: event.time,
+        current_time: event.time,
+    });
+    override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
+    **cursor = CursorIcon::System(SystemCursorIcon::Grabbing);
+}
+
+fn move_choreography_event_drag(
+    mut drag_event: On<Pointer<Drag>>,
+    events: Query<&TimelineChoreographyEvent>,
+    canvases: Query<&ComputedNode, With<TimelineCanvas>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+) {
+    let Ok(control) = events.get(drag_event.event_target()) else {
+        return;
+    };
+    drag_event.propagate(false);
+    let Some(mut drag) = state.choreography_event_drag else {
+        return;
+    };
+    if drag.event != control.event {
+        return;
+    }
+    let width = canvases
+        .iter()
+        .map(|canvas| canvas.size().x)
+        .fold(0.0, f32::max)
+        .max(1.0);
+    let logical_distance = screen_distance_to_logical(drag_event.distance.x, window.scale_factor());
+    let candidate = (drag.original_time + logical_distance / width * state.view.span())
+        .clamp(0.0, session.playback_duration());
+    let (time, guide) = snap_choreography_event_time(
+        candidate, drag.event, &session, state.snap, state.view, width,
+    );
+    drag.current_time = time.clamp(0.0, session.playback_duration());
+    state.choreography_event_drag = Some(drag);
+    state.snap_guide = guide;
+}
+
+fn finish_choreography_event_drag(
+    drag_event: On<Pointer<DragEnd>>,
+    events: Query<&TimelineChoreographyEvent>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    mut commands: Commands,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(control) = events.get(drag_event.event_target()) else {
+        return;
+    };
+    let Some(drag) = state.choreography_event_drag.take() else {
+        return;
+    };
+    if drag.event != control.event {
+        state.choreography_event_drag = Some(drag);
+        return;
+    }
+    state.snap_guide = None;
+    override_cursor.0 = None;
+    **cursor = CursorIcon::System(SystemCursorIcon::Grab);
+    if (drag.current_time - drag.original_time).abs() > 0.000_1 {
+        session.execute(
+            "Moved choreography event",
+            EffectCommand::SetChoreographyEventTime {
+                id: drag.event,
+                time: drag.current_time,
+            },
+            true,
+        );
+    }
+    commands.trigger(TimelineAction::SelectChoreographyEvent(drag.event));
 }
 
 fn begin_timeline_clip_drag(

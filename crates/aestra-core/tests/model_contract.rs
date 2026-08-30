@@ -1,8 +1,9 @@
 use aestra_core::{
-    AssetDefinition, DiagnosticCode, EffectAsset, EffectClip, EffectClipSeed, EffectId,
-    EffectMarker, EffectParameter, Emitter, EmitterId, EmitterShape, EmitterTransform,
-    FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE, MarkerTimeReference, MaterialProperties,
-    ModuleParameters, ParameterId, RendererInstance, ScalarRange, Value,
+    AssetDefinition, ChoreographyEvent, ChoreographyEventPayload, DiagnosticCode, EffectAsset,
+    EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter, EmitterId,
+    EmitterShape, EmitterTransform, FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE,
+    MarkerTimeReference, MaterialProperties, ModuleParameters, ParameterId, RendererInstance,
+    ScalarRange, Value,
 };
 
 #[test]
@@ -43,6 +44,44 @@ fn timeline_markers_round_trip_and_validate_the_effect_range() {
                     && diagnostic.path == "effect.markers[0].time"
             })
     );
+}
+
+#[test]
+fn choreography_events_round_trip_and_validate_timing_payload_and_marker_resolution() {
+    let mut effect = EffectAsset::new("Events", 2.0);
+    let marker = EffectMarker::new("Impact", 0.75);
+    let marker_id = marker.id;
+    effect.markers.push(marker);
+    let mut event = ChoreographyEvent::new(
+        "Shake",
+        1.0,
+        ChoreographyEventPayload::CameraShake { intensity: 0.8 },
+    );
+    let event_id = event.id;
+    event.time_reference = Some(MarkerTimeReference::new(marker_id, 0.25));
+    effect.choreography_events.push(event);
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+    assert_eq!(decoded.choreography_events[0].id, event_id);
+    assert_eq!(decoded.choreography_events[0].time, 1.0);
+    assert_eq!(
+        decoded.choreography_events[0].time_reference,
+        Some(MarkerTimeReference::new(marker_id, 0.25))
+    );
+
+    effect.choreography_events[0].time = 1.25;
+    effect.choreography_events[0].payload =
+        ChoreographyEventPayload::CameraShake { intensity: -1.0 };
+    let report = effect.validation_report();
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidTiming
+            && diagnostic.path.ends_with("time_reference")
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidValue
+            && diagnostic.path.ends_with("payload.intensity")
+    }));
 }
 
 #[test]

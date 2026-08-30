@@ -757,6 +757,12 @@ fn semantic_target_for_diagnostic_path(effect: &EffectAsset, path: &str) -> Opti
             .get(parameter_index)
             .map(|parameter| SemanticTarget::Parameter(parameter.id));
     }
+    if let Some(event_index) = diagnostic_collection_index(path, "choreography_events") {
+        return effect
+            .choreography_events
+            .get(event_index)
+            .map(|event| SemanticTarget::ChoreographyEvent(event.id));
+    }
     if let Some(event_index) = diagnostic_collection_index(path, "events") {
         return effect
             .events

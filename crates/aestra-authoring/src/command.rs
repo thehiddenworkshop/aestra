@@ -1,9 +1,9 @@
 use aestra_core::{
-    AssetDefinition, AssetId, ChoreographyTrackId, ColorKey, CurveKey, EffectAssetRef, EffectClip,
-    EffectClipId, EffectClipSeed, EffectMarker, EffectParameter, Emitter, EmitterId,
-    EmitterTransform, EventId, EventLink, FlipbookDefinition, MarkerId, MarkerTimeReference,
-    MaterialDefinition, MaterialId, ModuleId, ModuleInstance, ParameterId, RendererId,
-    RendererInstance, RendererProperties, Value,
+    AssetDefinition, AssetId, ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload,
+    ChoreographyTrackId, ColorKey, CurveKey, EffectAssetRef, EffectClip, EffectClipId,
+    EffectClipSeed, EffectMarker, EffectParameter, Emitter, EmitterId, EmitterTransform, EventId,
+    EventLink, FlipbookDefinition, MarkerId, MarkerTimeReference, MaterialDefinition, MaterialId,
+    ModuleId, ModuleInstance, ParameterId, RendererId, RendererInstance, RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +35,29 @@ pub enum EffectCommand {
     SetMarkerTime {
         id: MarkerId,
         time: f32,
+    },
+    AddChoreographyEvent {
+        event: ChoreographyEvent,
+        index: usize,
+    },
+    RemoveChoreographyEvent {
+        id: ChoreographyEventId,
+    },
+    SetChoreographyEventName {
+        id: ChoreographyEventId,
+        name: String,
+    },
+    SetChoreographyEventTime {
+        id: ChoreographyEventId,
+        time: f32,
+    },
+    SetChoreographyEventTimeReference {
+        id: ChoreographyEventId,
+        reference: Option<MarkerTimeReference>,
+    },
+    SetChoreographyEventPayload {
+        id: ChoreographyEventId,
+        payload: ChoreographyEventPayload,
     },
     AddEffectClip {
         clip: EffectClip,

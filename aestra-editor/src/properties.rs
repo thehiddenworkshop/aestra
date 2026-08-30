@@ -11,8 +11,8 @@ use crate::timeline::{
 };
 use crate::*;
 use aestra_bevy::{
-    EffectAsset, EffectClip, EffectClipId, EffectParameter, MarkerId, MarkerTimeReference,
-    ParameterId, ValueType,
+    ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, EffectAsset, EffectClip,
+    EffectClipId, EffectParameter, MarkerId, MarkerTimeReference, ParameterId, ValueType,
 };
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use bevy::{
@@ -54,6 +54,8 @@ impl Plugin for PropertiesPlugin {
             .add_observer(handle_emitter_scalar_change)
             .add_observer(handle_effect_clip_scalar_change)
             .add_observer(handle_marker_scalar_change)
+            .add_observer(handle_choreography_event_scalar_change)
+            .add_observer(handle_choreography_event_payload_text_change)
             .add_observer(handle_start_reference_offset_change)
             .add_observer(handle_effect_clip_parameter_integer_change)
             .add_observer(handle_effect_clip_parameter_scalar_change)
@@ -80,6 +82,7 @@ impl Plugin for PropertiesPlugin {
                         sync_emitter_number_inputs,
                         sync_effect_clip_number_inputs,
                         sync_marker_number_inputs,
+                        sync_choreography_event_number_inputs,
                         sync_start_reference_offset_inputs,
                         sync_effect_clip_parameter_number_inputs,
                         sync_properties_number_inputs,
@@ -105,6 +108,7 @@ impl Plugin for PropertiesPlugin {
 pub(crate) enum StartReferenceTarget {
     Emitter(EmitterId),
     EffectClip(EffectClipId),
+    ChoreographyEvent(ChoreographyEventId),
 }
 
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
@@ -137,6 +141,11 @@ pub(crate) enum PropertiesAction {
     },
     DeleteEventLink(EventId),
     DeleteMarker(MarkerId),
+    DeleteChoreographyEvent(ChoreographyEventId),
+    SetChoreographyEventKind {
+        id: ChoreographyEventId,
+        kind: ChoreographyEventKind,
+    },
     SetStartReference {
         target: StartReferenceTarget,
         marker: Option<MarkerId>,
@@ -521,6 +530,38 @@ fn handle_properties_actions(
                             true,
                         );
                     }
+                    PropertiesAction::DeleteChoreographyEvent(id) => {
+                        session.execute(
+                            "Deleted choreography event",
+                            EffectCommand::RemoveChoreographyEvent { id },
+                            true,
+                        );
+                    }
+                    PropertiesAction::SetChoreographyEventKind { id, kind } => {
+                        let payload = match kind {
+                            ChoreographyEventKind::GameplayNotify => {
+                                ChoreographyEventPayload::GameplayNotify {
+                                    topic: String::new(),
+                                }
+                            }
+                            ChoreographyEventKind::PlaySound => {
+                                ChoreographyEventPayload::PlaySound { cue: String::new() }
+                            }
+                            ChoreographyEventKind::CameraShake => {
+                                ChoreographyEventPayload::CameraShake { intensity: 1.0 }
+                            }
+                            ChoreographyEventKind::SpawnChildEffect => {
+                                ChoreographyEventPayload::SpawnChildEffect {
+                                    effect: String::new(),
+                                }
+                            }
+                        };
+                        session.execute(
+                            "Changed choreography event type",
+                            EffectCommand::SetChoreographyEventPayload { id, payload },
+                            true,
+                        );
+                    }
                     PropertiesAction::SetStartReference { target, marker } => {
                         set_start_reference(&mut session, target, marker, &localizer);
                     }
@@ -758,6 +799,10 @@ fn semantic_target_exists(effect: &EffectAsset, target: SemanticTarget) -> bool 
         SemanticTarget::Effect(id) => effect.id == id,
         SemanticTarget::EffectClip(id) => effect.effect_clips.iter().any(|clip| clip.id == id),
         SemanticTarget::Marker(id) => effect.markers.iter().any(|marker| marker.id == id),
+        SemanticTarget::ChoreographyEvent(id) => effect
+            .choreography_events
+            .iter()
+            .any(|event| event.id == id),
         SemanticTarget::Parameter(id) => effect.parameters.iter().any(|value| value.id == id),
         SemanticTarget::Emitter(id) => effect.emitters.iter().any(|emitter| emitter.id == id),
         SemanticTarget::Module(id) => effect
@@ -786,7 +831,10 @@ pub(crate) fn focus_compiled_target(
     }
     if matches!(
         target,
-        SemanticTarget::Emitter(_) | SemanticTarget::Module(_) | SemanticTarget::Renderer(_)
+        SemanticTarget::Emitter(_)
+            | SemanticTarget::Module(_)
+            | SemanticTarget::Renderer(_)
+            | SemanticTarget::ChoreographyEvent(_)
     ) {
         session.selection.primary = target;
     }
@@ -1318,8 +1366,8 @@ mod tests {
         app.insert_resource(session)
             .insert_resource(test_localizer())
             .add_observer(handle_document_text_change);
-        let effect_name = app.world_mut().spawn(DocumentTextControl::EffectName).id();
-        let emitter_name = app.world_mut().spawn(DocumentTextControl::EmitterName).id();
+        let effect_name = app.world_mut().spawn(DocumentTextControl::Effect).id();
+        let emitter_name = app.world_mut().spawn(DocumentTextControl::Emitter).id();
 
         app.world_mut().trigger(ValueChange {
             source: effect_name,
@@ -2364,6 +2412,42 @@ fn sync_marker_number_inputs(
     }
 }
 
+fn sync_choreography_event_number_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<
+        (Entity, &ChoreographyEventNumberControl),
+        Added<ChoreographyEventNumberControl>,
+    >,
+) {
+    for (entity, control) in &controls {
+        let (id, intensity) = match *control {
+            ChoreographyEventNumberControl::Time(id) => (id, false),
+            ChoreographyEventNumberControl::Intensity(id) => (id, true),
+        };
+        let Some(event) = session
+            .effect
+            .choreography_events
+            .iter()
+            .find(|event| event.id == id)
+        else {
+            continue;
+        };
+        let value = if intensity {
+            match event.payload {
+                ChoreographyEventPayload::CameraShake { intensity } => intensity,
+                _ => continue,
+            }
+        } else {
+            event.time
+        };
+        commands.trigger(UpdateNumberInput {
+            entity,
+            value: NumberInputValue::F32(value),
+        });
+    }
+}
+
 fn sync_start_reference_offset_inputs(
     mut commands: Commands,
     session: Res<EditorSession>,
@@ -2721,9 +2805,12 @@ fn handle_document_text_change(
     let value = change.value.trim();
     if value.is_empty() {
         let target = match control {
-            DocumentTextControl::EffectName => localizer.text("properties-effect"),
-            DocumentTextControl::EmitterName => localizer.text("properties-emitter"),
-            DocumentTextControl::MarkerName(_) => localizer.text("properties-marker"),
+            DocumentTextControl::Effect => localizer.text("properties-effect"),
+            DocumentTextControl::Emitter => localizer.text("properties-emitter"),
+            DocumentTextControl::Marker(_) => localizer.text("properties-marker"),
+            DocumentTextControl::ChoreographyEvent(_) => {
+                localizer.text("properties-choreography-event")
+            }
         };
         set_properties_status(
             &mut session,
@@ -2734,11 +2821,19 @@ fn handle_document_text_change(
         return;
     }
     let changed = match control {
-        DocumentTextControl::EffectName => session.set_effect_name(value),
-        DocumentTextControl::EmitterName => session.set_selected_emitter_name(value),
-        DocumentTextControl::MarkerName(id) => session.execute(
+        DocumentTextControl::Effect => session.set_effect_name(value),
+        DocumentTextControl::Emitter => session.set_selected_emitter_name(value),
+        DocumentTextControl::Marker(id) => session.execute(
             "Renamed timeline marker",
             EffectCommand::SetMarkerName {
+                id: *id,
+                name: value.to_owned(),
+            },
+            true,
+        ),
+        DocumentTextControl::ChoreographyEvent(id) => session.execute(
+            "Renamed choreography event",
+            EffectCommand::SetChoreographyEventName {
                 id: *id,
                 name: value.to_owned(),
             },
@@ -2747,15 +2842,91 @@ fn handle_document_text_change(
     };
     if changed {
         let target = match control {
-            DocumentTextControl::EffectName => {
-                localizer.text("properties-effect-name-status-target")
+            DocumentTextControl::Effect => localizer.text("properties-effect-name-status-target"),
+            DocumentTextControl::Emitter => localizer.text("properties-emitter-name-status-target"),
+            DocumentTextControl::Marker(_) => localizer.text("properties-marker"),
+            DocumentTextControl::ChoreographyEvent(_) => {
+                localizer.text("properties-choreography-event")
             }
-            DocumentTextControl::EmitterName => {
-                localizer.text("properties-emitter-name-status-target")
-            }
-            DocumentTextControl::MarkerName(_) => localizer.text("properties-marker"),
         };
         set_properties_status(&mut session, &localizer, PropertiesStatus::Updated(target));
+    }
+}
+
+fn handle_choreography_event_payload_text_change(
+    change: On<ValueChange<String>>,
+    controls: Query<&ChoreographyEventPayloadTextControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let Some(event) = session
+        .effect
+        .choreography_events
+        .iter()
+        .find(|event| event.id == control.0)
+    else {
+        return;
+    };
+    let value = change.value.trim().to_owned();
+    let payload = match event.payload {
+        ChoreographyEventPayload::GameplayNotify { .. } => {
+            ChoreographyEventPayload::GameplayNotify { topic: value }
+        }
+        ChoreographyEventPayload::PlaySound { .. } => {
+            ChoreographyEventPayload::PlaySound { cue: value }
+        }
+        ChoreographyEventPayload::SpawnChildEffect { .. } => {
+            ChoreographyEventPayload::SpawnChildEffect { effect: value }
+        }
+        ChoreographyEventPayload::CameraShake { .. } => return,
+    };
+    session.execute(
+        "Changed choreography event payload",
+        EffectCommand::SetChoreographyEventPayload {
+            id: control.0,
+            payload,
+        },
+        true,
+    );
+}
+
+fn handle_choreography_event_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&ChoreographyEventNumberControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    match *control {
+        ChoreographyEventNumberControl::Time(id) => {
+            let time = change.value.clamp(0.0, session.playback_duration());
+            session.execute(
+                "Moved choreography event",
+                EffectCommand::SetChoreographyEventTime { id, time },
+                true,
+            );
+        }
+        ChoreographyEventNumberControl::Intensity(id) => {
+            session.execute(
+                "Changed camera shake intensity",
+                EffectCommand::SetChoreographyEventPayload {
+                    id,
+                    payload: ChoreographyEventPayload::CameraShake {
+                        intensity: change.value.max(0.0),
+                    },
+                },
+                true,
+            );
+        }
     }
 }
 
@@ -2832,6 +3003,12 @@ fn start_reference(
             .iter()
             .find(|clip| clip.id == id)
             .and_then(|clip| clip.start_reference),
+        StartReferenceTarget::ChoreographyEvent(id) => session
+            .effect
+            .choreography_events
+            .iter()
+            .find(|event| event.id == id)
+            .and_then(|event| event.time_reference),
     }
 }
 
@@ -2849,6 +3026,12 @@ fn target_start_time(session: &EditorSession, target: StartReferenceTarget) -> O
             .iter()
             .find(|clip| clip.id == id)
             .map(|clip| clip.start_time),
+        StartReferenceTarget::ChoreographyEvent(id) => session
+            .effect
+            .choreography_events
+            .iter()
+            .find(|event| event.id == id)
+            .map(|event| event.time),
     }
 }
 
@@ -2866,6 +3049,7 @@ fn target_duration(session: &EditorSession, target: StartReferenceTarget) -> Opt
             .iter()
             .find(|clip| clip.id == id)
             .map(|clip| clip.duration),
+        StartReferenceTarget::ChoreographyEvent(_) => Some(0.0),
     }
 }
 
@@ -2924,9 +3108,12 @@ fn execute_start_reference(
         StartReferenceTarget::EffectClip(id) => {
             EffectCommand::SetEffectClipStartReference { id, reference }
         }
+        StartReferenceTarget::ChoreographyEvent(id) => {
+            EffectCommand::SetChoreographyEventTimeReference { id, reference }
+        }
     };
     session.execute(
-        &localizer.text("properties-start-reference-command"),
+        localizer.text("properties-start-reference-command"),
         command,
         true,
     );
@@ -3486,6 +3673,7 @@ fn decorate_numeric_scrub_inputs(
                 With<EffectClipParameterNumberControl>,
                 With<RendererNumberControl>,
                 With<StartReferenceOffsetControl>,
+                With<ChoreographyEventNumberControl>,
             )>,
         ),
     >,
@@ -3513,6 +3701,7 @@ fn begin_numeric_scrub(
     effect_clip_parameter_controls: Query<&EffectClipParameterNumberControl>,
     renderer_controls: Query<&RendererNumberControl>,
     start_reference_controls: Query<&StartReferenceOffsetControl>,
+    choreography_event_controls: Query<&ChoreographyEventNumberControl>,
     parents: Query<&ChildOf>,
     session: Res<EditorSession>,
     mut state: ResMut<NumericScrubState>,
@@ -3531,6 +3720,7 @@ fn begin_numeric_scrub(
         &effect_clip_parameter_controls,
         &renderer_controls,
         &start_reference_controls,
+        &choreography_event_controls,
     ) else {
         return;
     };
@@ -3651,6 +3841,7 @@ fn resolve_numeric_scrub_target(
     effect_clip_parameter_controls: &Query<&EffectClipParameterNumberControl>,
     renderer_controls: &Query<&RendererNumberControl>,
     start_reference_controls: &Query<&StartReferenceOffsetControl>,
+    choreography_event_controls: &Query<&ChoreographyEventNumberControl>,
 ) -> Option<(Entity, NumericScrubTarget)> {
     let mut candidate = entity;
     for _ in 0..4 {
@@ -3676,6 +3867,9 @@ fn resolve_numeric_scrub_target(
                 candidate,
                 NumericScrubTarget::StartReferenceOffset(*control),
             ));
+        }
+        if let Ok(control) = choreography_event_controls.get(candidate) {
+            return Some((candidate, NumericScrubTarget::ChoreographyEvent(*control)));
         }
         candidate = parents.get(candidate).ok()?.parent();
     }
@@ -3732,6 +3926,8 @@ fn numeric_scrub_step(target: NumericScrubTarget) -> f32 {
         }
         NumericScrubTarget::Renderer(control) => renderer_number_step(control),
         NumericScrubTarget::StartReferenceOffset(_) => 0.05,
+        NumericScrubTarget::ChoreographyEvent(ChoreographyEventNumberControl::Time(_)) => 0.05,
+        NumericScrubTarget::ChoreographyEvent(ChoreographyEventNumberControl::Intensity(_)) => 0.1,
     }
 }
 
@@ -3756,6 +3952,24 @@ fn numeric_scrub_value(session: &EditorSession, target: NumericScrubTarget) -> O
         NumericScrubTarget::Renderer(control) => renderer_number_input_value(session, control),
         NumericScrubTarget::StartReferenceOffset(control) => {
             start_reference(session, control.target).map(|reference| reference.offset)
+        }
+        NumericScrubTarget::ChoreographyEvent(control) => {
+            let id = match control {
+                ChoreographyEventNumberControl::Time(id)
+                | ChoreographyEventNumberControl::Intensity(id) => id,
+            };
+            let event = session
+                .effect
+                .choreography_events
+                .iter()
+                .find(|event| event.id == id)?;
+            match control {
+                ChoreographyEventNumberControl::Time(_) => Some(event.time),
+                ChoreographyEventNumberControl::Intensity(_) => match event.payload {
+                    ChoreographyEventPayload::CameraShake { intensity } => Some(intensity),
+                    _ => None,
+                },
+            }
         }
     }
 }
@@ -3868,6 +4082,12 @@ fn normalize_numeric_scrub_value_with_multiplier(
         NumericScrubTarget::StartReferenceOffset(control) => {
             normalize_start_reference_offset(session, control.target, value)
         }
+        NumericScrubTarget::ChoreographyEvent(ChoreographyEventNumberControl::Time(_)) => {
+            value.clamp(0.0, session.playback_duration())
+        }
+        NumericScrubTarget::ChoreographyEvent(ChoreographyEventNumberControl::Intensity(_)) => {
+            value.max(0.0)
+        }
     };
     round_numeric_scrub_value(target, normalized, multiplier)
 }
@@ -3978,6 +4198,21 @@ fn numeric_scrub_command(
                         reference: Some(reference),
                     }
                 }
+                StartReferenceTarget::ChoreographyEvent(id) => {
+                    EffectCommand::SetChoreographyEventTimeReference {
+                        id,
+                        reference: Some(reference),
+                    }
+                }
+            })
+        }
+        NumericScrubTarget::ChoreographyEvent(ChoreographyEventNumberControl::Time(id)) => {
+            Some(EffectCommand::SetChoreographyEventTime { id, time: value })
+        }
+        NumericScrubTarget::ChoreographyEvent(ChoreographyEventNumberControl::Intensity(id)) => {
+            Some(EffectCommand::SetChoreographyEventPayload {
+                id,
+                payload: ChoreographyEventPayload::CameraShake { intensity: value },
             })
         }
     }
@@ -4100,6 +4335,17 @@ fn commit_numeric_scrub(
                 );
             }
         }
+        NumericScrubTarget::ChoreographyEvent(control) => {
+            if let Some(command) = numeric_scrub_command(session, target, value) {
+                let label = match control {
+                    ChoreographyEventNumberControl::Time(_) => "Moved choreography event",
+                    ChoreographyEventNumberControl::Intensity(_) => {
+                        "Changed camera shake intensity"
+                    }
+                };
+                session.execute(label, command, true);
+            }
+        }
     }
 }
 
@@ -4126,6 +4372,12 @@ fn commit_bounded_slider(
         NumericScrubTarget::EffectClip(_) => "Changed effect clip transform".into(),
         NumericScrubTarget::EffectClipParameter(_) => "Changed instance parameter".into(),
         NumericScrubTarget::StartReferenceOffset(_) => "Changed marker offset".into(),
+        NumericScrubTarget::ChoreographyEvent(ChoreographyEventNumberControl::Time(_)) => {
+            "Moved choreography event".into()
+        }
+        NumericScrubTarget::ChoreographyEvent(ChoreographyEventNumberControl::Intensity(_)) => {
+            "Changed camera shake intensity".into()
+        }
     };
     session.execute(label, command, false)
 }
@@ -5603,6 +5855,11 @@ pub(crate) fn spawn_properties(
     {
         return;
     }
+    if let SemanticTarget::ChoreographyEvent(event) = session.selection.primary
+        && spawn_choreography_event_properties(parent, session, localizer, event)
+    {
+        return;
+    }
     if let SemanticTarget::EffectClip(clip) = session.selection.primary
         && spawn_effect_clip_properties(
             parent,
@@ -5770,7 +6027,7 @@ fn spawn_marker_properties(
                             &localizer.text("properties-name"),
                             &localizer.text("properties-marker-name-description"),
                             &marker.name,
-                            DocumentTextControl::MarkerName(id),
+                            DocumentTextControl::Marker(id),
                         );
                         crate::feathers::field_row::spawn_field_row(
                             card,
@@ -5800,6 +6057,196 @@ fn spawn_marker_properties(
                 });
         });
     true
+}
+
+fn spawn_choreography_event_properties(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+    id: ChoreographyEventId,
+) -> bool {
+    let Some(event) = session
+        .effect
+        .choreography_events
+        .iter()
+        .find(|event| event.id == id)
+    else {
+        return false;
+    };
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_grow: 1.0,
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
+        .with_children(|panel| {
+            panel_heading(panel, "CHOREOGRAPHY EVENT", "EDITABLE");
+            panel.spawn((
+                Text::new(&event.name),
+                PropertiesTitle,
+                TextFont {
+                    font_size: FontSize::Px(17.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Node {
+                    margin: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                    ..default()
+                },
+            ));
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::all(Val::Px(8.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(7.0),
+                    ..default()
+                })
+                .with_children(|stack| {
+                    spawn_read_only_card(
+                        stack,
+                        localizer.text("properties-choreography-event"),
+                        |card| {
+                            spawn_text_field(
+                                card,
+                                &localizer.text("properties-name"),
+                                &localizer.text("properties-choreography-event-name-description"),
+                                &event.name,
+                                DocumentTextControl::ChoreographyEvent(id),
+                            );
+                            crate::feathers::field_row::spawn_field_row(
+                                card,
+                                crate::feathers::field_row::FieldRowProps::new(
+                                    localizer.text("properties-time"),
+                                )
+                                .with_control_min_width(150.0),
+                                EditorTooltip::description(
+                                    localizer
+                                        .text("properties-choreography-event-time-description"),
+                                ),
+                                |controls| {
+                                    controls
+                                        .spawn_empty()
+                                        .apply_scene(ui_shell::feathers_scalar_input())
+                                        .insert((
+                                            ChoreographyEventNumberControl::Time(id),
+                                            AccessibleLabel(localizer.text("properties-time")),
+                                        ));
+                                },
+                            );
+                            spawn_start_reference_controls(
+                                card,
+                                session,
+                                StartReferenceTarget::ChoreographyEvent(id),
+                                localizer,
+                            );
+                            let kinds = [
+                                ChoreographyEventKind::GameplayNotify,
+                                ChoreographyEventKind::PlaySound,
+                                ChoreographyEventKind::CameraShake,
+                                ChoreographyEventKind::SpawnChildEffect,
+                            ];
+                            let kind_options = kinds
+                                .into_iter()
+                                .map(|kind| ComboOption {
+                                    label: choreography_event_kind_label(localizer, kind),
+                                    selected: event.payload.kind() == kind,
+                                    action: PropertiesAction::SetChoreographyEventKind { id, kind },
+                                })
+                                .collect::<Vec<_>>();
+                            spawn_properties_combo_row(
+                                card,
+                                &localizer.text("properties-choreography-event-type"),
+                                &choreography_event_kind_label(localizer, event.payload.kind()),
+                                &kind_options,
+                                Some(
+                                    &localizer
+                                        .text("properties-choreography-event-type-description"),
+                                ),
+                            );
+                            spawn_choreography_event_payload_control(card, event, localizer);
+                            mini_button(
+                                card,
+                                &localizer.text("properties-choreography-event-delete"),
+                                PropertiesAction::DeleteChoreographyEvent(id),
+                            );
+                        },
+                    );
+                });
+        });
+    true
+}
+
+fn choreography_event_kind_label(localizer: &Localizer, kind: ChoreographyEventKind) -> String {
+    localizer.text(match kind {
+        ChoreographyEventKind::GameplayNotify => "properties-event-kind-gameplay-notify",
+        ChoreographyEventKind::PlaySound => "properties-event-kind-play-sound",
+        ChoreographyEventKind::CameraShake => "properties-event-kind-camera-shake",
+        ChoreographyEventKind::SpawnChildEffect => "properties-event-kind-spawn-child-effect",
+    })
+}
+
+fn spawn_choreography_event_payload_control(
+    parent: &mut ChildSpawnerCommands,
+    event: &aestra_bevy::ChoreographyEvent,
+    localizer: &Localizer,
+) {
+    match &event.payload {
+        ChoreographyEventPayload::CameraShake { .. } => {
+            crate::feathers::field_row::spawn_field_row(
+                parent,
+                crate::feathers::field_row::FieldRowProps::new(
+                    localizer.text("properties-event-intensity"),
+                )
+                .with_control_min_width(150.0),
+                EditorTooltip::description(
+                    localizer.text("properties-event-intensity-description"),
+                ),
+                |controls| {
+                    controls
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_scalar_input())
+                        .insert((
+                            ChoreographyEventNumberControl::Intensity(event.id),
+                            AccessibleLabel(localizer.text("properties-event-intensity")),
+                        ));
+                },
+            );
+        }
+        payload => {
+            let (label_key, value) = match payload {
+                ChoreographyEventPayload::GameplayNotify { topic } => {
+                    ("properties-event-topic", topic.as_str())
+                }
+                ChoreographyEventPayload::PlaySound { cue } => {
+                    ("properties-event-cue", cue.as_str())
+                }
+                ChoreographyEventPayload::SpawnChildEffect { effect } => {
+                    ("properties-event-effect", effect.as_str())
+                }
+                ChoreographyEventPayload::CameraShake { .. } => unreachable!(),
+            };
+            let label = localizer.text(label_key);
+            crate::feathers::field_row::spawn_field_row(
+                parent,
+                crate::feathers::field_row::FieldRowProps::new(&label)
+                    .with_control_min_width(150.0),
+                EditorTooltip::description(
+                    localizer.text("properties-choreography-event-payload-description"),
+                ),
+                |inputs| {
+                    spawn_text_input(
+                        inputs,
+                        value,
+                        &label,
+                        ChoreographyEventPayloadTextControl(event.id),
+                    );
+                },
+            );
+        }
+    }
 }
 
 fn spawn_document_controls(
@@ -5834,7 +6281,7 @@ fn spawn_document_controls(
                 &localizer.text("properties-effect-name"),
                 &localizer.text("properties-effect-name-description"),
                 &session.effect.name,
-                DocumentTextControl::EffectName,
+                DocumentTextControl::Effect,
             );
         });
 
@@ -5870,7 +6317,7 @@ fn spawn_document_controls(
                 &localizer.text("properties-emitter-name"),
                 &localizer.text("properties-emitter-name-description"),
                 &emitter.name,
-                DocumentTextControl::EmitterName,
+                DocumentTextControl::Emitter,
             );
             spawn_document_toggle(
                 card,
@@ -8151,13 +8598,23 @@ struct EffectClipParameterDiagnostic(ParameterId);
 
 #[derive(Component, Debug, Clone, Copy)]
 enum DocumentTextControl {
-    EffectName,
-    EmitterName,
-    MarkerName(MarkerId),
+    Effect,
+    Emitter,
+    Marker(MarkerId),
+    ChoreographyEvent(ChoreographyEventId),
 }
 
 #[derive(Component, Debug, Clone, Copy)]
 struct MarkerNumberControl(MarkerId);
+
+#[derive(Component, Debug, Clone, Copy)]
+enum ChoreographyEventNumberControl {
+    Time(ChoreographyEventId),
+    Intensity(ChoreographyEventId),
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct ChoreographyEventPayloadTextControl(ChoreographyEventId);
 
 #[derive(Component, Debug, Clone, Copy)]
 struct StartReferenceOffsetControl {
@@ -8183,6 +8640,7 @@ enum NumericScrubTarget {
     EffectClipParameter(EffectClipParameterScrubControl),
     Renderer(RendererNumberControl),
     StartReferenceOffset(StartReferenceOffsetControl),
+    ChoreographyEvent(ChoreographyEventNumberControl),
 }
 
 #[derive(Debug, Clone, Copy)]

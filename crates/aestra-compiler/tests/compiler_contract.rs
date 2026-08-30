@@ -1,8 +1,8 @@
 use aestra_compiler::{EffectCompiler, ModuleRegistry, ProjectCompileError};
 use aestra_core::{
-    DiagnosticCode, EffectAsset, EffectClip, EffectClipSeed, EffectParameter, Emitter,
-    MODULE_EMISSION, MaterialInput, MaterialProperties, ModuleInstance, ModuleParameters,
-    ModuleTypeId, ParameterId, ScalarRange, StageKind, Value,
+    ChoreographyEvent, ChoreographyEventPayload, DiagnosticCode, EffectAsset, EffectClip,
+    EffectClipSeed, EffectParameter, Emitter, MODULE_EMISSION, MaterialInput, MaterialProperties,
+    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, ScalarRange, StageKind, Value,
 };
 use aestra_project::ProjectAssetIndex;
 use aestra_runtime::{
@@ -194,6 +194,60 @@ fn runtime_instances_are_deterministic_per_seed() {
 
     assert_eq!(first_samples, second_samples);
     assert_ne!(first_samples, other_samples);
+}
+
+#[test]
+fn choreography_events_compile_and_dispatch_deterministically_across_loop_boundaries() {
+    let mut asset = EffectAsset::new("Event dispatch", 2.0);
+    asset.looping = true;
+    asset.choreography_events = vec![
+        ChoreographyEvent::new(
+            "Begin",
+            0.0,
+            ChoreographyEventPayload::GameplayNotify {
+                topic: "effect.begin".into(),
+            },
+        ),
+        ChoreographyEvent::new(
+            "Shake",
+            0.5,
+            ChoreographyEventPayload::CameraShake { intensity: 0.75 },
+        ),
+        ChoreographyEvent::new(
+            "Sound",
+            1.5,
+            ChoreographyEventPayload::PlaySound {
+                cue: "impact".into(),
+            },
+        ),
+    ];
+    let compiled = Arc::new(EffectCompiler::default().compile(&asset).unwrap());
+    assert_eq!(compiled.choreography_events.len(), 3);
+
+    let mut instance = EffectInstance::new(compiled);
+    let mut dispatched = Vec::new();
+    instance.advance_with_choreography_events(0.75, &mut dispatched);
+    assert_eq!(
+        dispatched
+            .iter()
+            .map(|event| event.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Begin", "Shake"]
+    );
+
+    instance.advance_with_choreography_events(1.5, &mut dispatched);
+    assert_eq!(
+        dispatched
+            .iter()
+            .map(|event| event.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Sound", "Begin"]
+    );
+    assert!((instance.time() - 0.25).abs() < 0.000_1);
+    assert!(matches!(
+        dispatched[1].payload,
+        ChoreographyEventPayload::GameplayNotify { ref topic } if topic == "effect.begin"
+    ));
 }
 
 #[test]

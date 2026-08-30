@@ -1,7 +1,7 @@
 use crate::EffectCommand;
 use aestra_core::{
-    CurveId, EffectAsset, EffectClipId, EffectId, EmitterId, EventId, GradientId, MarkerId,
-    ModuleId, ModuleParameters, ParameterId, RendererId,
+    ChoreographyEventId, CurveId, EffectAsset, EffectClipId, EffectId, EmitterId, EventId,
+    GradientId, MarkerId, ModuleId, ModuleParameters, ParameterId, RendererId,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fmt};
@@ -11,6 +11,7 @@ pub enum SemanticTarget {
     Effect(EffectId),
     EffectClip(EffectClipId),
     Marker(MarkerId),
+    ChoreographyEvent(ChoreographyEventId),
     Parameter(ParameterId),
     Emitter(EmitterId),
     Module(ModuleId),
@@ -26,6 +27,7 @@ impl fmt::Display for SemanticTarget {
             Self::Effect(id) => write!(formatter, "effect {id}"),
             Self::EffectClip(id) => write!(formatter, "effect clip {id}"),
             Self::Marker(id) => write!(formatter, "marker {id}"),
+            Self::ChoreographyEvent(id) => write!(formatter, "choreography event {id}"),
             Self::Parameter(id) => write!(formatter, "parameter {id}"),
             Self::Emitter(id) => write!(formatter, "emitter {id}"),
             Self::Module(id) => write!(formatter, "module {id}"),
@@ -63,6 +65,10 @@ impl Selection {
 
     pub fn select_marker(&mut self, id: MarkerId) {
         self.primary = SemanticTarget::Marker(id);
+    }
+
+    pub fn select_choreography_event(&mut self, id: ChoreographyEventId) {
+        self.primary = SemanticTarget::ChoreographyEvent(id);
     }
 
     pub fn effect_clip(&self) -> Option<EffectClipId> {
@@ -169,6 +175,17 @@ impl LockState {
                     .is_some_and(|reference| reference.marker == *id)
                 {
                     let target = SemanticTarget::EffectClip(clip.id);
+                    if self.is_locked(target) {
+                        return Some(target);
+                    }
+                }
+            }
+            for event in &effect.choreography_events {
+                if event
+                    .time_reference
+                    .is_some_and(|reference| reference.marker == *id)
+                {
+                    let target = SemanticTarget::ChoreographyEvent(event.id);
                     if self.is_locked(target) {
                         return Some(target);
                     }
@@ -317,6 +334,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetEffectLooping { .. }
         | EffectCommand::SetChoreographyOrder { .. }
         | EffectCommand::AddMarker { .. }
+        | EffectCommand::AddChoreographyEvent { .. }
         | EffectCommand::AddEffectClip { .. }
         | EffectCommand::AddAsset { .. }
         | EffectCommand::RemoveAsset { .. }
@@ -343,6 +361,13 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         EffectCommand::RemoveMarker { id }
         | EffectCommand::SetMarkerName { id, .. }
         | EffectCommand::SetMarkerTime { id, .. } => (None, Some(SemanticTarget::Marker(*id))),
+        EffectCommand::RemoveChoreographyEvent { id }
+        | EffectCommand::SetChoreographyEventName { id, .. }
+        | EffectCommand::SetChoreographyEventTime { id, .. }
+        | EffectCommand::SetChoreographyEventTimeReference { id, .. }
+        | EffectCommand::SetChoreographyEventPayload { id, .. } => {
+            (None, Some(SemanticTarget::ChoreographyEvent(*id)))
+        }
         EffectCommand::RemoveParameter { id } | EffectCommand::SetParameter { id, .. } => {
             (None, Some(SemanticTarget::Parameter(*id)))
         }
@@ -423,6 +448,10 @@ fn target_exists(target: SemanticTarget, effect: &EffectAsset) -> bool {
         SemanticTarget::Effect(id) => effect.id == id,
         SemanticTarget::EffectClip(id) => effect.effect_clips.iter().any(|clip| clip.id == id),
         SemanticTarget::Marker(id) => effect.markers.iter().any(|marker| marker.id == id),
+        SemanticTarget::ChoreographyEvent(id) => effect
+            .choreography_events
+            .iter()
+            .any(|event| event.id == id),
         SemanticTarget::Parameter(id) => effect.parameters.iter().any(|item| item.id == id),
         SemanticTarget::Emitter(id) => effect.emitters.iter().any(|item| item.id == id),
         SemanticTarget::Module(id) => effect

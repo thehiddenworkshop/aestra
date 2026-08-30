@@ -265,6 +265,12 @@ The format begins with effect-level duration and looping, then emitters with ind
   particle-color consumption, texture assets, and UV regions;
 - typed event links between emitters.
 
+Effect-level choreography is modeled separately from particle lifecycle links. Stable
+`ChoreographyEvent` objects carry a typed gameplay, sound, camera, or child-effect payload at an
+absolute or marker-relative time. The compiler orders them by time and semantic ID, the runtime
+dispatches crossed intervals deterministically across loop boundaries, and `AestraPlugin` exposes
+each result as `AestraChoreographyEvent` for normal Bevy observers.
+
 The current file format is version 3. Prototype version 1 is intentionally unsupported
 and has no legacy loader. Version 2 assets are upgraded only through the editor's explicit,
 confirmed, backup-preserving migration path; core loading never silently interprets an
@@ -290,6 +296,7 @@ outdated or future format.
 - [x] cursor-centered timeline zooming, panning, adaptive rulers, and configurable snapping
 - [x] module stack for spawn, initialize, update, and renderer stages
 - [x] typed event-link authoring between emitter layers
+- [x] typed, marker-relative choreography events with timeline and Bevy dispatch
 - optional node-graph projection for dataflow-heavy authoring
 - [x] atomic debounced autosave and startup crash recovery
 - [x] typed, confirmed, backup-preserving asset migrations

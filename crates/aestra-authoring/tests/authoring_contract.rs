@@ -3,10 +3,10 @@ use aestra_authoring::{
     LockState, Selection, SemanticTarget,
 };
 use aestra_core::{
-    BlendMode, ColorKey, CurveKey, EffectAsset, EffectAssetRef, EffectClip, EffectClipSeed,
-    EffectId, EffectMarker, EffectParameter, Emitter, EmitterTransform, EventId, EventLink,
-    EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, MarkerTimeReference,
-    ParameterId, ScalarRange, Value,
+    BlendMode, ChoreographyEvent, ChoreographyEventPayload, ColorKey, CurveKey, EffectAsset,
+    EffectAssetRef, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter,
+    EmitterTransform, EventId, EventLink, EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION,
+    MODULE_INITIALIZE, MarkerTimeReference, ParameterId, ScalarRange, Value,
 };
 
 fn test_effect() -> EffectAsset {
@@ -198,6 +198,116 @@ fn marker_relative_starts_follow_markers_and_timeline_edits_preserve_binding() {
         Err(CommandError::Validation(_))
     ));
     assert_eq!(effect, before);
+}
+
+#[test]
+fn choreography_events_are_transactional_marker_relative_and_lock_aware() {
+    let mut effect = test_effect();
+    let marker = EffectMarker::new("Impact", 0.5);
+    let marker_id = marker.id;
+    effect.markers.push(marker);
+    let event = ChoreographyEvent::new(
+        "Notify",
+        0.75,
+        ChoreographyEventPayload::GameplayNotify {
+            topic: "impact".into(),
+        },
+    );
+    let event_id = event.id;
+    let original = effect.clone();
+    let mut history = CommandHistory::default();
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::new(
+                "Add bound choreography event",
+                vec![
+                    EffectCommand::AddChoreographyEvent { event, index: 0 },
+                    EffectCommand::SetChoreographyEventTimeReference {
+                        id: event_id,
+                        reference: Some(MarkerTimeReference::new(marker_id, 0.25)),
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+    assert_eq!(effect.choreography_events[0].time, 0.75);
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Move marker",
+                EffectCommand::SetMarkerTime {
+                    id: marker_id,
+                    time: 1.0,
+                },
+            ),
+        )
+        .unwrap();
+    assert_eq!(effect.choreography_events[0].time, 1.25);
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::new(
+                "Edit event",
+                vec![
+                    EffectCommand::SetChoreographyEventTime {
+                        id: event_id,
+                        time: 1.4,
+                    },
+                    EffectCommand::SetChoreographyEventName {
+                        id: event_id,
+                        name: "Camera impact".into(),
+                    },
+                    EffectCommand::SetChoreographyEventPayload {
+                        id: event_id,
+                        payload: ChoreographyEventPayload::CameraShake { intensity: 0.8 },
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+    let event = &effect.choreography_events[0];
+    assert_eq!(event.name, "Camera impact");
+    assert!((event.time_reference.unwrap().offset - 0.4).abs() < 0.000_1);
+    assert!(matches!(
+        event.payload,
+        ChoreographyEventPayload::CameraShake { intensity } if (intensity - 0.8).abs() < 0.000_1
+    ));
+
+    let before_locked_move = effect.clone();
+    let mut locks = LockState::default();
+    locks.lock(SemanticTarget::ChoreographyEvent(event_id));
+    assert!(matches!(
+        CommandExecutor::execute(
+            &mut effect,
+            &locks,
+            &EffectTransaction::single(
+                "Move marker with locked event",
+                EffectCommand::SetMarkerTime {
+                    id: marker_id,
+                    time: 0.75,
+                },
+            ),
+        ),
+        Err(CommandError::Locked {
+            target: SemanticTarget::ChoreographyEvent(locked)
+        }) if locked == event_id
+    ));
+    assert_eq!(effect, before_locked_move);
+
+    history.undo(&mut effect).unwrap().unwrap();
+    history.undo(&mut effect).unwrap().unwrap();
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect, original);
+    history.redo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect.choreography_events[0].id, event_id);
 }
 
 #[test]

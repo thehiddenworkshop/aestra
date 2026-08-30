@@ -10,9 +10,10 @@ pub use checkpoint::{
 pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource};
 
 use aestra_core::{
-    AssetId, AssetKind, BlendMode, Curve, EffectAssetRef, EffectClipId, EffectClipSeed, EffectId,
-    EmitterId, EmitterShape, EmitterTransform, FlipbookPlaybackMode, FlipbookTimeSource, Gradient,
-    MaterialId, ModuleId, ParameterId, RendererId, ScalarRange, UvRect, Value, ValueType,
+    AssetId, AssetKind, BlendMode, ChoreographyEventId, ChoreographyEventPayload, Curve,
+    EffectAssetRef, EffectClipId, EffectClipSeed, EffectId, EmitterId, EmitterShape,
+    EmitterTransform, FlipbookPlaybackMode, FlipbookTimeSource, Gradient, MaterialId, ModuleId,
+    ParameterId, RendererId, ScalarRange, UvRect, Value, ValueType,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -473,9 +474,37 @@ pub struct CompiledEffect {
     pub particle_layout: ParticleLayout,
     pub emitters: Vec<CompiledEmitter>,
     pub effect_clips: Vec<CompiledEffectClip>,
+    pub choreography_events: Vec<CompiledChoreographyEvent>,
     pub max_particles: usize,
     pub source_map: BTreeMap<ModuleId, IrLocation>,
     pub optimizations: OptimizationStats,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledChoreographyEvent {
+    pub source: ChoreographyEventId,
+    pub name: String,
+    pub time: f32,
+    pub payload: ChoreographyEventPayload,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DispatchedChoreographyEvent {
+    pub source: ChoreographyEventId,
+    pub name: String,
+    pub time: f32,
+    pub payload: ChoreographyEventPayload,
+}
+
+impl From<&CompiledChoreographyEvent> for DispatchedChoreographyEvent {
+    fn from(event: &CompiledChoreographyEvent) -> Self {
+        Self {
+            source: event.source,
+            name: event.name.clone(),
+            time: event.time,
+            payload: event.payload.clone(),
+        }
+    }
 }
 
 /// Compiled timing and deterministic-instance metadata for one reusable child effect.
@@ -777,6 +806,7 @@ pub struct EffectInstance {
     seed: u64,
     parameters: Vec<RuntimeValue>,
     overridden: BTreeSet<ParameterSlot>,
+    choreography_started: bool,
 }
 
 impl EffectInstance {
@@ -792,6 +822,7 @@ impl EffectInstance {
             seed: 0,
             parameters,
             overridden: BTreeSet::new(),
+            choreography_started: false,
         }
     }
 
@@ -879,10 +910,12 @@ impl EffectInstance {
 
     pub fn seek(&mut self, time: f32) {
         self.time = time.clamp(0.0, self.effect.duration);
+        self.choreography_started = true;
     }
 
     pub fn restart(&mut self) {
         self.time = 0.0;
+        self.choreography_started = false;
     }
 
     pub fn advance(&mut self, delta_seconds: f32) {
@@ -894,9 +927,91 @@ impl EffectInstance {
         };
     }
 
+    /// Advances playback and emits every deterministic choreography event crossed by the
+    /// interval. Events at time zero fire on the first advance and again after each loop wrap.
+    pub fn advance_with_choreography_events(
+        &mut self,
+        delta_seconds: f32,
+        output: &mut Vec<DispatchedChoreographyEvent>,
+    ) {
+        output.clear();
+        if !delta_seconds.is_finite() || delta_seconds <= 0.0 || self.effect.duration <= 0.0 {
+            return;
+        }
+        let previous = self.time;
+        if self.effect.looping {
+            let duration = self.effect.duration;
+            let total = previous + delta_seconds;
+            let wraps = (total / duration).floor() as u64;
+            let next = total.rem_euclid(duration);
+            if wraps == 0 {
+                append_choreography_window(
+                    &self.effect.choreography_events,
+                    previous,
+                    next,
+                    !self.choreography_started && previous == 0.0,
+                    output,
+                );
+            } else {
+                append_choreography_window(
+                    &self.effect.choreography_events,
+                    previous,
+                    duration,
+                    !self.choreography_started && previous == 0.0,
+                    output,
+                );
+                for _ in 1..wraps {
+                    append_choreography_window(
+                        &self.effect.choreography_events,
+                        0.0,
+                        duration,
+                        true,
+                        output,
+                    );
+                }
+                append_choreography_window(
+                    &self.effect.choreography_events,
+                    0.0,
+                    next,
+                    true,
+                    output,
+                );
+            }
+            self.time = next;
+        } else {
+            let next = (previous + delta_seconds).clamp(0.0, self.effect.duration);
+            append_choreography_window(
+                &self.effect.choreography_events,
+                previous,
+                next,
+                !self.choreography_started && previous == 0.0,
+                output,
+            );
+            self.time = next;
+        }
+        self.choreography_started = true;
+    }
+
     pub fn evaluate(&self, output: &mut Vec<ParticleSample>) {
         evaluate_with_parameters(&self.effect, self.time, self.seed, &self.parameters, output);
     }
+}
+
+fn append_choreography_window(
+    events: &[CompiledChoreographyEvent],
+    start: f32,
+    end: f32,
+    include_start: bool,
+    output: &mut Vec<DispatchedChoreographyEvent>,
+) {
+    output.extend(
+        events
+            .iter()
+            .filter(|event| {
+                (event.time > start || (include_start && event.time == start)) && event.time <= end
+            })
+            .map(DispatchedChoreographyEvent::from),
+    );
 }
 
 /// Executes a compiled effect with its default parameter values.

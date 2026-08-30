@@ -11,12 +11,12 @@ use aestra_core::{
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
 use aestra_runtime::{
-    CompiledAsset, CompiledCurve, CompiledEffect, CompiledEffectClip, CompiledEffectProject,
-    CompiledEmitter, CompiledFlipbook, CompiledGradient, CompiledMaterial, CompiledParameter,
-    CompiledParameterOverride, ExecutionPlan, Expression, Instruction, IrLocation,
-    MaterialColorPlan, OptimizationStats, ParameterSlot, ParticleAttribute, ParticleLayout,
-    RendererPlan, RendererPlanKind, RuntimeParameterValue, RuntimeStage, RuntimeValue,
-    SimulationSeekMode,
+    CompiledAsset, CompiledChoreographyEvent, CompiledCurve, CompiledEffect, CompiledEffectClip,
+    CompiledEffectProject, CompiledEmitter, CompiledFlipbook, CompiledGradient, CompiledMaterial,
+    CompiledParameter, CompiledParameterOverride, ExecutionPlan, Expression, Instruction,
+    IrLocation, MaterialColorPlan, OptimizationStats, ParameterSlot, ParticleAttribute,
+    ParticleLayout, RendererPlan, RendererPlanKind, RuntimeParameterValue, RuntimeStage,
+    RuntimeValue, SimulationSeekMode,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -460,6 +460,24 @@ impl EffectCompiler {
                     parameter_overrides: Vec::new(),
                 })
                 .collect(),
+            choreography_events: {
+                let mut events = asset
+                    .choreography_events
+                    .iter()
+                    .map(|event| CompiledChoreographyEvent {
+                        source: event.id,
+                        name: event.name.clone(),
+                        time: event.time,
+                        payload: event.payload.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                events.sort_by(|left, right| {
+                    left.time
+                        .total_cmp(&right.time)
+                        .then_with(|| left.source.cmp(&right.source))
+                });
+                events
+            },
             source_map,
             optimizations,
         })

@@ -1,6 +1,7 @@
 use crate::SemanticTarget;
 use aestra_core::{
-    EffectAsset, EffectClip, EffectMarker, Emitter, ModuleInstance, RendererInstance,
+    ChoreographyEvent, EffectAsset, EffectClip, EffectMarker, Emitter, ModuleInstance,
+    RendererInstance,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -69,6 +70,7 @@ impl EffectDiff {
 
         diff_effect_clips(before, after, &mut changes);
         diff_markers(before, after, &mut changes);
+        diff_choreography_events(before, after, &mut changes);
 
         let before_emitters = indexed_emitters(before);
         let after_emitters = indexed_emitters(after);
@@ -148,6 +150,57 @@ impl EffectDiff {
 
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
+    }
+}
+
+fn diff_choreography_events(
+    before: &EffectAsset,
+    after: &EffectAsset,
+    changes: &mut Vec<SemanticChange>,
+) {
+    let before_events = indexed_choreography_events(&before.choreography_events);
+    let after_events = indexed_choreography_events(&after.choreography_events);
+    for (id, (index, event)) in &before_events {
+        let target = SemanticTarget::ChoreographyEvent(*id);
+        let Some((after_index, after_event)) = after_events.get(id) else {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Removed,
+                target,
+                path: format!("effect.choreography_events[{index}]"),
+                before: Some(event.name.clone()),
+                after: None,
+            });
+            continue;
+        };
+        if index != after_index {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Moved,
+                target,
+                path: "effect.choreography_events".into(),
+                before: Some(index.to_string()),
+                after: Some(after_index.to_string()),
+            });
+        }
+        if event != after_event {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Modified,
+                target,
+                path: "choreography_event".into(),
+                before: Some(format!("{} @ {}", event.name, event.time)),
+                after: Some(format!("{} @ {}", after_event.name, after_event.time)),
+            });
+        }
+    }
+    for (id, (index, event)) in &after_events {
+        if !before_events.contains_key(id) {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Added,
+                target: SemanticTarget::ChoreographyEvent(*id),
+                path: format!("effect.choreography_events[{index}]"),
+                before: None,
+                after: Some(event.name.clone()),
+            });
+        }
     }
 }
 
@@ -447,6 +500,16 @@ fn indexed_markers(
         .iter()
         .enumerate()
         .map(|(index, marker)| (marker.id, (index, marker)))
+        .collect()
+}
+
+fn indexed_choreography_events(
+    events: &[ChoreographyEvent],
+) -> BTreeMap<aestra_core::ChoreographyEventId, (usize, &ChoreographyEvent)> {
+    events
+        .iter()
+        .enumerate()
+        .map(|(index, event)| (event.id, (index, event)))
         .collect()
 }
 

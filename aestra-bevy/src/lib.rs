@@ -7,9 +7,10 @@ pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
 pub use aestra_core::*;
 pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
-    CompiledEffect, DEFAULT_PLAYBACK_TICK_RATE, EffectInstance, EffectProfile, EmitterProfile,
-    ParameterError, ParticleSample, PlaybackCheckpoint, PlaybackClock, ProfileValue,
-    ProfileValueSource, RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
+    CompiledEffect, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent, EffectInstance,
+    EffectProfile, EmitterProfile, ParameterError, ParticleSample, PlaybackCheckpoint,
+    PlaybackClock, ProfileValue, ProfileValueSource, RuntimeValue, SeekOrigin, SeekPlan,
+    SimulationSeekMode,
 };
 pub use capabilities::{
     ActiveBackend, AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRuntimeStatus,
@@ -19,8 +20,8 @@ pub use capabilities::{
 use bevy::asset::LoadState;
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{
-    App, AssetServer, Assets, Children, Color, Commands, Component, Entity, Image, Plugin, Quat,
-    Query, Res, Resource, Sprite, Time, Transform, Update, Vec2, Vec3, Visibility, Without,
+    App, AssetServer, Assets, Children, Color, Commands, Component, Entity, Event, Image, Plugin,
+    Quat, Query, Res, Resource, Sprite, Time, Transform, Update, Vec2, Vec3, Visibility, Without,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -80,6 +81,15 @@ pub enum AestraSet {
     Playback,
 }
 
+/// Fired after an [`EffectPlayer`] crosses a compiled choreography event during normal playback.
+/// Applications can consume it with a Bevy observer without coupling game logic to particle
+/// lifecycle links or polling the player timeline.
+#[derive(Event, Debug, Clone)]
+pub struct AestraChoreographyEvent {
+    pub player: Entity,
+    pub event: DispatchedChoreographyEvent,
+}
+
 impl Plugin for AestraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AestraSettings>()
@@ -131,6 +141,7 @@ pub struct EffectPlayer {
     clock: PlaybackClock,
     samples: Vec<ParticleSample>,
     gpu_samples: Vec<ParticleSample>,
+    choreography_events: Vec<DispatchedChoreographyEvent>,
 }
 
 impl EffectPlayer {
@@ -152,6 +163,7 @@ impl EffectPlayer {
             clock: PlaybackClock::default(),
             samples: Vec::new(),
             gpu_samples: Vec::new(),
+            choreography_events: Vec::new(),
         }
     }
 
@@ -249,6 +261,15 @@ impl EffectPlayer {
         self.instance.clear_parameter(id)
     }
 
+    /// Drains choreography events produced by the most recent clock advance. The plugin drains
+    /// this automatically and emits [`AestraChoreographyEvent`]; manual player integrations can
+    /// use the same queue directly.
+    pub fn drain_choreography_events(
+        &mut self,
+    ) -> impl Iterator<Item = DispatchedChoreographyEvent> + '_ {
+        self.choreography_events.drain(..)
+    }
+
     fn advance_clock(&mut self, delta_seconds: f32) -> ClockAdvance {
         let duration = self.effect().duration;
         let looping = self.effect().looping;
@@ -256,17 +277,27 @@ impl EffectPlayer {
         let result = self
             .clock
             .advance(delta_seconds, self.speed, duration, looping);
+        self.choreography_events.clear();
+        let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
         match self.seek_mode() {
-            SimulationSeekMode::StatelessDirect => self.sync_instance_time(),
+            SimulationSeekMode::StatelessDirect => {
+                self.instance.advance_with_choreography_events(
+                    result.ticks as f32 * tick_seconds,
+                    &mut self.choreography_events,
+                );
+                self.sync_instance_time();
+            }
             SimulationSeekMode::CheckpointRestore | SimulationSeekMode::RestartReplay => {
                 let ticks = if looping {
                     result.ticks
                 } else {
                     self.clock.frame().saturating_sub(previous_frame)
                 };
-                let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
+                let mut events = Vec::new();
                 for _ in 0..ticks {
-                    self.instance.advance(tick_seconds);
+                    self.instance
+                        .advance_with_choreography_events(tick_seconds, &mut events);
+                    self.choreography_events.append(&mut events);
                 }
             }
         }
@@ -471,10 +502,12 @@ struct TexturePresentationAssets<'w> {
 }
 
 fn play_effects(
+    mut commands: Commands,
     time: Res<Time>,
     capabilities: Res<GpuCapabilities>,
     mut textures: TexturePresentationAssets,
     mut players: Query<(
+        Entity,
         &mut EffectPlayer,
         &mut EffectProfiler,
         Option<&Children>,
@@ -487,7 +520,7 @@ fn play_effects(
         &mut Visibility,
     )>,
 ) {
-    for (mut player, mut profiler, children, runtime) in &mut players {
+    for (player_entity, mut player, mut profiler, children, runtime) in &mut players {
         if !profiler.0.matches_compiled(player.effect()) {
             profiler.0 = bevy_profile(player.effect(), &capabilities, runtime);
         }
@@ -496,6 +529,12 @@ fn play_effects(
             if advance.reached_end {
                 player.playing = false;
             }
+        }
+        for event in player.drain_choreography_events() {
+            commands.trigger(AestraChoreographyEvent {
+                player: player_entity,
+                event,
+            });
         }
 
         if runtime.active == ActiveBackend::Gpu {
@@ -745,6 +784,37 @@ mod tests {
         fine.instance.evaluate(&mut fine_samples);
         coarse.instance.evaluate(&mut coarse_samples);
         assert_eq!(fine_samples, coarse_samples);
+    }
+
+    #[test]
+    fn players_surface_choreography_events_crossed_by_fixed_step_playback() {
+        let mut effect = EffectAsset::new("Choreography", 2.0);
+        effect.choreography_events = vec![
+            ChoreographyEvent::new(
+                "Begin",
+                0.0,
+                ChoreographyEventPayload::GameplayNotify {
+                    topic: "begin".into(),
+                },
+            ),
+            ChoreographyEvent::new(
+                "Impact",
+                0.5,
+                ChoreographyEventPayload::PlaySound {
+                    cue: "impact".into(),
+                },
+            ),
+        ];
+        let mut player = EffectPlayer::new(&effect);
+
+        player.advance_clock(0.75);
+        assert_eq!(
+            player
+                .drain_choreography_events()
+                .map(|event| event.name)
+                .collect::<Vec<_>>(),
+            ["Begin", "Impact"]
+        );
     }
 
     #[test]

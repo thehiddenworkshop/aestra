@@ -1,6 +1,7 @@
 use crate::{
-    AssetId, CurveId, Diagnostic, DiagnosticCode, EffectClipId, EffectId, EmitterId, EventId,
-    GradientId, MarkerId, MaterialId, ModuleId, ParameterId, RendererId, ValidationReport,
+    AssetId, ChoreographyEventId, CurveId, Diagnostic, DiagnosticCode, EffectClipId, EffectId,
+    EmitterId, EventId, GradientId, MarkerId, MaterialId, ModuleId, ParameterId, RendererId,
+    ValidationReport,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs, io::Write, path::Path};
@@ -41,6 +42,8 @@ pub struct EffectAsset {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub markers: Vec<EffectMarker>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choreography_events: Vec<ChoreographyEvent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effect_clips: Vec<EffectClip>,
     /// Optional stable presentation order for top-level choreography rows.
     /// Missing and stale entries are repaired by editor projections without changing runtime data.
@@ -67,6 +70,7 @@ impl EffectAsset {
             emitters: Vec::new(),
             events: Vec::new(),
             markers: Vec::new(),
+            choreography_events: Vec::new(),
             effect_clips: Vec::new(),
             choreography_order: Vec::new(),
             dependencies: Vec::new(),
@@ -264,6 +268,16 @@ impl EffectAsset {
                 ));
             }
         }
+        for (index, event) in self.choreography_events.iter().enumerate() {
+            let path = format!("effect.choreography_events[{index}]");
+            register_id(
+                &mut report,
+                &mut semantic_ids,
+                event.id.as_uuid().as_u128(),
+                format!("{path}.id"),
+            );
+            event.validate(&path, self, &mut report);
+        }
         for (index, event) in self.events.iter().enumerate() {
             let path = format!("effect.events[{index}]");
             register_id(
@@ -454,10 +468,10 @@ pub struct EffectMarker {
     pub time: f32,
 }
 
-/// Optional semantic anchor for an emitter or effect-clip start time.
+/// Optional semantic time anchor.
 ///
-/// `start_time` remains the resolved value consumed by runtimes; authoring commands keep it in
-/// sync with `marker + offset` so existing compiled/runtime representations stay deterministic.
+/// The owning object's resolved time remains the value consumed by runtimes; authoring commands
+/// keep it in sync with `marker + offset` so compiled/runtime representations stay deterministic.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct MarkerTimeReference {
     pub marker: MarkerId,
@@ -488,10 +502,7 @@ fn validate_marker_time_reference(
         report.push(Diagnostic::error(
             DiagnosticCode::InvalidReference,
             format!("{path}.marker"),
-            format!(
-                "start timing references missing marker {}",
-                reference.marker
-            ),
+            format!("timing references missing marker {}", reference.marker),
         ));
         return;
     };
@@ -508,15 +519,13 @@ fn validate_marker_time_reference(
         report.push(Diagnostic::error(
             DiagnosticCode::InvalidTiming,
             path,
-            "marker-relative start must resolve to a finite, non-negative time",
+            "marker-relative time must resolve to a finite, non-negative time",
         ));
     } else if (expected - resolved_time).abs() > 1.0e-4 {
         report.push(Diagnostic::error(
             DiagnosticCode::InvalidTiming,
             path,
-            format!(
-                "resolved start time {resolved_time} does not match marker-relative time {expected}"
-            ),
+            format!("resolved time {resolved_time} does not match marker-relative time {expected}"),
         ));
     }
 }
@@ -529,6 +538,90 @@ impl EffectMarker {
             time,
         }
     }
+}
+
+/// A deterministic semantic notification authored at one point on the effect timeline.
+/// It is intentionally separate from particle lifecycle routing (`EventLink`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChoreographyEvent {
+    pub id: ChoreographyEventId,
+    pub name: String,
+    pub time: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_reference: Option<MarkerTimeReference>,
+    pub payload: ChoreographyEventPayload,
+}
+
+impl ChoreographyEvent {
+    pub fn new(name: impl Into<String>, time: f32, payload: ChoreographyEventPayload) -> Self {
+        Self {
+            id: ChoreographyEventId::new(),
+            name: name.into(),
+            time,
+            time_reference: None,
+            payload,
+        }
+    }
+
+    fn validate(&self, path: &str, owner: &EffectAsset, report: &mut ValidationReport) {
+        if self.name.trim().is_empty() {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                format!("{path}.name"),
+                "choreography event name cannot be empty",
+            ));
+        }
+        if !self.time.is_finite() || !(0.0..=owner.duration).contains(&self.time) {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidTiming,
+                format!("{path}.time"),
+                "choreography event time must be finite and inside the effect duration",
+            ));
+        }
+        validate_marker_time_reference(
+            self.time_reference,
+            self.time,
+            &format!("{path}.time_reference"),
+            owner,
+            report,
+        );
+        if let ChoreographyEventPayload::CameraShake { intensity } = self.payload
+            && (!intensity.is_finite() || intensity < 0.0)
+        {
+            report.push(Diagnostic::error(
+                DiagnosticCode::InvalidValue,
+                format!("{path}.payload.intensity"),
+                "camera shake intensity must be finite and non-negative",
+            ));
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ChoreographyEventPayload {
+    GameplayNotify { topic: String },
+    PlaySound { cue: String },
+    CameraShake { intensity: f32 },
+    SpawnChildEffect { effect: String },
+}
+
+impl ChoreographyEventPayload {
+    pub const fn kind(&self) -> ChoreographyEventKind {
+        match self {
+            Self::GameplayNotify { .. } => ChoreographyEventKind::GameplayNotify,
+            Self::PlaySound { .. } => ChoreographyEventKind::PlaySound,
+            Self::CameraShake { .. } => ChoreographyEventKind::CameraShake,
+            Self::SpawnChildEffect { .. } => ChoreographyEventKind::SpawnChildEffect,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ChoreographyEventKind {
+    GameplayNotify,
+    PlaySound,
+    CameraShake,
+    SpawnChildEffect,
 }
 
 /// Stable identity of one top-level row in an effect choreography timeline.
