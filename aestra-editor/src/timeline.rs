@@ -11,7 +11,7 @@ use crate::{
     FeathersActionButton, KeyboardNavigableList, KeyboardNavigableListRow, Localizer, MenuState,
     ModulePaletteState, PendingFeathersActivation, ProjectEffectEntryId, TransportAction,
     WorkspaceLayout, mini_button, reveal_dock_panel, session::EditorSession, spawn_combo_control,
-    spawn_text_input, theme, ui_shell,
+    theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
@@ -67,7 +67,6 @@ impl Plugin for TimelinePlugin {
             .add_observer(execute_timeline_action)
             .add_observer(queue_choreography_action_activation)
             .add_observer(activate_timeline_track_entry)
-            .add_observer(handle_timeline_track_name_change)
             .add_observer(handle_timeline_track_color_change)
             .add_observer(begin_project_effect_drag_preview)
             .add_observer(finish_project_effect_drag_preview)
@@ -195,31 +194,6 @@ fn activate_timeline_track_entry(
         && let Ok(action) = actions.get(change.value)
     {
         commands.trigger(action.clone());
-    }
-}
-
-fn handle_timeline_track_name_change(
-    change: On<ValueChange<String>>,
-    controls: Query<&TimelineTrackNameControl>,
-    mut session: ResMut<EditorSession>,
-    localizer: Res<Localizer>,
-) {
-    if !change.is_final {
-        return;
-    }
-    let Ok(control) = controls.get(change.source) else {
-        return;
-    };
-    let name = change.value.trim();
-    if name.is_empty() {
-        session.status = localizer.text("timeline-emitter-name-required");
-        session.ui_revision += 1;
-        return;
-    }
-    if session.set_emitter_name(control.emitter, name) {
-        let mut args = FluentArgs::new();
-        args.set("name", name);
-        session.status = localizer.text_with("timeline-emitter-renamed", &args);
     }
 }
 
@@ -1913,17 +1887,11 @@ mod tests {
         assert!(heading.ends_with(" · CHOREOGRAPHY"));
         let renamed_track = {
             let world = app.world_mut();
-            let mut controls = world.query::<(&TimelineTrackNameControl, &Children)>();
-            let mut names = world.query::<&EditableText>();
-            controls
+            let mut labels = world.query_filtered::<&Text, With<TimelineTrackNameLabel>>();
+            labels
                 .iter(world)
-                .find(|(control, _)| control.emitter == emitter)
-                .and_then(|(_, children)| {
-                    children
-                        .iter()
-                        .find_map(|child| names.get(world, child).ok())
-                })
-                .map(|name| name.value().to_string())
+                .find(|name| name.0 == "Renamed Emitter")
+                .map(|name| name.0.clone())
         };
         assert_eq!(renamed_track.as_deref(), Some("Renamed Emitter"));
         let chip_color = {
@@ -2025,47 +1993,6 @@ mod tests {
                 Val::Px(0.0),
             )
         );
-    }
-
-    #[test]
-    fn inline_track_name_edit_is_undoable_and_rejects_empty_names() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let emitter = session.selected_layer().id;
-        let original = session.selected_layer().name.clone();
-        let mut app = App::new();
-        app.insert_resource(session)
-            .insert_resource(Localizer::new("en-US").unwrap())
-            .add_observer(handle_timeline_track_name_change);
-        let control = app
-            .world_mut()
-            .spawn(TimelineTrackNameControl { emitter })
-            .id();
-
-        app.world_mut().trigger(ValueChange {
-            source: control,
-            value: "Timeline Rename".to_owned(),
-            is_final: true,
-        });
-        app.update();
-        assert_eq!(
-            app.world()
-                .resource::<EditorSession>()
-                .selected_layer()
-                .name,
-            "Timeline Rename"
-        );
-
-        app.world_mut().trigger(ValueChange {
-            source: control,
-            value: "   ".to_owned(),
-            is_final: true,
-        });
-        app.update();
-        let mut session = app.world_mut().resource_mut::<EditorSession>();
-        assert_eq!(session.selected_layer().name, "Timeline Rename");
-        assert_eq!(session.status, "An emitter track name is required");
-        session.undo();
-        assert_eq!(session.selected_layer().name, original);
     }
 
     #[test]
@@ -3662,10 +3589,8 @@ struct EffectClipTrackReorderHandle {
     clip: EffectClipId,
 }
 
-#[derive(Component, Clone, Copy)]
-struct TimelineTrackNameControl {
-    emitter: EmitterId,
-}
+#[derive(Component)]
+struct TimelineTrackNameLabel;
 
 #[derive(Component)]
 struct EmitterTrackDiagnostic;
@@ -6174,22 +6099,25 @@ fn spawn_emitter_track_header(
                     .entity(solo)
                     .insert((Selected, ButtonVariant::Primary));
             }
-            let rename_label = emitter_timing_label(localizer, "timeline-rename-emitter", name);
-            let name_control = spawn_text_input(
-                row,
-                name,
-                &rename_label,
-                TimelineTrackNameControl { emitter },
-            );
-            row.commands().entity(name_control).insert((
+            row.spawn((
+                TimelineTrackNameLabel,
+                Text::new(name),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                TextLayout::no_wrap(),
+                Pickable::IGNORE,
                 Node {
                     min_width: Val::Px(0.0),
                     height: Val::Px(23.0),
                     flex_grow: 1.0,
                     overflow: Overflow::clip(),
+                    align_items: AlignItems::Center,
                     ..default()
                 },
-                EditorTooltip::description(rename_label),
+                EditorTooltip::description(name),
             ));
             if diagnostic {
                 row.spawn((
