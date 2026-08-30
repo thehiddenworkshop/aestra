@@ -200,20 +200,6 @@ impl EditorSession {
         self.seek_frame(target);
     }
 
-    pub fn adjust_preview_seed(&mut self, direction: i8) {
-        self.checkpoints.clear();
-        self.preview_seed = if direction < 0 {
-            self.preview_seed.wrapping_sub(1)
-        } else {
-            self.preview_seed.wrapping_add(1)
-        };
-        if let Some(preview) = &mut self.preview {
-            preview.set_seed(self.preview_seed);
-        }
-        self.status = format!("Preview seed {:#018x}", self.preview_seed);
-        self.ui_revision += 1;
-    }
-
     pub fn toggle_preview_solo(&mut self, emitter: EmitterId) -> bool {
         if !self.effect.emitters.iter().any(|item| item.id == emitter) {
             return false;
@@ -2212,7 +2198,7 @@ mod tests {
     }
 
     #[test]
-    fn editor_frame_controls_are_seeded_and_reproducible() {
+    fn editor_frame_controls_are_reproducible() {
         let mut session = EditorSession::from_embedded_sample(
             include_str!("../../assets/effects/prism_bloom.aestra.ron"),
             "sample.ron",
@@ -2233,11 +2219,6 @@ mod tests {
         session.step_frame(-1);
         assert_eq!(session.frame(), 59);
         assert!(!session.playing);
-        let before_seed_change = preview_samples(&mut session);
-        let seed = session.preview_seed;
-        session.adjust_preview_seed(1);
-        assert_eq!(session.preview_seed, seed + 1);
-        assert_ne!(preview_samples(&mut session), before_seed_change);
     }
 
     #[test]
@@ -2265,18 +2246,13 @@ mod tests {
     }
 
     #[test]
-    fn effect_and_seed_changes_invalidate_editor_checkpoints() {
+    fn effect_changes_invalidate_editor_checkpoints() {
         let mut session = EditorSession::from_embedded_sample(
             include_str!("../../assets/effects/prism_bloom.aestra.ron"),
             "sample.ron",
         );
         set_seek_mode(&mut session, SimulationSeekMode::CheckpointRestore);
         session.seek_time(1.0);
-        assert!(!session.checkpoints.is_empty());
-        session.adjust_preview_seed(1);
-        assert!(session.checkpoints.is_empty());
-
-        session.seek_time(0.5);
         assert!(!session.checkpoints.is_empty());
         let module = session.effect.emitters[0]
             .module_by_type(aestra_bevy::MODULE_EMISSION)

@@ -128,8 +128,10 @@ pub(crate) enum TimelineAction {
     FrameAll,
     AddMarker,
     SelectMarker(MarkerId),
+    DeleteMarker(MarkerId),
     AddChoreographyEvent,
     SelectChoreographyEvent(ChoreographyEventId),
+    DeleteChoreographyEvent(ChoreographyEventId),
 }
 
 #[derive(Component, Event, Debug, Clone, PartialEq, Eq)]
@@ -339,6 +341,13 @@ fn execute_timeline_action(
             session.select_marker(id);
             state.inspected_child = None;
         }
+        TimelineAction::DeleteMarker(id) => {
+            let label = localizer.as_deref().map_or_else(
+                || "Deleted timeline marker".to_owned(),
+                |localizer| localizer.text("timeline-delete-marker-command"),
+            );
+            session.execute(label, EffectCommand::RemoveMarker { id }, true);
+        }
         TimelineAction::AddChoreographyEvent => {
             let index = session.effect.choreography_events.len();
             let event = ChoreographyEvent::new(
@@ -360,6 +369,13 @@ fn execute_timeline_action(
         TimelineAction::SelectChoreographyEvent(id) => {
             session.select_choreography_event(id);
             state.inspected_child = None;
+        }
+        TimelineAction::DeleteChoreographyEvent(id) => {
+            let label = localizer.as_deref().map_or_else(
+                || "Deleted choreography event".to_owned(),
+                |localizer| localizer.text("timeline-delete-event-command"),
+            );
+            session.execute(label, EffectCommand::RemoveChoreographyEvent { id }, true);
         }
     }
 }
@@ -617,12 +633,20 @@ fn choreography_keyboard_input(
         commands.trigger(ChoreographyAction::DuplicateEmitter(None));
     }
     if keys.just_pressed(KeyCode::Delete) {
-        if state.inspected_child.is_none()
-            && let SemanticTarget::EffectClip(clip) = session.selection.primary
-        {
-            commands.trigger(ChoreographyAction::DeleteEffectClip(clip));
-        } else if state.inspected_child.is_none() {
-            commands.trigger(ChoreographyAction::DeleteEmitter(None));
+        match session.selection.primary {
+            SemanticTarget::Marker(marker) => {
+                commands.trigger(TimelineAction::DeleteMarker(marker));
+            }
+            SemanticTarget::ChoreographyEvent(event) => {
+                commands.trigger(TimelineAction::DeleteChoreographyEvent(event));
+            }
+            SemanticTarget::EffectClip(clip) if state.inspected_child.is_none() => {
+                commands.trigger(ChoreographyAction::DeleteEffectClip(clip));
+            }
+            _ if state.inspected_child.is_none() => {
+                commands.trigger(ChoreographyAction::DeleteEmitter(None));
+            }
+            _ => {}
         }
     }
 }
@@ -1962,6 +1986,95 @@ mod tests {
     }
 
     #[test]
+    fn timeline_toolbar_uses_icons_for_framing_marker_and_event_tools() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.new_effect();
+        let duration = session.playback_duration();
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .init_asset::<Image>()
+        .init_asset::<SvgFile>()
+        .insert_resource(session)
+        .insert_resource(TimelineState::framed(duration))
+        .init_resource::<ProjectEffectCatalog>()
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_systems(Startup, spawn_test_timeline);
+        app.update();
+
+        let world = app.world_mut();
+        let mut buttons = world.query::<(&TimelineAction, &Children)>();
+        for expected in [
+            TimelineAction::FrameAll,
+            TimelineAction::AddMarker,
+            TimelineAction::AddChoreographyEvent,
+        ] {
+            let children = buttons
+                .iter(world)
+                .find_map(|(action, children)| (*action == expected).then_some(children))
+                .expect("timeline tool must exist");
+            assert!(
+                children
+                    .iter()
+                    .any(|child| world.get::<UiSvg>(child).is_some())
+            );
+            assert!(
+                children
+                    .iter()
+                    .all(|child| world.get::<Text>(child).is_none())
+            );
+        }
+    }
+
+    #[test]
+    fn delete_key_removes_the_selected_marker_or_choreography_event() {
+        for delete_marker in [true, false] {
+            let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+            session.new_effect();
+            let marker = EffectMarker::new("Delete me", 0.5);
+            let marker_id = marker.id;
+            let event = ChoreographyEvent::new(
+                "Delete me",
+                0.75,
+                ChoreographyEventPayload::GameplayNotify {
+                    topic: "delete".into(),
+                },
+            );
+            let event_id = event.id;
+            session.effect.markers.push(marker);
+            session.effect.choreography_events.push(event);
+            if delete_marker {
+                session.select_marker(marker_id);
+            } else {
+                session.select_choreography_event(event_id);
+            }
+
+            let mut app = choreography_app(session);
+            app.init_resource::<ModulePaletteState>()
+                .init_resource::<ButtonInput<KeyCode>>()
+                .add_observer(execute_timeline_action)
+                .add_systems(Update, choreography_keyboard_input);
+            app.world_mut().spawn(TimelineCanvas);
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(KeyCode::Delete);
+            app.update();
+
+            let session = app.world().resource::<EditorSession>();
+            assert_eq!(session.effect.markers.len(), usize::from(!delete_marker));
+            assert_eq!(
+                session.effect.choreography_events.len(),
+                usize::from(delete_marker)
+            );
+            assert!(session.can_undo());
+        }
+    }
+
+    #[test]
     fn authored_names_and_display_color_are_projected_into_the_timeline() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         assert!(session.set_effect_name("Renamed Effect"));
@@ -2478,7 +2591,7 @@ mod tests {
                 .map(|(_, label, tooltip)| (label.0.clone(), tooltip))
                 .collect::<Vec<_>>()
         };
-        assert_eq!(timeline_icon_controls.len(), 4);
+        assert_eq!(timeline_icon_controls.len(), 2);
         assert!(timeline_icon_controls.iter().all(|(label, tooltip)| {
             *tooltip && !matches!(label.as_str(), "<" | ">" | "+" | "-")
         }));
@@ -4306,6 +4419,45 @@ fn describe_timeline_control(
     ));
 }
 
+fn timeline_icon_button(
+    parent: &mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    icon_path: &'static str,
+    label: String,
+    action: TimelineAction,
+) -> Entity {
+    let mut button = parent.spawn_empty();
+    button.apply_scene(ui_shell::feathers_tool_button());
+    let entity = button.id();
+    button
+        .insert((
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.clone()),
+            EditorTooltip::description(label),
+            Node {
+                width: Val::Px(28.0),
+                height: Val::Px(26.0),
+                flex_shrink: 0.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+        ))
+        .with_child((
+            Node {
+                width: Val::Px(16.0),
+                height: Val::Px(16.0),
+                ..default()
+            },
+            UiSvg(load_svg_icon(asset_server, icon_path)),
+            SvgColor(theme::TEXT),
+            Pickable::IGNORE,
+        ));
+    entity
+}
+
 fn emitter_timing_label(localizer: &Localizer, message_id: &str, name: &str) -> String {
     let mut args = FluentArgs::new();
     args.set("name", name);
@@ -5182,19 +5334,25 @@ pub(crate) fn spawn_timeline(
                         next,
                         localizer.text("timeline-next-frame"),
                     );
-                    mini_button(
+                    timeline_icon_button(
                         header,
-                        &localizer.text("timeline-frame-all"),
+                        asset_server,
+                        "icons/center-focus.svg",
+                        localizer.text("timeline-frame-all"),
                         TimelineAction::FrameAll,
                     );
-                    mini_button(
+                    timeline_icon_button(
                         header,
-                        &localizer.text("timeline-add-marker"),
+                        asset_server,
+                        "icons/marker.svg",
+                        localizer.text("timeline-add-marker"),
                         TimelineAction::AddMarker,
                     );
-                    mini_button(
+                    timeline_icon_button(
                         header,
-                        &localizer.text("timeline-add-event"),
+                        asset_server,
+                        "icons/event.svg",
+                        localizer.text("timeline-add-event"),
                         TimelineAction::AddChoreographyEvent,
                     );
                     let snap_options = TimelineSnapMode::ALL
@@ -5218,11 +5376,9 @@ pub(crate) fn spawn_timeline(
                     });
                     header.spawn((
                         Text::new(format!(
-                            "{} {}  ·  {} {:016x}",
+                            "{} {}",
                             session.clock.tick_rate(),
-                            localizer.text("timeline-hertz"),
-                            localizer.text("timeline-seed"),
-                            session.preview_seed
+                            localizer.text("timeline-hertz")
                         )),
                         TextFont {
                             font_size: FontSize::Px(9.0),
@@ -5230,20 +5386,6 @@ pub(crate) fn spawn_timeline(
                         },
                         TextColor(theme::TEXT_FAINT),
                     ));
-                    let decrease_seed =
-                        mini_button(header, "-", TransportAction::AdjustPreviewSeed(-1));
-                    describe_timeline_control(
-                        header,
-                        decrease_seed,
-                        localizer.text("timeline-decrease-seed"),
-                    );
-                    let increase_seed =
-                        mini_button(header, "+", TransportAction::AdjustPreviewSeed(1));
-                    describe_timeline_control(
-                        header,
-                        increase_seed,
-                        localizer.text("timeline-increase-seed"),
-                    );
                     header.spawn((
                         Text::new(format!(
                             "{} {:.2}s",

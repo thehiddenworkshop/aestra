@@ -46,7 +46,6 @@ pub(crate) enum TransportAction {
     ToggleLooping,
     Restart,
     StepFrame(i8),
-    AdjustPreviewSeed(i8),
 }
 
 #[derive(Component)]
@@ -143,9 +142,6 @@ fn execute_transport_action(action: On<TransportAction>, mut session: ResMut<Edi
         }
         TransportAction::Restart => session.restart(),
         TransportAction::StepFrame(direction) => session.step_frame(direction),
-        TransportAction::AdjustPreviewSeed(direction) => {
-            session.adjust_preview_seed(direction);
-        }
     }
 }
 
