@@ -121,6 +121,34 @@ pub(crate) fn spawn_action_menu<A: Component + Copy>(
     accessible_label: &str,
     options: &[ComboOption<A>],
 ) {
+    spawn_action_menu_with_trigger(parent, accessible_label, options, ActionMenuTrigger::Dots);
+}
+
+pub(crate) fn spawn_compact_action_menu<A: Component + Copy>(
+    parent: &mut ChildSpawnerCommands,
+    accessible_label: &str,
+    options: &[ComboOption<A>],
+) {
+    spawn_action_menu_with_trigger(
+        parent,
+        accessible_label,
+        options,
+        ActionMenuTrigger::Ellipsis,
+    );
+}
+
+#[derive(Clone, Copy)]
+enum ActionMenuTrigger {
+    Dots,
+    Ellipsis,
+}
+
+fn spawn_action_menu_with_trigger<A: Component + Copy>(
+    parent: &mut ChildSpawnerCommands,
+    accessible_label: &str,
+    options: &[ComboOption<A>],
+    trigger: ActionMenuTrigger,
+) {
     parent
         .spawn_empty()
         .apply_scene(scenes::feathers_menu())
@@ -137,33 +165,46 @@ pub(crate) fn spawn_action_menu<A: Component + Copy>(
                         ..default()
                     },
                 ))
-                .with_children(|button| {
-                    button
-                        .spawn((
-                            Node {
-                                width: Val::Px(4.0),
-                                height: Val::Px(16.0),
-                                flex_direction: FlexDirection::Column,
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::SpaceBetween,
+                .with_children(|button| match trigger {
+                    ActionMenuTrigger::Dots => {
+                        button
+                            .spawn((
+                                Node {
+                                    width: Val::Px(4.0),
+                                    height: Val::Px(16.0),
+                                    flex_direction: FlexDirection::Column,
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    ..default()
+                                },
+                                Pickable::IGNORE,
+                            ))
+                            .with_children(|dots| {
+                                for _ in 0..3 {
+                                    dots.spawn((
+                                        Node {
+                                            width: Val::Px(3.0),
+                                            height: Val::Px(3.0),
+                                            border_radius: BorderRadius::all(Val::Px(2.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(theme::TEXT_MUTED),
+                                        Pickable::IGNORE,
+                                    ));
+                                }
+                            });
+                    }
+                    ActionMenuTrigger::Ellipsis => {
+                        button.spawn((
+                            Text::new("…"),
+                            TextFont {
+                                font_size: FontSize::Px(14.0),
                                 ..default()
                             },
+                            ThemedText,
                             Pickable::IGNORE,
-                        ))
-                        .with_children(|dots| {
-                            for _ in 0..3 {
-                                dots.spawn((
-                                    Node {
-                                        width: Val::Px(3.0),
-                                        height: Val::Px(3.0),
-                                        border_radius: BorderRadius::all(Val::Px(2.0)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(theme::TEXT_MUTED),
-                                    Pickable::IGNORE,
-                                ));
-                            }
-                        });
+                        ));
+                    }
                 });
             menu.spawn_empty()
                 .apply_scene(scenes::feathers_menu_popup())

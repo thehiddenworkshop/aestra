@@ -30,9 +30,9 @@ toolbar-loop-enable = Enable loop playback
 toolbar-loop-disable = Disable loop playback
 toolbar-restart = Restart
 toolbar-save = Save
-toolbar-choreography = VFX CHOREOGRAPHY
 toolbar-source-back = Back to parent source
 toolbar-source-forward = Forward to nested source
+toolbar-source-hidden-ancestors = Hidden source ancestors
 toolbar-runtime = BEVY 0.19  |  CPU REFERENCE
 
 panel-viewport = VIEWPORT

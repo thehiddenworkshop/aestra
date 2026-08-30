@@ -1,6 +1,11 @@
 //! Root editor chrome, global shortcuts, and UI rebuild lifecycle.
 
+use crate::feathers::{
+    breadcrumb::{BreadcrumbItem, BreadcrumbProps, spawn_breadcrumb},
+    icon::load_svg_icon,
+};
 use crate::*;
+use bevy_resvg::prelude::{SvgColor, UiSvg};
 use std::collections::HashMap;
 
 pub(crate) struct EditorShellPlugin;
@@ -244,9 +249,11 @@ fn spawn_toolbar(
             ));
             bar.spawn((
                 GlobalSourceNavigation,
+                EditorTooltip::description(source_navigation_path(session, navigation)),
                 Node {
                     min_width: Val::Px(0.0),
                     max_width: Val::Percent(55.0),
+                    height: Val::Px(28.0),
                     align_items: AlignItems::Center,
                     overflow: Overflow::clip(),
                     ..default()
@@ -258,6 +265,7 @@ fn spawn_toolbar(
                     session,
                     navigation,
                     localizer,
+                    asset_server,
                 );
             });
             bar.spawn(Node {
@@ -293,113 +301,82 @@ fn global_source_navigation_view(
     }
 }
 
+fn source_navigation_path(session: &EditorSession, navigation: &SourceNavigationState) -> String {
+    navigation.breadcrumb(&session.effect.name).join(" › ")
+}
+
 fn spawn_global_source_navigation_items(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     navigation: &SourceNavigationState,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     spawn_global_navigation_button(
         parent,
-        "‹",
+        -1,
         DocumentAction::BackToSource,
         &localizer.text("toolbar-source-back"),
         !navigation.can_go_back(),
+        asset_server,
     );
     spawn_global_navigation_button(
         parent,
-        "›",
+        1,
         DocumentAction::ForwardToSource,
         &localizer.text("toolbar-source-forward"),
         !navigation.can_go_forward(),
+        asset_server,
     );
 
+    let mut breadcrumb = navigation.breadcrumb(&session.effect.name);
     let depth = navigation.depth();
-    for (index, name) in navigation
-        .breadcrumb(&session.effect.name)
+    let full_path = breadcrumb.join(" › ");
+    if session.dirty {
+        breadcrumb[depth] = format!("* {}", breadcrumb[depth]);
+    }
+    let items = breadcrumb
         .into_iter()
         .enumerate()
-    {
-        if index > 0 {
-            parent.spawn((
-                GlobalSourceNavigationItem,
-                Text::new("›"),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-                Node {
-                    margin: UiRect::horizontal(Val::Px(3.0)),
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ));
-        }
-        if index < depth {
-            let label = name.to_uppercase();
-            parent
-                .spawn_empty()
-                .apply_scene(ui_shell::feathers_plain_button())
-                .insert((
-                    GlobalSourceNavigationItem,
-                    DocumentAction::NavigateSourceAncestor(index),
-                    FeathersActionButton,
-                    AccessibleLabel(name),
-                    Node {
-                        min_width: Val::Px(0.0),
-                        height: Val::Px(26.0),
-                        padding: UiRect::horizontal(Val::Px(3.0)),
-                        ..default()
-                    },
-                ))
-                .with_child((
-                    Text::new(label),
-                    TextFont {
-                        font_size: FontSize::Px(11.0),
-                        ..default()
-                    },
-                    TextColor(theme::TEXT_MUTED),
-                    TextLayout::no_wrap(),
-                    Pickable::IGNORE,
-                ));
-        } else {
-            parent.spawn((
-                GlobalSourceNavigationItem,
-                Text::new(format!(
-                    "{}{}",
-                    if session.dirty { "* " } else { "" },
-                    name.to_uppercase()
-                )),
-                TextFont {
-                    font_size: FontSize::Px(11.0),
-                    ..default()
-                },
-                TextColor(theme::ACCENT),
-                TextLayout::no_wrap(),
-                Pickable::IGNORE,
-            ));
-        }
-    }
-    parent.spawn((
-        GlobalSourceNavigationItem,
-        Text::new(format!("  /  {}", localizer.text("toolbar-choreography"))),
-        TextFont {
-            font_size: FontSize::Px(11.0),
-            ..default()
+        .map(|(index, label)| BreadcrumbItem {
+            label,
+            action: (index < depth).then_some(DocumentAction::NavigateSourceAncestor(index)),
+        })
+        .collect::<Vec<_>>();
+    let breadcrumb = spawn_breadcrumb(
+        parent,
+        &items,
+        BreadcrumbProps {
+            height: 28.0,
+            font: fonts::MONO,
+            font_size: 11.0,
+            text_offset_y: 2.0,
+            uppercase: true,
+            flex_grow: 0.0,
+            max_ancestor_width: 132.0,
+            max_current_width: 164.0,
+            ancestor_color: theme::TEXT_MUTED,
+            current_color: theme::ACCENT,
+            compact_ancestors: true,
+            overflow_label: &localizer.text("toolbar-source-hidden-ancestors"),
+            current_tooltip: Some(&full_path),
+            ancestor_tooltips: true,
         },
-        TextColor(theme::TEXT_MUTED),
-        TextLayout::no_wrap(),
-        Pickable::IGNORE,
-    ));
+        asset_server,
+    );
+    parent
+        .commands()
+        .entity(breadcrumb)
+        .insert(GlobalSourceNavigationItem);
 }
 
 fn spawn_global_navigation_button(
     parent: &mut ChildSpawnerCommands,
-    glyph: &str,
+    direction: i8,
     action: DocumentAction,
     label: &str,
     disabled: bool,
+    asset_server: &AssetServer,
 ) {
     let mut button = parent.spawn_empty();
     button
@@ -423,15 +400,21 @@ fn spawn_global_navigation_button(
         button.insert(InteractionDisabled);
     }
     button.with_child((
-        Text::new(glyph),
-        TextFont {
-            font_size: FontSize::Px(18.0),
+        Node {
+            width: Val::Px(16.0),
+            height: Val::Px(16.0),
             ..default()
         },
-        TextColor(if disabled {
+        UiSvg(load_svg_icon(asset_server, "icons/chevron-right.svg")),
+        SvgColor(if disabled {
             theme::TEXT_FAINT
         } else {
             theme::TEXT
+        }),
+        UiTransform::from_rotation(if direction < 0 {
+            Rot2::radians(std::f32::consts::PI)
+        } else {
+            Rot2::IDENTITY
         }),
         Pickable::IGNORE,
     ));
@@ -442,6 +425,7 @@ fn sync_global_source_navigation(
     session: Res<EditorSession>,
     navigation: Res<SourceNavigationState>,
     localizer: Res<Localizer>,
+    asset_server: Res<AssetServer>,
     root: Single<Entity, With<GlobalSourceNavigation>>,
     items: Query<Entity, With<GlobalSourceNavigationItem>>,
     mut rendered: ResMut<RenderedGlobalSourceNavigation>,
@@ -453,8 +437,20 @@ fn sync_global_source_navigation(
     for item in &items {
         commands.entity(item).despawn();
     }
+    commands
+        .entity(*root)
+        .insert(EditorTooltip::description(source_navigation_path(
+            &session,
+            &navigation,
+        )));
     commands.entity(*root).with_children(|parent| {
-        spawn_global_source_navigation_items(parent, &session, &navigation, &localizer);
+        spawn_global_source_navigation_items(
+            parent,
+            &session,
+            &navigation,
+            &localizer,
+            &asset_server,
+        );
     });
     rendered.0 = Some(view);
 }

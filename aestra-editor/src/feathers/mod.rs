@@ -4,6 +4,7 @@
 //! reusable editor-facing compositions so panels do not each invent their own spacing, variants,
 //! activation bridge, or overflow behavior.
 
+pub(crate) mod breadcrumb;
 pub(crate) mod button;
 pub(crate) mod color_picker;
 pub(crate) mod combo_box;

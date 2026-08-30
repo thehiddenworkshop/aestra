@@ -30,9 +30,9 @@ toolbar-loop-enable = Activer la lecture en boucle
 toolbar-loop-disable = Désactiver la lecture en boucle
 toolbar-restart = Relancer
 toolbar-save = Enregistrer
-toolbar-choreography = CHORÉGRAPHIE VFX
 toolbar-source-back = Revenir à la source parente
 toolbar-source-forward = Avancer vers la source imbriquée
+toolbar-source-hidden-ancestors = Sources parentes masquées
 toolbar-runtime = BEVY 0.19  |  RÉFÉRENCE CPU
 
 panel-viewport = APERÇU

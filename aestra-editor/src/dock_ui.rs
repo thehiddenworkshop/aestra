@@ -383,6 +383,7 @@ fn spawn_panel_content(
                 sources.timeline,
                 sources.repair,
                 sources.navigation,
+                sources.asset_server,
             );
         }
         DockPanel::Timeline => timeline::spawn_timeline(

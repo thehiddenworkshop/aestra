@@ -1,6 +1,7 @@
 //! Inspector ownership: module-stack UI, semantic property editing, numeric scrubbing,
 //! navigation focus, and contextual help.
 
+use crate::feathers::breadcrumb::{BreadcrumbItem, BreadcrumbProps, spawn_breadcrumb};
 use crate::feathers::panel_card::{
     PanelCardProps, RememberedPanelCard, spawn_panel_card as spawn_remembered_panel_card,
 };
@@ -3295,7 +3296,15 @@ fn spawn_source_navigation_row(
     parent: &mut ChildSpawnerCommands,
     breadcrumbs: &[(String, Option<DocumentAction>)],
     trailing_action: Option<(DocumentAction, &str)>,
+    asset_server: &AssetServer,
 ) {
+    let items = breadcrumbs
+        .iter()
+        .map(|(label, action)| BreadcrumbItem {
+            label: label.clone(),
+            action: *action,
+        })
+        .collect::<Vec<_>>();
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -3308,69 +3317,27 @@ fn spawn_source_navigation_row(
         })
         .insert(BorderColor::all(theme::BORDER.with_alpha(0.65)))
         .with_children(|row| {
-            row.spawn(Node {
-                min_width: Val::Px(0.0),
-                flex_grow: 1.0,
-                align_items: AlignItems::Center,
-                overflow: Overflow::clip(),
-                ..default()
-            })
-            .with_children(|trail| {
-                for (index, (label, action)) in breadcrumbs.iter().enumerate() {
-                    if index > 0 {
-                        trail.spawn((
-                            Text::new("›"),
-                            TextFont {
-                                font_size: FontSize::Px(9.0),
-                                ..default()
-                            },
-                            TextColor(theme::TEXT_FAINT),
-                            Node {
-                                margin: UiRect::horizontal(Val::Px(3.0)),
-                                ..default()
-                            },
-                            Pickable::IGNORE,
-                        ));
-                    }
-                    if let Some(action) = action {
-                        trail
-                            .spawn_empty()
-                            .apply_scene(ui_shell::feathers_plain_button())
-                            .insert((
-                                *action,
-                                FeathersActionButton,
-                                AccessibleLabel(label.clone()),
-                                Node {
-                                    min_width: Val::Px(0.0),
-                                    height: Val::Px(22.0),
-                                    padding: UiRect::horizontal(Val::Px(3.0)),
-                                    ..default()
-                                },
-                            ))
-                            .with_child((
-                                Text::new(label),
-                                TextFont {
-                                    font_size: FontSize::Px(9.0),
-                                    ..default()
-                                },
-                                ThemedText,
-                                TextLayout::no_wrap(),
-                                Pickable::IGNORE,
-                            ));
-                    } else {
-                        trail.spawn((
-                            Text::new(label),
-                            TextFont {
-                                font_size: FontSize::Px(9.0),
-                                ..default()
-                            },
-                            TextColor(theme::ACCENT),
-                            TextLayout::no_wrap(),
-                            Pickable::IGNORE,
-                        ));
-                    }
-                }
-            });
+            spawn_breadcrumb(
+                row,
+                &items,
+                BreadcrumbProps {
+                    height: 28.0,
+                    font: fonts::REGULAR,
+                    font_size: 9.0,
+                    text_offset_y: 0.0,
+                    uppercase: false,
+                    flex_grow: 1.0,
+                    max_ancestor_width: 180.0,
+                    max_current_width: 180.0,
+                    ancestor_color: theme::TEXT,
+                    current_color: theme::ACCENT,
+                    compact_ancestors: false,
+                    overflow_label: "",
+                    current_tooltip: None,
+                    ancestor_tooltips: false,
+                },
+                asset_server,
+            );
             if let Some((action, label)) = trailing_action {
                 spawn_feathers_action_button(row, label, action, false);
             }
@@ -3383,6 +3350,7 @@ fn spawn_edit_source_navigation(
     source: EffectAssetRef,
     catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     if catalog.openable_path(source).is_some() {
         spawn_source_navigation_row(
@@ -3392,6 +3360,7 @@ fn spawn_edit_source_navigation(
                 DocumentAction::OpenSource(source),
                 &localizer.text("inspector-edit-source"),
             )),
+            asset_server,
         );
     }
 }
@@ -3513,6 +3482,7 @@ fn spawn_effect_clip_inspector(
     repair: &EffectClipRepairState,
     localizer: &Localizer,
     id: EffectClipId,
+    asset_server: &AssetServer,
 ) -> bool {
     let Some(clip) = session
         .effect
@@ -3538,6 +3508,7 @@ fn spawn_effect_clip_inspector(
             clip.source,
             catalog,
             localizer,
+            asset_server,
         );
         spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
             spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
@@ -3630,6 +3601,7 @@ fn spawn_referenced_emitter_inspector(
     localizer: &Localizer,
     path: &EffectClipPath,
     selected_emitter: EmitterId,
+    asset_server: &AssetServer,
 ) -> bool {
     let Some((clip, source)) = resolve_effect_clip_path(session, catalog, path) else {
         return false;
@@ -3645,7 +3617,14 @@ fn spawn_referenced_emitter_inspector(
     spawn_read_only_inspector_shell(parent, &emitter.name, localizer, false, |stack| {
         let mut breadcrumbs = effect_clip_breadcrumbs(session, catalog, path);
         breadcrumbs.push((emitter.name.clone(), None));
-        spawn_edit_source_navigation(stack, &breadcrumbs, clip.source, catalog, localizer);
+        spawn_edit_source_navigation(
+            stack,
+            &breadcrumbs,
+            clip.source,
+            catalog,
+            localizer,
+            asset_server,
+        );
         spawn_read_only_card(stack, localizer.text("inspector-reference"), |card| {
             spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
             spawn_read_only_row(card, localizer.text("inspector-emitter"), &emitter.name);
@@ -3758,6 +3737,7 @@ fn spawn_referenced_effect_clip_inspector(
     catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
     path: &EffectClipPath,
+    asset_server: &AssetServer,
 ) -> bool {
     let Some((clip, source)) = resolve_effect_clip_path(session, catalog, path) else {
         return false;
@@ -3770,6 +3750,7 @@ fn spawn_referenced_effect_clip_inspector(
             clip.source,
             catalog,
             localizer,
+            asset_server,
         );
         spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
             spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
@@ -3872,6 +3853,7 @@ pub(crate) fn spawn_inspector(
     timeline: &TimelineState,
     repair: &EffectClipRepairState,
     navigation: Option<&SourceNavigationState>,
+    asset_server: &AssetServer,
 ) {
     if let Some(navigation) = navigation.filter(|navigation| navigation.can_go_back()) {
         let depth = navigation.depth();
@@ -3886,16 +3868,29 @@ pub(crate) fn spawn_inspector(
                 )
             })
             .collect::<Vec<_>>();
-        spawn_source_navigation_row(parent, &breadcrumbs, None);
+        spawn_source_navigation_row(parent, &breadcrumbs, None, asset_server);
     }
     if let Some(selection) = timeline.inspected_child.as_ref() {
         let spawned = match selection {
             EffectClipChildSelection::EffectClip { path } => {
-                spawn_referenced_effect_clip_inspector(parent, session, catalog, localizer, path)
+                spawn_referenced_effect_clip_inspector(
+                    parent,
+                    session,
+                    catalog,
+                    localizer,
+                    path,
+                    asset_server,
+                )
             }
             EffectClipChildSelection::Emitter { path, emitter } => {
                 spawn_referenced_emitter_inspector(
-                    parent, session, catalog, localizer, path, *emitter,
+                    parent,
+                    session,
+                    catalog,
+                    localizer,
+                    path,
+                    *emitter,
+                    asset_server,
                 )
             }
         };
@@ -3904,7 +3899,15 @@ pub(crate) fn spawn_inspector(
         }
     }
     if let SemanticTarget::EffectClip(clip) = session.selection.primary
-        && spawn_effect_clip_inspector(parent, session, catalog, repair, localizer, clip)
+        && spawn_effect_clip_inspector(
+            parent,
+            session,
+            catalog,
+            repair,
+            localizer,
+            clip,
+            asset_server,
+        )
     {
         return;
     }
