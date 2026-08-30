@@ -1,6 +1,7 @@
 //! Editor document I/O, recovery, autosave, and application-exit lifecycle.
 
 use crate::recovery::{RecoveryCandidate, RecoveryPersistence};
+use crate::timeline::{TimelineNavigationSnapshot, TimelineState};
 use crate::*;
 use aestra_bevy::{EffectAssetLoad, EffectAssetMigration, EffectCompiler, prepare_effect_asset};
 use bevy::ui_widgets::Activate;
@@ -26,6 +27,7 @@ pub(crate) enum PersistenceSet {
 impl Plugin for EditorPersistencePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DocumentProtectionState>()
+            .init_resource::<SourceNavigationState>()
             .add_observer(queue_document_action_activation)
             .add_observer(resolve_document_protection)
             .add_observer(execute_document_action)
@@ -57,9 +59,53 @@ pub(crate) enum DocumentAction {
     New,
     Open,
     OpenCatalog(EffectAssetRef),
+    OpenSource(EffectAssetRef),
+    BackToSource,
     Save,
     SaveAs,
     Exit,
+}
+
+#[derive(Clone, Debug)]
+struct SourceNavigationEntry {
+    path: PathBuf,
+    effect: EffectAssetRef,
+    name: String,
+    playhead_time: f32,
+    playing: bool,
+    selection: SemanticTarget,
+    timeline: TimelineNavigationSnapshot,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct SourceNavigationState {
+    stack: Vec<SourceNavigationEntry>,
+}
+
+impl SourceNavigationState {
+    pub(crate) fn can_go_back(&self) -> bool {
+        !self.stack.is_empty()
+    }
+
+    pub(crate) fn parent_name(&self) -> Option<&str> {
+        self.stack.last().map(|entry| entry.name.as_str())
+    }
+
+    pub(crate) fn breadcrumb(&self, current: &str) -> Vec<String> {
+        self.stack
+            .iter()
+            .map(|entry| entry.name.clone())
+            .chain(std::iter::once(current.to_owned()))
+            .collect()
+    }
+
+    fn contains(&self, effect: EffectAssetRef) -> bool {
+        self.stack.iter().any(|entry| entry.effect == effect)
+    }
+
+    fn clear(&mut self) {
+        self.stack.clear();
+    }
 }
 
 #[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -418,6 +464,8 @@ fn execute_document_action(
     mut autosave: ResMut<AutosaveState>,
     localizer: Res<Localizer>,
     mut protection: ResMut<DocumentProtectionState>,
+    mut timeline: Option<ResMut<TimelineState>>,
+    mut navigation: Option<ResMut<SourceNavigationState>>,
 ) {
     if protection.is_open() {
         return;
@@ -444,6 +492,8 @@ fn execute_document_action(
         &mut recovery,
         &mut autosave,
         &localizer,
+        timeline.as_deref_mut(),
+        navigation.as_deref_mut(),
     );
 }
 
@@ -484,23 +534,65 @@ fn execute_protected_document_action(
     recovery: &mut RecoveryPersistence,
     autosave: &mut AutosaveState,
     localizer: &Localizer,
+    mut timeline: Option<&mut TimelineState>,
+    mut navigation: Option<&mut SourceNavigationState>,
 ) {
     match action {
         DocumentAction::New => {
+            if let Some(navigation) = navigation.as_deref_mut() {
+                navigation.clear();
+            }
             session.new_effect();
             session.playing = settings.preview.play_on_open;
+            if let Some(timeline) = timeline.as_deref_mut() {
+                *timeline = TimelineState::framed(session.playback_duration());
+            }
             workspace.clear();
             set_persistence_status(session, localizer, PersistenceStatus::CreatedUntitled);
         }
         DocumentAction::Open => {
-            open_effect_dialog(session, settings, localizer);
-            workspace.clear();
+            if open_effect_dialog(session, settings, localizer) {
+                if let Some(navigation) = navigation.as_deref_mut() {
+                    navigation.clear();
+                }
+                if let Some(timeline) = timeline.as_deref_mut() {
+                    *timeline = TimelineState::framed(session.playback_duration());
+                }
+                workspace.clear();
+            }
         }
         DocumentAction::OpenCatalog(id) => {
             if let Some(path) = catalog.openable_path(id) {
-                open_effect_path(session, path, settings, localizer);
-                workspace.clear();
+                if open_effect_path(session, path, settings, localizer) {
+                    if let Some(navigation) = navigation.as_deref_mut() {
+                        navigation.clear();
+                    }
+                    if let Some(timeline) = timeline.as_deref_mut() {
+                        *timeline = TimelineState::framed(session.playback_duration());
+                    }
+                    workspace.clear();
+                }
             }
+        }
+        DocumentAction::OpenSource(id) => {
+            let (Some(timeline), Some(navigation)) =
+                (timeline.as_deref_mut(), navigation.as_deref_mut())
+            else {
+                return;
+            };
+            open_referenced_source(
+                session, settings, catalog, workspace, timeline, navigation, id, localizer,
+            );
+        }
+        DocumentAction::BackToSource => {
+            let (Some(timeline), Some(navigation)) =
+                (timeline.as_deref_mut(), navigation.as_deref_mut())
+            else {
+                return;
+            };
+            return_to_source(
+                session, settings, workspace, timeline, navigation, localizer,
+            );
         }
         DocumentAction::Exit => {
             autosave.suspended = true;
@@ -531,6 +623,8 @@ fn resolve_document_protection(
     mut autosave: ResMut<AutosaveState>,
     localizer: Res<Localizer>,
     mut protection: ResMut<DocumentProtectionState>,
+    mut timeline: Option<ResMut<TimelineState>>,
+    mut navigation: Option<ResMut<SourceNavigationState>>,
 ) {
     let Ok(action) = actions.get(activate.entity) else {
         return;
@@ -555,6 +649,8 @@ fn resolve_document_protection(
         &mut recovery,
         &mut autosave,
         &localizer,
+        timeline.as_deref_mut(),
+        navigation.as_deref_mut(),
     );
 }
 
@@ -739,11 +835,94 @@ fn discard_active_recovery(persistence: &mut RecoveryPersistence) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn open_referenced_source(
+    session: &mut EditorSession,
+    settings: &EditorSettings,
+    catalog: &ProjectEffectCatalog,
+    workspace: &mut CurvesState,
+    timeline: &mut TimelineState,
+    navigation: &mut SourceNavigationState,
+    source: EffectAssetRef,
+    localizer: &Localizer,
+) {
+    let current = EffectAssetRef::new(session.effect.id);
+    if source == current || navigation.contains(source) {
+        set_persistence_status(
+            session,
+            localizer,
+            PersistenceStatus::OpenFailed(
+                "source navigation stopped because the reference is already in the breadcrumb"
+                    .into(),
+            ),
+        );
+        session.ui_revision += 1;
+        return;
+    }
+    let Some(return_path) = session.source_path.clone() else {
+        set_persistence_status(
+            session,
+            localizer,
+            PersistenceStatus::OpenFailed(
+                "save the current effect before opening a referenced source".into(),
+            ),
+        );
+        session.ui_revision += 1;
+        return;
+    };
+    let Some(source_path) = catalog.openable_path(source).map(Path::to_owned) else {
+        set_persistence_status(
+            session,
+            localizer,
+            PersistenceStatus::OpenFailed("referenced source is unavailable".into()),
+        );
+        session.ui_revision += 1;
+        return;
+    };
+    let entry = SourceNavigationEntry {
+        path: return_path,
+        effect: current,
+        name: session.effect.name.clone(),
+        playhead_time: session.time(),
+        playing: session.playing,
+        selection: session.selection.primary,
+        timeline: timeline.navigation_snapshot(),
+    };
+    if open_effect_path(session, &source_path, settings, localizer) {
+        navigation.stack.push(entry);
+        *timeline = TimelineState::framed(session.playback_duration());
+        workspace.clear();
+    }
+}
+
+fn return_to_source(
+    session: &mut EditorSession,
+    settings: &EditorSettings,
+    workspace: &mut CurvesState,
+    timeline: &mut TimelineState,
+    navigation: &mut SourceNavigationState,
+    localizer: &Localizer,
+) {
+    let Some(entry) = navigation.stack.last().cloned() else {
+        return;
+    };
+    if !open_effect_path(session, &entry.path, settings, localizer) {
+        return;
+    }
+    navigation.stack.pop();
+    session.selection.primary = entry.selection;
+    session.selection.repair(&session.effect);
+    timeline.restore_navigation(entry.timeline, session.playback_duration());
+    session.seek_time(entry.playhead_time);
+    session.playing = entry.playing;
+    workspace.clear();
+}
+
 fn open_effect_dialog(
     session: &mut EditorSession,
     settings: &EditorSettings,
     localizer: &Localizer,
-) {
+) -> bool {
     let mut dialog =
         FileDialog::new().add_filter(localizer.text("persistence-file-filter-effect"), &["ron"]);
     if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
@@ -751,9 +930,9 @@ fn open_effect_dialog(
     }
     let Some(path) = dialog.pick_file() else {
         set_persistence_status(session, localizer, PersistenceStatus::OpenCancelled);
-        return;
+        return false;
     };
-    open_effect_path(session, &path, settings, localizer);
+    open_effect_path(session, &path, settings, localizer)
 }
 
 fn open_effect_path(
@@ -761,7 +940,7 @@ fn open_effect_path(
     path: &Path,
     settings: &EditorSettings,
     localizer: &Localizer,
-) {
+) -> bool {
     let result = fs::read_to_string(path)
         .map_err(|error| error.to_string())
         .and_then(|source| prepare_effect_asset(&source).map_err(|error| error.to_string()));
@@ -774,17 +953,21 @@ fn open_effect_path(
                     localizer,
                     PersistenceStatus::Opened(path.display().to_string()),
                 );
+                true
             }
-            Err(error) => set_persistence_status(
-                session,
-                localizer,
-                PersistenceStatus::OpenFailed(error.to_string()),
-            ),
+            Err(error) => {
+                set_persistence_status(
+                    session,
+                    localizer,
+                    PersistenceStatus::OpenFailed(error.to_string()),
+                );
+                false
+            }
         },
         Ok(EffectAssetLoad::MigrationRequired(migration)) => {
             if !confirm_asset_migration(path, &migration, localizer) {
                 set_persistence_status(session, localizer, PersistenceStatus::MigrationCancelled);
-                return;
+                return false;
             }
             match persist_asset_migration(path, &migration) {
                 Ok(backup) => match session.open(path) {
@@ -800,20 +983,30 @@ fn open_effect_path(
                                 to: migration.target_version,
                             },
                         );
+                        true
                     }
-                    Err(error) => set_persistence_status(
-                        session,
-                        localizer,
-                        PersistenceStatus::OpenFailed(error.to_string()),
-                    ),
+                    Err(error) => {
+                        set_persistence_status(
+                            session,
+                            localizer,
+                            PersistenceStatus::OpenFailed(error.to_string()),
+                        );
+                        false
+                    }
                 },
                 Err(error) => {
-                    set_persistence_status(session, localizer, PersistenceStatus::OpenFailed(error))
+                    set_persistence_status(
+                        session,
+                        localizer,
+                        PersistenceStatus::OpenFailed(error),
+                    );
+                    false
                 }
             }
         }
         Err(error) => {
-            set_persistence_status(session, localizer, PersistenceStatus::OpenFailed(error))
+            set_persistence_status(session, localizer, PersistenceStatus::OpenFailed(error));
+            false
         }
     }
 }
@@ -1056,6 +1249,84 @@ mod tests {
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.name, "Catalog Effect");
         assert_eq!(session.source_path.as_deref(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn source_navigation_round_trip_restores_playhead_selection_and_parent_context() {
+        let temporary = tempfile::tempdir().unwrap();
+        let child_path = temporary.path().join("child.aestra.ron");
+        let mut child = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        child.id = aestra_bevy::EffectId::from_u128(0xC111D);
+        child.name = "Child".into();
+        child.save_ron(&child_path).unwrap();
+
+        let parent_path = temporary.path().join("parent.aestra.ron");
+        let mut parent = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        parent.id = aestra_bevy::EffectId::from_u128(0xA11CE);
+        parent.name = "Parent".into();
+        parent.effect_clips.clear();
+        let clip = aestra_bevy::EffectClip::new(EffectAssetRef::new(child.id), 0.0, 1.0);
+        let clip_id = clip.id;
+        parent.effect_clips.push(clip);
+        parent.save_ron(&parent_path).unwrap();
+
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.open(&parent_path).unwrap();
+        session.select_effect_clip(clip_id);
+        session.seek_time(1.25);
+        session.playing = false;
+        let mut timeline = TimelineState::framed(session.playback_duration());
+        let mut navigation = SourceNavigationState::default();
+        let mut workspace = CurvesState::default();
+        let settings = EditorSettings::default();
+        let localizer = Localizer::new("en-US").unwrap();
+
+        open_referenced_source(
+            &mut session,
+            &settings,
+            &catalog,
+            &mut workspace,
+            &mut timeline,
+            &mut navigation,
+            EffectAssetRef::new(child.id),
+            &localizer,
+        );
+        assert_eq!(session.effect.id, child.id);
+        assert!(navigation.can_go_back());
+        assert_eq!(
+            navigation.breadcrumb(&session.effect.name),
+            ["Parent", "Child"]
+        );
+
+        open_referenced_source(
+            &mut session,
+            &settings,
+            &catalog,
+            &mut workspace,
+            &mut timeline,
+            &mut navigation,
+            EffectAssetRef::new(parent.id),
+            &localizer,
+        );
+        assert_eq!(session.effect.id, child.id, "cycles must not navigate");
+
+        return_to_source(
+            &mut session,
+            &settings,
+            &mut workspace,
+            &mut timeline,
+            &mut navigation,
+            &localizer,
+        );
+        assert_eq!(session.effect.id, parent.id);
+        assert_eq!(
+            session.selection.primary,
+            SemanticTarget::EffectClip(clip_id)
+        );
+        assert!((session.time() - 1.25).abs() < 0.02);
+        assert!(!session.playing);
+        assert!(!navigation.can_go_back());
     }
 
     #[test]

@@ -1394,6 +1394,44 @@ mod tests {
             EmitterTransform::default()
         );
     }
+
+    #[test]
+    fn nested_reference_breadcrumbs_include_every_effect_level() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut leaf = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        leaf.id = aestra_bevy::EffectId::from_u128(0x1EAF);
+        leaf.name = "Leaf".into();
+        leaf.effect_clips.clear();
+        leaf.save_ron(temporary.path().join("leaf.aestra.ron"))
+            .unwrap();
+
+        let mut child = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        child.id = aestra_bevy::EffectId::from_u128(0xC111D);
+        child.name = "Child".into();
+        child.effect_clips.clear();
+        let nested = EffectClip::new(EffectAssetRef::new(leaf.id), 0.0, 1.0);
+        let nested_id = nested.id;
+        child.effect_clips.push(nested);
+        child
+            .save_ron(temporary.path().join("child.aestra.ron"))
+            .unwrap();
+
+        let mut root = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        root.id = aestra_bevy::EffectId::from_u128(0xA007);
+        root.name = "Root".into();
+        root.effect_clips.clear();
+        let parent = EffectClip::new(EffectAssetRef::new(child.id), 0.0, 1.0);
+        let path = EffectClipPath::root_path(parent.id).child(nested_id);
+        root.effect_clips.push(parent);
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect = root;
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+
+        assert_eq!(
+            effect_clip_breadcrumbs(&session, &catalog, &path),
+            ["Root", "Child", "Leaf"]
+        );
+    }
 }
 fn scroll_inspector_to_focus(
     mut commands: Commands,
@@ -3217,6 +3255,79 @@ fn effect_clip_catalog_name(catalog: &ProjectEffectCatalog, source: EffectAssetR
         .map_or_else(|| source.id.to_string(), |entry| entry.display_name.clone())
 }
 
+fn effect_clip_breadcrumbs(
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    path: &EffectClipPath,
+) -> Vec<String> {
+    let mut breadcrumbs = vec![session.effect.name.clone()];
+    let mut effect = session.effect.clone();
+    for id in path.ids() {
+        let Some(clip) = effect.effect_clips.iter().find(|clip| clip.id == *id) else {
+            break;
+        };
+        breadcrumbs.push(effect_clip_catalog_name(catalog, clip.source));
+        let Ok(source) = catalog.load_effect(clip.source) else {
+            break;
+        };
+        effect = source;
+    }
+    breadcrumbs
+}
+
+fn spawn_source_navigation_row(
+    parent: &mut ChildSpawnerCommands,
+    breadcrumbs: &[String],
+    action: DocumentAction,
+    action_label: &str,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(8.0),
+            padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+            border: UiRect::bottom(Val::Px(1.0)),
+            ..default()
+        })
+        .insert(BorderColor::all(theme::BORDER.with_alpha(0.65)))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(breadcrumbs.join(" › ")),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+                Node {
+                    min_width: Val::Px(0.0),
+                    flex_grow: 1.0,
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            spawn_feathers_action_button(row, action_label, action, false);
+        });
+}
+
+fn spawn_edit_source_navigation(
+    parent: &mut ChildSpawnerCommands,
+    breadcrumbs: &[String],
+    source: EffectAssetRef,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+) {
+    if catalog.openable_path(source).is_some() {
+        spawn_source_navigation_row(
+            parent,
+            breadcrumbs,
+            DocumentAction::OpenSource(source),
+            &localizer.text("inspector-edit-source"),
+        );
+    }
+}
+
 fn effect_clip_repair_source(
     catalog: &ProjectEffectCatalog,
     owner: &EffectAsset,
@@ -3347,6 +3458,13 @@ fn spawn_effect_clip_inspector(
     let source = catalog.load_effect(clip.source).ok();
     let dependency_error = catalog.effect_clip_dependency_error(&session.effect, clip.id);
     spawn_read_only_inspector_shell(parent, &source_name, localizer, true, |stack| {
+        spawn_edit_source_navigation(
+            stack,
+            &[session.effect.name.clone(), source_name.clone()],
+            clip.source,
+            catalog,
+            localizer,
+        );
         spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
             spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
             let start = spawn_read_only_row(
@@ -3451,6 +3569,9 @@ fn spawn_referenced_emitter_inspector(
     };
     let source_name = effect_clip_catalog_name(catalog, clip.source);
     spawn_read_only_inspector_shell(parent, &emitter.name, localizer, false, |stack| {
+        let mut breadcrumbs = effect_clip_breadcrumbs(session, catalog, path);
+        breadcrumbs.push(emitter.name.clone());
+        spawn_edit_source_navigation(stack, &breadcrumbs, clip.source, catalog, localizer);
         spawn_read_only_card(stack, localizer.text("inspector-reference"), |card| {
             spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
             spawn_read_only_row(card, localizer.text("inspector-emitter"), &emitter.name);
@@ -3569,6 +3690,13 @@ fn spawn_referenced_effect_clip_inspector(
     };
     let source_name = effect_clip_catalog_name(catalog, clip.source);
     spawn_read_only_inspector_shell(parent, &source_name, localizer, false, |stack| {
+        spawn_edit_source_navigation(
+            stack,
+            &effect_clip_breadcrumbs(session, catalog, path),
+            clip.source,
+            catalog,
+            localizer,
+        );
         spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
             spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
             spawn_read_only_row(
@@ -3669,7 +3797,19 @@ pub(crate) fn spawn_inspector(
     catalog: &ProjectEffectCatalog,
     timeline: &TimelineState,
     repair: &EffectClipRepairState,
+    navigation: Option<&SourceNavigationState>,
 ) {
+    if let Some(navigation) = navigation.filter(|navigation| navigation.can_go_back()) {
+        let parent_name = navigation.parent_name().unwrap_or(&session.effect.name);
+        let mut args = FluentArgs::new();
+        args.set("name", parent_name);
+        spawn_source_navigation_row(
+            parent,
+            &navigation.breadcrumb(&session.effect.name),
+            DocumentAction::BackToSource,
+            &localizer.text_with("inspector-back-to-source", &args),
+        );
+    }
     if let Some(selection) = timeline.inspected_child.as_ref() {
         let spawned = match selection {
             EffectClipChildSelection::EffectClip { path } => {

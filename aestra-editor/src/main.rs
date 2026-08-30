@@ -120,7 +120,7 @@ use menus::{EditorMenusPlugin, spawn_about_overlay, spawn_menu_bar, spawn_tab_co
 pub(crate) use persistence::persist_editor_settings;
 use persistence::{
     DocumentAction, DocumentProtectionState, EditorPersistencePlugin, PersistenceSet,
-    spawn_document_protection_overlay,
+    SourceNavigationState, spawn_document_protection_overlay,
 };
 use profiler::{EditorProfilerPlugin, ProfilerSet};
 pub(crate) use profiler::{ProfilerState, spawn_profiler_workspace};

@@ -1470,6 +1470,33 @@ mod tests {
     }
 
     #[test]
+    fn timeline_navigation_snapshot_restores_nested_context_and_view() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let clip = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 1.0);
+        let path = EffectClipPath::root_path(clip.id);
+        session.effect.effect_clips.push(clip);
+        let mut state = TimelineState::framed(10.0);
+        state.zoom_at(6.0, 0.4, 10.0, 60);
+        state.vertical_scroll = 73.0;
+        state.expanded_effect_clips.insert(path.clone());
+        state.inspected_child = Some(EffectClipChildSelection::EffectClip { path });
+        let expected_view = state.view;
+        let snapshot = state.navigation_snapshot();
+
+        state = TimelineState::framed(2.0);
+        state.restore_navigation(snapshot, 10.0);
+
+        assert_eq!(state.view.start, expected_view.start);
+        assert_eq!(state.view.end, expected_view.end);
+        assert_eq!(state.vertical_scroll, 73.0);
+        assert_eq!(state.expanded_effect_clips.len(), 1);
+        assert!(matches!(
+            state.inspected_child,
+            Some(EffectClipChildSelection::EffectClip { .. })
+        ));
+    }
+
+    #[test]
     fn timeline_wheel_routes_scroll_pan_and_zoom_like_a_track_editor() {
         assert_eq!(
             timeline_wheel_intent(Vec2::new(0.0, -1.0), -21.0, false, false),
@@ -3651,11 +3678,11 @@ struct EffectDropPreview {
 pub(crate) struct EffectClipPath(Vec<EffectClipId>);
 
 impl EffectClipPath {
-    fn root_path(clip: EffectClipId) -> Self {
+    pub(crate) fn root_path(clip: EffectClipId) -> Self {
         Self(vec![clip])
     }
 
-    fn child(&self, clip: EffectClipId) -> Self {
+    pub(crate) fn child(&self, clip: EffectClipId) -> Self {
         let mut path = self.0.clone();
         path.push(clip);
         Self(path)
@@ -3697,6 +3724,15 @@ impl EffectClipChildSelection {
 struct TimelineView {
     start: f32,
     end: f32,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TimelineNavigationSnapshot {
+    view: TimelineView,
+    snap: TimelineSnapMode,
+    expanded_effect_clips: BTreeSet<EffectClipPath>,
+    inspected_child: Option<EffectClipChildSelection>,
+    vertical_scroll: f32,
 }
 
 impl TimelineView {
@@ -3769,6 +3805,30 @@ impl TimelineState {
             vertical_scroll: 0.0,
             known_duration: duration,
         }
+    }
+
+    pub(crate) fn navigation_snapshot(&self) -> TimelineNavigationSnapshot {
+        TimelineNavigationSnapshot {
+            view: self.view,
+            snap: self.snap,
+            expanded_effect_clips: self.expanded_effect_clips.clone(),
+            inspected_child: self.inspected_child.clone(),
+            vertical_scroll: self.vertical_scroll,
+        }
+    }
+
+    pub(crate) fn restore_navigation(
+        &mut self,
+        snapshot: TimelineNavigationSnapshot,
+        duration: f32,
+    ) {
+        *self = Self::framed(duration);
+        self.view = snapshot.view;
+        self.snap = snapshot.snap;
+        self.expanded_effect_clips = snapshot.expanded_effect_clips;
+        self.inspected_child = snapshot.inspected_child;
+        self.vertical_scroll = snapshot.vertical_scroll.max(0.0);
+        self.clamp_view(duration.max(0.05));
     }
 
     pub(crate) fn set_snap(&mut self, snap: TimelineSnapMode) -> bool {

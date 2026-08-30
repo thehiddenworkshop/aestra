@@ -20,6 +20,7 @@ struct PanelSources<'a> {
     asset_server: &'a AssetServer,
     session: &'a EditorSession,
     timeline: &'a TimelineState,
+    navigation: Option<&'a SourceNavigationState>,
     catalog: &'a ProjectEffectCatalog,
     library: &'a LibraryState,
     registry: &'a EditorModuleRegistry,
@@ -50,6 +51,7 @@ pub(crate) struct DockUiResources<'w> {
     localizer: Res<'w, Localizer>,
     workspace: Res<'w, CurvesState>,
     timeline: Res<'w, TimelineState>,
+    navigation: Option<Res<'w, SourceNavigationState>>,
 }
 
 impl<'w> DockUiResources<'w> {
@@ -58,6 +60,7 @@ impl<'w> DockUiResources<'w> {
             asset_server: &self.asset_server,
             session,
             timeline: &self.timeline,
+            navigation: self.navigation.as_deref(),
             catalog: &self.catalog,
             library: &self.library,
             registry: &self.registry,
@@ -379,6 +382,7 @@ fn spawn_panel_content(
                 sources.catalog,
                 sources.timeline,
                 sources.repair,
+                sources.navigation,
             );
         }
         DockPanel::Timeline => timeline::spawn_timeline(
