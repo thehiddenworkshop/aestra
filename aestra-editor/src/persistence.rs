@@ -60,6 +60,7 @@ pub(crate) enum DocumentAction {
     Open,
     OpenCatalog(EffectAssetRef),
     OpenSource(EffectAssetRef),
+    OpenSourceEmitter(EffectAssetRef, EmitterId),
     BackToSource,
     ForwardToSource,
     NavigateSourceAncestor(usize),
@@ -592,6 +593,18 @@ fn execute_protected_document_action(
                 session, settings, catalog, workspace, timeline, navigation, id, localizer,
             );
         }
+        DocumentAction::OpenSourceEmitter(id, emitter) => {
+            let (Some(timeline), Some(navigation)) =
+                (timeline.as_deref_mut(), navigation.as_deref_mut())
+            else {
+                return;
+            };
+            if open_referenced_source(
+                session, settings, catalog, workspace, timeline, navigation, id, localizer,
+            ) {
+                session.select_emitter(emitter);
+            }
+        }
         DocumentAction::BackToSource => {
             let (Some(timeline), Some(navigation)) =
                 (timeline.as_deref_mut(), navigation.as_deref_mut())
@@ -873,7 +886,7 @@ fn open_referenced_source(
     navigation: &mut SourceNavigationState,
     source: EffectAssetRef,
     localizer: &Localizer,
-) {
+) -> bool {
     let current = EffectAssetRef::new(session.effect.id);
     if source == current || navigation.contains(source) {
         set_persistence_status(
@@ -885,7 +898,7 @@ fn open_referenced_source(
             ),
         );
         session.ui_revision += 1;
-        return;
+        return false;
     }
     let Some(return_path) = session.source_path.clone() else {
         set_persistence_status(
@@ -896,7 +909,7 @@ fn open_referenced_source(
             ),
         );
         session.ui_revision += 1;
-        return;
+        return false;
     };
     let Some(source_path) = catalog.openable_path(source).map(Path::to_owned) else {
         set_persistence_status(
@@ -905,7 +918,7 @@ fn open_referenced_source(
             PersistenceStatus::OpenFailed("referenced source is unavailable".into()),
         );
         session.ui_revision += 1;
-        return;
+        return false;
     };
     let entry = source_navigation_entry(session, timeline, return_path);
     if open_effect_path(session, &source_path, settings, localizer) {
@@ -913,6 +926,9 @@ fn open_referenced_source(
         navigation.forward.clear();
         *timeline = TimelineState::framed(session.playback_duration());
         workspace.clear();
+        true
+    } else {
+        false
     }
 }
 
@@ -1352,6 +1368,62 @@ mod tests {
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.name, "Catalog Effect");
         assert_eq!(session.source_path.as_deref(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn source_emitter_navigation_opens_the_effect_with_the_requested_selection() {
+        let temporary = tempfile::tempdir().unwrap();
+        let source_path = temporary.path().join("source.aestra.ron");
+        let mut source = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        source.id = aestra_bevy::EffectId::from_u128(0x50A1CE);
+        source.name = "Source".into();
+        let target_id = source.emitters[1].id;
+        source.save_ron(&source_path).unwrap();
+
+        let parent_path = temporary.path().join("parent.aestra.ron");
+        let mut parent = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        parent.id = aestra_bevy::EffectId::from_u128(0xA11CE);
+        parent.name = "Parent".into();
+        parent.save_ron(&parent_path).unwrap();
+
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.open(&parent_path).unwrap();
+        let autosave = AutosaveState::new(&session, true);
+        let duration = session.playback_duration();
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(EditorSettings::default())
+            .insert_resource(catalog)
+            .init_resource::<CurvesState>()
+            .insert_resource(RecoveryPersistence::for_test(
+                temporary.path().join("recovery"),
+                None,
+            ))
+            .insert_resource(autosave)
+            .init_resource::<DocumentProtectionState>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .insert_resource(TimelineState::framed(duration))
+            .init_resource::<SourceNavigationState>()
+            .add_observer(execute_document_action);
+
+        app.world_mut().trigger(DocumentAction::OpenSourceEmitter(
+            EffectAssetRef::new(source.id),
+            target_id,
+        ));
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.id, source.id);
+        assert_eq!(
+            session.selection.primary,
+            SemanticTarget::Emitter(target_id)
+        );
+        assert!(
+            app.world()
+                .resource::<SourceNavigationState>()
+                .can_go_back()
+        );
     }
 
     #[test]

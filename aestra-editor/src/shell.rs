@@ -4,6 +4,7 @@ use crate::feathers::{
     breadcrumb::{BreadcrumbItem, BreadcrumbProps, spawn_breadcrumb},
     icon::load_svg_icon,
 };
+use crate::timeline::{EffectClipChildSelection, TimelineState, resolve_effect_clip_path};
 use crate::*;
 use bevy_resvg::prelude::{SvgColor, UiSvg};
 use std::collections::HashMap;
@@ -94,6 +95,7 @@ struct GlobalSourceNavigationView {
     ancestors: Vec<String>,
     current_id: EffectAssetRef,
     current_name: String,
+    current_emitter: Option<(EmitterId, String)>,
     dirty: bool,
     can_go_forward: bool,
 }
@@ -111,6 +113,8 @@ fn setup_editor(
     protection: Res<DocumentProtectionState>,
     library_asset_operation: Res<LibraryAssetOperationState>,
     navigation: Res<SourceNavigationState>,
+    timeline: Res<TimelineState>,
+    catalog: Res<ProjectEffectCatalog>,
     mut rendered: ResMut<RenderedUiRevision>,
     mut rendered_navigation: ResMut<RenderedGlobalSourceNavigation>,
 ) {
@@ -134,9 +138,16 @@ fn setup_editor(
         &protection,
         &library_asset_operation,
         &navigation,
+        &timeline,
+        &catalog,
     );
     rendered.0 = session.ui_revision;
-    rendered_navigation.0 = Some(global_source_navigation_view(&session, &navigation));
+    rendered_navigation.0 = Some(global_source_navigation_view(
+        &session,
+        &navigation,
+        &timeline,
+        &catalog,
+    ));
 }
 
 fn setup_editor_fonts(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -173,13 +184,23 @@ fn spawn_editor_ui(
     protection: &DocumentProtectionState,
     library_asset_operation: &LibraryAssetOperationState,
     navigation: &SourceNavigationState,
+    timeline: &TimelineState,
+    catalog: &ProjectEffectCatalog,
 ) {
     commands
         .spawn(EditorRoot)
         .apply_scene(ui_shell::editor_root())
         .with_children(|root| {
             spawn_menu_bar(root, session, menu, layout, localizer);
-            spawn_toolbar(root, session, navigation, localizer, asset_server);
+            spawn_toolbar(
+                root,
+                session,
+                navigation,
+                timeline,
+                catalog,
+                localizer,
+                asset_server,
+            );
             spawn_editor_content(root, menu, localizer);
             spawn_status_bar(root, session, localizer);
             spawn_about_overlay(root, menu.show_about, localizer);
@@ -206,6 +227,8 @@ fn spawn_toolbar(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     navigation: &SourceNavigationState,
+    timeline: &TimelineState,
+    catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -249,7 +272,9 @@ fn spawn_toolbar(
             ));
             bar.spawn((
                 GlobalSourceNavigation,
-                EditorTooltip::description(source_navigation_path(session, navigation)),
+                EditorTooltip::description(source_navigation_path(
+                    session, navigation, timeline, catalog,
+                )),
                 Node {
                     min_width: Val::Px(0.0),
                     max_width: Val::Percent(55.0),
@@ -264,6 +289,8 @@ fn spawn_toolbar(
                     navigation_root,
                     session,
                     navigation,
+                    timeline,
+                    catalog,
                     localizer,
                     asset_server,
                 );
@@ -287,6 +314,8 @@ fn spawn_toolbar(
 fn global_source_navigation_view(
     session: &EditorSession,
     navigation: &SourceNavigationState,
+    timeline: &TimelineState,
+    catalog: &ProjectEffectCatalog,
 ) -> GlobalSourceNavigationView {
     let mut breadcrumb = navigation.breadcrumb(&session.effect.name);
     let current_name = breadcrumb
@@ -296,19 +325,67 @@ fn global_source_navigation_view(
         ancestors: breadcrumb,
         current_id: EffectAssetRef::new(session.effect.id),
         current_name,
+        current_emitter: inspected_emitter(session, timeline, catalog),
         dirty: session.dirty,
         can_go_forward: navigation.can_go_forward(),
     }
 }
 
-fn source_navigation_path(session: &EditorSession, navigation: &SourceNavigationState) -> String {
-    navigation.breadcrumb(&session.effect.name).join(" › ")
+fn source_navigation_path(
+    session: &EditorSession,
+    navigation: &SourceNavigationState,
+    timeline: &TimelineState,
+    catalog: &ProjectEffectCatalog,
+) -> String {
+    source_navigation_breadcrumb(session, navigation, timeline, catalog).join(" › ")
+}
+
+fn inspected_emitter(
+    session: &EditorSession,
+    timeline: &TimelineState,
+    catalog: &ProjectEffectCatalog,
+) -> Option<(EmitterId, String)> {
+    match timeline.inspected_child.as_ref() {
+        Some(EffectClipChildSelection::Emitter { path, emitter }) => {
+            let (_, source) = resolve_effect_clip_path(session, catalog, path)?;
+            source
+                .emitters
+                .iter()
+                .find(|candidate| candidate.id == *emitter)
+                .map(|candidate| (candidate.id, candidate.name.clone()))
+        }
+        Some(EffectClipChildSelection::EffectClip { .. }) => None,
+        None => {
+            let emitter = session.selection.emitter(&session.effect)?;
+            session
+                .effect
+                .emitters
+                .iter()
+                .find(|candidate| candidate.id == emitter)
+                .map(|candidate| (candidate.id, candidate.name.clone()))
+        }
+    }
+}
+
+fn source_navigation_breadcrumb(
+    session: &EditorSession,
+    navigation: &SourceNavigationState,
+    timeline: &TimelineState,
+    catalog: &ProjectEffectCatalog,
+) -> Vec<String> {
+    let mut breadcrumb = navigation.breadcrumb(&session.effect.name);
+    if let Some((_, name)) = inspected_emitter(session, timeline, catalog) {
+        breadcrumb.push(name);
+    }
+    breadcrumb
 }
 
 fn spawn_global_source_navigation_items(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     navigation: &SourceNavigationState,
+    timeline: &TimelineState,
+    catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -329,7 +406,7 @@ fn spawn_global_source_navigation_items(
         asset_server,
     );
 
-    let mut breadcrumb = navigation.breadcrumb(&session.effect.name);
+    let mut breadcrumb = source_navigation_breadcrumb(session, navigation, timeline, catalog);
     let depth = navigation.depth();
     let full_path = breadcrumb.join(" › ");
     if session.dirty {
@@ -357,7 +434,7 @@ fn spawn_global_source_navigation_items(
             max_current_width: 164.0,
             ancestor_color: theme::TEXT_MUTED,
             current_color: theme::ACCENT,
-            compact_ancestors: true,
+            compact_ancestors: false,
             overflow_label: &localizer.text("toolbar-source-hidden-ancestors"),
             current_tooltip: Some(&full_path),
             ancestor_tooltips: true,
@@ -424,13 +501,15 @@ fn sync_global_source_navigation(
     mut commands: Commands,
     session: Res<EditorSession>,
     navigation: Res<SourceNavigationState>,
+    timeline: Res<TimelineState>,
+    catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
     asset_server: Res<AssetServer>,
     root: Single<Entity, With<GlobalSourceNavigation>>,
     items: Query<Entity, With<GlobalSourceNavigationItem>>,
     mut rendered: ResMut<RenderedGlobalSourceNavigation>,
 ) {
-    let view = global_source_navigation_view(&session, &navigation);
+    let view = global_source_navigation_view(&session, &navigation, &timeline, &catalog);
     if rendered.0.as_ref() == Some(&view) && !localizer.is_changed() {
         return;
     }
@@ -442,12 +521,16 @@ fn sync_global_source_navigation(
         .insert(EditorTooltip::description(source_navigation_path(
             &session,
             &navigation,
+            &timeline,
+            &catalog,
         )));
     commands.entity(*root).with_children(|parent| {
         spawn_global_source_navigation_items(
             parent,
             &session,
             &navigation,
+            &timeline,
+            &catalog,
             &localizer,
             &asset_server,
         );
@@ -788,6 +871,21 @@ fn update_editor_labels(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_breadcrumb_ends_with_the_inspected_emitter() {
+        let temporary = tempfile::tempdir().unwrap();
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let expected = session.selected_layer().name.clone();
+        let timeline = TimelineState::framed(session.playback_duration());
+        let navigation = SourceNavigationState::default();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+
+        assert_eq!(
+            source_navigation_breadcrumb(&session, &navigation, &timeline, &catalog),
+            [session.effect.name.clone(), expected]
+        );
+    }
 
     #[test]
     fn new_scroll_area_keeps_memory_until_same_frame_restore() {

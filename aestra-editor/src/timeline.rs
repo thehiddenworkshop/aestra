@@ -40,7 +40,9 @@ use bevy::{
 use bevy_resvg::prelude::SvgFile;
 use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, time::Duration};
+
+const REFERENCED_EMITTER_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum TimelineSet {
@@ -132,6 +134,10 @@ pub(crate) enum ChoreographyAction {
     ToggleEffectClipSolo(EffectClipId),
     ToggleEffectClipMenu(EffectClipId),
     EditEffectClipSource(EffectClipId),
+    EditEffectClipEmitterSource {
+        path: EffectClipPath,
+        emitter: EmitterId,
+    },
     DeleteEffectClip(EffectClipId),
     AddEmitter,
     DuplicateEmitter(Option<EmitterId>),
@@ -510,6 +516,16 @@ fn execute_choreography_action(
                 state.context_effect_clip = None;
                 session.ui_revision += 1;
                 commands.trigger(DocumentAction::OpenSource(source));
+            }
+        }
+        ChoreographyAction::EditEffectClipEmitterSource { path, emitter } => {
+            if let Some((clip, source)) = resolve_effect_clip_path(&session, &catalog, &path)
+                && source
+                    .emitters
+                    .iter()
+                    .any(|candidate| candidate.id == emitter)
+            {
+                commands.trigger(DocumentAction::OpenSourceEmitter(clip.source, emitter));
             }
         }
         ChoreographyAction::AddEmitter => {
@@ -1112,6 +1128,26 @@ mod tests {
         assert_eq!(
             effect_clip_click_action(2, &trim_control, &selection),
             selection
+        );
+    }
+
+    #[test]
+    fn double_click_opens_referenced_emitter_source_with_the_emitter_target() {
+        let path = EffectClipPath::root_path(EffectClipId::new());
+        let emitter = EmitterId::new();
+        let mut state = TimelineState::framed(1.0);
+        let selection = ChoreographyAction::SelectEffectClipEmitter {
+            path: path.clone(),
+            emitter,
+        };
+
+        assert_eq!(
+            referenced_emitter_click_action(&mut state, Duration::ZERO, 1, &selection),
+            selection
+        );
+        assert_eq!(
+            referenced_emitter_click_action(&mut state, Duration::from_millis(200), 1, &selection,),
+            ChoreographyAction::EditEffectClipEmitterSource { path, emitter }
         );
     }
 
@@ -3728,6 +3764,13 @@ struct EffectDropPreview {
     display_name: String,
 }
 
+#[derive(Clone, Debug)]
+struct ReferencedEmitterClick {
+    path: EffectClipPath,
+    emitter: EmitterId,
+    at: Duration,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct EffectClipPath(Vec<EffectClipId>);
 
@@ -3820,6 +3863,7 @@ pub(crate) struct TimelineState {
     solo_effect_clip: Option<EffectClipId>,
     context_effect_clip: Option<EffectClipId>,
     pub(crate) inspected_child: Option<EffectClipChildSelection>,
+    referenced_emitter_click: Option<ReferencedEmitterClick>,
     effect_drop_preview: Option<EffectDropPreview>,
     effect_drop_insertion: Option<(ChoreographyTrackId, bool)>,
     vertical_scroll: f32,
@@ -3854,6 +3898,7 @@ impl TimelineState {
             solo_effect_clip: None,
             context_effect_clip: None,
             inspected_child: None,
+            referenced_emitter_click: None,
             effect_drop_preview: None,
             effect_drop_insertion: None,
             vertical_scroll: 0.0,
@@ -4458,6 +4503,7 @@ fn spawn_referenced_emitter_track_header(
     if selected {
         header.insert(Selected);
     }
+    header.observe(open_referenced_emitter_source_from_header);
     header.with_children(|row| {
         row.spawn((
             Text::new("└"),
@@ -7937,13 +7983,76 @@ fn open_effect_clip_source_from_header(
 fn select_timeline_referenced_emitter(
     click: On<Pointer<Click>>,
     actions: Query<&ChoreographyAction, With<TimelineReferencedEmitterControl>>,
+    time: Res<Time<Real>>,
+    mut state: ResMut<TimelineState>,
     mut commands: Commands,
 ) {
     let Ok(action) = actions.get(click.event_target()) else {
         return;
     };
     if click.button == PointerButton::Primary {
-        commands.trigger(action.clone());
+        commands.trigger(referenced_emitter_click_action(
+            &mut state,
+            time.elapsed(),
+            click.count,
+            action,
+        ));
+    }
+}
+
+fn referenced_emitter_click_action(
+    state: &mut TimelineState,
+    now: Duration,
+    click_count: u8,
+    selection: &ChoreographyAction,
+) -> ChoreographyAction {
+    let ChoreographyAction::SelectEffectClipEmitter { path, emitter } = selection else {
+        state.referenced_emitter_click = None;
+        return selection.clone();
+    };
+    let repeated_after_rebuild = state
+        .referenced_emitter_click
+        .as_ref()
+        .is_some_and(|previous| {
+            previous.path == *path
+                && previous.emitter == *emitter
+                && now.saturating_sub(previous.at) <= REFERENCED_EMITTER_DOUBLE_CLICK_INTERVAL
+        });
+    if click_count >= 2 || repeated_after_rebuild {
+        state.referenced_emitter_click = None;
+        ChoreographyAction::EditEffectClipEmitterSource {
+            path: path.clone(),
+            emitter: *emitter,
+        }
+    } else {
+        state.referenced_emitter_click = Some(ReferencedEmitterClick {
+            path: path.clone(),
+            emitter: *emitter,
+            at: now,
+        });
+        selection.clone()
+    }
+}
+
+fn open_referenced_emitter_source_from_header(
+    click: On<Pointer<Click>>,
+    headers: Query<&ChoreographyAction, With<ReferencedEmitterTrackHeader>>,
+    time: Res<Time<Real>>,
+    mut state: ResMut<TimelineState>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let Ok(action) = headers.get(click.event_target()) else {
+        return;
+    };
+    let resolved = referenced_emitter_click_action(&mut state, time.elapsed(), click.count, action);
+    if matches!(
+        resolved,
+        ChoreographyAction::EditEffectClipEmitterSource { .. }
+    ) {
+        commands.trigger(resolved);
     }
 }
 

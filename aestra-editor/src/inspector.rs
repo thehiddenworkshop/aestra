@@ -3857,7 +3857,7 @@ pub(crate) fn spawn_inspector(
 ) {
     if let Some(navigation) = navigation.filter(|navigation| navigation.can_go_back()) {
         let depth = navigation.depth();
-        let breadcrumbs = navigation
+        let mut breadcrumbs = navigation
             .breadcrumb(&session.effect.name)
             .into_iter()
             .enumerate()
@@ -3868,6 +3868,16 @@ pub(crate) fn spawn_inspector(
                 )
             })
             .collect::<Vec<_>>();
+        if timeline.inspected_child.is_none()
+            && let Some(emitter) = session.selection.emitter(&session.effect)
+            && let Some(emitter) = session
+                .effect
+                .emitters
+                .iter()
+                .find(|candidate| candidate.id == emitter)
+        {
+            breadcrumbs.push((emitter.name.clone(), None));
+        }
         spawn_source_navigation_row(parent, &breadcrumbs, None, asset_server);
     }
     if let Some(selection) = timeline.inspected_child.as_ref() {
