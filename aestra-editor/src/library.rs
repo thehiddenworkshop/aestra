@@ -16,11 +16,15 @@ use bevy::{
     ui_widgets::Activate,
     window::SystemCursorIcon,
 };
-#[cfg(test)]
-use std::path::PathBuf;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::UNIX_EPOCH,
+};
 
 const DEFAULT_PROJECT_EFFECT_ROOT: &str = "assets/effects";
+const PROJECT_EFFECT_POLL_INTERVAL_SECONDS: f32 = 0.25;
+const PROJECT_EFFECT_STABLE_OBSERVATIONS: u8 = 2;
 
 pub(crate) struct EditorLibraryPlugin;
 
@@ -34,6 +38,7 @@ pub(crate) enum LibrarySet {
 impl Plugin for EditorLibraryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ProjectEffectCatalog>()
+            .init_resource::<ProjectEffectWatchState>()
             .init_resource::<LibraryState>()
             .init_resource::<LibraryAssetOperationState>()
             .add_observer(queue_library_action_activation)
@@ -45,6 +50,10 @@ impl Plugin for EditorLibraryPlugin {
             .add_observer(begin_project_effect_drag)
             .add_observer(update_project_effect_drag)
             .add_observer(end_project_effect_drag)
+            .add_systems(
+                Update,
+                poll_project_effect_catalog.in_set(LibrarySet::Input),
+            )
             .add_systems(
                 Update,
                 (
@@ -83,6 +92,10 @@ impl ProjectEffectCatalog {
 
     pub(crate) fn root(&self) -> &Path {
         self.index.root()
+    }
+
+    pub(crate) fn refresh(&mut self) {
+        self.index.refresh();
     }
 
     pub(crate) fn entry(&self, id: ProjectEffectEntryId) -> Option<&ProjectEffectEntry> {
@@ -223,6 +236,228 @@ impl ProjectEffectCatalog {
         Self {
             index: ProjectAssetIndex::from_entries("virtual", entries),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectEffectFileStamp {
+    path: PathBuf,
+    length: u64,
+    modified_nanos: u128,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectEffectTreeSnapshot {
+    available: bool,
+    diagnostic: Option<String>,
+    files: Vec<ProjectEffectFileStamp>,
+}
+
+impl ProjectEffectTreeSnapshot {
+    fn scan(root: &Path) -> Self {
+        let mut files = Vec::new();
+        let result = collect_project_effect_file_stamps(root, &mut files);
+        files.sort_by(|left, right| left.path.cmp(&right.path));
+        match result {
+            Ok(()) => Self {
+                available: true,
+                diagnostic: None,
+                files,
+            },
+            Err(error) => Self {
+                available: false,
+                diagnostic: Some(error.to_string()),
+                files,
+            },
+        }
+    }
+
+    fn file(&self, path: &Path) -> Option<&ProjectEffectFileStamp> {
+        self.files
+            .iter()
+            .find(|candidate| paths_refer_to_same_source(&candidate.path, path))
+    }
+}
+
+#[derive(Resource)]
+struct ProjectEffectWatchState {
+    poll: Timer,
+    committed: ProjectEffectTreeSnapshot,
+    pending: Option<(ProjectEffectTreeSnapshot, u8)>,
+}
+
+impl FromWorld for ProjectEffectWatchState {
+    fn from_world(world: &mut World) -> Self {
+        let root = world.resource::<ProjectEffectCatalog>().root().to_owned();
+        Self {
+            poll: Timer::from_seconds(PROJECT_EFFECT_POLL_INTERVAL_SECONDS, TimerMode::Repeating),
+            committed: ProjectEffectTreeSnapshot::scan(&root),
+            pending: None,
+        }
+    }
+}
+
+impl ProjectEffectWatchState {
+    fn observe(&mut self, snapshot: ProjectEffectTreeSnapshot) -> bool {
+        if snapshot == self.committed {
+            self.pending = None;
+            return false;
+        }
+        match self.pending.as_mut() {
+            Some((pending, observations)) if pending == &snapshot => {
+                *observations = observations.saturating_add(1);
+                if *observations < PROJECT_EFFECT_STABLE_OBSERVATIONS {
+                    return false;
+                }
+            }
+            _ => {
+                self.pending = Some((snapshot, 1));
+                return PROJECT_EFFECT_STABLE_OBSERVATIONS <= 1;
+            }
+        }
+        self.committed = snapshot;
+        self.pending = None;
+        true
+    }
+
+    fn accept_current(&mut self, root: &Path) {
+        self.committed = ProjectEffectTreeSnapshot::scan(root);
+        self.pending = None;
+        self.poll.reset();
+    }
+}
+
+fn collect_project_effect_file_stamps(
+    directory: &Path,
+    files: &mut Vec<ProjectEffectFileStamp>,
+) -> std::io::Result<()> {
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let path = entry.path();
+        if file_type.is_dir() {
+            collect_project_effect_file_stamps(&path, files)?;
+            continue;
+        }
+        if !file_type.is_file()
+            || !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".aestra.ron"))
+        {
+            continue;
+        }
+        let metadata = entry.metadata()?;
+        let modified_nanos = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map_or(0, |duration| duration.as_nanos());
+        files.push(ProjectEffectFileStamp {
+            path,
+            length: metadata.len(),
+            modified_nanos,
+        });
+    }
+    Ok(())
+}
+
+fn poll_project_effect_catalog(
+    time: Option<Res<Time>>,
+    mut watch: ResMut<ProjectEffectWatchState>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    let Some(time) = time else {
+        return;
+    };
+    if !watch.poll.tick(time.delta()).just_finished() {
+        return;
+    }
+    let snapshot = ProjectEffectTreeSnapshot::scan(catalog.root());
+    let previous = watch.committed.clone();
+    if !watch.observe(snapshot.clone()) {
+        return;
+    }
+    apply_project_effect_catalog_refresh(
+        &mut catalog,
+        &mut session,
+        &previous,
+        &snapshot,
+        &localizer,
+    );
+}
+
+fn apply_project_effect_catalog_refresh(
+    catalog: &mut ProjectEffectCatalog,
+    session: &mut EditorSession,
+    previous: &ProjectEffectTreeSnapshot,
+    current: &ProjectEffectTreeSnapshot,
+    localizer: &Localizer,
+) {
+    let source_path = session.source_path.clone();
+    let source_changed = source_path.as_deref().is_some_and(|path| {
+        previous.file(path) != current.file(path)
+            && (previous.file(path).is_some() || current.file(path).is_some())
+    });
+    catalog.refresh();
+
+    let revision = session.ui_revision;
+    let mut status_set = false;
+    if source_changed && let Some(source_path) = source_path {
+        let resolved_path = catalog
+            .openable_path(EffectAssetRef::new(session.effect.id))
+            .map(Path::to_owned);
+        let path = resolved_path.as_deref().unwrap_or(&source_path);
+        if session.dirty {
+            if resolved_path.is_some() && path != source_path {
+                session.source_path = Some(path.to_owned());
+                let mut args = FluentArgs::new();
+                args.set("path", path.display().to_string());
+                session.status = localizer.text_with("library-status-source-moved-dirty", &args);
+            } else if current.file(path).is_some() {
+                session.status = localizer.text("library-status-source-conflict");
+            } else {
+                session.status = localizer.text("library-status-open-source-missing");
+            }
+            status_set = true;
+        } else if current.file(path).is_some() {
+            let matches_clean_session = path == source_path
+                && EffectAsset::load_ron(path)
+                    .ok()
+                    .is_some_and(|effect| effect == session.effect);
+            // An editor save changes the filesystem stamp too. When the session already owns
+            // these exact bytes, retain its more useful save status and playback state.
+            if !matches_clean_session {
+                match session.open(path) {
+                    Ok(()) => {
+                        let mut args = FluentArgs::new();
+                        args.set("path", path.display().to_string());
+                        session.status =
+                            localizer.text_with("library-status-source-reloaded", &args);
+                    }
+                    Err(error) => {
+                        let mut args = FluentArgs::new();
+                        args.set("message", error.to_string());
+                        session.status =
+                            localizer.text_with("library-status-source-reload-failed", &args);
+                    }
+                }
+            }
+            status_set = true;
+        } else {
+            session.status = localizer.text("library-status-open-source-missing");
+            status_set = true;
+        }
+    }
+    if session.ui_revision == revision {
+        session.ui_revision += 1;
+    }
+    if !status_set {
+        let mut args = FluentArgs::new();
+        args.set("count", catalog.entries().len());
+        session.status = localizer.text_with("library-status-catalog-refreshed", &args);
     }
 }
 
@@ -1350,6 +1585,7 @@ fn execute_library_action(
     action: On<LibraryAction>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
+    mut watch: ResMut<ProjectEffectWatchState>,
     mut operation: ResMut<LibraryAssetOperationState>,
     localizer: Res<Localizer>,
 ) {
@@ -1393,6 +1629,7 @@ fn execute_library_action(
             };
             match catalog.move_effect_source(source, &destination) {
                 Ok(moved) => {
+                    watch.accept_current(catalog.root());
                     if is_current {
                         session.source_path = Some(moved.path.clone());
                     }
@@ -1416,6 +1653,7 @@ fn resolve_library_asset_operation(
     actions: Query<&LibraryAssetOperationAction>,
     mut state: ResMut<LibraryAssetOperationState>,
     mut catalog: ResMut<ProjectEffectCatalog>,
+    mut watch: ResMut<ProjectEffectWatchState>,
     mut session: ResMut<EditorSession>,
     localizer: Res<Localizer>,
 ) {
@@ -1447,6 +1685,7 @@ fn resolve_library_asset_operation(
     }
     match catalog.rename_effect_source(rename.source, &rename.draft) {
         Ok(renamed) => {
+            watch.accept_current(catalog.root());
             if is_current {
                 session.accept_external_source_rename(
                     renamed.path.clone(),
@@ -2329,6 +2568,151 @@ mod tests {
                 .contains("Save")
         );
         assert!(original.exists());
+    }
+
+    #[test]
+    fn project_effect_watch_requires_two_stable_observations() {
+        let temporary = tempfile::tempdir().unwrap();
+        let initial = ProjectEffectTreeSnapshot::scan(temporary.path());
+        let mut watch = ProjectEffectWatchState {
+            poll: Timer::from_seconds(PROJECT_EFFECT_POLL_INTERVAL_SECONDS, TimerMode::Repeating),
+            committed: initial,
+            pending: None,
+        };
+        write_effect(&temporary.path().join("new.aestra.ron"), "New");
+        let changed = ProjectEffectTreeSnapshot::scan(temporary.path());
+
+        assert!(!watch.observe(changed.clone()));
+        assert!(watch.observe(changed.clone()));
+        assert!(!watch.observe(changed));
+    }
+
+    #[test]
+    fn catalog_refresh_reloads_a_clean_open_source() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("open.aestra.ron");
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &path);
+        session.effect.save_ron(&path).unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let previous = ProjectEffectTreeSnapshot::scan(temporary.path());
+        let mut changed = EffectAsset::load_ron(&path).unwrap();
+        changed.name = "Externally Renamed".into();
+        changed.save_ron(&path).unwrap();
+        let current = ProjectEffectTreeSnapshot::scan(temporary.path());
+        let mut session = session;
+
+        apply_project_effect_catalog_refresh(
+            &mut catalog,
+            &mut session,
+            &previous,
+            &current,
+            &Localizer::new("en-US").unwrap(),
+        );
+
+        assert_eq!(session.effect.name, "Externally Renamed");
+        assert!(!session.dirty);
+        assert!(session.status.contains("Reloaded externally changed"));
+        assert_eq!(
+            catalog
+                .load_effect(EffectAssetRef::new(changed.id))
+                .unwrap()
+                .name,
+            "Externally Renamed"
+        );
+    }
+
+    #[test]
+    fn catalog_refresh_preserves_dirty_edits_when_the_source_changes() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("open.aestra.ron");
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &path);
+        session.effect.save_ron(&path).unwrap();
+        session.effect.name = "Unsaved Editor Name".into();
+        session.dirty = true;
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let previous = ProjectEffectTreeSnapshot::scan(temporary.path());
+        let mut changed = EffectAsset::load_ron(&path).unwrap();
+        changed.name = "External Name".into();
+        changed.save_ron(&path).unwrap();
+        let current = ProjectEffectTreeSnapshot::scan(temporary.path());
+
+        apply_project_effect_catalog_refresh(
+            &mut catalog,
+            &mut session,
+            &previous,
+            &current,
+            &Localizer::new("en-US").unwrap(),
+        );
+
+        assert_eq!(session.effect.name, "Unsaved Editor Name");
+        assert!(session.dirty);
+        assert!(
+            session
+                .status
+                .contains("unsaved editor changes were preserved")
+        );
+        assert_eq!(
+            catalog
+                .load_effect(EffectAssetRef::new(changed.id))
+                .unwrap()
+                .name,
+            "External Name"
+        );
+    }
+
+    #[test]
+    fn catalog_refresh_does_not_treat_an_editor_save_as_an_external_reload() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("open.aestra.ron");
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &path);
+        session.effect.save_ron(&path).unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let previous = ProjectEffectTreeSnapshot::scan(temporary.path());
+        session.effect.name = "Saved In Editor".into();
+        session.dirty = true;
+        session.save().unwrap();
+        session.status = "Saved by editor".into();
+        let current = ProjectEffectTreeSnapshot::scan(temporary.path());
+
+        apply_project_effect_catalog_refresh(
+            &mut catalog,
+            &mut session,
+            &previous,
+            &current,
+            &Localizer::new("en-US").unwrap(),
+        );
+
+        assert_eq!(session.effect.name, "Saved In Editor");
+        assert!(!session.dirty);
+        assert_eq!(session.status, "Saved by editor");
+    }
+
+    #[test]
+    fn catalog_refresh_tracks_an_externally_moved_dirty_source_by_effect_id() {
+        let temporary = tempfile::tempdir().unwrap();
+        let nested = temporary.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        let original = temporary.path().join("open.aestra.ron");
+        let moved = nested.join("open.aestra.ron");
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &original);
+        session.effect.save_ron(&original).unwrap();
+        session.dirty = true;
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let previous = ProjectEffectTreeSnapshot::scan(temporary.path());
+        fs::rename(&original, &moved).unwrap();
+        let current = ProjectEffectTreeSnapshot::scan(temporary.path());
+
+        apply_project_effect_catalog_refresh(
+            &mut catalog,
+            &mut session,
+            &previous,
+            &current,
+            &Localizer::new("en-US").unwrap(),
+        );
+
+        assert_eq!(session.source_path.as_deref(), Some(moved.as_path()));
+        assert!(session.dirty);
+        assert!(session.status.contains("moved to"));
     }
 
     #[test]

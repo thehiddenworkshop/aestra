@@ -2917,6 +2917,61 @@ mod tests {
     }
 
     #[test]
+    fn project_preview_recompiles_referenced_effects_when_the_catalog_refreshes() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("child.aestra.ron");
+        let mut child = aestra_bevy::EffectAsset::new("Child A", 1.0);
+        child
+            .emitters
+            .push(aestra_bevy::Emitter::basic_sprite("Child emitter", 1.0));
+        child.save_ron(&path).unwrap();
+        let child_id = child.id;
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.effect_clips.clear();
+        session
+            .effect
+            .effect_clips
+            .push(aestra_bevy::EffectClip::new(child_id, 0.0, 0.5));
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(ProjectEffectCatalog::scan(temporary.path()))
+            .init_resource::<EditorPreviewProject>()
+            .add_systems(Update, sync_project_preview);
+
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<EditorPreviewProject>()
+                .project
+                .as_ref()
+                .unwrap()
+                .effect(child_id)
+                .unwrap()
+                .name,
+            "Child A"
+        );
+
+        child.name = "Child B".into();
+        child.save_ron(&path).unwrap();
+        app.world_mut()
+            .resource_mut::<ProjectEffectCatalog>()
+            .refresh();
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<EditorPreviewProject>()
+                .project
+                .as_ref()
+                .unwrap()
+                .effect(child_id)
+                .unwrap()
+                .name,
+            "Child B"
+        );
+    }
+
+    #[test]
     fn project_preview_players_follow_seek_and_restart_deterministically() {
         let temporary = tempfile::tempdir().unwrap();
         let mut child = aestra_bevy::EffectAsset::new("Child", 1.0);

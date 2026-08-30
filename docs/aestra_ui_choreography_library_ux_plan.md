@@ -2089,7 +2089,10 @@ longer treats its path-derived row key as semantic effect identity. Transitive d
 cycle reporting, missing-reference repair, and guarded Library rename/move commands are complete.
 Rename updates both the authored name and source filename, while move remains inside the indexed project
 root; neither operation changes the persisted effect identity, so existing clips continue to resolve.
-Usage graphs, automatic file watching, and preview-cache identity remain in Phase D.
+The editor now polls the project effect tree with a two-sample debounce, refreshes Library rows after
+external add/edit/move/delete operations, and recompiles referenced previews through the catalog change
+boundary. Clean open sources reload automatically; dirty editor state is preserved and reported when its
+source changes on disk. Usage graphs and preview-cache identity remain in Phase D.
 
 ## Phase E — Minimal reusable Effect composition
 
