@@ -2236,6 +2236,13 @@ or
 leave original + create asset
 ```
 
+Status: complete for top-level local emitter tracks. Ctrl/Shift timeline selection feeds an
+in-app extraction dialog, project assets are created with normalized collision-safe paths, and
+the optional replacement is one undoable transaction. Extraction preserves selected timing and
+internal event links while rejecting event links that cross the selection boundary. Recursive
+clip or nested-source extraction remains a later extension rather than silently flattening
+referenced content.
+
 ## Phase J — Automation and events
 
 After basic clips are stable:
@@ -2380,7 +2387,8 @@ After the MVP:
       dedicated lane, transactional editing, Properties controls, and deterministic runtime
       dispatch.
 - [ ] Automation lanes use the same semantic curves as the Curves editor.
-- [ ] `Create Reusable Effect from Selection` works.
+- [x] `Create Reusable Effect from Selection` works for top-level local emitter tracks, with
+      optional undoable replacement by a referenced clip.
 - [ ] Reusable emitter extraction works.
 - [ ] Library search supports tags/types.
 - [ ] Effect previews use cached static thumbnails and optionally animated preview.

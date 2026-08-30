@@ -107,8 +107,10 @@ architecture vision; this file is the shorter delivery plan.
   timing and transform in one undoable transaction. Named timeline markers now provide stable,
   marker-relative anchors for emitters, clips, and choreography events. Typed choreography events
   have a dedicated timeline lane, transactional Properties editing, compiler artifacts, and
-  deterministic interval dispatch across loop boundaries. Usage graphs, reusable extraction,
-  preview-cache identity,
+  deterministic interval dispatch across loop boundaries. Top-level local emitter tracks can now
+  be multi-selected and extracted into a collision-safe reusable effect asset, optionally replacing
+  the source tracks with one referenced clip through an undoable transaction. Usage graphs,
+  recursive reusable extraction, preview-cache identity,
   procedural recipes, mesh/ribbon production paths, renderer sorting, and richer material domains
   remain.
 

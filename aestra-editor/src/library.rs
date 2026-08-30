@@ -4,12 +4,14 @@ use crate::feathers::context_menu::{
     keyboard_context_menu_requested, pointer_position_in_node, should_dismiss_pointer_context_menu,
     spawn_pointer_context_menu, spawn_pointer_context_menu_item,
 };
+use crate::timeline::TimelineState;
 use crate::*;
 use aestra_bevy::{
-    AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectClipId, EffectId,
-    EffectParameter, Emitter, EmitterId, EmitterTransform, EventId, EventLink, FlipbookDefinition,
-    GradientId, MaterialDefinition, MaterialId, MaterialInput, ModuleParameters, ParameterId,
-    RendererProperties, SpriteColorSource, ValidationReport, Value,
+    AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectAsset,
+    EffectAssetRef, EffectClip, EffectClipId, EffectId, EffectParameter, Emitter, EmitterId,
+    EmitterTransform, EventId, EventLink, FlipbookDefinition, GradientId, MaterialDefinition,
+    MaterialId, MaterialInput, ModuleParameters, ParameterId, RendererProperties,
+    SpriteColorSource, ValidationReport, Value,
 };
 use aestra_compiler::{EffectCompiler, ProjectCompileError};
 use aestra_project::{
@@ -59,6 +61,8 @@ impl Plugin for EditorLibraryPlugin {
             .add_observer(activate_library_list_entry)
             .add_observer(execute_library_action)
             .add_observer(update_library_rename_draft)
+            .add_observer(update_reusable_effect_extraction_draft)
+            .add_observer(update_reusable_effect_extraction_replace)
             .add_observer(resolve_library_asset_operation)
             .add_observer(update_library_query)
             .add_observer(begin_project_effect_drag)
@@ -118,6 +122,13 @@ impl ProjectEffectCatalog {
 
     pub(crate) fn refresh(&mut self) {
         self.index.refresh();
+    }
+
+    pub(crate) fn create_effect_source(
+        &mut self,
+        effect: &EffectAsset,
+    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        self.index.create_effect_source(effect)
     }
 
     pub(crate) fn entry(&self, id: ProjectEffectEntryId) -> Option<&ProjectEffectEntry> {
@@ -549,12 +560,14 @@ pub(crate) enum LibraryAction {
     AddGridFlipbook,
     RenameProjectEffect(ProjectEffectEntryId),
     MoveProjectEffect(ProjectEffectEntryId),
+    CreateReusableEffectFromSelection,
     ExplodeEffectClip(EffectClipId),
 }
 
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct LibraryAssetOperationState {
     rename: Option<LibraryRenameState>,
+    extraction: Option<ReusableEffectExtractionState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -564,9 +577,17 @@ struct LibraryRenameState {
     error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReusableEffectExtractionState {
+    emitters: Vec<EmitterId>,
+    draft: String,
+    replace_selection: bool,
+    error: Option<String>,
+}
+
 impl LibraryAssetOperationState {
     pub(crate) fn is_open(&self) -> bool {
-        self.rename.is_some()
+        self.rename.is_some() || self.extraction.is_some()
     }
 }
 
@@ -574,14 +595,30 @@ impl LibraryAssetOperationState {
 struct LibraryAssetOperationOverlay;
 
 #[derive(Component)]
+struct LibraryRenameDialog;
+
+#[derive(Component)]
 struct LibraryRenameInput;
 
 #[derive(Component)]
 struct LibraryRenameError;
 
+#[derive(Component)]
+struct ReusableEffectExtractionDialog;
+
+#[derive(Component)]
+struct ReusableEffectExtractionInput;
+
+#[derive(Component)]
+struct ReusableEffectExtractionReplace;
+
+#[derive(Component)]
+struct ReusableEffectExtractionError;
+
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 enum LibraryAssetOperationAction {
     ConfirmRename,
+    ConfirmReusableEffectExtraction,
     Cancel,
 }
 
@@ -591,6 +628,7 @@ pub(crate) fn spawn_library_asset_operation_overlay(
     localizer: &Localizer,
 ) {
     let rename = state.rename.as_ref();
+    let extraction = state.extraction.as_ref();
     parent
         .spawn((
             LibraryAssetOperationOverlay,
@@ -600,7 +638,7 @@ pub(crate) fn spawn_library_asset_operation_overlay(
                 is_hoverable: true,
             },
             Node {
-                display: if rename.is_some() {
+                display: if state.is_open() {
                     Display::Flex
                 } else {
                     Display::None
@@ -619,7 +657,13 @@ pub(crate) fn spawn_library_asset_operation_overlay(
         .with_children(|overlay| {
             overlay
                 .spawn((
+                    LibraryRenameDialog,
                     Node {
+                        display: if rename.is_some() {
+                            Display::Flex
+                        } else {
+                            Display::None
+                        },
                         width: Val::Px(440.0),
                         max_width: Val::Percent(92.0),
                         padding: UiRect::all(Val::Px(22.0)),
@@ -721,6 +765,148 @@ pub(crate) fn spawn_library_asset_operation_overlay(
                             }
                         });
                 });
+            overlay
+                .spawn((
+                    ReusableEffectExtractionDialog,
+                    Node {
+                        display: if extraction.is_some() {
+                            Display::Flex
+                        } else {
+                            Display::None
+                        },
+                        width: Val::Px(460.0),
+                        max_width: Val::Percent(92.0),
+                        padding: UiRect::all(Val::Px(22.0)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(12.0),
+                        border: UiRect::all(Val::Px(1.0)),
+                        border_radius: BorderRadius::all(Val::Px(7.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL),
+                    BorderColor::all(theme::BORDER_BRIGHT),
+                ))
+                .with_children(|dialog| {
+                    dialog.spawn((
+                        Text::new(localizer.text("library-extract-dialog-title")),
+                        TextFont {
+                            font_size: FontSize::Px(17.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Pickable::IGNORE,
+                    ));
+                    dialog.spawn((
+                        Text::new(localizer.text("library-extract-dialog-description")),
+                        TextFont {
+                            font_size: FontSize::Px(11.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                        Pickable::IGNORE,
+                    ));
+                    let input = spawn_text_input(
+                        dialog,
+                        extraction.map_or("", |extraction| extraction.draft.as_str()),
+                        &localizer.text("library-extract-input"),
+                        ReusableEffectExtractionInput,
+                    );
+                    dialog.commands().entity(input).insert(Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(32.0),
+                        ..default()
+                    });
+                    dialog
+                        .spawn(Node {
+                            width: Val::Percent(100.0),
+                            min_height: Val::Px(28.0),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(9.0),
+                            ..default()
+                        })
+                        .with_children(|row| {
+                            let mut checkbox = row.spawn_empty();
+                            checkbox.apply_scene(ui_shell::feathers_checkbox()).insert((
+                                ReusableEffectExtractionReplace,
+                                AccessibleLabel(
+                                    localizer.text("library-extract-replace-selection"),
+                                ),
+                            ));
+                            if extraction.is_none_or(|extraction| extraction.replace_selection) {
+                                checkbox.insert(Checked);
+                            }
+                            row.spawn((
+                                Text::new(localizer.text("library-extract-replace-selection")),
+                                TextFont {
+                                    font_size: FontSize::Px(11.0),
+                                    ..default()
+                                },
+                                TextColor(theme::TEXT),
+                                Pickable::IGNORE,
+                            ));
+                        });
+                    dialog.spawn((
+                        ReusableEffectExtractionError,
+                        Text::new(
+                            extraction
+                                .and_then(|extraction| extraction.error.as_deref())
+                                .unwrap_or_default(),
+                        ),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::PLAYHEAD),
+                        Node {
+                            display: if extraction
+                                .and_then(|extraction| extraction.error.as_ref())
+                                .is_some()
+                            {
+                                Display::Flex
+                            } else {
+                                Display::None
+                            },
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ));
+                    dialog
+                        .spawn(Node {
+                            width: Val::Percent(100.0),
+                            justify_content: JustifyContent::End,
+                            column_gap: Val::Px(8.0),
+                            margin: UiRect::top(Val::Px(6.0)),
+                            ..default()
+                        })
+                        .with_children(|buttons| {
+                            for (message, action) in [
+                                ("common-cancel", LibraryAssetOperationAction::Cancel),
+                                (
+                                    "library-extract-confirm",
+                                    LibraryAssetOperationAction::ConfirmReusableEffectExtraction,
+                                ),
+                            ] {
+                                let label = localizer.text(message);
+                                buttons
+                                    .spawn_empty()
+                                    .apply_scene(ui_shell::feathers_button())
+                                    .insert((
+                                        action,
+                                        FeathersActionButton,
+                                        AccessibleLabel(label.clone()),
+                                        Node {
+                                            min_width: Val::Px(82.0),
+                                            height: Val::Px(30.0),
+                                            padding: UiRect::horizontal(Val::Px(12.0)),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_child((Text::new(label), ThemedText, Pickable::IGNORE));
+                            }
+                        });
+                });
         });
 }
 
@@ -739,56 +925,123 @@ fn update_library_rename_draft(
     rename.error = None;
 }
 
+fn update_reusable_effect_extraction_draft(
+    change: On<ValueChange<String>>,
+    inputs: Query<(), With<ReusableEffectExtractionInput>>,
+    mut state: ResMut<LibraryAssetOperationState>,
+) {
+    if !inputs.contains(change.source) {
+        return;
+    }
+    let Some(extraction) = state.extraction.as_mut() else {
+        return;
+    };
+    extraction.draft.clone_from(&change.value);
+    extraction.error = None;
+}
+
+fn update_reusable_effect_extraction_replace(
+    change: On<ValueChange<bool>>,
+    controls: Query<(), With<ReusableEffectExtractionReplace>>,
+    mut commands: Commands,
+    mut state: ResMut<LibraryAssetOperationState>,
+) {
+    if !controls.contains(change.source) {
+        return;
+    }
+    let Some(extraction) = state.extraction.as_mut() else {
+        return;
+    };
+    extraction.replace_selection = change.value;
+    extraction.error = None;
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+}
+
 fn dismiss_library_asset_operation_with_escape(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<LibraryAssetOperationState>,
 ) {
     if state.is_open() && keys.just_pressed(KeyCode::Escape) {
         state.rename = None;
+        state.extraction = None;
     }
 }
 
 fn sync_library_asset_operation_overlay(
     state: Res<LibraryAssetOperationState>,
-    mut overlays: Query<
-        &mut Node,
-        (
-            With<LibraryAssetOperationOverlay>,
-            Without<LibraryRenameError>,
-        ),
-    >,
-    inputs: Query<Entity, With<LibraryRenameInput>>,
+    mut nodes: ParamSet<(
+        Query<&mut Node, With<LibraryAssetOperationOverlay>>,
+        Query<&mut Node, With<LibraryRenameDialog>>,
+        Query<&mut Node, With<ReusableEffectExtractionDialog>>,
+        Query<(&mut Text, &mut Node), With<LibraryRenameError>>,
+        Query<(&mut Text, &mut Node), With<ReusableEffectExtractionError>>,
+    )>,
+    rename_inputs: Query<Entity, With<LibraryRenameInput>>,
+    extraction_inputs: Query<Entity, With<ReusableEffectExtractionInput>>,
     mut editable_texts: Query<(&ChildOf, &mut EditableText)>,
-    mut errors: Query<
-        (&mut Text, &mut Node),
-        (
-            With<LibraryRenameError>,
-            Without<LibraryAssetOperationOverlay>,
-        ),
-    >,
 ) {
     if !state.is_changed() {
         return;
     }
-    for mut node in &mut overlays {
+    for mut node in &mut nodes.p0() {
         node.display = if state.is_open() {
             Display::Flex
         } else {
             Display::None
         };
     }
-    let Some(rename) = state.rename.as_ref() else {
-        return;
-    };
+    for mut node in &mut nodes.p1() {
+        node.display = if state.rename.is_some() {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for mut node in &mut nodes.p2() {
+        node.display = if state.extraction.is_some() {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
     for (parent, mut text) in &mut editable_texts {
-        if inputs.contains(parent.parent()) && text.value() != rename.draft.as_str() {
+        if rename_inputs.contains(parent.parent())
+            && let Some(rename) = state.rename.as_ref()
+            && text.value() != rename.draft.as_str()
+        {
             text.editor_mut().set_text(&rename.draft);
+            text.queue_edit(TextEdit::TextEnd(false));
+        } else if extraction_inputs.contains(parent.parent())
+            && let Some(extraction) = state.extraction.as_ref()
+            && text.value() != extraction.draft.as_str()
+        {
+            text.editor_mut().set_text(&extraction.draft);
             text.queue_edit(TextEdit::TextEnd(false));
         }
     }
-    for (mut text, mut node) in &mut errors {
-        text.0 = rename.error.clone().unwrap_or_default();
-        node.display = if rename.error.is_some() {
+    for (mut text, mut node) in &mut nodes.p3() {
+        let error = state
+            .rename
+            .as_ref()
+            .and_then(|rename| rename.error.as_ref());
+        text.0 = error.cloned().unwrap_or_default();
+        node.display = if error.is_some() {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for (mut text, mut node) in &mut nodes.p4() {
+        let error = state
+            .extraction
+            .as_ref()
+            .and_then(|extraction| extraction.error.as_ref());
+        text.0 = error.cloned().unwrap_or_default();
+        node.display = if error.is_some() {
             Display::Flex
         } else {
             Display::None
@@ -1771,6 +2024,7 @@ fn execute_library_action(
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut watch: ResMut<ProjectEffectWatchState>,
     mut operation: ResMut<LibraryAssetOperationState>,
+    timeline: Option<Res<TimelineState>>,
     localizer: Res<Localizer>,
 ) {
     match *action {
@@ -1794,6 +2048,7 @@ fn execute_library_action(
                 draft: entry.display_name.clone(),
                 error: None,
             });
+            operation.extraction = None;
         }
         LibraryAction::MoveProjectEffect(source) => {
             let Some(entry) = catalog.entry(source).cloned() else {
@@ -1829,6 +2084,28 @@ fn execute_library_action(
                 }
             }
         }
+        LibraryAction::CreateReusableEffectFromSelection => {
+            let mut emitters = timeline.as_deref().map_or_else(Vec::new, |timeline| {
+                timeline.selected_local_emitters(&session.effect)
+            });
+            if let Some(emitter) = session.selection.emitter(&session.effect)
+                && (emitters.is_empty() || !emitters.contains(&emitter))
+            {
+                emitters.clear();
+                emitters.push(emitter);
+            }
+            if emitters.is_empty() {
+                session.status = localizer.text("library-extract-no-selection");
+                return;
+            }
+            operation.rename = None;
+            operation.extraction = Some(ReusableEffectExtractionState {
+                emitters,
+                draft: localizer.text("library-extract-default-name"),
+                replace_selection: true,
+                error: None,
+            });
+        }
         LibraryAction::ExplodeEffectClip(clip) => {
             if let Err(error) = explode_effect_clip(clip, &catalog, &mut session, &localizer) {
                 session.status = error;
@@ -1844,14 +2121,44 @@ fn resolve_library_asset_operation(
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut watch: ResMut<ProjectEffectWatchState>,
     mut session: ResMut<EditorSession>,
+    mut timeline: Option<ResMut<TimelineState>>,
     localizer: Res<Localizer>,
 ) {
     let Ok(action) = actions.get(activate.entity) else {
         return;
     };
-    if *action == LibraryAssetOperationAction::Cancel {
-        state.rename = None;
-        return;
+    match *action {
+        LibraryAssetOperationAction::Cancel => {
+            state.rename = None;
+            state.extraction = None;
+            return;
+        }
+        LibraryAssetOperationAction::ConfirmReusableEffectExtraction => {
+            let Some(extraction) = state.extraction.clone() else {
+                return;
+            };
+            match create_reusable_effect_from_emitters(
+                &extraction,
+                &mut catalog,
+                &mut session,
+                &localizer,
+            ) {
+                Ok(()) => {
+                    watch.accept_current(catalog.root());
+                    state.extraction = None;
+                    if let Some(timeline) = timeline.as_deref_mut() {
+                        timeline.clear_emitter_selection();
+                    }
+                }
+                Err(error) => {
+                    if let Some(extraction) = state.extraction.as_mut() {
+                        extraction.error = Some(error);
+                    }
+                }
+            }
+            return;
+        }
+        LibraryAssetOperationAction::ConfirmRename => {}
     }
     let Some(rename) = state.rename.clone() else {
         return;
@@ -1894,6 +2201,166 @@ fn resolve_library_asset_operation(
             }
         }
     }
+}
+
+#[derive(Debug)]
+struct ReusableEffectPlan {
+    effect: EffectAsset,
+    selected: Vec<EmitterId>,
+    clip_start: f32,
+    clip_duration: f32,
+}
+
+fn reusable_effect_plan(
+    owner: &EffectAsset,
+    selected: &[EmitterId],
+    name: &str,
+) -> Result<ReusableEffectPlan, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("the reusable effect needs a name".into());
+    }
+    let requested = selected.iter().copied().collect::<BTreeSet<_>>();
+    let ordered = normalized_choreography_order_for_effect(owner)
+        .into_iter()
+        .filter_map(|track| match track {
+            ChoreographyTrackId::Emitter(emitter) if requested.contains(&emitter) => Some(emitter),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if ordered.is_empty() {
+        return Err("the selected emitters no longer exist".into());
+    }
+    let selected = ordered.iter().copied().collect::<BTreeSet<_>>();
+    if let Some(event) = owner
+        .events
+        .iter()
+        .find(|event| selected.contains(&event.source) != selected.contains(&event.target))
+    {
+        return Err(format!(
+            "event link {} crosses the selection boundary; select both connected emitters",
+            event.id
+        ));
+    }
+    let emitters = ordered
+        .iter()
+        .filter_map(|id| owner.emitters.iter().find(|emitter| emitter.id == *id))
+        .collect::<Vec<_>>();
+    let clip_start = emitters
+        .iter()
+        .map(|emitter| emitter.start_time)
+        .fold(f32::INFINITY, f32::min);
+    let clip_end = emitters
+        .iter()
+        .map(|emitter| emitter.start_time + emitter.duration)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let clip_duration = (clip_end - clip_start).max(0.05);
+
+    let mut effect = EffectAsset::new(name, clip_duration);
+    effect.looping = false;
+    effect.assets.clone_from(&owner.assets);
+    effect.flipbooks.clone_from(&owner.flipbooks);
+    effect.materials.clone_from(&owner.materials);
+    effect.parameters.clone_from(&owner.parameters);
+    effect.dependencies.clone_from(&owner.dependencies);
+    effect.emitters = emitters
+        .into_iter()
+        .cloned()
+        .map(|mut emitter| {
+            emitter.start_time -= clip_start;
+            emitter.start_reference = None;
+            emitter
+        })
+        .collect();
+    effect.events = owner
+        .events
+        .iter()
+        .filter(|event| selected.contains(&event.source) && selected.contains(&event.target))
+        .cloned()
+        .collect();
+    effect.choreography_order = ordered
+        .iter()
+        .copied()
+        .map(ChoreographyTrackId::Emitter)
+        .collect();
+    effect.validate().map_err(|report| report.to_string())?;
+    Ok(ReusableEffectPlan {
+        effect,
+        selected: ordered,
+        clip_start,
+        clip_duration,
+    })
+}
+
+fn create_reusable_effect_from_emitters(
+    extraction: &ReusableEffectExtractionState,
+    catalog: &mut ProjectEffectCatalog,
+    session: &mut EditorSession,
+    localizer: &Localizer,
+) -> Result<(), String> {
+    let plan = reusable_effect_plan(&session.effect, &extraction.emitters, &extraction.draft)?;
+    let created = catalog
+        .create_effect_source(&plan.effect)
+        .map_err(|error| error.to_string())?;
+
+    if extraction.replace_selection {
+        let clip = EffectClip::new(
+            EffectAssetRef::new(plan.effect.id),
+            plan.clip_start,
+            plan.clip_duration,
+        );
+        let clip_id = clip.id;
+        let selected = plan.selected.iter().copied().collect::<BTreeSet<_>>();
+        let mut order = normalized_choreography_order_for_effect(&session.effect);
+        let insertion = order
+            .iter()
+            .position(|track| {
+                matches!(track, ChoreographyTrackId::Emitter(emitter) if selected.contains(emitter))
+            })
+            .unwrap_or(order.len());
+        order.retain(|track| {
+            !matches!(track, ChoreographyTrackId::Emitter(emitter) if selected.contains(emitter))
+        });
+        order.insert(
+            insertion.min(order.len()),
+            ChoreographyTrackId::EffectClip(clip_id),
+        );
+
+        let mut commands = plan
+            .selected
+            .iter()
+            .copied()
+            .map(|id| EffectCommand::RemoveEmitter { id })
+            .collect::<Vec<_>>();
+        commands.push(EffectCommand::AddEffectClip {
+            clip,
+            index: session.effect.effect_clips.len(),
+        });
+        commands.push(EffectCommand::SetChoreographyOrder { order });
+        if !session.execute_transaction(
+            EffectTransaction::new(localizer.text("library-extract-command"), commands),
+            true,
+        ) {
+            let transaction_error = session.status.clone();
+            let rollback_error = fs::remove_file(&created.path).err();
+            catalog.refresh();
+            return Err(match rollback_error {
+                Some(error) => {
+                    format!("{transaction_error}; removing the new source also failed: {error}")
+                }
+                None => transaction_error,
+            });
+        }
+        session.select_effect_clip(clip_id);
+    } else {
+        session.ui_revision += 1;
+    }
+
+    let mut args = FluentArgs::new();
+    args.set("name", plan.effect.name.as_str());
+    args.set("count", plan.selected.len() as i64);
+    session.status = localizer.text_with("library-extract-created", &args);
+    Ok(())
 }
 
 fn explode_effect_clip(
@@ -2396,6 +2863,7 @@ mod tests {
     use crate::feathers::list_row::CompactListRow;
     use crate::session::blank_effect;
     use crate::timeline::{TimelineState, spawn_timeline};
+    use aestra_bevy::EventTrigger;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
     #[derive(Resource, Default)]
@@ -2427,6 +2895,16 @@ mod tests {
     ) {
         commands.spawn(Node::default()).with_children(|parent| {
             spawn_library(parent, &session, &catalog, &state, &localizer);
+        });
+    }
+
+    fn spawn_test_library_asset_operation_overlay(
+        mut commands: Commands,
+        state: Res<LibraryAssetOperationState>,
+        localizer: Res<Localizer>,
+    ) {
+        commands.spawn(Node::default()).with_children(|parent| {
+            spawn_library_asset_operation_overlay(parent, &state, &localizer);
         });
     }
 
@@ -3322,6 +3800,169 @@ mod tests {
                 .contains("Save")
         );
         assert!(original.exists());
+    }
+
+    #[test]
+    fn reusable_effect_extraction_replaces_selected_emitters_and_is_undoable() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut owner = EffectAsset::new("Owner", 4.0);
+        owner.looping = false;
+        let mut first = Emitter::basic_sprite("First", 1.0);
+        first.start_time = 0.5;
+        let first_id = first.id;
+        let mut second = Emitter::basic_sprite("Second", 0.75);
+        second.start_time = 1.25;
+        let second_id = second.id;
+        let mut untouched = Emitter::basic_sprite("Untouched", 1.0);
+        untouched.start_time = 2.5;
+        let untouched_id = untouched.id;
+        owner.emitters = vec![first, second, untouched];
+        owner.events.push(EventLink {
+            id: EventId::new(),
+            source: first_id,
+            trigger: EventTrigger::OnDeath,
+            target: second_id,
+        });
+        owner.choreography_order = vec![
+            ChoreographyTrackId::Emitter(first_id),
+            ChoreographyTrackId::Emitter(second_id),
+            ChoreographyTrackId::Emitter(untouched_id),
+        ];
+        let mut session = EditorSession::from_embedded_sample(
+            &owner.to_pretty_ron().unwrap(),
+            temporary.path().join("owner.aestra.ron"),
+        );
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let localizer = Localizer::new("en-US").unwrap();
+        let extraction = ReusableEffectExtractionState {
+            emitters: vec![first_id, second_id],
+            draft: "Prismatic Burst".into(),
+            replace_selection: true,
+            error: None,
+        };
+
+        create_reusable_effect_from_emitters(&extraction, &mut catalog, &mut session, &localizer)
+            .unwrap();
+
+        let created_path = temporary.path().join("prismatic_burst.aestra.ron");
+        let created = EffectAsset::load_ron(&created_path).unwrap();
+        assert_eq!(created.name, "Prismatic Burst");
+        assert_eq!(created.duration, 1.5);
+        assert!(!created.looping);
+        assert_eq!(created.emitters.len(), 2);
+        assert_eq!(created.emitters[0].start_time, 0.0);
+        assert_eq!(created.emitters[1].start_time, 0.75);
+        assert_eq!(created.events.len(), 1);
+        assert_eq!(session.effect.emitters.len(), 1);
+        assert_eq!(session.effect.emitters[0].id, untouched_id);
+        assert_eq!(session.effect.effect_clips.len(), 1);
+        let clip = &session.effect.effect_clips[0];
+        assert_eq!(clip.source, EffectAssetRef::new(created.id));
+        assert_eq!(clip.start_time, 0.5);
+        assert_eq!(clip.duration, 1.5);
+        assert_eq!(
+            session.effect.choreography_order,
+            vec![
+                ChoreographyTrackId::EffectClip(clip.id),
+                ChoreographyTrackId::Emitter(untouched_id),
+            ]
+        );
+        assert!(session.can_undo());
+
+        session.undo();
+        assert_eq!(session.effect.emitters.len(), 3);
+        assert!(session.effect.effect_clips.is_empty());
+        assert_eq!(session.effect.events.len(), 1);
+        assert!(
+            created_path.exists(),
+            "undo keeps the reusable asset available"
+        );
+    }
+
+    #[test]
+    fn reusable_effect_extraction_rejects_cross_boundary_event_links() {
+        let mut owner = EffectAsset::new("Owner", 2.0);
+        let first = Emitter::basic_sprite("First", 1.0);
+        let first_id = first.id;
+        let second = Emitter::basic_sprite("Second", 1.0);
+        let second_id = second.id;
+        owner.emitters = vec![first, second];
+        owner.events.push(EventLink {
+            id: EventId::new(),
+            source: first_id,
+            trigger: EventTrigger::OnSpawn,
+            target: second_id,
+        });
+
+        let error = reusable_effect_plan(&owner, &[first_id], "Partial").unwrap_err();
+
+        assert!(error.contains("crosses the selection boundary"));
+    }
+
+    #[test]
+    fn reusable_effect_extraction_overlay_tracks_modal_state_without_query_conflicts() {
+        let state = LibraryAssetOperationState {
+            extraction: Some(ReusableEffectExtractionState {
+                emitters: vec![EmitterId::new()],
+                draft: "Reusable Burst".into(),
+                replace_selection: true,
+                error: Some("Choose another name".into()),
+            }),
+            ..default()
+        };
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .insert_resource(state)
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_systems(Startup, spawn_test_library_asset_operation_overlay)
+        .add_systems(Update, sync_library_asset_operation_overlay);
+
+        app.update();
+
+        let world = app.world_mut();
+        let overlay = world
+            .query_filtered::<&Node, With<LibraryAssetOperationOverlay>>()
+            .single(world)
+            .unwrap();
+        assert_eq!(overlay.display, Display::Flex);
+        let extraction = world
+            .query_filtered::<&Node, With<ReusableEffectExtractionDialog>>()
+            .single(world)
+            .unwrap();
+        assert_eq!(extraction.display, Display::Flex);
+        let rename = world
+            .query_filtered::<&Node, With<LibraryRenameDialog>>()
+            .single(world)
+            .unwrap();
+        assert_eq!(rename.display, Display::None);
+        let (error, error_node) = world
+            .query_filtered::<(&Text, &Node), With<ReusableEffectExtractionError>>()
+            .single(world)
+            .unwrap();
+        assert_eq!(error.0, "Choose another name");
+        assert_eq!(error_node.display, Display::Flex);
+
+        world
+            .resource_mut::<LibraryAssetOperationState>()
+            .extraction = None;
+        app.update();
+
+        let world = app.world_mut();
+        let overlay = world
+            .query_filtered::<&Node, With<LibraryAssetOperationOverlay>>()
+            .single(world)
+            .unwrap();
+        assert_eq!(overlay.display, Display::None);
+        let extraction = world
+            .query_filtered::<&Node, With<ReusableEffectExtractionDialog>>()
+            .single(world)
+            .unwrap();
+        assert_eq!(extraction.display, Display::None);
     }
 
     #[test]

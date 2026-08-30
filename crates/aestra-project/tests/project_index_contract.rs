@@ -79,6 +79,27 @@ fn indexed_move_stays_inside_root_and_preserves_reference_identity() {
 }
 
 #[test]
+fn indexed_creation_normalizes_the_filename_and_never_replaces_a_collision() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut index = ProjectAssetIndex::scan(temporary.path());
+    let effect = EffectAsset::new("Prismatic Burst", 1.0);
+
+    let created = index.create_effect_source(&effect).unwrap();
+
+    assert_eq!(created.reference, Some(EffectAssetRef::new(effect.id)));
+    assert_eq!(
+        created.path.file_name().unwrap(),
+        "prismatic_burst.aestra.ron"
+    );
+    assert_eq!(index.load_effect(effect.id.into()).unwrap(), effect);
+    assert!(matches!(
+        index.create_effect_source(&EffectAsset::new("Prismatic Burst", 1.0)),
+        Err(ProjectAssetOperationError::DestinationExists { .. })
+    ));
+    assert_eq!(index.effects().len(), 1);
+}
+
+#[test]
 fn asset_operations_reject_collisions_and_destinations_outside_the_project() {
     let temporary = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();

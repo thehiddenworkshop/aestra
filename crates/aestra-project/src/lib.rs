@@ -322,6 +322,39 @@ impl ProjectAssetIndex {
         *self = Self::scan(self.root.clone());
     }
 
+    /// Creates a new effect source directly inside the indexed project root.
+    ///
+    /// The display name determines the normalized filename. Existing files are never replaced,
+    /// and the index is refreshed before the newly created stable reference is returned.
+    pub fn create_effect_source(
+        &mut self,
+        effect: &EffectAsset,
+    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        let name = effect.name.trim();
+        let Some(stem) = effect_source_stem(name) else {
+            return Err(ProjectAssetOperationError::InvalidName);
+        };
+        let destination = self.root.join(format!("{stem}.aestra.ron"));
+        if destination.exists() {
+            return Err(ProjectAssetOperationError::DestinationExists { path: destination });
+        }
+        effect
+            .save_ron(&destination)
+            .map_err(|error| ProjectAssetOperationError::Asset {
+                path: destination.clone(),
+                message: error.to_string(),
+            })?;
+
+        let reference = EffectAssetRef::new(effect.id);
+        self.refresh();
+        self.resolve(reference)
+            .cloned()
+            .map_err(|error| ProjectAssetOperationError::Refresh {
+                reference,
+                message: error.to_string(),
+            })
+    }
+
     /// Renames one resolvable effect source and its authored display name.
     ///
     /// The persisted [`EffectId`] is left untouched, so every existing [`EffectAssetRef`] keeps

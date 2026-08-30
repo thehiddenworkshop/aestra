@@ -318,6 +318,7 @@ fn execute_timeline_action(
         }
         TimelineAction::FrameAll => state.frame_all(session.playback_duration()),
         TimelineAction::AddMarker => {
+            state.clear_emitter_selection();
             let index = session.effect.markers.len();
             let marker_label = localizer.as_deref().map_or_else(
                 || "Marker".to_owned(),
@@ -338,6 +339,7 @@ fn execute_timeline_action(
             }
         }
         TimelineAction::SelectMarker(id) => {
+            state.clear_emitter_selection();
             session.select_marker(id);
             state.inspected_child = None;
         }
@@ -349,6 +351,7 @@ fn execute_timeline_action(
             session.execute(label, EffectCommand::RemoveMarker { id }, true);
         }
         TimelineAction::AddChoreographyEvent => {
+            state.clear_emitter_selection();
             let index = session.effect.choreography_events.len();
             let event = ChoreographyEvent::new(
                 format!("Event {}", index + 1),
@@ -367,6 +370,7 @@ fn execute_timeline_action(
             }
         }
         TimelineAction::SelectChoreographyEvent(id) => {
+            state.clear_emitter_selection();
             session.select_choreography_event(id);
             state.inspected_child = None;
         }
@@ -389,6 +393,7 @@ fn execute_choreography_action(
     mut state: ResMut<TimelineState>,
     catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
+    keys: Option<Res<ButtonInput<KeyCode>>>,
 ) {
     if let ChoreographyAction::ToggleEmitterColorPicker(emitter) = action.clone() {
         let revision = session.ui_revision;
@@ -399,6 +404,7 @@ fn execute_choreography_action(
             .any(|item| item.id == emitter)
         {
             session.select_emitter(emitter);
+            state.select_only_emitter(emitter);
             curves.clear();
         }
         state.context_emitter = None;
@@ -424,7 +430,16 @@ fn execute_choreography_action(
                 .iter()
                 .any(|item| item.id == emitter)
             {
-                session.select_emitter(emitter);
+                let control = keys.as_deref().is_some_and(|keys| {
+                    keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight)
+                });
+                let shift = keys.as_deref().is_some_and(|keys| {
+                    keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight)
+                });
+                let current = session.selection.emitter(&session.effect);
+                let primary =
+                    state.select_emitter(&session.effect, current, emitter, control, shift);
+                session.select_emitter(primary);
                 state.inspected_child = None;
                 curves.clear();
             }
@@ -436,6 +451,7 @@ fn execute_choreography_action(
                 .iter()
                 .any(|item| item.id == clip)
             {
+                state.clear_emitter_selection();
                 let changed = session.select_effect_clip(clip);
                 let had_child = state.inspected_child.take().is_some();
                 state.inspected_child = None;
@@ -452,6 +468,7 @@ fn execute_choreography_action(
                 .as_ref()
                 .is_some_and(|effect| effect.emitters.iter().any(|item| item.id == emitter))
             {
+                state.clear_emitter_selection();
                 session.selection.select_effect_clip(path.root());
                 state.inspected_child = Some(EffectClipChildSelection::Emitter { path, emitter });
                 session.status = localizer.text("timeline-selected-referenced-emitter");
@@ -461,6 +478,7 @@ fn execute_choreography_action(
         }
         ChoreographyAction::SelectReferencedEffectClip(path) => {
             if resolve_effect_clip_path(&session, &catalog, &path).is_some() {
+                state.clear_emitter_selection();
                 session.selection.select_effect_clip(path.root());
                 state.inspected_child = Some(EffectClipChildSelection::EffectClip { path });
                 session.status = localizer.text("timeline-selected-referenced-effect");
@@ -541,11 +559,17 @@ fn execute_choreography_action(
         }
         ChoreographyAction::AddEmitter => {
             session.add_layer();
+            if let Some(emitter) = session.selection.emitter(&session.effect) {
+                state.select_only_emitter(emitter);
+            }
             curves.clear();
         }
         ChoreographyAction::DuplicateEmitter(target) => {
             if select_choreography_target(&mut session, target) {
                 session.duplicate_selected_layer();
+                if let Some(emitter) = session.selection.emitter(&session.effect) {
+                    state.select_only_emitter(emitter);
+                }
                 curves.clear();
             }
         }
@@ -2812,6 +2836,71 @@ mod tests {
     }
 
     #[test]
+    fn control_and_shift_select_multiple_local_emitter_tracks_in_timeline_order() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let effect = &session.effect;
+        let [first, second, third, ..] = effect.emitters.as_slice() else {
+            panic!("sample needs at least three emitters");
+        };
+        let mut state = TimelineState::framed(effect.duration);
+
+        state.select_emitter(effect, Some(first.id), first.id, false, false);
+        state.select_emitter(effect, Some(first.id), third.id, true, false);
+        assert_eq!(
+            state.selected_local_emitters(effect),
+            vec![first.id, third.id]
+        );
+
+        state.select_emitter(effect, Some(third.id), second.id, false, true);
+        assert_eq!(
+            state.selected_local_emitters(effect),
+            vec![second.id, third.id]
+        );
+    }
+
+    #[test]
+    fn unmodified_click_on_the_primary_track_collapses_multi_selection_after_a_context_menu() {
+        let emitter = EmitterId::new();
+
+        assert!(should_collapse_emitter_multi_selection(
+            PointerButton::Primary,
+            false,
+            false,
+            false,
+            3,
+            Some(emitter),
+            emitter,
+        ));
+        assert!(!should_collapse_emitter_multi_selection(
+            PointerButton::Secondary,
+            false,
+            false,
+            false,
+            3,
+            Some(emitter),
+            emitter,
+        ));
+        assert!(!should_collapse_emitter_multi_selection(
+            PointerButton::Primary,
+            true,
+            false,
+            false,
+            3,
+            Some(emitter),
+            emitter,
+        ));
+        assert!(!should_collapse_emitter_multi_selection(
+            PointerButton::Primary,
+            false,
+            true,
+            false,
+            3,
+            Some(emitter),
+            emitter,
+        ));
+    }
+
+    #[test]
     fn track_list_value_change_selects_the_emitter_through_its_semantic_action() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let target = session.effect.emitters[2].id;
@@ -4237,6 +4326,8 @@ pub(crate) struct TimelineState {
     snap_guide: Option<f32>,
     panning: bool,
     context_emitter: Option<EmitterId>,
+    selected_emitters: BTreeSet<EmitterId>,
+    emitter_selection_anchor: Option<EmitterId>,
     color_picker_emitter: Option<EmitterId>,
     reorder_drag: Option<EmitterId>,
     effect_clip_reorder_drag: Option<EffectClipId>,
@@ -4279,6 +4370,8 @@ impl TimelineState {
             snap_guide: None,
             panning: false,
             context_emitter: None,
+            selected_emitters: BTreeSet::new(),
+            emitter_selection_anchor: None,
             color_picker_emitter: None,
             reorder_drag: None,
             effect_clip_reorder_drag: None,
@@ -4336,6 +4429,94 @@ impl TimelineState {
     pub(crate) fn reveal_emitter(&mut self, emitter: EmitterId) {
         self.reveal_emitter = Some(emitter);
         self.reveal_wait_frames = 1;
+    }
+
+    pub(crate) fn selected_local_emitters(&self, effect: &EffectAsset) -> Vec<EmitterId> {
+        normalized_choreography_order(effect)
+            .into_iter()
+            .filter_map(|track| match track {
+                ChoreographyTrackId::Emitter(emitter)
+                    if self.selected_emitters.contains(&emitter) =>
+                {
+                    Some(emitter)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub(crate) fn clear_emitter_selection(&mut self) {
+        self.selected_emitters.clear();
+        self.emitter_selection_anchor = None;
+    }
+
+    fn select_only_emitter(&mut self, emitter: EmitterId) {
+        self.selected_emitters.clear();
+        self.selected_emitters.insert(emitter);
+        self.emitter_selection_anchor = Some(emitter);
+    }
+
+    fn select_emitter(
+        &mut self,
+        effect: &EffectAsset,
+        current: Option<EmitterId>,
+        emitter: EmitterId,
+        control: bool,
+        shift: bool,
+    ) -> EmitterId {
+        let order = normalized_choreography_order(effect)
+            .into_iter()
+            .filter_map(|track| match track {
+                ChoreographyTrackId::Emitter(emitter) => Some(emitter),
+                ChoreographyTrackId::EffectClip(_) => None,
+            })
+            .collect::<Vec<_>>();
+        if shift {
+            let anchor = self
+                .emitter_selection_anchor
+                .filter(|anchor| order.contains(anchor))
+                .or_else(|| self.selected_emitters.iter().next().copied())
+                .unwrap_or(emitter);
+            if !control {
+                self.selected_emitters.clear();
+            }
+            let start = order.iter().position(|candidate| *candidate == anchor);
+            let end = order.iter().position(|candidate| *candidate == emitter);
+            if let (Some(start), Some(end)) = (start, end) {
+                let (start, end) = if start <= end {
+                    (start, end)
+                } else {
+                    (end, start)
+                };
+                self.selected_emitters
+                    .extend(order[start..=end].iter().copied());
+            }
+            self.emitter_selection_anchor = Some(anchor);
+            return emitter;
+        }
+        if control {
+            if self.selected_emitters.is_empty() {
+                self.selected_emitters.extend(current);
+            }
+            if !self.selected_emitters.remove(&emitter) {
+                self.selected_emitters.insert(emitter);
+            }
+            if self.selected_emitters.is_empty() {
+                self.selected_emitters.insert(emitter);
+            }
+            self.emitter_selection_anchor = Some(emitter);
+            return if self.selected_emitters.contains(&emitter) {
+                emitter
+            } else {
+                self.selected_emitters
+                    .iter()
+                    .next()
+                    .copied()
+                    .unwrap_or(emitter)
+            };
+        }
+        self.select_only_emitter(emitter);
+        emitter
     }
 
     pub(crate) fn effect_clip_preview_timing(&self, clip: EffectClipId) -> Option<(f32, f32, f32)> {
@@ -6387,7 +6568,14 @@ fn spawn_emitter_track_header(
     grid_row: i16,
     asset_server: &AssetServer,
 ) {
-    let selected = session.selection.primary == SemanticTarget::Emitter(emitter);
+    let primary_emitter = session.selection.emitter(&session.effect);
+    let multi_selection_is_current =
+        primary_emitter.is_some_and(|primary| state.selected_emitters.contains(&primary));
+    let selected = if multi_selection_is_current {
+        state.selected_emitters.contains(&emitter)
+    } else {
+        primary_emitter == Some(emitter)
+    };
     let diagnostic = emitter_has_diagnostic(session, index);
     let mut args = FluentArgs::new();
     args.set("name", name);
@@ -6444,6 +6632,7 @@ fn spawn_emitter_track_header(
         header.insert(EmitterTrackDisabled);
     }
     header
+        .observe(collapse_emitter_multi_selection_on_primary_click)
         .observe(open_timeline_track_context_menu)
         .observe(drop_emitter_track_reorder)
         .observe(drop_effect_clip_track_reorder)
@@ -6655,6 +6844,11 @@ fn spawn_emitter_context_menu(
             );
             spawn_pointer_context_menu_item(
                 menu,
+                &localizer.text("timeline-menu-create-reusable-effect"),
+                crate::library::LibraryAction::CreateReusableEffectFromSelection,
+            );
+            spawn_pointer_context_menu_item(
+                menu,
                 &localizer.text("timeline-menu-duplicate"),
                 ChoreographyAction::DuplicateEmitter(Some(emitter)),
             );
@@ -6665,6 +6859,73 @@ fn spawn_emitter_context_menu(
             );
         },
     );
+}
+
+fn collapse_emitter_multi_selection_on_primary_click(
+    click: On<Pointer<Click>>,
+    headers: Query<&EmitterTrackHeader>,
+    parents: Query<&ChildOf>,
+    action_controls: Query<
+        (),
+        Or<(
+            With<TimelineTrackActionControl>,
+            With<EmitterTrackReorderHandle>,
+        )>,
+    >,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<TimelineState>,
+    mut session: ResMut<EditorSession>,
+    mut curves: ResMut<CurvesState>,
+) {
+    let target_is_action_control = action_controls.contains(click.event_target());
+    if click.button != PointerButton::Primary || target_is_action_control {
+        return;
+    }
+    let mut entity = click.event_target();
+    let emitter = loop {
+        if let Ok(header) = headers.get(entity) {
+            break header.emitter;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    if !should_collapse_emitter_multi_selection(
+        click.button,
+        target_is_action_control,
+        control,
+        shift,
+        state.selected_emitters.len(),
+        session.selection.emitter(&session.effect),
+        emitter,
+    ) {
+        return;
+    }
+
+    state.select_only_emitter(emitter);
+    session.select_emitter(emitter);
+    session.ui_revision += 1;
+    curves.clear();
+}
+
+fn should_collapse_emitter_multi_selection(
+    button: PointerButton,
+    target_is_action_control: bool,
+    control: bool,
+    shift: bool,
+    selected_count: usize,
+    primary: Option<EmitterId>,
+    clicked: EmitterId,
+) -> bool {
+    button == PointerButton::Primary
+        && !target_is_action_control
+        && !control
+        && !shift
+        && selected_count > 1
+        && primary == Some(clicked)
 }
 
 fn spawn_effect_clip_context_menu(
@@ -8801,6 +9062,9 @@ fn open_timeline_track_context_menu(
         .iter()
         .any(|candidate| candidate.id == emitter)
     {
+        if !state.selected_emitters.contains(&emitter) {
+            state.select_only_emitter(emitter);
+        }
         session.select_emitter(emitter);
         curves.clear();
     }
@@ -8848,6 +9112,9 @@ fn open_focused_timeline_context_menu(
                 .iter()
                 .any(|candidate| candidate.id == header.emitter)
             {
+                if !state.selected_emitters.contains(&header.emitter) {
+                    state.select_only_emitter(header.emitter);
+                }
                 session.select_emitter(header.emitter);
                 curves.clear();
             }
@@ -8869,6 +9136,7 @@ fn open_focused_timeline_context_menu(
                 .iter()
                 .any(|candidate| candidate.id == header.clip)
             {
+                state.clear_emitter_selection();
                 session.select_effect_clip(header.clip);
                 curves.clear();
             }
@@ -8921,6 +9189,7 @@ fn open_effect_clip_track_context_menu(
         .iter()
         .any(|candidate| candidate.id == clip)
     {
+        state.clear_emitter_selection();
         session.select_effect_clip(clip);
         curves.clear();
     }
