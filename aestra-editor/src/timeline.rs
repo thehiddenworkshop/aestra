@@ -109,6 +109,7 @@ impl Plugin for TimelinePlugin {
                     update_timeline_marker_visuals,
                     update_choreography_event_visuals,
                     update_effect_clip_visuals,
+                    update_automation_lane_graph_visuals,
                     update_automation_key_visuals,
                     update_automation_curve_drag_preview,
                     update_effect_drop_insertion,
@@ -2662,6 +2663,125 @@ mod tests {
     }
 
     #[test]
+    fn automation_graph_follows_the_live_emitter_timing_preview() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.effect.emitters[0].id;
+        let mut timeline = TimelineState::framed(session.playback_duration());
+        let view = timeline.view;
+        timeline.drag = Some(TimelineDrag {
+            emitter,
+            kind: TimelineDragKind::TrimEnd,
+            pointer_start: 0.0,
+            original_start: 0.0,
+            original_duration: 1.0,
+            current_start: 0.35,
+            current_duration: 0.8,
+        });
+        let lane = AutomationLaneId {
+            emitter,
+            module: ModuleId::new(),
+            input: 0,
+            parameter: "test".into(),
+        };
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(timeline)
+            .add_systems(Update, update_automation_lane_graph_visuals);
+        let graph = app
+            .world_mut()
+            .spawn((TimelineAutomationLaneGraph(lane), Node::default()))
+            .id();
+
+        app.update();
+
+        let node = app.world().get::<Node>(graph).unwrap();
+        assert_eq!(node.left, Val::Percent(view.normalized_time(0.35) * 100.0));
+        assert_eq!(node.width, Val::Percent(0.8 / view.span() * 100.0));
+    }
+
+    #[test]
+    fn emitter_automation_disclosure_is_an_active_a_button() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let target = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| automation_lane_count(emitter) > 0)
+            .unwrap()
+            .id;
+        let mut timeline = TimelineState::framed(session.playback_duration());
+        timeline.expanded_automation_emitters.insert(target);
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            ScenePlugin,
+            TextPlugin,
+        ))
+        .init_asset::<Image>()
+        .init_asset::<SvgFile>()
+        .insert_resource(session)
+        .insert_resource(timeline)
+        .init_resource::<ProjectEffectCatalog>()
+        .init_resource::<EditorModuleRegistry>()
+        .init_resource::<CurvesState>()
+        .insert_resource(Localizer::new("en-US").unwrap())
+        .add_systems(Startup, spawn_test_timeline);
+
+        app.update();
+
+        let toggles = {
+            let world = app.world_mut();
+            let mut query =
+                world.query::<(Entity, &ChoreographyAction, Has<Selected>, &ButtonVariant)>();
+            query
+                .iter(world)
+                .filter_map(|(entity, action, selected, variant)| match action {
+                    ChoreographyAction::ToggleEmitterAutomation(emitter) => {
+                        Some((entity, *emitter, selected, variant.clone()))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(!toggles.is_empty());
+        let target_toggle = toggles
+            .iter()
+            .find(|(_, emitter, _, _)| *emitter == target)
+            .map(|(entity, _, _, _)| *entity)
+            .unwrap();
+        for (entity, emitter, selected, variant) in toggles {
+            let label = app
+                .world()
+                .get::<Children>(entity)
+                .and_then(|children| {
+                    children
+                        .iter()
+                        .find_map(|child| app.world().get::<Text>(child))
+                })
+                .map(|text| text.0.as_str());
+            assert_eq!(label, Some("A"));
+            assert_eq!(selected, emitter == target);
+            assert_eq!(variant == ButtonVariant::Primary, emitter == target);
+        }
+        let world = app.world();
+        let parent = world.get::<ChildOf>(target_toggle).unwrap().parent();
+        let children = world.get::<Children>(parent).unwrap();
+        let solo_position = children
+            .iter()
+            .position(|child| {
+                world.get::<ChoreographyAction>(child)
+                    == Some(&ChoreographyAction::ToggleEmitterSolo(target))
+            })
+            .unwrap();
+        let automation_position = children
+            .iter()
+            .position(|child| child == target_toggle)
+            .unwrap();
+        assert_eq!(automation_position, solo_position + 1);
+    }
+
+    #[test]
     fn track_headers_and_clips_expose_the_same_stable_selection_actions() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         session.effect.effect_clips.clear();
@@ -3844,6 +3964,56 @@ fn update_effect_clip_visuals(
     }
 }
 
+fn update_automation_lane_graph_visuals(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    mut graphs: Query<(&TimelineAutomationLaneGraph, &mut Node)>,
+) {
+    for (graph, mut node) in &mut graphs {
+        let Some((start, duration)) = emitter_preview_timing(&session, &state, graph.0.emitter)
+        else {
+            node.display = Display::None;
+            continue;
+        };
+        apply_automation_graph_geometry(&mut node, start, duration, state.view);
+    }
+}
+
+fn emitter_preview_timing(
+    session: &EditorSession,
+    state: &TimelineState,
+    emitter: EmitterId,
+) -> Option<(f32, f32)> {
+    let emitter = session
+        .effect
+        .emitters
+        .iter()
+        .find(|candidate| candidate.id == emitter)?;
+    Some(
+        state
+            .drag
+            .filter(|drag| drag.emitter == emitter.id)
+            .map_or((emitter.start_time, emitter.duration), |drag| {
+                (drag.current_start, drag.current_duration)
+            }),
+    )
+}
+
+fn apply_automation_graph_geometry(
+    node: &mut Node,
+    start_time: f32,
+    duration: f32,
+    view: TimelineView,
+) {
+    node.display = if start_time + duration > view.start && start_time < view.end {
+        Display::Flex
+    } else {
+        Display::None
+    };
+    node.left = Val::Percent(view.normalized_time(start_time) * 100.0);
+    node.width = Val::Percent(duration / view.span().max(0.001) * 100.0);
+}
+
 fn update_automation_key_visuals(
     session: Res<EditorSession>,
     state: Res<TimelineState>,
@@ -3854,11 +4024,8 @@ fn update_automation_key_visuals(
         .as_ref()
         .and_then(|drag| automation_key_drag_preview_data(&session.effect, drag));
     for (selection, mut node) in &mut keys {
-        let Some(emitter) = session
-            .effect
-            .emitters
-            .iter()
-            .find(|emitter| emitter.id == selection.lane.emitter)
+        let Some((emitter_start, emitter_duration)) =
+            emitter_preview_timing(&session, &state, selection.lane.emitter)
         else {
             node.display = Display::None;
             continue;
@@ -3871,7 +4038,7 @@ fn update_automation_key_visuals(
             .or_else(|| {
                 automation_lane_keys(&session.effect, &selection.lane)
                     .and_then(|keys| keys.times().nth(selection.key))
-                    .map(|normalized| emitter.start_time + normalized * emitter.duration)
+                    .map(|normalized| emitter_start + normalized * emitter_duration)
             });
         let Some(time) = time else {
             node.display = Display::None;
@@ -7496,39 +7663,6 @@ fn spawn_emitter_track_header(
         .observe(drop_emitter_track_reorder)
         .observe(drop_effect_clip_track_reorder)
         .with_children(|row| {
-            if automation_lane_count > 0 {
-                let expanded = state.expanded_automation_emitters.contains(&emitter);
-                let label = localizer.text(if expanded {
-                    "timeline-collapse-automation"
-                } else {
-                    "timeline-expand-automation"
-                });
-                let disclosure = mini_button(
-                    row,
-                    if expanded { "⌄" } else { ">" },
-                    ChoreographyAction::ToggleEmitterAutomation(emitter),
-                );
-                row.commands().entity(disclosure).insert((
-                    AccessibleLabel(label.clone()),
-                    EditorTooltip::description(label),
-                    Node {
-                        width: Val::Px(18.0),
-                        height: Val::Px(23.0),
-                        flex_shrink: 0.0,
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        ..default()
-                    },
-                ));
-                configure_timeline_track_action_control(row.commands(), disclosure);
-            } else {
-                row.spawn(Node {
-                    width: Val::Px(18.0),
-                    height: Val::Px(1.0),
-                    flex_shrink: 0.0,
-                    ..default()
-                });
-            }
             let reorder_label = emitter_timing_label(localizer, "timeline-reorder-emitter", name);
             let handle = row
                 .spawn((
@@ -7653,6 +7787,44 @@ fn spawn_emitter_track_header(
                 row.commands()
                     .entity(solo)
                     .insert((Selected, ButtonVariant::Primary));
+            }
+            if automation_lane_count > 0 {
+                let expanded = state.expanded_automation_emitters.contains(&emitter);
+                let label = localizer.text(if expanded {
+                    "timeline-collapse-automation"
+                } else {
+                    "timeline-expand-automation"
+                });
+                let disclosure = mini_button(
+                    row,
+                    "A",
+                    ChoreographyAction::ToggleEmitterAutomation(emitter),
+                );
+                row.commands().entity(disclosure).insert((
+                    AccessibleLabel(label.clone()),
+                    EditorTooltip::description(label),
+                    Node {
+                        width: Val::Px(23.0),
+                        height: Val::Px(23.0),
+                        flex_shrink: 0.0,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                ));
+                if expanded {
+                    row.commands()
+                        .entity(disclosure)
+                        .insert((Selected, ButtonVariant::Primary));
+                }
+                configure_timeline_track_action_control(row.commands(), disclosure);
+            } else {
+                row.spawn(Node {
+                    width: Val::Px(23.0),
+                    height: Val::Px(1.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                });
             }
             row.spawn((
                 TimelineTrackNameLabel,
@@ -8107,27 +8279,23 @@ fn spawn_automation_lane_row(
         ))
         .with_children(|row| {
             let graph_data = lane.keys.graph_data();
-            let graph_start = state.view.normalized_time(emitter.start_time) * 100.0;
-            let graph_width = emitter.duration / state.view.span().max(0.001) * 100.0;
-            let graph_visible = emitter.start_time + emitter.duration > state.view.start
-                && emitter.start_time < state.view.end;
+            let mut graph_node = Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(0.0),
+                height: Val::Percent(100.0),
+                overflow: Overflow::clip(),
+                ..default()
+            };
+            apply_automation_graph_geometry(
+                &mut graph_node,
+                emitter.start_time,
+                emitter.duration,
+                state.view,
+            );
             row.spawn((
                 TimelineAutomationLaneGraph(lane.id.clone()),
                 RelativeCursorPosition::default(),
-                Node {
-                    display: if graph_visible {
-                        Display::Flex
-                    } else {
-                        Display::None
-                    },
-                    position_type: PositionType::Absolute,
-                    left: Val::Percent(graph_start),
-                    top: Val::Px(0.0),
-                    width: Val::Percent(graph_width),
-                    height: Val::Percent(100.0),
-                    overflow: Overflow::clip(),
-                    ..default()
-                },
+                graph_node,
                 BackgroundColor(theme::ACCENT.with_alpha(0.035)),
             ))
             .observe(add_automation_key_from_graph)

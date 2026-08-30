@@ -2101,7 +2101,9 @@ root; neither operation changes the persisted effect identity, so existing clips
 The editor now polls the project effect tree with a two-sample debounce, refreshes Library rows after
 external add/edit/move/delete operations, and recompiles referenced previews through the catalog change
 boundary. Clean open sources reload automatically; dirty editor state is preserved and reported when its
-source changes on disk. Usage graphs and preview-cache identity remain in Phase D.
+source changes on disk. Direct and transitive dependency and reverse-usage graphs are now available from
+the project index with owning clip identity. The Library exposes a navigable Uses / Used By inspector and
+revalidates those relations before confirmed source deletion; preview-cache identity remains in Phase D.
 
 ## Phase E — Minimal reusable Effect composition
 

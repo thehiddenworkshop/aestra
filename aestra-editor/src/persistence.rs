@@ -3,7 +3,9 @@
 use crate::recovery::{RecoveryCandidate, RecoveryPersistence};
 use crate::timeline::{TimelineNavigationSnapshot, TimelineState};
 use crate::*;
-use aestra_bevy::{EffectAssetLoad, EffectAssetMigration, EffectCompiler, prepare_effect_asset};
+use aestra_bevy::{
+    EffectAssetLoad, EffectAssetMigration, EffectClipId, EffectCompiler, prepare_effect_asset,
+};
 use bevy::ui_widgets::Activate;
 use fluent_bundle::FluentArgs;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
@@ -59,6 +61,7 @@ pub(crate) enum DocumentAction {
     New,
     Open,
     OpenCatalog(EffectAssetRef),
+    OpenCatalogClip(EffectAssetRef, EffectClipId),
     OpenSource(EffectAssetRef),
     OpenSourceEmitter(EffectAssetRef, EmitterId),
     BackToSource,
@@ -581,6 +584,20 @@ fn execute_protected_document_action(
                     *timeline = TimelineState::framed(session.playback_duration());
                 }
                 workspace.clear();
+            }
+        }
+        DocumentAction::OpenCatalogClip(id, clip) => {
+            if let Some(path) = catalog.openable_path(id)
+                && open_effect_path(session, path, settings, localizer)
+            {
+                if let Some(navigation) = navigation.as_deref_mut() {
+                    navigation.clear();
+                }
+                if let Some(timeline) = timeline.as_deref_mut() {
+                    *timeline = TimelineState::framed(session.playback_duration());
+                }
+                workspace.clear();
+                session.select_effect_clip(clip);
             }
         }
         DocumentAction::OpenSource(id) => {
@@ -1369,6 +1386,50 @@ mod tests {
         let session = app.world().resource::<EditorSession>();
         assert_eq!(session.effect.name, "Catalog Effect");
         assert_eq!(session.source_path.as_deref(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn catalog_clip_navigation_opens_the_owner_with_the_requested_clip_selected() {
+        let temporary = tempfile::tempdir().unwrap();
+        let child_path = temporary.path().join("child.aestra.ron");
+        let mut child = EffectAsset::new("Child", 1.0);
+        child.id = aestra_bevy::EffectId::from_u128(0xC101);
+        child.save_ron(&child_path).unwrap();
+        let owner_path = temporary.path().join("owner.aestra.ron");
+        let mut owner = EffectAsset::new("Owner", 1.0);
+        owner.id = aestra_bevy::EffectId::from_u128(0xC102);
+        let clip = aestra_bevy::EffectClip::new(child.id, 0.0, 1.0);
+        let clip_id = clip.id;
+        owner.effect_clips.push(clip);
+        owner.save_ron(&owner_path).unwrap();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let owner_reference = EffectAssetRef::new(owner.id);
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let autosave = AutosaveState::new(&session, true);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(EditorSettings::default())
+            .insert_resource(catalog)
+            .init_resource::<CurvesState>()
+            .insert_resource(RecoveryPersistence::for_test(
+                temporary.path().join("recovery"),
+                None,
+            ))
+            .insert_resource(autosave)
+            .init_resource::<DocumentProtectionState>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(execute_document_action);
+
+        app.world_mut()
+            .trigger(DocumentAction::OpenCatalogClip(owner_reference, clip_id));
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.id, owner.id);
+        assert_eq!(
+            session.selection.primary,
+            SemanticTarget::EffectClip(clip_id)
+        );
     }
 
     #[test]

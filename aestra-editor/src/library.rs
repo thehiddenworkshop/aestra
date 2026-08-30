@@ -16,7 +16,8 @@ use aestra_bevy::{
 use aestra_compiler::{EffectCompiler, ProjectCompileError};
 use aestra_project::{
     ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectAssetOperationError,
-    ProjectDependencyDiagnosticCode, ProjectEffectEntry, ProjectEffectStatus,
+    ProjectDependencyDiagnosticCode, ProjectEffectDeletePolicy, ProjectEffectEntry,
+    ProjectEffectRelation, ProjectEffectStatus, ProjectEffectUsageGraph,
 };
 use aestra_runtime::CompiledEffectProject;
 #[cfg(test)]
@@ -57,6 +58,7 @@ impl Plugin for EditorLibraryPlugin {
             .init_resource::<ProjectEffectWatchState>()
             .init_resource::<LibraryState>()
             .init_resource::<LibraryAssetOperationState>()
+            .init_resource::<RenderedLibraryRelationOverlay>()
             .add_observer(queue_library_action_activation)
             .add_observer(activate_library_list_entry)
             .add_observer(execute_library_action)
@@ -87,7 +89,11 @@ impl Plugin for EditorLibraryPlugin {
             )
             .add_systems(
                 Update,
-                (sync_library_filtering, restore_library_context_menu_focus)
+                (
+                    sync_library_filtering,
+                    restore_library_context_menu_focus,
+                    queue_library_relation_overlay_rebuild,
+                )
                     .chain()
                     .in_set(LibrarySet::Sync),
             );
@@ -262,6 +268,30 @@ impl ProjectEffectCatalog {
         destination: &Path,
     ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
         self.index.move_effect_source(source, destination)
+    }
+
+    fn effect_usage_graph(
+        &self,
+        reference: EffectAssetRef,
+    ) -> Result<ProjectEffectUsageGraph, String> {
+        self.index
+            .effect_usage_graph(reference)
+            .map_err(|error| error.to_string())
+    }
+
+    fn delete_effect_source(
+        &mut self,
+        source: ProjectEffectEntryId,
+    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        self.index
+            .delete_effect_source(source, ProjectEffectDeletePolicy::AllowReferenced)
+    }
+
+    fn effect_name(&self, reference: EffectAssetRef) -> String {
+        self.index.resolve(reference).map_or_else(
+            |_| reference.to_string(),
+            |entry| entry.display_name.clone(),
+        )
     }
 
     #[cfg(test)]
@@ -560,6 +590,8 @@ pub(crate) enum LibraryAction {
     AddGridFlipbook,
     RenameProjectEffect(ProjectEffectEntryId),
     MoveProjectEffect(ProjectEffectEntryId),
+    InspectProjectEffect(ProjectEffectEntryId),
+    DeleteProjectEffect(ProjectEffectEntryId),
     CreateReusableEffectFromSelection,
     ExplodeEffectClip(EffectClipId),
 }
@@ -568,6 +600,8 @@ pub(crate) enum LibraryAction {
 pub(crate) struct LibraryAssetOperationState {
     rename: Option<LibraryRenameState>,
     extraction: Option<ReusableEffectExtractionState>,
+    dependency_inspector: Option<LibraryDependencyInspectorState>,
+    deletion: Option<LibraryEffectDeletionState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -585,9 +619,41 @@ struct ReusableEffectExtractionState {
     error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LibraryDependencyInspectorState {
+    source: ProjectEffectEntryId,
+    graph: ProjectEffectUsageGraph,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LibraryEffectDeletionState {
+    source: ProjectEffectEntryId,
+    graph: ProjectEffectUsageGraph,
+    error: Option<String>,
+}
+
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+struct RenderedLibraryRelationOverlay(Option<LibraryRelationOverlayView>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LibraryRelationOverlayView {
+    Inspector(LibraryDependencyInspectorState),
+    Deletion(LibraryEffectDeletionState),
+}
+
 impl LibraryAssetOperationState {
     pub(crate) fn is_open(&self) -> bool {
-        self.rename.is_some() || self.extraction.is_some()
+        self.rename.is_some()
+            || self.extraction.is_some()
+            || self.dependency_inspector.is_some()
+            || self.deletion.is_some()
+    }
+
+    fn close_all(&mut self) {
+        self.rename = None;
+        self.extraction = None;
+        self.dependency_inspector = None;
+        self.deletion = None;
     }
 }
 
@@ -615,16 +681,28 @@ struct ReusableEffectExtractionReplace;
 #[derive(Component)]
 struct ReusableEffectExtractionError;
 
+#[derive(Component)]
+struct LibraryDependencyInspectorDialog;
+
+#[derive(Component)]
+struct LibraryEffectDeletionDialog;
+
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 enum LibraryAssetOperationAction {
     ConfirmRename,
     ConfirmReusableEffectExtraction,
+    NavigateToEffect {
+        effect: EffectAssetRef,
+        clip: Option<EffectClipId>,
+    },
+    ConfirmEffectDeletion,
     Cancel,
 }
 
 pub(crate) fn spawn_library_asset_operation_overlay(
     parent: &mut ChildSpawnerCommands,
     state: &LibraryAssetOperationState,
+    catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
 ) {
     let rename = state.rename.as_ref();
@@ -907,6 +985,366 @@ pub(crate) fn spawn_library_asset_operation_overlay(
                             }
                         });
                 });
+            spawn_dependency_inspector_dialog(
+                overlay,
+                state.dependency_inspector.as_ref(),
+                catalog,
+                localizer,
+            );
+            spawn_effect_deletion_dialog(overlay, state.deletion.as_ref(), catalog, localizer);
+        });
+}
+
+fn spawn_dependency_inspector_dialog(
+    overlay: &mut ChildSpawnerCommands,
+    inspector: Option<&LibraryDependencyInspectorState>,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+) {
+    let source_name = inspector
+        .and_then(|inspector| catalog.entry(inspector.source))
+        .map_or_else(String::new, |entry| entry.display_name.clone());
+    overlay
+        .spawn((
+            LibraryDependencyInspectorDialog,
+            Node {
+                display: if inspector.is_some() {
+                    Display::Flex
+                } else {
+                    Display::None
+                },
+                width: Val::Px(560.0),
+                max_width: Val::Percent(92.0),
+                max_height: Val::Percent(84.0),
+                padding: UiRect::all(Val::Px(22.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(12.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(7.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::BORDER_BRIGHT),
+        ))
+        .with_children(|dialog| {
+            let mut args = FluentArgs::new();
+            args.set("name", source_name.as_str());
+            dialog.spawn((
+                Text::new(localizer.text_with("library-dependencies-title", &args)),
+                TextFont {
+                    font_size: FontSize::Px(17.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+            dialog.spawn((
+                Text::new(localizer.text("library-dependencies-description")),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+                Pickable::IGNORE,
+            ));
+            spawn_vertical_scroll_area(
+                dialog,
+                ScrollMemoryKey::LibraryRelations,
+                Node {
+                    width: Val::Percent(100.0),
+                    max_height: Val::Px(430.0),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(12.0),
+                    ..default()
+                },
+                |content| {
+                    if let Some(inspector) = inspector {
+                        spawn_relation_section(
+                            content,
+                            &localizer.text("library-dependencies-uses"),
+                            &inspector.graph.dependencies,
+                            false,
+                            catalog,
+                            localizer,
+                        );
+                        spawn_relation_section(
+                            content,
+                            &localizer.text("library-dependencies-used-by"),
+                            &inspector.graph.usages,
+                            true,
+                            catalog,
+                            localizer,
+                        );
+                    }
+                },
+            );
+            spawn_library_dialog_buttons(
+                dialog,
+                &[("common-close", LibraryAssetOperationAction::Cancel)],
+                localizer,
+            );
+        });
+}
+
+fn spawn_relation_section(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    relations: &[ProjectEffectRelation],
+    reverse: bool,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(5.0),
+            ..default()
+        })
+        .with_children(|section| {
+            section.spawn((
+                Text::new(format!("{title}  ·  {}", relations.len())),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::ACCENT),
+                Pickable::IGNORE,
+            ));
+            if relations.is_empty() {
+                section.spawn((
+                    Text::new(localizer.text("library-dependencies-none")),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_MUTED),
+                    Pickable::IGNORE,
+                ));
+                return;
+            }
+            for relation in relations {
+                let effect = if reverse {
+                    relation.owner
+                } else {
+                    relation.dependency
+                };
+                let label = catalog.effect_name(effect);
+                let meta = relation_meta(relation, reverse, catalog, localizer);
+                let action = LibraryAssetOperationAction::NavigateToEffect {
+                    effect,
+                    clip: reverse.then_some(relation.clip),
+                };
+                section
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_button())
+                    .insert((
+                        action,
+                        FeathersActionButton,
+                        AccessibleLabel(label.clone()),
+                        Node {
+                            width: Val::Percent(100.0),
+                            min_height: Val::Px(38.0),
+                            padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::SpaceBetween,
+                            column_gap: Val::Px(10.0),
+                            ..default()
+                        },
+                    ))
+                    .with_children(|row| {
+                        row.spawn((Text::new(label), ThemedText, Pickable::IGNORE));
+                        row.spawn((
+                            Text::new(meta),
+                            TextFont {
+                                font_size: FontSize::Px(9.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT_MUTED),
+                            Pickable::IGNORE,
+                        ));
+                    });
+            }
+        });
+}
+
+fn relation_meta(
+    relation: &ProjectEffectRelation,
+    reverse: bool,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+) -> String {
+    if relation.depth > 1 {
+        let mut args = FluentArgs::new();
+        args.set("depth", relation.depth as i64);
+        return localizer.text_with("library-dependencies-indirect", &args);
+    }
+    if !reverse {
+        return localizer.text("library-dependencies-direct");
+    }
+    let clip_index = catalog
+        .load_effect(relation.owner)
+        .ok()
+        .and_then(|effect| {
+            effect
+                .effect_clips
+                .iter()
+                .position(|clip| clip.id == relation.clip)
+        })
+        .map_or(1, |index| index + 1);
+    let mut args = FluentArgs::new();
+    args.set("index", clip_index as i64);
+    localizer.text_with("library-dependencies-clip", &args)
+}
+
+fn spawn_effect_deletion_dialog(
+    overlay: &mut ChildSpawnerCommands,
+    deletion: Option<&LibraryEffectDeletionState>,
+    catalog: &ProjectEffectCatalog,
+    localizer: &Localizer,
+) {
+    let source_name = deletion
+        .and_then(|deletion| catalog.entry(deletion.source))
+        .map_or_else(String::new, |entry| entry.display_name.clone());
+    overlay
+        .spawn((
+            LibraryEffectDeletionDialog,
+            Node {
+                display: if deletion.is_some() {
+                    Display::Flex
+                } else {
+                    Display::None
+                },
+                width: Val::Px(520.0),
+                max_width: Val::Percent(92.0),
+                max_height: Val::Percent(84.0),
+                padding: UiRect::all(Val::Px(22.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(12.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(7.0)),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL),
+            BorderColor::all(theme::PLAYHEAD),
+        ))
+        .with_children(|dialog| {
+            let mut args = FluentArgs::new();
+            args.set("name", source_name.as_str());
+            dialog.spawn((
+                Text::new(localizer.text_with("library-delete-title", &args)),
+                TextFont {
+                    font_size: FontSize::Px(17.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+            if let Some(deletion) = deletion {
+                let direct = deletion.graph.direct_usages().count();
+                let indirect = deletion.graph.transitive_usages().count();
+                let mut args = FluentArgs::new();
+                args.set("direct", direct as i64);
+                args.set("indirect", indirect as i64);
+                let message = if direct > 0 {
+                    localizer.text_with("library-delete-referenced-warning", &args)
+                } else {
+                    localizer.text("library-delete-unreferenced-warning")
+                };
+                dialog.spawn((
+                    Text::new(message),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(if direct > 0 {
+                        theme::PLAYHEAD
+                    } else {
+                        theme::TEXT_MUTED
+                    }),
+                    Pickable::IGNORE,
+                ));
+                if direct > 0 {
+                    spawn_vertical_scroll_area(
+                        dialog,
+                        ScrollMemoryKey::LibraryDeletion,
+                        Node {
+                            width: Val::Percent(100.0),
+                            max_height: Val::Px(260.0),
+                            flex_direction: FlexDirection::Column,
+                            ..default()
+                        },
+                        |content| {
+                            spawn_relation_section(
+                                content,
+                                &localizer.text("library-dependencies-used-by"),
+                                &deletion.graph.usages,
+                                true,
+                                catalog,
+                                localizer,
+                            );
+                        },
+                    );
+                }
+                if let Some(error) = deletion.error.as_deref() {
+                    dialog.spawn((
+                        Text::new(error),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::PLAYHEAD),
+                        Pickable::IGNORE,
+                    ));
+                }
+            }
+            spawn_library_dialog_buttons(
+                dialog,
+                &[
+                    ("common-cancel", LibraryAssetOperationAction::Cancel),
+                    (
+                        "library-delete-confirm",
+                        LibraryAssetOperationAction::ConfirmEffectDeletion,
+                    ),
+                ],
+                localizer,
+            );
+        });
+}
+
+fn spawn_library_dialog_buttons(
+    parent: &mut ChildSpawnerCommands,
+    buttons: &[(&str, LibraryAssetOperationAction)],
+    localizer: &Localizer,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            justify_content: JustifyContent::End,
+            column_gap: Val::Px(8.0),
+            margin: UiRect::top(Val::Px(6.0)),
+            ..default()
+        })
+        .with_children(|row| {
+            for (message, action) in buttons {
+                let label = localizer.text(message);
+                row.spawn_empty()
+                    .apply_scene(ui_shell::feathers_button())
+                    .insert((
+                        *action,
+                        FeathersActionButton,
+                        AccessibleLabel(label.clone()),
+                        Node {
+                            min_width: Val::Px(82.0),
+                            height: Val::Px(30.0),
+                            padding: UiRect::horizontal(Val::Px(12.0)),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            ..default()
+                        },
+                    ))
+                    .with_child((Text::new(label), ThemedText, Pickable::IGNORE));
+            }
         });
 }
 
@@ -966,8 +1404,7 @@ fn dismiss_library_asset_operation_with_escape(
     mut state: ResMut<LibraryAssetOperationState>,
 ) {
     if state.is_open() && keys.just_pressed(KeyCode::Escape) {
-        state.rename = None;
-        state.extraction = None;
+        state.close_all();
     }
 }
 
@@ -977,6 +1414,8 @@ fn sync_library_asset_operation_overlay(
         Query<&mut Node, With<LibraryAssetOperationOverlay>>,
         Query<&mut Node, With<LibraryRenameDialog>>,
         Query<&mut Node, With<ReusableEffectExtractionDialog>>,
+        Query<&mut Node, With<LibraryDependencyInspectorDialog>>,
+        Query<&mut Node, With<LibraryEffectDeletionDialog>>,
         Query<(&mut Text, &mut Node), With<LibraryRenameError>>,
         Query<(&mut Text, &mut Node), With<ReusableEffectExtractionError>>,
     )>,
@@ -1008,6 +1447,20 @@ fn sync_library_asset_operation_overlay(
             Display::None
         };
     }
+    for mut node in &mut nodes.p3() {
+        node.display = if state.dependency_inspector.is_some() {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for mut node in &mut nodes.p4() {
+        node.display = if state.deletion.is_some() {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
     for (parent, mut text) in &mut editable_texts {
         if rename_inputs.contains(parent.parent())
             && let Some(rename) = state.rename.as_ref()
@@ -1023,7 +1476,7 @@ fn sync_library_asset_operation_overlay(
             text.queue_edit(TextEdit::TextEnd(false));
         }
     }
-    for (mut text, mut node) in &mut nodes.p3() {
+    for (mut text, mut node) in &mut nodes.p5() {
         let error = state
             .rename
             .as_ref()
@@ -1035,7 +1488,7 @@ fn sync_library_asset_operation_overlay(
             Display::None
         };
     }
-    for (mut text, mut node) in &mut nodes.p4() {
+    for (mut text, mut node) in &mut nodes.p6() {
         let error = state
             .extraction
             .as_ref()
@@ -1046,6 +1499,27 @@ fn sync_library_asset_operation_overlay(
         } else {
             Display::None
         };
+    }
+}
+
+fn queue_library_relation_overlay_rebuild(
+    state: Res<LibraryAssetOperationState>,
+    mut rendered: ResMut<RenderedLibraryRelationOverlay>,
+    mut session: ResMut<EditorSession>,
+) {
+    let view = state
+        .dependency_inspector
+        .clone()
+        .map(LibraryRelationOverlayView::Inspector)
+        .or_else(|| {
+            state
+                .deletion
+                .clone()
+                .map(LibraryRelationOverlayView::Deletion)
+        });
+    if rendered.0 != view {
+        rendered.0 = view;
+        session.ui_revision += 1;
     }
 }
 
@@ -1087,6 +1561,10 @@ struct LibraryCatalogUnavailable;
 
 #[derive(Component)]
 struct LibraryProjectEffectsSection;
+
+/// Hosts the Library's pointer context menu outside the hovered list row hierarchy.
+#[derive(Component)]
+struct LibraryContextMenuHost;
 
 #[derive(Component)]
 struct LibraryCurrentResourcesSection;
@@ -1234,7 +1712,8 @@ fn project_effect_row_from_entity<'a>(
 
 fn open_project_effect_context_menu(
     mut click: On<Pointer<Click>>,
-    rows: Query<(&ProjectEffectRow, &ComputedNode, &UiGlobalTransform)>,
+    rows: Query<&ProjectEffectRow>,
+    hosts: Query<(&ComputedNode, &UiGlobalTransform), With<LibraryContextMenuHost>>,
     parents: Query<&ChildOf>,
     catalog: Res<ProjectEffectCatalog>,
     mut state: ResMut<LibraryState>,
@@ -1244,23 +1723,29 @@ fn open_project_effect_context_menu(
         return;
     }
     let mut entity = click.event_target();
-    let (source, position) = loop {
-        if let Ok((row, node, transform)) = rows.get(entity) {
+    let mut source = None;
+    let position = loop {
+        if source.is_none()
+            && let Ok(row) = rows.get(entity)
+        {
             let Some(entry) = catalog.entry(row.id()) else {
                 return;
             };
             if !matches!(entry.status, ProjectEffectStatus::Valid) {
                 return;
             }
-            break (
-                row.id(),
-                pointer_position_in_node(click.pointer_location.position, node, transform),
-            );
+            source = Some(row.id());
+        }
+        if let Ok((node, transform)) = hosts.get(entity) {
+            break pointer_position_in_node(click.pointer_location.position, node, transform);
         }
         let Ok(parent) = parents.get(entity) else {
             return;
         };
         entity = parent.parent();
+    };
+    let Some(source) = source else {
+        return;
     };
     state.context_effect = Some(source);
     state.context_menu_position = position;
@@ -1294,7 +1779,8 @@ fn open_focused_library_context_menu(
     keys: Res<ButtonInput<KeyCode>>,
     focus: Option<Res<InputFocus>>,
     active_descendants: Query<&ActiveDescendant>,
-    rows: Query<(&ProjectEffectRow, &ComputedNode)>,
+    rows: Query<(&ProjectEffectRow, &ComputedNode, &UiGlobalTransform)>,
+    hosts: Query<(&ComputedNode, &UiGlobalTransform), With<LibraryContextMenuHost>>,
     parents: Query<&ChildOf>,
     catalog: Res<ProjectEffectCatalog>,
     mut state: ResMut<LibraryState>,
@@ -1311,25 +1797,37 @@ fn open_focused_library_context_menu(
     {
         entity = descendant;
     }
-    loop {
-        if let Ok((row, node)) = rows.get(entity) {
+    let (source, pointer_position) = loop {
+        if let Ok((row, node, transform)) = rows.get(entity) {
             let Some(entry) = catalog.entry(row.id()) else {
                 return;
             };
             if !matches!(entry.status, ProjectEffectStatus::Valid) {
                 return;
             }
-            state.context_effect = Some(row.id());
-            state.context_menu_position =
-                Vec2::new((node.size().x - 8.0).max(0.0), node.size().y * 0.5);
-            session.ui_revision += 1;
-            return;
+            let top_left = transform.translation.trunc() - node.size() * 0.5;
+            break (
+                row.id(),
+                top_left + Vec2::new((node.size().x - 8.0).max(0.0), node.size().y * 0.5),
+            );
         }
         let Ok(parent) = parents.get(entity) else {
             return;
         };
         entity = parent.parent();
-    }
+    };
+    let position = loop {
+        if let Ok((node, transform)) = hosts.get(entity) {
+            break pointer_position_in_node(pointer_position, node, transform);
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    state.context_effect = Some(source);
+    state.context_menu_position = position;
+    session.ui_revision += 1;
 }
 
 fn update_project_effect_drag(
@@ -1530,16 +2028,6 @@ fn spawn_project_effects(
                 .entity(row)
                 .insert(EntityCursor::System(SystemCursorIcon::Grab))
                 .observe(open_project_effect_context_menu);
-            if state.context_effect == Some(entry.id) {
-                panel.commands().entity(row).with_children(|row| {
-                    spawn_project_effect_context_menu(
-                        row,
-                        localizer,
-                        entry.id,
-                        state.context_menu_position,
-                    );
-                });
-            }
         }
     }
     let catalog_empty = spawn_list_empty_state(
@@ -1626,6 +2114,11 @@ fn spawn_project_effect_context_menu(
         |menu| {
             spawn_pointer_context_menu_item(
                 menu,
+                &localizer.text("library-inspect-dependencies"),
+                LibraryAction::InspectProjectEffect(source),
+            );
+            spawn_pointer_context_menu_item(
+                menu,
                 &localizer.text("library-rename-effect"),
                 LibraryAction::RenameProjectEffect(source),
             );
@@ -1633,6 +2126,11 @@ fn spawn_project_effect_context_menu(
                 menu,
                 &localizer.text("library-move-effect"),
                 LibraryAction::MoveProjectEffect(source),
+            );
+            spawn_pointer_context_menu_item(
+                menu,
+                &localizer.text("library-delete-effect"),
+                LibraryAction::DeleteProjectEffect(source),
             );
         },
     );
@@ -1873,12 +2371,16 @@ pub(crate) fn spawn_library(
     localizer: &Localizer,
 ) {
     parent
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            flex_grow: 1.0,
-            min_height: Val::Px(0.0),
-            ..default()
-        })
+        .spawn((
+            LibraryContextMenuHost,
+            Node {
+                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                min_height: Val::Px(0.0),
+                position_type: PositionType::Relative,
+                ..default()
+            },
+        ))
         .with_children(|body| {
             let list = spawn_vertical_scroll_area(
                 body,
@@ -1901,6 +2403,18 @@ pub(crate) fn spawn_library(
                 TabIndex(0),
                 AccessibleLabel(localizer.text("assets-project-effects")),
             ));
+            if let Some(source) = state.context_effect
+                && catalog
+                    .entry(source)
+                    .is_some_and(|entry| matches!(entry.status, ProjectEffectStatus::Valid))
+            {
+                spawn_project_effect_context_menu(
+                    body,
+                    localizer,
+                    source,
+                    state.context_menu_position,
+                );
+            }
         });
 }
 
@@ -2043,12 +2557,12 @@ fn execute_library_action(
                 session.status = localizer.text("library-status-save-before-rename");
                 return;
             }
+            operation.close_all();
             operation.rename = Some(LibraryRenameState {
                 source,
                 draft: entry.display_name.clone(),
                 error: None,
             });
-            operation.extraction = None;
         }
         LibraryAction::MoveProjectEffect(source) => {
             let Some(entry) = catalog.entry(source).cloned() else {
@@ -2084,6 +2598,63 @@ fn execute_library_action(
                 }
             }
         }
+        LibraryAction::InspectProjectEffect(source) => {
+            let Some(entry) = catalog.entry(source) else {
+                session.status = localizer.text("library-status-source-missing");
+                return;
+            };
+            let Some(reference) = entry.reference else {
+                session.status = localizer.text("library-status-source-unresolvable");
+                return;
+            };
+            match catalog.effect_usage_graph(reference) {
+                Ok(graph) => {
+                    operation.close_all();
+                    operation.dependency_inspector =
+                        Some(LibraryDependencyInspectorState { source, graph });
+                    session.ui_revision += 1;
+                }
+                Err(error) => {
+                    let mut args = FluentArgs::new();
+                    args.set("message", error);
+                    session.status = localizer.text_with("library-status-operation-failed", &args);
+                }
+            }
+        }
+        LibraryAction::DeleteProjectEffect(source) => {
+            let Some(entry) = catalog.entry(source) else {
+                session.status = localizer.text("library-status-source-missing");
+                return;
+            };
+            if session
+                .source_path
+                .as_deref()
+                .is_some_and(|path| paths_refer_to_same_source(path, &entry.path))
+            {
+                session.status = localizer.text("library-status-switch-before-delete");
+                return;
+            }
+            let Some(reference) = entry.reference else {
+                session.status = localizer.text("library-status-source-unresolvable");
+                return;
+            };
+            match catalog.effect_usage_graph(reference) {
+                Ok(graph) => {
+                    operation.close_all();
+                    operation.deletion = Some(LibraryEffectDeletionState {
+                        source,
+                        graph,
+                        error: None,
+                    });
+                    session.ui_revision += 1;
+                }
+                Err(error) => {
+                    let mut args = FluentArgs::new();
+                    args.set("message", error);
+                    session.status = localizer.text_with("library-status-operation-failed", &args);
+                }
+            }
+        }
         LibraryAction::CreateReusableEffectFromSelection => {
             let mut emitters = timeline.as_deref().map_or_else(Vec::new, |timeline| {
                 timeline.selected_local_emitters(&session.effect)
@@ -2098,7 +2669,7 @@ fn execute_library_action(
                 session.status = localizer.text("library-extract-no-selection");
                 return;
             }
-            operation.rename = None;
+            operation.close_all();
             operation.extraction = Some(ReusableEffectExtractionState {
                 emitters,
                 draft: localizer.text("library-extract-default-name"),
@@ -2117,6 +2688,7 @@ fn execute_library_action(
 fn resolve_library_asset_operation(
     activate: On<Activate>,
     actions: Query<&LibraryAssetOperationAction>,
+    mut commands: Commands,
     mut state: ResMut<LibraryAssetOperationState>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut watch: ResMut<ProjectEffectWatchState>,
@@ -2129,8 +2701,64 @@ fn resolve_library_asset_operation(
     };
     match *action {
         LibraryAssetOperationAction::Cancel => {
-            state.rename = None;
-            state.extraction = None;
+            state.close_all();
+            return;
+        }
+        LibraryAssetOperationAction::NavigateToEffect { effect, clip } => {
+            state.close_all();
+            commands.trigger(clip.map_or(DocumentAction::OpenCatalog(effect), |clip| {
+                DocumentAction::OpenCatalogClip(effect, clip)
+            }));
+            return;
+        }
+        LibraryAssetOperationAction::ConfirmEffectDeletion => {
+            let Some(deletion) = state.deletion.clone() else {
+                return;
+            };
+            let Some(reference) = catalog
+                .entry(deletion.source)
+                .and_then(|entry| entry.reference)
+            else {
+                if let Some(deletion) = state.deletion.as_mut() {
+                    deletion.error = Some(localizer.text("library-status-source-missing"));
+                }
+                session.ui_revision += 1;
+                return;
+            };
+            match catalog.effect_usage_graph(reference) {
+                Ok(graph) if graph != deletion.graph => {
+                    if let Some(deletion) = state.deletion.as_mut() {
+                        deletion.graph = graph;
+                        deletion.error = Some(localizer.text("library-delete-usages-changed"));
+                    }
+                    session.ui_revision += 1;
+                    return;
+                }
+                Err(error) => {
+                    if let Some(deletion) = state.deletion.as_mut() {
+                        deletion.error = Some(error);
+                    }
+                    session.ui_revision += 1;
+                    return;
+                }
+                Ok(_) => {}
+            }
+            match catalog.delete_effect_source(deletion.source) {
+                Ok(entry) => {
+                    watch.accept_current(catalog.root());
+                    state.close_all();
+                    session.ui_revision += 1;
+                    let mut args = FluentArgs::new();
+                    args.set("name", entry.display_name);
+                    session.status = localizer.text_with("library-status-effect-deleted", &args);
+                }
+                Err(error) => {
+                    if let Some(deletion) = state.deletion.as_mut() {
+                        deletion.error = Some(error.to_string());
+                    }
+                    session.ui_revision += 1;
+                }
+            }
             return;
         }
         LibraryAssetOperationAction::ConfirmReusableEffectExtraction => {
@@ -2886,6 +3514,20 @@ mod tests {
         captured.0 = Some(*action);
     }
 
+    fn library_action_test_app(session: EditorSession, catalog: ProjectEffectCatalog) -> App {
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .init_resource::<CurvesState>()
+            .init_resource::<WorkspaceLayout>()
+            .init_resource::<MenuState>()
+            .init_resource::<ModulePaletteState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_plugins(EditorLibraryPlugin);
+        app
+    }
+
     fn spawn_test_library(
         mut commands: Commands,
         session: Res<EditorSession>,
@@ -2901,10 +3543,11 @@ mod tests {
     fn spawn_test_library_asset_operation_overlay(
         mut commands: Commands,
         state: Res<LibraryAssetOperationState>,
+        catalog: Res<ProjectEffectCatalog>,
         localizer: Res<Localizer>,
     ) {
         commands.spawn(Node::default()).with_children(|parent| {
-            spawn_library_asset_operation_overlay(parent, &state, &localizer);
+            spawn_library_asset_operation_overlay(parent, &state, &catalog, &localizer);
         });
     }
 
@@ -3258,12 +3901,14 @@ mod tests {
                 world.query_filtered::<(&ChildOf, &Node), With<ProjectEffectContextMenuAnchor>>();
             let (parent, node) = query.single(world).unwrap();
             (
-                world.get::<ProjectEffectRow>(parent.parent()).unwrap().id(),
+                world
+                    .get::<LibraryContextMenuHost>(parent.parent())
+                    .is_some(),
                 node.left,
                 node.top,
             )
         };
-        assert_eq!(context_anchor, (valid_id, Val::Px(19.0), Val::Px(27.0)));
+        assert_eq!(context_anchor, (true, Val::Px(19.0), Val::Px(27.0)));
         assert_eq!(marker_count::<ProjectEffectContextMenu>(&mut app), 1);
         let menu_semantics = {
             let world = app.world_mut();
@@ -3924,6 +4569,7 @@ mod tests {
             TextPlugin,
         ))
         .insert_resource(state)
+        .insert_resource(ProjectEffectCatalog::from_entries(Vec::new()))
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_library_asset_operation_overlay)
         .add_systems(Update, sync_library_asset_operation_overlay);
@@ -3969,6 +4615,37 @@ mod tests {
             .single(world)
             .unwrap();
         assert_eq!(extraction.display, Display::None);
+    }
+
+    #[test]
+    fn relation_overlay_change_queues_one_follow_up_shell_rebuild() {
+        let source = test_source_id(701);
+        let state = LibraryAssetOperationState {
+            dependency_inspector: Some(LibraryDependencyInspectorState {
+                source,
+                graph: ProjectEffectUsageGraph::default(),
+            }),
+            ..default()
+        };
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let initial_revision = session.ui_revision;
+        let mut app = App::new();
+        app.insert_resource(state)
+            .init_resource::<RenderedLibraryRelationOverlay>()
+            .insert_resource(session)
+            .add_systems(Update, queue_library_relation_overlay_rebuild);
+
+        app.update();
+        assert_eq!(
+            app.world().resource::<EditorSession>().ui_revision,
+            initial_revision + 1
+        );
+        app.update();
+        assert_eq!(
+            app.world().resource::<EditorSession>().ui_revision,
+            initial_revision + 1,
+            "an unchanged relation view must not rebuild every frame"
+        );
     }
 
     #[test]
@@ -4327,6 +5004,127 @@ mod tests {
         assert_eq!(session.source_path.as_deref(), Some(moved.as_path()));
         assert!(session.dirty);
         assert!(session.status.contains("moved to"));
+    }
+
+    #[test]
+    fn dependency_inspector_reports_actionable_reverse_clip_usages() {
+        let temporary = tempfile::tempdir().unwrap();
+        let child_path = temporary.path().join("child.aestra.ron");
+        let mut child = EffectAsset::new("Child", 1.0);
+        child.id = EffectId::from_u128(0xD01);
+        child.save_ron(&child_path).unwrap();
+        let owner_path = temporary.path().join("owner.aestra.ron");
+        let mut owner = EffectAsset::new("Owner", 1.0);
+        owner.id = EffectId::from_u128(0xD02);
+        let clip = EffectClip::new(child.id, 0.0, 1.0);
+        let clip_id = clip.id;
+        owner.effect_clips.push(clip);
+        owner.save_ron(&owner_path).unwrap();
+
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let source = catalog
+            .entries()
+            .iter()
+            .find(|entry| entry.reference == Some(child.id.into()))
+            .unwrap()
+            .id;
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut app = library_action_test_app(session, catalog);
+
+        app.world_mut()
+            .trigger(LibraryAction::InspectProjectEffect(source));
+
+        let inspector = app
+            .world()
+            .resource::<LibraryAssetOperationState>()
+            .dependency_inspector
+            .as_ref()
+            .unwrap();
+        let usage = inspector.graph.direct_usages().next().unwrap();
+        assert_eq!(usage.owner.id, owner.id);
+        assert_eq!(usage.clip, clip_id);
+    }
+
+    #[test]
+    fn dependency_navigation_opens_and_selects_the_exact_owner_clip() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let catalog = ProjectEffectCatalog::from_entries(Vec::new());
+        let owner = EffectAssetRef::new(EffectId::from_u128(0xD11));
+        let clip = EffectClipId::new();
+        let mut app = library_action_test_app(session, catalog);
+        app.init_resource::<CapturedDocumentAction>()
+            .add_observer(capture_document_action);
+        let action = app
+            .world_mut()
+            .spawn(LibraryAssetOperationAction::NavigateToEffect {
+                effect: owner,
+                clip: Some(clip),
+            })
+            .id();
+
+        app.world_mut().trigger(Activate { entity: action });
+        app.world_mut().flush();
+
+        assert_eq!(
+            app.world().resource::<CapturedDocumentAction>().0,
+            Some(DocumentAction::OpenCatalogClip(owner, clip))
+        );
+    }
+
+    #[test]
+    fn confirmed_effect_deletion_removes_the_source_after_showing_usages() {
+        let temporary = tempfile::tempdir().unwrap();
+        let child_path = temporary.path().join("child.aestra.ron");
+        let mut child = EffectAsset::new("Child", 1.0);
+        child.id = EffectId::from_u128(0xD21);
+        child.save_ron(&child_path).unwrap();
+        let mut owner = EffectAsset::new("Owner", 1.0);
+        owner.id = EffectId::from_u128(0xD22);
+        owner.effect_clips.push(EffectClip::new(child.id, 0.0, 1.0));
+        owner
+            .save_ron(temporary.path().join("owner.aestra.ron"))
+            .unwrap();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let source = catalog
+            .entries()
+            .iter()
+            .find(|entry| entry.reference == Some(child.id.into()))
+            .unwrap()
+            .id;
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut app = library_action_test_app(session, catalog);
+
+        app.world_mut()
+            .trigger(LibraryAction::DeleteProjectEffect(source));
+        assert_eq!(
+            app.world()
+                .resource::<LibraryAssetOperationState>()
+                .deletion
+                .as_ref()
+                .unwrap()
+                .graph
+                .direct_usages()
+                .count(),
+            1
+        );
+        let confirm = app
+            .world_mut()
+            .spawn(LibraryAssetOperationAction::ConfirmEffectDeletion)
+            .id();
+        app.world_mut().trigger(Activate { entity: confirm });
+
+        assert!(!child_path.exists());
+        assert!(
+            !app.world()
+                .resource::<LibraryAssetOperationState>()
+                .is_open()
+        );
+        assert!(
+            app.world()
+                .resource::<EditorSession>()
+                .status
+                .contains("Deleted")
+        );
     }
 
     #[test]

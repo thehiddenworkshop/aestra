@@ -113,8 +113,11 @@ architecture vision; this file is the shorter delivery plan.
   Delete shortcut, and commit through the same undoable semantic curve commands. Top-level local
   emitter tracks can now
   be multi-selected and extracted into a collision-safe reusable effect asset, optionally replacing
-  the source tracks with one referenced clip through an undoable transaction. Usage graphs,
-  recursive reusable extraction, preview-cache identity,
+  the source tracks with one referenced clip through an undoable transaction. The project index now
+  exposes deterministic direct and transitive dependency and reverse-usage relations with owning
+  clip identity. The Library presents those relations through a navigable Uses / Used By inspector,
+  selects exact owner clips, and guards source deletion with refreshed dependency warnings.
+  Recursive reusable extraction, preview-cache identity,
   procedural recipes, mesh/ribbon production paths, renderer sorting, and richer material domains
   remain.
 

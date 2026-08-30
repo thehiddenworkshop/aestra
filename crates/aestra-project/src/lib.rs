@@ -9,7 +9,7 @@ pub use aestra_core::EffectAssetRef;
 use aestra_core::{AssetError, EffectAsset, EffectClipId, EffectId};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fs,
     path::{Path, PathBuf},
 };
@@ -72,6 +72,54 @@ pub struct ProjectEffectEntry {
     pub display_name: String,
     pub path: PathBuf,
     pub status: ProjectEffectStatus,
+}
+
+/// One authored effect-clip relationship in the project dependency graph.
+///
+/// `depth` is one for a direct relationship and increases for every traversed effect. Keeping the
+/// owning clip identity makes reverse usages actionable in editor clients instead of reducing the
+/// graph to a list of filenames.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectEffectRelation {
+    pub owner: EffectAssetRef,
+    pub owner_source: ProjectSourceId,
+    pub clip: EffectClipId,
+    pub dependency: EffectAssetRef,
+    pub depth: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProjectEffectUsageGraph {
+    pub dependencies: Vec<ProjectEffectRelation>,
+    pub usages: Vec<ProjectEffectRelation>,
+}
+
+impl ProjectEffectUsageGraph {
+    pub fn direct_dependencies(&self) -> impl Iterator<Item = &ProjectEffectRelation> {
+        self.dependencies
+            .iter()
+            .filter(|relation| relation.depth == 1)
+    }
+
+    pub fn transitive_dependencies(&self) -> impl Iterator<Item = &ProjectEffectRelation> {
+        self.dependencies
+            .iter()
+            .filter(|relation| relation.depth > 1)
+    }
+
+    pub fn direct_usages(&self) -> impl Iterator<Item = &ProjectEffectRelation> {
+        self.usages.iter().filter(|relation| relation.depth == 1)
+    }
+
+    pub fn transitive_usages(&self) -> impl Iterator<Item = &ProjectEffectRelation> {
+        self.usages.iter().filter(|relation| relation.depth > 1)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectEffectDeletePolicy {
+    RejectReferenced,
+    AllowReferenced,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -318,6 +366,23 @@ impl ProjectAssetIndex {
         }
     }
 
+    /// Builds the forward dependency and reverse usage graph for one project effect.
+    ///
+    /// All valid indexed effects are reloaded so external source changes cannot produce a stale
+    /// deletion decision. Relations are deterministic and preserve every authored clip, even when
+    /// an owner instantiates the same dependency more than once.
+    pub fn effect_usage_graph(
+        &self,
+        reference: EffectAssetRef,
+    ) -> Result<ProjectEffectUsageGraph, ResolveEffectError> {
+        self.resolve(reference)?;
+        let edges = self.effect_relation_edges()?;
+        Ok(ProjectEffectUsageGraph {
+            dependencies: traverse_effect_relations(reference, &edges, false),
+            usages: traverse_effect_relations(reference, &edges, true),
+        })
+    }
+
     pub fn refresh(&mut self) {
         *self = Self::scan(self.root.clone());
     }
@@ -499,6 +564,70 @@ impl ProjectAssetIndex {
             })
     }
 
+    /// Deletes one resolvable effect source after applying an explicit reference policy.
+    ///
+    /// Callers must deliberately opt into breaking references. This keeps non-UI consumers safe
+    /// while allowing an editor confirmation surface to perform the requested destructive action.
+    pub fn delete_effect_source(
+        &mut self,
+        source: ProjectSourceId,
+        policy: ProjectEffectDeletePolicy,
+    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        let entry = self.effect_source_for_operation(source)?;
+        let reference = entry
+            .reference
+            .expect("a resolvable effect source has a semantic reference");
+        if policy == ProjectEffectDeletePolicy::RejectReferenced {
+            let graph = self.effect_usage_graph(reference).map_err(|error| {
+                ProjectAssetOperationError::UsageInspection {
+                    reference,
+                    message: error.to_string(),
+                }
+            })?;
+            let usage_count = graph.direct_usages().count();
+            if usage_count > 0 {
+                return Err(ProjectAssetOperationError::Referenced {
+                    reference,
+                    usage_count,
+                });
+            }
+        }
+        fs::remove_file(&entry.path).map_err(|error| ProjectAssetOperationError::FileSystem {
+            operation: "delete",
+            path: entry.path.clone(),
+            message: error.to_string(),
+        })?;
+        self.refresh();
+        Ok(entry)
+    }
+
+    fn effect_relation_edges(&self) -> Result<Vec<ProjectEffectRelation>, ResolveEffectError> {
+        let mut edges = Vec::new();
+        for entry in self
+            .effects
+            .iter()
+            .filter(|entry| entry.status.is_resolvable())
+        {
+            let Some(reference) = entry.reference else {
+                continue;
+            };
+            let effect = self.load_effect(reference)?;
+            edges.extend(
+                effect
+                    .effect_clips
+                    .into_iter()
+                    .map(|clip| ProjectEffectRelation {
+                        owner: reference,
+                        owner_source: entry.id,
+                        clip: clip.id,
+                        dependency: clip.source,
+                        depth: 1,
+                    }),
+            );
+        }
+        Ok(edges)
+    }
+
     fn effect_source_for_operation(
         &self,
         source: ProjectSourceId,
@@ -533,6 +662,16 @@ pub enum ProjectAssetOperationError {
     DestinationOutsideRoot { destination: PathBuf, root: PathBuf },
     #[error("destination source already exists at {path}")]
     DestinationExists { path: PathBuf },
+    #[error("effect {reference} is used by {usage_count} project clip(s)")]
+    Referenced {
+        reference: EffectAssetRef,
+        usage_count: usize,
+    },
+    #[error("could not inspect usages of effect {reference}: {message}")]
+    UsageInspection {
+        reference: EffectAssetRef,
+        message: String,
+    },
     #[error("effect source at {path} changed semantic identity from {reference}")]
     IdentityChanged {
         reference: EffectAssetRef,
@@ -551,6 +690,39 @@ pub enum ProjectAssetOperationError {
         reference: EffectAssetRef,
         message: String,
     },
+}
+
+fn traverse_effect_relations(
+    reference: EffectAssetRef,
+    edges: &[ProjectEffectRelation],
+    reverse: bool,
+) -> Vec<ProjectEffectRelation> {
+    let mut relations = Vec::new();
+    let mut queue = VecDeque::from([(reference.id, 0_usize)]);
+    let mut visited = BTreeSet::from([reference.id]);
+    while let Some((current, depth)) = queue.pop_front() {
+        for edge in edges.iter().filter(|edge| {
+            if reverse {
+                edge.dependency.id == current
+            } else {
+                edge.owner.id == current
+            }
+        }) {
+            let next = if reverse {
+                edge.owner.id
+            } else {
+                edge.dependency.id
+            };
+            let mut relation = edge.clone();
+            relation.depth = depth + 1;
+            relations.push(relation);
+            if visited.insert(next) {
+                queue.push_back((next, depth + 1));
+            }
+        }
+    }
+    relations.sort_by_key(|relation| (relation.depth, relation.owner_source, relation.clip));
+    relations
 }
 
 fn effect_source_stem(name: &str) -> Option<String> {

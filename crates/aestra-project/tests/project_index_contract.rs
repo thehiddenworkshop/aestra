@@ -1,7 +1,8 @@
 use aestra_core::{CURRENT_FORMAT_VERSION, EffectAsset, EffectClip, EffectId};
 use aestra_project::{
     EffectAssetRef, ProjectAssetDiagnosticCode, ProjectAssetIndex, ProjectAssetOperationError,
-    ProjectDependencyDiagnosticCode, ProjectEffectStatus, ResolveEffectError,
+    ProjectDependencyDiagnosticCode, ProjectEffectDeletePolicy, ProjectEffectStatus,
+    ResolveEffectError,
 };
 use std::fs;
 
@@ -259,6 +260,103 @@ fn transitive_effect_dependencies_resolve_once_by_stable_identity() {
     assert_eq!(resolved.dependencies.len(), 2);
     assert_eq!(resolved.effect(child_id).unwrap().name, "Child");
     assert_eq!(resolved.effect(grandchild_id).unwrap().name, "Grandchild");
+}
+
+#[test]
+fn usage_graph_reports_direct_and_transitive_relations_with_clip_identity() {
+    let temporary = tempfile::tempdir().unwrap();
+    let grandchild_id = EffectId::from_u128(0x901);
+    let child_id = EffectId::from_u128(0x902);
+    let root_id = EffectId::from_u128(0x903);
+    let consumer_id = EffectId::from_u128(0x904);
+
+    let mut grandchild = EffectAsset::new("Grandchild", 1.0);
+    grandchild.id = grandchild_id;
+    grandchild
+        .save_ron(temporary.path().join("grandchild.aestra.ron"))
+        .unwrap();
+
+    let mut child = EffectAsset::new("Child", 1.0);
+    child.id = child_id;
+    let child_clip = EffectClip::new(grandchild_id, 0.0, 1.0);
+    let child_clip_id = child_clip.id;
+    child.effect_clips.push(child_clip);
+    child
+        .save_ron(temporary.path().join("child.aestra.ron"))
+        .unwrap();
+
+    let mut root = EffectAsset::new("Root", 1.0);
+    root.id = root_id;
+    let root_clip = EffectClip::new(child_id, 0.0, 1.0);
+    let root_clip_id = root_clip.id;
+    root.effect_clips.push(root_clip);
+    root.save_ron(temporary.path().join("root.aestra.ron"))
+        .unwrap();
+
+    let mut consumer = EffectAsset::new("Consumer", 1.0);
+    consumer.id = consumer_id;
+    consumer
+        .effect_clips
+        .push(EffectClip::new(root_id, 0.0, 1.0));
+    consumer
+        .save_ron(temporary.path().join("consumer.aestra.ron"))
+        .unwrap();
+
+    let index = ProjectAssetIndex::scan(temporary.path());
+    let child_graph = index.effect_usage_graph(child_id.into()).unwrap();
+    let direct_child_dependencies = child_graph.direct_dependencies().collect::<Vec<_>>();
+    assert_eq!(direct_child_dependencies.len(), 1);
+    assert_eq!(direct_child_dependencies[0].clip, child_clip_id);
+    assert_eq!(direct_child_dependencies[0].dependency.id, grandchild_id);
+    let direct_child_usages = child_graph.direct_usages().collect::<Vec<_>>();
+    assert_eq!(direct_child_usages.len(), 1);
+    assert_eq!(direct_child_usages[0].clip, root_clip_id);
+    assert_eq!(direct_child_usages[0].owner.id, root_id);
+    assert!(
+        child_graph
+            .transitive_usages()
+            .any(|relation| relation.depth == 2 && relation.owner.id == consumer_id)
+    );
+
+    let root_graph = index.effect_usage_graph(root_id.into()).unwrap();
+    assert!(
+        root_graph.direct_dependencies().any(|relation| {
+            relation.clip == root_clip_id && relation.dependency.id == child_id
+        })
+    );
+    assert!(
+        root_graph
+            .transitive_dependencies()
+            .any(|relation| { relation.depth == 2 && relation.dependency.id == grandchild_id })
+    );
+}
+
+#[test]
+fn referenced_effect_deletion_requires_an_explicit_breaking_policy() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut child = EffectAsset::new("Child", 1.0);
+    child.id = EffectId::from_u128(0xA01);
+    let child_path = temporary.path().join("child.aestra.ron");
+    child.save_ron(&child_path).unwrap();
+    let mut owner = EffectAsset::new("Owner", 1.0);
+    owner.id = EffectId::from_u128(0xA02);
+    owner.effect_clips.push(EffectClip::new(child.id, 0.0, 1.0));
+    owner
+        .save_ron(temporary.path().join("owner.aestra.ron"))
+        .unwrap();
+
+    let mut index = ProjectAssetIndex::scan(temporary.path());
+    let source = index.resolve(child.id.into()).unwrap().id;
+    assert!(matches!(
+        index.delete_effect_source(source, ProjectEffectDeletePolicy::RejectReferenced),
+        Err(ProjectAssetOperationError::Referenced { usage_count: 1, .. })
+    ));
+    assert!(child_path.exists());
+
+    index
+        .delete_effect_source(source, ProjectEffectDeletePolicy::AllowReferenced)
+        .unwrap();
+    assert!(!child_path.exists());
 }
 
 #[test]

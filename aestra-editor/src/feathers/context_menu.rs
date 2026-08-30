@@ -5,6 +5,7 @@ use crate::theme;
 use bevy::{
     feathers::theme::ThemedText,
     input_focus::tab_navigation::NavAction,
+    picking::events::{Click, Pointer},
     prelude::*,
     ui::RelativeCursorPosition,
     ui_widgets::{
@@ -50,6 +51,7 @@ pub(crate) fn spawn_pointer_context_menu<A: Bundle, M: Bundle>(
                 .spawn((
                     PointerContextMenuSurface,
                     marker,
+                    Pickable::default(),
                     MenuPopup::default(),
                     MenuFocusState::Opening(NavAction::First),
                     Popover {
@@ -113,11 +115,13 @@ pub(crate) fn spawn_pointer_context_menu_item<A: Component>(
         .apply_scene(scenes::feathers_menu_item())
         .insert((
             PointerContextMenuItem,
+            Pickable::default(),
             Interaction::None,
             action,
             FeathersActionButton,
             AccessibleLabel(label.to_owned()),
         ))
+        .observe(stop_pointer_context_menu_click_propagation)
         .with_children(|item| {
             item.spawn((
                 Text::new(label),
@@ -126,6 +130,10 @@ pub(crate) fn spawn_pointer_context_menu_item<A: Component>(
                 Pickable::IGNORE,
             ));
         });
+}
+
+fn stop_pointer_context_menu_click_propagation(mut click: On<Pointer<Click>>) {
+    click.propagate(false);
 }
 
 pub(crate) fn pointer_position_in_node(
