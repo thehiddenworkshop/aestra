@@ -3,7 +3,11 @@
 use crate::feathers::icon::load_svg_icon;
 use crate::*;
 use bevy::ui_widgets::Activate;
-use bevy::{feathers::controls::ButtonVariant, ui::Selected};
+use bevy::{
+    feathers::controls::ButtonVariant,
+    input::{ButtonState, keyboard::KeyboardInput},
+    ui::Selected,
+};
 use bevy_resvg::prelude::{SvgColor, UiSvg};
 
 pub(crate) struct EditorTransportPlugin;
@@ -146,13 +150,18 @@ fn execute_transport_action(action: On<TransportAction>, mut session: ResMut<Edi
 
 fn transport_keyboard_input(
     mut commands: Commands,
+    mut keyboard_events: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     palette: Res<ModulePaletteState>,
 ) {
+    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+    let repeated_steps = keyboard_events
+        .read()
+        .filter_map(|event| repeated_frame_step(event, alt))
+        .collect::<Vec<_>>();
     if palette.open {
         return;
     }
-    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
     if keys.just_pressed(KeyCode::Space) {
         commands.trigger(TransportAction::TogglePlayback);
     }
@@ -164,6 +173,20 @@ fn transport_keyboard_input(
     }
     if !alt && keys.just_pressed(KeyCode::ArrowRight) {
         commands.trigger(TransportAction::StepFrame(1));
+    }
+    for direction in repeated_steps {
+        commands.trigger(TransportAction::StepFrame(direction));
+    }
+}
+
+fn repeated_frame_step(event: &KeyboardInput, alt: bool) -> Option<i8> {
+    if alt || !event.repeat || event.state != ButtonState::Pressed {
+        return None;
+    }
+    match event.key_code {
+        KeyCode::ArrowLeft => Some(-1),
+        KeyCode::ArrowRight => Some(1),
+        _ => None,
     }
 }
 
@@ -528,6 +551,7 @@ mod tests {
         ))
         .insert_resource(ButtonInput::<KeyCode>::default())
         .init_resource::<ModulePaletteState>()
+        .add_message::<KeyboardInput>()
         .add_observer(execute_transport_action)
         .add_systems(Update, transport_keyboard_input);
         app.world_mut()
@@ -537,5 +561,28 @@ mod tests {
         app.update();
 
         assert!(!app.world().resource::<EditorSession>().playing);
+    }
+
+    #[test]
+    fn held_arrow_repeat_events_continue_stepping_frames() {
+        let repeat = KeyboardInput {
+            key_code: KeyCode::ArrowRight,
+            logical_key: bevy::input::keyboard::Key::ArrowRight,
+            state: ButtonState::Pressed,
+            text: None,
+            repeat: true,
+            window: Entity::PLACEHOLDER,
+        };
+
+        assert_eq!(repeated_frame_step(&repeat, false), Some(1));
+        assert_eq!(repeated_frame_step(&repeat, true), None);
+
+        let mut released = repeat.clone();
+        released.state = ButtonState::Released;
+        assert_eq!(repeated_frame_step(&released, false), None);
+
+        let mut ordinary = repeat;
+        ordinary.repeat = false;
+        assert_eq!(repeated_frame_step(&ordinary, false), None);
     }
 }
