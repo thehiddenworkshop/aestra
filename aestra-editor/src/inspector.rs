@@ -3294,8 +3294,7 @@ fn effect_clip_breadcrumbs(
 fn spawn_source_navigation_row(
     parent: &mut ChildSpawnerCommands,
     breadcrumbs: &[(String, Option<DocumentAction>)],
-    action: DocumentAction,
-    action_label: &str,
+    trailing_action: Option<(DocumentAction, &str)>,
 ) {
     parent
         .spawn(Node {
@@ -3372,7 +3371,9 @@ fn spawn_source_navigation_row(
                     }
                 }
             });
-            spawn_feathers_action_button(row, action_label, action, false);
+            if let Some((action, label)) = trailing_action {
+                spawn_feathers_action_button(row, label, action, false);
+            }
         });
 }
 
@@ -3387,8 +3388,10 @@ fn spawn_edit_source_navigation(
         spawn_source_navigation_row(
             parent,
             breadcrumbs,
-            DocumentAction::OpenSource(source),
-            &localizer.text("inspector-edit-source"),
+            Some((
+                DocumentAction::OpenSource(source),
+                &localizer.text("inspector-edit-source"),
+            )),
         );
     }
 }
@@ -3871,9 +3874,6 @@ pub(crate) fn spawn_inspector(
     navigation: Option<&SourceNavigationState>,
 ) {
     if let Some(navigation) = navigation.filter(|navigation| navigation.can_go_back()) {
-        let parent_name = navigation.parent_name().unwrap_or(&session.effect.name);
-        let mut args = FluentArgs::new();
-        args.set("name", parent_name);
         let depth = navigation.depth();
         let breadcrumbs = navigation
             .breadcrumb(&session.effect.name)
@@ -3886,12 +3886,7 @@ pub(crate) fn spawn_inspector(
                 )
             })
             .collect::<Vec<_>>();
-        spawn_source_navigation_row(
-            parent,
-            &breadcrumbs,
-            DocumentAction::BackToSource,
-            &localizer.text_with("inspector-back-to-source", &args),
-        );
+        spawn_source_navigation_row(parent, &breadcrumbs, None);
     }
     if let Some(selection) = timeline.inspected_child.as_ref() {
         let spawned = match selection {

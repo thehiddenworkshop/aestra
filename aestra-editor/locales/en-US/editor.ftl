@@ -31,6 +31,8 @@ toolbar-loop-disable = Disable loop playback
 toolbar-restart = Restart
 toolbar-save = Save
 toolbar-choreography = VFX CHOREOGRAPHY
+toolbar-source-back = Back to parent source
+toolbar-source-forward = Forward to nested source
 toolbar-runtime = BEVY 0.19  |  CPU REFERENCE
 
 panel-viewport = VIEWPORT
@@ -206,7 +208,6 @@ inspector-referenced-effect-heading = REFERENCED EFFECT
 inspector-read-only = READ ONLY
 inspector-instance-editable = INSTANCE EDITABLE
 inspector-edit-source = Edit Source
-inspector-back-to-source = ← Back to { $name }
 inspector-effect-clip = Effect clip
 inspector-source = Source
 inspector-source-offset = Source offset

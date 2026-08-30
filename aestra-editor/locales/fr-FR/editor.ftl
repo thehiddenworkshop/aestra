@@ -31,6 +31,8 @@ toolbar-loop-disable = Désactiver la lecture en boucle
 toolbar-restart = Relancer
 toolbar-save = Enregistrer
 toolbar-choreography = CHORÉGRAPHIE VFX
+toolbar-source-back = Revenir à la source parente
+toolbar-source-forward = Avancer vers la source imbriquée
 toolbar-runtime = BEVY 0.19  |  RÉFÉRENCE CPU
 
 panel-viewport = APERÇU
@@ -206,7 +208,6 @@ inspector-referenced-effect-heading = EFFET RÉFÉRENCÉ
 inspector-read-only = LECTURE SEULE
 inspector-instance-editable = INSTANCE MODIFIABLE
 inspector-edit-source = Modifier la source
-inspector-back-to-source = ← Retour à { $name }
 inspector-effect-clip = Clip d’effet
 inspector-source = Source
 inspector-source-offset = Décalage source

@@ -213,7 +213,6 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "inspector-emitter-capacity",
     "inspector-emitter-capacity-description",
     "inspector-edit-source",
-    "inspector-back-to-source",
     "inspector-events",
     "inspector-events-empty",
     "inspector-events-add",

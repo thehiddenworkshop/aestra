@@ -152,16 +152,17 @@ fn transport_keyboard_input(
     if palette.open {
         return;
     }
+    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
     if keys.just_pressed(KeyCode::Space) {
         commands.trigger(TransportAction::TogglePlayback);
     }
     if keys.just_pressed(KeyCode::KeyR) {
         commands.trigger(TransportAction::Restart);
     }
-    if keys.just_pressed(KeyCode::ArrowLeft) {
+    if !alt && keys.just_pressed(KeyCode::ArrowLeft) {
         commands.trigger(TransportAction::StepFrame(-1));
     }
-    if keys.just_pressed(KeyCode::ArrowRight) {
+    if !alt && keys.just_pressed(KeyCode::ArrowRight) {
         commands.trigger(TransportAction::StepFrame(1));
     }
 }

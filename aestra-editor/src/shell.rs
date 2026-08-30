@@ -18,6 +18,7 @@ impl Plugin for EditorShellPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ScrollMemoryState>()
             .init_resource::<RenderedUiRevision>()
+            .init_resource::<RenderedGlobalSourceNavigation>()
             .add_systems(
                 Startup,
                 (setup_window_cursor, setup_editor_fonts, setup_editor)
@@ -30,7 +31,8 @@ impl Plugin for EditorShellPlugin {
                     (apply_editor_fonts, keyboard_shortcuts, handle_buttons)
                         .chain()
                         .in_set(EditorSet::PreViewport),
-                    update_editor_labels.in_set(EditorSet::MainUpdate),
+                    (update_editor_labels, sync_global_source_navigation)
+                        .in_set(EditorSet::MainUpdate),
                     (remember_scroll_positions, rebuild_editor_ui)
                         .chain()
                         .in_set(EditorSet::UiRebuild),
@@ -77,7 +79,22 @@ struct EditorFonts {
 }
 
 #[derive(Component)]
-struct DocumentToolbarLabel;
+struct GlobalSourceNavigation;
+
+#[derive(Component)]
+struct GlobalSourceNavigationItem;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GlobalSourceNavigationView {
+    ancestors: Vec<String>,
+    current_id: EffectAssetRef,
+    current_name: String,
+    dirty: bool,
+    can_go_forward: bool,
+}
+
+#[derive(Resource, Default)]
+struct RenderedGlobalSourceNavigation(Option<GlobalSourceNavigationView>);
 
 fn setup_editor(
     mut commands: Commands,
@@ -88,7 +105,9 @@ fn setup_editor(
     localizer: Res<Localizer>,
     protection: Res<DocumentProtectionState>,
     library_asset_operation: Res<LibraryAssetOperationState>,
+    navigation: Res<SourceNavigationState>,
     mut rendered: ResMut<RenderedUiRevision>,
+    mut rendered_navigation: ResMut<RenderedGlobalSourceNavigation>,
 ) {
     commands.spawn((
         Camera2d,
@@ -109,8 +128,10 @@ fn setup_editor(
         &asset_server,
         &protection,
         &library_asset_operation,
+        &navigation,
     );
     rendered.0 = session.ui_revision;
+    rendered_navigation.0 = Some(global_source_navigation_view(&session, &navigation));
 }
 
 fn setup_editor_fonts(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -146,13 +167,14 @@ fn spawn_editor_ui(
     asset_server: &AssetServer,
     protection: &DocumentProtectionState,
     library_asset_operation: &LibraryAssetOperationState,
+    navigation: &SourceNavigationState,
 ) {
     commands
         .spawn(EditorRoot)
         .apply_scene(ui_shell::editor_root())
         .with_children(|root| {
             spawn_menu_bar(root, session, menu, layout, localizer);
-            spawn_toolbar(root, session, localizer, asset_server);
+            spawn_toolbar(root, session, navigation, localizer, asset_server);
             spawn_editor_content(root, menu, localizer);
             spawn_status_bar(root, session, localizer);
             spawn_about_overlay(root, menu.show_about, localizer);
@@ -178,6 +200,7 @@ fn spawn_editor_content(
 fn spawn_toolbar(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
+    navigation: &SourceNavigationState,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -220,18 +243,23 @@ fn spawn_toolbar(
                 feathers::separator::SeparatorProps::vertical(),
             ));
             bar.spawn((
-                DocumentToolbarLabel,
-                Text::new(format!(
-                    "{}  /  {}",
-                    session.effect.name.to_uppercase(),
-                    localizer.text("toolbar-choreography")
-                )),
-                TextFont {
-                    font_size: FontSize::Px(12.0),
+                GlobalSourceNavigation,
+                Node {
+                    min_width: Val::Px(0.0),
+                    max_width: Val::Percent(55.0),
+                    align_items: AlignItems::Center,
+                    overflow: Overflow::clip(),
                     ..default()
                 },
-                TextColor(theme::TEXT_MUTED),
-            ));
+            ))
+            .with_children(|navigation_root| {
+                spawn_global_source_navigation_items(
+                    navigation_root,
+                    session,
+                    navigation,
+                    localizer,
+                );
+            });
             bar.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
@@ -246,6 +274,189 @@ fn spawn_toolbar(
                 TextColor(theme::TEXT_FAINT),
             ));
         });
+}
+
+fn global_source_navigation_view(
+    session: &EditorSession,
+    navigation: &SourceNavigationState,
+) -> GlobalSourceNavigationView {
+    let mut breadcrumb = navigation.breadcrumb(&session.effect.name);
+    let current_name = breadcrumb
+        .pop()
+        .unwrap_or_else(|| session.effect.name.clone());
+    GlobalSourceNavigationView {
+        ancestors: breadcrumb,
+        current_id: EffectAssetRef::new(session.effect.id),
+        current_name,
+        dirty: session.dirty,
+        can_go_forward: navigation.can_go_forward(),
+    }
+}
+
+fn spawn_global_source_navigation_items(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    navigation: &SourceNavigationState,
+    localizer: &Localizer,
+) {
+    spawn_global_navigation_button(
+        parent,
+        "‹",
+        DocumentAction::BackToSource,
+        &localizer.text("toolbar-source-back"),
+        !navigation.can_go_back(),
+    );
+    spawn_global_navigation_button(
+        parent,
+        "›",
+        DocumentAction::ForwardToSource,
+        &localizer.text("toolbar-source-forward"),
+        !navigation.can_go_forward(),
+    );
+
+    let depth = navigation.depth();
+    for (index, name) in navigation
+        .breadcrumb(&session.effect.name)
+        .into_iter()
+        .enumerate()
+    {
+        if index > 0 {
+            parent.spawn((
+                GlobalSourceNavigationItem,
+                Text::new("›"),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+                Node {
+                    margin: UiRect::horizontal(Val::Px(3.0)),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+        }
+        if index < depth {
+            let label = name.to_uppercase();
+            parent
+                .spawn_empty()
+                .apply_scene(ui_shell::feathers_plain_button())
+                .insert((
+                    GlobalSourceNavigationItem,
+                    DocumentAction::NavigateSourceAncestor(index),
+                    FeathersActionButton,
+                    AccessibleLabel(name),
+                    Node {
+                        min_width: Val::Px(0.0),
+                        height: Val::Px(26.0),
+                        padding: UiRect::horizontal(Val::Px(3.0)),
+                        ..default()
+                    },
+                ))
+                .with_child((
+                    Text::new(label),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_MUTED),
+                    TextLayout::no_wrap(),
+                    Pickable::IGNORE,
+                ));
+        } else {
+            parent.spawn((
+                GlobalSourceNavigationItem,
+                Text::new(format!(
+                    "{}{}",
+                    if session.dirty { "* " } else { "" },
+                    name.to_uppercase()
+                )),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::ACCENT),
+                TextLayout::no_wrap(),
+                Pickable::IGNORE,
+            ));
+        }
+    }
+    parent.spawn((
+        GlobalSourceNavigationItem,
+        Text::new(format!("  /  {}", localizer.text("toolbar-choreography"))),
+        TextFont {
+            font_size: FontSize::Px(11.0),
+            ..default()
+        },
+        TextColor(theme::TEXT_MUTED),
+        TextLayout::no_wrap(),
+        Pickable::IGNORE,
+    ));
+}
+
+fn spawn_global_navigation_button(
+    parent: &mut ChildSpawnerCommands,
+    glyph: &str,
+    action: DocumentAction,
+    label: &str,
+    disabled: bool,
+) {
+    let mut button = parent.spawn_empty();
+    button
+        .apply_scene(ui_shell::feathers_plain_button())
+        .insert((
+            GlobalSourceNavigationItem,
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.to_owned()),
+            EditorTooltip::description(label),
+            Node {
+                width: Val::Px(26.0),
+                height: Val::Px(26.0),
+                margin: UiRect::right(Val::Px(2.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+        ));
+    if disabled {
+        button.insert(InteractionDisabled);
+    }
+    button.with_child((
+        Text::new(glyph),
+        TextFont {
+            font_size: FontSize::Px(18.0),
+            ..default()
+        },
+        TextColor(if disabled {
+            theme::TEXT_FAINT
+        } else {
+            theme::TEXT
+        }),
+        Pickable::IGNORE,
+    ));
+}
+
+fn sync_global_source_navigation(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    navigation: Res<SourceNavigationState>,
+    localizer: Res<Localizer>,
+    root: Single<Entity, With<GlobalSourceNavigation>>,
+    items: Query<Entity, With<GlobalSourceNavigationItem>>,
+    mut rendered: ResMut<RenderedGlobalSourceNavigation>,
+) {
+    let view = global_source_navigation_view(&session, &navigation);
+    if rendered.0.as_ref() == Some(&view) && !localizer.is_changed() {
+        return;
+    }
+    for item in &items {
+        commands.entity(item).despawn();
+    }
+    commands.entity(*root).with_children(|parent| {
+        spawn_global_source_navigation_items(parent, &session, &navigation, &localizer);
+    });
+    rendered.0 = Some(view);
 }
 
 pub(crate) fn format_value(value: Value) -> String {
@@ -397,12 +608,14 @@ fn keyboard_shortcuts(
     mut session: ResMut<EditorSession>,
     mut menu: ResMut<MenuState>,
     palette: Res<ModulePaletteState>,
+    navigation: Res<SourceNavigationState>,
 ) {
     if palette.open {
         return;
     }
     let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
 
     if keys.just_pressed(KeyCode::Escape) {
         let context_was_open = menu.tab_context.take().is_some();
@@ -425,6 +638,12 @@ fn keyboard_shortcuts(
         } else {
             DocumentAction::Save
         });
+    }
+    if alt && keys.just_pressed(KeyCode::ArrowLeft) && navigation.can_go_back() {
+        commands.trigger(DocumentAction::BackToSource);
+    }
+    if alt && keys.just_pressed(KeyCode::ArrowRight) && navigation.can_go_forward() {
+        commands.trigger(DocumentAction::ForwardToSource);
     }
 }
 
@@ -540,19 +759,17 @@ fn rebuild_editor_ui(
 #[allow(clippy::type_complexity)]
 fn update_editor_labels(
     session: Res<EditorSession>,
-    localizer: Res<Localizer>,
     mut labels: Query<(
         &mut Text,
         Option<&InspectorTitle>,
         Option<&DocumentMenuLabel>,
-        Option<&DocumentToolbarLabel>,
     )>,
 ) {
-    if !session.is_changed() && !localizer.is_changed() {
+    if !session.is_changed() {
         return;
     }
     let layer = session.selected_layer();
-    for (mut text, title, document_menu, document_toolbar) in &mut labels {
+    for (mut text, title, document_menu) in &mut labels {
         if title.is_some() {
             text.0 = layer.name.clone();
         } else if document_menu.is_some() {
@@ -567,12 +784,6 @@ fn update_editor_labels(
                 if session.dirty { "* " } else { "" },
                 session.effect.name,
                 file
-            );
-        } else if document_toolbar.is_some() {
-            text.0 = format!(
-                "{}  /  {}",
-                session.effect.name.to_uppercase(),
-                localizer.text("toolbar-choreography")
             );
         }
     }

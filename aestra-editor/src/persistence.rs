@@ -61,6 +61,7 @@ pub(crate) enum DocumentAction {
     OpenCatalog(EffectAssetRef),
     OpenSource(EffectAssetRef),
     BackToSource,
+    ForwardToSource,
     NavigateSourceAncestor(usize),
     Save,
     SaveAs,
@@ -80,24 +81,25 @@ struct SourceNavigationEntry {
 
 #[derive(Resource, Debug, Default)]
 pub(crate) struct SourceNavigationState {
-    stack: Vec<SourceNavigationEntry>,
+    back: Vec<SourceNavigationEntry>,
+    forward: Vec<SourceNavigationEntry>,
 }
 
 impl SourceNavigationState {
     pub(crate) fn can_go_back(&self) -> bool {
-        !self.stack.is_empty()
+        !self.back.is_empty()
     }
 
-    pub(crate) fn parent_name(&self) -> Option<&str> {
-        self.stack.last().map(|entry| entry.name.as_str())
+    pub(crate) fn can_go_forward(&self) -> bool {
+        !self.forward.is_empty()
     }
 
     pub(crate) fn depth(&self) -> usize {
-        self.stack.len()
+        self.back.len()
     }
 
     pub(crate) fn breadcrumb(&self, current: &str) -> Vec<String> {
-        self.stack
+        self.back
             .iter()
             .map(|entry| entry.name.clone())
             .chain(std::iter::once(current.to_owned()))
@@ -105,11 +107,12 @@ impl SourceNavigationState {
     }
 
     fn contains(&self, effect: EffectAssetRef) -> bool {
-        self.stack.iter().any(|entry| entry.effect == effect)
+        self.back.iter().any(|entry| entry.effect == effect)
     }
 
     fn clear(&mut self) {
-        self.stack.clear();
+        self.back.clear();
+        self.forward.clear();
     }
 }
 
@@ -599,6 +602,16 @@ fn execute_protected_document_action(
                 session, settings, workspace, timeline, navigation, localizer,
             );
         }
+        DocumentAction::ForwardToSource => {
+            let (Some(timeline), Some(navigation)) =
+                (timeline.as_deref_mut(), navigation.as_deref_mut())
+            else {
+                return;
+            };
+            advance_to_source(
+                session, settings, workspace, timeline, navigation, localizer,
+            );
+        }
         DocumentAction::NavigateSourceAncestor(depth) => {
             let (Some(timeline), Some(navigation)) =
                 (timeline.as_deref_mut(), navigation.as_deref_mut())
@@ -894,20 +907,39 @@ fn open_referenced_source(
         session.ui_revision += 1;
         return;
     };
-    let entry = SourceNavigationEntry {
-        path: return_path,
-        effect: current,
+    let entry = source_navigation_entry(session, timeline, return_path);
+    if open_effect_path(session, &source_path, settings, localizer) {
+        navigation.back.push(entry);
+        navigation.forward.clear();
+        *timeline = TimelineState::framed(session.playback_duration());
+        workspace.clear();
+    }
+}
+
+fn source_navigation_entry(
+    session: &EditorSession,
+    timeline: &TimelineState,
+    path: PathBuf,
+) -> SourceNavigationEntry {
+    SourceNavigationEntry {
+        path,
+        effect: EffectAssetRef::new(session.effect.id),
         name: session.effect.name.clone(),
         playhead_time: session.time(),
         playing: session.playing,
         selection: session.selection.primary,
         timeline: timeline.navigation_snapshot(),
-    };
-    if open_effect_path(session, &source_path, settings, localizer) {
-        navigation.stack.push(entry);
-        *timeline = TimelineState::framed(session.playback_duration());
-        workspace.clear();
     }
+}
+
+fn current_source_navigation_entry(
+    session: &EditorSession,
+    timeline: &TimelineState,
+) -> Option<SourceNavigationEntry> {
+    session
+        .source_path
+        .clone()
+        .map(|path| source_navigation_entry(session, timeline, path))
 }
 
 fn return_to_source(
@@ -918,7 +950,7 @@ fn return_to_source(
     navigation: &mut SourceNavigationState,
     localizer: &Localizer,
 ) {
-    let Some(depth) = navigation.stack.len().checked_sub(1) else {
+    let Some(depth) = navigation.back.len().checked_sub(1) else {
         return;
     };
     return_to_source_at(
@@ -936,13 +968,51 @@ fn return_to_source_at(
     depth: usize,
     localizer: &Localizer,
 ) {
-    let Some(entry) = navigation.stack.get(depth).cloned() else {
+    let Some(entry) = navigation.back.get(depth).cloned() else {
+        return;
+    };
+    let Some(current) = current_source_navigation_entry(session, timeline) else {
         return;
     };
     if !open_effect_path(session, &entry.path, settings, localizer) {
         return;
     }
-    navigation.stack.truncate(depth);
+    let traversed = navigation.back.split_off(depth + 1);
+    navigation.back.truncate(depth);
+    navigation.forward.push(current);
+    navigation.forward.extend(traversed.into_iter().rev());
+    restore_source_navigation_entry(session, workspace, timeline, entry);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn advance_to_source(
+    session: &mut EditorSession,
+    settings: &EditorSettings,
+    workspace: &mut CurvesState,
+    timeline: &mut TimelineState,
+    navigation: &mut SourceNavigationState,
+    localizer: &Localizer,
+) {
+    let Some(entry) = navigation.forward.last().cloned() else {
+        return;
+    };
+    let Some(current) = current_source_navigation_entry(session, timeline) else {
+        return;
+    };
+    if !open_effect_path(session, &entry.path, settings, localizer) {
+        return;
+    }
+    navigation.forward.pop();
+    navigation.back.push(current);
+    restore_source_navigation_entry(session, workspace, timeline, entry);
+}
+
+fn restore_source_navigation_entry(
+    session: &mut EditorSession,
+    workspace: &mut CurvesState,
+    timeline: &mut TimelineState,
+    entry: SourceNavigationEntry,
+) {
     session.selection.primary = entry.selection;
     session.selection.repair(&session.effect);
     timeline.restore_navigation(entry.timeline, session.playback_duration());
@@ -1339,6 +1409,7 @@ mod tests {
         );
         assert_eq!(session.effect.id, child.id);
         assert!(navigation.can_go_back());
+        assert!(!navigation.can_go_forward());
         assert_eq!(
             navigation.breadcrumb(&session.effect.name),
             ["Parent", "Child"]
@@ -1410,6 +1481,31 @@ mod tests {
         );
         assert_eq!(session.effect.id, parent.id);
         assert_eq!(navigation.depth(), 0);
+        assert!(navigation.can_go_forward());
+
+        advance_to_source(
+            &mut session,
+            &settings,
+            &mut workspace,
+            &mut timeline,
+            &mut navigation,
+            &localizer,
+        );
+        assert_eq!(session.effect.id, child.id);
+        assert_eq!(navigation.depth(), 1);
+        assert!(navigation.can_go_forward());
+
+        advance_to_source(
+            &mut session,
+            &settings,
+            &mut workspace,
+            &mut timeline,
+            &mut navigation,
+            &localizer,
+        );
+        assert_eq!(session.effect.id, grandchild.id);
+        assert_eq!(navigation.depth(), 2);
+        assert!(!navigation.can_go_forward());
     }
 
     #[test]
