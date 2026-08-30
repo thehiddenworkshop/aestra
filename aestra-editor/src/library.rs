@@ -12,8 +12,14 @@ use aestra_runtime::CompiledEffectProject;
 use bevy::ui_widgets::ScrollArea;
 use bevy::{
     feathers::cursor::EntityCursor,
-    picking::events::{Drag, DragEnd, DragStart, Pointer},
-    ui_widgets::Activate,
+    picking::{
+        events::{Click, Drag, DragEnd, DragStart, Pointer},
+        pointer::PointerButton,
+    },
+    ui_widgets::{
+        Activate,
+        popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
+    },
     window::SystemCursorIcon,
 };
 use std::{
@@ -50,6 +56,7 @@ impl Plugin for EditorLibraryPlugin {
             .add_observer(begin_project_effect_drag)
             .add_observer(update_project_effect_drag)
             .add_observer(end_project_effect_drag)
+            .add_observer(open_project_effect_context_menu)
             .add_systems(
                 Update,
                 poll_project_effect_catalog.in_set(LibrarySet::Input),
@@ -58,6 +65,7 @@ impl Plugin for EditorLibraryPlugin {
                 Update,
                 (
                     dismiss_library_asset_operation_with_escape,
+                    dismiss_library_context_menu,
                     handle_library_action_buttons,
                     sync_library_asset_operation_overlay,
                 )
@@ -494,11 +502,13 @@ pub(crate) enum LibraryKindFilter {
     Flipbook,
 }
 
-#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub(crate) struct LibraryState {
     pub(crate) query: String,
     pub(crate) origin: LibraryOriginFilter,
     pub(crate) kind: LibraryKindFilter,
+    pub(crate) context_effect: Option<ProjectEffectEntryId>,
+    pub(crate) context_menu_position: Vec2,
 }
 
 impl LibraryState {
@@ -779,6 +789,12 @@ struct LibrarySearchInput;
 #[derive(Component)]
 struct ProjectEffectDragGhost;
 
+#[derive(Component)]
+struct ProjectEffectContextMenu;
+
+#[derive(Component)]
+struct ProjectEffectContextMenuAnchor;
+
 #[derive(Component, Clone, Copy)]
 pub(crate) struct ProjectEffectRow(ProjectEffectEntryId);
 
@@ -859,6 +875,9 @@ fn begin_project_effect_drag(
     ghosts: Query<Entity, With<ProjectEffectDragGhost>>,
     mut commands: Commands,
 ) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
     let Some(row) = project_effect_row_from_entity(drag.event_target(), &rows, &parents) else {
         return;
     };
@@ -941,6 +960,57 @@ fn project_effect_row_from_entity<'a>(
             return Some(row);
         }
         entity = parents.get(entity).ok()?.parent();
+    }
+}
+
+fn open_project_effect_context_menu(
+    mut click: On<Pointer<Click>>,
+    rows: Query<(&ProjectEffectRow, &ComputedNode, &UiGlobalTransform)>,
+    parents: Query<&ChildOf>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut state: ResMut<LibraryState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    let mut entity = click.event_target();
+    let (source, position) = loop {
+        if let Ok((row, node, transform)) = rows.get(entity) {
+            let Some(entry) = catalog.entry(row.id()) else {
+                return;
+            };
+            if !matches!(entry.status, ProjectEffectStatus::Valid) {
+                return;
+            }
+            let top_left = transform.translation.trunc() - node.size() * 0.5;
+            break (row.id(), click.pointer_location.position - top_left);
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    state.context_effect = Some(source);
+    state.context_menu_position = position;
+    session.ui_revision += 1;
+    click.propagate(false);
+}
+
+fn dismiss_library_context_menu(
+    buttons: Option<Res<ButtonInput<MouseButton>>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    surfaces: Query<&RelativeCursorPosition, With<ProjectEffectContextMenu>>,
+    mut state: ResMut<LibraryState>,
+    mut session: ResMut<EditorSession>,
+) {
+    let clicked_outside = buttons
+        .as_deref()
+        .is_some_and(|buttons| buttons.just_pressed(MouseButton::Left))
+        && !surfaces.iter().any(RelativeCursorPosition::cursor_over);
+    if state.context_effect.is_some() && (clicked_outside || keys.just_pressed(KeyCode::Escape)) {
+        state.context_effect = None;
+        session.ui_revision += 1;
     }
 }
 
@@ -1140,28 +1210,18 @@ fn spawn_project_effects(
             panel
                 .commands()
                 .entity(row)
-                .insert(EntityCursor::System(SystemCursorIcon::Grab));
-            let mut args = FluentArgs::new();
-            args.set("name", entry.display_name.as_str());
-            let accessible_label = localizer.text_with("library-more-effect-actions", &args);
-            panel.commands().entity(row).with_children(|row| {
-                spawn_action_menu(
-                    row,
-                    &accessible_label,
-                    &[
-                        ComboOption {
-                            label: localizer.text("library-rename-effect"),
-                            selected: false,
-                            action: LibraryAction::RenameProjectEffect(entry.id),
-                        },
-                        ComboOption {
-                            label: localizer.text("library-move-effect"),
-                            selected: false,
-                            action: LibraryAction::MoveProjectEffect(entry.id),
-                        },
-                    ],
-                );
-            });
+                .insert(EntityCursor::System(SystemCursorIcon::Grab))
+                .observe(open_project_effect_context_menu);
+            if state.context_effect == Some(entry.id) {
+                panel.commands().entity(row).with_children(|row| {
+                    spawn_project_effect_context_menu(
+                        row,
+                        localizer,
+                        entry.id,
+                        state.context_menu_position,
+                    );
+                });
+            }
         }
     }
     let catalog_empty = spawn_list_empty_state(
@@ -1232,6 +1292,114 @@ fn spawn_project_effects(
         .commands()
         .entity(unavailable)
         .insert((LibraryCatalogUnavailable, unavailable_tooltip));
+}
+
+fn spawn_project_effect_context_menu(
+    parent: &mut ChildSpawnerCommands,
+    localizer: &Localizer,
+    source: ProjectEffectEntryId,
+    position: Vec2,
+) {
+    parent
+        .spawn((
+            ProjectEffectContextMenuAnchor,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(position.x),
+                top: Val::Px(position.y),
+                width: Val::Px(1.0),
+                height: Val::Px(1.0),
+                ..default()
+            },
+        ))
+        .with_children(|anchor| {
+            anchor
+                .spawn((
+                    ProjectEffectContextMenu,
+                    Popover {
+                        positions: vec![
+                            PopoverPlacement {
+                                side: PopoverSide::Right,
+                                align: PopoverAlign::Start,
+                                gap: 2.0,
+                            },
+                            PopoverPlacement {
+                                side: PopoverSide::Left,
+                                align: PopoverAlign::Start,
+                                gap: 2.0,
+                            },
+                            PopoverPlacement {
+                                side: PopoverSide::Bottom,
+                                align: PopoverAlign::Start,
+                                gap: 2.0,
+                            },
+                            PopoverPlacement {
+                                side: PopoverSide::Top,
+                                align: PopoverAlign::Start,
+                                gap: 2.0,
+                            },
+                        ],
+                        window_margin: 8.0,
+                    },
+                    RelativeCursorPosition::default(),
+                    OverrideClip,
+                    GlobalZIndex(250),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Px(184.0),
+                        padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
+                        flex_direction: FlexDirection::Column,
+                        border: UiRect::all(Val::Px(1.0)),
+                        border_radius: BorderRadius::all(Val::Px(4.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::MENU),
+                    BorderColor::all(theme::BORDER_BRIGHT),
+                    BoxShadow::new(
+                        Color::srgba(0.0, 0.0, 0.0, 0.62),
+                        Val::Px(0.0),
+                        Val::Px(2.0),
+                        Val::Px(3.0),
+                        Val::Px(5.0),
+                    ),
+                ))
+                .with_children(|menu| {
+                    spawn_project_effect_context_menu_item(
+                        menu,
+                        &localizer.text("library-rename-effect"),
+                        LibraryAction::RenameProjectEffect(source),
+                    );
+                    spawn_project_effect_context_menu_item(
+                        menu,
+                        &localizer.text("library-move-effect"),
+                        LibraryAction::MoveProjectEffect(source),
+                    );
+                });
+        });
+}
+
+fn spawn_project_effect_context_menu_item(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    action: LibraryAction,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_menu_item())
+        .insert((
+            Interaction::None,
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.to_owned()),
+        ))
+        .with_children(|item| {
+            item.spawn((
+                Text::new(label),
+                ThemedText,
+                TextLayout::no_wrap(),
+                Pickable::IGNORE,
+            ));
+        });
 }
 
 fn project_effect_accessible_label(entry: &ProjectEffectEntry, localizer: &Localizer) -> String {
@@ -1551,6 +1719,7 @@ fn handle_library_action_buttons(
         ),
     >,
     mut menu: ResMut<MenuState>,
+    mut library: ResMut<LibraryState>,
     mut session: ResMut<EditorSession>,
 ) {
     for (entity, interaction, action, feathers, pending, mut background) in &mut interactions {
@@ -1572,6 +1741,9 @@ fn handle_library_action_buttons(
                 menu.open = None;
                 menu.panels_open = false;
                 if menu.tab_context.take().is_some() {
+                    session.ui_revision += 1;
+                }
+                if library.context_effect.take().is_some() {
                     session.ui_revision += 1;
                 }
                 commands.trigger(*action);
@@ -1957,6 +2129,7 @@ mod tests {
             query: "bloom".into(),
             origin: LibraryOriginFilter::Project,
             kind: LibraryKindFilter::Effect,
+            ..default()
         };
         assert!(state.matches_project_effect(&entry));
 
@@ -2016,6 +2189,9 @@ mod tests {
                 },
             },
         ]);
+        let mut library = LibraryState::default();
+        library.context_effect = Some(valid_id);
+        library.context_menu_position = Vec2::new(19.0, 27.0);
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
@@ -2025,7 +2201,7 @@ mod tests {
         ))
         .insert_resource(session)
         .insert_resource(catalog)
-        .init_resource::<LibraryState>()
+        .insert_resource(library)
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_library);
 
@@ -2079,6 +2255,19 @@ mod tests {
         assert!(valid.4.contains("Prism Bloom"));
         assert!(valid.5);
         assert!(valid.6);
+        let context_anchor = {
+            let world = app.world_mut();
+            let mut query =
+                world.query_filtered::<(&ChildOf, &Node), With<ProjectEffectContextMenuAnchor>>();
+            let (parent, node) = query.single(world).unwrap();
+            (
+                world.get::<ProjectEffectRow>(parent.parent()).unwrap().id(),
+                node.left,
+                node.top,
+            )
+        };
+        assert_eq!(context_anchor, (valid_id, Val::Px(19.0), Val::Px(27.0)));
+        assert_eq!(marker_count::<ProjectEffectContextMenu>(&mut app), 1);
         for id in [invalid_id, unsupported_id] {
             let status = rows.iter().find(|row| row.0 == id).unwrap();
             assert!(!status.1);

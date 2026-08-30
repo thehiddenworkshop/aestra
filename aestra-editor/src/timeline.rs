@@ -102,7 +102,6 @@ impl Plugin for TimelinePlugin {
                     reveal_timeline_emitter,
                     sync_timeline_vertical_scroll,
                     sync_timeline_horizontal_scroll,
-                    update_track_header_hover_actions,
                     sync_emitter_reorder_hints,
                     sync_effect_clip_reorder_hints,
                     sync_timeline_track_drop_hints,
@@ -133,7 +132,6 @@ pub(crate) enum ChoreographyAction {
     ToggleEffectClipExpanded(EffectClipPath),
     ToggleEffectClipMuted(EffectClipId),
     ToggleEffectClipSolo(EffectClipId),
-    ToggleEffectClipMenu(EffectClipId),
     EditEffectClipSource(EffectClipId),
     EditEffectClipEmitterSource {
         path: EffectClipPath,
@@ -148,7 +146,6 @@ pub(crate) enum ChoreographyAction {
         enabled: bool,
     },
     ToggleEmitterSolo(EmitterId),
-    ToggleEmitterMenu(EmitterId),
     ToggleEmitterColorPicker(EmitterId),
 }
 
@@ -343,45 +340,6 @@ fn execute_choreography_action(
     catalog: Res<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
 ) {
-    if let ChoreographyAction::ToggleEffectClipMenu(clip) = action.clone() {
-        let revision = session.ui_revision;
-        if session
-            .effect
-            .effect_clips
-            .iter()
-            .any(|item| item.id == clip)
-        {
-            session.select_effect_clip(clip);
-            curves.clear();
-        }
-        state.inspected_child = None;
-        state.context_emitter = None;
-        state.color_picker_emitter = None;
-        state.context_effect_clip = (state.context_effect_clip != Some(clip)).then_some(clip);
-        if session.ui_revision == revision {
-            session.ui_revision += 1;
-        }
-        return;
-    }
-    if let ChoreographyAction::ToggleEmitterMenu(emitter) = action.clone() {
-        let revision = session.ui_revision;
-        if session
-            .effect
-            .emitters
-            .iter()
-            .any(|item| item.id == emitter)
-        {
-            session.select_emitter(emitter);
-            curves.clear();
-        }
-        state.color_picker_emitter = None;
-        state.context_emitter = (state.context_emitter != Some(emitter)).then_some(emitter);
-        if session.ui_revision == revision {
-            session.ui_revision += 1;
-        }
-        return;
-    }
-
     if let ChoreographyAction::ToggleEmitterColorPicker(emitter) = action.clone() {
         let revision = session.ui_revision;
         if session
@@ -561,9 +519,7 @@ fn execute_choreography_action(
                 curves.clear();
             }
         }
-        ChoreographyAction::ToggleEmitterMenu(_)
-        | ChoreographyAction::ToggleEmitterColorPicker(_)
-        | ChoreographyAction::ToggleEffectClipMenu(_) => unreachable!(),
+        ChoreographyAction::ToggleEmitterColorPicker(_) => unreachable!(),
     }
     if closed_context_menu && session.ui_revision == revision {
         session.ui_revision += 1;
@@ -1990,11 +1946,12 @@ mod tests {
     }
 
     #[test]
-    fn track_actions_keep_the_name_layout_stable_and_menus_escape_scroll_clipping() {
+    fn track_context_menus_anchor_to_rows_without_consuming_header_space() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let emitter = session.effect.emitters[0].id;
         let mut state = TimelineState::framed(session.playback_duration());
         state.context_emitter = Some(emitter);
+        state.context_menu_position = Vec2::new(17.0, 23.0);
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
@@ -2008,8 +1965,7 @@ mod tests {
         .insert_resource(state)
         .init_resource::<ProjectEffectCatalog>()
         .insert_resource(Localizer::new("en-US").unwrap())
-        .add_systems(Startup, spawn_test_timeline)
-        .add_systems(Update, update_track_header_hover_actions);
+        .add_systems(Startup, spawn_test_timeline);
 
         app.update();
 
@@ -2021,46 +1977,25 @@ mod tests {
                 .find_map(|(entity, header)| (header.emitter == emitter).then_some(entity))
                 .unwrap()
         };
-        let actions = {
-            let world = app.world_mut();
-            let children = world.get::<Children>(header).unwrap();
-            children
-                .iter()
-                .find(|child| world.get::<EmitterTrackHoverActions>(*child).is_some())
-                .unwrap()
-        };
-        assert_eq!(
-            app.world().get::<Node>(actions).unwrap().width,
-            Val::Px(28.0)
-        );
-        assert_eq!(
-            *app.world().get::<Visibility>(actions).unwrap(),
-            Visibility::Inherited
-        );
-
-        app.world_mut()
-            .entity_mut(header)
-            .insert(Interaction::Hovered);
-        app.update();
-        app.world_mut().entity_mut(header).insert(Interaction::None);
-        app.update();
-        assert_eq!(
-            *app.world().get::<Visibility>(actions).unwrap(),
-            Visibility::Inherited,
-            "leaving the row must not hide its open context menu"
-        );
-
         let menu_layer = {
             let world = app.world_mut();
             let mut query = world.query_filtered::<(
+                &ChildOf,
                 &GlobalZIndex,
                 Option<&OverrideClip>,
                 &Popover,
                 &BackgroundColor,
                 &Node,
             ), With<EmitterTrackContextMenu>>();
-            let (z_index, override_clip, popover, background, node) = query.single(world).unwrap();
+            let (parent, z_index, override_clip, popover, background, node) =
+                query.single(world).unwrap();
+            let anchor = parent.parent();
+            let anchor_parent = world.get::<ChildOf>(anchor).unwrap().parent();
+            let anchor_node = world.get::<Node>(anchor).unwrap();
             (
+                anchor_parent == header,
+                anchor_node.left,
+                anchor_node.top,
                 z_index.0,
                 override_clip.is_some(),
                 popover.positions[0].side,
@@ -2072,6 +2007,9 @@ mod tests {
         assert_eq!(
             menu_layer,
             (
+                true,
+                Val::Px(17.0),
+                Val::Px(23.0),
                 250,
                 true,
                 PopoverSide::Right,
@@ -2451,6 +2389,37 @@ mod tests {
                 })
                 .count(),
             2
+        );
+        let context_safe_controls = {
+            let world = app.world_mut();
+            let mut query = world.query::<(
+                &ChoreographyAction,
+                Has<TimelineTrackActionControl>,
+                Has<Button>,
+            )>();
+            query
+                .iter(world)
+                .filter(|(action, context_safe, _)| {
+                    *context_safe
+                        && matches!(
+                            action,
+                            ChoreographyAction::ToggleEmitterColorPicker(_)
+                                | ChoreographyAction::SetEmitterEnabled { .. }
+                                | ChoreographyAction::ToggleEmitterSolo(_)
+                                | ChoreographyAction::ToggleEffectClipExpanded(_)
+                                | ChoreographyAction::ToggleEffectClipMuted(_)
+                                | ChoreographyAction::ToggleEffectClipSolo(_)
+                        )
+                })
+                .map(|(_, context_safe, button)| (context_safe, button))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(context_safe_controls.len(), emitter_count * 3 + 3);
+        assert!(
+            context_safe_controls
+                .iter()
+                .all(|(context_safe, button)| *context_safe && !*button),
+            "track action controls must leave secondary clicks available to their row"
         );
         let timeline_icon_controls = {
             let world = app.world_mut();
@@ -3671,7 +3640,10 @@ struct ReferencedEmitterTrackHeader;
 struct EffectClipTrackContextMenu;
 
 #[derive(Component)]
-struct EffectClipTrackContextMenuTrigger;
+struct TimelineTrackContextMenuAnchor;
+
+#[derive(Component)]
+struct TimelineTrackActionControl;
 
 #[derive(Component, Clone, Copy)]
 struct EmitterTrackReorderHandle {
@@ -3711,13 +3683,7 @@ struct EmitterTrackColorPicker {
 struct EmitterTrackColorPickerPopover;
 
 #[derive(Component)]
-struct EmitterTrackHoverActions;
-
-#[derive(Component)]
 struct EmitterTrackContextMenu;
-
-#[derive(Component)]
-struct EmitterTrackContextMenuTrigger;
 
 #[derive(Component, Clone, Copy)]
 struct TimelineClip {
@@ -3931,6 +3897,7 @@ pub(crate) struct TimelineState {
     muted_effect_clips: BTreeSet<EffectClipId>,
     solo_effect_clip: Option<EffectClipId>,
     context_effect_clip: Option<EffectClipId>,
+    context_menu_position: Vec2,
     pub(crate) inspected_child: Option<EffectClipChildSelection>,
     referenced_emitter_click: Option<ReferencedEmitterClick>,
     reveal_emitter: Option<EmitterId>,
@@ -3968,6 +3935,7 @@ impl TimelineState {
             muted_effect_clips: BTreeSet::new(),
             solo_effect_clip: None,
             context_effect_clip: None,
+            context_menu_position: Vec2::ZERO,
             inspected_child: None,
             referenced_emitter_click: None,
             reveal_emitter: None,
@@ -4167,7 +4135,6 @@ enum ReferencedTrackKind {
     },
     Emitter {
         emitter: Emitter,
-        index: usize,
     },
 }
 
@@ -4251,12 +4218,7 @@ fn append_referenced_track_projections(
                 }
             }
             ChoreographyTrackId::Emitter(id) => {
-                let Some((index, emitter)) = source
-                    .emitters
-                    .iter()
-                    .enumerate()
-                    .find(|(_, emitter)| emitter.id == id)
-                else {
+                let Some(emitter) = source.emitters.iter().find(|emitter| emitter.id == id) else {
                     continue;
                 };
                 rows.push(ReferencedTrackProjection {
@@ -4269,7 +4231,6 @@ fn append_referenced_track_projections(
                         .map(|(timing, _)| timing),
                     kind: ReferencedTrackKind::Emitter {
                         emitter: emitter.clone(),
-                        index,
                     },
                 });
             }
@@ -4384,6 +4345,7 @@ fn spawn_effect_clip_track_header(
     header.observe(drop_effect_clip_track_reorder);
     header.observe(drop_emitter_track_reorder);
     header.observe(open_effect_clip_source_from_header);
+    header.observe(open_effect_clip_track_context_menu);
     header.with_children(|row| {
         let reorder_label =
             emitter_timing_label(localizer, "timeline-reorder-effect-clip", source_name);
@@ -4404,6 +4366,10 @@ fn spawn_effect_clip_track_header(
                 ..default()
             },
         ));
+        configure_timeline_track_action_control(row.commands(), disclosure);
+        row.commands()
+            .entity(disclosure)
+            .observe(open_effect_clip_track_context_menu);
         row.commands().entity(disclosure).with_children(|button| {
             button.spawn((
                 Node {
@@ -4455,6 +4421,10 @@ fn spawn_effect_clip_track_header(
             AccessibleLabel(mute_label.clone()),
             EditorTooltip::description(mute_label),
         ));
+        configure_timeline_track_action_control(row.commands(), mute);
+        row.commands()
+            .entity(mute)
+            .observe(open_effect_clip_track_context_menu);
         if muted {
             row.commands()
                 .entity(mute)
@@ -4470,6 +4440,10 @@ fn spawn_effect_clip_track_header(
             AccessibleLabel(solo_label.clone()),
             EditorTooltip::description(solo_label),
         ));
+        configure_timeline_track_action_control(row.commands(), solo);
+        row.commands()
+            .entity(solo)
+            .observe(open_effect_clip_track_context_menu);
         if soloed {
             row.commands()
                 .entity(solo)
@@ -4500,23 +4474,20 @@ fn spawn_effect_clip_track_header(
             TextColor(theme::TEXT_FAINT),
             Pickable::IGNORE,
         ));
-        let more = mini_button(
-            row,
-            "...",
-            ChoreographyAction::ToggleEffectClipMenu(clip.id),
-        );
-        describe_timeline_control(
-            row,
-            more,
-            localizer.text("timeline-more-effect-clip-actions"),
-        );
-        row.commands().entity(more).insert((
-            EffectClipTrackContextMenuTrigger,
-            RelativeCursorPosition::default(),
-        ));
         if state.context_effect_clip == Some(clip.id) {
-            row.commands().entity(more).with_children(|button| {
-                spawn_effect_clip_context_menu(button, localizer, clip.id, muted, soloed);
+            row.spawn((
+                TimelineTrackContextMenuAnchor,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(state.context_menu_position.x),
+                    top: Val::Px(state.context_menu_position.y),
+                    width: Val::Px(1.0),
+                    height: Val::Px(1.0),
+                    ..default()
+                },
+            ))
+            .with_children(|anchor| {
+                spawn_effect_clip_context_menu(anchor, localizer, clip.id, muted, soloed);
             });
         }
     });
@@ -4529,7 +4500,6 @@ fn spawn_referenced_emitter_track_header(
     path: &EffectClipPath,
     depth: usize,
     emitter: &Emitter,
-    index: usize,
     grid_row: i16,
 ) {
     let selected = state.inspected_child.as_ref()
@@ -4601,15 +4571,6 @@ fn spawn_referenced_emitter_track_header(
                 ..default()
             },
             BackgroundColor(color),
-            Pickable::IGNORE,
-        ));
-        row.spawn((
-            Text::new(format!("{:02}", index + 1)),
-            TextFont {
-                font_size: FontSize::Px(8.0),
-                ..default()
-            },
-            TextColor(theme::TEXT_FAINT),
             Pickable::IGNORE,
         ));
         row.spawn((
@@ -5220,7 +5181,7 @@ pub(crate) fn spawn_timeline(
                                                 child_grid_row,
                                                 asset_server,
                                             ),
-                                            ReferencedTrackKind::Emitter { emitter, index } => {
+                                            ReferencedTrackKind::Emitter { emitter, .. } => {
                                                 spawn_referenced_emitter_track_header(
                                                     headers,
                                                     state,
@@ -5228,7 +5189,6 @@ pub(crate) fn spawn_timeline(
                                                     &projection.path,
                                                     projection.depth,
                                                     emitter,
-                                                    *index,
                                                     child_grid_row,
                                                 );
                                             }
@@ -6111,6 +6071,7 @@ fn spawn_emitter_track_header(
             let color_label =
                 emitter_timing_label(localizer, "timeline-change-emitter-color", name);
             let mut color_button = row.spawn_empty();
+            let color_control = color_button.id();
             color_button
                 .apply_scene(ui_shell::feathers_plain_button())
                 .insert((
@@ -6158,6 +6119,10 @@ fn spawn_emitter_track_header(
                     );
                 }
             });
+            configure_timeline_track_action_control(row.commands(), color_control);
+            row.commands()
+                .entity(color_control)
+                .observe(open_timeline_track_context_menu);
             let muted = !enabled;
             let mute = mini_button(
                 row,
@@ -6176,6 +6141,10 @@ fn spawn_emitter_track_header(
                 AccessibleLabel(mute_label.clone()),
                 EditorTooltip::description(mute_label),
             ));
+            configure_timeline_track_action_control(row.commands(), mute);
+            row.commands()
+                .entity(mute)
+                .observe(open_timeline_track_context_menu);
             if muted {
                 row.commands()
                     .entity(mute)
@@ -6191,24 +6160,15 @@ fn spawn_emitter_track_header(
                 AccessibleLabel(solo_label.clone()),
                 EditorTooltip::description(solo_label),
             ));
+            configure_timeline_track_action_control(row.commands(), solo);
+            row.commands()
+                .entity(solo)
+                .observe(open_timeline_track_context_menu);
             if soloed {
                 row.commands()
                     .entity(solo)
                     .insert((Selected, ButtonVariant::Primary));
             }
-            row.spawn((
-                Text::new(format!("{:02}", index + 1)),
-                TextFont {
-                    font_size: FontSize::Px(9.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-                Node {
-                    flex_shrink: 0.0,
-                    ..default()
-                },
-                Pickable::IGNORE,
-            ));
             let rename_label = emitter_timing_label(localizer, "timeline-rename-emitter", name);
             let name_control = spawn_text_input(
                 row,
@@ -6238,37 +6198,22 @@ fn spawn_emitter_track_header(
                     EditorTooltip::description(localizer.text("timeline-emitter-diagnostic")),
                 ));
             }
-            row.spawn((
-                EmitterTrackHoverActions,
-                Visibility::Hidden,
-                Node {
-                    width: Val::Px(28.0),
-                    flex_shrink: 0.0,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-            ))
-            .with_children(|actions| {
-                let more = mini_button(
-                    actions,
-                    "...",
-                    ChoreographyAction::ToggleEmitterMenu(emitter),
-                );
-                describe_timeline_control(
-                    actions,
-                    more,
-                    localizer.text("timeline-more-emitter-actions"),
-                );
-                actions.commands().entity(more).insert((
-                    EmitterTrackContextMenuTrigger,
-                    RelativeCursorPosition::default(),
-                ));
-                if state.context_emitter == Some(emitter) {
-                    actions.commands().entity(more).with_children(|button| {
-                        spawn_emitter_context_menu(button, localizer, emitter, enabled, soloed);
-                    });
-                }
-            });
+            if state.context_emitter == Some(emitter) {
+                row.spawn((
+                    TimelineTrackContextMenuAnchor,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(state.context_menu_position.x),
+                        top: Val::Px(state.context_menu_position.y),
+                        width: Val::Px(1.0),
+                        height: Val::Px(1.0),
+                        ..default()
+                    },
+                ))
+                .with_children(|anchor| {
+                    spawn_emitter_context_menu(anchor, localizer, emitter, enabled, soloed);
+                });
+            }
         });
 }
 
@@ -6669,7 +6614,10 @@ fn navigate_timeline(
             override_cursor.0 = None;
             **cursor = CursorIcon::System(SystemCursorIcon::Default);
         }
-        if state.context_emitter.take().is_some() | state.color_picker_emitter.take().is_some() {
+        if state.context_emitter.take().is_some()
+            | state.color_picker_emitter.take().is_some()
+            | state.context_effect_clip.take().is_some()
+        {
             session.ui_revision += 1;
         }
     }
@@ -6759,9 +6707,7 @@ fn dismiss_timeline_popovers(
     menu_surfaces: Query<
         &RelativeCursorPosition,
         Or<(
-            With<EmitterTrackContextMenuTrigger>,
             With<EmitterTrackContextMenu>,
-            With<EffectClipTrackContextMenuTrigger>,
             With<EffectClipTrackContextMenu>,
         )>,
     >,
@@ -8135,37 +8081,125 @@ fn open_referenced_emitter_source_from_header(
 }
 
 fn open_timeline_track_context_menu(
-    click: On<Pointer<Click>>,
-    headers: Query<&EmitterTrackHeader>,
-    mut commands: Commands,
+    mut click: On<Pointer<Click>>,
+    headers: Query<(&EmitterTrackHeader, &ComputedNode, &UiGlobalTransform)>,
+    parents: Query<&ChildOf>,
+    mut session: ResMut<EditorSession>,
+    mut curves: ResMut<CurvesState>,
+    mut state: ResMut<TimelineState>,
 ) {
-    let Ok(header) = headers.get(click.event_target()) else {
+    if click.button != PointerButton::Secondary {
         return;
-    };
-    if click.button == PointerButton::Secondary {
-        commands.trigger(ChoreographyAction::ToggleEmitterMenu(header.emitter));
     }
+    let mut entity = click.event_target();
+    let (emitter, position) = loop {
+        if let Ok((header, node, transform)) = headers.get(entity) {
+            break (
+                header.emitter,
+                pointer_position_in_node(click.pointer_location.position, node, transform),
+            );
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    let revision = session.ui_revision;
+    if session
+        .effect
+        .emitters
+        .iter()
+        .any(|candidate| candidate.id == emitter)
+    {
+        session.select_emitter(emitter);
+        curves.clear();
+    }
+    state.color_picker_emitter = None;
+    state.context_effect_clip = None;
+    state.context_emitter = Some(emitter);
+    state.context_menu_position = position;
+    if session.ui_revision == revision {
+        session.ui_revision += 1;
+    }
+    click.propagate(false);
 }
 
-fn update_track_header_hover_actions(
-    headers: Query<(&Interaction, &Children, &EmitterTrackHeader), Changed<Interaction>>,
-    mut action_groups: Query<&mut Visibility, With<EmitterTrackHoverActions>>,
-    state: Res<TimelineState>,
+fn open_effect_clip_track_context_menu(
+    mut click: On<Pointer<Click>>,
+    headers: Query<(&EffectClipTrackHeader, &ComputedNode, &UiGlobalTransform)>,
+    parents: Query<&ChildOf>,
+    mut session: ResMut<EditorSession>,
+    mut curves: ResMut<CurvesState>,
+    mut state: ResMut<TimelineState>,
 ) {
-    for (interaction, children, header) in &headers {
-        for child in children.iter() {
-            let Ok(mut visibility) = action_groups.get_mut(child) else {
-                continue;
-            };
-            *visibility = if *interaction != Interaction::None
-                || state.context_emitter == Some(header.emitter)
-            {
-                Visibility::Inherited
-            } else {
-                Visibility::Hidden
-            };
-        }
+    if click.button != PointerButton::Secondary {
+        return;
     }
+    let mut entity = click.event_target();
+    let (clip, position) = loop {
+        if let Ok((header, node, transform)) = headers.get(entity) {
+            break (
+                header.clip,
+                pointer_position_in_node(click.pointer_location.position, node, transform),
+            );
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    let revision = session.ui_revision;
+    if session
+        .effect
+        .effect_clips
+        .iter()
+        .any(|candidate| candidate.id == clip)
+    {
+        session.select_effect_clip(clip);
+        curves.clear();
+    }
+    state.inspected_child = None;
+    state.context_emitter = None;
+    state.color_picker_emitter = None;
+    state.context_effect_clip = Some(clip);
+    state.context_menu_position = position;
+    if session.ui_revision == revision {
+        session.ui_revision += 1;
+    }
+    click.propagate(false);
+}
+
+fn pointer_position_in_node(
+    pointer: Vec2,
+    node: &ComputedNode,
+    transform: &UiGlobalTransform,
+) -> Vec2 {
+    let top_left = transform.translation.trunc() - node.size() * 0.5;
+    pointer - top_left
+}
+
+fn configure_timeline_track_action_control(mut commands: Commands, entity: Entity) {
+    commands
+        .entity(entity)
+        .remove::<Button>()
+        .remove::<FeathersActionButton>()
+        .insert((TimelineTrackActionControl, EditorNativeControl))
+        .observe(activate_timeline_track_action_control);
+}
+
+fn activate_timeline_track_action_control(
+    mut click: On<Pointer<Click>>,
+    controls: Query<&ChoreographyAction, With<TimelineTrackActionControl>>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let Ok(action) = controls.get(click.event_target()) else {
+        return;
+    };
+    commands.trigger(action.clone());
+    click.propagate(false);
 }
 
 fn timeline_drag_cursor(kind: TimelineDragKind, active: bool) -> CursorIcon {
