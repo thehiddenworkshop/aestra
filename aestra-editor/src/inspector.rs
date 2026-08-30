@@ -10,7 +10,7 @@ use crate::timeline::{
     EffectClipChildSelection, EffectClipPath, TimelineState, resolve_effect_clip_path,
 };
 use crate::*;
-use aestra_bevy::{EffectClip, EffectClipId};
+use aestra_bevy::{EffectAsset, EffectClip, EffectClipId, ParameterId, ValueType};
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use bevy::{
     ui::InteractionDisabled,
@@ -48,6 +48,10 @@ impl Plugin for InspectorPlugin {
             .add_observer(handle_renderer_toggle_change)
             .add_observer(handle_emitter_scalar_change)
             .add_observer(handle_effect_clip_scalar_change)
+            .add_observer(handle_effect_clip_parameter_integer_change)
+            .add_observer(handle_effect_clip_parameter_scalar_change)
+            .add_observer(handle_effect_clip_parameter_text_change)
+            .add_observer(handle_effect_clip_parameter_toggle_change)
             .add_observer(update_effect_clip_repair_query)
             .add_observer(handle_inspector_integer_change)
             .add_observer(handle_inspector_scalar_change)
@@ -68,6 +72,7 @@ impl Plugin for InspectorPlugin {
                         sync_emitter_capacity_inputs,
                         sync_emitter_number_inputs,
                         sync_effect_clip_number_inputs,
+                        sync_effect_clip_parameter_number_inputs,
                         sync_inspector_number_inputs,
                         sync_inspector_slider_inputs,
                         sync_renderer_number_inputs,
@@ -118,6 +123,10 @@ pub(crate) enum InspectorAction {
     RepairEffectClipSource {
         clip: EffectClipId,
         source: EffectAssetRef,
+    },
+    ResetEffectClipParameter {
+        clip: EffectClipId,
+        parameter: ParameterId,
     },
 }
 
@@ -515,6 +524,16 @@ fn handle_inspector_actions(
                             ),
                         }
                     }
+                    InspectorAction::ResetEffectClipParameter { clip, parameter } => {
+                        session.execute(
+                            localizer.text("inspector-reset-effect-clip-parameter-command"),
+                            EffectCommand::RemoveEffectClipParameterOverride {
+                                id: clip,
+                                parameter,
+                            },
+                            true,
+                        );
+                    }
                     InspectorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     InspectorAction::DeleteRenderer(id) => {
                         if preview_renderer_deletion(&mut session, id) {
@@ -613,6 +632,88 @@ mod tests {
 
     fn test_localizer() -> Localizer {
         Localizer::new("en-US").unwrap()
+    }
+
+    #[test]
+    fn effect_clip_parameter_entries_use_defaults_and_report_stale_overrides() {
+        let exposed = ParameterId::new();
+        let hidden = ParameterId::new();
+        let missing = ParameterId::new();
+        let mut source = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        source.parameters = vec![
+            aestra_bevy::EffectParameter {
+                id: exposed,
+                name: "Intensity".into(),
+                default: Value::Scalar(2.0),
+                exposed: true,
+            },
+            aestra_bevy::EffectParameter {
+                id: hidden,
+                name: "Internal".into(),
+                default: Value::Bool(false),
+                exposed: false,
+            },
+        ];
+        let mut clip = EffectClip::new(EffectAssetRef::new(source.id), 0.0, 1.0);
+        clip.parameter_overrides.insert(hidden, Value::Bool(true));
+        clip.parameter_overrides.insert(missing, Value::U32(4));
+
+        let entries = effect_clip_parameter_entries(&clip, Some(&source));
+
+        assert_eq!(entries[0].id, exposed);
+        assert_eq!(entries[0].value, Value::Scalar(2.0));
+        assert!(!entries[0].overridden);
+        assert_eq!(
+            entries
+                .iter()
+                .find(|entry| entry.id == hidden)
+                .unwrap()
+                .issue,
+            Some(EffectClipParameterIssue::Hidden)
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .find(|entry| entry.id == missing)
+                .unwrap()
+                .issue,
+            Some(EffectClipParameterIssue::Missing)
+        );
+    }
+
+    #[test]
+    fn effect_clip_parameter_edit_creates_an_undoable_override() {
+        let parameter = ParameterId::new();
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xe11ec7));
+        let clip = EffectClip::new(source, 0.0, 1.0);
+        let clip_id = clip.id;
+        session.effect.effect_clips.push(clip);
+        set_effect_clip_parameter_override(
+            &mut session,
+            &test_localizer(),
+            clip_id,
+            parameter,
+            Value::Scalar(3.5),
+        );
+        let authored = session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|clip| clip.id == clip_id)
+            .unwrap();
+        assert_eq!(authored.parameter_overrides[&parameter], Value::Scalar(3.5));
+        session.undo();
+        assert!(
+            session
+                .effect
+                .effect_clips
+                .iter()
+                .find(|clip| clip.id == clip_id)
+                .unwrap()
+                .parameter_overrides
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1687,6 +1788,31 @@ fn sync_effect_clip_number_inputs(
     }
 }
 
+fn sync_effect_clip_parameter_number_inputs(
+    mut commands: Commands,
+    controls: Query<
+        (Entity, &EffectClipParameterNumberControl),
+        Added<EffectClipParameterNumberControl>,
+    >,
+) {
+    for (entity, control) in &controls {
+        let value = match &control.value {
+            Value::U32(value) => NumberInputValue::I32((*value).min(i32::MAX as u32) as i32),
+            Value::Scalar(value) => NumberInputValue::F32(*value),
+            Value::Vec2(value) => NumberInputValue::F32(value[control.component as usize]),
+            Value::Vec3(value) => NumberInputValue::F32(value[control.component as usize]),
+            Value::Vec4(value) => NumberInputValue::F32(value[control.component as usize]),
+            Value::Range(value) => NumberInputValue::F32(if control.component == 0 {
+                value.min
+            } else {
+                value.max
+            }),
+            _ => continue,
+        };
+        commands.trigger(UpdateNumberInput { entity, value });
+    }
+}
+
 fn emitter_number_input_value(session: &EditorSession, control: EmitterNumberControl) -> f32 {
     let transform = session.selected_layer().transform;
     match control {
@@ -2315,6 +2441,157 @@ fn handle_effect_clip_scalar_change(
         return;
     };
     session.execute("Transformed effect clip", command, true);
+}
+
+fn handle_effect_clip_parameter_integer_change(
+    change: On<ValueChange<i32>>,
+    controls: Query<&EffectClipParameterNumberControl>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let Value::U32(current) = control.value else {
+        return;
+    };
+    let value = change.value.max(0) as u32;
+    if value != current {
+        set_effect_clip_parameter_override(
+            &mut session,
+            &localizer,
+            control.clip,
+            control.parameter,
+            Value::U32(value),
+        );
+    }
+}
+
+fn handle_effect_clip_parameter_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&EffectClipParameterNumberControl>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let Some(value) = effect_clip_parameter_value_with_component(
+        control.value.clone(),
+        control.component,
+        change.value,
+    ) else {
+        return;
+    };
+    if value != control.value {
+        set_effect_clip_parameter_override(
+            &mut session,
+            &localizer,
+            control.clip,
+            control.parameter,
+            value,
+        );
+    }
+}
+
+fn handle_effect_clip_parameter_text_change(
+    change: On<ValueChange<String>>,
+    controls: Query<&EffectClipParameterTextControl>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value != control.value {
+        set_effect_clip_parameter_override(
+            &mut session,
+            &localizer,
+            control.clip,
+            control.parameter,
+            Value::Text(change.value.clone()),
+        );
+    }
+}
+
+fn handle_effect_clip_parameter_toggle_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&EffectClipParameterToggleControl>,
+    mut commands: Commands,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    if change.value == control.value {
+        return;
+    }
+    set_effect_clip_parameter_override(
+        &mut session,
+        &localizer,
+        control.clip,
+        control.parameter,
+        Value::Bool(change.value),
+    );
+}
+
+fn set_effect_clip_parameter_override(
+    session: &mut EditorSession,
+    localizer: &Localizer,
+    clip: EffectClipId,
+    parameter: ParameterId,
+    value: Value,
+) {
+    session.execute(
+        localizer.text("inspector-set-effect-clip-parameter-command"),
+        EffectCommand::SetEffectClipParameterOverride {
+            id: clip,
+            parameter,
+            value,
+        },
+        true,
+    );
+}
+
+fn effect_clip_parameter_value_with_component(
+    mut value: Value,
+    component: u8,
+    replacement: f32,
+) -> Option<Value> {
+    match &mut value {
+        Value::Scalar(current) if component == 0 => *current = replacement,
+        Value::Vec2(current) if (component as usize) < current.len() => {
+            current[component as usize] = replacement;
+        }
+        Value::Vec3(current) if (component as usize) < current.len() => {
+            current[component as usize] = replacement;
+        }
+        Value::Vec4(current) if (component as usize) < current.len() => {
+            current[component as usize] = replacement;
+        }
+        Value::Range(current) if component == 0 => current.min = replacement,
+        Value::Range(current) if component == 1 => current.max = replacement,
+        _ => return None,
+    }
+    Some(value)
 }
 
 fn decorate_numeric_scrub_inputs(
@@ -3475,6 +3752,367 @@ fn spawn_effect_clip_repair(
     );
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct EffectClipParameterEntry {
+    id: ParameterId,
+    name: String,
+    value: Value,
+    overridden: bool,
+    issue: Option<EffectClipParameterIssue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EffectClipParameterIssue {
+    Missing,
+    Hidden,
+    TypeMismatch {
+        expected: ValueType,
+        actual: ValueType,
+    },
+    SourceUnavailable,
+}
+
+fn effect_clip_parameter_entries(
+    clip: &EffectClip,
+    source: Option<&EffectAsset>,
+) -> Vec<EffectClipParameterEntry> {
+    let mut entries = Vec::new();
+    if let Some(source) = source {
+        for parameter in source
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.exposed)
+        {
+            let authored = clip.parameter_overrides.get(&parameter.id);
+            let issue = authored.and_then(|value| {
+                (value.value_type() != parameter.default.value_type()).then_some(
+                    EffectClipParameterIssue::TypeMismatch {
+                        expected: parameter.default.value_type(),
+                        actual: value.value_type(),
+                    },
+                )
+            });
+            entries.push(EffectClipParameterEntry {
+                id: parameter.id,
+                name: parameter.name.clone(),
+                value: authored
+                    .cloned()
+                    .unwrap_or_else(|| parameter.default.clone()),
+                overridden: authored.is_some(),
+                issue,
+            });
+        }
+        for (&id, value) in &clip.parameter_overrides {
+            let parameter = source
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == id);
+            if parameter.is_some_and(|parameter| parameter.exposed) {
+                continue;
+            }
+            entries.push(EffectClipParameterEntry {
+                id,
+                name: parameter.map_or_else(|| id.to_string(), |parameter| parameter.name.clone()),
+                value: value.clone(),
+                overridden: true,
+                issue: Some(if parameter.is_some() {
+                    EffectClipParameterIssue::Hidden
+                } else {
+                    EffectClipParameterIssue::Missing
+                }),
+            });
+        }
+    } else {
+        entries.extend(clip.parameter_overrides.iter().map(|(&id, value)| {
+            EffectClipParameterEntry {
+                id,
+                name: id.to_string(),
+                value: value.clone(),
+                overridden: true,
+                issue: Some(EffectClipParameterIssue::SourceUnavailable),
+            }
+        }));
+    }
+    entries
+}
+
+fn spawn_effect_clip_instance_parameters(
+    parent: &mut ChildSpawnerCommands,
+    clip: &EffectClip,
+    source: Option<&EffectAsset>,
+    localizer: &Localizer,
+) {
+    let entries = effect_clip_parameter_entries(clip, source);
+    spawn_read_only_card(
+        parent,
+        localizer.text("inspector-instance-parameters"),
+        |card| {
+            if entries.is_empty() {
+                card.spawn_empty().apply_scene(label_dim(
+                    localizer.text("inspector-instance-parameters-empty"),
+                ));
+                return;
+            }
+            for entry in &entries {
+                spawn_effect_clip_parameter_row(card, clip.id, entry, localizer);
+            }
+        },
+    );
+}
+
+fn spawn_effect_clip_parameter_row(
+    parent: &mut ChildSpawnerCommands,
+    clip: EffectClipId,
+    entry: &EffectClipParameterEntry,
+    localizer: &Localizer,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            padding: UiRect::vertical(Val::Px(3.0)),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
+            ..default()
+        })
+        .with_children(|column| {
+            column
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    min_height: Val::Px(27.0),
+                    min_width: Val::Px(0.0),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(5.0),
+                    ..default()
+                })
+                .with_children(|row| {
+                    row.spawn((
+                        Text::new(&entry.name),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Node {
+                            width: Val::Px(92.0),
+                            flex_shrink: 0.0,
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                    ));
+                    row.spawn(Node {
+                        flex_grow: 1.0,
+                        min_width: Val::Px(0.0),
+                        column_gap: Val::Px(4.0),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    })
+                    .with_children(|controls| {
+                        if entry.issue.is_none() {
+                            spawn_effect_clip_parameter_control(
+                                controls,
+                                clip,
+                                entry.id,
+                                &entry.name,
+                                &entry.value,
+                            );
+                        } else {
+                            controls
+                                .spawn_empty()
+                                .apply_scene(label_dim(format_value(entry.value.clone())));
+                        }
+                    });
+                    if entry.overridden {
+                        row.spawn((
+                            Text::new(localizer.text("inspector-parameter-overridden")),
+                            TextFont {
+                                font_size: FontSize::Px(8.0),
+                                ..default()
+                            },
+                            TextColor(theme::ACCENT),
+                            EffectClipParameterOverrideIndicator(entry.id),
+                            Pickable::IGNORE,
+                        ));
+                        let reset = mini_button(
+                            row,
+                            "↺",
+                            InspectorAction::ResetEffectClipParameter {
+                                clip,
+                                parameter: entry.id,
+                            },
+                        );
+                        row.commands().entity(reset).insert((
+                            EditorTooltip::description(localizer.text("inspector-reset-to-source")),
+                            AccessibleLabel(localizer.text("inspector-reset-to-source")),
+                        ));
+                    }
+                });
+            if let Some(issue) = entry.issue {
+                column.spawn((
+                    Text::new(effect_clip_parameter_issue_text(localizer, issue)),
+                    TextFont {
+                        font_size: FontSize::Px(8.0),
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.94, 0.55, 0.27)),
+                    EffectClipParameterDiagnostic(entry.id),
+                    Pickable::IGNORE,
+                ));
+            }
+        });
+}
+
+fn spawn_effect_clip_parameter_control(
+    parent: &mut ChildSpawnerCommands,
+    clip: EffectClipId,
+    parameter: ParameterId,
+    name: &str,
+    value: &Value,
+) {
+    match value {
+        Value::Bool(value) => {
+            let mut checkbox = parent.spawn_empty();
+            checkbox.apply_scene(ui_shell::feathers_checkbox()).insert((
+                EffectClipParameterToggleControl {
+                    clip,
+                    parameter,
+                    value: *value,
+                },
+                AccessibleLabel(name.to_owned()),
+            ));
+            if *value {
+                checkbox.insert(Checked);
+            }
+        }
+        Value::U32(_) => {
+            parent
+                .spawn_empty()
+                .apply_scene(ui_shell::feathers_integer_input())
+                .insert((
+                    EffectClipParameterNumberControl {
+                        clip,
+                        parameter,
+                        value: value.clone(),
+                        component: 0,
+                    },
+                    AccessibleLabel(name.to_owned()),
+                ));
+        }
+        Value::Scalar(_) => {
+            spawn_effect_clip_parameter_scalar_input(parent, clip, parameter, name, value, "", 0)
+        }
+        Value::Vec2(_) => {
+            for (axis, component) in [("X", 0), ("Y", 1)] {
+                spawn_effect_clip_parameter_scalar_input(
+                    parent, clip, parameter, name, value, axis, component,
+                );
+            }
+        }
+        Value::Vec3(_) => {
+            for (axis, component) in [("X", 0), ("Y", 1), ("Z", 2)] {
+                spawn_effect_clip_parameter_scalar_input(
+                    parent, clip, parameter, name, value, axis, component,
+                );
+            }
+        }
+        Value::Vec4(_) => {
+            for (axis, component) in [("X", 0), ("Y", 1), ("Z", 2), ("W", 3)] {
+                spawn_effect_clip_parameter_scalar_input(
+                    parent, clip, parameter, name, value, axis, component,
+                );
+            }
+        }
+        Value::Range(_) => {
+            for (axis, component) in [("MIN", 0), ("MAX", 1)] {
+                spawn_effect_clip_parameter_scalar_input(
+                    parent, clip, parameter, name, value, axis, component,
+                );
+            }
+        }
+        Value::Text(value) => {
+            spawn_text_input(
+                parent,
+                value,
+                name,
+                EffectClipParameterTextControl {
+                    clip,
+                    parameter,
+                    value: value.clone(),
+                },
+            );
+        }
+        _ => {
+            parent
+                .spawn_empty()
+                .apply_scene(label_dim(format_value(value.clone())));
+        }
+    }
+}
+
+fn spawn_effect_clip_parameter_scalar_input(
+    parent: &mut ChildSpawnerCommands,
+    clip: EffectClipId,
+    parameter: ParameterId,
+    name: &str,
+    value: &Value,
+    axis: &'static str,
+    component: u8,
+) {
+    parent
+        .spawn(Node {
+            flex_grow: 1.0,
+            flex_basis: Val::Px(0.0),
+            min_width: Val::Px(44.0),
+            ..default()
+        })
+        .with_children(|wrapper| {
+            let mut input = wrapper.spawn_empty();
+            if axis.is_empty() {
+                input.apply_scene(ui_shell::feathers_scalar_input());
+            } else {
+                let color = match axis {
+                    "X" | "MIN" => tokens::TEXT_INPUT_X_AXIS,
+                    "Y" | "MAX" => tokens::TEXT_INPUT_Y_AXIS,
+                    "Z" => tokens::TEXT_INPUT_Z_AXIS,
+                    _ => tokens::TEXT_INPUT_BG,
+                };
+                input.apply_scene(ui_shell::feathers_labeled_scalar_input(axis, color));
+            }
+            input.insert((
+                EffectClipParameterNumberControl {
+                    clip,
+                    parameter,
+                    value: value.clone(),
+                    component,
+                },
+                AccessibleLabel(if axis.is_empty() {
+                    name.to_owned()
+                } else {
+                    format!("{name} {axis}")
+                }),
+            ));
+        });
+}
+
+fn effect_clip_parameter_issue_text(
+    localizer: &Localizer,
+    issue: EffectClipParameterIssue,
+) -> String {
+    match issue {
+        EffectClipParameterIssue::Missing => localizer.text("inspector-parameter-override-missing"),
+        EffectClipParameterIssue::Hidden => localizer.text("inspector-parameter-override-hidden"),
+        EffectClipParameterIssue::TypeMismatch { expected, actual } => {
+            let mut args = FluentArgs::new();
+            args.set("expected", format!("{expected:?}"));
+            args.set("actual", format!("{actual:?}"));
+            localizer.text_with("inspector-parameter-override-type-mismatch", &args)
+        }
+        EffectClipParameterIssue::SourceUnavailable => {
+            localizer.text("inspector-parameter-override-source-unavailable")
+        }
+    }
+}
+
 fn spawn_effect_clip_inspector(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
@@ -3552,6 +4190,7 @@ fn spawn_effect_clip_inspector(
             );
         });
         spawn_effect_clip_transform_controls(stack, clip.id);
+        spawn_effect_clip_instance_parameters(stack, clip, source.as_ref(), localizer);
         if let Some(error) = dependency_error.as_deref() {
             spawn_effect_clip_repair(stack, session, catalog, repair, localizer, clip, error);
         }
@@ -6150,6 +6789,34 @@ struct EffectClipNumberControl {
     clip: EffectClipId,
     control: EmitterNumberControl,
 }
+
+#[derive(Component, Debug, Clone)]
+struct EffectClipParameterNumberControl {
+    clip: EffectClipId,
+    parameter: ParameterId,
+    value: Value,
+    component: u8,
+}
+
+#[derive(Component, Debug, Clone)]
+struct EffectClipParameterTextControl {
+    clip: EffectClipId,
+    parameter: ParameterId,
+    value: String,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct EffectClipParameterToggleControl {
+    clip: EffectClipId,
+    parameter: ParameterId,
+    value: bool,
+}
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+struct EffectClipParameterOverrideIndicator(ParameterId);
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+struct EffectClipParameterDiagnostic(ParameterId);
 
 #[derive(Component, Debug, Clone, Copy)]
 enum DocumentTextControl {
