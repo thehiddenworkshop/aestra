@@ -321,6 +321,250 @@ impl ProjectAssetIndex {
     pub fn refresh(&mut self) {
         *self = Self::scan(self.root.clone());
     }
+
+    /// Renames one resolvable effect source and its authored display name.
+    ///
+    /// The persisted [`EffectId`] is left untouched, so every existing [`EffectAssetRef`] keeps
+    /// resolving after the source filename changes.
+    pub fn rename_effect_source(
+        &mut self,
+        source: ProjectSourceId,
+        new_name: &str,
+    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        let entry = self.effect_source_for_operation(source)?;
+        let reference = entry
+            .reference
+            .expect("a resolvable effect source has a semantic reference");
+        let new_name = new_name.trim();
+        let Some(stem) = effect_source_stem(new_name) else {
+            return Err(ProjectAssetOperationError::InvalidName);
+        };
+        let Some(parent) = entry.path.parent() else {
+            return Err(ProjectAssetOperationError::InvalidSource {
+                path: entry.path.clone(),
+            });
+        };
+        let destination = parent.join(format!("{stem}.aestra.ron"));
+        let same_file = destination.exists()
+            && fs::canonicalize(&entry.path).ok() == fs::canonicalize(&destination).ok();
+        let moved = destination != entry.path && !same_file;
+        if destination.exists() && !same_file {
+            return Err(ProjectAssetOperationError::DestinationExists { path: destination });
+        }
+
+        let mut effect = EffectAsset::load_ron(&entry.path).map_err(|error| {
+            ProjectAssetOperationError::Asset {
+                path: entry.path.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        if effect.id != reference.id {
+            return Err(ProjectAssetOperationError::IdentityChanged {
+                reference,
+                path: entry.path,
+            });
+        }
+
+        if moved {
+            fs::rename(&entry.path, &destination).map_err(|error| {
+                ProjectAssetOperationError::FileSystem {
+                    operation: "rename",
+                    path: entry.path.clone(),
+                    message: error.to_string(),
+                }
+            })?;
+        }
+        effect.name = new_name.to_owned();
+        if let Err(error) = effect.save_ron(&destination) {
+            let rollback = moved
+                .then(|| fs::rename(&destination, &entry.path))
+                .and_then(Result::err)
+                .map(|error| format!("; restoring the original source also failed: {error}"))
+                .unwrap_or_default();
+            return Err(ProjectAssetOperationError::Asset {
+                path: destination,
+                message: format!("{error}{rollback}"),
+            });
+        }
+
+        self.refresh();
+        self.resolve(reference)
+            .cloned()
+            .map_err(|error| ProjectAssetOperationError::Refresh {
+                reference,
+                message: error.to_string(),
+            })
+    }
+
+    /// Moves one resolvable effect source to another directory inside the indexed root.
+    ///
+    /// Moving outside the project root is rejected because the source would immediately become
+    /// unavailable to all references in this index.
+    pub fn move_effect_source(
+        &mut self,
+        source: ProjectSourceId,
+        destination_directory: impl AsRef<Path>,
+    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        let entry = self.effect_source_for_operation(source)?;
+        let reference = entry
+            .reference
+            .expect("a resolvable effect source has a semantic reference");
+        let destination_directory = destination_directory.as_ref();
+        if !destination_directory.is_dir() {
+            return Err(ProjectAssetOperationError::InvalidDestination {
+                path: destination_directory.to_owned(),
+            });
+        }
+        let root = fs::canonicalize(&self.root).map_err(|error| {
+            ProjectAssetOperationError::FileSystem {
+                operation: "resolve project root",
+                path: self.root.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        let destination_directory = fs::canonicalize(destination_directory).map_err(|error| {
+            ProjectAssetOperationError::FileSystem {
+                operation: "resolve destination",
+                path: destination_directory.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        if !destination_directory.starts_with(&root) {
+            return Err(ProjectAssetOperationError::DestinationOutsideRoot {
+                destination: destination_directory,
+                root,
+            });
+        }
+        let Some(file_name) = entry.path.file_name() else {
+            return Err(ProjectAssetOperationError::InvalidSource {
+                path: entry.path.clone(),
+            });
+        };
+        let destination = destination_directory.join(file_name);
+        if destination.exists() {
+            let source_path = fs::canonicalize(&entry.path).ok();
+            let destination_path = fs::canonicalize(&destination).ok();
+            if source_path == destination_path {
+                return Ok(entry);
+            }
+            return Err(ProjectAssetOperationError::DestinationExists { path: destination });
+        }
+        fs::rename(&entry.path, &destination).map_err(|error| {
+            ProjectAssetOperationError::FileSystem {
+                operation: "move",
+                path: entry.path,
+                message: error.to_string(),
+            }
+        })?;
+
+        self.refresh();
+        self.resolve(reference)
+            .cloned()
+            .map_err(|error| ProjectAssetOperationError::Refresh {
+                reference,
+                message: error.to_string(),
+            })
+    }
+
+    fn effect_source_for_operation(
+        &self,
+        source: ProjectSourceId,
+    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        let entry = self
+            .entry(source)
+            .cloned()
+            .ok_or(ProjectAssetOperationError::SourceMissing { id: source })?;
+        if !entry.status.is_resolvable() || entry.reference.is_none() {
+            return Err(ProjectAssetOperationError::SourceNotResolvable {
+                id: source,
+                path: entry.path,
+            });
+        }
+        Ok(entry)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ProjectAssetOperationError {
+    #[error("project source {id:?} is no longer present in the asset index")]
+    SourceMissing { id: ProjectSourceId },
+    #[error("project source {id:?} at {path} is not a resolvable effect")]
+    SourceNotResolvable { id: ProjectSourceId, path: PathBuf },
+    #[error("effect name must contain at least one letter or number")]
+    InvalidName,
+    #[error("effect source path {path} has no valid parent or filename")]
+    InvalidSource { path: PathBuf },
+    #[error("destination {path} is not an existing directory")]
+    InvalidDestination { path: PathBuf },
+    #[error("destination {destination} is outside the project effect root {root}")]
+    DestinationOutsideRoot { destination: PathBuf, root: PathBuf },
+    #[error("destination source already exists at {path}")]
+    DestinationExists { path: PathBuf },
+    #[error("effect source at {path} changed semantic identity from {reference}")]
+    IdentityChanged {
+        reference: EffectAssetRef,
+        path: PathBuf,
+    },
+    #[error("could not read or save effect source at {path}: {message}")]
+    Asset { path: PathBuf, message: String },
+    #[error("could not {operation} {path}: {message}")]
+    FileSystem {
+        operation: &'static str,
+        path: PathBuf,
+        message: String,
+    },
+    #[error("effect {reference} no longer resolves after the asset operation: {message}")]
+    Refresh {
+        reference: EffectAssetRef,
+        message: String,
+    },
+}
+
+fn effect_source_stem(name: &str) -> Option<String> {
+    let mut stem = String::new();
+    let mut separator_pending = false;
+    for character in name.chars() {
+        if character.is_alphanumeric() {
+            if separator_pending && !stem.is_empty() {
+                stem.push('_');
+            }
+            stem.extend(character.to_lowercase());
+            separator_pending = false;
+        } else {
+            separator_pending = true;
+        }
+    }
+    if stem.is_empty() {
+        return None;
+    }
+    if matches!(
+        stem.as_str(),
+        "con"
+            | "prn"
+            | "aux"
+            | "nul"
+            | "com1"
+            | "com2"
+            | "com3"
+            | "com4"
+            | "com5"
+            | "com6"
+            | "com7"
+            | "com8"
+            | "com9"
+            | "lpt1"
+            | "lpt2"
+            | "lpt3"
+            | "lpt4"
+            | "lpt5"
+            | "lpt6"
+            | "lpt7"
+            | "lpt8"
+            | "lpt9"
+    ) {
+        stem.push_str("_effect");
+    }
+    Some(stem)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

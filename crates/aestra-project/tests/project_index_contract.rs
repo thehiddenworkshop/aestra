@@ -1,7 +1,7 @@
 use aestra_core::{CURRENT_FORMAT_VERSION, EffectAsset, EffectClip, EffectId};
 use aestra_project::{
-    EffectAssetRef, ProjectAssetDiagnosticCode, ProjectAssetIndex, ProjectDependencyDiagnosticCode,
-    ProjectEffectStatus, ResolveEffectError,
+    EffectAssetRef, ProjectAssetDiagnosticCode, ProjectAssetIndex, ProjectAssetOperationError,
+    ProjectDependencyDiagnosticCode, ProjectEffectStatus, ResolveEffectError,
 };
 use std::fs;
 
@@ -33,6 +33,80 @@ fn effect_identity_survives_source_rename_and_move() {
         second.resolve(reference).unwrap().display_name,
         "Stable Effect"
     );
+}
+
+#[test]
+fn indexed_rename_updates_name_and_filename_without_breaking_references() {
+    let temporary = tempfile::tempdir().unwrap();
+    let id = EffectId::from_u128(0xA358);
+    let original = temporary.path().join("original.aestra.ron");
+    write_effect(&original, id, "Original");
+    let mut owner = EffectAsset::new("Owner", 2.0);
+    owner.effect_clips.push(EffectClip::new(id, 0.0, 1.0));
+    let mut index = ProjectAssetIndex::scan(temporary.path());
+    let source = index.effects()[0].id;
+
+    let renamed = index.rename_effect_source(source, "Nova Burst").unwrap();
+
+    assert_eq!(renamed.reference, Some(EffectAssetRef::new(id)));
+    assert_eq!(renamed.display_name, "Nova Burst");
+    assert_eq!(renamed.path.file_name().unwrap(), "nova_burst.aestra.ron");
+    assert!(!original.exists());
+    assert_eq!(
+        index.load_effect(EffectAssetRef::new(id)).unwrap().name,
+        "Nova Burst"
+    );
+    assert!(index.resolve_effect_project(&owner).is_ok());
+}
+
+#[test]
+fn indexed_move_stays_inside_root_and_preserves_reference_identity() {
+    let temporary = tempfile::tempdir().unwrap();
+    let nested = temporary.path().join("nested");
+    fs::create_dir(&nested).unwrap();
+    let id = EffectId::from_u128(0xA359);
+    let original = temporary.path().join("movable.aestra.ron");
+    write_effect(&original, id, "Movable");
+    let mut index = ProjectAssetIndex::scan(temporary.path());
+    let source = index.effects()[0].id;
+
+    let moved = index.move_effect_source(source, &nested).unwrap();
+
+    assert_eq!(moved.reference, Some(EffectAssetRef::new(id)));
+    assert_eq!(moved.path, nested.join("movable.aestra.ron"));
+    assert!(!original.exists());
+    assert_eq!(index.resolve(EffectAssetRef::new(id)).unwrap(), &moved);
+}
+
+#[test]
+fn asset_operations_reject_collisions_and_destinations_outside_the_project() {
+    let temporary = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let original = temporary.path().join("original.aestra.ron");
+    write_effect(&original, EffectId::from_u128(0xA360), "Original");
+    write_effect(
+        &temporary.path().join("occupied.aestra.ron"),
+        EffectId::from_u128(0xA361),
+        "Occupied",
+    );
+    let mut index = ProjectAssetIndex::scan(temporary.path());
+    let source = index
+        .effects()
+        .iter()
+        .find(|entry| entry.display_name == "Original")
+        .unwrap()
+        .id;
+
+    assert!(matches!(
+        index.rename_effect_source(source, "Occupied"),
+        Err(ProjectAssetOperationError::DestinationExists { .. })
+    ));
+    assert!(original.exists());
+    assert!(matches!(
+        index.move_effect_source(source, outside.path()),
+        Err(ProjectAssetOperationError::DestinationOutsideRoot { .. })
+    ));
+    assert!(original.exists());
 }
 
 #[test]

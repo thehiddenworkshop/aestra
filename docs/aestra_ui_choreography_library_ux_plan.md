@@ -2082,13 +2082,14 @@ preview cache identity
 
 This is the semantic boundary between the pre-M6 UX foundation and M6 composition.
 
-Status: the first resolver slice is complete. `aestra-project` owns recursive effect discovery,
+Status: the core lifecycle slice is complete. `aestra-project` owns recursive effect discovery,
 persisted-`EffectId` resolution for typed `EffectAssetRef` values, deterministic source rows, and structured
 missing/duplicate/invalid/unsupported/unavailable outcomes. The Library consumes this index and no
-longer treats its path-derived row key as semantic effect identity. Transitive dependency resolution
-and cycle reporting are complete. Usage graphs,
-rename/move commands, repair UI, automatic file watching, and preview-cache identity remain in Phase D; the
-EffectClip authoring workflow remains Phase F.
+longer treats its path-derived row key as semantic effect identity. Transitive dependency resolution,
+cycle reporting, missing-reference repair, and guarded Library rename/move commands are complete.
+Rename updates both the authored name and source filename, while move remains inside the indexed project
+root; neither operation changes the persisted effect identity, so existing clips continue to resolve.
+Usage graphs, automatic file watching, and preview-cache identity remain in Phase D.
 
 ## Phase E — Minimal reusable Effect composition
 
@@ -2316,7 +2317,7 @@ all workspace presets
 
 ## M6 reusable-composition acceptance
 
-- [ ] Reusable Effect Assets are discoverable through the project asset index.
+- [x] Reusable Effect Assets are discoverable through the project asset index.
 - [x] An Effect Asset can be dragged from the Library to the timeline.
 - [x] Dropping it creates a referenced EffectClip, not a destructive copy.
 - [x] Moving an EffectClip changes its semantic start time.
@@ -2326,9 +2327,9 @@ all workspace presets
 - [x] The referenced effect resolves, compiles, runs, seeks, and restarts deterministically.
 - [x] An EffectClip exposes its resolved source and timing window in the Inspector.
 - [x] An EffectClip exposes an editable instance transform that affects the complete referenced effect.
-- [ ] Missing references identify the unresolved asset and offer a repair path.
+- [x] Missing references identify the unresolved asset and offer a repair path.
 - [x] Effect reference cycles are rejected with clear diagnostics.
-- [ ] Moving or renaming a project asset through the Library preserves valid references.
+- [x] Moving or renaming a project asset through the Library preserves valid references.
 - [ ] Existing emitter/module editing remains functional.
 - [ ] Existing preview/runtime behavior remains functional.
 - [ ] Existing direct-seek/stateless behavior is not regressed.

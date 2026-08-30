@@ -4,8 +4,8 @@ use crate::*;
 use aestra_bevy::{Diagnostic, EffectClipId, ValidationReport};
 use aestra_compiler::{EffectCompiler, ProjectCompileError};
 use aestra_project::{
-    ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectDependencyDiagnosticCode,
-    ProjectEffectEntry, ProjectEffectStatus,
+    ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectAssetOperationError,
+    ProjectDependencyDiagnosticCode, ProjectEffectEntry, ProjectEffectStatus,
 };
 use aestra_runtime::CompiledEffectProject;
 #[cfg(test)]
@@ -16,9 +16,9 @@ use bevy::{
     ui_widgets::Activate,
     window::SystemCursorIcon,
 };
-use std::path::Path;
 #[cfg(test)]
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
+use std::{fs, path::Path};
 
 const DEFAULT_PROJECT_EFFECT_ROOT: &str = "assets/effects";
 
@@ -35,16 +35,25 @@ impl Plugin for EditorLibraryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ProjectEffectCatalog>()
             .init_resource::<LibraryState>()
+            .init_resource::<LibraryAssetOperationState>()
             .add_observer(queue_library_action_activation)
             .add_observer(activate_library_list_entry)
             .add_observer(execute_library_action)
+            .add_observer(update_library_rename_draft)
+            .add_observer(resolve_library_asset_operation)
             .add_observer(update_library_query)
             .add_observer(begin_project_effect_drag)
             .add_observer(update_project_effect_drag)
             .add_observer(end_project_effect_drag)
             .add_systems(
                 Update,
-                handle_library_action_buttons.in_set(LibrarySet::Actions),
+                (
+                    dismiss_library_asset_operation_with_escape,
+                    handle_library_action_buttons,
+                    sync_library_asset_operation_overlay,
+                )
+                    .chain()
+                    .in_set(LibrarySet::Actions),
             )
             .add_systems(Update, sync_library_filtering.in_set(LibrarySet::Sync));
     }
@@ -70,6 +79,10 @@ impl ProjectEffectCatalog {
 
     pub(crate) fn entries(&self) -> &[ProjectEffectEntry] {
         self.index.effects()
+    }
+
+    pub(crate) fn root(&self) -> &Path {
+        self.index.root()
     }
 
     pub(crate) fn entry(&self, id: ProjectEffectEntryId) -> Option<&ProjectEffectEntry> {
@@ -189,6 +202,22 @@ impl ProjectEffectCatalog {
         self.index.availability()
     }
 
+    fn rename_effect_source(
+        &mut self,
+        source: ProjectEffectEntryId,
+        name: &str,
+    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        self.index.rename_effect_source(source, name)
+    }
+
+    fn move_effect_source(
+        &mut self,
+        source: ProjectEffectEntryId,
+        destination: &Path,
+    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        self.index.move_effect_source(source, destination)
+    }
+
     #[cfg(test)]
     pub(crate) fn from_entries(entries: Vec<ProjectEffectEntry>) -> Self {
         Self {
@@ -258,6 +287,252 @@ impl LibraryState {
 pub(crate) enum LibraryAction {
     AddSpriteMaterial,
     AddGridFlipbook,
+    RenameProjectEffect(ProjectEffectEntryId),
+    MoveProjectEffect(ProjectEffectEntryId),
+}
+
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct LibraryAssetOperationState {
+    rename: Option<LibraryRenameState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LibraryRenameState {
+    source: ProjectEffectEntryId,
+    draft: String,
+    error: Option<String>,
+}
+
+impl LibraryAssetOperationState {
+    pub(crate) fn is_open(&self) -> bool {
+        self.rename.is_some()
+    }
+}
+
+#[derive(Component)]
+struct LibraryAssetOperationOverlay;
+
+#[derive(Component)]
+struct LibraryRenameInput;
+
+#[derive(Component)]
+struct LibraryRenameError;
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+enum LibraryAssetOperationAction {
+    ConfirmRename,
+    Cancel,
+}
+
+pub(crate) fn spawn_library_asset_operation_overlay(
+    parent: &mut ChildSpawnerCommands,
+    state: &LibraryAssetOperationState,
+    localizer: &Localizer,
+) {
+    let rename = state.rename.as_ref();
+    parent
+        .spawn((
+            LibraryAssetOperationOverlay,
+            GlobalZIndex(310),
+            Pickable {
+                should_block_lower: true,
+                is_hoverable: true,
+            },
+            Node {
+                display: if rename.is_some() {
+                    Display::Flex
+                } else {
+                    Display::None
+                },
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.005, 0.007, 0.014, 0.82)),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        width: Val::Px(440.0),
+                        max_width: Val::Percent(92.0),
+                        padding: UiRect::all(Val::Px(22.0)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(12.0),
+                        border: UiRect::all(Val::Px(1.0)),
+                        border_radius: BorderRadius::all(Val::Px(7.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme::PANEL),
+                    BorderColor::all(theme::BORDER_BRIGHT),
+                ))
+                .with_children(|dialog| {
+                    dialog.spawn((
+                        Text::new(localizer.text("library-rename-dialog-title")),
+                        TextFont {
+                            font_size: FontSize::Px(17.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Pickable::IGNORE,
+                    ));
+                    dialog.spawn((
+                        Text::new(localizer.text("library-rename-dialog-description")),
+                        TextFont {
+                            font_size: FontSize::Px(11.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                        Pickable::IGNORE,
+                    ));
+                    let input = spawn_text_input(
+                        dialog,
+                        rename.map_or("", |rename| rename.draft.as_str()),
+                        &localizer.text("library-rename-input"),
+                        LibraryRenameInput,
+                    );
+                    dialog.commands().entity(input).insert(Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(32.0),
+                        ..default()
+                    });
+                    dialog.spawn((
+                        LibraryRenameError,
+                        Text::new(
+                            rename
+                                .and_then(|rename| rename.error.as_deref())
+                                .unwrap_or_default(),
+                        ),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::PLAYHEAD),
+                        Node {
+                            display: if rename.and_then(|rename| rename.error.as_ref()).is_some() {
+                                Display::Flex
+                            } else {
+                                Display::None
+                            },
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ));
+                    dialog
+                        .spawn(Node {
+                            width: Val::Percent(100.0),
+                            justify_content: JustifyContent::End,
+                            column_gap: Val::Px(8.0),
+                            margin: UiRect::top(Val::Px(6.0)),
+                            ..default()
+                        })
+                        .with_children(|buttons| {
+                            for (message, action) in [
+                                ("common-cancel", LibraryAssetOperationAction::Cancel),
+                                (
+                                    "library-rename-confirm",
+                                    LibraryAssetOperationAction::ConfirmRename,
+                                ),
+                            ] {
+                                let label = localizer.text(message);
+                                buttons
+                                    .spawn_empty()
+                                    .apply_scene(ui_shell::feathers_button())
+                                    .insert((
+                                        action,
+                                        FeathersActionButton,
+                                        AccessibleLabel(label.clone()),
+                                        Node {
+                                            min_width: Val::Px(82.0),
+                                            height: Val::Px(30.0),
+                                            padding: UiRect::horizontal(Val::Px(12.0)),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                    ))
+                                    .with_child((Text::new(label), ThemedText, Pickable::IGNORE));
+                            }
+                        });
+                });
+        });
+}
+
+fn update_library_rename_draft(
+    change: On<ValueChange<String>>,
+    inputs: Query<(), With<LibraryRenameInput>>,
+    mut state: ResMut<LibraryAssetOperationState>,
+) {
+    if !inputs.contains(change.source) {
+        return;
+    }
+    let Some(rename) = state.rename.as_mut() else {
+        return;
+    };
+    rename.draft.clone_from(&change.value);
+    rename.error = None;
+}
+
+fn dismiss_library_asset_operation_with_escape(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<LibraryAssetOperationState>,
+) {
+    if state.is_open() && keys.just_pressed(KeyCode::Escape) {
+        state.rename = None;
+    }
+}
+
+fn sync_library_asset_operation_overlay(
+    state: Res<LibraryAssetOperationState>,
+    mut overlays: Query<
+        &mut Node,
+        (
+            With<LibraryAssetOperationOverlay>,
+            Without<LibraryRenameError>,
+        ),
+    >,
+    inputs: Query<Entity, With<LibraryRenameInput>>,
+    mut editable_texts: Query<(&ChildOf, &mut EditableText)>,
+    mut errors: Query<
+        (&mut Text, &mut Node),
+        (
+            With<LibraryRenameError>,
+            Without<LibraryAssetOperationOverlay>,
+        ),
+    >,
+) {
+    if !state.is_changed() {
+        return;
+    }
+    for mut node in &mut overlays {
+        node.display = if state.is_open() {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    let Some(rename) = state.rename.as_ref() else {
+        return;
+    };
+    for (parent, mut text) in &mut editable_texts {
+        if inputs.contains(parent.parent()) && text.value() != rename.draft.as_str() {
+            text.editor_mut().set_text(&rename.draft);
+            text.queue_edit(TextEdit::TextEnd(false));
+        }
+    }
+    for (mut text, mut node) in &mut errors {
+        text.0 = rename.error.clone().unwrap_or_default();
+        node.display = if rename.error.is_some() {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
 }
 
 #[derive(Component)]
@@ -631,6 +906,27 @@ fn spawn_project_effects(
                 .commands()
                 .entity(row)
                 .insert(EntityCursor::System(SystemCursorIcon::Grab));
+            let mut args = FluentArgs::new();
+            args.set("name", entry.display_name.as_str());
+            let accessible_label = localizer.text_with("library-more-effect-actions", &args);
+            panel.commands().entity(row).with_children(|row| {
+                spawn_action_menu(
+                    row,
+                    &accessible_label,
+                    &[
+                        ComboOption {
+                            label: localizer.text("library-rename-effect"),
+                            selected: false,
+                            action: LibraryAction::RenameProjectEffect(entry.id),
+                        },
+                        ComboOption {
+                            label: localizer.text("library-move-effect"),
+                            selected: false,
+                            action: LibraryAction::MoveProjectEffect(entry.id),
+                        },
+                    ],
+                );
+            });
         }
     }
     let catalog_empty = spawn_list_empty_state(
@@ -1050,11 +1346,134 @@ fn handle_library_action_buttons(
     }
 }
 
-fn execute_library_action(action: On<LibraryAction>, mut session: ResMut<EditorSession>) {
+fn execute_library_action(
+    action: On<LibraryAction>,
+    mut session: ResMut<EditorSession>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
+    mut operation: ResMut<LibraryAssetOperationState>,
+    localizer: Res<Localizer>,
+) {
     match *action {
         LibraryAction::AddSpriteMaterial => session.add_sprite_material(),
         LibraryAction::AddGridFlipbook => session.add_grid_flipbook(),
+        LibraryAction::RenameProjectEffect(source) => {
+            let Some(entry) = catalog.entry(source) else {
+                session.status = localizer.text("library-status-source-missing");
+                return;
+            };
+            let is_current = session
+                .source_path
+                .as_deref()
+                .is_some_and(|path| paths_refer_to_same_source(path, &entry.path));
+            if is_current && session.dirty {
+                session.status = localizer.text("library-status-save-before-rename");
+                return;
+            }
+            operation.rename = Some(LibraryRenameState {
+                source,
+                draft: entry.display_name.clone(),
+                error: None,
+            });
+        }
+        LibraryAction::MoveProjectEffect(source) => {
+            let Some(entry) = catalog.entry(source).cloned() else {
+                session.status = localizer.text("library-status-source-missing");
+                return;
+            };
+            let is_current = session
+                .source_path
+                .as_deref()
+                .is_some_and(|path| paths_refer_to_same_source(path, &entry.path));
+            let Some(destination) = rfd::FileDialog::new()
+                .set_title(localizer.text("library-move-dialog-title"))
+                .set_directory(catalog.root())
+                .pick_folder()
+            else {
+                return;
+            };
+            match catalog.move_effect_source(source, &destination) {
+                Ok(moved) => {
+                    if is_current {
+                        session.source_path = Some(moved.path.clone());
+                    }
+                    session.ui_revision += 1;
+                    let mut args = FluentArgs::new();
+                    args.set("path", moved.path.display().to_string());
+                    session.status = localizer.text_with("library-status-effect-moved", &args);
+                }
+                Err(error) => {
+                    let mut args = FluentArgs::new();
+                    args.set("message", error.to_string());
+                    session.status = localizer.text_with("library-status-operation-failed", &args);
+                }
+            }
+        }
     }
+}
+
+fn resolve_library_asset_operation(
+    activate: On<Activate>,
+    actions: Query<&LibraryAssetOperationAction>,
+    mut state: ResMut<LibraryAssetOperationState>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
+    mut session: ResMut<EditorSession>,
+    localizer: Res<Localizer>,
+) {
+    let Ok(action) = actions.get(activate.entity) else {
+        return;
+    };
+    if *action == LibraryAssetOperationAction::Cancel {
+        state.rename = None;
+        return;
+    }
+    let Some(rename) = state.rename.clone() else {
+        return;
+    };
+    let Some(entry) = catalog.entry(rename.source).cloned() else {
+        if let Some(rename) = state.rename.as_mut() {
+            rename.error = Some(localizer.text("library-status-source-missing"));
+        }
+        return;
+    };
+    let is_current = session
+        .source_path
+        .as_deref()
+        .is_some_and(|path| paths_refer_to_same_source(path, &entry.path));
+    if is_current && session.dirty {
+        if let Some(rename) = state.rename.as_mut() {
+            rename.error = Some(localizer.text("library-status-save-before-rename"));
+        }
+        return;
+    }
+    match catalog.rename_effect_source(rename.source, &rename.draft) {
+        Ok(renamed) => {
+            if is_current {
+                session.accept_external_source_rename(
+                    renamed.path.clone(),
+                    renamed.display_name.clone(),
+                );
+            } else {
+                session.ui_revision += 1;
+            }
+            let mut args = FluentArgs::new();
+            args.set("name", renamed.display_name.as_str());
+            session.status = localizer.text_with("library-status-effect-renamed", &args);
+            state.rename = None;
+        }
+        Err(error) => {
+            if let Some(rename) = state.rename.as_mut() {
+                rename.error = Some(error.to_string());
+            }
+        }
+    }
+}
+
+fn paths_refer_to_same_source(left: &Path, right: &Path) -> bool {
+    left == right
+        || fs::canonicalize(left)
+            .ok()
+            .zip(fs::canonicalize(right).ok())
+            .is_some_and(|(left, right)| left == right)
 }
 
 #[cfg(test)]
@@ -1819,6 +2238,97 @@ mod tests {
                 .len(),
             initial_materials + 1
         );
+    }
+
+    #[test]
+    fn library_rename_keeps_the_open_document_clean_and_updates_its_source_path() {
+        let temporary = tempfile::tempdir().unwrap();
+        let original = temporary.path().join("original.aestra.ron");
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &original);
+        session.effect.save_ron(&original).unwrap();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let source = catalog.entries()[0].id;
+        let reference = catalog.entries()[0].reference.unwrap();
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .init_resource::<CurvesState>()
+            .init_resource::<WorkspaceLayout>()
+            .init_resource::<MenuState>()
+            .init_resource::<ModulePaletteState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_plugins(EditorLibraryPlugin);
+
+        app.world_mut()
+            .trigger(LibraryAction::RenameProjectEffect(source));
+        app.world_mut()
+            .resource_mut::<LibraryAssetOperationState>()
+            .rename
+            .as_mut()
+            .unwrap()
+            .draft = "Renamed Effect".into();
+        let confirm = app
+            .world_mut()
+            .spawn(LibraryAssetOperationAction::ConfirmRename)
+            .id();
+        app.world_mut().trigger(Activate { entity: confirm });
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.name, "Renamed Effect");
+        assert_eq!(
+            session.source_path.as_deref().unwrap().file_name().unwrap(),
+            "renamed_effect.aestra.ron"
+        );
+        assert!(!session.dirty);
+        assert!(!original.exists());
+        let catalog = app.world().resource::<ProjectEffectCatalog>();
+        assert_eq!(
+            catalog.openable_path(reference),
+            session.source_path.as_deref()
+        );
+        assert!(
+            !app.world()
+                .resource::<LibraryAssetOperationState>()
+                .is_open()
+        );
+    }
+
+    #[test]
+    fn library_rename_requires_saving_when_the_source_is_open_and_dirty() {
+        let temporary = tempfile::tempdir().unwrap();
+        let original = temporary.path().join("original.aestra.ron");
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &original);
+        session.effect.save_ron(&original).unwrap();
+        session.dirty = true;
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let source = catalog.entries()[0].id;
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .init_resource::<CurvesState>()
+            .init_resource::<WorkspaceLayout>()
+            .init_resource::<MenuState>()
+            .init_resource::<ModulePaletteState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_plugins(EditorLibraryPlugin);
+
+        app.world_mut()
+            .trigger(LibraryAction::RenameProjectEffect(source));
+
+        assert!(
+            !app.world()
+                .resource::<LibraryAssetOperationState>()
+                .is_open()
+        );
+        assert!(
+            app.world()
+                .resource::<EditorSession>()
+                .status
+                .contains("Save")
+        );
+        assert!(original.exists());
     }
 
     #[test]

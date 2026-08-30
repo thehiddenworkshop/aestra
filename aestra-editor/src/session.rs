@@ -487,6 +487,22 @@ impl EditorSession {
         Ok(())
     }
 
+    /// Accepts a successful external rename of the clean source currently open in the editor.
+    ///
+    /// Library asset operations save the renamed source atomically before updating the session,
+    /// so this only realigns the in-memory document identity and clean baseline.
+    pub(crate) fn accept_external_source_rename(
+        &mut self,
+        path: impl Into<PathBuf>,
+        name: impl Into<String>,
+    ) {
+        self.effect.name = name.into();
+        self.source_path = Some(path.into());
+        self.saved_effect = Some(self.effect.clone());
+        self.update_dirty_state();
+        self.ui_revision += 1;
+    }
+
     pub fn execute(
         &mut self,
         label: impl Into<String>,

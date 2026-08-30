@@ -109,7 +109,10 @@ pub(crate) use history::HistoryAction;
 use history::{EditorHistoryPlugin, HistorySet};
 use inspector::*;
 use library::{EditorLibraryPlugin, LibrarySet};
-pub(crate) use library::{LibraryState, ProjectEffectCatalog, spawn_library};
+pub(crate) use library::{
+    LibraryAssetOperationState, LibraryState, ProjectEffectCatalog, spawn_library,
+    spawn_library_asset_operation_overlay,
+};
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
 pub(crate) use menus::{DocumentMenuLabel, MenuState, TabContextMenu};
