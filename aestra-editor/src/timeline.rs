@@ -256,7 +256,7 @@ fn handle_timeline_action_buttons(
         if menu.tab_context.take().is_some() {
             session.ui_revision += 1;
         }
-        commands.trigger(action.clone());
+        commands.trigger(*action);
     }
 }
 

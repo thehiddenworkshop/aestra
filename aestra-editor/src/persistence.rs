@@ -571,16 +571,16 @@ fn execute_protected_document_action(
             }
         }
         DocumentAction::OpenCatalog(id) => {
-            if let Some(path) = catalog.openable_path(id) {
-                if open_effect_path(session, path, settings, localizer) {
-                    if let Some(navigation) = navigation.as_deref_mut() {
-                        navigation.clear();
-                    }
-                    if let Some(timeline) = timeline.as_deref_mut() {
-                        *timeline = TimelineState::framed(session.playback_duration());
-                    }
-                    workspace.clear();
+            if let Some(path) = catalog.openable_path(id)
+                && open_effect_path(session, path, settings, localizer)
+            {
+                if let Some(navigation) = navigation.as_deref_mut() {
+                    navigation.clear();
                 }
+                if let Some(timeline) = timeline.as_deref_mut() {
+                    *timeline = TimelineState::framed(session.playback_duration());
+                }
+                workspace.clear();
             }
         }
         DocumentAction::OpenSource(id) => {
@@ -629,9 +629,7 @@ fn execute_protected_document_action(
             );
         }
         DocumentAction::NavigateSourceAncestor(depth) => {
-            let (Some(timeline), Some(navigation)) =
-                (timeline.as_deref_mut(), navigation.as_deref_mut())
-            else {
+            let (Some(timeline), Some(navigation)) = (timeline, navigation) else {
                 return;
             };
             return_to_source_at(
@@ -1893,9 +1891,11 @@ mod tests {
     #[test]
     fn document_action_activation_dispatches_directly_and_closes_the_menu() {
         let mut app = App::new();
-        let mut menu = MenuState::default();
-        menu.open = Some(MenuKind::File);
-        menu.panels_open = true;
+        let menu = MenuState {
+            open: Some(MenuKind::File),
+            panels_open: true,
+            ..default()
+        };
         app.insert_resource(menu)
             .insert_resource(EditorSession::from_embedded_sample(
                 EFFECT_SOURCE,

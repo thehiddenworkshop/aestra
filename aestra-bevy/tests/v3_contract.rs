@@ -1,47 +1,25 @@
 use aestra_bevy::{
-    AssetError, EffectAsset, EffectCompiler, EffectInstance, EffectProfile, ParticleSample,
-    ProfileValue,
+    AssetDefinition, AssetError, AssetId, CurveId, EffectAsset, EffectCompiler, EffectId,
+    EffectInstance, EffectProfile, Emitter, EmitterId, GradientId, MaterialProperties, ModuleId,
+    ModuleParameters, ParticleSample, ProfileValue, RendererId,
 };
 use std::sync::Arc;
 
-const V3_REFERENCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
-const TEXTURED_REFERENCE: &str = include_str!("../../assets/effects/ember_sigil.aestra.ron");
-
 #[test]
-fn bundled_v3_asset_preserves_its_public_shape() {
-    let effect = EffectAsset::from_ron(V3_REFERENCE).expect("v3 reference asset must load");
+fn immutable_v3_contract_preserves_its_public_shape() {
+    let effect = contract_effect();
 
     assert_eq!(effect.format_version, 3);
-    assert_eq!(
-        effect.id.to_string(),
-        "8f245a4d-4c55-4d8b-a404-09a20cf67a01"
-    );
-    assert_eq!(effect.emitters.len(), 4);
-    assert_eq!(effect.events.len(), 2);
-    assert_eq!(
-        effect
-            .emitters
-            .iter()
-            .map(|emitter| emitter.name.as_str())
-            .collect::<Vec<_>>(),
-        [
-            "Prism Core",
-            "Spectrum Shards",
-            "Floating Dust",
-            "Bloom Ring",
-        ]
-    );
-    assert!(
-        effect
-            .emitters
-            .iter()
-            .all(|emitter| { emitter.modules.len() == 5 && !emitter.renderers.is_empty() })
-    );
+    assert_eq!(effect.id, EffectId::from_u128(1));
+    assert_eq!(effect.emitters.len(), 1);
+    assert_eq!(effect.emitters[0].name, "Contract Emitter");
+    assert_eq!(effect.emitters[0].modules.len(), 5);
+    assert_eq!(effect.emitters[0].renderers.len(), 1);
 }
 
 #[test]
-fn bundled_textured_effect_compiles_with_multiple_renderer_paths() {
-    let effect = EffectAsset::from_ron(TEXTURED_REFERENCE).unwrap();
+fn immutable_textured_contract_compiles_with_a_texture_path() {
+    let effect = textured_contract_effect();
     let compiled = EffectCompiler::default().compile(&effect).unwrap();
 
     assert_eq!(compiled.assets.len(), 1);
@@ -60,7 +38,11 @@ fn bundled_textured_effect_compiles_with_multiple_renderer_paths() {
 
 #[test]
 fn strict_loading_reports_that_format_v2_requires_a_migration_path() {
-    let source = V3_REFERENCE.replacen("format_version: 3", "format_version: 2", 1);
+    let source = contract_effect().to_pretty_ron().unwrap().replacen(
+        "format_version: 3",
+        "format_version: 2",
+        1,
+    );
     let error = EffectAsset::from_ron(&source).expect_err("format v2 must be rejected");
     assert!(matches!(
         error,
@@ -72,31 +54,29 @@ fn strict_loading_reports_that_format_v2_requires_a_migration_path() {
 }
 
 #[test]
-fn bundled_v3_asset_has_stable_pretty_serialization() {
-    let effect = EffectAsset::from_ron(V3_REFERENCE).expect("v3 reference asset must load");
-    let serialized = effect
-        .to_pretty_ron()
-        .expect("v3 reference asset must serialize");
+fn immutable_v3_contract_has_stable_pretty_serialization() {
+    let effect = contract_effect();
+    let serialized = effect.to_pretty_ron().expect("v3 contract must serialize");
 
     assert_eq!(
         serialized.len(),
-        23_310,
+        6_001,
         "update only for an intentional format change"
     );
     assert_eq!(
         fnv1a64(serialized.as_bytes()),
-        0x6fad_5d0e_7a4d_d7b2,
+        0x0ac7_aa40_6902_089c,
         "update only for an intentional format change"
     );
     assert_eq!(
-        EffectAsset::from_ron(&serialized).expect("serialized v3 reference must reload"),
+        EffectAsset::from_ron(&serialized).expect("serialized v3 contract must reload"),
         effect
     );
 }
 
 #[test]
-fn bundled_v3_evaluation_matches_golden_moments() {
-    let effect = EffectAsset::from_ron(V3_REFERENCE).expect("v3 reference asset must load");
+fn immutable_v3_contract_evaluation_matches_golden_moments() {
+    let effect = contract_effect();
     let compiled = EffectCompiler::default()
         .compile(&effect)
         .expect("v3 reference asset must compile");
@@ -112,8 +92,45 @@ fn bundled_v3_evaluation_matches_golden_moments() {
 
     // Git may materialize text fixtures with CRLF on Windows runners. The snapshot contract is
     // about evaluated particle data, not the checkout's line-ending policy.
-    let expected = include_str!("fixtures/v3_prism_bloom.moments").replace("\r\n", "\n");
+    let expected = include_str!("fixtures/v3_contract.moments").replace("\r\n", "\n");
     assert_eq!(actual, expected);
+}
+
+fn contract_effect() -> EffectAsset {
+    let mut effect = EffectAsset::new("V3 Contract", 3.0);
+    effect.id = EffectId::from_u128(1);
+    let mut emitter = Emitter::basic_sprite("Contract Emitter", effect.duration);
+    emitter.id = EmitterId::from_u128(2);
+    for (index, module) in emitter.modules.iter_mut().enumerate() {
+        module.id = ModuleId::from_u128(10 + index as u128);
+        if let ModuleParameters::Appearance {
+            size,
+            opacity,
+            color,
+        } = &mut module.parameters
+        {
+            size.id = CurveId::from_u128(20);
+            opacity.id = CurveId::from_u128(21);
+            color.id = GradientId::from_u128(22);
+        }
+    }
+    emitter.renderers[0].id = RendererId::from_u128(30);
+    effect.emitters.push(emitter);
+    effect
+}
+
+fn textured_contract_effect() -> EffectAsset {
+    let mut effect = contract_effect();
+    effect.name = "Textured V3 Contract".into();
+    let mut texture = AssetDefinition::texture("Contract Texture", "textures/contract.png");
+    texture.id = AssetId::from_u128(40);
+    let MaterialProperties::Sprite {
+        texture: material_texture,
+        ..
+    } = &mut effect.materials[0].properties;
+    *material_texture = Some(texture.id);
+    effect.assets.push(texture);
+    effect
 }
 
 fn snapshot_line(time: f32, emitter_count: usize, samples: &[ParticleSample]) -> String {

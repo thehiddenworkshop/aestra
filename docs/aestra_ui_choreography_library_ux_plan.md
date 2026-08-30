@@ -2184,6 +2184,9 @@ Make Unique
 orphaned/type-changed override diagnostics
 ```
 
+Status: not started. This is the next user-facing M6 feature slice after the composition release
+gate is green.
+
 ## Phase H — Nested effect expansion
 
 Support:
@@ -2195,6 +2198,11 @@ breadcrumbs
 ```
 
 Do not require deep nesting UI in the first iteration if it substantially complicates implementation.
+
+Status: complete for recursive read-only expansion. Nested clip and emitter rows preserve mapped
+ancestor timing, overflow through synchronized scrolling, navigate directly to referenced sources,
+and expose the full source path through reusable breadcrumbs. Source mutation still requires an
+explicit source-navigation action and remains separate from future instance overrides.
 
 ## Phase I — Reusable extraction
 
@@ -2306,17 +2314,17 @@ all workspace presets
 
 ## Pre-M6 UX foundation acceptance
 
-- [ ] The default UI clearly communicates that the timeline is a primary authoring surface.
-- [ ] Project Library content, built-in content, and current-document resources are no longer mixed together.
-- [ ] The timeline track-header tree provides a stable current-document hierarchy.
-- [ ] Existing project effects are searchable and filterable in the Library.
-- [ ] Existing emitter actions remain available from the track hierarchy or its context menus.
-- [ ] Existing timeline move, trim, seek, zoom, pan, and snapping behavior remains functional.
-- [ ] Selection remains synchronized between Timeline, Inspector, Curves, Diagnostics, and Viewport.
-- [ ] Empty, loading, invalid, and unavailable Library states are visually explicit.
-- [ ] Keyboard navigation, accessible labels, and invalid-drop feedback are preserved or improved.
-- [ ] User-resized layouts remain persisted.
-- [ ] No effect-format migration is required for this gate.
+- [x] The default UI clearly communicates that the timeline is a primary authoring surface.
+- [x] Project Library content, built-in content, and current-document resources are no longer mixed together.
+- [x] The timeline track-header tree provides a stable current-document hierarchy.
+- [x] Existing project effects are searchable and filterable in the Library.
+- [x] Existing emitter actions remain available from the track hierarchy or its context menus.
+- [x] Existing timeline move, trim, seek, zoom, pan, and snapping behavior remains functional.
+- [x] Selection remains synchronized between Timeline, Inspector, Curves, Diagnostics, and Viewport.
+- [x] Empty, loading, invalid, and unavailable Library states are visually explicit.
+- [x] Keyboard navigation, accessible labels, and invalid-drop feedback are preserved or improved.
+- [x] User-resized layouts remain persisted.
+- [x] No effect-format migration is required for this gate.
 
 ## M6 reusable-composition acceptance
 
@@ -2333,9 +2341,9 @@ all workspace presets
 - [x] Missing references identify the unresolved asset and offer a repair path.
 - [x] Effect reference cycles are rejected with clear diagnostics.
 - [x] Moving or renaming a project asset through the Library preserves valid references.
-- [ ] Existing emitter/module editing remains functional.
-- [ ] Existing preview/runtime behavior remains functional.
-- [ ] Existing direct-seek/stateless behavior is not regressed.
+- [x] Existing emitter/module editing remains functional.
+- [x] Existing preview/runtime behavior remains functional.
+- [x] Existing direct-seek/stateless behavior is not regressed.
 
 ---
 
@@ -2350,7 +2358,7 @@ After the MVP:
 - [ ] The user can make an instance unique.
 - [ ] The user can add and move named markers.
 - [x] Nested EffectClips can be expanded for read-only source inspection.
-- [ ] Breadcrumb navigation clearly indicates nested source editing.
+- [x] Breadcrumb navigation clearly indicates nested source editing.
 - [ ] Effect markers can be referenced by child clip timing.
 - [ ] Timeline events are supported.
 - [ ] Automation lanes use the same semantic curves as the Curves editor.

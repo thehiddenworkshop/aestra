@@ -2184,9 +2184,11 @@ mod tests {
                 },
             },
         ]);
-        let mut library = LibraryState::default();
-        library.context_effect = Some(valid_id);
-        library.context_menu_position = Vec2::new(19.0, 27.0);
+        let library = LibraryState {
+            context_effect: Some(valid_id),
+            context_menu_position: Vec2::new(19.0, 27.0),
+            ..default()
+        };
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,

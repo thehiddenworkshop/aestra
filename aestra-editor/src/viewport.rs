@@ -2740,12 +2740,18 @@ mod tests {
 
     #[test]
     fn precision_reanchor_keeps_modifier_transitions_continuous() {
-        let mut raw_anchor = EmitterTransform::default();
-        raw_anchor.translation = [10.0, 0.0, 0.0];
-        let mut output_anchor = EmitterTransform::default();
-        output_anchor.translation = [4.0, 0.0, 0.0];
-        let mut raw_current = EmitterTransform::default();
-        raw_current.translation = [20.0, 0.0, 0.0];
+        let raw_anchor = EmitterTransform {
+            translation: [10.0, 0.0, 0.0],
+            ..default()
+        };
+        let output_anchor = EmitterTransform {
+            translation: [4.0, 0.0, 0.0],
+            ..default()
+        };
+        let raw_current = EmitterTransform {
+            translation: [20.0, 0.0, 0.0],
+            ..default()
+        };
 
         let precise = transform_with_drag_precision(
             TransformGizmoMode::Translate,

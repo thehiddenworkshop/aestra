@@ -18,7 +18,7 @@ architecture vision; this file is the shorter delivery plan.
   are implemented. Deterministic image regression with approved references, tolerant
   metrics, and diff reports is implemented. Adapter capability reporting, automatic
   backend selection, particle budgets, and per-effect fallback diagnostics close the milestone.
-- M5 professional authoring workflow: in progress. The editor has a searchable,
+- M5 professional authoring workflow: complete. The editor has a searchable,
   registry-driven stage/module stack, metadata-defined typed property controls,
   undoable module and renderer structure edits, inline compiler diagnostics, and
   dedicated curve/gradient authoring with draggable keys and fine-grained semantic
@@ -94,9 +94,22 @@ architecture vision; this file is the shorter delivery plan.
   diagnostics, project compilation, child-time mapping, deterministic clip seeds, and nested CPU
   reference execution with instance provenance. `aestra-authoring` now provides atomic EffectClip
   create/delete/timing/seed commands, semantic selection and locks, granular diffs, selection
-  repair, and stable undo/redo. Timeline drag/drop, clip presentation and Inspector UI, plus
-  Bevy/GPU child rendering remain, alongside usage graphs, file watching, repair workflows, and
-  preview-cache identity.
+  repair, and stable undo/redo. Timeline drag/drop, clip presentation, trimming, reordering,
+  instance transforms, Inspector UI, recursive read-only expansion, source navigation, and
+  Bevy/GPU child rendering are implemented. Project file watching, guarded rename/move,
+  missing-reference repair, and project-aware preview recompilation are also complete. Instance
+  parameter overrides, Make Unique, usage graphs, reusable extraction, preview-cache identity,
+  markers/events, procedural recipes, mesh/ribbon production paths, renderer sorting, and richer
+  material domains remain.
+
+## M6 composition release gate
+
+The local release gate separates immutable semantic/runtime contract fixtures from the editable
+example effects used by the editor and native-GPU visual workflow. Formatting, all-target workspace
+checks, strict Clippy, and workspace tests must pass together before the next M6 feature slice.
+Intentional changes to Prism Bloom, Ember Sigil, or Plasma Burst are approved through the dedicated
+native-GPU visual workflow rather than by rewriting semantic golden contracts. GPU reference
+approval remains a manual or scheduled self-hosted-runner gate.
 
 ## Stability-hardening milestone
 
