@@ -2263,6 +2263,24 @@ mod tests {
         };
         assert_eq!(context_anchor, (valid_id, Val::Px(19.0), Val::Px(27.0)));
         assert_eq!(marker_count::<ProjectEffectContextMenu>(&mut app), 1);
+        let menu_semantics = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<(
+                Has<bevy::ui_widgets::MenuPopup>,
+                &bevy::ui_widgets::MenuFocusState,
+            ), With<ProjectEffectContextMenu>>();
+            let (popup, focus) = query.single(world).unwrap();
+            (popup, focus.clone())
+        };
+        assert_eq!(
+            menu_semantics,
+            (
+                true,
+                bevy::ui_widgets::MenuFocusState::Opening(
+                    bevy::input_focus::tab_navigation::NavAction::First,
+                ),
+            )
+        );
         for id in [invalid_id, unsupported_id] {
             let status = rows.iter().find(|row| row.0 == id).unwrap();
             assert!(!status.1);

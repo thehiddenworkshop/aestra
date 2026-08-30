@@ -64,7 +64,6 @@ impl Plugin for AestraFeathersPlugin {
                 Update,
                 (
                     list_row::update_keyboard_list_focus_visuals,
-                    context_menu::focus_new_pointer_context_menu,
                     color_picker::sync_color_picker_visuals,
                     number_input::decorate_scrubbable_numbers,
                     scroll::update_scrollbar_visibility,

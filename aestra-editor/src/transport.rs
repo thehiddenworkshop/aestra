@@ -6,6 +6,7 @@ use bevy::ui_widgets::Activate;
 use bevy::{
     feathers::controls::ButtonVariant,
     input::{ButtonState, keyboard::KeyboardInput},
+    input_focus::InputFocus,
     ui::Selected,
 };
 use bevy_resvg::prelude::{SvgColor, UiSvg};
@@ -153,13 +154,19 @@ fn transport_keyboard_input(
     mut keyboard_events: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     palette: Res<ModulePaletteState>,
+    focus: Option<Res<InputFocus>>,
+    menu_items: Query<(), With<bevy::ui_widgets::MenuItem>>,
 ) {
     let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
     let repeated_steps = keyboard_events
         .read()
         .filter_map(|event| repeated_frame_step(event, alt))
         .collect::<Vec<_>>();
-    if palette.open {
+    let menu_item_focused = focus
+        .as_deref()
+        .and_then(InputFocus::get)
+        .is_some_and(|entity| menu_items.contains(entity));
+    if palette.open || menu_item_focused {
         return;
     }
     if keys.just_pressed(KeyCode::Space) {
@@ -561,6 +568,31 @@ mod tests {
         app.update();
 
         assert!(!app.world().resource::<EditorSession>().playing);
+    }
+
+    #[test]
+    fn focused_menu_item_reserves_transport_shortcuts_for_menu_navigation() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let initially_playing = session.playing;
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(ButtonInput::<KeyCode>::default())
+            .init_resource::<ModulePaletteState>()
+            .add_message::<KeyboardInput>()
+            .add_observer(execute_transport_action)
+            .add_systems(Update, transport_keyboard_input);
+        let item = app.world_mut().spawn(bevy::ui_widgets::MenuItem).id();
+        app.insert_resource(InputFocus::from_entity(item));
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Space);
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<EditorSession>().playing,
+            initially_playing
+        );
     }
 
     #[test]

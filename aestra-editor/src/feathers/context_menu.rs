@@ -4,10 +4,13 @@ use super::{button::FeathersActionButton, scenes};
 use crate::theme;
 use bevy::{
     feathers::theme::ThemedText,
-    input_focus::{FocusCause, InputFocus},
+    input_focus::tab_navigation::NavAction,
     prelude::*,
     ui::RelativeCursorPosition,
-    ui_widgets::popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
+    ui_widgets::{
+        MenuFocusState, MenuPopup,
+        popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
+    },
 };
 
 pub(crate) const POINTER_CONTEXT_MENU_WIDTH: f32 = 184.0;
@@ -47,6 +50,8 @@ pub(crate) fn spawn_pointer_context_menu<A: Bundle, M: Bundle>(
                 .spawn((
                     PointerContextMenuSurface,
                     marker,
+                    MenuPopup::default(),
+                    MenuFocusState::Opening(NavAction::First),
                     Popover {
                         positions: vec![
                             PopoverPlacement {
@@ -145,22 +150,6 @@ pub(crate) fn should_dismiss_pointer_context_menu(
     pointer_over_surface: bool,
 ) -> bool {
     open && (escape_pressed || (primary_pressed && !pointer_over_surface))
-}
-
-pub(super) fn focus_new_pointer_context_menu(
-    surfaces: Query<Entity, Added<PointerContextMenuSurface>>,
-    children: Query<&Children>,
-    items: Query<(), With<PointerContextMenuItem>>,
-    mut focus: ResMut<InputFocus>,
-) {
-    let Some(item) = surfaces.iter().find_map(|surface| {
-        children
-            .iter_descendants(surface)
-            .find(|descendant| items.contains(*descendant))
-    }) else {
-        return;
-    };
-    focus.set(item, FocusCause::Navigated);
 }
 
 #[cfg(test)]
