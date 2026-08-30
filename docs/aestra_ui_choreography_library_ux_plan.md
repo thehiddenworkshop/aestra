@@ -2372,7 +2372,7 @@ After the MVP:
 - [x] Orphaned or type-changed overrides produce actionable diagnostics.
 - [x] The user can explicitly edit the source asset.
 - [x] The user can explode an instance into independent local emitters without changing its visible timing or transform.
-- [ ] The user can add and move named markers.
+- [x] The user can add, select, rename, move, and delete named markers with snapping and undo/redo.
 - [x] Nested EffectClips can be expanded for read-only source inspection.
 - [x] Breadcrumb navigation clearly indicates nested source editing.
 - [ ] Effect markers can be referenced by child clip timing.

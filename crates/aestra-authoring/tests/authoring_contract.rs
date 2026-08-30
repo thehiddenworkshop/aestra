@@ -4,14 +4,78 @@ use aestra_authoring::{
 };
 use aestra_core::{
     BlendMode, ColorKey, CurveKey, EffectAsset, EffectAssetRef, EffectClip, EffectClipSeed,
-    EffectId, EffectParameter, Emitter, EmitterTransform, EventId, EventLink, EventTrigger,
-    MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, ParameterId, ScalarRange, Value,
+    EffectId, EffectMarker, EffectParameter, Emitter, EmitterTransform, EventId, EventLink,
+    EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE, ParameterId, ScalarRange,
+    Value,
 };
 
 fn test_effect() -> EffectAsset {
     let mut effect = EffectAsset::new("Authoring Test", 2.0);
     effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
     effect
+}
+
+#[test]
+fn timeline_markers_are_stable_undoable_semantic_objects() {
+    let mut effect = test_effect();
+    let marker = EffectMarker::new("Impact", 0.5);
+    let id = marker.id;
+    let original = effect.clone();
+    let mut history = CommandHistory::default();
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single("Add marker", EffectCommand::AddMarker { marker, index: 0 }),
+        )
+        .unwrap();
+    let outcome = history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::new(
+                "Edit marker",
+                vec![
+                    EffectCommand::SetMarkerName {
+                        id,
+                        name: "Burst".into(),
+                    },
+                    EffectCommand::SetMarkerTime { id, time: 1.25 },
+                ],
+            ),
+        )
+        .unwrap();
+
+    assert_eq!(effect.markers[0].id, id);
+    assert_eq!(effect.markers[0].name, "Burst");
+    assert_eq!(effect.markers[0].time, 1.25);
+    assert!(outcome.changes.iter().any(|change| {
+        change.target == SemanticTarget::Marker(id) && change.kind == ChangeKind::Modified
+    }));
+
+    history.undo(&mut effect).unwrap();
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect, original);
+    history.redo(&mut effect).unwrap();
+    history.redo(&mut effect).unwrap();
+    assert_eq!(effect.markers[0].id, id);
+
+    let mut locks = LockState::default();
+    locks.lock(SemanticTarget::Marker(id));
+    assert!(matches!(
+        CommandExecutor::execute(
+            &mut effect,
+            &locks,
+            &EffectTransaction::single(
+                "Move locked marker",
+                EffectCommand::SetMarkerTime { id, time: 0.25 },
+            ),
+        ),
+        Err(CommandError::Locked {
+            target: SemanticTarget::Marker(locked)
+        }) if locked == id
+    ));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use crate::{
     AssetId, CurveId, Diagnostic, DiagnosticCode, EffectClipId, EffectId, EmitterId, EventId,
-    GradientId, MaterialId, ModuleId, ParameterId, RendererId, ValidationReport,
+    GradientId, MarkerId, MaterialId, ModuleId, ParameterId, RendererId, ValidationReport,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs, io::Write, path::Path};
@@ -39,6 +39,8 @@ pub struct EffectAsset {
     #[serde(default)]
     pub events: Vec<EventLink>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub markers: Vec<EffectMarker>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effect_clips: Vec<EffectClip>,
     /// Optional stable presentation order for top-level choreography rows.
     /// Missing and stale entries are repaired by editor projections without changing runtime data.
@@ -64,6 +66,7 @@ impl EffectAsset {
             parameters: Vec::new(),
             emitters: Vec::new(),
             events: Vec::new(),
+            markers: Vec::new(),
             effect_clips: Vec::new(),
             choreography_order: Vec::new(),
             dependencies: Vec::new(),
@@ -226,6 +229,32 @@ impl EffectAsset {
                         ));
                     }
                 }
+            }
+        }
+        for (index, marker) in self.markers.iter().enumerate() {
+            let path = format!("effect.markers[{index}]");
+            register_id(
+                &mut report,
+                &mut semantic_ids,
+                marker.id.as_uuid().as_u128(),
+                format!("{path}.id"),
+            );
+            if marker.name.trim().is_empty() {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.name"),
+                    "marker name cannot be empty",
+                ));
+            }
+            if !marker.time.is_finite() || !(0.0..=self.duration).contains(&marker.time) {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.time"),
+                    format!(
+                        "marker time must be finite and within 0..={}, got {}",
+                        self.duration, marker.time
+                    ),
+                ));
             }
         }
         for (index, event) in self.events.iter().enumerate() {
@@ -408,6 +437,23 @@ impl EffectAsset {
     pub fn save_ron(&self, path: impl AsRef<Path>) -> Result<(), AssetError> {
         atomic_write(path.as_ref(), self.to_pretty_ron()?.as_bytes())?;
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EffectMarker {
+    pub id: MarkerId,
+    pub name: String,
+    pub time: f32,
+}
+
+impl EffectMarker {
+    pub fn new(name: impl Into<String>, time: f32) -> Self {
+        Self {
+            id: MarkerId::new(),
+            name: name.into(),
+            time,
+        }
     }
 }
 

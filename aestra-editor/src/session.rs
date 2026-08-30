@@ -773,6 +773,21 @@ impl EditorSession {
         true
     }
 
+    pub fn select_marker(&mut self, id: aestra_bevy::MarkerId) -> bool {
+        let Some(marker) = self.effect.markers.iter().find(|marker| marker.id == id) else {
+            self.status = "Marker no longer exists".into();
+            return false;
+        };
+        if self.selection.primary == aestra_authoring::SemanticTarget::Marker(id) {
+            return false;
+        }
+        let name = marker.name.clone();
+        self.selection.select_marker(id);
+        self.status = format!("Selected marker {name}");
+        self.ui_revision += 1;
+        true
+    }
+
     pub fn add_layer(&mut self) {
         let index = self.effect.emitters.len();
         let mut emitter = default_layer(index);

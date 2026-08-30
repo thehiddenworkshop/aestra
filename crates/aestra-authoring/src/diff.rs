@@ -1,5 +1,7 @@
 use crate::SemanticTarget;
-use aestra_core::{EffectAsset, EffectClip, Emitter, ModuleInstance, RendererInstance};
+use aestra_core::{
+    EffectAsset, EffectClip, EffectMarker, Emitter, ModuleInstance, RendererInstance,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -66,6 +68,7 @@ impl EffectDiff {
         }
 
         diff_effect_clips(before, after, &mut changes);
+        diff_markers(before, after, &mut changes);
 
         let before_emitters = indexed_emitters(before);
         let after_emitters = indexed_emitters(after);
@@ -145,6 +148,53 @@ impl EffectDiff {
 
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
+    }
+}
+
+fn diff_markers(before: &EffectAsset, after: &EffectAsset, changes: &mut Vec<SemanticChange>) {
+    let before_markers = indexed_markers(&before.markers);
+    let after_markers = indexed_markers(&after.markers);
+    for (id, (index, marker)) in &before_markers {
+        let target = SemanticTarget::Marker(*id);
+        let Some((after_index, after_marker)) = after_markers.get(id) else {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Removed,
+                target,
+                path: format!("effect.markers[{index}]"),
+                before: Some(marker.name.clone()),
+                after: None,
+            });
+            continue;
+        };
+        if index != after_index {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Moved,
+                target,
+                path: "effect.markers".into(),
+                before: Some(index.to_string()),
+                after: Some(after_index.to_string()),
+            });
+        }
+        if marker != after_marker {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Modified,
+                target,
+                path: "marker".into(),
+                before: Some(format!("{} @ {}", marker.name, marker.time)),
+                after: Some(format!("{} @ {}", after_marker.name, after_marker.time)),
+            });
+        }
+    }
+    for (id, (index, marker)) in &after_markers {
+        if !before_markers.contains_key(id) {
+            changes.push(SemanticChange {
+                kind: ChangeKind::Added,
+                target: SemanticTarget::Marker(*id),
+                path: format!("effect.markers[{index}]"),
+                before: None,
+                after: Some(marker.name.clone()),
+            });
+        }
     }
 }
 
@@ -378,6 +428,16 @@ fn indexed_effect_clips(
         .iter()
         .enumerate()
         .map(|(index, clip)| (clip.id, (index, clip)))
+        .collect()
+}
+
+fn indexed_markers(
+    markers: &[EffectMarker],
+) -> BTreeMap<aestra_core::MarkerId, (usize, &EffectMarker)> {
+    markers
+        .iter()
+        .enumerate()
+        .map(|(index, marker)| (marker.id, (index, marker)))
         .collect()
 }
 

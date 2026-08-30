@@ -10,7 +10,9 @@ use crate::timeline::{
     EffectClipChildSelection, EffectClipPath, TimelineState, resolve_effect_clip_path,
 };
 use crate::*;
-use aestra_bevy::{EffectAsset, EffectClip, EffectClipId, EffectParameter, ParameterId, ValueType};
+use aestra_bevy::{
+    EffectAsset, EffectClip, EffectClipId, EffectParameter, MarkerId, ParameterId, ValueType,
+};
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use bevy::{
     feathers::controls::ButtonVariant,
@@ -50,6 +52,7 @@ impl Plugin for PropertiesPlugin {
             .add_observer(handle_renderer_toggle_change)
             .add_observer(handle_emitter_scalar_change)
             .add_observer(handle_effect_clip_scalar_change)
+            .add_observer(handle_marker_scalar_change)
             .add_observer(handle_effect_clip_parameter_integer_change)
             .add_observer(handle_effect_clip_parameter_scalar_change)
             .add_observer(handle_effect_clip_parameter_text_change)
@@ -74,6 +77,7 @@ impl Plugin for PropertiesPlugin {
                         sync_emitter_capacity_inputs,
                         sync_emitter_number_inputs,
                         sync_effect_clip_number_inputs,
+                        sync_marker_number_inputs,
                         sync_effect_clip_parameter_number_inputs,
                         sync_properties_number_inputs,
                         sync_properties_slider_inputs,
@@ -123,6 +127,7 @@ pub(crate) enum PropertiesAction {
         target: EmitterId,
     },
     DeleteEventLink(EventId),
+    DeleteMarker(MarkerId),
     RepairEffectClipSource {
         clip: EffectClipId,
         source: EffectAssetRef,
@@ -496,6 +501,13 @@ fn handle_properties_actions(
                             );
                         }
                     }
+                    PropertiesAction::DeleteMarker(id) => {
+                        session.execute(
+                            "Deleted timeline marker",
+                            EffectCommand::RemoveMarker { id },
+                            true,
+                        );
+                    }
                     PropertiesAction::RepairEffectClipSource { clip, source } => {
                         let result = catalog
                             .as_deref()
@@ -729,6 +741,7 @@ fn semantic_target_exists(effect: &EffectAsset, target: SemanticTarget) -> bool 
     match target {
         SemanticTarget::Effect(id) => effect.id == id,
         SemanticTarget::EffectClip(id) => effect.effect_clips.iter().any(|clip| clip.id == id),
+        SemanticTarget::Marker(id) => effect.markers.iter().any(|marker| marker.id == id),
         SemanticTarget::Parameter(id) => effect.parameters.iter().any(|value| value.id == id),
         SemanticTarget::Emitter(id) => effect.emitters.iter().any(|emitter| emitter.id == id),
         SemanticTarget::Module(id) => effect
@@ -2269,6 +2282,26 @@ fn sync_effect_clip_number_inputs(
     }
 }
 
+fn sync_marker_number_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &MarkerNumberControl), Added<MarkerNumberControl>>,
+) {
+    for (entity, control) in &controls {
+        if let Some(marker) = session
+            .effect
+            .markers
+            .iter()
+            .find(|marker| marker.id == control.0)
+        {
+            commands.trigger(UpdateNumberInput {
+                entity,
+                value: NumberInputValue::F32(marker.time),
+            });
+        }
+    }
+}
+
 fn sync_effect_clip_parameter_number_inputs(
     mut commands: Commands,
     controls: Query<
@@ -2612,6 +2645,7 @@ fn handle_document_text_change(
         let target = match control {
             DocumentTextControl::EffectName => localizer.text("properties-effect"),
             DocumentTextControl::EmitterName => localizer.text("properties-emitter"),
+            DocumentTextControl::MarkerName(_) => localizer.text("properties-marker"),
         };
         set_properties_status(
             &mut session,
@@ -2624,6 +2658,14 @@ fn handle_document_text_change(
     let changed = match control {
         DocumentTextControl::EffectName => session.set_effect_name(value),
         DocumentTextControl::EmitterName => session.set_selected_emitter_name(value),
+        DocumentTextControl::MarkerName(id) => session.execute(
+            "Renamed timeline marker",
+            EffectCommand::SetMarkerName {
+                id: *id,
+                name: value.to_owned(),
+            },
+            true,
+        ),
     };
     if changed {
         let target = match control {
@@ -2633,9 +2675,43 @@ fn handle_document_text_change(
             DocumentTextControl::EmitterName => {
                 localizer.text("properties-emitter-name-status-target")
             }
+            DocumentTextControl::MarkerName(_) => localizer.text("properties-marker"),
         };
         set_properties_status(&mut session, &localizer, PropertiesStatus::Updated(target));
     }
+}
+
+fn handle_marker_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&MarkerNumberControl>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let time = change.value.clamp(0.0, session.playback_duration());
+    let Some(marker) = session
+        .effect
+        .markers
+        .iter()
+        .find(|marker| marker.id == control.0)
+    else {
+        return;
+    };
+    if (marker.time - time).abs() <= f32::EPSILON {
+        return;
+    }
+    session.execute(
+        "Moved timeline marker",
+        EffectCommand::SetMarkerTime {
+            id: control.0,
+            time,
+        },
+        true,
+    );
 }
 
 fn handle_document_toggle_change(
@@ -5255,6 +5331,11 @@ pub(crate) fn spawn_properties(
             return;
         }
     }
+    if let SemanticTarget::Marker(marker) = session.selection.primary
+        && spawn_marker_properties(parent, session, localizer, marker)
+    {
+        return;
+    }
     if let SemanticTarget::EffectClip(clip) = session.selection.primary
         && spawn_effect_clip_properties(
             parent,
@@ -5373,6 +5454,85 @@ pub(crate) fn spawn_properties(
                 spawn_module_palette(panel, registry, palette);
             }
         });
+}
+
+fn spawn_marker_properties(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    localizer: &Localizer,
+    id: MarkerId,
+) -> bool {
+    let Some(marker) = session.effect.markers.iter().find(|marker| marker.id == id) else {
+        return false;
+    };
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_grow: 1.0,
+            min_height: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        })
+        .with_children(|panel| {
+            panel_heading(panel, "TIMELINE MARKER", "EDITABLE");
+            panel.spawn((
+                Text::new(&marker.name),
+                PropertiesTitle,
+                TextFont {
+                    font_size: FontSize::Px(17.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Node {
+                    margin: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                    ..default()
+                },
+            ));
+            panel
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::all(Val::Px(8.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(7.0),
+                    ..default()
+                })
+                .with_children(|stack| {
+                    spawn_read_only_card(stack, localizer.text("properties-marker"), |card| {
+                        spawn_text_field(
+                            card,
+                            &localizer.text("properties-name"),
+                            &localizer.text("properties-marker-name-description"),
+                            &marker.name,
+                            DocumentTextControl::MarkerName(id),
+                        );
+                        crate::feathers::field_row::spawn_field_row(
+                            card,
+                            crate::feathers::field_row::FieldRowProps::new(
+                                localizer.text("properties-time"),
+                            )
+                            .with_control_min_width(150.0),
+                            EditorTooltip::description(
+                                localizer.text("properties-marker-time-description"),
+                            ),
+                            |controls| {
+                                controls
+                                    .spawn_empty()
+                                    .apply_scene(ui_shell::feathers_scalar_input())
+                                    .insert((
+                                        MarkerNumberControl(id),
+                                        AccessibleLabel(localizer.text("properties-time")),
+                                    ));
+                            },
+                        );
+                        mini_button(
+                            card,
+                            &localizer.text("properties-marker-delete"),
+                            PropertiesAction::DeleteMarker(id),
+                        );
+                    });
+                });
+        });
+    true
 }
 
 fn spawn_document_controls(
@@ -7626,7 +7786,11 @@ struct EffectClipParameterDiagnostic(ParameterId);
 enum DocumentTextControl {
     EffectName,
     EmitterName,
+    MarkerName(MarkerId),
 }
+
+#[derive(Component, Debug, Clone, Copy)]
+struct MarkerNumberControl(MarkerId);
 
 #[derive(Component, Debug, Clone, Copy)]
 enum DocumentToggleControl {

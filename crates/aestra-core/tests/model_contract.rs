@@ -1,8 +1,8 @@
 use aestra_core::{
     AssetDefinition, DiagnosticCode, EffectAsset, EffectClip, EffectClipSeed, EffectId,
-    EffectParameter, Emitter, EmitterId, EmitterShape, EmitterTransform, FlipbookDefinition,
-    MODULE_EMISSION, MODULE_SHAPE, MaterialProperties, ModuleParameters, ParameterId,
-    RendererInstance, ScalarRange, Value,
+    EffectMarker, EffectParameter, Emitter, EmitterId, EmitterShape, EmitterTransform,
+    FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE, MaterialProperties, ModuleParameters,
+    ParameterId, RendererInstance, ScalarRange, Value,
 };
 
 #[test]
@@ -17,6 +17,32 @@ fn semantic_ids_survive_round_trip() {
 
     assert_eq!(decoded.id, effect_id);
     assert_eq!(decoded.emitters[0].id, emitter_id);
+}
+
+#[test]
+fn timeline_markers_round_trip_and_validate_the_effect_range() {
+    let mut effect = EffectAsset::new("Marked", 2.0);
+    let marker = EffectMarker::new("Impact", 1.25);
+    let id = marker.id;
+    effect.markers.push(marker);
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+    assert_eq!(decoded.markers[0].id, id);
+    assert_eq!(decoded.markers[0].name, "Impact");
+    assert_eq!(decoded.markers[0].time, 1.25);
+
+    effect.markers[0].time = 2.5;
+    assert!(
+        effect
+            .validation_report()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.code == DiagnosticCode::InvalidValue
+                    && diagnostic.path == "effect.markers[0].time"
+            })
+    );
 }
 
 #[test]

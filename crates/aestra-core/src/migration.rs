@@ -153,6 +153,7 @@ fn migrate_v2_to_v3(source: &str) -> Result<EffectAsset, AssetError> {
         parameters,
         emitters,
         events: legacy.events,
+        markers: Vec::new(),
         effect_clips: Vec::new(),
         choreography_order: Vec::new(),
         dependencies: legacy.dependencies,

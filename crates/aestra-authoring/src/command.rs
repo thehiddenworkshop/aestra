@@ -1,8 +1,9 @@
 use aestra_core::{
     AssetDefinition, AssetId, ChoreographyTrackId, ColorKey, CurveKey, EffectAssetRef, EffectClip,
-    EffectClipId, EffectClipSeed, EffectParameter, Emitter, EmitterId, EmitterTransform, EventId,
-    EventLink, FlipbookDefinition, MaterialDefinition, MaterialId, ModuleId, ModuleInstance,
-    ParameterId, RendererId, RendererInstance, RendererProperties, Value,
+    EffectClipId, EffectClipSeed, EffectMarker, EffectParameter, Emitter, EmitterId,
+    EmitterTransform, EventId, EventLink, FlipbookDefinition, MarkerId, MaterialDefinition,
+    MaterialId, ModuleId, ModuleInstance, ParameterId, RendererId, RendererInstance,
+    RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +20,21 @@ pub enum EffectCommand {
     },
     SetChoreographyOrder {
         order: Vec<ChoreographyTrackId>,
+    },
+    AddMarker {
+        marker: EffectMarker,
+        index: usize,
+    },
+    RemoveMarker {
+        id: MarkerId,
+    },
+    SetMarkerName {
+        id: MarkerId,
+        name: String,
+    },
+    SetMarkerTime {
+        id: MarkerId,
+        time: f32,
     },
     AddEffectClip {
         clip: EffectClip,

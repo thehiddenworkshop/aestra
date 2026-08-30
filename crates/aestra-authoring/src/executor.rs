@@ -150,6 +150,36 @@ fn apply_command(
             let previous = std::mem::replace(&mut effect.choreography_order, order.clone());
             vec![EffectCommand::SetChoreographyOrder { order: previous }]
         }
+        EffectCommand::AddMarker { marker, index } => {
+            checked_insert(
+                &mut effect.markers,
+                *index,
+                marker.clone(),
+                "effect markers",
+            )?;
+            vec![EffectCommand::RemoveMarker { id: marker.id }]
+        }
+        EffectCommand::RemoveMarker { id } => {
+            let index = marker_index(effect, *id)?;
+            let marker = effect.markers.remove(index);
+            vec![EffectCommand::AddMarker { marker, index }]
+        }
+        EffectCommand::SetMarkerName { id, name } => {
+            let marker = marker_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut marker.name, name.clone());
+            vec![EffectCommand::SetMarkerName {
+                id: *id,
+                name: previous,
+            }]
+        }
+        EffectCommand::SetMarkerTime { id, time } => {
+            let marker = marker_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut marker.time, *time);
+            vec![EffectCommand::SetMarkerTime {
+                id: *id,
+                time: previous,
+            }]
+        }
         EffectCommand::AddEffectClip { clip, index } => {
             checked_insert(
                 &mut effect.effect_clips,
@@ -931,6 +961,25 @@ fn effect_clip_mut(
         .iter_mut()
         .find(|clip| clip.id == id)
         .ok_or_else(|| not_found("effect clip", &id))
+}
+
+fn marker_index(effect: &EffectAsset, id: aestra_core::MarkerId) -> Result<usize, CommandError> {
+    effect
+        .markers
+        .iter()
+        .position(|marker| marker.id == id)
+        .ok_or_else(|| not_found("marker", &id))
+}
+
+fn marker_mut(
+    effect: &mut EffectAsset,
+    id: aestra_core::MarkerId,
+) -> Result<&mut aestra_core::EffectMarker, CommandError> {
+    effect
+        .markers
+        .iter_mut()
+        .find(|marker| marker.id == id)
+        .ok_or_else(|| not_found("marker", &id))
 }
 
 fn material_index(effect: &EffectAsset, id: MaterialId) -> Result<usize, CommandError> {

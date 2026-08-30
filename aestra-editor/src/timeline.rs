@@ -15,7 +15,8 @@ use crate::{
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    ChoreographyTrackId, EffectAsset, EffectAssetRef, EffectClip, EffectClipId, Emitter, EmitterId,
+    ChoreographyTrackId, EffectAsset, EffectAssetRef, EffectClip, EffectClipId, EffectMarker,
+    Emitter, EmitterId, MarkerId,
 };
 #[cfg(test)]
 use bevy::ui_widgets::{ControlOrientation, Scrollbar};
@@ -98,6 +99,7 @@ impl Plugin for TimelinePlugin {
                 (
                     update_timeline_time_label,
                     update_timeline_visuals,
+                    update_timeline_marker_visuals,
                     update_effect_clip_visuals,
                     update_effect_drop_insertion,
                     sync_effect_drop_track_gap,
@@ -122,6 +124,8 @@ pub(crate) enum TimelineAction {
     AdjustEffectDuration(f32),
     SetSnap(TimelineSnapMode),
     FrameAll,
+    AddMarker,
+    SelectMarker(MarkerId),
 }
 
 #[derive(Component, Event, Debug, Clone, PartialEq, Eq)]
@@ -295,6 +299,7 @@ fn execute_timeline_action(
     action: On<TimelineAction>,
     mut session: ResMut<EditorSession>,
     mut state: ResMut<TimelineState>,
+    localizer: Option<Res<Localizer>>,
 ) {
     match *action {
         TimelineAction::AdjustEffectDuration(delta) => {
@@ -306,6 +311,30 @@ fn execute_timeline_action(
             }
         }
         TimelineAction::FrameAll => state.frame_all(session.playback_duration()),
+        TimelineAction::AddMarker => {
+            let index = session.effect.markers.len();
+            let marker_label = localizer.as_deref().map_or_else(
+                || "Marker".to_owned(),
+                |localizer| localizer.text("timeline-marker"),
+            );
+            let marker = EffectMarker::new(format!("{marker_label} {}", index + 1), session.time());
+            let id = marker.id;
+            let command_label = localizer.as_deref().map_or_else(
+                || "Added timeline marker".to_owned(),
+                |localizer| localizer.text("timeline-add-marker-command"),
+            );
+            if session.execute(
+                &command_label,
+                EffectCommand::AddMarker { marker, index },
+                true,
+            ) {
+                session.select_marker(id);
+            }
+        }
+        TimelineAction::SelectMarker(id) => {
+            session.select_marker(id);
+            state.inspected_child = None;
+        }
     }
 }
 
@@ -1853,10 +1882,36 @@ mod tests {
     }
 
     #[test]
+    fn add_marker_action_creates_and_selects_one_undoable_marker() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.seek_time(0.75);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(TimelineState::framed(2.8))
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_observer(execute_timeline_action);
+
+        app.world_mut().trigger(TimelineAction::AddMarker);
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.markers.len(), 1);
+        let marker = &session.effect.markers[0];
+        assert_eq!(marker.name, "Marker 1");
+        assert!((marker.time - 0.75).abs() < 0.000_1);
+        assert_eq!(session.selection.primary, SemanticTarget::Marker(marker.id));
+        assert!(session.can_undo());
+    }
+
+    #[test]
     fn authored_names_and_display_color_are_projected_into_the_timeline() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         assert!(session.set_effect_name("Renamed Effect"));
         assert!(session.set_selected_emitter_name("Renamed Emitter"));
+        session
+            .effect
+            .markers
+            .push(EffectMarker::new("Impact", 0.75));
         let emitter = session.selected_layer().id;
         let authored_color = [0.28, 0.78, 0.45, 1.0];
         assert!(session.set_emitter_display_color(emitter, Some(authored_color)));
@@ -1874,7 +1929,8 @@ mod tests {
         .insert_resource(TimelineState::framed(duration))
         .init_resource::<ProjectEffectCatalog>()
         .insert_resource(Localizer::new("en-US").unwrap())
-        .add_systems(Startup, spawn_test_timeline);
+        .add_systems(Startup, spawn_test_timeline)
+        .add_systems(Update, audit_timeline_controls);
 
         app.update();
 
@@ -2986,6 +3042,35 @@ fn update_timeline_visuals(
     }
 }
 
+fn update_timeline_marker_visuals(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    mut markers: Query<(&TimelineMarker, &mut Node)>,
+) {
+    for (control, mut node) in &mut markers {
+        let Some(marker) = session
+            .effect
+            .markers
+            .iter()
+            .find(|marker| marker.id == control.marker)
+        else {
+            node.display = Display::None;
+            continue;
+        };
+        let time = state
+            .marker_drag
+            .filter(|drag| drag.marker == marker.id)
+            .map_or(marker.time, |drag| drag.current_time);
+        let position = state.view.normalized_time(time);
+        node.display = if (0.0..=1.0).contains(&position) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        node.left = Val::Percent(position.clamp(0.0, 1.0) * 100.0);
+    }
+}
+
 fn update_effect_clip_visuals(
     session: Res<EditorSession>,
     state: Res<TimelineState>,
@@ -3422,6 +3507,60 @@ fn snap_effect_clip_boundary(
     }
 }
 
+fn snap_marker_time(
+    candidate: f32,
+    marker: MarkerId,
+    session: &EditorSession,
+    mode: TimelineSnapMode,
+    view: TimelineView,
+    canvas_width: f32,
+) -> (f32, Option<f32>) {
+    match mode {
+        TimelineSnapMode::None => (candidate, None),
+        TimelineSnapMode::Frames => {
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let snapped = (candidate / frame).round() * frame;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Seconds => {
+            let interval = nice_timeline_step(view.span(), canvas_width) / 5.0;
+            let snapped = (candidate / interval).round() * interval;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Smart => {
+            let threshold = view.span() / canvas_width.max(1.0) * 9.0;
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let mut targets = vec![
+                0.0,
+                session.playback_duration(),
+                session.time(),
+                (candidate / frame).round() * frame,
+            ];
+            for emitter in &session.effect.emitters {
+                targets.push(emitter.start_time);
+                targets.push(emitter.start_time + emitter.duration);
+            }
+            for clip in &session.effect.effect_clips {
+                targets.push(clip.start_time);
+                targets.push(clip.start_time + clip.duration);
+            }
+            for other in &session.effect.markers {
+                if other.id != marker {
+                    targets.push(other.time);
+                }
+            }
+            let nearest = targets.into_iter().min_by(|left, right| {
+                (candidate - *left)
+                    .abs()
+                    .total_cmp(&(candidate - *right).abs())
+            });
+            nearest
+                .filter(|target| (candidate - *target).abs() <= threshold)
+                .map_or((candidate, None), |target| (target, Some(target)))
+        }
+    }
+}
+
 fn snap_effect_clip_moved_timing(
     start: f32,
     duration: f32,
@@ -3476,6 +3615,18 @@ fn snap_moved_timing(
 
 #[derive(Component)]
 struct TimelineCanvas;
+
+#[derive(Component, Clone, Copy)]
+struct TimelineMarker {
+    marker: MarkerId,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TimelineMarkerDrag {
+    marker: MarkerId,
+    original_time: f32,
+    current_time: f32,
+}
 
 #[derive(Component)]
 struct TimelineLibraryDropTarget;
@@ -3819,6 +3970,7 @@ pub(crate) struct TimelineState {
     snap: TimelineSnapMode,
     drag: Option<TimelineDrag>,
     effect_clip_drag: Option<EffectClipTimelineDrag>,
+    marker_drag: Option<TimelineMarkerDrag>,
     snap_guide: Option<f32>,
     panning: bool,
     context_emitter: Option<EmitterId>,
@@ -3859,6 +4011,7 @@ impl TimelineState {
             snap: TimelineSnapMode::Smart,
             drag: None,
             effect_clip_drag: None,
+            marker_drag: None,
             snap_guide: None,
             panning: false,
             context_emitter: None,
@@ -4883,6 +5036,11 @@ pub(crate) fn spawn_timeline(
                         &localizer.text("timeline-frame-all"),
                         TimelineAction::FrameAll,
                     );
+                    mini_button(
+                        header,
+                        &localizer.text("timeline-add-marker"),
+                        TimelineAction::AddMarker,
+                    );
                     let snap_options = TimelineSnapMode::ALL
                         .into_iter()
                         .map(|mode| ComboOption {
@@ -5195,7 +5353,7 @@ pub(crate) fn spawn_timeline(
                     .observe(hide_invalid_timeline_drop_feedback)
                     .observe(drop_project_effect_on_timeline)
                     .with_children(|tracks| {
-                        spawn_ruler(tracks);
+                        spawn_ruler(tracks, session, localizer);
                         vertical_scroll_target =
                             Some(
                                 tracks
@@ -6388,7 +6546,7 @@ fn spawn_effect_drop_spacer(parent: &mut ChildSpawnerCommands) {
     ));
 }
 
-fn spawn_ruler(parent: &mut ChildSpawnerCommands) {
+fn spawn_ruler(parent: &mut ChildSpawnerCommands, session: &EditorSession, localizer: &Localizer) {
     for index in 0..32 {
         parent
             .spawn((
@@ -6421,6 +6579,60 @@ fn spawn_ruler(parent: &mut ChildSpawnerCommands) {
                 Pickable::IGNORE,
             ));
     }
+    for marker in &session.effect.markers {
+        let selected = session.selection.primary == SemanticTarget::Marker(marker.id);
+        parent
+            .spawn((
+                Button,
+                EditorNativeControl,
+                TimelineMarker { marker: marker.id },
+                TimelineAction::SelectMarker(marker.id),
+                AccessibleLabel(format!(
+                    "{} {}",
+                    localizer.text("timeline-marker"),
+                    marker.name
+                )),
+                RelativeCursorPosition::default(),
+                EntityCursor::System(SystemCursorIcon::Grab),
+                Node {
+                    position_type: PositionType::Absolute,
+                    display: Display::None,
+                    left: Val::Percent(0.0),
+                    top: Val::Px(0.0),
+                    height: Val::Px(24.0),
+                    max_width: Val::Px(120.0),
+                    padding: UiRect::axes(Val::Px(5.0), Val::Px(2.0)),
+                    align_items: AlignItems::Center,
+                    border: UiRect::left(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(if selected {
+                    theme::ACCENT_DIM.with_alpha(0.8)
+                } else {
+                    theme::PANEL_LIGHT.with_alpha(0.9)
+                }),
+                BorderColor::all(theme::ACCENT),
+            ))
+            .observe(select_timeline_marker)
+            .observe(stop_timeline_control_press)
+            .observe(begin_timeline_marker_drag)
+            .observe(move_timeline_marker_drag)
+            .observe(finish_timeline_marker_drag)
+            .with_child((
+                Text::new(&marker.name),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(if selected {
+                    theme::TEXT
+                } else {
+                    theme::TEXT_MUTED
+                }),
+                TextLayout::no_wrap(),
+                Pickable::IGNORE,
+            ));
+    }
 }
 
 fn navigate_timeline(
@@ -6436,7 +6648,10 @@ fn navigate_timeline(
     mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
 ) {
     if keys.just_pressed(KeyCode::Escape) {
-        if state.drag.take().is_some() | state.effect_clip_drag.take().is_some() {
+        if state.drag.take().is_some()
+            | state.effect_clip_drag.take().is_some()
+            | state.marker_drag.take().is_some()
+        {
             state.snap_guide = None;
             override_cursor.0 = None;
             **cursor = CursorIcon::System(SystemCursorIcon::Default);
@@ -7547,6 +7762,124 @@ fn apply_timeline_insertion_border(before: bool, node: &mut Node, border: &mut B
         node.border.bottom = Val::Px(3.0);
         border.bottom = theme::DOCK_TARGET;
     }
+}
+
+fn select_timeline_marker(
+    mut click: On<Pointer<Click>>,
+    markers: Query<&TimelineMarker>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let Ok(marker) = markers.get(click.event_target()) else {
+        return;
+    };
+    commands.trigger(TimelineAction::SelectMarker(marker.marker));
+    click.propagate(false);
+}
+
+fn begin_timeline_marker_drag(
+    drag: On<Pointer<DragStart>>,
+    markers: Query<&TimelineMarker>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(control) = markers.get(drag.event_target()) else {
+        return;
+    };
+    let Some(marker) = session
+        .effect
+        .markers
+        .iter()
+        .find(|marker| marker.id == control.marker)
+    else {
+        return;
+    };
+    state.marker_drag = Some(TimelineMarkerDrag {
+        marker: marker.id,
+        original_time: marker.time,
+        current_time: marker.time,
+    });
+    override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
+    **cursor = CursorIcon::System(SystemCursorIcon::Grabbing);
+}
+
+fn move_timeline_marker_drag(
+    mut drag_event: On<Pointer<Drag>>,
+    markers: Query<&TimelineMarker>,
+    canvases: Query<&ComputedNode, With<TimelineCanvas>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+) {
+    let Ok(control) = markers.get(drag_event.event_target()) else {
+        return;
+    };
+    drag_event.propagate(false);
+    let Some(mut drag) = state.marker_drag else {
+        return;
+    };
+    if drag.marker != control.marker {
+        return;
+    }
+    let width = canvases
+        .iter()
+        .map(|canvas| canvas.size().x)
+        .fold(0.0, f32::max)
+        .max(1.0);
+    let logical_distance = screen_distance_to_logical(drag_event.distance.x, window.scale_factor());
+    let candidate = (drag.original_time + logical_distance / width * state.view.span())
+        .clamp(0.0, session.playback_duration());
+    let (time, guide) = snap_marker_time(
+        candidate,
+        drag.marker,
+        &session,
+        state.snap,
+        state.view,
+        width,
+    );
+    drag.current_time = time.clamp(0.0, session.playback_duration());
+    state.marker_drag = Some(drag);
+    state.snap_guide = guide;
+}
+
+fn finish_timeline_marker_drag(
+    drag_event: On<Pointer<DragEnd>>,
+    markers: Query<&TimelineMarker>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    localizer: Res<Localizer>,
+    mut commands: Commands,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(control) = markers.get(drag_event.event_target()) else {
+        return;
+    };
+    let Some(drag) = state.marker_drag.take() else {
+        return;
+    };
+    if drag.marker != control.marker {
+        state.marker_drag = Some(drag);
+        return;
+    }
+    state.snap_guide = None;
+    override_cursor.0 = None;
+    **cursor = CursorIcon::System(SystemCursorIcon::Grab);
+    if (drag.current_time - drag.original_time).abs() > 0.000_1 {
+        session.execute(
+            &localizer.text("timeline-move-marker-command"),
+            EffectCommand::SetMarkerTime {
+                id: drag.marker,
+                time: drag.current_time,
+            },
+            true,
+        );
+    }
+    commands.trigger(TimelineAction::SelectMarker(drag.marker));
 }
 
 fn begin_timeline_clip_drag(
