@@ -53,6 +53,10 @@ const VIEWPORT_TOOL_BUTTON_SIZE: f32 = 28.0;
 const VIEWPORT_TOOL_ICON_SIZE: f32 = 20.0;
 const PREVIEW_TRANSFORM_GIZMO_SCREEN_SCALE: f32 = 0.14;
 const PREVIEW_TRANSFORM_GIZMO_HIT_DISTANCE: f32 = 42.0;
+const PREVIEW_TRANSFORM_TRANSLATE_SNAP: f32 = 1.0;
+const PREVIEW_TRANSFORM_ROTATE_SNAP: f32 = std::f32::consts::PI / 12.0;
+const PREVIEW_TRANSFORM_SCALE_SNAP: f32 = 0.1;
+const PREVIEW_TRANSFORM_PRECISION_FACTOR: f32 = 0.1;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ViewportSet {
@@ -130,6 +134,7 @@ impl Plugin for ViewportPlugin {
                     apply_transform_gizmo_drag_feedback
                         .after(TransformGizmoRenderStep)
                         .after(update_emitter_transform_gizmo),
+                    update_transform_gizmo_value_label.after(update_emitter_transform_gizmo),
                 ),
             )
             .configure_sets(Update, AestraSet::Playback.after(sync_rendered_preview));
@@ -492,6 +497,9 @@ struct ActiveEmitterTransformGizmo {
     target: PreviewTransformTarget,
     original: EmitterTransform,
     current: EmitterTransform,
+    raw_anchor: EmitterTransform,
+    output_anchor: EmitterTransform,
+    precision: bool,
 }
 
 #[derive(Resource, Default)]
@@ -510,6 +518,9 @@ struct GizmoModeLabel;
 
 #[derive(Component)]
 struct ShapeGizmoValueLabel;
+
+#[derive(Component)]
+struct TransformGizmoValueLabel;
 
 #[derive(Component)]
 struct ParticleCountLabel;
@@ -856,25 +867,54 @@ fn sync_emitter_transform_proxy(
 
 fn update_emitter_transform_gizmo(
     gizmo: Res<TransformGizmoState>,
+    settings: Res<TransformGizmoSettings>,
+    keys: Res<ButtonInput<KeyCode>>,
     mut interaction: ResMut<EmitterTransformGizmoInteraction>,
-    proxies: Query<&Transform, With<EmitterTransformGizmoProxy>>,
+    mut proxies: Query<&mut Transform, With<EmitterTransformGizmoProxy>>,
     mut session: ResMut<EditorSession>,
 ) {
-    let Ok(transform) = proxies.single() else {
+    let Ok(mut transform) = proxies.single_mut() else {
         return;
     };
-    let current = emitter_transform_from_bevy(transform);
+    let raw_current = emitter_transform_from_bevy(&transform);
     if gizmo.active {
         let Some((target, authored)) = selected_preview_transform(&session) else {
             return;
         };
+        let precision = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
         let active = interaction
             .active
             .get_or_insert(ActiveEmitterTransformGizmo {
                 target,
                 original: authored,
                 current: authored,
+                raw_anchor: authored,
+                output_anchor: authored,
+                precision,
             });
+        if active.precision != precision {
+            active.raw_anchor = raw_current;
+            active.output_anchor = active.current;
+            active.precision = precision;
+        }
+        let current = transform_with_drag_precision(
+            settings.mode,
+            active.raw_anchor,
+            active.output_anchor,
+            raw_current,
+            if precision {
+                PREVIEW_TRANSFORM_PRECISION_FACTOR
+            } else {
+                1.0
+            },
+        );
+        let snapping = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+        let current = if snapping {
+            snap_transform_absolute(settings.mode, gizmo.axis, current, precision)
+        } else {
+            current
+        };
+        *transform = bevy_transform_from_emitter(current);
         if active.current != current {
             active.current = current;
             session.preview_interaction(EffectTransaction::single(
@@ -901,6 +941,253 @@ fn update_emitter_transform_gizmo(
         }
     } else {
         session.restore_interaction_preview();
+    }
+}
+
+fn transform_with_drag_precision(
+    mode: TransformGizmoMode,
+    raw_anchor: EmitterTransform,
+    output_anchor: EmitterTransform,
+    raw_current: EmitterTransform,
+    factor: f32,
+) -> EmitterTransform {
+    let mut output = output_anchor;
+    match mode {
+        TransformGizmoMode::Translate => {
+            let raw_anchor = Vec3::from_array(raw_anchor.translation);
+            let raw_current = Vec3::from_array(raw_current.translation);
+            output.translation = (Vec3::from_array(output_anchor.translation)
+                + (raw_current - raw_anchor) * factor)
+                .to_array();
+        }
+        TransformGizmoMode::Rotate => {
+            let raw_anchor = Quat::from_array(raw_anchor.rotation).normalize();
+            let raw_current = Quat::from_array(raw_current.rotation).normalize();
+            let output_anchor = Quat::from_array(output_anchor.rotation).normalize();
+            let raw_delta = (raw_current * raw_anchor.inverse()).normalize();
+            output.rotation = (Quat::IDENTITY.slerp(raw_delta, factor) * output_anchor)
+                .normalize()
+                .to_array();
+        }
+        TransformGizmoMode::Scale => {
+            let raw_anchor = Vec3::from_array(raw_anchor.scale);
+            let raw_current = Vec3::from_array(raw_current.scale);
+            output.scale = (Vec3::from_array(output_anchor.scale)
+                + (raw_current - raw_anchor) * factor)
+                .max(Vec3::splat(0.001))
+                .to_array();
+        }
+    }
+    output
+}
+
+fn snap_transform_absolute(
+    mode: TransformGizmoMode,
+    axis: Option<TransformGizmoAxis>,
+    mut transform: EmitterTransform,
+    precision: bool,
+) -> EmitterTransform {
+    let precision_factor = if precision {
+        PREVIEW_TRANSFORM_PRECISION_FACTOR
+    } else {
+        1.0
+    };
+    let snap_selected = |values: &mut Vec3, step: f32| {
+        let step = step * precision_factor;
+        let snap = |value: f32| (value / step).round() * step;
+        match axis {
+            Some(TransformGizmoAxis::X) => values.x = snap(values.x),
+            Some(TransformGizmoAxis::Y) => values.y = snap(values.y),
+            Some(TransformGizmoAxis::Z) => values.z = snap(values.z),
+            Some(TransformGizmoAxis::View) | None => {
+                *values = Vec3::new(snap(values.x), snap(values.y), snap(values.z));
+            }
+        }
+    };
+    match mode {
+        TransformGizmoMode::Translate => {
+            let mut translation = Vec3::from_array(transform.translation);
+            snap_selected(&mut translation, PREVIEW_TRANSFORM_TRANSLATE_SNAP);
+            transform.translation = translation.to_array();
+        }
+        TransformGizmoMode::Rotate => {
+            let (x, y, z) = Quat::from_array(transform.rotation)
+                .normalize()
+                .to_euler(EulerRot::XYZ);
+            let mut rotation = Vec3::new(x, y, z);
+            snap_selected(&mut rotation, PREVIEW_TRANSFORM_ROTATE_SNAP);
+            transform.rotation =
+                Quat::from_euler(EulerRot::XYZ, rotation.x, rotation.y, rotation.z).to_array();
+        }
+        TransformGizmoMode::Scale => {
+            let mut scale = Vec3::from_array(transform.scale);
+            snap_selected(&mut scale, PREVIEW_TRANSFORM_SCALE_SNAP);
+            transform.scale = scale.max(Vec3::splat(0.001)).to_array();
+        }
+    }
+    transform
+}
+
+fn format_transform_value(value: f32, decimals: usize, sign: bool) -> String {
+    if sign {
+        format!("{value:+.*}", decimals)
+    } else {
+        format!("{value:.*}", decimals)
+    }
+}
+
+fn transform_gizmo_value_text(
+    mode: TransformGizmoMode,
+    axis: Option<TransformGizmoAxis>,
+    current: EmitterTransform,
+    snapping: bool,
+    precision: bool,
+) -> String {
+    let axis_name = match axis {
+        Some(TransformGizmoAxis::X) => "X",
+        Some(TransformGizmoAxis::Y) => "Y",
+        Some(TransformGizmoAxis::Z) => "Z",
+        Some(TransformGizmoAxis::View) | None => "XYZ",
+    };
+    let mut value = match mode {
+        TransformGizmoMode::Translate => {
+            let position = Vec3::from_array(current.translation);
+            let decimals = match (snapping, precision) {
+                (true, false) => 0,
+                (true, true) => 1,
+                (false, true) => 4,
+                (false, false) => 2,
+            };
+            match axis {
+                Some(TransformGizmoAxis::X) => {
+                    format!(
+                        "MOVE X  {}",
+                        format_transform_value(position.x, decimals, true)
+                    )
+                }
+                Some(TransformGizmoAxis::Y) => {
+                    format!(
+                        "MOVE Y  {}",
+                        format_transform_value(position.y, decimals, true)
+                    )
+                }
+                Some(TransformGizmoAxis::Z) => {
+                    format!(
+                        "MOVE Z  {}",
+                        format_transform_value(position.z, decimals, true)
+                    )
+                }
+                Some(TransformGizmoAxis::View) | None => format!(
+                    "MOVE XYZ  {}  {}  {}",
+                    format_transform_value(position.x, decimals, true),
+                    format_transform_value(position.y, decimals, true),
+                    format_transform_value(position.z, decimals, true),
+                ),
+            }
+        }
+        TransformGizmoMode::Rotate => {
+            let (x, y, z) = Quat::from_array(current.rotation)
+                .normalize()
+                .to_euler(EulerRot::XYZ);
+            let degrees = Vec3::new(x, y, z) * (180.0 / std::f32::consts::PI);
+            let decimals = match (snapping, precision) {
+                (true, false) => 0,
+                (true, true) => 1,
+                (false, true) => 3,
+                (false, false) => 1,
+            };
+            let angle = match axis {
+                Some(TransformGizmoAxis::X) => degrees.x,
+                Some(TransformGizmoAxis::Y) => degrees.y,
+                Some(TransformGizmoAxis::Z) => degrees.z,
+                Some(TransformGizmoAxis::View) | None => degrees.length(),
+            };
+            format!(
+                "ROTATE {axis_name}  {}\u{00b0}",
+                format_transform_value(angle, decimals, true)
+            )
+        }
+        TransformGizmoMode::Scale => {
+            let scale = Vec3::from_array(current.scale);
+            let decimals = match (snapping, precision) {
+                (true, false) => 1,
+                (true, true) => 2,
+                (false, true) => 4,
+                (false, false) => 2,
+            };
+            match axis {
+                Some(TransformGizmoAxis::X) => {
+                    format!(
+                        "SCALE X  {}",
+                        format_transform_value(scale.x, decimals, false)
+                    )
+                }
+                Some(TransformGizmoAxis::Y) => {
+                    format!(
+                        "SCALE Y  {}",
+                        format_transform_value(scale.y, decimals, false)
+                    )
+                }
+                Some(TransformGizmoAxis::Z) => {
+                    format!(
+                        "SCALE Z  {}",
+                        format_transform_value(scale.z, decimals, false)
+                    )
+                }
+                Some(TransformGizmoAxis::View) | None => {
+                    format!(
+                        "SCALE XYZ  {}  {}  {}",
+                        format_transform_value(scale.x, decimals, false),
+                        format_transform_value(scale.y, decimals, false),
+                        format_transform_value(scale.z, decimals, false),
+                    )
+                }
+            }
+        }
+    };
+    if snapping {
+        value.push_str("  \u{00b7} SNAP");
+    }
+    if precision {
+        value.push_str("  \u{00b7} PRECISE");
+    }
+    value
+}
+
+fn update_transform_gizmo_value_label(
+    window: Single<&Window, With<PrimaryWindow>>,
+    canvas: Single<(&ComputedNode, &UiGlobalTransform), With<PreviewCanvas>>,
+    gizmo: Res<TransformGizmoState>,
+    settings: Res<TransformGizmoSettings>,
+    keys: Res<ButtonInput<KeyCode>>,
+    interaction: Res<EmitterTransformGizmoInteraction>,
+    mut labels: Query<(&mut Text, &mut Node, &mut Visibility), With<TransformGizmoValueLabel>>,
+) {
+    let Some(active) = interaction.active.filter(|_| gizmo.active) else {
+        for (_, _, mut visibility) in &mut labels {
+            *visibility = Visibility::Hidden;
+        }
+        return;
+    };
+    let snapping = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let precision = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let message = transform_gizmo_value_text(
+        settings.mode,
+        gizmo.axis,
+        active.current,
+        snapping,
+        precision,
+    );
+    let top_left = canvas.1.translation.trunc() - canvas.0.size() * 0.5;
+    let local_position = window
+        .cursor_position()
+        .unwrap_or(top_left + Vec2::splat(24.0))
+        - top_left;
+    for (mut text, mut node, mut visibility) in &mut labels {
+        text.0.clone_from(&message);
+        node.left = Val::Px((local_position.x + 14.0).clamp(8.0, canvas.0.size().x - 200.0));
+        node.top = Val::Px((local_position.y + 14.0).clamp(8.0, canvas.0.size().y - 32.0));
+        *visibility = Visibility::Inherited;
     }
 }
 
@@ -1822,6 +2109,28 @@ pub(crate) fn spawn_preview(
                         Visibility::Hidden,
                         Pickable::IGNORE,
                     ));
+                    canvas.spawn((
+                        TransformGizmoValueLabel,
+                        Text::new(""),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(12.0),
+                            top: Val::Px(36.0),
+                            padding: UiRect::axes(Val::Px(7.0), Val::Px(4.0)),
+                            border: UiRect::all(Val::Px(1.0)),
+                            border_radius: BorderRadius::all(Val::Px(3.0)),
+                            ..default()
+                        },
+                        BackgroundColor(theme::PANEL.with_alpha(0.94)),
+                        BorderColor::all(theme::ACCENT_DIM),
+                        Visibility::Hidden,
+                        Pickable::IGNORE,
+                    ));
                     canvas
                         .spawn((
                             Node {
@@ -2377,6 +2686,97 @@ mod tests {
         assert!(preview.axis_hit_distance > defaults.axis_hit_distance);
     }
 
+    #[test]
+    fn transform_snap_rounds_absolute_values_instead_of_drag_deltas() {
+        let transform = EmitterTransform {
+            translation: [0.695_576, 2.4, -3.6],
+            ..default()
+        };
+
+        let snapped = snap_transform_absolute(
+            TransformGizmoMode::Translate,
+            Some(TransformGizmoAxis::X),
+            transform,
+            false,
+        );
+
+        assert_eq!(snapped.translation, [1.0, 2.4, -3.6]);
+    }
+
+    #[test]
+    fn precise_transform_snap_uses_the_finer_absolute_grid() {
+        let transform = EmitterTransform {
+            translation: [0.695_576, 0.0, 0.0],
+            ..default()
+        };
+
+        let snapped = snap_transform_absolute(
+            TransformGizmoMode::Translate,
+            Some(TransformGizmoAxis::X),
+            transform,
+            true,
+        );
+
+        assert_eq!(snapped.translation, [0.7, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn precision_drag_scales_motion_without_changing_unedited_components() {
+        let original = EmitterTransform::default();
+        let mut raw = original;
+        raw.translation = [10.0, -5.0, 2.0];
+        let precise = transform_with_drag_precision(
+            TransformGizmoMode::Translate,
+            original,
+            original,
+            raw,
+            PREVIEW_TRANSFORM_PRECISION_FACTOR,
+        );
+
+        assert_eq!(precise.translation, [1.0, -0.5, 0.2]);
+        assert_eq!(precise.rotation, original.rotation);
+        assert_eq!(precise.scale, original.scale);
+    }
+
+    #[test]
+    fn precision_reanchor_keeps_modifier_transitions_continuous() {
+        let mut raw_anchor = EmitterTransform::default();
+        raw_anchor.translation = [10.0, 0.0, 0.0];
+        let mut output_anchor = EmitterTransform::default();
+        output_anchor.translation = [4.0, 0.0, 0.0];
+        let mut raw_current = EmitterTransform::default();
+        raw_current.translation = [20.0, 0.0, 0.0];
+
+        let precise = transform_with_drag_precision(
+            TransformGizmoMode::Translate,
+            raw_anchor,
+            output_anchor,
+            raw_current,
+            PREVIEW_TRANSFORM_PRECISION_FACTOR,
+        );
+
+        assert_eq!(precise.translation, [5.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn gizmo_value_readout_exposes_active_modifiers() {
+        let current = EmitterTransform {
+            translation: [2.123_456, 3.0, 4.0],
+            ..default()
+        };
+
+        assert_eq!(
+            transform_gizmo_value_text(
+                TransformGizmoMode::Translate,
+                Some(TransformGizmoAxis::X),
+                current,
+                false,
+                true,
+            ),
+            "MOVE X  +2.1235  \u{00b7} PRECISE"
+        );
+    }
+
     fn viewport_action_app() -> (App, tempfile::TempDir) {
         let temporary = tempfile::tempdir().expect("temporary settings directory should exist");
         let mut app = App::new();
@@ -2754,6 +3154,8 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(session)
             .insert_resource(gizmo)
+            .insert_resource(preview_transform_gizmo_settings())
+            .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<EmitterTransformGizmoInteraction>()
             .add_systems(Update, update_emitter_transform_gizmo);
         app.world_mut().spawn((
