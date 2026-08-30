@@ -286,6 +286,8 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetEffectLooping { .. }
         | EffectCommand::SetChoreographyOrder { .. }
         | EffectCommand::AddEffectClip { .. }
+        | EffectCommand::AddAsset { .. }
+        | EffectCommand::RemoveAsset { .. }
         | EffectCommand::AddEmitter { .. }
         | EffectCommand::AddParameter { .. }
         | EffectCommand::AddMaterial { .. }

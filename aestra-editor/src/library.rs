@@ -5,7 +5,12 @@ use crate::feathers::context_menu::{
     spawn_pointer_context_menu, spawn_pointer_context_menu_item,
 };
 use crate::*;
-use aestra_bevy::{Diagnostic, EffectClipId, ValidationReport};
+use aestra_bevy::{
+    AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectClipId, EffectId,
+    EffectParameter, Emitter, EmitterId, EmitterTransform, EventId, EventLink, FlipbookDefinition,
+    GradientId, MaterialDefinition, MaterialId, MaterialInput, ModuleParameters, ParameterId,
+    RendererProperties, SpriteColorSource, ValidationReport, Value,
+};
 use aestra_compiler::{EffectCompiler, ProjectCompileError};
 use aestra_project::{
     ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectAssetOperationError,
@@ -25,6 +30,7 @@ use bevy::{
     window::SystemCursorIcon,
 };
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
@@ -543,6 +549,7 @@ pub(crate) enum LibraryAction {
     AddGridFlipbook,
     RenameProjectEffect(ProjectEffectEntryId),
     MoveProjectEffect(ProjectEffectEntryId),
+    ExplodeEffectClip(EffectClipId),
 }
 
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
@@ -1687,7 +1694,7 @@ fn handle_library_action_buttons(
             &LibraryAction,
             Option<&FeathersActionButton>,
             Option<&PendingFeathersActivation>,
-            &mut BackgroundColor,
+            Option<&mut BackgroundColor>,
         ),
         (
             Changed<Interaction>,
@@ -1700,8 +1707,16 @@ fn handle_library_action_buttons(
 ) {
     for (entity, interaction, action, feathers, pending, mut background) in &mut interactions {
         match *interaction {
-            Interaction::Hovered if feathers.is_none() => background.0 = theme::BUTTON_HOVER,
-            Interaction::None if feathers.is_none() => background.0 = theme::PANEL_DARK,
+            Interaction::Hovered if feathers.is_none() => {
+                if let Some(background) = background.as_deref_mut() {
+                    background.0 = theme::BUTTON_HOVER;
+                }
+            }
+            Interaction::None if feathers.is_none() => {
+                if let Some(background) = background.as_deref_mut() {
+                    background.0 = theme::PANEL_DARK;
+                }
+            }
             Interaction::Pressed => {
                 if feathers.is_some() {
                     if pending.is_none() {
@@ -1712,7 +1727,9 @@ fn handle_library_action_buttons(
                         .remove::<PendingFeathersActivation>()
                         .insert(Interaction::None);
                 } else {
-                    background.0 = theme::ACCENT_DIM;
+                    if let Some(background) = background.as_deref_mut() {
+                        background.0 = theme::ACCENT_DIM;
+                    }
                 }
                 menu.open = None;
                 menu.panels_open = false;
@@ -1812,6 +1829,11 @@ fn execute_library_action(
                 }
             }
         }
+        LibraryAction::ExplodeEffectClip(clip) => {
+            if let Err(error) = explode_effect_clip(clip, &catalog, &mut session, &localizer) {
+                session.status = error;
+            }
+        }
     }
 }
 
@@ -1874,6 +1896,492 @@ fn resolve_library_asset_operation(
     }
 }
 
+fn explode_effect_clip(
+    clip_id: EffectClipId,
+    catalog: &ProjectEffectCatalog,
+    session: &mut EditorSession,
+    localizer: &Localizer,
+) -> Result<(), String> {
+    let clip = session
+        .effect
+        .effect_clips
+        .iter()
+        .find(|candidate| candidate.id == clip_id)
+        .cloned()
+        .ok_or_else(|| localizer.text("library-explode-clip-missing"))?;
+    let source = catalog.load_effect(clip.source)?;
+    let source_name = source.name.clone();
+    let mut exploded = ExplodedEffectContent::default();
+    flatten_effect_window(
+        catalog,
+        &source,
+        &clip.parameter_overrides,
+        clip.source_offset,
+        clip.duration,
+        clip.start_time,
+        clip.transform,
+        &mut BTreeSet::new(),
+        &mut exploded,
+    )?;
+    if exploded.emitters.is_empty() {
+        return Err("the clip contains no emitters in its visible time range".into());
+    }
+
+    let first_emitter = exploded.emitters[0].id;
+    let emitter_count = exploded.emitters.len();
+    let mut order = normalized_choreography_order_for_effect(&session.effect);
+    let insertion = order
+        .iter()
+        .position(|track| *track == ChoreographyTrackId::EffectClip(clip_id))
+        .unwrap_or(order.len());
+    order.retain(|track| *track != ChoreographyTrackId::EffectClip(clip_id));
+    order.splice(
+        insertion..insertion,
+        exploded
+            .emitters
+            .iter()
+            .map(|emitter| ChoreographyTrackId::Emitter(emitter.id)),
+    );
+
+    let mut commands = Vec::new();
+    let asset_index = session.effect.assets.len();
+    commands.extend(
+        exploded
+            .assets
+            .into_iter()
+            .enumerate()
+            .map(|(offset, asset)| EffectCommand::AddAsset {
+                asset,
+                index: asset_index + offset,
+            }),
+    );
+    let flipbook_index = session.effect.flipbooks.len();
+    commands.extend(
+        exploded
+            .flipbooks
+            .into_iter()
+            .enumerate()
+            .map(|(offset, flipbook)| EffectCommand::AddFlipbook {
+                flipbook,
+                index: flipbook_index + offset,
+            }),
+    );
+    let material_index = session.effect.materials.len();
+    commands.extend(
+        exploded
+            .materials
+            .into_iter()
+            .enumerate()
+            .map(|(offset, material)| EffectCommand::AddMaterial {
+                material,
+                index: material_index + offset,
+            }),
+    );
+    let parameter_index = session.effect.parameters.len();
+    commands.extend(
+        exploded
+            .parameters
+            .into_iter()
+            .enumerate()
+            .map(|(offset, parameter)| EffectCommand::AddParameter {
+                parameter,
+                index: parameter_index + offset,
+            }),
+    );
+    let emitter_index = session.effect.emitters.len();
+    commands.extend(
+        exploded
+            .emitters
+            .into_iter()
+            .enumerate()
+            .map(|(offset, emitter)| EffectCommand::AddEmitter {
+                emitter,
+                index: emitter_index + offset,
+            }),
+    );
+    let event_index = session.effect.events.len();
+    commands.extend(
+        exploded
+            .events
+            .into_iter()
+            .enumerate()
+            .map(|(offset, event)| EffectCommand::AddEvent {
+                event,
+                index: event_index + offset,
+            }),
+    );
+    commands.push(EffectCommand::RemoveEffectClip { id: clip_id });
+    commands.push(EffectCommand::SetChoreographyOrder { order });
+    if !session.execute_transaction(
+        EffectTransaction::new(localizer.text("library-explode-command"), commands),
+        true,
+    ) {
+        return Err(session.status.clone());
+    }
+    session.select_emitter(first_emitter);
+
+    let mut args = FluentArgs::new();
+    args.set("name", source_name);
+    args.set("count", emitter_count as i64);
+    session.status = localizer.text_with("library-explode-created", &args);
+    Ok(())
+}
+
+#[derive(Default)]
+struct ExplodedEffectContent {
+    assets: Vec<AssetDefinition>,
+    flipbooks: Vec<FlipbookDefinition>,
+    materials: Vec<MaterialDefinition>,
+    parameters: Vec<EffectParameter>,
+    emitters: Vec<Emitter>,
+    events: Vec<EventLink>,
+}
+
+#[derive(Default)]
+struct ExplodedResourceMap {
+    assets: BTreeMap<AssetId, AssetId>,
+    materials: BTreeMap<MaterialId, MaterialId>,
+    parameters: BTreeMap<ParameterId, ParameterId>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn flatten_effect_window(
+    catalog: &ProjectEffectCatalog,
+    source: &EffectAsset,
+    overrides: &BTreeMap<ParameterId, Value>,
+    window_start: f32,
+    window_duration: f32,
+    destination_start: f32,
+    transform: EmitterTransform,
+    ancestors: &mut BTreeSet<EffectId>,
+    output: &mut ExplodedEffectContent,
+) -> Result<(), String> {
+    if !ancestors.insert(source.id) {
+        return Err(format!(
+            "effect reference cycle encountered at '{}'",
+            source.name
+        ));
+    }
+    let result = (|| {
+        let mut resolved = source.clone();
+        bake_parameter_overrides(&mut resolved, overrides)?;
+        let resources = import_effect_resources(&resolved, output)?;
+        let window_end = window_start + window_duration;
+        let occurrences = effect_occurrences(&resolved, window_start, window_end)?;
+        let mut emitter_ids = BTreeMap::<(EmitterId, i64), EmitterId>::new();
+
+        for emitter in &resolved.emitters {
+            for occurrence in &occurrences {
+                let occurrence_start = emitter.start_time + *occurrence as f32 * resolved.duration;
+                let occurrence_end = occurrence_start + emitter.duration;
+                let visible_start = occurrence_start.max(window_start);
+                let visible_end = occurrence_end.min(window_end);
+                if visible_end - visible_start <= f32::EPSILON {
+                    continue;
+                }
+                let mut local = emitter.clone();
+                local.regenerate_ids();
+                local.start_time = destination_start + visible_start - window_start;
+                local.duration = visible_end - visible_start;
+                local.transform = compose_emitter_transforms(transform, emitter.transform);
+                remap_emitter_resources(&mut local, &resources)?;
+                emitter_ids.insert((emitter.id, *occurrence), local.id);
+                output.emitters.push(local);
+            }
+        }
+
+        for event in &resolved.events {
+            for occurrence in &occurrences {
+                let (Some(source), Some(target)) = (
+                    emitter_ids.get(&(event.source, *occurrence)),
+                    emitter_ids.get(&(event.target, *occurrence)),
+                ) else {
+                    continue;
+                };
+                let mut local = event.clone();
+                local.id = EventId::new();
+                local.source = *source;
+                local.target = *target;
+                output.events.push(local);
+            }
+        }
+
+        for clip in &resolved.effect_clips {
+            for occurrence in &occurrences {
+                let occurrence_start = clip.start_time + *occurrence as f32 * resolved.duration;
+                let occurrence_end = occurrence_start + clip.duration;
+                let visible_start = occurrence_start.max(window_start);
+                let visible_end = occurrence_end.min(window_end);
+                if visible_end - visible_start <= f32::EPSILON {
+                    continue;
+                }
+                let child = catalog.load_effect(clip.source)?;
+                flatten_effect_window(
+                    catalog,
+                    &child,
+                    &clip.parameter_overrides,
+                    clip.source_offset + visible_start - occurrence_start,
+                    visible_end - visible_start,
+                    destination_start + visible_start - window_start,
+                    compose_emitter_transforms(transform, clip.transform),
+                    ancestors,
+                    output,
+                )?;
+            }
+        }
+        Ok(())
+    })();
+    ancestors.remove(&source.id);
+    result
+}
+
+fn effect_occurrences(
+    source: &EffectAsset,
+    window_start: f32,
+    window_end: f32,
+) -> Result<Vec<i64>, String> {
+    if !source.looping {
+        return Ok(vec![0]);
+    }
+    if !source.duration.is_finite() || source.duration <= 0.0 {
+        return Err(format!("effect '{}' has an invalid duration", source.name));
+    }
+    let first = (window_start / source.duration).floor() as i64 - 1;
+    let last = (window_end / source.duration).ceil() as i64 + 1;
+    if last.saturating_sub(first) > 4096 {
+        return Err("the clip spans too many loop iterations to explode safely".into());
+    }
+    Ok((first..=last).collect())
+}
+
+fn bake_parameter_overrides(
+    effect: &mut EffectAsset,
+    overrides: &BTreeMap<ParameterId, Value>,
+) -> Result<(), String> {
+    for (id, value) in overrides {
+        let parameter = effect
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.id == *id)
+            .ok_or_else(|| format!("override references missing source parameter {id}"))?;
+        if !parameter.exposed {
+            return Err(format!(
+                "source parameter '{}' is not public and cannot be baked",
+                parameter.name
+            ));
+        }
+        let expected = parameter.default.value_type();
+        let actual = value.value_type();
+        if expected != actual {
+            return Err(format!(
+                "source parameter '{}' expects {expected:?}, found {actual:?}",
+                parameter.name
+            ));
+        }
+        parameter.default = value.clone();
+    }
+    Ok(())
+}
+
+fn import_effect_resources(
+    effect: &EffectAsset,
+    output: &mut ExplodedEffectContent,
+) -> Result<ExplodedResourceMap, String> {
+    let mut resources = ExplodedResourceMap::default();
+    for asset in &effect.assets {
+        resources.assets.insert(asset.id, AssetId::new());
+    }
+    for flipbook in &effect.flipbooks {
+        resources.assets.insert(flipbook.id, AssetId::new());
+    }
+    for material in &effect.materials {
+        resources.materials.insert(material.id, MaterialId::new());
+    }
+    for parameter in &effect.parameters {
+        resources
+            .parameters
+            .insert(parameter.id, ParameterId::new());
+    }
+
+    for asset in &effect.assets {
+        let mut local = asset.clone();
+        local.id = mapped_asset(asset.id, &resources)?;
+        output.assets.push(local);
+    }
+    for flipbook in &effect.flipbooks {
+        let mut local = flipbook.clone();
+        local.id = mapped_asset(flipbook.id, &resources)?;
+        local.texture = mapped_asset(flipbook.texture, &resources)?;
+        output.flipbooks.push(local);
+    }
+    for parameter in &effect.parameters {
+        let mut local = parameter.clone();
+        local.id = mapped_parameter(parameter.id, &resources)?;
+        local.exposed = false;
+        remap_value(&mut local.default, &resources)?;
+        output.parameters.push(local);
+    }
+    for material in &effect.materials {
+        let mut local = material.clone();
+        local.id = mapped_material(material.id, &resources)?;
+        let MaterialProperties::Sprite {
+            softness,
+            color,
+            texture,
+            ..
+        } = &mut local.properties;
+        remap_material_input(softness, &resources)?;
+        if let SpriteColorSource::Value(color) = color {
+            remap_material_input(color, &resources)?;
+        }
+        if let Some(texture) = texture {
+            *texture = mapped_asset(*texture, &resources)?;
+        }
+        output.materials.push(local);
+    }
+    Ok(resources)
+}
+
+fn remap_emitter_resources(
+    emitter: &mut Emitter,
+    resources: &ExplodedResourceMap,
+) -> Result<(), String> {
+    for module in &mut emitter.modules {
+        for parameter in module.bindings.values_mut() {
+            *parameter = mapped_parameter(*parameter, resources)?;
+        }
+        if let ModuleParameters::Custom(values) = &mut module.parameters {
+            for value in values.values_mut() {
+                remap_value(value, resources)?;
+            }
+        }
+    }
+    for renderer in &mut emitter.renderers {
+        renderer.material = mapped_material(renderer.material, resources)?;
+        match &mut renderer.properties {
+            RendererProperties::Flipbook { flipbook, .. } => {
+                *flipbook = mapped_asset(*flipbook, resources)?;
+            }
+            RendererProperties::Mesh { asset } => {
+                *asset = mapped_asset(*asset, resources)?;
+            }
+            RendererProperties::Custom(values) => {
+                for value in values.values_mut() {
+                    remap_value(value, resources)?;
+                }
+            }
+            RendererProperties::Sprite | RendererProperties::Ribbon { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+fn remap_value(value: &mut Value, resources: &ExplodedResourceMap) -> Result<(), String> {
+    match value {
+        Value::Curve(curve) => curve.id = CurveId::new(),
+        Value::Gradient(gradient) => gradient.id = GradientId::new(),
+        Value::Parameter(parameter) => *parameter = mapped_parameter(*parameter, resources)?,
+        Value::Asset(asset) => *asset = mapped_asset(*asset, resources)?,
+        Value::Material(material) => *material = mapped_material(*material, resources)?,
+        Value::Bool(_)
+        | Value::U32(_)
+        | Value::Scalar(_)
+        | Value::Vec2(_)
+        | Value::Vec3(_)
+        | Value::Vec4(_)
+        | Value::Text(_)
+        | Value::Range(_)
+        | Value::Shape(_) => {}
+    }
+    Ok(())
+}
+
+fn remap_material_input<T>(
+    input: &mut MaterialInput<T>,
+    resources: &ExplodedResourceMap,
+) -> Result<(), String> {
+    if let MaterialInput::Parameter(parameter) = input {
+        *parameter = mapped_parameter(*parameter, resources)?;
+    }
+    Ok(())
+}
+
+fn mapped_asset(id: AssetId, resources: &ExplodedResourceMap) -> Result<AssetId, String> {
+    resources
+        .assets
+        .get(&id)
+        .copied()
+        .ok_or_else(|| format!("source references missing asset {id}"))
+}
+
+fn mapped_material(id: MaterialId, resources: &ExplodedResourceMap) -> Result<MaterialId, String> {
+    resources
+        .materials
+        .get(&id)
+        .copied()
+        .ok_or_else(|| format!("source references missing material {id}"))
+}
+
+fn mapped_parameter(
+    id: ParameterId,
+    resources: &ExplodedResourceMap,
+) -> Result<ParameterId, String> {
+    resources
+        .parameters
+        .get(&id)
+        .copied()
+        .ok_or_else(|| format!("source references missing parameter {id}"))
+}
+
+fn compose_emitter_transforms(
+    parent: EmitterTransform,
+    child: EmitterTransform,
+) -> EmitterTransform {
+    let parent_translation = Vec3::from_array(parent.translation);
+    let parent_rotation = Quat::from_array(parent.rotation);
+    let parent_scale = Vec3::from_array(parent.scale);
+    let child_translation = Vec3::from_array(child.translation);
+    let child_rotation = Quat::from_array(child.rotation);
+    let child_scale = Vec3::from_array(child.scale);
+    EmitterTransform {
+        translation: (parent_translation + parent_rotation * (child_translation * parent_scale))
+            .to_array(),
+        rotation: (parent_rotation * child_rotation).normalize().to_array(),
+        scale: (parent_scale * child_scale).to_array(),
+    }
+}
+
+fn normalized_choreography_order_for_effect(effect: &EffectAsset) -> Vec<ChoreographyTrackId> {
+    let mut seen = BTreeSet::new();
+    let mut order = Vec::with_capacity(effect.effect_clips.len() + effect.emitters.len());
+    for track in &effect.choreography_order {
+        let exists = match *track {
+            ChoreographyTrackId::EffectClip(id) => {
+                effect.effect_clips.iter().any(|clip| clip.id == id)
+            }
+            ChoreographyTrackId::Emitter(id) => {
+                effect.emitters.iter().any(|emitter| emitter.id == id)
+            }
+        };
+        if exists && seen.insert(*track) {
+            order.push(*track);
+        }
+    }
+    for clip in &effect.effect_clips {
+        let track = ChoreographyTrackId::EffectClip(clip.id);
+        if seen.insert(track) {
+            order.push(track);
+        }
+    }
+    for emitter in &effect.emitters {
+        let track = ChoreographyTrackId::Emitter(emitter.id);
+        if seen.insert(track) {
+            order.push(track);
+        }
+    }
+    order
+}
+
 fn paths_refer_to_same_source(left: &Path, right: &Path) -> bool {
     left == right
         || fs::canonicalize(left)
@@ -1893,9 +2401,19 @@ mod tests {
     #[derive(Resource, Default)]
     struct CapturedDocumentAction(Option<DocumentAction>);
 
+    #[derive(Resource, Default)]
+    struct CapturedLibraryAction(Option<LibraryAction>);
+
     fn capture_document_action(
         action: On<DocumentAction>,
         mut captured: ResMut<CapturedDocumentAction>,
+    ) {
+        captured.0 = Some(*action);
+    }
+
+    fn capture_library_action(
+        action: On<LibraryAction>,
+        mut captured: ResMut<CapturedLibraryAction>,
     ) {
         captured.0 = Some(*action);
     }
@@ -2684,6 +3202,38 @@ mod tests {
     }
 
     #[test]
+    fn context_menu_library_actions_dispatch_without_a_background_component() {
+        let clip = EffectClipId::new();
+        let mut app = App::new();
+        app.insert_resource(EditorSession::from_embedded_sample(
+            EFFECT_SOURCE,
+            "assets/effects/prism_bloom.aestra.ron",
+        ))
+        .init_resource::<MenuState>()
+        .init_resource::<LibraryState>()
+        .init_resource::<CapturedLibraryAction>()
+        .add_observer(queue_library_action_activation)
+        .add_observer(capture_library_action)
+        .add_systems(Update, handle_library_action_buttons);
+        let item = app
+            .world_mut()
+            .spawn((
+                Interaction::None,
+                LibraryAction::ExplodeEffectClip(clip),
+                FeathersActionButton,
+            ))
+            .id();
+
+        app.world_mut().trigger(Activate { entity: item });
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<CapturedLibraryAction>().0,
+            Some(LibraryAction::ExplodeEffectClip(clip))
+        );
+    }
+
+    #[test]
     fn library_rename_keeps_the_open_document_clean_and_updates_its_source_path() {
         let temporary = tempfile::tempdir().unwrap();
         let original = temporary.path().join("original.aestra.ron");
@@ -2772,6 +3322,219 @@ mod tests {
                 .contains("Save")
         );
         assert!(original.exists());
+    }
+
+    #[test]
+    fn explode_replaces_the_clip_with_editable_emitters_and_is_undoable() {
+        let temporary = tempfile::tempdir().unwrap();
+        let child_path = temporary.path().join("child.aestra.ron");
+        let mut child = EffectAsset::new("Child", 2.0);
+        let texture = AssetDefinition::texture("Child Texture", "textures/child.png");
+        let texture_id = texture.id;
+        child.assets.push(texture);
+        let MaterialProperties::Sprite { texture, .. } = &mut child.materials[0].properties;
+        *texture = Some(texture_id);
+        child
+            .emitters
+            .push(Emitter::basic_sprite("First", child.duration));
+        let parameter = aestra_bevy::ParameterId::new();
+        child.parameters.push(aestra_bevy::EffectParameter {
+            id: parameter,
+            name: "Intensity".into(),
+            default: Value::Scalar(1.0),
+            exposed: true,
+        });
+        child.emitters[0]
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+            .unwrap()
+            .bindings
+            .insert("spawn_rate".into(), parameter);
+        let mut second = child.emitters[0].clone();
+        second.regenerate_ids();
+        second.name = "Second".into();
+        second.transform.translation = [1.0, 0.0, 0.0];
+        child.emitters.push(second);
+        child.save_ron(&child_path).unwrap();
+        let child_reference = EffectAssetRef::new(child.id);
+
+        let owner = blank_effect();
+        let mut session = EditorSession::from_embedded_sample(
+            &owner.to_pretty_ron().unwrap(),
+            temporary.path().join("owner.aestra.ron"),
+        );
+        let mut clip = aestra_bevy::EffectClip::new(child_reference, 0.25, 1.0);
+        let clip_id = clip.id;
+        clip.transform.translation = [2.0, 0.0, 0.0];
+        clip.parameter_overrides
+            .insert(parameter, Value::Scalar(3.5));
+        session.effect.effect_clips.push(clip.clone());
+        session.effect.choreography_order = vec![ChoreographyTrackId::EffectClip(clip_id)];
+        let original_emitter_count = session.effect.emitters.len();
+        let original_asset_count = session.effect.assets.len();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let catalog_entries = catalog.entries().len();
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .init_resource::<CurvesState>()
+            .init_resource::<WorkspaceLayout>()
+            .init_resource::<MenuState>()
+            .init_resource::<ModulePaletteState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_plugins(EditorLibraryPlugin);
+
+        app.world_mut()
+            .trigger(LibraryAction::ExplodeEffectClip(clip_id));
+
+        let session = app.world().resource::<EditorSession>();
+        assert!(
+            !session
+                .effect
+                .effect_clips
+                .iter()
+                .any(|candidate| candidate.id == clip_id),
+            "{}",
+            session.status
+        );
+        let local_emitters = &session.effect.emitters[original_emitter_count..];
+        assert_eq!(local_emitters.len(), 2);
+        assert_eq!(local_emitters[0].name, "First");
+        assert_eq!(local_emitters[1].name, "Second");
+        assert_eq!(local_emitters[0].start_time, clip.start_time);
+        assert_eq!(local_emitters[0].duration, clip.duration);
+        assert_eq!(local_emitters[0].transform.translation, [2.0, 0.0, 0.0]);
+        assert_eq!(local_emitters[1].transform.translation, [3.0, 0.0, 0.0]);
+        assert_eq!(session.effect.assets.len(), original_asset_count + 1);
+        assert_ne!(session.effect.assets.last().unwrap().id, texture_id);
+        let local_parameter = session.effect.parameters.last().unwrap();
+        assert_ne!(local_parameter.id, parameter);
+        assert_eq!(local_parameter.default, Value::Scalar(3.5));
+        assert!(!local_parameter.exposed);
+        assert_eq!(
+            local_emitters[0]
+                .modules
+                .iter()
+                .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+                .unwrap()
+                .bindings["spawn_rate"],
+            local_parameter.id
+        );
+        assert_eq!(
+            session.effect.choreography_order[0],
+            ChoreographyTrackId::Emitter(local_emitters[0].id)
+        );
+        assert!(
+            session.status.contains("editable emitters"),
+            "{}",
+            session.status
+        );
+        assert!(
+            !app.world()
+                .resource::<LibraryAssetOperationState>()
+                .is_open()
+        );
+        assert_eq!(
+            app.world()
+                .resource::<ProjectEffectCatalog>()
+                .entries()
+                .len(),
+            catalog_entries
+        );
+        assert!(child_path.exists());
+
+        assert!(app.world().resource::<EditorSession>().can_undo());
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        assert!(
+            app.world()
+                .resource::<EditorSession>()
+                .status
+                .starts_with("Undid"),
+            "{}",
+            app.world().resource::<EditorSession>().status
+        );
+        let session = app.world().resource::<EditorSession>();
+        let restored = session
+            .effect
+            .effect_clips
+            .iter()
+            .find(|candidate| candidate.id == clip_id)
+            .unwrap();
+        assert_eq!(restored.source, child_reference);
+        assert_eq!(restored.parameter_overrides[&parameter], Value::Scalar(3.5));
+        assert_eq!(session.effect.emitters.len(), original_emitter_count);
+        assert_eq!(session.effect.assets.len(), original_asset_count);
+        assert_eq!(
+            session.effect.choreography_order,
+            vec![ChoreographyTrackId::EffectClip(clip_id)]
+        );
+    }
+
+    #[test]
+    fn baking_rejects_invalid_overrides_instead_of_silently_discarding_them() {
+        let mut child = EffectAsset::new("Child", 1.0);
+        let parameter = aestra_bevy::ParameterId::new();
+        child.parameters.push(aestra_bevy::EffectParameter {
+            id: parameter,
+            name: "Count".into(),
+            default: Value::U32(2),
+            exposed: true,
+        });
+        let mut clip = aestra_bevy::EffectClip::new(child.id, 0.0, 1.0);
+        clip.parameter_overrides
+            .insert(parameter, Value::Scalar(2.0));
+
+        let error = bake_parameter_overrides(&mut child, &clip.parameter_overrides).unwrap_err();
+
+        assert!(error.contains("expects U32, found Scalar"));
+        assert_eq!(child.parameters[0].default, Value::U32(2));
+    }
+
+    #[test]
+    fn exploding_recursively_materializes_nested_clip_emitters() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut grandchild = EffectAsset::new("Grandchild", 1.0);
+        let mut nested_emitter = Emitter::basic_sprite("Nested", 1.0);
+        nested_emitter.transform.translation = [1.0, 0.0, 0.0];
+        grandchild.emitters.push(nested_emitter);
+        grandchild
+            .save_ron(temporary.path().join("grandchild.aestra.ron"))
+            .unwrap();
+
+        let mut child = EffectAsset::new("Child", 2.0);
+        let mut nested_clip = aestra_bevy::EffectClip::new(grandchild.id, 0.5, 1.0);
+        nested_clip.transform.translation = [2.0, 0.0, 0.0];
+        child.effect_clips.push(nested_clip);
+        child
+            .save_ron(temporary.path().join("child.aestra.ron"))
+            .unwrap();
+
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let mut output = ExplodedEffectContent::default();
+        let parent_transform = EmitterTransform {
+            translation: [3.0, 0.0, 0.0],
+            ..default()
+        };
+        flatten_effect_window(
+            &catalog,
+            &child,
+            &BTreeMap::new(),
+            0.0,
+            2.0,
+            0.25,
+            parent_transform,
+            &mut BTreeSet::new(),
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(output.emitters.len(), 1);
+        assert_eq!(output.emitters[0].name, "Nested");
+        assert_eq!(output.emitters[0].start_time, 0.75);
+        assert_eq!(output.emitters[0].duration, 1.0);
+        assert_eq!(output.emitters[0].transform.translation, [6.0, 0.0, 0.0]);
     }
 
     #[test]

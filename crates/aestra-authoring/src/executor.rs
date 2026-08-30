@@ -245,6 +245,19 @@ fn apply_command(
                 value: previous,
             }]
         }
+        EffectCommand::AddAsset { asset, index } => {
+            checked_insert(&mut effect.assets, *index, asset.clone(), "effect assets")?;
+            vec![EffectCommand::RemoveAsset { id: asset.id }]
+        }
+        EffectCommand::RemoveAsset { id } => {
+            let index = effect
+                .assets
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| not_found("asset", id))?;
+            let asset = effect.assets.remove(index);
+            vec![EffectCommand::AddAsset { asset, index }]
+        }
         EffectCommand::AddParameter { parameter, index } => {
             checked_insert(
                 &mut effect.parameters,

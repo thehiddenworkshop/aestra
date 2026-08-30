@@ -102,7 +102,10 @@ architecture vision; this file is the shorter delivery plan.
   against exposed source parameters, execute in nested CPU and Bevy/GPU preview instances, report
   orphaned/type-changed values, and participate in undo/redo. The Properties now authors typed
   property-level public toggles, in-place source defaults, instance overrides, and
-  reset-to-source. Make Unique, usage graphs, reusable extraction, preview-cache identity,
+  reset-to-source. Explode now replaces a referenced clip with editable local emitters, imports
+  the resources they require, bakes valid instance overrides, and preserves the clip's visible
+  timing and transform in one undoable transaction. Usage graphs, reusable extraction,
+  preview-cache identity,
   markers/events,
   procedural recipes, mesh/ribbon production paths, renderer sorting, and richer material domains
   remain.
@@ -180,7 +183,7 @@ Complete this milestone before expanding the editor or renderer feature surface 
    synchronization, and footer entry point now run through `EditorDiagnosticsPlugin`;
    validation and compilation remain owned by `EditorSession`.
    The advanced Compiler Inspector, artifact formatting, and semantic navigation now run
-   through `EditorCompilerPropertiesPlugin`. New layouts keep it hidden, while a Serde
+   through `EditorCompilerInspectorPlugin`. New layouts keep it hidden, while a Serde
    alias preserves the placement of legacy `GeneratedCode` tabs.
    Runtime profile ingestion, aggregation, bounded history, reset actions, presentation,
    and UI synchronization now run through `EditorProfilerPlugin`. Viewport evaluation

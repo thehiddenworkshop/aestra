@@ -6214,6 +6214,11 @@ fn spawn_effect_clip_context_menu(
             );
             spawn_pointer_context_menu_item(
                 menu,
+                &localizer.text("timeline-menu-explode-effect-clip"),
+                crate::library::LibraryAction::ExplodeEffectClip(clip),
+            );
+            spawn_pointer_context_menu_item(
+                menu,
                 &localizer.text(if muted {
                     "timeline-menu-unmute"
                 } else {

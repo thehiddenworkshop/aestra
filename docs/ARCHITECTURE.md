@@ -194,7 +194,7 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   dockable Diagnostics workspace, severity filtering, semantic-path navigation, and
   the persistent compile-health footer action. Compiler validation remains an
   `EditorSession` responsibility, so presentation cannot mutate or replace reports.
-- Runs advanced compiler-artifact presentation through `EditorCompilerPropertiesPlugin`.
+- Runs advanced compiler-artifact presentation through `EditorCompilerInspectorPlugin`.
   The dockable Compiler Inspector is hidden from the default workspace but remains
   available from View, and saved `GeneratedCode` layout entries migrate without losing
   their placement. It presents execution stages, source-mapped instructions, particle layout, runtime parameter

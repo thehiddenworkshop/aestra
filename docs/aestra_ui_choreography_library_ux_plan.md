@@ -704,7 +704,7 @@ Every referenced effect instance should support:
 ```text
 Edit Source
 Open Instance
-Make Unique
+Explode…
 ```
 
 ## Edit Source
@@ -717,11 +717,13 @@ Changes update all instances using it.
 
 Edit the local instance overrides while preserving the original asset.
 
-## Make Unique
+## Explode
 
-Fork/copy the asset so this instance can diverge permanently.
+Replace the referenced clip with editable local emitter tracks. Bake its current overrides, import
+the resources those emitters need, and preserve the visible timing and instance transform.
 
-These operations need to be obvious in context menus and properties actions.
+These operations need to be obvious in context menus and properties actions. Undo atomically
+restores the original clip and removes the materialized local content.
 
 ---
 
@@ -1561,7 +1563,7 @@ transform
 parameter overrides
 seed
 Edit Source
-Make Unique
+Explode…
 ```
 
 ## Select marker
@@ -2187,7 +2189,7 @@ override indication
 reset-to-source
 explicit source/instance mode
 Edit Source
-Make Unique
+Explode…
 orphaned/type-changed override diagnostics
 ```
 
@@ -2197,7 +2199,9 @@ parameter slots, and reports orphaned, hidden, or type-changed overrides. Nested
 execution and the Bevy/GPU editor preview apply the compiled values. The Properties exposes source
 properties directly, edits their defaults in place, and provides instance overrides with
 reset-to-source through stable undoable commands. Source navigation and explicit instance mode are
-available; Make Unique remains as the user-facing continuation.
+available. Explode recursively materializes a resolved instance as local editable emitters, bakes
+valid overrides, remaps required resources to fresh identities, and replaces the clip through
+normal undo history.
 
 ## Phase H — Nested effect expansion
 
@@ -2308,7 +2312,7 @@ Do not block this MVP on:
 
 ```text
 instance parameter overrides
-Edit Source / Make Unique
+Edit Source / Explode
 named or marker-relative timing
 full automation lanes
 advanced nested expansion
@@ -2363,11 +2367,11 @@ all workspace presets
 
 After the MVP:
 
-- [ ] Exposed effect parameters can be overridden per instance.
-- [ ] Overrides can be reset to inherited source values.
-- [ ] Orphaned or type-changed overrides produce actionable diagnostics.
-- [ ] The user can explicitly edit the source asset.
-- [ ] The user can make an instance unique.
+- [x] Exposed effect parameters can be overridden per instance.
+- [x] Overrides can be reset to inherited source values.
+- [x] Orphaned or type-changed overrides produce actionable diagnostics.
+- [x] The user can explicitly edit the source asset.
+- [x] The user can explode an instance into independent local emitters without changing its visible timing or transform.
 - [ ] The user can add and move named markers.
 - [x] Nested EffectClips can be expanded for read-only source inspection.
 - [x] Breadcrumb navigation clearly indicates nested source editing.

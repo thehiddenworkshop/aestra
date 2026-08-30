@@ -4260,6 +4260,7 @@ fn spawn_source_navigation_row(
     parent: &mut ChildSpawnerCommands,
     breadcrumbs: &[(String, Option<DocumentAction>)],
     trailing_action: Option<(DocumentAction, &str)>,
+    explode_clip: Option<(EffectClipId, &str)>,
     asset_server: &AssetServer,
 ) {
     let items = breadcrumbs
@@ -4305,6 +4306,14 @@ fn spawn_source_navigation_row(
             if let Some((action, label)) = trailing_action {
                 spawn_feathers_action_button(row, label, action, false);
             }
+            if let Some((clip, label)) = explode_clip {
+                spawn_feathers_action_button(
+                    row,
+                    label,
+                    crate::library::LibraryAction::ExplodeEffectClip(clip),
+                    false,
+                );
+            }
         });
 }
 
@@ -4315,6 +4324,7 @@ fn spawn_edit_source_navigation(
     catalog: &ProjectEffectCatalog,
     localizer: &Localizer,
     asset_server: &AssetServer,
+    explode_clip: Option<EffectClipId>,
 ) {
     if catalog.openable_path(source).is_some() {
         spawn_source_navigation_row(
@@ -4324,6 +4334,10 @@ fn spawn_edit_source_navigation(
                 DocumentAction::OpenSource(source),
                 &localizer.text("properties-edit-source"),
             )),
+            explode_clip
+                .map(|clip| (clip, localizer.text("properties-explode-effect-clip")))
+                .as_ref()
+                .map(|(clip, label)| (*clip, label.as_str())),
             asset_server,
         );
     }
@@ -4838,6 +4852,7 @@ fn spawn_effect_clip_properties(
             catalog,
             localizer,
             asset_server,
+            Some(clip.id),
         );
         spawn_read_only_card(stack, localizer.text("properties-effect-clip"), |card| {
             spawn_read_only_row(card, localizer.text("properties-source"), &source_name);
@@ -4954,6 +4969,7 @@ fn spawn_referenced_emitter_properties(
             catalog,
             localizer,
             asset_server,
+            None,
         );
         spawn_read_only_card(stack, localizer.text("properties-reference"), |card| {
             spawn_read_only_row(card, localizer.text("properties-source"), &source_name);
@@ -5081,6 +5097,7 @@ fn spawn_referenced_effect_clip_properties(
             catalog,
             localizer,
             asset_server,
+            None,
         );
         spawn_read_only_card(stack, localizer.text("properties-effect-clip"), |card| {
             spawn_read_only_row(card, localizer.text("properties-source"), &source_name);
@@ -5208,7 +5225,7 @@ pub(crate) fn spawn_properties(
         {
             breadcrumbs.push((emitter.name.clone(), None));
         }
-        spawn_source_navigation_row(parent, &breadcrumbs, None, asset_server);
+        spawn_source_navigation_row(parent, &breadcrumbs, None, None, asset_server);
     }
     if let Some(selection) = timeline.inspected_child.as_ref() {
         let spawned = match selection {
