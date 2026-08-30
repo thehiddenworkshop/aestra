@@ -1,4 +1,4 @@
-//! Inspector ownership: module-stack UI, semantic property editing, numeric scrubbing,
+//! Properties ownership: module-stack UI, semantic property editing, numeric scrubbing,
 //! navigation focus, and contextual help.
 
 use crate::feathers::breadcrumb::{BreadcrumbItem, BreadcrumbProps, spawn_breadcrumb};
@@ -20,30 +20,30 @@ use bevy::{
 };
 use fluent_bundle::FluentArgs;
 
-pub(crate) const INSPECTOR_HIGHLIGHT_DURATION: f32 = 1.6;
+pub(crate) const PROPERTIES_HIGHLIGHT_DURATION: f32 = 1.6;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum InspectorSet {
+pub(crate) enum PropertiesSet {
     Input,
     Actions,
     Sync,
 }
 
-pub(crate) struct InspectorPlugin;
+pub(crate) struct PropertiesPlugin;
 
-impl Plugin for InspectorPlugin {
+impl Plugin for PropertiesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()
             .init_resource::<EffectClipRepairState>()
-            .init_resource::<InspectorFocus>()
+            .init_resource::<PropertiesFocus>()
             .init_resource::<NumericScrubState>()
             .init_resource::<BoundedSliderState>()
-            .add_observer(queue_inspector_action_activation)
+            .add_observer(queue_properties_action_activation)
             .add_observer(handle_document_text_change)
             .add_observer(handle_document_toggle_change)
             .add_observer(handle_emitter_capacity_change)
-            .add_observer(handle_inspector_toggle_change)
+            .add_observer(handle_properties_toggle_change)
             .add_observer(handle_module_enabled_change)
             .add_observer(handle_renderer_enabled_change)
             .add_observer(handle_renderer_scalar_change)
@@ -55,17 +55,17 @@ impl Plugin for InspectorPlugin {
             .add_observer(handle_effect_clip_parameter_text_change)
             .add_observer(handle_effect_clip_parameter_toggle_change)
             .add_observer(update_effect_clip_repair_query)
-            .add_observer(handle_inspector_integer_change)
-            .add_observer(handle_inspector_scalar_change)
+            .add_observer(handle_properties_integer_change)
+            .add_observer(handle_properties_scalar_change)
             .add_observer(handle_bounded_slider_change)
             .add_observer(begin_numeric_scrub)
             .add_observer(update_numeric_scrub)
             .add_observer(finish_numeric_scrub)
-            .add_observer(select_inspector_header)
-            .add_systems(Update, module_palette_keyboard.in_set(InspectorSet::Input))
+            .add_observer(select_properties_header)
+            .add_systems(Update, module_palette_keyboard.in_set(PropertiesSet::Input))
             .add_systems(
                 Update,
-                handle_inspector_actions.in_set(InspectorSet::Actions),
+                handle_properties_actions.in_set(PropertiesSet::Actions),
             )
             .add_systems(
                 Update,
@@ -75,27 +75,27 @@ impl Plugin for InspectorPlugin {
                         sync_emitter_number_inputs,
                         sync_effect_clip_number_inputs,
                         sync_effect_clip_parameter_number_inputs,
-                        sync_inspector_number_inputs,
-                        sync_inspector_slider_inputs,
+                        sync_properties_number_inputs,
+                        sync_properties_slider_inputs,
                         sync_renderer_number_inputs,
                         sync_renderer_slider_inputs,
-                        sync_effect_clip_inspector_timing,
+                        sync_effect_clip_properties_timing,
                         sync_effect_clip_repair_candidates,
                     )
                         .chain(),
-                    scroll_inspector_to_focus,
-                    update_inspector_highlight,
+                    scroll_properties_to_focus,
+                    update_properties_highlight,
                     decorate_numeric_scrub_inputs,
                     sync_module_input_public_toggle_visibility,
                 )
                     .chain()
-                    .in_set(InspectorSet::Sync),
+                    .in_set(PropertiesSet::Sync),
             );
     }
 }
 
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
-pub(crate) enum InspectorAction {
+pub(crate) enum PropertiesAction {
     OpenModulePalette(StackStage),
     CloseModulePalette,
     AddModule(usize),
@@ -106,7 +106,7 @@ pub(crate) enum InspectorAction {
     DeleteModule(ModuleId),
     DuplicateRenderer(RendererId),
     DeleteRenderer(RendererId),
-    ToggleSection(InspectorSection),
+    ToggleSection(PropertiesSection),
     SetModuleChoice {
         module: ModuleId,
         input: u8,
@@ -154,7 +154,7 @@ struct EffectClipRepairCandidate {
 struct EffectClipRepairEmpty;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum InspectorStatus {
+enum PropertiesStatus {
     SelectedCompiled(String),
     Selected(String),
     ModuleRegistryUnavailable,
@@ -175,70 +175,70 @@ enum InspectorStatus {
     RepairRejected(String),
 }
 
-fn set_inspector_status(
+fn set_properties_status(
     session: &mut EditorSession,
     localizer: &Localizer,
-    status: InspectorStatus,
+    status: PropertiesStatus,
 ) {
-    session.status = localize_inspector_status(status, localizer);
+    session.status = localize_properties_status(status, localizer);
 }
 
-fn localize_inspector_status(status: InspectorStatus, localizer: &Localizer) -> String {
+fn localize_properties_status(status: PropertiesStatus, localizer: &Localizer) -> String {
     let (message_id, argument) = match status {
-        InspectorStatus::SelectedCompiled(target) => {
-            ("inspector-status-selected-compiled", ("target", target))
+        PropertiesStatus::SelectedCompiled(target) => {
+            ("properties-status-selected-compiled", ("target", target))
         }
-        InspectorStatus::Selected(target) => ("inspector-status-selected", ("target", target)),
-        InspectorStatus::ModuleRegistryUnavailable => {
-            return localizer.text("inspector-status-module-registry-unavailable");
+        PropertiesStatus::Selected(target) => ("properties-status-selected", ("target", target)),
+        PropertiesStatus::ModuleRegistryUnavailable => {
+            return localizer.text("properties-status-module-registry-unavailable");
         }
-        InspectorStatus::ModuleMissing => {
-            return localizer.text("inspector-status-module-missing");
+        PropertiesStatus::ModuleMissing => {
+            return localizer.text("properties-status-module-missing");
         }
-        InspectorStatus::InputMetadataUnavailable => {
-            return localizer.text("inspector-status-input-metadata-unavailable");
+        PropertiesStatus::InputMetadataUnavailable => {
+            return localizer.text("properties-status-input-metadata-unavailable");
         }
-        InspectorStatus::NotChoice(input) => ("inspector-status-not-choice", ("input", input)),
-        InspectorStatus::ChoiceUnavailable => {
-            return localizer.text("inspector-status-choice-unavailable");
+        PropertiesStatus::NotChoice(input) => ("properties-status-not-choice", ("input", input)),
+        PropertiesStatus::ChoiceUnavailable => {
+            return localizer.text("properties-status-choice-unavailable");
         }
-        InspectorStatus::TargetUnavailable => {
-            return localizer.text("inspector-status-target-unavailable");
+        PropertiesStatus::TargetUnavailable => {
+            return localizer.text("properties-status-target-unavailable");
         }
-        InspectorStatus::FiniteNumberRequired(parameter) => (
-            "inspector-status-finite-number-required",
+        PropertiesStatus::FiniteNumberRequired(parameter) => (
+            "properties-status-finite-number-required",
             ("parameter", parameter),
         ),
-        InspectorStatus::IncompatibleMetadata(parameter) => (
-            "inspector-status-incompatible-metadata",
+        PropertiesStatus::IncompatibleMetadata(parameter) => (
+            "properties-status-incompatible-metadata",
             ("parameter", parameter),
         ),
-        InspectorStatus::Updated(target) => ("inspector-status-updated", ("target", target)),
-        InspectorStatus::NameRequired(target) => {
-            ("inspector-status-name-required", ("target", target))
+        PropertiesStatus::Updated(target) => ("properties-status-updated", ("target", target)),
+        PropertiesStatus::NameRequired(target) => {
+            ("properties-status-name-required", ("target", target))
         }
-        InspectorStatus::EventAdded { trigger, target } => {
+        PropertiesStatus::EventAdded { trigger, target } => {
             let mut args = FluentArgs::new();
             args.set("trigger", trigger);
             args.set("target", target);
-            return localizer.text_with("inspector-status-event-added", &args);
+            return localizer.text_with("properties-status-event-added", &args);
         }
-        InspectorStatus::EventRemoved => {
-            return localizer.text("inspector-status-event-removed");
+        PropertiesStatus::EventRemoved => {
+            return localizer.text("properties-status-event-removed");
         }
-        InspectorStatus::EventDuplicate => {
-            return localizer.text("inspector-status-event-duplicate");
+        PropertiesStatus::EventDuplicate => {
+            return localizer.text("properties-status-event-duplicate");
         }
-        InspectorStatus::EventSelfTarget => {
-            return localizer.text("inspector-status-event-self-target");
+        PropertiesStatus::EventSelfTarget => {
+            return localizer.text("properties-status-event-self-target");
         }
-        InspectorStatus::EventTargetMissing => {
-            return localizer.text("inspector-status-event-target-missing");
+        PropertiesStatus::EventTargetMissing => {
+            return localizer.text("properties-status-event-target-missing");
         }
-        InspectorStatus::RepairRejected(reason) => {
+        PropertiesStatus::RepairRejected(reason) => {
             let mut args = FluentArgs::new();
             args.set("reason", reason);
-            return localizer.text_with("inspector-repair-rejected", &args);
+            return localizer.text_with("properties-repair-rejected", &args);
         }
     };
     let mut args = FluentArgs::new();
@@ -246,9 +246,9 @@ fn localize_inspector_status(status: InspectorStatus, localizer: &Localizer) -> 
     localizer.text_with(message_id, &args)
 }
 
-fn queue_inspector_action_activation(
+fn queue_properties_action_activation(
     activate: On<Activate>,
-    actions: Query<(), (With<InspectorAction>, With<FeathersActionButton>)>,
+    actions: Query<(), (With<PropertiesAction>, With<FeathersActionButton>)>,
     mut commands: Commands,
 ) {
     if actions.contains(activate.entity) {
@@ -300,13 +300,13 @@ fn sync_effect_clip_repair_candidates(
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-fn handle_inspector_actions(
+fn handle_properties_actions(
     mut commands: Commands,
     mut actions: Query<
         (
             Entity,
             &Interaction,
-            &InspectorAction,
+            &PropertiesAction,
             Option<&FeathersActionButton>,
             Option<&PendingFeathersActivation>,
             Option<&InteractionDisabled>,
@@ -363,17 +363,17 @@ fn handle_inspector_actions(
                     session.ui_revision += 1;
                 }
                 match *action {
-                    InspectorAction::OpenModulePalette(stage) => {
+                    PropertiesAction::OpenModulePalette(stage) => {
                         palette.open = true;
                         palette.stage = stage;
                         palette.query.clear();
                         session.ui_revision += 1;
                     }
-                    InspectorAction::CloseModulePalette => {
+                    PropertiesAction::CloseModulePalette => {
                         palette.open = false;
                         session.ui_revision += 1;
                     }
-                    InspectorAction::AddModule(index) => {
+                    PropertiesAction::AddModule(index) => {
                         let module = registry
                             .0
                             .iter()
@@ -383,22 +383,22 @@ fn handle_inspector_actions(
                             session.add_module(module);
                             palette.open = false;
                         } else {
-                            set_inspector_status(
+                            set_properties_status(
                                 &mut session,
                                 &localizer,
-                                InspectorStatus::ModuleRegistryUnavailable,
+                                PropertiesStatus::ModuleRegistryUnavailable,
                             );
                         }
                     }
-                    InspectorAction::AddSpriteRenderer => {
+                    PropertiesAction::AddSpriteRenderer => {
                         session.add_sprite_renderer();
                         palette.open = false;
                     }
-                    InspectorAction::AddFlipbookRenderer => {
+                    PropertiesAction::AddFlipbookRenderer => {
                         session.add_flipbook_renderer();
                         palette.open = false;
                     }
-                    InspectorAction::SetModuleChoice {
+                    PropertiesAction::SetModuleChoice {
                         module,
                         input,
                         choice,
@@ -410,17 +410,17 @@ fn handle_inspector_actions(
                         choice,
                         &localizer,
                     ),
-                    InspectorAction::MoveModule(id, direction) => {
+                    PropertiesAction::MoveModule(id, direction) => {
                         session.move_module(id, direction);
                     }
-                    InspectorAction::DuplicateModule(id) => session.duplicate_module(id),
-                    InspectorAction::DeleteModule(id) => {
+                    PropertiesAction::DuplicateModule(id) => session.duplicate_module(id),
+                    PropertiesAction::DeleteModule(id) => {
                         if preview_module_deletion(&mut session, id) {
                             reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                             workspace.clear();
                         }
                     }
-                    InspectorAction::SetRendererMaterial(id, index) => {
+                    PropertiesAction::SetRendererMaterial(id, index) => {
                         if let Some(material) = session
                             .effect
                             .materials
@@ -430,17 +430,17 @@ fn handle_inspector_actions(
                             session.set_renderer_material(id, material);
                         }
                     }
-                    InspectorAction::SetRendererBlend(id, blend) => {
+                    PropertiesAction::SetRendererBlend(id, blend) => {
                         session.set_renderer_blend(id, blend);
                     }
-                    InspectorAction::SetRendererTexture(id, index) => {
+                    PropertiesAction::SetRendererTexture(id, index) => {
                         let texture = index
                             .and_then(|index| session.effect.assets.get(index))
                             .filter(|asset| asset.kind == aestra_bevy::AssetKind::Texture)
                             .map(|asset| asset.id);
                         session.set_renderer_texture(id, texture);
                     }
-                    InspectorAction::SetRendererFlipbook(id, index) => {
+                    PropertiesAction::SetRendererFlipbook(id, index) => {
                         if let Some(flipbook) = session
                             .effect
                             .flipbooks
@@ -450,13 +450,13 @@ fn handle_inspector_actions(
                             session.set_renderer_flipbook(id, flipbook);
                         }
                     }
-                    InspectorAction::SetFlipbookTimeSource(id, value) => {
+                    PropertiesAction::SetFlipbookTimeSource(id, value) => {
                         session.set_flipbook_time_source(id, value);
                     }
-                    InspectorAction::SetFlipbookPlayback(id, value) => {
+                    PropertiesAction::SetFlipbookPlayback(id, value) => {
                         session.set_flipbook_playback(id, value);
                     }
-                    InspectorAction::AddEventLink { trigger, target } => {
+                    PropertiesAction::AddEventLink { trigger, target } => {
                         let target_name = session
                             .effect
                             .emitters
@@ -465,38 +465,38 @@ fn handle_inspector_actions(
                             .map(|emitter| emitter.name.clone());
                         let result = session.add_event_link(trigger, target);
                         let status = match result {
-                            Ok(_) => InspectorStatus::EventAdded {
+                            Ok(_) => PropertiesStatus::EventAdded {
                                 trigger: localized_event_trigger(&localizer, trigger),
                                 target: target_name.unwrap_or_else(|| target.to_string()),
                             },
                             Err(crate::session::EventLinkError::SameEmitter) => {
-                                InspectorStatus::EventSelfTarget
+                                PropertiesStatus::EventSelfTarget
                             }
                             Err(crate::session::EventLinkError::Duplicate) => {
-                                InspectorStatus::EventDuplicate
+                                PropertiesStatus::EventDuplicate
                             }
                             Err(crate::session::EventLinkError::TargetMissing) => {
-                                InspectorStatus::EventTargetMissing
+                                PropertiesStatus::EventTargetMissing
                             }
                         };
-                        set_inspector_status(&mut session, &localizer, status);
+                        set_properties_status(&mut session, &localizer, status);
                     }
-                    InspectorAction::DeleteEventLink(id) => {
+                    PropertiesAction::DeleteEventLink(id) => {
                         if session.remove_event_link(id) {
-                            set_inspector_status(
+                            set_properties_status(
                                 &mut session,
                                 &localizer,
-                                InspectorStatus::EventRemoved,
+                                PropertiesStatus::EventRemoved,
                             );
                         } else {
-                            set_inspector_status(
+                            set_properties_status(
                                 &mut session,
                                 &localizer,
-                                InspectorStatus::TargetUnavailable,
+                                PropertiesStatus::TargetUnavailable,
                             );
                         }
                     }
-                    InspectorAction::RepairEffectClipSource { clip, source } => {
+                    PropertiesAction::RepairEffectClipSource { clip, source } => {
                         let result = catalog
                             .as_deref()
                             .ok_or_else(|| "the project effect catalog is unavailable".to_owned())
@@ -516,7 +516,7 @@ fn handle_inspector_actions(
                         match result {
                             Ok(()) => {
                                 session.execute(
-                                    localizer.text("inspector-repair-effect-clip-command"),
+                                    localizer.text("properties-repair-effect-clip-command"),
                                     EffectCommand::SetEffectClipSource { id: clip, source },
                                     true,
                                 );
@@ -524,16 +524,16 @@ fn handle_inspector_actions(
                                     repair.query.clear();
                                 }
                             }
-                            Err(reason) => set_inspector_status(
+                            Err(reason) => set_properties_status(
                                 &mut session,
                                 &localizer,
-                                InspectorStatus::RepairRejected(reason),
+                                PropertiesStatus::RepairRejected(reason),
                             ),
                         }
                     }
-                    InspectorAction::ResetEffectClipParameter { clip, parameter } => {
+                    PropertiesAction::ResetEffectClipParameter { clip, parameter } => {
                         session.execute(
-                            localizer.text("inspector-reset-effect-clip-parameter-command"),
+                            localizer.text("properties-reset-effect-clip-parameter-command"),
                             EffectCommand::RemoveEffectClipParameterOverride {
                                 id: clip,
                                 parameter,
@@ -541,7 +541,7 @@ fn handle_inspector_actions(
                             true,
                         );
                     }
-                    InspectorAction::ToggleModuleInputPublic { module, input } => {
+                    PropertiesAction::ToggleModuleInputPublic { module, input } => {
                         toggle_module_input_public(
                             &mut session,
                             &registry.0,
@@ -550,15 +550,15 @@ fn handle_inspector_actions(
                             &localizer,
                         );
                     }
-                    InspectorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
-                    InspectorAction::DeleteRenderer(id) => {
+                    PropertiesAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
+                    PropertiesAction::DeleteRenderer(id) => {
                         if preview_renderer_deletion(&mut session, id) {
                             reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                             workspace.clear();
                         }
                     }
-                    InspectorAction::ToggleSection(section) => {
-                        if toggle_persisted_inspector_section(&session, &mut settings, section) {
+                    PropertiesAction::ToggleSection(section) => {
+                        if toggle_persisted_properties_section(&session, &mut settings, section) {
                             persist_editor_settings(
                                 &settings,
                                 &mut settings_persistence,
@@ -617,7 +617,7 @@ fn toggle_module_input_public(
     localizer: &Localizer,
 ) -> bool {
     let Some((_, input_name)) =
-        inspector_module_input_target(session, registry, module_id, input_index)
+        properties_module_input_target(session, registry, module_id, input_index)
     else {
         return false;
     };
@@ -645,7 +645,7 @@ fn expose_module_input(
     localizer: &Localizer,
 ) -> bool {
     let Some((emitter, input_name)) =
-        inspector_module_input_target(session, registry, module_id, input_index)
+        properties_module_input_target(session, registry, module_id, input_index)
     else {
         return false;
     };
@@ -674,7 +674,7 @@ fn expose_module_input(
         .and_then(|metadata| metadata.inputs.get(input_index as usize))
         .map_or_else(
             || input_name.to_owned(),
-            |input| localized_inspector_input(localizer, input.name, input.display_name, false),
+            |input| localized_properties_input(localizer, input.name, input.display_name, false),
         );
     let parameter = EffectParameter {
         id: ParameterId::new(),
@@ -686,7 +686,7 @@ fn expose_module_input(
     let parameter_index = session.effect.parameters.len();
     session.execute_transaction(
         EffectTransaction::new(
-            localizer.text("inspector-expose-module-input-command"),
+            localizer.text("properties-expose-module-input-command"),
             vec![
                 EffectCommand::AddParameter {
                     parameter,
@@ -704,7 +704,7 @@ fn expose_module_input(
     )
 }
 
-fn inspector_module_input_target<'a>(
+fn properties_module_input_target<'a>(
     session: &EditorSession,
     registry: &'a ModuleRegistry,
     module: ModuleId,
@@ -724,7 +724,7 @@ fn inspector_module_input_target<'a>(
         .map(|input| (emitter, input.name))
 }
 
-// Inspector domain implementation.
+// Properties domain implementation.
 fn semantic_target_exists(effect: &EffectAsset, target: SemanticTarget) -> bool {
     match target {
         SemanticTarget::Effect(id) => effect.id == id,
@@ -748,7 +748,7 @@ fn semantic_target_exists(effect: &EffectAsset, target: SemanticTarget) -> bool 
 
 pub(crate) fn focus_compiled_target(
     session: &mut EditorSession,
-    focus: &mut InspectorFocus,
+    focus: &mut PropertiesFocus,
     target: SemanticTarget,
     localizer: &Localizer,
 ) -> bool {
@@ -764,11 +764,11 @@ pub(crate) fn focus_compiled_target(
     focus.target = Some(target);
     focus.wait_frames = 2;
     focus.highlight = Some(target);
-    focus.highlight_remaining = INSPECTOR_HIGHLIGHT_DURATION;
-    set_inspector_status(
+    focus.highlight_remaining = PROPERTIES_HIGHLIGHT_DURATION;
+    set_properties_status(
         session,
         localizer,
-        InspectorStatus::SelectedCompiled(target.to_string()),
+        PropertiesStatus::SelectedCompiled(target.to_string()),
     );
     session.ui_revision += 1;
     true
@@ -1105,17 +1105,17 @@ mod tests {
             input,
             &test_localizer(),
         ));
-        let control = InspectorNumberControl {
+        let control = PropertiesNumberControl {
             module,
             parameter: "spawn_rate",
             component: 0,
-            kind: InspectorNumberKind::Scalar,
+            kind: PropertiesNumberKind::Scalar,
             step: 1.0,
             min: Some(0.0),
             max: None,
         };
 
-        assert!(apply_inspector_number(
+        assert!(apply_properties_number(
             &mut session,
             control,
             42.0,
@@ -1123,7 +1123,7 @@ mod tests {
         ));
         assert_eq!(session.effect.parameters[0].default, Value::Scalar(42.0));
         assert_eq!(
-            inspector_module_parameter(&session, module, "spawn_rate"),
+            properties_module_parameter(&session, module, "spawn_rate"),
             Some(Value::Scalar(42.0))
         );
         assert_eq!(
@@ -1316,13 +1316,13 @@ mod tests {
     }
 
     #[test]
-    fn inspector_action_activation_uses_the_feathers_contract() {
+    fn properties_action_activation_uses_the_feathers_contract() {
         let mut app = App::new();
-        app.add_observer(queue_inspector_action_activation);
+        app.add_observer(queue_properties_action_activation);
         let action = app
             .world_mut()
             .spawn((
-                InspectorAction::CloseModulePalette,
+                PropertiesAction::CloseModulePalette,
                 FeathersActionButton,
                 Interaction::None,
             ))
@@ -1337,7 +1337,7 @@ mod tests {
     }
 
     #[test]
-    fn inspector_actions_are_executed_by_the_inspector_plugin_path() {
+    fn properties_actions_are_executed_by_the_properties_plugin_path() {
         let temporary = tempfile::tempdir().unwrap();
         let mut app = App::new();
         app.insert_resource(EditorSession::from_embedded_sample(
@@ -1354,11 +1354,11 @@ mod tests {
             temporary.path().join("settings.ron"),
         ))
         .insert_resource(test_localizer())
-        .add_systems(Update, handle_inspector_actions);
+        .add_systems(Update, handle_properties_actions);
         app.world_mut().spawn((
             Button,
             Interaction::Pressed,
-            InspectorAction::OpenModulePalette(StackStage::ParticleSpawn),
+            PropertiesAction::OpenModulePalette(StackStage::ParticleSpawn),
             BackgroundColor(theme::BUTTON),
         ));
 
@@ -1370,7 +1370,7 @@ mod tests {
     }
 
     #[test]
-    fn inspector_disclosure_persists_without_requesting_a_ui_rebuild() {
+    fn properties_disclosure_persists_without_requesting_a_ui_rebuild() {
         let temporary = tempfile::tempdir().unwrap();
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session.selected_layer().modules[0].id;
@@ -1387,11 +1387,11 @@ mod tests {
                 temporary.path().join("settings.ron"),
             ))
             .insert_resource(test_localizer())
-            .add_systems(Update, handle_inspector_actions);
+            .add_systems(Update, handle_properties_actions);
         app.world_mut().spawn((
             Button,
             Interaction::Pressed,
-            InspectorAction::ToggleSection(InspectorSection::Module(module)),
+            PropertiesAction::ToggleSection(PropertiesSection::Module(module)),
             BackgroundColor(theme::BUTTON),
         ));
 
@@ -1405,7 +1405,7 @@ mod tests {
     }
 
     #[test]
-    fn inspector_event_action_creates_an_undoable_semantic_link() {
+    fn properties_event_action_creates_an_undoable_semantic_link() {
         let temporary = tempfile::tempdir().unwrap();
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         session.new_effect();
@@ -1424,11 +1424,11 @@ mod tests {
                 temporary.path().join("settings.ron"),
             ))
             .insert_resource(test_localizer())
-            .add_systems(Update, handle_inspector_actions);
+            .add_systems(Update, handle_properties_actions);
         app.world_mut().spawn((
             Button,
             Interaction::Pressed,
-            InspectorAction::AddEventLink {
+            PropertiesAction::AddEventLink {
                 trigger: EventTrigger::OnDeath,
                 target,
             },
@@ -1445,14 +1445,14 @@ mod tests {
     }
 
     #[test]
-    fn inspector_outcomes_are_localized_and_preserve_semantic_details() {
+    fn properties_outcomes_are_localized_and_preserve_semantic_details() {
         let english = test_localizer();
         assert_eq!(
-            localize_inspector_status(InspectorStatus::TargetUnavailable, &english),
-            "Inspector target is no longer available"
+            localize_properties_status(PropertiesStatus::TargetUnavailable, &english),
+            "Properties target is no longer available"
         );
-        let finite = localize_inspector_status(
-            InspectorStatus::FiniteNumberRequired("spawn_rate".into()),
+        let finite = localize_properties_status(
+            PropertiesStatus::FiniteNumberRequired("spawn_rate".into()),
             &english,
         );
         assert!(finite.contains("spawn_rate"));
@@ -1460,11 +1460,11 @@ mod tests {
 
         let french = Localizer::new("fr-FR").unwrap();
         assert_eq!(
-            localize_inspector_status(InspectorStatus::ChoiceUnavailable, &french),
+            localize_properties_status(PropertiesStatus::ChoiceUnavailable, &french),
             "Le choix n’est plus disponible"
         );
         let selected =
-            localize_inspector_status(InspectorStatus::Selected("module/shape".into()), &french);
+            localize_properties_status(PropertiesStatus::Selected("module/shape".into()), &french);
         assert!(selected.contains("module/shape"));
     }
 
@@ -1487,12 +1487,12 @@ mod tests {
         assert_eq!(session.selected_layer().modules.len(), original_count);
     }
 
-    // Inspector domain tests.
+    // Properties domain tests.
     #[test]
-    fn compiled_navigation_focuses_the_exact_inspector_target() {
+    fn compiled_navigation_focuses_the_exact_properties_target() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let target = SemanticTarget::Module(session.effect.emitters[3].modules[2].id);
-        let mut focus = InspectorFocus::default();
+        let mut focus = PropertiesFocus::default();
 
         assert!(focus_compiled_target(
             &mut session,
@@ -1504,7 +1504,7 @@ mod tests {
         assert_eq!(focus.target, Some(target));
         assert_eq!(focus.wait_frames, 2);
         assert_eq!(focus.highlight, Some(target));
-        assert_eq!(focus.highlight_remaining, INSPECTOR_HIGHLIGHT_DURATION);
+        assert_eq!(focus.highlight_remaining, PROPERTIES_HIGHLIGHT_DURATION);
         assert_eq!(session.selected_layer_index(), 3);
     }
 
@@ -1522,22 +1522,22 @@ mod tests {
     }
 
     #[test]
-    fn inspector_input_localization_uses_fluent_and_preserves_custom_metadata() {
+    fn properties_input_localization_uses_fluent_and_preserves_custom_metadata() {
         let localizer = Localizer::new("fr-FR").unwrap();
         assert_eq!(
-            localized_inspector_input(&localizer, "spawn_rate", "Spawn Rate", false),
+            localized_properties_input(&localizer, "spawn_rate", "Spawn Rate", false),
             "Taux d’émission"
         );
         assert_eq!(
-            localized_inspector_input(&localizer, "custom_gain", "Custom Gain", false),
+            localized_properties_input(&localizer, "custom_gain", "Custom Gain", false),
             "Custom Gain"
         );
     }
 
     #[test]
-    fn inspector_property_units_are_presented_in_the_tooltip_footer() {
+    fn property_units_are_presented_in_the_tooltip_footer() {
         let localizer = test_localizer();
-        let tooltip = inspector_property_tooltip(
+        let tooltip = property_tooltip(
             "Rotation applied to each particle.",
             Some("rad/s"),
             &localizer,
@@ -1547,21 +1547,21 @@ mod tests {
         assert!(accessible.contains("Unit:"), "{accessible:?}");
         assert!(accessible.contains("rad/s"), "{accessible:?}");
 
-        let unitless = inspector_property_tooltip("Normalized opacity.", None, &localizer);
+        let unitless = property_tooltip("Normalized opacity.", None, &localizer);
         assert_eq!(unitless.accessible_label(), "Normalized opacity.");
     }
 
     #[test]
-    fn inspector_number_rejects_non_finite_values() {
-        assert_eq!(clamp_inspector_number(f32::INFINITY, None, None), None);
+    fn properties_number_rejects_non_finite_values() {
+        assert_eq!(clamp_properties_number(f32::INFINITY, None, None), None);
         assert_eq!(
-            clamp_inspector_number(-5.0, Some(0.0), Some(10.0)),
+            clamp_properties_number(-5.0, Some(0.0), Some(10.0)),
             Some(0.0)
         );
     }
 
     #[test]
-    fn inspector_typing_does_not_rebuild_or_commit_until_final() {
+    fn properties_typing_does_not_rebuild_or_commit_until_final() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
             .selected_layer()
@@ -1570,19 +1570,19 @@ mod tests {
             .find(|module| module_parameter(module, "spawn_rate").is_some())
             .unwrap()
             .id;
-        let original = inspector_module_parameter(&session, module, "spawn_rate").unwrap();
+        let original = properties_module_parameter(&session, module, "spawn_rate").unwrap();
         let revision = session.ui_revision;
         let mut app = App::new();
         app.insert_resource(session);
         app.insert_resource(test_localizer());
-        app.add_observer(handle_inspector_scalar_change);
+        app.add_observer(handle_properties_scalar_change);
         let control = app
             .world_mut()
-            .spawn(InspectorNumberControl {
+            .spawn(PropertiesNumberControl {
                 module,
                 parameter: "spawn_rate",
                 component: 0,
-                kind: InspectorNumberKind::Scalar,
+                kind: PropertiesNumberKind::Scalar,
                 step: 5.0,
                 min: Some(0.0),
                 max: None,
@@ -1598,14 +1598,14 @@ mod tests {
 
         let session = app.world().resource::<EditorSession>();
         assert_eq!(
-            inspector_module_parameter(session, module, "spawn_rate"),
+            properties_module_parameter(session, module, "spawn_rate"),
             Some(original)
         );
         assert_eq!(session.ui_revision, revision);
     }
 
     #[test]
-    fn inspector_range_edit_preserves_ordering() {
+    fn properties_range_edit_preserves_ordering() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
             .selected_layer()
@@ -1614,23 +1614,24 @@ mod tests {
             .find(|module| module_parameter(module, "lifetime").is_some())
             .unwrap()
             .id;
-        let control = InspectorNumberControl {
+        let control = PropertiesNumberControl {
             module,
             parameter: "lifetime",
             component: 0,
-            kind: InspectorNumberKind::Range,
+            kind: PropertiesNumberKind::Range,
             step: 0.1,
             min: Some(0.05),
             max: None,
         };
 
-        assert!(apply_inspector_number(
+        assert!(apply_properties_number(
             &mut session,
             control,
             99.0,
             &test_localizer(),
         ));
-        let Value::Range(range) = inspector_module_parameter(&session, module, "lifetime").unwrap()
+        let Value::Range(range) =
+            properties_module_parameter(&session, module, "lifetime").unwrap()
         else {
             panic!("lifetime should remain a range");
         };
@@ -1638,7 +1639,7 @@ mod tests {
     }
 
     #[test]
-    fn inspector_scrub_previews_live_and_commits_one_undoable_edit() {
+    fn properties_scrub_previews_live_and_commits_one_undoable_edit() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
             .selected_layer()
@@ -1647,12 +1648,12 @@ mod tests {
             .find(|module| module_parameter(module, "spawn_rate").is_some())
             .unwrap()
             .id;
-        let original = inspector_module_parameter(&session, module, "spawn_rate").unwrap();
-        let target = NumericScrubTarget::Inspector(InspectorNumberControl {
+        let original = properties_module_parameter(&session, module, "spawn_rate").unwrap();
+        let target = NumericScrubTarget::Properties(PropertiesNumberControl {
             module,
             parameter: "spawn_rate",
             component: 0,
-            kind: InspectorNumberKind::Scalar,
+            kind: PropertiesNumberKind::Scalar,
             step: 5.0,
             min: Some(0.0),
             max: None,
@@ -1660,24 +1661,24 @@ mod tests {
 
         assert!(preview_numeric_scrub(&mut session, target, 29.0));
         assert_eq!(
-            inspector_module_parameter(&session, module, "spawn_rate"),
+            properties_module_parameter(&session, module, "spawn_rate"),
             Some(original.clone()),
             "drag preview must not mutate the document"
         );
         commit_numeric_scrub(&mut session, target, 29.0, &test_localizer());
         assert_eq!(
-            inspector_module_parameter(&session, module, "spawn_rate"),
+            properties_module_parameter(&session, module, "spawn_rate"),
             Some(Value::Scalar(29.0))
         );
         session.undo();
         assert_eq!(
-            inspector_module_parameter(&session, module, "spawn_rate"),
+            properties_module_parameter(&session, module, "spawn_rate"),
             Some(original)
         );
     }
 
     #[test]
-    fn bounded_slider_commit_preserves_the_inspector_tree_and_is_undoable() {
+    fn bounded_slider_commit_preserves_the_properties_tree_and_is_undoable() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
             .selected_layer()
@@ -1686,12 +1687,12 @@ mod tests {
             .find(|module| module_parameter(module, "spread_degrees").is_some())
             .unwrap()
             .id;
-        let original = inspector_module_parameter(&session, module, "spread_degrees").unwrap();
-        let target = NumericScrubTarget::Inspector(InspectorNumberControl {
+        let original = properties_module_parameter(&session, module, "spread_degrees").unwrap();
+        let target = NumericScrubTarget::Properties(PropertiesNumberControl {
             module,
             parameter: "spread_degrees",
             component: 0,
-            kind: InspectorNumberKind::Scalar,
+            kind: PropertiesNumberKind::Scalar,
             step: 5.0,
             min: Some(0.0),
             max: Some(360.0),
@@ -1702,19 +1703,19 @@ mod tests {
         assert!(commit_bounded_slider(&mut session, target, 75.0));
         assert_eq!(session.ui_revision, ui_revision);
         assert_eq!(
-            inspector_module_parameter(&session, module, "spread_degrees"),
+            properties_module_parameter(&session, module, "spread_degrees"),
             Some(Value::Scalar(75.0))
         );
 
         session.undo();
         assert_eq!(
-            inspector_module_parameter(&session, module, "spread_degrees"),
+            properties_module_parameter(&session, module, "spread_degrees"),
             Some(original)
         );
     }
 
     #[test]
-    fn inspector_scrub_uses_metadata_steps_and_modifier_precision() {
+    fn properties_scrub_uses_metadata_steps_and_modifier_precision() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
             .selected_layer()
@@ -1723,16 +1724,16 @@ mod tests {
             .find(|module| module_parameter(module, "spawn_rate").is_some())
             .unwrap()
             .id;
-        let control = InspectorNumberControl {
+        let control = PropertiesNumberControl {
             module,
             parameter: "spawn_rate",
             component: 0,
-            kind: InspectorNumberKind::Scalar,
+            kind: PropertiesNumberKind::Scalar,
             step: 5.0,
             min: Some(0.0),
             max: None,
         };
-        let target = NumericScrubTarget::Inspector(control);
+        let target = NumericScrubTarget::Properties(control);
         assert_eq!(numeric_scrub_step(target), 5.0);
         assert_eq!(numeric_scrub_delta(8.0, 5.0, 1.0), 5.0);
         assert_eq!(
@@ -1766,7 +1767,7 @@ mod tests {
     }
 
     #[test]
-    fn inspector_sections_use_compact_defaults_and_persist_type_preferences() {
+    fn properties_sections_use_compact_defaults_and_persist_type_preferences() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let mut settings = EditorSettings::default();
         let emission = session
@@ -1783,41 +1784,41 @@ mod tests {
             .unwrap();
         let renderer = session.selected_layer().renderers.first().unwrap();
 
-        assert!(!inspector_module_collapsed(&settings, emission));
-        assert!(inspector_module_collapsed(&settings, motion));
-        assert!(inspector_renderer_collapsed(&settings, renderer));
+        assert!(!properties_module_collapsed(&settings, emission));
+        assert!(properties_module_collapsed(&settings, motion));
+        assert!(properties_renderer_collapsed(&settings, renderer));
 
-        assert!(toggle_persisted_inspector_section(
+        assert!(toggle_persisted_properties_section(
             &session,
             &mut settings,
-            InspectorSection::Module(motion.id),
+            PropertiesSection::Module(motion.id),
         ));
-        assert!(!inspector_module_collapsed(&settings, motion));
+        assert!(!properties_module_collapsed(&settings, motion));
         assert_eq!(
             settings
-                .inspector
+                .properties
                 .section_expansion
-                .get(&inspector_module_key(motion)),
+                .get(&properties_module_key(motion)),
             Some(&true)
         );
 
-        assert!(toggle_persisted_inspector_section(
+        assert!(toggle_persisted_properties_section(
             &session,
             &mut settings,
-            InspectorSection::Renderer(renderer.id),
+            PropertiesSection::Renderer(renderer.id),
         ));
-        assert!(!inspector_renderer_collapsed(&settings, renderer));
+        assert!(!properties_renderer_collapsed(&settings, renderer));
         assert_eq!(
             settings
-                .inspector
+                .properties
                 .section_expansion
-                .get(&inspector_renderer_key(renderer)),
+                .get(&properties_renderer_key(renderer)),
             Some(&true)
         );
     }
 
     #[test]
-    fn inspector_number_edit_is_clamped_semantic_and_undoable() {
+    fn properties_number_edit_is_clamped_semantic_and_undoable() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
             .selected_layer()
@@ -1826,38 +1827,38 @@ mod tests {
             .find(|module| module_parameter(module, "spawn_rate").is_some())
             .unwrap()
             .id;
-        let original = inspector_module_parameter(&session, module, "spawn_rate").unwrap();
-        let control = InspectorNumberControl {
+        let original = properties_module_parameter(&session, module, "spawn_rate").unwrap();
+        let control = PropertiesNumberControl {
             module,
             parameter: "spawn_rate",
             component: 0,
-            kind: InspectorNumberKind::Scalar,
+            kind: PropertiesNumberKind::Scalar,
             step: 5.0,
             min: Some(0.0),
             max: Some(30.0),
         };
 
-        assert!(apply_inspector_number(
+        assert!(apply_properties_number(
             &mut session,
             control,
             300.0,
             &test_localizer(),
         ));
         assert_eq!(
-            inspector_module_parameter(&session, module, "spawn_rate"),
+            properties_module_parameter(&session, module, "spawn_rate"),
             Some(Value::Scalar(30.0))
         );
         assert!(session.can_undo());
 
         session.undo();
         assert_eq!(
-            inspector_module_parameter(&session, module, "spawn_rate"),
+            properties_module_parameter(&session, module, "spawn_rate"),
             Some(original)
         );
     }
 
     #[test]
-    fn inspector_edits_volumetric_shape_dimensions_semantically() {
+    fn properties_edits_volumetric_shape_dimensions_semantically() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
             .selected_layer()
@@ -1869,23 +1870,23 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         set_module_choice(&mut session, &registry, module, 0, 5, &test_localizer());
 
-        let control = InspectorNumberControl {
+        let control = PropertiesNumberControl {
             module,
             parameter: "shape",
             component: 2,
-            kind: InspectorNumberKind::Shape,
+            kind: PropertiesNumberKind::Shape,
             step: 0.1,
             min: Some(0.1),
             max: None,
         };
-        assert!(apply_inspector_number(
+        assert!(apply_properties_number(
             &mut session,
             control,
             18.0,
             &test_localizer(),
         ));
         assert_eq!(
-            inspector_module_parameter(&session, module, "shape"),
+            properties_module_parameter(&session, module, "shape"),
             Some(Value::Shape(EmitterShape::Box {
                 half_extents: [12.0, 12.0, 18.0],
             }))
@@ -1893,7 +1894,7 @@ mod tests {
     }
 
     #[test]
-    fn inspector_choice_selects_the_requested_shape_directly() {
+    fn properties_choice_selects_the_requested_shape_directly() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let module = session
             .selected_layer()
@@ -1907,7 +1908,7 @@ mod tests {
         set_module_choice(&mut session, &registry, module, 0, 7, &test_localizer());
 
         assert_eq!(
-            inspector_module_parameter(&session, module, "shape"),
+            properties_module_parameter(&session, module, "shape"),
             Some(Value::Shape(EmitterShape::Cone {
                 radius: 12.0,
                 depth: 24.0,
@@ -1916,7 +1917,7 @@ mod tests {
     }
 
     #[test]
-    fn inspector_emitter_transform_components_are_semantic_and_undoable() {
+    fn properties_emitter_transform_components_are_semantic_and_undoable() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         assert!(set_emitter_transform_component(
             &mut session,
@@ -1933,7 +1934,7 @@ mod tests {
     }
 
     #[test]
-    fn inspector_effect_clip_transform_is_semantic_and_undoable() {
+    fn properties_effect_clip_transform_is_semantic_and_undoable() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let clip = aestra_bevy::EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 1.0);
         let clip_id = clip.id;
@@ -2020,10 +2021,10 @@ mod tests {
         );
     }
 }
-fn scroll_inspector_to_focus(
+fn scroll_properties_to_focus(
     mut commands: Commands,
-    mut focus: ResMut<InspectorFocus>,
-    targets: Query<(Entity, &InspectorSemanticTarget)>,
+    mut focus: ResMut<PropertiesFocus>,
+    targets: Query<(Entity, &PropertiesSemanticTarget)>,
 ) {
     let Some(target) = focus.target else {
         return;
@@ -2041,16 +2042,16 @@ fn scroll_inspector_to_focus(
     focus.target = None;
 }
 
-fn update_inspector_highlight(
+fn update_properties_highlight(
     time: Res<Time>,
-    mut focus: ResMut<InspectorFocus>,
-    mut targets: Query<(&InspectorSemanticTarget, &mut BorderColor)>,
+    mut focus: ResMut<PropertiesFocus>,
+    mut targets: Query<(&PropertiesSemanticTarget, &mut BorderColor)>,
 ) {
     let Some(highlight) = focus.highlight else {
         return;
     };
     focus.highlight_remaining = (focus.highlight_remaining - time.delta_secs()).max(0.0);
-    let strength = (focus.highlight_remaining / INSPECTOR_HIGHLIGHT_DURATION)
+    let strength = (focus.highlight_remaining / PROPERTIES_HIGHLIGHT_DURATION)
         .clamp(0.0, 1.0)
         .powi(2);
     for (target, mut border) in &mut targets {
@@ -2077,29 +2078,29 @@ pub(crate) fn set_module_choice(
         .iter()
         .find(|module| module.id == module_id)
     else {
-        set_inspector_status(session, localizer, InspectorStatus::ModuleMissing);
+        set_properties_status(session, localizer, PropertiesStatus::ModuleMissing);
         return;
     };
     let Some(input) = registry
         .get(&module.module_type)
         .and_then(|metadata| metadata.inputs.get(input_index as usize))
     else {
-        set_inspector_status(
+        set_properties_status(
             session,
             localizer,
-            InspectorStatus::InputMetadataUnavailable,
+            PropertiesStatus::InputMetadataUnavailable,
         );
         return;
     };
     if !matches!(input.control, InputControl::Choice) {
-        set_inspector_status(
+        set_properties_status(
             session,
             localizer,
-            InspectorStatus::NotChoice(input.display_name.into()),
+            PropertiesStatus::NotChoice(input.display_name.into()),
         );
         return;
     }
-    let current = inspector_module_parameter(session, module_id, input.name);
+    let current = properties_module_parameter(session, module_id, input.name);
     let shape = match choice {
         0 => EmitterShape::Point,
         1 => match current {
@@ -2147,15 +2148,15 @@ pub(crate) fn set_module_choice(
             },
         },
         _ => {
-            set_inspector_status(session, localizer, InspectorStatus::ChoiceUnavailable);
+            set_properties_status(session, localizer, PropertiesStatus::ChoiceUnavailable);
             return;
         }
     };
     if let Some(command) =
-        inspector_module_parameter_command(session, module_id, input.name, Value::Shape(shape))
+        properties_module_parameter_command(session, module_id, input.name, Value::Shape(shape))
     {
         session.execute(
-            localizer.text("inspector-edit-module-input-command"),
+            localizer.text("properties-edit-module-input-command"),
             command,
             true,
         );
@@ -2398,26 +2399,26 @@ fn set_emitter_transform_value(
     Some(())
 }
 
-fn sync_inspector_number_inputs(
+fn sync_properties_number_inputs(
     mut commands: Commands,
     session: Res<EditorSession>,
-    controls: Query<(Entity, &InspectorNumberControl), Added<InspectorNumberControl>>,
+    controls: Query<(Entity, &PropertiesNumberControl), Added<PropertiesNumberControl>>,
 ) {
     for (entity, control) in &controls {
-        let Some(value) = inspector_number_input_value(&session, *control) else {
+        let Some(value) = properties_number_input_value(&session, *control) else {
             continue;
         };
         commands.trigger(UpdateNumberInput { entity, value });
     }
 }
 
-fn sync_inspector_slider_inputs(
+fn sync_properties_slider_inputs(
     mut commands: Commands,
     session: Res<EditorSession>,
-    controls: Query<(Entity, &InspectorSliderControl), Added<InspectorSliderControl>>,
+    controls: Query<(Entity, &PropertiesSliderControl), Added<PropertiesSliderControl>>,
 ) {
     for (entity, control) in &controls {
-        let Some(NumberInputValue::F32(value)) = inspector_number_input_value(&session, control.0)
+        let Some(NumberInputValue::F32(value)) = properties_number_input_value(&session, control.0)
         else {
             continue;
         };
@@ -2510,36 +2511,36 @@ fn renderer_number_input_value(
     }
 }
 
-fn inspector_number_input_value(
+fn properties_number_input_value(
     session: &EditorSession,
-    control: InspectorNumberControl,
+    control: PropertiesNumberControl,
 ) -> Option<NumberInputValue> {
-    let value = inspector_module_parameter(session, control.module, control.parameter)?;
+    let value = properties_module_parameter(session, control.module, control.parameter)?;
     match (control.kind, value) {
-        (InspectorNumberKind::U32, Value::U32(value)) => {
+        (PropertiesNumberKind::U32, Value::U32(value)) => {
             Some(NumberInputValue::I32(value.min(i32::MAX as u32) as i32))
         }
-        (InspectorNumberKind::Scalar, Value::Scalar(value)) => Some(NumberInputValue::F32(value)),
-        (InspectorNumberKind::Vector, Value::Vec2(value)) => value
+        (PropertiesNumberKind::Scalar, Value::Scalar(value)) => Some(NumberInputValue::F32(value)),
+        (PropertiesNumberKind::Vector, Value::Vec2(value)) => value
             .get(control.component as usize)
             .copied()
             .map(NumberInputValue::F32),
-        (InspectorNumberKind::Vector, Value::Vec3(value)) => value
+        (PropertiesNumberKind::Vector, Value::Vec3(value)) => value
             .get(control.component as usize)
             .copied()
             .map(NumberInputValue::F32),
-        (InspectorNumberKind::Vector, Value::Vec4(value)) => value
+        (PropertiesNumberKind::Vector, Value::Vec4(value)) => value
             .get(control.component as usize)
             .copied()
             .map(NumberInputValue::F32),
-        (InspectorNumberKind::Range, Value::Range(value)) => {
+        (PropertiesNumberKind::Range, Value::Range(value)) => {
             Some(NumberInputValue::F32(if control.component == 0 {
                 value.min
             } else {
                 value.max
             }))
         }
-        (InspectorNumberKind::Shape, Value::Shape(shape)) => {
+        (PropertiesNumberKind::Shape, Value::Shape(shape)) => {
             shape_dimension(shape, control.component).map(NumberInputValue::F32)
         }
         _ => None,
@@ -2609,13 +2610,13 @@ fn handle_document_text_change(
     let value = change.value.trim();
     if value.is_empty() {
         let target = match control {
-            DocumentTextControl::EffectName => localizer.text("inspector-effect"),
-            DocumentTextControl::EmitterName => localizer.text("inspector-emitter"),
+            DocumentTextControl::EffectName => localizer.text("properties-effect"),
+            DocumentTextControl::EmitterName => localizer.text("properties-emitter"),
         };
-        set_inspector_status(
+        set_properties_status(
             &mut session,
             &localizer,
-            InspectorStatus::NameRequired(target),
+            PropertiesStatus::NameRequired(target),
         );
         session.ui_revision += 1;
         return;
@@ -2627,13 +2628,13 @@ fn handle_document_text_change(
     if changed {
         let target = match control {
             DocumentTextControl::EffectName => {
-                localizer.text("inspector-effect-name-status-target")
+                localizer.text("properties-effect-name-status-target")
             }
             DocumentTextControl::EmitterName => {
-                localizer.text("inspector-emitter-name-status-target")
+                localizer.text("properties-emitter-name-status-target")
             }
         };
-        set_inspector_status(&mut session, &localizer, InspectorStatus::Updated(target));
+        set_properties_status(&mut session, &localizer, PropertiesStatus::Updated(target));
     }
 }
 
@@ -2658,11 +2659,11 @@ fn handle_document_toggle_change(
     let (changed, target) = match control {
         DocumentToggleControl::EmitterEnabled => (
             session.set_selected_emitter_enabled(change.value),
-            localizer.text("inspector-emitter-enabled"),
+            localizer.text("properties-emitter-enabled"),
         ),
     };
     if changed {
-        set_inspector_status(&mut session, &localizer, InspectorStatus::Updated(target));
+        set_properties_status(&mut session, &localizer, PropertiesStatus::Updated(target));
     }
 }
 
@@ -2677,17 +2678,17 @@ fn handle_emitter_capacity_change(
     }
     let value = change.value.max(1) as u32;
     if session.set_selected_emitter_capacity(value) {
-        set_inspector_status(
+        set_properties_status(
             &mut session,
             &localizer,
-            InspectorStatus::Updated(localizer.text("inspector-emitter-capacity")),
+            PropertiesStatus::Updated(localizer.text("properties-emitter-capacity")),
         );
     }
 }
 
-fn handle_inspector_toggle_change(
+fn handle_properties_toggle_change(
     change: On<ValueChange<bool>>,
-    controls: Query<&InspectorToggleControl>,
+    controls: Query<&PropertiesToggleControl>,
     mut commands: Commands,
     mut session: ResMut<EditorSession>,
     localizer: Res<Localizer>,
@@ -2703,18 +2704,22 @@ fn handle_inspector_toggle_change(
     } else {
         commands.entity(change.source).remove::<Checked>();
     }
-    let Some(current) = inspector_module_parameter(&session, control.module, control.parameter)
+    let Some(current) = properties_module_parameter(&session, control.module, control.parameter)
     else {
-        set_inspector_status(&mut session, &localizer, InspectorStatus::TargetUnavailable);
+        set_properties_status(
+            &mut session,
+            &localizer,
+            PropertiesStatus::TargetUnavailable,
+        );
         return;
     };
     let value = Value::Bool(change.value);
     if current != value
         && let Some(command) =
-            inspector_module_parameter_command(&session, control.module, control.parameter, value)
+            properties_module_parameter_command(&session, control.module, control.parameter, value)
     {
         session.execute(
-            localizer.text("inspector-edit-module-input-command"),
+            localizer.text("properties-edit-module-input-command"),
             command,
             true,
         );
@@ -2808,7 +2813,7 @@ fn handle_renderer_scalar_change(
 
 fn handle_bounded_slider_change(
     change: On<ValueChange<f32>>,
-    inspector_controls: Query<&InspectorSliderControl>,
+    properties_controls: Query<&PropertiesSliderControl>,
     renderer_controls: Query<&RendererSliderControl>,
     pairs: Query<&SliderNumberInputPair>,
     mut commands: Commands,
@@ -2818,8 +2823,8 @@ fn handle_bounded_slider_change(
     if !change.value.is_finite() {
         return;
     }
-    let target = if let Ok(control) = inspector_controls.get(change.source) {
-        NumericScrubTarget::Inspector(control.0)
+    let target = if let Ok(control) = properties_controls.get(change.source) {
+        NumericScrubTarget::Properties(control.0)
     } else if let Ok(control) = renderer_controls.get(change.source) {
         NumericScrubTarget::Renderer(control.0)
     } else {
@@ -3057,7 +3062,7 @@ fn update_effect_parameter(
     };
     update(&mut parameter);
     session.execute(
-        localizer.text("inspector-edit-effect-parameter-command"),
+        localizer.text("properties-edit-effect-parameter-command"),
         EffectCommand::SetParameter { id, parameter },
         true,
     )
@@ -3071,7 +3076,7 @@ fn set_effect_clip_parameter_override(
     value: Value,
 ) {
     session.execute(
-        localizer.text("inspector-set-effect-clip-parameter-command"),
+        localizer.text("properties-set-effect-clip-parameter-command"),
         EffectCommand::SetEffectClipParameterOverride {
             id: clip,
             parameter,
@@ -3181,7 +3186,7 @@ fn decorate_numeric_scrub_inputs(
         (
             Without<NumericScrubInput>,
             Or<(
-                With<InspectorNumberControl>,
+                With<PropertiesNumberControl>,
                 With<EmitterNumberControl>,
                 With<EffectClipNumberControl>,
                 With<EffectClipParameterNumberControl>,
@@ -3207,7 +3212,7 @@ fn decorate_numeric_scrub_inputs(
 
 fn begin_numeric_scrub(
     mut drag: On<Pointer<DragStart>>,
-    inspector_controls: Query<&InspectorNumberControl>,
+    properties_controls: Query<&PropertiesNumberControl>,
     emitter_controls: Query<&EmitterNumberControl>,
     effect_clip_controls: Query<&EffectClipNumberControl>,
     effect_clip_parameter_controls: Query<&EffectClipParameterNumberControl>,
@@ -3224,7 +3229,7 @@ fn begin_numeric_scrub(
     let Some((entity, target)) = resolve_numeric_scrub_target(
         drag.entity,
         &parents,
-        &inspector_controls,
+        &properties_controls,
         &emitter_controls,
         &effect_clip_controls,
         &effect_clip_parameter_controls,
@@ -3343,7 +3348,7 @@ fn finish_numeric_scrub(
 fn resolve_numeric_scrub_target(
     entity: Entity,
     parents: &Query<&ChildOf>,
-    inspector_controls: &Query<&InspectorNumberControl>,
+    properties_controls: &Query<&PropertiesNumberControl>,
     emitter_controls: &Query<&EmitterNumberControl>,
     effect_clip_controls: &Query<&EffectClipNumberControl>,
     effect_clip_parameter_controls: &Query<&EffectClipParameterNumberControl>,
@@ -3351,8 +3356,8 @@ fn resolve_numeric_scrub_target(
 ) -> Option<(Entity, NumericScrubTarget)> {
     let mut candidate = entity;
     for _ in 0..4 {
-        if let Ok(control) = inspector_controls.get(candidate) {
-            return Some((candidate, NumericScrubTarget::Inspector(*control)));
+        if let Ok(control) = properties_controls.get(candidate) {
+            return Some((candidate, NumericScrubTarget::Properties(*control)));
         }
         if let Ok(control) = emitter_controls.get(candidate) {
             return Some((candidate, NumericScrubTarget::Emitter(*control)));
@@ -3401,7 +3406,7 @@ fn numeric_scrub_delta(pixel_delta: f32, step: f32, multiplier: f32) -> f32 {
 
 fn numeric_scrub_step(target: NumericScrubTarget) -> f32 {
     match target {
-        NumericScrubTarget::Inspector(control) => control.step,
+        NumericScrubTarget::Properties(control) => control.step,
         NumericScrubTarget::Emitter(control) => match control {
             EmitterNumberControl::Translation(_) => 0.1,
             EmitterNumberControl::Rotation(_) => 1.0,
@@ -3435,8 +3440,8 @@ fn renderer_number_step(control: RendererNumberControl) -> f32 {
 
 fn numeric_scrub_value(session: &EditorSession, target: NumericScrubTarget) -> Option<f32> {
     match target {
-        NumericScrubTarget::Inspector(control) => {
-            inspector_number_input_value(session, control).map(number_input_value_as_f32)
+        NumericScrubTarget::Properties(control) => {
+            properties_number_input_value(session, control).map(number_input_value_as_f32)
         }
         NumericScrubTarget::Emitter(control) => Some(emitter_number_input_value(session, control)),
         NumericScrubTarget::EffectClip(control) => effect_clip_number_input_value(session, control),
@@ -3478,8 +3483,8 @@ fn round_numeric_scrub_value(target: NumericScrubTarget, value: f32, multiplier:
 fn numeric_scrub_is_integer(target: NumericScrubTarget) -> bool {
     matches!(
         target,
-        NumericScrubTarget::Inspector(InspectorNumberControl {
-            kind: InspectorNumberKind::U32,
+        NumericScrubTarget::Properties(PropertiesNumberControl {
+            kind: PropertiesNumberKind::U32,
             ..
         }) | NumericScrubTarget::EffectClipParameter(EffectClipParameterScrubControl {
             kind: EffectClipParameterScrubKind::U32,
@@ -3506,14 +3511,14 @@ fn normalize_numeric_scrub_value_with_multiplier(
         return numeric_scrub_value(session, target).unwrap_or_default();
     }
     let normalized = match target {
-        NumericScrubTarget::Inspector(control) => {
+        NumericScrubTarget::Properties(control) => {
             let mut value =
-                clamp_inspector_number(value, control.min, control.max).unwrap_or_default();
-            if control.kind == InspectorNumberKind::U32 {
+                clamp_properties_number(value, control.min, control.max).unwrap_or_default();
+            if control.kind == PropertiesNumberKind::U32 {
                 value = value.max(0.0).round();
-            } else if control.kind == InspectorNumberKind::Range
+            } else if control.kind == PropertiesNumberKind::Range
                 && let Some(Value::Range(range)) =
-                    inspector_module_parameter(session, control.module, control.parameter)
+                    properties_module_parameter(session, control.module, control.parameter)
             {
                 value = if control.component == 0 {
                     value.min(range.max)
@@ -3604,11 +3609,11 @@ fn numeric_scrub_command(
     value: f32,
 ) -> Option<EffectCommand> {
     match target {
-        NumericScrubTarget::Inspector(control) => inspector_module_parameter_command(
+        NumericScrubTarget::Properties(control) => properties_module_parameter_command(
             session,
             control.module,
             control.parameter,
-            updated_inspector_number_value(session, control, value)?,
+            updated_properties_number_value(session, control, value)?,
         ),
         NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
             let emitter = session.selected_layer();
@@ -3722,8 +3727,8 @@ fn commit_numeric_scrub(
     localizer: &Localizer,
 ) {
     match target {
-        NumericScrubTarget::Inspector(control) => {
-            apply_inspector_number(session, control, value, localizer);
+        NumericScrubTarget::Properties(control) => {
+            apply_properties_number(session, control, value, localizer);
         }
         NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
             let current = session.selected_layer().start_time;
@@ -3744,7 +3749,7 @@ fn commit_numeric_scrub(
         NumericScrubTarget::EffectClipParameter(_) => {
             if let Some(command) = numeric_scrub_command(session, target, value) {
                 session.execute(
-                    localizer.text("inspector-set-effect-clip-parameter-command"),
+                    localizer.text("properties-set-effect-clip-parameter-command"),
                     command,
                     true,
                 );
@@ -3771,7 +3776,7 @@ fn commit_bounded_slider(
         return false;
     };
     let label = match target {
-        NumericScrubTarget::Inspector(control) => format!("Changed {}", control.parameter),
+        NumericScrubTarget::Properties(control) => format!("Changed {}", control.parameter),
         NumericScrubTarget::Renderer(RendererNumberControl::Uv(_, _)) => {
             "Changed material UV bounds".into()
         }
@@ -3839,9 +3844,9 @@ fn handle_renderer_toggle_change(
     }
 }
 
-fn handle_inspector_integer_change(
+fn handle_properties_integer_change(
     change: On<ValueChange<i32>>,
-    controls: Query<&InspectorNumberControl>,
+    controls: Query<&PropertiesNumberControl>,
     mut session: ResMut<EditorSession>,
     localizer: Res<Localizer>,
 ) {
@@ -3851,15 +3856,15 @@ fn handle_inspector_integer_change(
     let Ok(control) = controls.get(change.source) else {
         return;
     };
-    if control.kind != InspectorNumberKind::U32 {
+    if control.kind != PropertiesNumberKind::U32 {
         return;
     }
-    apply_inspector_number(&mut session, *control, change.value as f32, &localizer);
+    apply_properties_number(&mut session, *control, change.value as f32, &localizer);
 }
 
-fn handle_inspector_scalar_change(
+fn handle_properties_scalar_change(
     change: On<ValueChange<f32>>,
-    controls: Query<&InspectorNumberControl>,
+    controls: Query<&PropertiesNumberControl>,
     mut session: ResMut<EditorSession>,
     localizer: Res<Localizer>,
 ) {
@@ -3869,13 +3874,13 @@ fn handle_inspector_scalar_change(
     let Ok(control) = controls.get(change.source) else {
         return;
     };
-    if control.kind == InspectorNumberKind::U32 {
+    if control.kind == PropertiesNumberKind::U32 {
         return;
     }
-    apply_inspector_number(&mut session, *control, change.value, &localizer);
+    apply_properties_number(&mut session, *control, change.value, &localizer);
 }
 
-fn inspector_module_parameter(
+fn properties_module_parameter(
     session: &EditorSession,
     module: ModuleId,
     parameter: &str,
@@ -3896,7 +3901,7 @@ fn inspector_module_parameter(
     module_parameter(module, parameter)
 }
 
-fn inspector_module_parameter_command(
+fn properties_module_parameter_command(
     session: &EditorSession,
     module: ModuleId,
     input: &str,
@@ -3928,30 +3933,30 @@ fn inspector_module_parameter_command(
     })
 }
 
-fn apply_inspector_number(
+fn apply_properties_number(
     session: &mut EditorSession,
-    control: InspectorNumberControl,
+    control: PropertiesNumberControl,
     raw_value: f32,
     localizer: &Localizer,
 ) -> bool {
-    let Some(value) = clamp_inspector_number(raw_value, control.min, control.max) else {
-        set_inspector_status(
+    let Some(value) = clamp_properties_number(raw_value, control.min, control.max) else {
+        set_properties_status(
             session,
             localizer,
-            InspectorStatus::FiniteNumberRequired(control.parameter.into()),
+            PropertiesStatus::FiniteNumberRequired(control.parameter.into()),
         );
         return false;
     };
-    let Some(current) = inspector_module_parameter(session, control.module, control.parameter)
+    let Some(current) = properties_module_parameter(session, control.module, control.parameter)
     else {
-        set_inspector_status(session, localizer, InspectorStatus::TargetUnavailable);
+        set_properties_status(session, localizer, PropertiesStatus::TargetUnavailable);
         return false;
     };
-    let Some(updated) = updated_inspector_number_value(session, control, value) else {
-        set_inspector_status(
+    let Some(updated) = updated_properties_number_value(session, control, value) else {
+        set_properties_status(
             session,
             localizer,
-            InspectorStatus::IncompatibleMetadata(control.parameter.into()),
+            PropertiesStatus::IncompatibleMetadata(control.parameter.into()),
         );
         return false;
     };
@@ -3969,45 +3974,45 @@ fn apply_inspector_number(
         return true;
     }
     let Some(command) =
-        inspector_module_parameter_command(session, control.module, control.parameter, updated)
+        properties_module_parameter_command(session, control.module, control.parameter, updated)
     else {
         return false;
     };
     session.execute(
-        localizer.text("inspector-edit-module-input-command"),
+        localizer.text("properties-edit-module-input-command"),
         command,
         true,
     )
 }
 
-fn updated_inspector_number_value(
+fn updated_properties_number_value(
     session: &EditorSession,
-    control: InspectorNumberControl,
+    control: PropertiesNumberControl,
     raw_value: f32,
 ) -> Option<Value> {
-    let value = clamp_inspector_number(raw_value, control.min, control.max)?;
-    let current = inspector_module_parameter(session, control.module, control.parameter)?;
+    let value = clamp_properties_number(raw_value, control.min, control.max)?;
+    let current = properties_module_parameter(session, control.module, control.parameter)?;
     match (control.kind, current) {
-        (InspectorNumberKind::U32, Value::U32(_)) => Some(Value::U32(
+        (PropertiesNumberKind::U32, Value::U32(_)) => Some(Value::U32(
             value.max(0.0).round().min(u32::MAX as f32) as u32,
         )),
-        (InspectorNumberKind::Scalar, Value::Scalar(_)) => Some(Value::Scalar(value)),
-        (InspectorNumberKind::Vector, Value::Vec2(mut vector)) => {
+        (PropertiesNumberKind::Scalar, Value::Scalar(_)) => Some(Value::Scalar(value)),
+        (PropertiesNumberKind::Vector, Value::Vec2(mut vector)) => {
             let component = vector.get_mut(control.component as usize)?;
             *component = value;
             Some(Value::Vec2(vector))
         }
-        (InspectorNumberKind::Vector, Value::Vec3(mut vector)) => {
+        (PropertiesNumberKind::Vector, Value::Vec3(mut vector)) => {
             let component = vector.get_mut(control.component as usize)?;
             *component = value;
             Some(Value::Vec3(vector))
         }
-        (InspectorNumberKind::Vector, Value::Vec4(mut vector)) => {
+        (PropertiesNumberKind::Vector, Value::Vec4(mut vector)) => {
             let component = vector.get_mut(control.component as usize)?;
             *component = value;
             Some(Value::Vec4(vector))
         }
-        (InspectorNumberKind::Range, Value::Range(mut range)) => {
+        (PropertiesNumberKind::Range, Value::Range(mut range)) => {
             if control.component == 0 {
                 range.min = value.min(range.max);
             } else {
@@ -4015,14 +4020,14 @@ fn updated_inspector_number_value(
             }
             Some(Value::Range(range))
         }
-        (InspectorNumberKind::Shape, Value::Shape(shape)) => {
+        (PropertiesNumberKind::Shape, Value::Shape(shape)) => {
             shape_with_dimension(shape, control.component, value).map(Value::Shape)
         }
         _ => None,
     }
 }
 
-fn clamp_inspector_number(value: f32, min: Option<f32>, max: Option<f32>) -> Option<f32> {
+fn clamp_properties_number(value: f32, min: Option<f32>, max: Option<f32>) -> Option<f32> {
     if !value.is_finite() {
         return None;
     }
@@ -4030,7 +4035,7 @@ fn clamp_inspector_number(value: f32, min: Option<f32>, max: Option<f32>) -> Opt
     Some(max.map_or(value, |max| value.min(max)))
 }
 
-fn spawn_read_only_inspector_shell(
+fn spawn_read_only_properties_shell(
     parent: &mut ChildSpawnerCommands,
     title: &str,
     localizer: &Localizer,
@@ -4048,16 +4053,16 @@ fn spawn_read_only_inspector_shell(
         .with_children(|panel| {
             panel_heading(
                 panel,
-                &localizer.text("inspector-referenced-effect-heading"),
+                &localizer.text("properties-referenced-effect-heading"),
                 &localizer.text(if instance_editable {
-                    "inspector-instance-editable"
+                    "properties-instance-editable"
                 } else {
-                    "inspector-read-only"
+                    "properties-read-only"
                 }),
             );
             panel.spawn((
                 Text::new(title),
-                InspectorTitle,
+                PropertiesTitle,
                 TextFont {
                     font_size: FontSize::Px(17.0),
                     ..default()
@@ -4079,7 +4084,7 @@ fn spawn_read_only_inspector_shell(
                 .with_children(|container| {
                     spawn_vertical_scroll_area(
                         container,
-                        ScrollMemoryKey::Inspector,
+                        ScrollMemoryKey::Properties,
                         Node {
                             flex_grow: 1.0,
                             min_width: Val::Px(0.0),
@@ -4179,22 +4184,22 @@ fn spawn_read_only_row(
 }
 
 #[derive(Component, Clone, Copy)]
-struct EffectClipInspectorTimingText {
+struct EffectClipPropertiesTimingText {
     clip: EffectClipId,
-    field: EffectClipInspectorTimingField,
+    field: EffectClipPropertiesTimingField,
 }
 
 #[derive(Clone, Copy)]
-enum EffectClipInspectorTimingField {
+enum EffectClipPropertiesTimingField {
     Start,
     SourceOffset,
     Duration,
 }
 
-fn sync_effect_clip_inspector_timing(
+fn sync_effect_clip_properties_timing(
     session: Res<EditorSession>,
     timeline: Option<Res<TimelineState>>,
-    mut texts: Query<(&EffectClipInspectorTimingText, &mut Text)>,
+    mut texts: Query<(&EffectClipPropertiesTimingText, &mut Text)>,
 ) {
     for (marker, mut text) in &mut texts {
         let timing = timeline
@@ -4212,9 +4217,9 @@ fn sync_effect_clip_inspector_timing(
             continue;
         };
         let value = match marker.field {
-            EffectClipInspectorTimingField::Start => start,
-            EffectClipInspectorTimingField::SourceOffset => source_offset,
-            EffectClipInspectorTimingField::Duration => duration,
+            EffectClipPropertiesTimingField::Start => start,
+            EffectClipPropertiesTimingField::SourceOffset => source_offset,
+            EffectClipPropertiesTimingField::Duration => duration,
         };
         text.0 = format!("{value:.3} s");
     }
@@ -4317,7 +4322,7 @@ fn spawn_edit_source_navigation(
             breadcrumbs,
             Some((
                 DocumentAction::OpenSource(source),
-                &localizer.text("inspector-edit-source"),
+                &localizer.text("properties-edit-source"),
             )),
             asset_server,
         );
@@ -4360,7 +4365,7 @@ fn spawn_effect_clip_repair(
 ) {
     spawn_read_only_card(
         parent,
-        localizer.text("inspector-repair-reference"),
+        localizer.text("properties-repair-reference"),
         |card| {
             card.spawn((
                 Text::new(dependency_error),
@@ -4379,8 +4384,8 @@ fn spawn_effect_clip_repair(
                 spawn_search_field(
                     search,
                     &repair.query,
-                    &localizer.text("inspector-repair-search-placeholder"),
-                    &localizer.text("inspector-repair-search-clear"),
+                    &localizer.text("properties-repair-search-placeholder"),
+                    &localizer.text("properties-repair-search-clear"),
                     EffectClipRepairSearchInput,
                 );
             });
@@ -4397,7 +4402,7 @@ fn spawn_effect_clip_repair(
                 let visible = repair_candidate_matches(&repair.query, &entry.display_name, &path);
                 let accessible = format!(
                     "{} {}",
-                    localizer.text("inspector-repair-reference"),
+                    localizer.text("properties-repair-reference"),
                     entry.display_name
                 );
                 let row = spawn_action_list_row(
@@ -4406,7 +4411,7 @@ fn spawn_effect_clip_repair(
                     Some(&path),
                     None,
                     &accessible,
-                    InspectorAction::RepairEffectClipSource {
+                    PropertiesAction::RepairEffectClipSource {
                         clip: clip.id,
                         source: reference,
                     },
@@ -4420,8 +4425,8 @@ fn spawn_effect_clip_repair(
             }
             let empty = spawn_list_empty_state(
                 card,
-                &localizer.text("inspector-repair-no-results-title"),
-                &localizer.text("inspector-repair-no-results-message"),
+                &localizer.text("properties-repair-no-results-title"),
+                &localizer.text("properties-repair-no-results-message"),
                 theme::TEXT_MUTED,
                 if compatible == 0 {
                     Display::Flex
@@ -4527,11 +4532,11 @@ fn spawn_effect_clip_instance_parameters(
     let entries = effect_clip_parameter_entries(clip, source);
     spawn_read_only_card(
         parent,
-        localizer.text("inspector-instance-parameters"),
+        localizer.text("properties-instance-parameters"),
         |card| {
             if entries.is_empty() {
                 card.spawn_empty().apply_scene(label_dim(
-                    localizer.text("inspector-instance-parameters-empty"),
+                    localizer.text("properties-instance-parameters-empty"),
                 ));
                 return;
             }
@@ -4606,7 +4611,7 @@ fn spawn_effect_clip_parameter_row(
                     });
                     if entry.overridden {
                         row.spawn((
-                            Text::new(localizer.text("inspector-parameter-overridden")),
+                            Text::new(localizer.text("properties-parameter-overridden")),
                             TextFont {
                                 font_size: FontSize::Px(8.0),
                                 ..default()
@@ -4618,14 +4623,16 @@ fn spawn_effect_clip_parameter_row(
                         let reset = mini_button(
                             row,
                             "↺",
-                            InspectorAction::ResetEffectClipParameter {
+                            PropertiesAction::ResetEffectClipParameter {
                                 clip,
                                 parameter: entry.id,
                             },
                         );
                         row.commands().entity(reset).insert((
-                            EditorTooltip::description(localizer.text("inspector-reset-to-source")),
-                            AccessibleLabel(localizer.text("inspector-reset-to-source")),
+                            EditorTooltip::description(
+                                localizer.text("properties-reset-to-source"),
+                            ),
+                            AccessibleLabel(localizer.text("properties-reset-to-source")),
                         ));
                     }
                 });
@@ -4781,21 +4788,23 @@ fn effect_clip_parameter_issue_text(
     issue: EffectClipParameterIssue,
 ) -> String {
     match issue {
-        EffectClipParameterIssue::Missing => localizer.text("inspector-parameter-override-missing"),
-        EffectClipParameterIssue::Hidden => localizer.text("inspector-parameter-override-hidden"),
+        EffectClipParameterIssue::Missing => {
+            localizer.text("properties-parameter-override-missing")
+        }
+        EffectClipParameterIssue::Hidden => localizer.text("properties-parameter-override-hidden"),
         EffectClipParameterIssue::TypeMismatch { expected, actual } => {
             let mut args = FluentArgs::new();
             args.set("expected", format!("{expected:?}"));
             args.set("actual", format!("{actual:?}"));
-            localizer.text_with("inspector-parameter-override-type-mismatch", &args)
+            localizer.text_with("properties-parameter-override-type-mismatch", &args)
         }
         EffectClipParameterIssue::SourceUnavailable => {
-            localizer.text("inspector-parameter-override-source-unavailable")
+            localizer.text("properties-parameter-override-source-unavailable")
         }
     }
 }
 
-fn spawn_effect_clip_inspector(
+fn spawn_effect_clip_properties(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
@@ -4815,7 +4824,7 @@ fn spawn_effect_clip_inspector(
     let source_name = effect_clip_catalog_name(catalog, clip.source);
     let source = catalog.load_effect(clip.source).ok();
     let dependency_error = catalog.effect_clip_dependency_error(&session.effect, clip.id);
-    spawn_read_only_inspector_shell(parent, &source_name, localizer, true, |stack| {
+    spawn_read_only_properties_shell(parent, &source_name, localizer, true, |stack| {
         spawn_edit_source_navigation(
             stack,
             &[
@@ -4830,44 +4839,44 @@ fn spawn_effect_clip_inspector(
             localizer,
             asset_server,
         );
-        spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
-            spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
+        spawn_read_only_card(stack, localizer.text("properties-effect-clip"), |card| {
+            spawn_read_only_row(card, localizer.text("properties-source"), &source_name);
             let start = spawn_read_only_row(
                 card,
-                localizer.text("inspector-start"),
+                localizer.text("properties-start"),
                 format!("{:.3} s", clip.start_time),
             );
             card.commands()
                 .entity(start)
-                .insert(EffectClipInspectorTimingText {
+                .insert(EffectClipPropertiesTimingText {
                     clip: clip.id,
-                    field: EffectClipInspectorTimingField::Start,
+                    field: EffectClipPropertiesTimingField::Start,
                 });
             let source_offset = spawn_read_only_row(
                 card,
-                localizer.text("inspector-source-offset"),
+                localizer.text("properties-source-offset"),
                 format!("{:.3} s", clip.source_offset),
             );
             card.commands()
                 .entity(source_offset)
-                .insert(EffectClipInspectorTimingText {
+                .insert(EffectClipPropertiesTimingText {
                     clip: clip.id,
-                    field: EffectClipInspectorTimingField::SourceOffset,
+                    field: EffectClipPropertiesTimingField::SourceOffset,
                 });
             let duration = spawn_read_only_row(
                 card,
-                localizer.text("inspector-duration"),
+                localizer.text("properties-duration"),
                 format!("{:.3} s", clip.duration),
             );
             card.commands()
                 .entity(duration)
-                .insert(EffectClipInspectorTimingText {
+                .insert(EffectClipPropertiesTimingText {
                     clip: clip.id,
-                    field: EffectClipInspectorTimingField::Duration,
+                    field: EffectClipPropertiesTimingField::Duration,
                 });
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-seed"),
+                localizer.text("properties-seed"),
                 format!("{:?}", clip.seed),
             );
         });
@@ -4876,34 +4885,34 @@ fn spawn_effect_clip_inspector(
         if let Some(error) = dependency_error.as_deref() {
             spawn_effect_clip_repair(stack, session, catalog, repair, localizer, clip, error);
         }
-        spawn_read_only_card(stack, localizer.text("inspector-source-summary"), |card| {
+        spawn_read_only_card(stack, localizer.text("properties-source-summary"), |card| {
             if let Some(source) = &source {
-                spawn_read_only_row(card, localizer.text("inspector-name"), &source.name);
+                spawn_read_only_row(card, localizer.text("properties-name"), &source.name);
                 spawn_read_only_row(
                     card,
-                    localizer.text("inspector-duration"),
+                    localizer.text("properties-duration"),
                     format!("{:.3} s", source.duration),
                 );
                 spawn_read_only_row(
                     card,
-                    localizer.text("inspector-emitters"),
+                    localizer.text("properties-emitters"),
                     source.emitters.len().to_string(),
                 );
                 spawn_read_only_row(
                     card,
-                    localizer.text("inspector-looping"),
+                    localizer.text("properties-looping"),
                     source.looping.to_string(),
                 );
             } else {
                 spawn_read_only_row(
                     card,
-                    localizer.text("inspector-status"),
-                    localizer.text("inspector-source-unavailable"),
+                    localizer.text("properties-status"),
+                    localizer.text("properties-source-unavailable"),
                 );
             }
         });
         stack.spawn((
-            Text::new(localizer.text("inspector-effect-clip-read-only-description")),
+            Text::new(localizer.text("properties-effect-clip-read-only-description")),
             TextFont {
                 font_size: FontSize::Px(9.0),
                 ..default()
@@ -4915,7 +4924,7 @@ fn spawn_effect_clip_inspector(
     true
 }
 
-fn spawn_referenced_emitter_inspector(
+fn spawn_referenced_emitter_properties(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
@@ -4935,7 +4944,7 @@ fn spawn_referenced_emitter_inspector(
         return false;
     };
     let source_name = effect_clip_catalog_name(catalog, clip.source);
-    spawn_read_only_inspector_shell(parent, &emitter.name, localizer, false, |stack| {
+    spawn_read_only_properties_shell(parent, &emitter.name, localizer, false, |stack| {
         let mut breadcrumbs = effect_clip_breadcrumbs(session, catalog, path);
         breadcrumbs.push((emitter.name.clone(), None));
         spawn_edit_source_navigation(
@@ -4946,46 +4955,46 @@ fn spawn_referenced_emitter_inspector(
             localizer,
             asset_server,
         );
-        spawn_read_only_card(stack, localizer.text("inspector-reference"), |card| {
-            spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
-            spawn_read_only_row(card, localizer.text("inspector-emitter"), &emitter.name);
+        spawn_read_only_card(stack, localizer.text("properties-reference"), |card| {
+            spawn_read_only_row(card, localizer.text("properties-source"), &source_name);
+            spawn_read_only_row(card, localizer.text("properties-emitter"), &emitter.name);
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-mode"),
-                localizer.text("inspector-read-only"),
+                localizer.text("properties-mode"),
+                localizer.text("properties-read-only"),
             );
         });
-        spawn_read_only_card(stack, localizer.text("inspector-emitter"), |card| {
+        spawn_read_only_card(stack, localizer.text("properties-emitter"), |card| {
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-enabled"),
+                localizer.text("properties-enabled"),
                 emitter.enabled.to_string(),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-capacity"),
+                localizer.text("properties-capacity"),
                 emitter.max_particles.to_string(),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-start"),
+                localizer.text("properties-start"),
                 format!("{:.3} s", emitter.start_time),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-duration"),
+                localizer.text("properties-duration"),
                 format!("{:.3} s", emitter.duration),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-domain"),
+                localizer.text("properties-domain"),
                 format!("{:?}", emitter.simulation_domain),
             );
         });
-        spawn_read_only_card(stack, localizer.text("inspector-transform"), |card| {
+        spawn_read_only_card(stack, localizer.text("properties-transform"), |card| {
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-position"),
+                localizer.text("properties-position"),
                 format!(
                     "{:.3}, {:.3}, {:.3}",
                     emitter.transform.translation[0],
@@ -4995,7 +5004,7 @@ fn spawn_referenced_emitter_inspector(
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-rotation"),
+                localizer.text("properties-rotation"),
                 format!(
                     "{:.3}, {:.3}, {:.3}, {:.3}",
                     emitter.transform.rotation[0],
@@ -5006,7 +5015,7 @@ fn spawn_referenced_emitter_inspector(
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-scale"),
+                localizer.text("properties-scale"),
                 format!(
                     "{:.3}, {:.3}, {:.3}",
                     emitter.transform.scale[0],
@@ -5019,17 +5028,17 @@ fn spawn_referenced_emitter_inspector(
             spawn_read_only_card(stack, &module.module_type.0, |card| {
                 spawn_read_only_row(
                     card,
-                    localizer.text("inspector-stage"),
+                    localizer.text("properties-stage"),
                     format!("{:?}", module.stage),
                 );
                 spawn_read_only_row(
                     card,
-                    localizer.text("inspector-enabled"),
+                    localizer.text("properties-enabled"),
                     module.enabled.to_string(),
                 );
                 spawn_read_only_row(
                     card,
-                    localizer.text("inspector-parameters"),
+                    localizer.text("properties-parameters"),
                     format!("{:?}", module.parameters),
                 );
             });
@@ -5038,12 +5047,12 @@ fn spawn_referenced_emitter_inspector(
             spawn_read_only_card(stack, &renderer.renderer_type.0, |card| {
                 spawn_read_only_row(
                     card,
-                    localizer.text("inspector-enabled"),
+                    localizer.text("properties-enabled"),
                     renderer.enabled.to_string(),
                 );
                 spawn_read_only_row(
                     card,
-                    localizer.text("inspector-properties"),
+                    localizer.text("properties-section-properties"),
                     format!("{:?}", renderer.properties),
                 );
             });
@@ -5052,7 +5061,7 @@ fn spawn_referenced_emitter_inspector(
     true
 }
 
-fn spawn_referenced_effect_clip_inspector(
+fn spawn_referenced_effect_clip_properties(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
@@ -5064,7 +5073,7 @@ fn spawn_referenced_effect_clip_inspector(
         return false;
     };
     let source_name = effect_clip_catalog_name(catalog, clip.source);
-    spawn_read_only_inspector_shell(parent, &source_name, localizer, false, |stack| {
+    spawn_read_only_properties_shell(parent, &source_name, localizer, false, |stack| {
         spawn_edit_source_navigation(
             stack,
             &effect_clip_breadcrumbs(session, catalog, path),
@@ -5073,38 +5082,38 @@ fn spawn_referenced_effect_clip_inspector(
             localizer,
             asset_server,
         );
-        spawn_read_only_card(stack, localizer.text("inspector-effect-clip"), |card| {
-            spawn_read_only_row(card, localizer.text("inspector-source"), &source_name);
+        spawn_read_only_card(stack, localizer.text("properties-effect-clip"), |card| {
+            spawn_read_only_row(card, localizer.text("properties-source"), &source_name);
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-start"),
+                localizer.text("properties-start"),
                 format!("{:.3} s", clip.start_time),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-source-offset"),
+                localizer.text("properties-source-offset"),
                 format!("{:.3} s", clip.source_offset),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-duration"),
+                localizer.text("properties-duration"),
                 format!("{:.3} s", clip.duration),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-seed"),
+                localizer.text("properties-seed"),
                 format!("{:?}", clip.seed),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-mode"),
-                localizer.text("inspector-read-only"),
+                localizer.text("properties-mode"),
+                localizer.text("properties-read-only"),
             );
         });
-        spawn_read_only_card(stack, localizer.text("inspector-transform"), |card| {
+        spawn_read_only_card(stack, localizer.text("properties-transform"), |card| {
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-position"),
+                localizer.text("properties-position"),
                 format!(
                     "{:.3}, {:.3}, {:.3}",
                     clip.transform.translation[0],
@@ -5114,7 +5123,7 @@ fn spawn_referenced_effect_clip_inspector(
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-rotation"),
+                localizer.text("properties-rotation"),
                 format!(
                     "{:.3}, {:.3}, {:.3}, {:.3}",
                     clip.transform.rotation[0],
@@ -5125,33 +5134,33 @@ fn spawn_referenced_effect_clip_inspector(
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-scale"),
+                localizer.text("properties-scale"),
                 format!(
                     "{:.3}, {:.3}, {:.3}",
                     clip.transform.scale[0], clip.transform.scale[1], clip.transform.scale[2]
                 ),
             );
         });
-        spawn_read_only_card(stack, localizer.text("inspector-source-summary"), |card| {
-            spawn_read_only_row(card, localizer.text("inspector-name"), &source.name);
+        spawn_read_only_card(stack, localizer.text("properties-source-summary"), |card| {
+            spawn_read_only_row(card, localizer.text("properties-name"), &source.name);
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-duration"),
+                localizer.text("properties-duration"),
                 format!("{:.3} s", source.duration),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-emitters"),
+                localizer.text("properties-emitters"),
                 source.emitters.len().to_string(),
             );
             spawn_read_only_row(
                 card,
-                localizer.text("inspector-looping"),
+                localizer.text("properties-looping"),
                 source.looping.to_string(),
             );
         });
         stack.spawn((
-            Text::new(localizer.text("inspector-effect-clip-read-only-description")),
+            Text::new(localizer.text("properties-effect-clip-read-only-description")),
             TextFont {
                 font_size: FontSize::Px(9.0),
                 ..default()
@@ -5163,7 +5172,7 @@ fn spawn_referenced_effect_clip_inspector(
     true
 }
 
-pub(crate) fn spawn_inspector(
+pub(crate) fn spawn_properties(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     registry: &EditorModuleRegistry,
@@ -5204,7 +5213,7 @@ pub(crate) fn spawn_inspector(
     if let Some(selection) = timeline.inspected_child.as_ref() {
         let spawned = match selection {
             EffectClipChildSelection::EffectClip { path } => {
-                spawn_referenced_effect_clip_inspector(
+                spawn_referenced_effect_clip_properties(
                     parent,
                     session,
                     catalog,
@@ -5214,7 +5223,7 @@ pub(crate) fn spawn_inspector(
                 )
             }
             EffectClipChildSelection::Emitter { path, emitter } => {
-                spawn_referenced_emitter_inspector(
+                spawn_referenced_emitter_properties(
                     parent,
                     session,
                     catalog,
@@ -5230,7 +5239,7 @@ pub(crate) fn spawn_inspector(
         }
     }
     if let SemanticTarget::EffectClip(clip) = session.selection.primary
-        && spawn_effect_clip_inspector(
+        && spawn_effect_clip_properties(
             parent,
             session,
             catalog,
@@ -5256,7 +5265,7 @@ pub(crate) fn spawn_inspector(
             panel_heading(panel, "MODULE STACK", "LIVE COMPILE");
             panel.spawn((
                 Text::new(&layer.name),
-                InspectorTitle,
+                PropertiesTitle,
                 TextFont {
                     font_size: FontSize::Px(17.0),
                     ..default()
@@ -5278,7 +5287,7 @@ pub(crate) fn spawn_inspector(
                 .with_children(|body| {
                     spawn_vertical_scroll_area(
                         body,
-                        ScrollMemoryKey::Inspector,
+                        ScrollMemoryKey::Properties,
                         Node {
                             flex_grow: 1.0,
                             min_width: Val::Px(0.0),
@@ -5303,7 +5312,7 @@ pub(crate) fn spawn_inspector(
                                         "effect.emitters[{emitter_index}].renderers[{renderer_index}]"
                                     ),
                                     session,
-                                    inspector_renderer_collapsed(settings, renderer),
+                                    properties_renderer_collapsed(settings, renderer),
                                 );
                             }
                             spawn_stage_diagnostics(
@@ -5329,7 +5338,7 @@ pub(crate) fn spawn_inspector(
                                 ),
                                 session,
                                 localizer,
-                                inspector_module_collapsed(settings, module),
+                                properties_module_collapsed(settings, module),
                             );
                         }
                         spawn_stage_diagnostics(
@@ -5369,7 +5378,7 @@ fn spawn_document_controls(
         ))
         .with_children(|card| {
             card.spawn((
-                Text::new(localizer.text("inspector-effect")),
+                Text::new(localizer.text("properties-effect")),
                 ThemedText,
                 TextFont {
                     font_size: FontSize::Px(11.0),
@@ -5378,8 +5387,8 @@ fn spawn_document_controls(
             ));
             spawn_text_field(
                 card,
-                &localizer.text("inspector-effect-name"),
-                &localizer.text("inspector-effect-name-description"),
+                &localizer.text("properties-effect-name"),
+                &localizer.text("properties-effect-name-description"),
                 &session.effect.name,
                 DocumentTextControl::EffectName,
             );
@@ -5388,7 +5397,7 @@ fn spawn_document_controls(
     let emitter = session.selected_layer();
     parent
         .spawn((
-            InspectorSemanticTarget {
+            PropertiesSemanticTarget {
                 target: SemanticTarget::Emitter(emitter.id),
                 base_border: theme::BORDER,
             },
@@ -5405,7 +5414,7 @@ fn spawn_document_controls(
         ))
         .with_children(|card| {
             card.spawn((
-                Text::new(localizer.text("inspector-emitter")),
+                Text::new(localizer.text("properties-emitter")),
                 ThemedText,
                 TextFont {
                     font_size: FontSize::Px(11.0),
@@ -5414,26 +5423,26 @@ fn spawn_document_controls(
             ));
             spawn_text_field(
                 card,
-                &localizer.text("inspector-emitter-name"),
-                &localizer.text("inspector-emitter-name-description"),
+                &localizer.text("properties-emitter-name"),
+                &localizer.text("properties-emitter-name-description"),
                 &emitter.name,
                 DocumentTextControl::EmitterName,
             );
             spawn_document_toggle(
                 card,
-                &localizer.text("inspector-emitter-enabled"),
-                &localizer.text("inspector-emitter-enabled-description"),
+                &localizer.text("properties-emitter-enabled"),
+                &localizer.text("properties-emitter-enabled-description"),
                 emitter.enabled,
                 DocumentToggleControl::EmitterEnabled,
             );
             crate::feathers::field_row::spawn_field_row(
                 card,
                 crate::feathers::field_row::FieldRowProps::new(
-                    localizer.text("inspector-emitter-capacity"),
+                    localizer.text("properties-emitter-capacity"),
                 )
                 .with_control_min_width(150.0),
                 EditorTooltip::description(
-                    localizer.text("inspector-emitter-capacity-description"),
+                    localizer.text("properties-emitter-capacity-description"),
                 ),
                 |controls| {
                     controls
@@ -5441,7 +5450,7 @@ fn spawn_document_controls(
                         .apply_scene(ui_shell::feathers_integer_input())
                         .insert((
                             EmitterCapacityControl,
-                            AccessibleLabel(localizer.text("inspector-emitter-capacity")),
+                            AccessibleLabel(localizer.text("properties-emitter-capacity")),
                         ));
                 },
             );
@@ -5495,7 +5504,7 @@ fn spawn_event_links(
 ) {
     let source = session.selected_layer().id;
     parent.spawn((
-        Text::new(localizer.text("inspector-events")),
+        Text::new(localizer.text("properties-events")),
         TextFont {
             font_size: FontSize::Px(9.0),
             ..default()
@@ -5516,7 +5525,7 @@ fn spawn_event_links(
     if outgoing.is_empty() {
         parent
             .spawn_empty()
-            .apply_scene(label_dim(localizer.text("inspector-events-empty")));
+            .apply_scene(label_dim(localizer.text("properties-events-empty")));
     }
     for event in outgoing {
         let target = session
@@ -5530,7 +5539,7 @@ fn spawn_event_links(
         args.set("target", target);
         parent
             .spawn((
-                InspectorSemanticTarget {
+                PropertiesSemanticTarget {
                     target: SemanticTarget::Event(event.id),
                     base_border: theme::BORDER,
                 },
@@ -5547,7 +5556,7 @@ fn spawn_event_links(
             ))
             .with_children(|row| {
                 row.spawn((
-                    Text::new(localizer.text_with("inspector-event-link", &args)),
+                    Text::new(localizer.text_with("properties-event-link", &args)),
                     ThemedText,
                     TextFont {
                         font_size: FontSize::Px(10.0),
@@ -5560,7 +5569,7 @@ fn spawn_event_links(
                         ..default()
                     },
                 ));
-                mini_button(row, "×", InspectorAction::DeleteEventLink(event.id));
+                mini_button(row, "×", PropertiesAction::DeleteEventLink(event.id));
             });
     }
 
@@ -5585,9 +5594,9 @@ fn spawn_event_links(
             args.set("trigger", localized_event_trigger(localizer, trigger));
             args.set("target", target.name.clone());
             options.push(ComboOption {
-                label: localizer.text_with("inspector-event-link", &args),
+                label: localizer.text_with("properties-event-link", &args),
                 selected: false,
-                action: InspectorAction::AddEventLink {
+                action: PropertiesAction::AddEventLink {
                     trigger,
                     target: target.id,
                 },
@@ -5597,7 +5606,7 @@ fn spawn_event_links(
     if options.is_empty() {
         parent
             .spawn_empty()
-            .apply_scene(label_dim(localizer.text("inspector-events-no-targets")));
+            .apply_scene(label_dim(localizer.text("properties-events-no-targets")));
     } else {
         parent
             .spawn(Node {
@@ -5609,8 +5618,8 @@ fn spawn_event_links(
             .with_children(|row| {
                 spawn_combo_control(
                     row,
-                    &localizer.text("inspector-events-add"),
-                    &localizer.text("inspector-events-add-description"),
+                    &localizer.text("properties-events-add"),
+                    &localizer.text("properties-events-add-description"),
                     &options,
                     230.0,
                 );
@@ -5620,39 +5629,41 @@ fn spawn_event_links(
 
 fn localized_event_trigger(localizer: &Localizer, trigger: EventTrigger) -> String {
     localizer.text(match trigger {
-        EventTrigger::OnSpawn => "inspector-event-on-spawn",
-        EventTrigger::OnDeath => "inspector-event-on-death",
-        EventTrigger::OnCollision => "inspector-event-on-collision",
+        EventTrigger::OnSpawn => "properties-event-on-spawn",
+        EventTrigger::OnDeath => "properties-event-on-death",
+        EventTrigger::OnCollision => "properties-event-on-collision",
     })
 }
 
-fn inspector_module_collapsed(settings: &EditorSettings, module: &ModuleInstance) -> bool {
-    inspector_module_card_memory(module).collapsed(&settings.inspector.section_expansion)
+fn properties_module_collapsed(settings: &EditorSettings, module: &ModuleInstance) -> bool {
+    properties_module_card_memory(module).collapsed(&settings.properties.section_expansion)
 }
 
-fn inspector_renderer_collapsed(
+fn properties_renderer_collapsed(
     settings: &EditorSettings,
     renderer: &aestra_bevy::RendererInstance,
 ) -> bool {
-    inspector_renderer_card_memory(renderer).collapsed(&settings.inspector.section_expansion)
+    properties_renderer_card_memory(renderer).collapsed(&settings.properties.section_expansion)
 }
 
-fn inspector_module_card_memory(module: &ModuleInstance) -> RememberedPanelCard {
+fn properties_module_card_memory(module: &ModuleInstance) -> RememberedPanelCard {
     RememberedPanelCard::new(
-        inspector_module_key(module),
+        properties_module_key(module),
         !matches!(module.stage, StageKind::ParticleUpdate),
     )
 }
 
-fn inspector_renderer_card_memory(renderer: &aestra_bevy::RendererInstance) -> RememberedPanelCard {
-    RememberedPanelCard::new(inspector_renderer_key(renderer), false)
+fn properties_renderer_card_memory(
+    renderer: &aestra_bevy::RendererInstance,
+) -> RememberedPanelCard {
+    RememberedPanelCard::new(properties_renderer_key(renderer), false)
 }
 
-fn inspector_module_key(module: &ModuleInstance) -> String {
+fn properties_module_key(module: &ModuleInstance) -> String {
     format!("module/{}", module.module_type.0)
 }
 
-fn inspector_renderer_key(renderer: &aestra_bevy::RendererInstance) -> String {
+fn properties_renderer_key(renderer: &aestra_bevy::RendererInstance) -> String {
     match renderer.properties {
         RendererProperties::Sprite => "renderer/sprite",
         RendererProperties::Flipbook { .. } => "renderer/flipbook",
@@ -5661,13 +5672,13 @@ fn inspector_renderer_key(renderer: &aestra_bevy::RendererInstance) -> String {
     .into()
 }
 
-pub(crate) fn toggle_persisted_inspector_section(
+pub(crate) fn toggle_persisted_properties_section(
     session: &EditorSession,
     settings: &mut EditorSettings,
-    section: InspectorSection,
+    section: PropertiesSection,
 ) -> bool {
     let card = match section {
-        InspectorSection::Module(id) => {
+        PropertiesSection::Module(id) => {
             let Some(module) = session
                 .selected_layer()
                 .modules
@@ -5676,9 +5687,9 @@ pub(crate) fn toggle_persisted_inspector_section(
             else {
                 return false;
             };
-            inspector_module_card_memory(module)
+            properties_module_card_memory(module)
         }
-        InspectorSection::Renderer(id) => {
+        PropertiesSection::Renderer(id) => {
             let Some(renderer) = session
                 .selected_layer()
                 .renderers
@@ -5687,10 +5698,10 @@ pub(crate) fn toggle_persisted_inspector_section(
             else {
                 return false;
             };
-            inspector_renderer_card_memory(renderer)
+            properties_renderer_card_memory(renderer)
         }
     };
-    card.toggle(&mut settings.inspector.section_expansion);
+    card.toggle(&mut settings.properties.section_expansion);
     true
 }
 
@@ -5928,7 +5939,7 @@ fn spawn_stage_header(parent: &mut ChildSpawnerCommands, stage: StackStage) {
                 flex_grow: 1.0,
                 ..default()
             });
-            mini_button(row, "+", InspectorAction::OpenModulePalette(stage));
+            mini_button(row, "+", PropertiesAction::OpenModulePalette(stage));
         });
 }
 
@@ -5961,7 +5972,7 @@ fn spawn_module_card(
     spawn_remembered_panel_card(
         parent,
         PanelCardProps::new(display_name, collapsed)
-            .with_memory_key(inspector_module_key(module))
+            .with_memory_key(properties_module_key(module))
             .with_help(help)
             .with_enabled(module.enabled)
             .with_background(if module.enabled {
@@ -5970,12 +5981,12 @@ fn spawn_module_card(
                 theme::PANEL_DARK
             })
             .with_border(base_border),
-        InspectorSemanticTarget {
+        PropertiesSemanticTarget {
             target: SemanticTarget::Module(module.id),
             base_border,
         },
-        InspectorSelectionTarget(SemanticTarget::Module(module.id)),
-        InspectorAction::ToggleSection(InspectorSection::Module(module.id)),
+        PropertiesSelectionTarget(SemanticTarget::Module(module.id)),
+        PropertiesAction::ToggleSection(PropertiesSection::Module(module.id)),
         |header| {
             let mut enabled = header.spawn_empty();
             enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
@@ -5992,22 +6003,22 @@ fn spawn_module_card(
                     ComboOption {
                         label: "Move up".into(),
                         selected: false,
-                        action: InspectorAction::MoveModule(module.id, -1),
+                        action: PropertiesAction::MoveModule(module.id, -1),
                     },
                     ComboOption {
                         label: "Move down".into(),
                         selected: false,
-                        action: InspectorAction::MoveModule(module.id, 1),
+                        action: PropertiesAction::MoveModule(module.id, 1),
                     },
                     ComboOption {
                         label: "Duplicate".into(),
                         selected: false,
-                        action: InspectorAction::DuplicateModule(module.id),
+                        action: PropertiesAction::DuplicateModule(module.id),
                     },
                     ComboOption {
                         label: "Delete…".into(),
                         selected: false,
-                        action: InspectorAction::DeleteModule(module.id),
+                        action: PropertiesAction::DeleteModule(module.id),
                     },
                 ],
             );
@@ -6031,29 +6042,29 @@ fn spawn_input_control(
     session: &EditorSession,
     localizer: &Localizer,
 ) {
-    let display_name = localized_inspector_input(localizer, input.name, input.display_name, false);
-    let description = localized_inspector_input(localizer, input.name, input.description, true);
-    let Some(value) = inspector_module_parameter(session, module.id, input.name) else {
-        spawn_inspector_read_only_control(parent, &display_name, "Missing authored value");
+    let display_name = localized_properties_input(localizer, input.name, input.display_name, false);
+    let description = localized_properties_input(localizer, input.name, input.description, true);
+    let Some(value) = properties_module_parameter(session, module.id, input.name) else {
+        spawn_properties_read_only_control(parent, &display_name, "Missing authored value");
         return;
     };
     let public =
         public_module_input_control(session, module, input, input_index, &value, localizer);
     match (&input.control, value) {
-        (InputControl::Curve { .. }, Value::Curve(curve)) => inspector_action_button(
+        (InputControl::Curve { .. }, Value::Curve(curve)) => properties_action_button(
             parent,
             &format!("{}  ·  {} keys  →", display_name, curve.keys.len()),
             CurvesAction::OpenInput(module.id, input_index),
             Some(&description),
         ),
-        (InputControl::Gradient, Value::Gradient(gradient)) => inspector_action_button(
+        (InputControl::Gradient, Value::Gradient(gradient)) => properties_action_button(
             parent,
             &format!("{}  ·  {} color keys  →", display_name, gradient.keys.len()),
             CurvesAction::OpenInput(module.id, input_index),
             Some(&description),
         ),
         (InputControl::Toggle, Value::Bool(value)) => {
-            spawn_inspector_toggle_control(
+            spawn_properties_toggle_control(
                 parent,
                 module.id,
                 input,
@@ -6064,25 +6075,25 @@ fn spawn_input_control(
             );
         }
         (InputControl::Number { .. }, Value::U32(_)) => {
-            spawn_inspector_integer_control(
+            spawn_properties_integer_control(
                 parent,
                 module.id,
                 input,
                 &display_name,
-                inspector_property_tooltip(&description, input.unit, localizer),
+                property_tooltip(&description, input.unit, localizer),
                 public,
             );
         }
         (InputControl::Number { step, min, max }, Value::Scalar(value)) => {
-            spawn_inspector_number_controls(
+            spawn_properties_number_controls(
                 parent,
                 &display_name,
-                inspector_property_tooltip(&description, input.unit, localizer),
-                InspectorNumberControl {
+                property_tooltip(&description, input.unit, localizer),
+                PropertiesNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
-                    kind: InspectorNumberKind::Scalar,
+                    kind: PropertiesNumberKind::Scalar,
                     step: *step,
                     min: *min,
                     max: *max,
@@ -6092,15 +6103,15 @@ fn spawn_input_control(
             );
         }
         (InputControl::Vector { step, min, max }, Value::Vec2(value)) => {
-            spawn_inspector_number_controls(
+            spawn_properties_number_controls(
                 parent,
                 &display_name,
-                inspector_property_tooltip(&description, input.unit, localizer),
-                InspectorNumberControl {
+                property_tooltip(&description, input.unit, localizer),
+                PropertiesNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
-                    kind: InspectorNumberKind::Vector,
+                    kind: PropertiesNumberKind::Vector,
                     step: *step,
                     min: *min,
                     max: *max,
@@ -6110,15 +6121,15 @@ fn spawn_input_control(
             );
         }
         (InputControl::Vector { step, min, max }, Value::Vec3(value)) => {
-            spawn_inspector_number_controls(
+            spawn_properties_number_controls(
                 parent,
                 &display_name,
-                inspector_property_tooltip(&description, input.unit, localizer),
-                InspectorNumberControl {
+                property_tooltip(&description, input.unit, localizer),
+                PropertiesNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
-                    kind: InspectorNumberKind::Vector,
+                    kind: PropertiesNumberKind::Vector,
                     step: *step,
                     min: *min,
                     max: *max,
@@ -6128,15 +6139,15 @@ fn spawn_input_control(
             );
         }
         (InputControl::Vector { step, min, max }, Value::Vec4(value)) => {
-            spawn_inspector_number_controls(
+            spawn_properties_number_controls(
                 parent,
                 &display_name,
-                inspector_property_tooltip(&description, input.unit, localizer),
-                InspectorNumberControl {
+                property_tooltip(&description, input.unit, localizer),
+                PropertiesNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
-                    kind: InspectorNumberKind::Vector,
+                    kind: PropertiesNumberKind::Vector,
                     step: *step,
                     min: *min,
                     max: *max,
@@ -6151,15 +6162,15 @@ fn spawn_input_control(
             );
         }
         (InputControl::Range { step, min, max }, Value::Range(value)) => {
-            spawn_inspector_number_controls(
+            spawn_properties_number_controls(
                 parent,
                 &display_name,
-                inspector_property_tooltip(&description, input.unit, localizer),
-                InspectorNumberControl {
+                property_tooltip(&description, input.unit, localizer),
+                PropertiesNumberControl {
                     module: module.id,
                     parameter: input.name,
                     component: 0,
-                    kind: InspectorNumberKind::Range,
+                    kind: PropertiesNumberKind::Range,
                     step: *step,
                     min: *min,
                     max: *max,
@@ -6168,7 +6179,7 @@ fn spawn_input_control(
                 public,
             );
         }
-        (InputControl::Choice, value) => spawn_inspector_choice_control(
+        (InputControl::Choice, value) => spawn_properties_choice_control(
             parent,
             module.id,
             input_index,
@@ -6177,63 +6188,59 @@ fn spawn_input_control(
             &value,
         ),
         (_, value) => {
-            spawn_inspector_read_only_control(parent, &display_name, &format_value(value));
+            spawn_properties_read_only_control(parent, &display_name, &format_value(value));
         }
     }
 }
 
-pub(crate) fn localized_inspector_input(
+pub(crate) fn localized_properties_input(
     localizer: &Localizer,
     input: &str,
     fallback: &str,
     description: bool,
 ) -> String {
     let message = match (input, description) {
-        ("spawn_rate", false) => "inspector-input-spawn-rate",
-        ("spawn_rate", true) => "inspector-input-spawn-rate-description",
-        ("burst_count", false) => "inspector-input-burst-count",
-        ("burst_count", true) => "inspector-input-burst-count-description",
-        ("shape", false) => "inspector-input-shape",
-        ("shape", true) => "inspector-input-shape-description",
-        ("lifetime", false) => "inspector-input-lifetime",
-        ("lifetime", true) => "inspector-input-lifetime-description",
-        ("speed", false) => "inspector-input-speed",
-        ("speed", true) => "inspector-input-speed-description",
-        ("direction", false) => "inspector-input-direction",
-        ("direction", true) => "inspector-input-direction-description",
-        ("spread_degrees", false) => "inspector-input-spread",
-        ("spread_degrees", true) => "inspector-input-spread-description",
-        ("angular_velocity", false) => "inspector-input-angular-velocity",
-        ("angular_velocity", true) => "inspector-input-angular-velocity-description",
-        ("gravity", false) => "inspector-input-gravity",
-        ("gravity", true) => "inspector-input-gravity-description",
-        ("drag", false) => "inspector-input-drag",
-        ("drag", true) => "inspector-input-drag-description",
-        ("turbulence", false) => "inspector-input-turbulence",
-        ("turbulence", true) => "inspector-input-turbulence-description",
-        ("size", false) => "inspector-input-size-over-life",
-        ("size", true) => "inspector-input-size-over-life-description",
-        ("opacity", false) => "inspector-input-opacity-over-life",
-        ("opacity", true) => "inspector-input-opacity-over-life-description",
-        ("color", false) => "inspector-input-color-over-life",
-        ("color", true) => "inspector-input-color-over-life-description",
+        ("spawn_rate", false) => "properties-input-spawn-rate",
+        ("spawn_rate", true) => "properties-input-spawn-rate-description",
+        ("burst_count", false) => "properties-input-burst-count",
+        ("burst_count", true) => "properties-input-burst-count-description",
+        ("shape", false) => "properties-input-shape",
+        ("shape", true) => "properties-input-shape-description",
+        ("lifetime", false) => "properties-input-lifetime",
+        ("lifetime", true) => "properties-input-lifetime-description",
+        ("speed", false) => "properties-input-speed",
+        ("speed", true) => "properties-input-speed-description",
+        ("direction", false) => "properties-input-direction",
+        ("direction", true) => "properties-input-direction-description",
+        ("spread_degrees", false) => "properties-input-spread",
+        ("spread_degrees", true) => "properties-input-spread-description",
+        ("angular_velocity", false) => "properties-input-angular-velocity",
+        ("angular_velocity", true) => "properties-input-angular-velocity-description",
+        ("gravity", false) => "properties-input-gravity",
+        ("gravity", true) => "properties-input-gravity-description",
+        ("drag", false) => "properties-input-drag",
+        ("drag", true) => "properties-input-drag-description",
+        ("turbulence", false) => "properties-input-turbulence",
+        ("turbulence", true) => "properties-input-turbulence-description",
+        ("size", false) => "properties-input-size-over-life",
+        ("size", true) => "properties-input-size-over-life-description",
+        ("opacity", false) => "properties-input-opacity-over-life",
+        ("opacity", true) => "properties-input-opacity-over-life-description",
+        ("color", false) => "properties-input-color-over-life",
+        ("color", true) => "properties-input-color-over-life-description",
         _ => return fallback.to_owned(),
     };
     localizer.text(message)
 }
 
-fn inspector_property_tooltip(
-    description: &str,
-    unit: Option<&str>,
-    localizer: &Localizer,
-) -> EditorTooltip {
+fn property_tooltip(description: &str, unit: Option<&str>, localizer: &Localizer) -> EditorTooltip {
     let tooltip = EditorTooltip::description(description);
     let Some(unit) = unit else {
         return tooltip;
     };
     let mut args = FluentArgs::new();
     args.set("unit", unit);
-    tooltip.with_footer(localizer.text_with("inspector-property-unit", &args))
+    tooltip.with_footer(localizer.text_with("properties-property-unit", &args))
 }
 
 #[derive(Debug, Clone)]
@@ -6293,14 +6300,14 @@ fn public_module_input_control(
         input: input_index,
         is_public,
         label: if is_public {
-            localizer.text("inspector-make-module-input-private")
+            localizer.text("properties-make-module-input-private")
         } else {
-            localizer.text("inspector-expose-module-input")
+            localizer.text("properties-expose-module-input")
         },
         description: if is_public {
-            localizer.text("inspector-make-module-input-private-description")
+            localizer.text("properties-make-module-input-private-description")
         } else {
-            localizer.text("inspector-expose-module-input-description")
+            localizer.text("properties-expose-module-input-description")
         },
     })
 }
@@ -6315,7 +6322,7 @@ fn spawn_module_input_public_toggle(
     let button = mini_button(
         parent,
         "P",
-        InspectorAction::ToggleModuleInputPublic {
+        PropertiesAction::ToggleModuleInputPublic {
             module: public.module,
             input: public.input,
         },
@@ -6356,7 +6363,7 @@ fn sync_module_input_public_toggle_visibility(
     }
 }
 
-fn spawn_inspector_integer_control(
+fn spawn_properties_integer_control(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
     input: &InputMetadata,
@@ -6381,7 +6388,7 @@ fn spawn_inspector_integer_control(
             },
         ))
         .with_children(|row| {
-            spawn_inspector_property_label(row, title);
+            spawn_property_label(row, title);
             row.spawn(Node {
                 flex_grow: 1.0,
                 min_width: Val::Px(0.0),
@@ -6392,11 +6399,11 @@ fn spawn_inspector_integer_control(
                     .spawn_empty()
                     .apply_scene(ui_shell::feathers_integer_input())
                     .insert((
-                        InspectorNumberControl {
+                        PropertiesNumberControl {
                             module,
                             parameter: input.name,
                             component: 0,
-                            kind: InspectorNumberKind::U32,
+                            kind: PropertiesNumberKind::U32,
                             step,
                             min,
                             max,
@@ -6408,11 +6415,11 @@ fn spawn_inspector_integer_control(
         });
 }
 
-fn spawn_inspector_number_controls(
+fn spawn_properties_number_controls(
     parent: &mut ChildSpawnerCommands,
     title: &str,
     tooltip: EditorTooltip,
-    control: InspectorNumberControl,
+    control: PropertiesNumberControl,
     values: &[(&'static str, f32, u8)],
     public: Option<ModuleInputPublicControl>,
 ) {
@@ -6422,7 +6429,7 @@ fn spawn_inspector_number_controls(
             values.len() == 1
                 && axis.is_empty()
                 && *component == 0
-                && control.kind == InspectorNumberKind::Scalar
+                && control.kind == PropertiesNumberKind::Scalar
         })
         .and_then(|(_, value, _)| {
             control
@@ -6444,7 +6451,7 @@ fn spawn_inspector_number_controls(
             },
         ))
         .with_children(|row| {
-            spawn_inspector_property_label(row, title);
+            spawn_property_label(row, title);
             row.spawn(Node {
                 flex_grow: 1.0,
                 min_width: Val::Px(0.0),
@@ -6457,7 +6464,7 @@ fn spawn_inspector_number_controls(
                         controls,
                         props,
                         (
-                            InspectorSliderControl(control),
+                            PropertiesSliderControl(control),
                             AccessibleLabel(title.to_owned()),
                         ),
                         (control, AccessibleLabel(title.to_owned())),
@@ -6487,7 +6494,7 @@ fn spawn_inspector_number_controls(
                                     );
                                 }
                                 input_entity.insert((
-                                    InspectorNumberControl {
+                                    PropertiesNumberControl {
                                         component: *component,
                                         ..control
                                     },
@@ -6505,7 +6512,7 @@ fn spawn_inspector_number_controls(
         });
 }
 
-fn spawn_inspector_property_label(parent: &mut ChildSpawnerCommands, title: &str) {
+fn spawn_property_label(parent: &mut ChildSpawnerCommands, title: &str) {
     parent.spawn((
         Text::new(title),
         ThemedText,
@@ -6522,7 +6529,7 @@ fn spawn_inspector_property_label(parent: &mut ChildSpawnerCommands, title: &str
     ));
 }
 
-fn spawn_inspector_toggle_control(
+fn spawn_properties_toggle_control(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
     input: &InputMetadata,
@@ -6545,14 +6552,14 @@ fn spawn_inspector_toggle_control(
             },
         ))
         .with_children(|row| {
-            spawn_inspector_property_label(row, title);
+            spawn_property_label(row, title);
             row.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
             });
             let mut checkbox = row.spawn_empty();
             checkbox.apply_scene(ui_shell::feathers_checkbox()).insert((
-                InspectorToggleControl {
+                PropertiesToggleControl {
                     module,
                     parameter: input.name,
                 },
@@ -6565,7 +6572,7 @@ fn spawn_inspector_toggle_control(
         });
 }
 
-fn spawn_inspector_choice_control(
+fn spawn_properties_choice_control(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
     input: u8,
@@ -6574,7 +6581,7 @@ fn spawn_inspector_choice_control(
     value: &Value,
 ) {
     let Value::Shape(shape) = value else {
-        spawn_inspector_read_only_control(parent, title, &format_value(value.clone()));
+        spawn_properties_read_only_control(parent, title, &format_value(value.clone()));
         return;
     };
     let current = shape_label(*shape);
@@ -6594,14 +6601,14 @@ fn spawn_inspector_choice_control(
     .map(|(choice, label)| ComboOption {
         label: label.to_owned(),
         selected: choice == selected,
-        action: InspectorAction::SetModuleChoice {
+        action: PropertiesAction::SetModuleChoice {
             module,
             input,
             choice: choice as u8,
         },
     })
     .collect::<Vec<_>>();
-    spawn_inspector_combo_row(parent, title, current, &options, Some(description));
+    spawn_properties_combo_row(parent, title, current, &options, Some(description));
     match *shape {
         EmitterShape::Point => {}
         EmitterShape::Circle { radius }
@@ -6667,7 +6674,7 @@ fn spawn_shape_number_row(
             },
         ))
         .with_children(|row| {
-            spawn_inspector_property_label(row, title);
+            spawn_property_label(row, title);
             row.spawn(Node {
                 flex_grow: 1.0,
                 min_width: Val::Px(0.0),
@@ -6699,11 +6706,11 @@ fn spawn_shape_number_row(
                                 ));
                             }
                             input.insert((
-                                InspectorNumberControl {
+                                PropertiesNumberControl {
                                     module,
                                     parameter: "shape",
                                     component: *component,
-                                    kind: InspectorNumberKind::Shape,
+                                    kind: PropertiesNumberKind::Shape,
                                     step: 0.1,
                                     min: Some(0.1),
                                     max: None,
@@ -6720,11 +6727,11 @@ fn spawn_shape_number_row(
         });
 }
 
-fn spawn_inspector_combo_row(
+fn spawn_properties_combo_row(
     parent: &mut ChildSpawnerCommands,
     title: &str,
     current: &str,
-    options: &[ComboOption<InspectorAction>],
+    options: &[ComboOption<PropertiesAction>],
     description: Option<&str>,
 ) {
     let mut row = parent.spawn(Node {
@@ -6738,7 +6745,7 @@ fn spawn_inspector_combo_row(
         row.insert(EditorTooltip::description(description));
     }
     row.with_children(|row| {
-        spawn_inspector_property_label(row, title);
+        spawn_property_label(row, title);
         row.spawn(Node {
             flex_grow: 1.0,
             ..default()
@@ -6771,7 +6778,7 @@ fn spawn_renderer_scalar_control(
             ..default()
         })
         .with_children(|row| {
-            spawn_inspector_property_label(row, title);
+            spawn_property_label(row, title);
             if let Some(props) = bounded_slider {
                 row.spawn(Node {
                     flex_grow: 1.0,
@@ -6826,7 +6833,7 @@ fn spawn_renderer_toggle_control(
             ..default()
         })
         .with_children(|row| {
-            spawn_inspector_property_label(row, title);
+            spawn_property_label(row, title);
             row.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
@@ -6867,7 +6874,7 @@ fn shape_label(shape: EmitterShape) -> &'static str {
     }
 }
 
-fn spawn_inspector_read_only_control(parent: &mut ChildSpawnerCommands, title: &str, value: &str) {
+fn spawn_properties_read_only_control(parent: &mut ChildSpawnerCommands, title: &str, value: &str) {
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -6877,7 +6884,7 @@ fn spawn_inspector_read_only_control(parent: &mut ChildSpawnerCommands, title: &
             ..default()
         })
         .with_children(|row| {
-            spawn_inspector_property_label(row, title);
+            spawn_property_label(row, title);
             row.spawn(Node {
                 flex_grow: 1.0,
                 ..default()
@@ -6906,16 +6913,16 @@ fn spawn_renderer_card(
     spawn_remembered_panel_card(
         parent,
         PanelCardProps::new(display_name, collapsed)
-            .with_memory_key(inspector_renderer_key(renderer))
+            .with_memory_key(properties_renderer_key(renderer))
             .with_help("Controls how this emitter is drawn.")
             .with_enabled(renderer.enabled)
             .with_border(base_border),
-        InspectorSemanticTarget {
+        PropertiesSemanticTarget {
             target: SemanticTarget::Renderer(renderer.id),
             base_border,
         },
-        InspectorSelectionTarget(SemanticTarget::Renderer(renderer.id)),
-        InspectorAction::ToggleSection(InspectorSection::Renderer(renderer.id)),
+        PropertiesSelectionTarget(SemanticTarget::Renderer(renderer.id)),
+        PropertiesAction::ToggleSection(PropertiesSection::Renderer(renderer.id)),
         |header| {
             let mut enabled = header.spawn_empty();
             enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
@@ -6932,12 +6939,12 @@ fn spawn_renderer_card(
                     ComboOption {
                         label: "Duplicate".into(),
                         selected: false,
-                        action: InspectorAction::DuplicateRenderer(renderer.id),
+                        action: PropertiesAction::DuplicateRenderer(renderer.id),
                     },
                     ComboOption {
                         label: "Delete…".into(),
                         selected: false,
-                        action: InspectorAction::DeleteRenderer(renderer.id),
+                        action: PropertiesAction::DeleteRenderer(renderer.id),
                     },
                 ],
             );
@@ -6949,7 +6956,7 @@ fn spawn_renderer_card(
                 .iter()
                 .find(|material| material.id == renderer.material)
             else {
-                spawn_inspector_read_only_control(card, "Material", "Missing");
+                spawn_properties_read_only_control(card, "Material", "Missing");
                 spawn_inline_diagnostics(card, diagnostic_path, session);
                 return;
             };
@@ -6961,19 +6968,19 @@ fn spawn_renderer_card(
                 .map(|(index, candidate)| ComboOption {
                     label: candidate.name.clone(),
                     selected: candidate.id == material.id,
-                    action: InspectorAction::SetRendererMaterial(renderer.id, index),
+                    action: PropertiesAction::SetRendererMaterial(renderer.id, index),
                 })
                 .collect::<Vec<_>>();
-            spawn_inspector_combo_row(card, "Material", &material.name, &material_options, None);
+            spawn_properties_combo_row(card, "Material", &material.name, &material_options, None);
             let blend_options = [BlendMode::Alpha, BlendMode::Additive, BlendMode::Multiply]
                 .into_iter()
                 .map(|blend| ComboOption {
                     label: format!("{blend:?}"),
                     selected: blend == material.blend,
-                    action: InspectorAction::SetRendererBlend(renderer.id, blend),
+                    action: PropertiesAction::SetRendererBlend(renderer.id, blend),
                 })
                 .collect::<Vec<_>>();
-            spawn_inspector_combo_row(
+            spawn_properties_combo_row(
                 card,
                 "Blend",
                 &format!("{:?}", material.blend),
@@ -6991,7 +6998,7 @@ fn spawn_renderer_card(
                     RendererNumberControl::Softness(renderer.id),
                     session,
                 ),
-                MaterialInput::Parameter(parameter) => spawn_inspector_read_only_control(
+                MaterialInput::Parameter(parameter) => spawn_properties_read_only_control(
                     card,
                     "Softness",
                     &format!("Parameter {parameter}"),
@@ -7005,7 +7012,7 @@ fn spawn_renderer_card(
                     let mut texture_options = vec![ComboOption {
                         label: "Procedural".into(),
                         selected: texture.is_none(),
-                        action: InspectorAction::SetRendererTexture(renderer.id, None),
+                        action: PropertiesAction::SetRendererTexture(renderer.id, None),
                     }];
                     texture_options.extend(
                         session
@@ -7017,13 +7024,13 @@ fn spawn_renderer_card(
                             .map(|(index, asset)| ComboOption {
                                 label: asset.name.clone(),
                                 selected: Some(asset.id) == *texture,
-                                action: InspectorAction::SetRendererTexture(
+                                action: PropertiesAction::SetRendererTexture(
                                     renderer.id,
                                     Some(index),
                                 ),
                             }),
                     );
-                    spawn_inspector_combo_row(
+                    spawn_properties_combo_row(
                         card,
                         "Texture",
                         texture_name,
@@ -7066,10 +7073,10 @@ fn spawn_renderer_card(
                         .map(|(index, candidate)| ComboOption {
                             label: candidate.name.clone(),
                             selected: candidate.id == *flipbook,
-                            action: InspectorAction::SetRendererFlipbook(renderer.id, index),
+                            action: PropertiesAction::SetRendererFlipbook(renderer.id, index),
                         })
                         .collect::<Vec<_>>();
-                    spawn_inspector_combo_row(
+                    spawn_properties_combo_row(
                         card,
                         "Flipbook",
                         definition.map_or("Missing", |item| item.name.as_str()),
@@ -7099,10 +7106,10 @@ fn spawn_renderer_card(
                     .map(|candidate| ComboOption {
                         label: format!("{candidate:?}"),
                         selected: candidate == *time_source,
-                        action: InspectorAction::SetFlipbookTimeSource(renderer.id, candidate),
+                        action: PropertiesAction::SetFlipbookTimeSource(renderer.id, candidate),
                     })
                     .collect::<Vec<_>>();
-                    spawn_inspector_combo_row(
+                    spawn_properties_combo_row(
                         card,
                         "Time Source",
                         &format!("{time_source:?}"),
@@ -7118,10 +7125,10 @@ fn spawn_renderer_card(
                     .map(|candidate| ComboOption {
                         label: format!("{candidate:?}"),
                         selected: candidate == *playback,
-                        action: InspectorAction::SetFlipbookPlayback(renderer.id, candidate),
+                        action: PropertiesAction::SetFlipbookPlayback(renderer.id, candidate),
                     })
                     .collect::<Vec<_>>();
-                    spawn_inspector_combo_row(
+                    spawn_properties_combo_row(
                         card,
                         "Playback",
                         &format!("{playback:?}"),
@@ -7256,7 +7263,7 @@ fn spawn_module_palette(
                             ..default()
                         },
                     ));
-                    stack_button(header, "×", InspectorAction::CloseModulePalette, 28.0);
+                    stack_button(header, "×", PropertiesAction::CloseModulePalette, 28.0);
                 });
             popup.spawn((
                 Text::new(format!(
@@ -7291,7 +7298,7 @@ fn spawn_module_palette(
                     popup,
                     "Sprite Renderer",
                     "Render · translucent particle sprites",
-                    InspectorAction::AddSpriteRenderer,
+                    PropertiesAction::AddSpriteRenderer,
                 );
                 results += 1;
             }
@@ -7302,7 +7309,7 @@ fn spawn_module_palette(
                     popup,
                     "Flipbook Renderer",
                     "Render · animated imported sprite sheet",
-                    InspectorAction::AddFlipbookRenderer,
+                    PropertiesAction::AddFlipbookRenderer,
                 );
                 results += 1;
             }
@@ -7317,7 +7324,7 @@ fn spawn_module_palette(
                     popup,
                     metadata.display_name,
                     &format!("{} · {}", metadata.category, metadata.description),
-                    InspectorAction::AddModule(index),
+                    PropertiesAction::AddModule(index),
                 );
                 results += 1;
             }
@@ -7338,7 +7345,7 @@ fn palette_result(
     parent: &mut ChildSpawnerCommands,
     title: &str,
     subtitle: &str,
-    action: InspectorAction,
+    action: PropertiesAction,
 ) {
     parent
         .spawn_empty()
@@ -7459,9 +7466,9 @@ pub(crate) fn module_parameter(module: &ModuleInstance, name: &str) -> Option<Va
     }
 }
 
-fn select_inspector_header(
+fn select_properties_header(
     click: On<Pointer<Click>>,
-    selectable: Query<&InspectorSelectionTarget>,
+    selectable: Query<&PropertiesSelectionTarget>,
     parents: Query<&ChildOf>,
     mut session: ResMut<EditorSession>,
     localizer: Res<Localizer>,
@@ -7484,29 +7491,29 @@ fn select_inspector_header(
     };
     if session.selection.primary != target {
         session.selection.primary = target;
-        set_inspector_status(
+        set_properties_status(
             &mut session,
             &localizer,
-            InspectorStatus::Selected(target.to_string()),
+            PropertiesStatus::Selected(target.to_string()),
         );
         session.ui_revision += 1;
     }
 }
 
 #[derive(Component)]
-pub(crate) struct InspectorTitle;
+pub(crate) struct PropertiesTitle;
 
 #[derive(Component)]
-struct InspectorSemanticTarget {
+struct PropertiesSemanticTarget {
     target: SemanticTarget,
     base_border: Color,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
-struct InspectorSelectionTarget(SemanticTarget);
+struct PropertiesSelectionTarget(SemanticTarget);
 
 #[derive(Resource, Default)]
-pub(crate) struct InspectorFocus {
+pub(crate) struct PropertiesFocus {
     pub(crate) target: Option<SemanticTarget>,
     pub(crate) wait_frames: u8,
     pub(crate) highlight: Option<SemanticTarget>,
@@ -7514,7 +7521,7 @@ pub(crate) struct InspectorFocus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InspectorNumberKind {
+enum PropertiesNumberKind {
     U32,
     Scalar,
     Vector,
@@ -7523,18 +7530,18 @@ enum InspectorNumberKind {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
-struct InspectorNumberControl {
+struct PropertiesNumberControl {
     module: ModuleId,
     parameter: &'static str,
     component: u8,
-    kind: InspectorNumberKind,
+    kind: PropertiesNumberKind,
     step: f32,
     min: Option<f32>,
     max: Option<f32>,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
-struct InspectorSliderControl(InspectorNumberControl);
+struct PropertiesSliderControl(PropertiesNumberControl);
 
 #[derive(Component, Debug, Clone, Copy)]
 enum EmitterNumberControl {
@@ -7617,7 +7624,7 @@ struct NumericScrubInput;
 
 #[derive(Debug, Clone, Copy)]
 enum NumericScrubTarget {
-    Inspector(InspectorNumberControl),
+    Properties(PropertiesNumberControl),
     Emitter(EmitterNumberControl),
     EffectClip(EffectClipNumberControl),
     EffectClipParameter(EffectClipParameterScrubControl),
@@ -7651,7 +7658,7 @@ struct BoundedSliderState {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
-struct InspectorToggleControl {
+struct PropertiesToggleControl {
     module: ModuleId,
     parameter: &'static str,
 }
@@ -7740,7 +7747,7 @@ impl Default for ModulePaletteState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum InspectorSection {
+pub(crate) enum PropertiesSection {
     Module(ModuleId),
     Renderer(RendererId),
 }

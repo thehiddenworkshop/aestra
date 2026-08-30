@@ -52,16 +52,16 @@ architecture vision; this file is the shorter delivery plan.
   number entry, scrollbars, focus, cursors, and accessibility. Embedded
   `en-US` and `fr-FR` Fluent catalogs now localize the editor
   shell live with English fallback, semantic message IDs, interpolation, and catalog
-  coverage tests. Metadata-defined Inspector scalars, integers, vectors, ranges,
+  coverage tests. Metadata-defined Properties scalars, integers, vectors, ranges,
   and toggles now use Feathers controls, commit final values through semantic
   undoable commands, retain in-progress text across live preview frames, and expose
   localized built-in names and descriptions. Effect and emitter identity, playback,
   enabled state, capacity, and typed outgoing emitter-event links are now editable in
-  the Inspector through the same command history. An automated blank-document acceptance
+  the Properties through the same command history. An automated blank-document acceptance
   path authors a representative multi-emitter effect, proves full undo/redo, saves and
   reloads the asset, and compiles it without direct RON edits. Semantic emitter transforms now flow
   from persisted format-v3 assets through commands, compiler artifacts, CPU/GPU
-  execution, compact Inspector controls, and viewport gizmos. Gizmo drags preview
+  execution, compact Properties controls, and viewport gizmos. Gizmo drags preview
   temporary transactions and commit one undoable command on release. M5 workflow now
   includes debounced atomic recovery snapshots, startup restore/discard,
   stale-snapshot cleanup, save/discard cleanup, and persisted autosave enablement and
@@ -79,7 +79,7 @@ architecture vision; this file is the shorter delivery plan.
   reusable material definitions instead of owning presentation state. The first sprite
   material domain compiles blend state, typed softness/tint inputs, explicit particle-color
   consumption, stable texture assets, and UV regions into backend-independent material
-  plans consumed by native GPU, readback, and CPU presentation. The Assets and Inspector
+  plans consumed by native GPU, readback, and CPU presentation. The Assets and Properties
   workspaces expose material creation, assignment, and undoable editing. Imported
   flipbooks now add explicit atlas frames, particle-age/effect-time animation,
   forward/reverse/ping-pong playback, looping, deterministic random starts, native WESL,
@@ -95,12 +95,12 @@ architecture vision; this file is the shorter delivery plan.
   reference execution with instance provenance. `aestra-authoring` now provides atomic EffectClip
   create/delete/timing/seed commands, semantic selection and locks, granular diffs, selection
   repair, and stable undo/redo. Timeline drag/drop, clip presentation, trimming, reordering,
-  instance transforms, Inspector UI, recursive read-only expansion, source navigation, and
+  instance transforms, Properties UI, recursive read-only expansion, source navigation, and
   Bevy/GPU child rendering are implemented. Project file watching, guarded rename/move,
   missing-reference repair, and project-aware preview recompilation are also complete. The first
   instance-override foundation is complete: typed clip overrides persist in v3 assets, compile
   against exposed source parameters, execute in nested CPU and Bevy/GPU preview instances, report
-  orphaned/type-changed values, and participate in undo/redo. The Inspector now authors typed
+  orphaned/type-changed values, and participate in undo/redo. The Properties now authors typed
   property-level public toggles, in-place source defaults, instance overrides, and
   reset-to-source. Make Unique, usage graphs, reusable extraction, preview-cache identity,
   markers/events,
@@ -147,11 +147,11 @@ Complete this milestone before expanding the editor or renderer feature surface 
    includes the indirect command table, focused tests cover command/range isolation,
    and the native editor-viewport GPU smoke remains the visual acceptance gate.
 5. **Decompose the editor application — complete.** The timeline, viewport,
-   inspector, and docking lifecycle are extracted domain plugins with explicit
+   properties, and docking lifecycle are extracted domain plugins with explicit
    system-set boundaries. `DockingPlugin` owns persisted layout loading, transient
    drag/resize state, drop-affordance reconciliation, and native floating-window
    synchronization. The
-   inspector owns module-stack construction, semantic property controls, numeric scrub
+   properties owns module-stack construction, semantic property controls, numeric scrub
    transactions, renderer fields, focus navigation, contextual help, and focused tests.
    Recursive main-window dock construction and revision-aware native floating-panel
    reconstruction now run behind `DockingPlugin`; the editor shell declares only a
@@ -173,14 +173,14 @@ Complete this milestone before expanding the editor or renderer feature surface 
    shortcuts, and selection styling now run through `EditorAssetsPlugin`. Assets-panel and
    Edit-menu controls share one `AssetsAction` contract; catalog rows still emit
    `DocumentAction` so the Assets plugin cannot bypass persistence safeguards.
-   The Curves workspace, curve/gradient selection, Inspector navigation contract, graph
+   The Curves workspace, curve/gradient selection, Properties navigation contract, graph
    interaction, and key controls now run through `EditorCurvesPlugin`. Its actions retain
    the existing semantic command path, including one-history-entry key edits and undo/redo.
    The Diagnostics workspace, filter state, semantic-source navigation, compile-status
    synchronization, and footer entry point now run through `EditorDiagnosticsPlugin`;
    validation and compilation remain owned by `EditorSession`.
    The advanced Compiler Inspector, artifact formatting, and semantic navigation now run
-   through `EditorCompilerInspectorPlugin`. New layouts keep it hidden, while a Serde
+   through `EditorCompilerPropertiesPlugin`. New layouts keep it hidden, while a Serde
    alias preserves the placement of legacy `GeneratedCode` tabs.
    Runtime profile ingestion, aggregation, bounded history, reset actions, presentation,
    and UI synchronization now run through `EditorProfilerPlugin`. Viewport evaluation
@@ -188,7 +188,7 @@ Complete this milestone before expanding the editor or renderer feature surface 
    compiled effects or particle buffers.
    Pending transaction review now runs through `EditorChangesPlugin`. The plugin owns the
    Changes workspace, apply/discard actions, and navigation from semantic diff rows back to
-   live Inspector targets, while `EditorSession` remains the transaction and history owner.
+   live Properties targets, while `EditorSession` remains the transaction and history owner.
    Preview playback now runs through `EditorTransportPlugin`. Toolbar, Timeline, View-menu,
    and keyboard controls share one `TransportAction` contract; the plugin owns playback
    mutation, clock advancement, Feathers activation, shortcuts, and play/pause icon sync.
@@ -211,8 +211,8 @@ Complete this milestone before expanding the editor or renderer feature surface 
    unchanged. Document creation, open/save, recovery, autosave, settings persistence,
    unsaved-change prompts, and lifecycle cancellation now produce structured outcomes
    localized by `EditorPersistencePlugin`; domain session methods no longer author their
-   UI prose. Inspector controls now emit a dedicated `InspectorAction` contract;
-   `InspectorPlugin` owns module-palette navigation, module and renderer mutations,
+   UI prose. Properties controls now emit a dedicated `PropertiesAction` contract;
+   `PropertiesPlugin` owns module-palette navigation, module and renderer mutations,
    renderer configuration, persisted disclosure state, and localized validation/status
    outcomes. Root chrome construction, About actions, global document shortcuts, editor
    labels, font setup, and revision-aware content rebuilds now run through
@@ -449,7 +449,7 @@ Deliver:
 
 - effect hierarchy and searchable module stack;
 - properties generated from module metadata;
-- timeline, curve, diagnostics, compiler-inspector, and profiler tabs;
+- timeline, curve, diagnostics, compiler-properties, and profiler tabs;
 - node graph as an optional projection for dataflow-heavy authoring;
 - preview transaction, semantic diff, accept/reject, and undo;
 - semantic viewport selection and gizmos that submit normal commands;
@@ -484,7 +484,7 @@ A follow-up choreography polish slice makes emitter names directly editable in T
 track headers and persists an optional emitter display color. The color is edited directly
 from each track's anchored Bevy Feathers color picker, including RGB/HSL channels, alpha,
 editable RGBA hex, and live track preview. Both edits use semantic commands with undo/redo;
-Inspector and Timeline therefore project the same name state. The color is
+Properties and Timeline therefore project the same name state. The color is
 backward-compatible authoring metadata and is deliberately ignored by the compiler and runtime.
 
 Persistent settings slice:
@@ -512,7 +512,7 @@ Localization slice:
    interpolation, and coverage of every registered editor command and panel title.
 
 The Fluent runtime, English fallback, French catalog, live persisted switching, shell,
-Inspector, Assets, Timeline, Curves, Diagnostics, Compiler Inspector, Profiler, and Changes
+Properties, Assets, Timeline, Curves, Diagnostics, Compiler Inspector, Profiler, and Changes
 coverage are complete. Incidental action/status messages migrate alongside their owning
 plugins; user-authored names, file paths, semantic IDs, and generated code stay
 untranslated.
@@ -648,7 +648,7 @@ domain assumptions:
 - preserve collapse and scroll state by semantic keys rather than transient entities;
 - build on Bevy Feathers focus, accessibility, menus, text editing, and theme tokens;
 - keep numeric scrub mechanics independent from the semantic command committed by
-  the owning Inspector field.
+  the owning Properties field.
 
 The first slice is implemented in `aestra-editor/src/feathers/`. Its widgets cover
 Aestra's current shared controls. The following Jackdaw primitives become useful as
@@ -657,11 +657,11 @@ the corresponding Aestra feature lands, rather than being copied unused:
 1. add swatch rows when continuous color authoring expands;
 2. add list/tree primitives for the future searchable content browser;
 3. evaluate Jackdaw's Bevy 0.19 scrub input as a replacement for the remaining
-   Inspector-owned pointer state after its semantic preview/commit adapter is isolated;
+   Properties-owned pointer state after its semantic preview/commit adapter is isolated;
 4. add dialogs, toasts, progress, and file-browser widgets only when those workflows
    need in-editor non-native surfaces.
 
-The generic tooltip slice is complete: Inspector and viewport help now share delayed,
+The generic tooltip slice is complete: Properties and viewport help now share delayed,
 popover-based content with optional titles, shortcuts, and footers. Text remains localized at
 the call site, and parenting the popup to the hovered control keeps placement scoped to the
 correct native window.
@@ -674,7 +674,7 @@ so UI rebuilds and equivalent instances restore the same state without persistin
 The bounded scalar slice is complete. Metadata-defined scalar ranges, normalized UV bounds, and
 flipbook frame rate use a shared Feathers slider plus a precise numeric input. Slider motion updates
 the compiled preview continuously, release commits one semantic undo command, and the final commit
-keeps the Inspector tree intact so scroll and disclosure state do not jump. Unbounded transforms,
+keeps the Properties tree intact so scroll and disclosure state do not jump. Unbounded transforms,
 vectors, and ranges remain numeric-only because an arbitrary slider range would misrepresent them.
 
 Dock tabs, splitters, timeline clips, curve keys, and viewport gizmos remain specialized

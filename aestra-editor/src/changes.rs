@@ -85,7 +85,7 @@ fn handle_changes_actions(
                     }
                     ChangesAction::Navigate(target) => {
                         if select_change_target(&mut session, target, &localizer) {
-                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Inspector);
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
                         }
                     }
                 }
@@ -365,13 +365,13 @@ pub(crate) fn spawn_changes_workspace(
                                         ..default()
                                     })
                                     .with_children(|actions| {
-                                        inspector_action_button(
+                                        properties_action_button(
                                             actions,
                                             &localizer.text("changes-discard"),
                                             ChangesAction::Discard,
                                             None,
                                         );
-                                        inspector_action_button(
+                                        properties_action_button(
                                             actions,
                                             &localizer.text(if pending.can_apply {
                                                 "changes-apply"
@@ -478,7 +478,7 @@ mod tests {
     }
 
     #[test]
-    fn navigate_action_selects_a_live_semantic_target_and_opens_inspector() {
+    fn navigate_action_selects_a_live_semantic_target_and_opens_properties() {
         let emitter = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH)
             .effect
             .emitters[1]

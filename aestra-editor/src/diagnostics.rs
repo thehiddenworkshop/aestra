@@ -150,7 +150,7 @@ fn handle_diagnostics_actions(
                     DiagnosticsAction::Select { source, index } => {
                         if navigate_to_diagnostic(&mut session, catalog.as_deref(), source, index) {
                             workspace.clear();
-                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Inspector);
+                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
                         }
                     }
                 }

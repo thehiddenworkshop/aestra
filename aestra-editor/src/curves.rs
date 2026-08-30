@@ -319,7 +319,7 @@ fn spawn_complex_input_list(
                                 selection.module == module.id
                                     && selection.input == input_index as u8
                             });
-                            let display_name = localized_inspector_input(
+                            let display_name = localized_properties_input(
                                 localizer,
                                 input.name,
                                 input.display_name,
@@ -410,8 +410,8 @@ fn spawn_curve_graph(
     let InputControl::Curve { step, min, max } = input.control else {
         return;
     };
-    let display_name = localized_inspector_input(localizer, input.name, input.display_name, false);
-    let description = localized_inspector_input(localizer, input.name, input.description, true);
+    let display_name = localized_properties_input(localizer, input.name, input.display_name, false);
+    let description = localized_properties_input(localizer, input.name, input.description, true);
     parent.spawn((
         Text::new(format!("{display_name}  ·  {description}")),
         TextFont {
@@ -567,8 +567,8 @@ fn spawn_gradient_graph(
     selected_key: usize,
     localizer: &Localizer,
 ) {
-    let display_name = localized_inspector_input(localizer, input.name, input.display_name, false);
-    let description = localized_inspector_input(localizer, input.name, input.description, true);
+    let display_name = localized_properties_input(localizer, input.name, input.display_name, false);
+    let description = localized_properties_input(localizer, input.name, input.description, true);
     parent.spawn((
         Text::new(format!("{display_name}  ·  {description}")),
         TextFont {

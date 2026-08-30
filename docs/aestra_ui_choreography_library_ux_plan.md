@@ -10,7 +10,7 @@ The audited, commit-sized execution plan for the editor-only foundation is maint
 The current editor already has the right major ingredients:
 
 - a live 3D viewport,
-- an emitter/module inspector,
+- an emitter/module properties,
 - a bottom timeline,
 - an asset/project browser,
 - curves/profiler/change panels,
@@ -168,7 +168,7 @@ Target structure:
 | Toolbar / breadcrumb / compile status                                 |
 +-------------+-------------------------------------------+-------------+
 |             |                                           |             |
-| LIBRARY     |                                           | INSPECTOR   |
+| LIBRARY     |                                           | PROPERTIES   |
 |             |                 VIEWPORT                  |             |
 |             |                                           |             |
 |             |                                           |             |
@@ -665,7 +665,7 @@ for repair and report an actionable diagnostic rather than silently discarding i
 
 # 13. Inheritance UI
 
-The inspector should clearly distinguish:
+The properties should clearly distinguish:
 
 ```text
 Inherited
@@ -721,7 +721,7 @@ Edit the local instance overrides while preserving the original asset.
 
 Fork/copy the asset so this instance can diverge permanently.
 
-These operations need to be obvious in context menus and inspector actions.
+These operations need to be obvious in context menus and properties actions.
 
 ---
 
@@ -1131,7 +1131,7 @@ Primary/default complete-effect authoring.
 large viewport
 large timeline
 library
-inspector
+properties
 ```
 
 ## Emitter
@@ -1142,7 +1142,7 @@ Detailed emitter behavior editing.
 large module stack / graph
 viewport
 small timeline
-inspector
+properties
 ```
 
 ## Material
@@ -1499,7 +1499,7 @@ Conceptual target:
 +----------------------------------------------------------------------------+
 | AESTRA   Prism Bloom                Play  Stop                 GPU 0.18 ms  |
 +----------------+-----------------------------------------+-----------------+
-| LIBRARY        |                                         | INSPECTOR       |
+| LIBRARY        |                                         | PROPERTIES       |
 |                |                                         |                 |
 | Search         |                                         | Prism Core      |
 |                |                 VIEWPORT                |                 |
@@ -1529,9 +1529,9 @@ Conceptual target:
 
 ---
 
-# 37. Inspector Behavior
+# 37. Properties Behavior
 
-Inspector contents should depend on selection.
+Properties contents should depend on selection.
 
 ## Select emitter track
 
@@ -2142,7 +2142,7 @@ select
 inspect
 ```
 
-The first Inspector shows the resolved source, placement start, source offset, playback
+The first Properties shows the resolved source, placement start, source offset, playback
 duration, seed behavior, and validation state. Add trimming, looping, and time scaling
 after basic placement is stable.
 
@@ -2152,10 +2152,10 @@ creates a referenced clip at the pointer time, clamps its initial window to the 
 shows a cursor-following drag ghost and provisional timeline bar, projects a distinct effect-instance
 row and clip, selects it semantically, and preserves identity through create undo/redo. Effect clips
 have preview mute/solo and contextual deletion controls, expand into their resolved source emitters,
-and expose both clip metadata and child emitter/module data through a read-only Inspector. Clip
+and expose both clip metadata and child emitter/module data through a read-only Properties. Clip
 bodies move directly with timeline snapping; boundary handles trim the parent window while keeping
 `source_offset` coherent and respecting parent and non-looping source bounds. The transient timing
-is reflected in the Inspector and commits as one undoable semantic command. Invalid, missing,
+is reflected in the Properties and commits as one undoable semantic command. Invalid, missing,
 direct-self, and transitive-cycle drops are rejected without mutating the document and retain visible
 feedback.
 
@@ -2163,7 +2163,7 @@ Effect clips now use the same explicit reorder-grip interaction as local emitter
 placed before, between, or after local emitters. Reordering changes only a stable semantic
 choreography order and is one undoable command; timing and source identity do not change. Each clip
 also owns a backward-compatible, non-destructive instance transform. Position,
-rotation, and scale are editable with the Inspector's standard scrubbable numeric controls and the
+rotation, and scale are editable with the Properties's standard scrubbable numeric controls and the
 Viewport transform gizmo, serialize with the clip, compose through nested references, and transform
 the whole referenced effect without modifying its source asset.
 
@@ -2194,7 +2194,7 @@ orphaned/type-changed override diagnostics
 Status: source and instance parameter workflows complete. `EffectClip` persists typed parameter
 overrides; project compilation accepts only exposed source parameters, lowers values into child
 parameter slots, and reports orphaned, hidden, or type-changed overrides. Nested reference
-execution and the Bevy/GPU editor preview apply the compiled values. The Inspector exposes source
+execution and the Bevy/GPU editor preview apply the compiled values. The Properties exposes source
 properties directly, edits their defaults in place, and provides instance overrides with
 reset-to-source through stable undoable commands. Source navigation and explicit instance mode are
 available; Make Unique remains as the user-facing continuation.
@@ -2332,7 +2332,7 @@ all workspace presets
 - [x] Existing project effects are searchable and filterable in the Library.
 - [x] Existing emitter actions remain available from the track hierarchy or its context menus.
 - [x] Existing timeline move, trim, seek, zoom, pan, and snapping behavior remains functional.
-- [x] Selection remains synchronized between Timeline, Inspector, Curves, Diagnostics, and Viewport.
+- [x] Selection remains synchronized between Timeline, Properties, Curves, Diagnostics, and Viewport.
 - [x] Empty, loading, invalid, and unavailable Library states are visually explicit.
 - [x] Keyboard navigation, accessible labels, and invalid-drop feedback are preserved or improved.
 - [x] User-resized layouts remain persisted.
@@ -2348,7 +2348,7 @@ all workspace presets
 - [x] EffectClip operations are undoable/redoable.
 - [x] EffectClip serialization is stable.
 - [x] The referenced effect resolves, compiles, runs, seeks, and restarts deterministically.
-- [x] An EffectClip exposes its resolved source and timing window in the Inspector.
+- [x] An EffectClip exposes its resolved source and timing window in the Properties.
 - [x] An EffectClip exposes an editable instance transform that affects the complete referenced effect.
 - [x] Missing references identify the unresolved asset and offer a repair path.
 - [x] Effect reference cycles are rejected with clear diagnostics.
@@ -2398,7 +2398,7 @@ Timeline
     |
 move / arrange / combine
     |
-Inspector
+Properties
     |
 override parameters
     |

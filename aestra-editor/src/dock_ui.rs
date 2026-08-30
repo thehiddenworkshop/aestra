@@ -371,8 +371,8 @@ fn spawn_panel_content(
             sources.library,
             sources.localizer,
         ),
-        DockPanel::Inspector => {
-            spawn_inspector(
+        DockPanel::Properties => {
+            spawn_properties(
                 parent,
                 sources.session,
                 sources.registry,

@@ -104,9 +104,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Presents Bevy-native UI and editor interactions.
 - Uses Bevy Feathers for standard tooling controls and theme semantics. The
   editor menu bar, dropdowns, primary toolbar, Settings workspace, and
-  metadata-driven Inspector inputs use Feathers menus, buttons, pane/group
+  metadata-driven Properties inputs use Feathers menus, buttons, pane/group
   containers, checkboxes, editable numeric inputs, bounded sliders, themed typography, keyboard
-  focus, cursors, and accessibility labels. Inspector edits commit only when an
+  focus, cursors, and accessibility labels. Properties edits commit only when an
   interaction is final and enter the semantic command history as undoable changes.
 - Owns a dedicated `src/feathers/` widget layer above Bevy Feathers. Reusable
   button activation, combo/action menus, compact field rows, scrub-number policy,
@@ -115,7 +115,7 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   BSN scenes, scroll areas, separators, and status surfaces live there rather than
   in application or panel builders.
   Domain plugins retain only semantic state and commands; docking, timeline,
-  viewport, and effect-specific Inspector behavior do not leak into generic widgets.
+  viewport, and effect-specific Properties behavior do not leak into generic widgets.
 - Owns a persisted recursive workspace dock tree with tab-strip insertion and
   directional panel-content splitting,
   closable/recoverable panels, collapsing empty branches, transient drop targets,
@@ -150,7 +150,7 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Runs emitter hierarchy, inline track naming, selection, timing, authored track color,
   Mute/Solo preview state, overflow, and track navigation through `TimelinePlugin`.
   Stable emitter IDs connect track headers and clips to semantic commands, so Timeline
-  and Inspector naming stay synchronized through the same undoable document field. Track
+  and Properties naming stay synchronized through the same undoable document field. Track
   swatches open an anchored picker composed from Bevy Feathers' shader-backed color plane,
   lightness/alpha sliders, RGB/HSL number inputs, and editable RGBA hex input. Intermediate
   values preview directly on the track; only final picker values enter semantic undo history.
@@ -160,16 +160,16 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Keeps compact Library rows and Timeline panes shrinkable with clipped, non-wrapping
   labels and reserved native scrollbar gutters. Automated composition coverage exercises
   blank and current documents at constrained width without adding a GPU requirement to CI.
-- Runs effect-property authoring through `InspectorPlugin`. Inspector controls emit the
-  dedicated `InspectorAction` contract; the plugin owns module-palette navigation,
+- Runs effect-property authoring through `PropertiesPlugin`. Properties controls emit the
+  dedicated `PropertiesAction` contract; the plugin owns module-palette navigation,
   effect/emitter identity and execution settings, typed emitter-event links, module and
   renderer mutations, renderer configuration, persisted disclosure state, semantic
   selection, and localized validation/status outcomes. Undoable edits still
   enter the shared `EditorSession` command history, while `main.rs` only schedules the
-  Inspector action set with the other editor domains.
+  Properties action set with the other editor domains.
 - Runs curve and gradient authoring through `EditorCurvesPlugin`. The plugin owns the
   Curves workspace, semantic property/key selection, graph interaction, key controls,
-  and its Feathers action bridge. Inspector links emit `CurvesAction`, while every key
+  and its Feathers action bridge. Properties links emit `CurvesAction`, while every key
   mutation still enters the `EditorSession` command history as one undoable semantic edit.
 - Runs document lifecycle through `EditorPersistencePlugin`. File-menu controls,
   keyboard shortcuts, and project-effect rows emit one `DocumentAction` contract;
@@ -194,7 +194,7 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   dockable Diagnostics workspace, severity filtering, semantic-path navigation, and
   the persistent compile-health footer action. Compiler validation remains an
   `EditorSession` responsibility, so presentation cannot mutate or replace reports.
-- Runs advanced compiler-artifact presentation through `EditorCompilerInspectorPlugin`.
+- Runs advanced compiler-artifact presentation through `EditorCompilerPropertiesPlugin`.
   The dockable Compiler Inspector is hidden from the default workspace but remains
   available from View, and saved `GeneratedCode` layout entries migrate without losing
   their placement. It presents execution stages, source-mapped instructions, particle layout, runtime parameter
@@ -205,9 +205,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   entries no longer depend on the global editor action enum. Command and drag/drop outcomes
   use localized panel names, while the serializable `WorkspaceLayout` remains the single
   persisted source of truth.
-- Uses one native Bevy scroll-area with a BSN-backed Feathers scrollbar across Inspector, Diagnostics,
+- Uses one native Bevy scroll-area with a BSN-backed Feathers scrollbar across Properties, Diagnostics,
   Compiler Inspector, Profiler, Changes, and curve lists. Scrollbars only participate in
-  layout while their content overflows. Semantic Inspector anchors support exact
+  layout while their content overflows. Semantic Properties anchors support exact
   scroll-to-source navigation from compiled instructions with a transient highlight
   that fades back to the normal or diagnostic border.
 - Runs runtime profiling through `EditorProfilerPlugin`. Preview producers submit borrowed
@@ -276,7 +276,7 @@ outdated or future format.
 
 - Bevy UI workspace and professional editor layout
 - deterministic CPU reference evaluator
-- layer/timeline playback and basic inspector editing
+- layer/timeline playback and basic properties editing
 - versioned RON effects, validation, save, and sample content
 
 ### Phase 2 — real authoring (in progress)
@@ -295,8 +295,8 @@ outdated or future format.
 - [x] typed, confirmed, backup-preserving asset migrations
 - [x] versioned persistent editor settings and a dockable Settings workspace
 - [x] Fluent editor-shell localization with catalog validation, fallback, and live locale switching
-- [x] localized built-in Inspector module inputs and descriptions
-- [x] semantic emitter transforms with undoable Inspector and viewport gizmo editing
+- [x] localized built-in Properties module inputs and descriptions
+- [x] semantic emitter transforms with undoable Properties and viewport gizmo editing
 - [x] localized diagnostics and profiler workspace content
 - [x] localized primary authoring workspace content while preserving technical payloads
 - [x] persistent recursive pane resizing and dockable authoring-panel tab stacks

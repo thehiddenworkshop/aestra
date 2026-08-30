@@ -10,12 +10,12 @@ mod dock_ui;
 mod docking;
 mod feathers;
 mod history;
-mod inspector;
 mod library;
 mod localization;
 mod menus;
 mod persistence;
 mod profiler;
+mod properties;
 mod recovery;
 mod session;
 mod settings;
@@ -107,7 +107,6 @@ use feathers::{
 use fluent_bundle::FluentArgs;
 pub(crate) use history::HistoryAction;
 use history::{EditorHistoryPlugin, HistorySet};
-use inspector::*;
 use library::{EditorLibraryPlugin, LibrarySet};
 pub(crate) use library::{
     LibraryAssetOperationState, LibraryState, ProjectEffectCatalog, spawn_library,
@@ -124,6 +123,7 @@ use persistence::{
 };
 use profiler::{EditorProfilerPlugin, ProfilerSet};
 pub(crate) use profiler::{ProfilerState, spawn_profiler_workspace};
+use properties::*;
 use session::EditorSession;
 use settings::{EditorSettings, SettingsPersistence};
 use settings_ui::EditorSettingsUiPlugin;
@@ -188,7 +188,7 @@ fn main() {
         .add_plugins(EditorPersistencePlugin)
         .add_plugins(AestraPlugin)
         .add_plugins(DockingPlugin)
-        .add_plugins(InspectorPlugin)
+        .add_plugins(PropertiesPlugin)
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)
         .add_plugins(ViewportPlugin)
@@ -212,7 +212,7 @@ fn main() {
                 )
                     .chain(),
                 TimelineSet::Input,
-                InspectorSet::Input,
+                PropertiesSet::Input,
                 DockingSet::Input,
                 AestraFeathersSet::Input,
                 (
@@ -223,7 +223,7 @@ fn main() {
                     DiagnosticsSet::Actions,
                     DockingSet::Actions,
                     HistorySet::Actions,
-                    InspectorSet::Actions,
+                    PropertiesSet::Actions,
                     ProfilerSet::Actions,
                     PersistenceSet::Actions,
                     TimelineSet::Actions,
@@ -245,7 +245,7 @@ fn main() {
                     DiagnosticsSet::Sync,
                     HistorySet::Sync,
                     ProfilerSet::Sync,
-                    InspectorSet::Sync,
+                    PropertiesSet::Sync,
                 )
                     .chain(),
                 DockingSet::Sync,
@@ -266,7 +266,7 @@ mod tests {
     fn viewport_dock_is_a_transparent_cutout_for_the_preview_camera() {
         assert_eq!(dock_pane_background(Some(DockPanel::Viewport)), Color::NONE);
         assert_eq!(
-            dock_pane_background(Some(DockPanel::Inspector)),
+            dock_pane_background(Some(DockPanel::Properties)),
             theme::PANEL_DARK
         );
         assert_eq!(dock_pane_background(None), theme::PANEL_DARK);
@@ -278,12 +278,12 @@ mod tests {
         let mut buttons = ButtonInput::<MouseButton>::default();
         buttons.press(MouseButton::Left);
         app.insert_resource(buttons);
-        app.insert_resource(DockDragState(Some(DockPanel::Inspector)));
+        app.insert_resource(DockDragState(Some(DockPanel::Properties)));
         app.add_systems(Update, clear_finished_dock_drag);
         let tab = app
             .world_mut()
             .spawn((
-                DockTab(DockPanel::Inspector),
+                DockTab(DockPanel::Properties),
                 UiTransform {
                     translation: Val2::px(20.0, 10.0),
                     ..default()
@@ -295,7 +295,7 @@ mod tests {
         app.update();
         assert_eq!(
             app.world().resource::<DockDragState>().0,
-            Some(DockPanel::Inspector)
+            Some(DockPanel::Properties)
         );
 
         app.world_mut()

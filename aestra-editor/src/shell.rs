@@ -57,7 +57,7 @@ pub(crate) enum EditorAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ScrollMemoryKey {
     Library,
-    Inspector,
+    Properties,
     CompilerInspector,
     Profiler,
     Settings,
@@ -613,7 +613,7 @@ fn spawn_status_bar(
         .with_children(|bar| spawn_compile_status(bar, session, localizer));
 }
 
-pub(crate) fn inspector_action_button<A: Component>(
+pub(crate) fn properties_action_button<A: Component>(
     parent: &mut ChildSpawnerCommands,
     label: &str,
     action: A,
@@ -840,7 +840,7 @@ fn update_editor_labels(
     session: Res<EditorSession>,
     mut labels: Query<(
         &mut Text,
-        Option<&InspectorTitle>,
+        Option<&PropertiesTitle>,
         Option<&DocumentMenuLabel>,
     )>,
 ) {
@@ -891,7 +891,7 @@ mod tests {
     fn new_scroll_area_keeps_memory_until_same_frame_restore() {
         let saved = Vec2::new(0.0, 184.0);
         let mut memory = ScrollMemoryState::default();
-        memory.0.insert(ScrollMemoryKey::Inspector, saved);
+        memory.0.insert(ScrollMemoryKey::Properties, saved);
         let mut app = App::new();
         app.insert_resource(memory);
         app.add_systems(
@@ -901,7 +901,7 @@ mod tests {
         let rebuilt = app
             .world_mut()
             .spawn((
-                PersistedScroll(ScrollMemoryKey::Inspector),
+                PersistedScroll(ScrollMemoryKey::Properties),
                 ScrollPosition::default(),
             ))
             .id();
@@ -913,7 +913,7 @@ mod tests {
             app.world()
                 .resource::<ScrollMemoryState>()
                 .0
-                .get(&ScrollMemoryKey::Inspector),
+                .get(&ScrollMemoryKey::Properties),
             Some(&saved)
         );
     }

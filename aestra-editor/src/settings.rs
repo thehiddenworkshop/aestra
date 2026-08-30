@@ -19,7 +19,8 @@ pub(crate) struct EditorSettings {
     pub(crate) performance: PerformanceSettings,
     pub(crate) capture: CaptureSettings,
     pub(crate) appearance: AppearanceSettings,
-    pub(crate) inspector: InspectorSettings,
+    #[serde(alias = "inspector")]
+    pub(crate) properties: PropertiesSettings,
     pub(crate) language: LanguageSettings,
 }
 
@@ -32,7 +33,7 @@ impl Default for EditorSettings {
             performance: PerformanceSettings::default(),
             capture: CaptureSettings::default(),
             appearance: AppearanceSettings::default(),
-            inspector: InspectorSettings::default(),
+            properties: PropertiesSettings::default(),
             language: LanguageSettings::default(),
         }
     }
@@ -134,7 +135,7 @@ impl Default for AppearanceSettings {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
-pub(crate) struct InspectorSettings {
+pub(crate) struct PropertiesSettings {
     /// User expansion choices keyed by stable module or renderer type.
     pub(crate) section_expansion: BTreeMap<String, bool>,
 }
@@ -546,7 +547,7 @@ mod tests {
         settings.general.autosave_interval_seconds = 1;
         settings.appearance.ui_scale = 8.0;
         settings
-            .inspector
+            .properties
             .section_expansion
             .insert("module/aestra.update.motion".into(), true);
         settings.language.locale = "fr-FR".into();
@@ -564,7 +565,7 @@ mod tests {
         assert_eq!(loaded.appearance.ui_scale, 1.5);
         assert_eq!(
             loaded
-                .inspector
+                .properties
                 .section_expansion
                 .get("module/aestra.update.motion"),
             Some(&true)
@@ -572,6 +573,16 @@ mod tests {
         assert_eq!(loaded.language.locale, "fr-FR");
         assert!(state.diagnostic().is_none());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn legacy_inspector_settings_field_migrates_to_properties() {
+        let source = ron::to_string(&EditorSettings::default()).unwrap();
+        let legacy = source.replacen("properties:", "inspector:", 1);
+        let restored = ron::from_str::<EditorSettings>(&legacy).unwrap();
+
+        assert_eq!(restored, EditorSettings::default());
+        assert!(ron::to_string(&restored).unwrap().contains("properties:"));
     }
 
     #[test]

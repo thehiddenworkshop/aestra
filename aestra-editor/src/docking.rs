@@ -379,7 +379,8 @@ pub(crate) enum DockPanel {
     #[default]
     Viewport,
     Assets,
-    Inspector,
+    #[serde(alias = "Inspector")]
+    Properties,
     Timeline,
     Curves,
     Diagnostics,
@@ -394,7 +395,7 @@ impl DockPanel {
     pub(crate) const ALL: [Self; 10] = [
         Self::Viewport,
         Self::Assets,
-        Self::Inspector,
+        Self::Properties,
         Self::Timeline,
         Self::Curves,
         Self::Diagnostics,
@@ -408,7 +409,7 @@ impl DockPanel {
         match self {
             Self::Viewport => "panel-viewport",
             Self::Assets => "panel-assets",
-            Self::Inspector => "panel-inspector",
+            Self::Properties => "panel-properties",
             Self::Timeline => "panel-timeline",
             Self::Curves => "panel-curves",
             Self::Diagnostics => "panel-diagnostics",
@@ -460,7 +461,7 @@ pub(crate) struct FloatingPanel {
 impl Default for FloatingPanel {
     fn default() -> Self {
         Self {
-            panel: DockPanel::Inspector,
+            panel: DockPanel::Properties,
             position: [120.0, 80.0],
             size: [420.0, 520.0],
         }
@@ -658,7 +659,7 @@ impl Default for WorkspaceLayout {
     fn default() -> Self {
         let assets = DockNode::tabs(1, &[DockPanel::Assets], DockPanel::Assets);
         let viewport = DockNode::tabs(2, &[DockPanel::Viewport], DockPanel::Viewport);
-        let inspector = DockNode::tabs(3, &[DockPanel::Inspector], DockPanel::Inspector);
+        let properties = DockNode::tabs(3, &[DockPanel::Properties], DockPanel::Properties);
         let bottom = DockNode::tabs(
             4,
             &[
@@ -670,7 +671,7 @@ impl Default for WorkspaceLayout {
             ],
             DockPanel::Timeline,
         );
-        let center_right = DockNode::split(5, DockAxis::Horizontal, 0.68, viewport, inspector);
+        let center_right = DockNode::split(5, DockAxis::Horizontal, 0.68, viewport, properties);
         let top = DockNode::split(6, DockAxis::Horizontal, 0.17, assets, center_right);
         Self {
             root: DockNode::split(7, DockAxis::Vertical, DEFAULT_TOP_SPLIT_RATIO, top, bottom),
@@ -1009,7 +1010,7 @@ fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2]
         | DockPanel::CompilerInspector
         | DockPanel::Profiler
         | DockPanel::Changes => [720.0, 320.0],
-        DockPanel::Assets | DockPanel::Inspector => [420.0, 520.0],
+        DockPanel::Assets | DockPanel::Properties => [420.0, 520.0],
         DockPanel::Settings => [520.0, 620.0],
         DockPanel::Viewport => [760.0, 540.0],
     };
@@ -1073,28 +1074,28 @@ mod tests {
     fn docking_actions_own_panel_visibility_and_workspace_reset() {
         let mut layout = WorkspaceLayout::default();
         let closed = apply_docking_action(
-            DockingAction::Close(DockPanel::Inspector),
+            DockingAction::Close(DockPanel::Properties),
             &mut layout,
             None,
         );
         assert!(closed.changed);
         assert_eq!(
             closed.status,
-            Some(DockingStatus::Closed(DockPanel::Inspector))
+            Some(DockingStatus::Closed(DockPanel::Properties))
         );
-        assert!(!layout.is_visible(DockPanel::Inspector));
+        assert!(!layout.is_visible(DockPanel::Properties));
 
         let shown = apply_docking_action(
-            DockingAction::Toggle(DockPanel::Inspector),
+            DockingAction::Toggle(DockPanel::Properties),
             &mut layout,
             None,
         );
         assert!(shown.changed);
         assert_eq!(
             shown.status,
-            Some(DockingStatus::Showing(DockPanel::Inspector))
+            Some(DockingStatus::Showing(DockPanel::Properties))
         );
-        assert!(layout.is_visible(DockPanel::Inspector));
+        assert!(layout.is_visible(DockPanel::Properties));
 
         assert!(layout.close(DockPanel::Assets));
         let reset = apply_docking_action(DockingAction::ResetWorkspace, &mut layout, None);
@@ -1110,8 +1111,8 @@ mod tests {
             localize_docking_status(DockingStatus::Floated(DockPanel::Profiler), &english);
         assert!(english.starts_with("Floated"));
         assert!(english.contains("PROFILER"));
-        let french = localize_docking_status(DockingStatus::Closed(DockPanel::Inspector), &french);
-        assert!(french.contains("INSPECTEUR"));
+        let french = localize_docking_status(DockingStatus::Closed(DockPanel::Properties), &french);
+        assert!(french.contains("PROPRIÉTÉS"));
         assert!(french.ends_with("fermé · rouvrez-le depuis Affichage"));
     }
 
@@ -1208,9 +1209,21 @@ mod tests {
     }
 
     #[test]
+    fn legacy_inspector_panel_name_migrates_to_properties() {
+        assert_eq!(
+            ron::from_str::<DockPanel>("Inspector").unwrap(),
+            DockPanel::Properties
+        );
+        assert_eq!(
+            ron::to_string(&DockPanel::Properties).unwrap(),
+            "Properties"
+        );
+    }
+
+    #[test]
     fn center_drop_builds_a_tab_stack() {
         let mut layout = WorkspaceLayout::default();
-        let target = layout.root.node_containing(DockPanel::Inspector).unwrap();
+        let target = layout.root.node_containing(DockPanel::Properties).unwrap();
         assert!(layout.dock(DockPanel::Assets, target, DockDrop::Center));
         assert_eq!(layout.root.node_containing(DockPanel::Assets), Some(target));
         assert!(layout.is_active(DockPanel::Assets));
@@ -1228,11 +1241,11 @@ mod tests {
     #[test]
     fn closing_the_last_tab_prunes_its_branch() {
         let mut layout = WorkspaceLayout::default();
-        assert!(layout.close(DockPanel::Inspector));
-        assert!(!layout.root.contains(DockPanel::Inspector));
+        assert!(layout.close(DockPanel::Properties));
+        assert!(!layout.root.contains(DockPanel::Properties));
         assert!(layout.root.contains(DockPanel::Viewport));
-        assert!(layout.show(DockPanel::Inspector));
-        assert!(layout.is_active(DockPanel::Inspector));
+        assert!(layout.show(DockPanel::Properties));
+        assert!(layout.is_active(DockPanel::Properties));
     }
 
     #[test]
@@ -1359,13 +1372,13 @@ mod tests {
     #[test]
     fn floating_panels_leave_no_empty_dock_and_can_redock() {
         let mut layout = WorkspaceLayout::default();
-        assert!(layout.float_panel(DockPanel::Inspector, [900.0, 80.0], [1200.0, 800.0]));
-        assert!(!layout.root.contains(DockPanel::Inspector));
-        assert_eq!(layout.floating[0].panel, DockPanel::Inspector);
+        assert!(layout.float_panel(DockPanel::Properties, [900.0, 80.0], [1200.0, 800.0]));
+        assert!(!layout.root.contains(DockPanel::Properties));
+        assert_eq!(layout.floating[0].panel, DockPanel::Properties);
 
-        assert!(layout.redock(DockPanel::Inspector));
+        assert!(layout.redock(DockPanel::Properties));
         assert!(layout.floating.is_empty());
-        assert!(layout.root.contains(DockPanel::Inspector));
+        assert!(layout.root.contains(DockPanel::Properties));
     }
 
     #[test]
