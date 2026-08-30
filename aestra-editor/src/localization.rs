@@ -291,6 +291,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "timeline-menu-unsolo",
     "timeline-menu-duplicate",
     "timeline-menu-delete",
+    "timeline-menu-edit-source",
     "timeline-reorder-emitter",
     "timeline-reordered-emitter",
     "timeline-reorder-effect-clip",

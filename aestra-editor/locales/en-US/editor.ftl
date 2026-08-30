@@ -386,6 +386,7 @@ timeline-menu-solo = Solo
 timeline-menu-unsolo = Clear Solo
 timeline-menu-duplicate = Duplicate
 timeline-menu-delete = Delete
+timeline-menu-edit-source = Edit Source
 timeline-reorder-emitter = Reorder emitter { $name }
 timeline-reordered-emitter = Reordered emitter tracks
 timeline-reorder-effect-clip = Reorder effect clip { $name }

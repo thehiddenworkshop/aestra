@@ -3,11 +3,11 @@ use crate::feathers::icon::load_svg_icon;
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
 use crate::library::{ProjectEffectCatalog, ProjectEffectRow};
 use crate::{
-    ComboOption, CurvesState, DockPanel, EditorNativeControl, EditorTooltip, FeathersActionButton,
-    KeyboardNavigableList, KeyboardNavigableListRow, Localizer, MenuState, ModulePaletteState,
-    PendingFeathersActivation, ProjectEffectEntryId, TransportAction, WorkspaceLayout, mini_button,
-    reveal_dock_panel, session::EditorSession, spawn_combo_control, spawn_text_input, theme,
-    ui_shell,
+    ComboOption, CurvesState, DockPanel, DocumentAction, EditorNativeControl, EditorTooltip,
+    FeathersActionButton, KeyboardNavigableList, KeyboardNavigableListRow, Localizer, MenuState,
+    ModulePaletteState, PendingFeathersActivation, ProjectEffectEntryId, TransportAction,
+    WorkspaceLayout, mini_button, reveal_dock_panel, session::EditorSession, spawn_combo_control,
+    spawn_text_input, theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
@@ -131,6 +131,7 @@ pub(crate) enum ChoreographyAction {
     ToggleEffectClipMuted(EffectClipId),
     ToggleEffectClipSolo(EffectClipId),
     ToggleEffectClipMenu(EffectClipId),
+    EditEffectClipSource(EffectClipId),
     DeleteEffectClip(EffectClipId),
     AddEmitter,
     DuplicateEmitter(Option<EmitterId>),
@@ -327,6 +328,7 @@ fn execute_timeline_action(
 
 fn execute_choreography_action(
     action: On<ChoreographyAction>,
+    mut commands: Commands,
     mut session: ResMut<EditorSession>,
     mut curves: ResMut<CurvesState>,
     mut layout: ResMut<WorkspaceLayout>,
@@ -495,6 +497,19 @@ fn execute_choreography_action(
                 state.context_effect_clip = None;
                 state.inspected_child = None;
                 curves.clear();
+            }
+        }
+        ChoreographyAction::EditEffectClipSource(clip) => {
+            if let Some(source) = session
+                .effect
+                .effect_clips
+                .iter()
+                .find(|candidate| candidate.id == clip)
+                .map(|clip| clip.source)
+            {
+                state.context_effect_clip = None;
+                session.ui_revision += 1;
+                commands.trigger(DocumentAction::OpenSource(source));
             }
         }
         ChoreographyAction::AddEmitter => {
@@ -1071,6 +1086,33 @@ mod tests {
         assert!(first_leaf.starts_with(&root));
         assert!(first_leaf.starts_with(&first_branch));
         assert!(!first_leaf.starts_with(&second_branch));
+    }
+
+    #[test]
+    fn double_click_opens_effect_clip_source_without_hijacking_trim_handles() {
+        let clip = EffectClipId::new();
+        let selection = ChoreographyAction::SelectEffectClip(clip);
+        let move_control = TimelineEffectClipInteraction {
+            clip,
+            kind: TimelineDragKind::Move,
+        };
+        let trim_control = TimelineEffectClipInteraction {
+            clip,
+            kind: TimelineDragKind::TrimStart,
+        };
+
+        assert_eq!(
+            effect_clip_click_action(1, &move_control, &selection),
+            selection
+        );
+        assert_eq!(
+            effect_clip_click_action(2, &move_control, &selection),
+            ChoreographyAction::EditEffectClipSource(clip)
+        );
+        assert_eq!(
+            effect_clip_click_action(2, &trim_control, &selection),
+            selection
+        );
     }
 
     #[test]
@@ -2121,6 +2163,7 @@ mod tests {
         let mut app = App::new();
         let mut timeline = TimelineState::framed(duration);
         timeline.vertical_scroll = 72.0;
+        timeline.context_effect_clip = Some(effect_clip_id);
         app.add_plugins((
             MinimalPlugins,
             AssetPlugin::default(),
@@ -2147,6 +2190,17 @@ mod tests {
                 .count()
         };
         assert_eq!(effect_clip_headers, 1);
+        let edit_source_actions = {
+            let world = app.world_mut();
+            let mut query = world.query::<&ChoreographyAction>();
+            query
+                .iter(world)
+                .filter(|action| {
+                    **action == ChoreographyAction::EditEffectClipSource(effect_clip_id)
+                })
+                .count()
+        };
+        assert_eq!(edit_source_actions, 1);
         let effect_clip_reorder_handles = {
             let world = app.world_mut();
             let mut query = world.query::<&EffectClipTrackReorderHandle>();
@@ -4206,6 +4260,7 @@ fn spawn_effect_clip_track_header(
     }
     header.observe(drop_effect_clip_track_reorder);
     header.observe(drop_emitter_track_reorder);
+    header.observe(open_effect_clip_source_from_header);
     header.with_children(|row| {
         let reorder_label =
             emitter_timing_label(localizer, "timeline-reorder-effect-clip", source_name);
@@ -6240,6 +6295,11 @@ fn spawn_effect_clip_context_menu(
         .with_children(|menu| {
             spawn_emitter_context_menu_item(
                 menu,
+                &localizer.text("timeline-menu-edit-source"),
+                ChoreographyAction::EditEffectClipSource(clip),
+            );
+            spawn_emitter_context_menu_item(
+                menu,
                 &localizer.text(if muted {
                     "timeline-menu-unmute"
                 } else {
@@ -7834,15 +7894,44 @@ fn select_timeline_clip(
 
 fn select_timeline_effect_clip(
     click: On<Pointer<Click>>,
-    actions: Query<&ChoreographyAction, With<TimelineEffectClipControl>>,
+    actions: Query<
+        (&ChoreographyAction, &TimelineEffectClipInteraction),
+        With<TimelineEffectClipControl>,
+    >,
     mut commands: Commands,
 ) {
-    let Ok(action) = actions.get(click.event_target()) else {
+    let Ok((action, interaction)) = actions.get(click.event_target()) else {
         return;
     };
     if click.button == PointerButton::Primary {
-        commands.trigger(action.clone());
+        commands.trigger(effect_clip_click_action(click.count, interaction, action));
     }
+}
+
+fn effect_clip_click_action(
+    click_count: u8,
+    interaction: &TimelineEffectClipInteraction,
+    selection: &ChoreographyAction,
+) -> ChoreographyAction {
+    if click_count >= 2 && interaction.kind == TimelineDragKind::Move {
+        ChoreographyAction::EditEffectClipSource(interaction.clip)
+    } else {
+        selection.clone()
+    }
+}
+
+fn open_effect_clip_source_from_header(
+    click: On<Pointer<Click>>,
+    headers: Query<&EffectClipTrackHeader>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Primary || click.count < 2 {
+        return;
+    }
+    let Ok(header) = headers.get(click.event_target()) else {
+        return;
+    };
+    commands.trigger(ChoreographyAction::EditEffectClipSource(header.clip));
 }
 
 fn select_timeline_referenced_emitter(

@@ -61,6 +61,7 @@ pub(crate) enum DocumentAction {
     OpenCatalog(EffectAssetRef),
     OpenSource(EffectAssetRef),
     BackToSource,
+    NavigateSourceAncestor(usize),
     Save,
     SaveAs,
     Exit,
@@ -89,6 +90,10 @@ impl SourceNavigationState {
 
     pub(crate) fn parent_name(&self) -> Option<&str> {
         self.stack.last().map(|entry| entry.name.as_str())
+    }
+
+    pub(crate) fn depth(&self) -> usize {
+        self.stack.len()
     }
 
     pub(crate) fn breadcrumb(&self, current: &str) -> Vec<String> {
@@ -594,6 +599,16 @@ fn execute_protected_document_action(
                 session, settings, workspace, timeline, navigation, localizer,
             );
         }
+        DocumentAction::NavigateSourceAncestor(depth) => {
+            let (Some(timeline), Some(navigation)) =
+                (timeline.as_deref_mut(), navigation.as_deref_mut())
+            else {
+                return;
+            };
+            return_to_source_at(
+                session, settings, workspace, timeline, navigation, depth, localizer,
+            );
+        }
         DocumentAction::Exit => {
             autosave.suspended = true;
             discard_active_recovery(recovery);
@@ -903,13 +918,31 @@ fn return_to_source(
     navigation: &mut SourceNavigationState,
     localizer: &Localizer,
 ) {
-    let Some(entry) = navigation.stack.last().cloned() else {
+    let Some(depth) = navigation.stack.len().checked_sub(1) else {
+        return;
+    };
+    return_to_source_at(
+        session, settings, workspace, timeline, navigation, depth, localizer,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn return_to_source_at(
+    session: &mut EditorSession,
+    settings: &EditorSettings,
+    workspace: &mut CurvesState,
+    timeline: &mut TimelineState,
+    navigation: &mut SourceNavigationState,
+    depth: usize,
+    localizer: &Localizer,
+) {
+    let Some(entry) = navigation.stack.get(depth).cloned() else {
         return;
     };
     if !open_effect_path(session, &entry.path, settings, localizer) {
         return;
     }
-    navigation.stack.pop();
+    navigation.stack.truncate(depth);
     session.selection.primary = entry.selection;
     session.selection.repair(&session.effect);
     timeline.restore_navigation(entry.timeline, session.playback_duration());
@@ -1254,10 +1287,22 @@ mod tests {
     #[test]
     fn source_navigation_round_trip_restores_playhead_selection_and_parent_context() {
         let temporary = tempfile::tempdir().unwrap();
+        let grandchild_path = temporary.path().join("grandchild.aestra.ron");
+        let mut grandchild = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        grandchild.id = aestra_bevy::EffectId::from_u128(0x6A11D);
+        grandchild.name = "Grandchild".into();
+        grandchild.save_ron(&grandchild_path).unwrap();
+
         let child_path = temporary.path().join("child.aestra.ron");
         let mut child = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
         child.id = aestra_bevy::EffectId::from_u128(0xC111D);
         child.name = "Child".into();
+        child.effect_clips.clear();
+        child.effect_clips.push(aestra_bevy::EffectClip::new(
+            EffectAssetRef::new(grandchild.id),
+            0.0,
+            1.0,
+        ));
         child.save_ron(&child_path).unwrap();
 
         let parent_path = temporary.path().join("parent.aestra.ron");
@@ -1327,6 +1372,44 @@ mod tests {
         assert!((session.time() - 1.25).abs() < 0.02);
         assert!(!session.playing);
         assert!(!navigation.can_go_back());
+
+        open_referenced_source(
+            &mut session,
+            &settings,
+            &catalog,
+            &mut workspace,
+            &mut timeline,
+            &mut navigation,
+            EffectAssetRef::new(child.id),
+            &localizer,
+        );
+        open_referenced_source(
+            &mut session,
+            &settings,
+            &catalog,
+            &mut workspace,
+            &mut timeline,
+            &mut navigation,
+            EffectAssetRef::new(grandchild.id),
+            &localizer,
+        );
+        assert_eq!(navigation.depth(), 2);
+        assert_eq!(
+            navigation.breadcrumb(&session.effect.name),
+            ["Parent", "Child", "Grandchild"]
+        );
+
+        return_to_source_at(
+            &mut session,
+            &settings,
+            &mut workspace,
+            &mut timeline,
+            &mut navigation,
+            0,
+            &localizer,
+        );
+        assert_eq!(session.effect.id, parent.id);
+        assert_eq!(navigation.depth(), 0);
     }
 
     #[test]
