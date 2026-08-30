@@ -488,6 +488,15 @@ pub struct CompiledEffectClip {
     pub duration: f32,
     pub transform: EmitterTransform,
     pub seed: EffectClipSeed,
+    pub parameter_overrides: Vec<CompiledParameterOverride>,
+}
+
+/// A validated, packed value replacing one exposed parameter on a child instance.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompiledParameterOverride {
+    pub source: ParameterId,
+    pub slot: ParameterSlot,
+    pub value: RuntimeValue,
 }
 
 impl CompiledEffectClip {
@@ -525,7 +534,8 @@ impl CompiledEffectProject {
     pub fn evaluate(&self, time: f32, seed: u64, output: &mut Vec<ProjectParticleSample>) {
         output.clear();
         let mut path = Vec::new();
-        evaluate_project_effect(self, &self.root, time, seed, &mut path, output);
+        let parameters = default_parameter_values(&self.root);
+        evaluate_project_effect(self, &self.root, time, seed, &parameters, &mut path, output);
     }
 }
 
@@ -542,6 +552,7 @@ fn evaluate_project_effect(
     effect: &CompiledEffect,
     time: f32,
     seed: u64,
+    parameters: &[RuntimeValue],
     path: &mut Vec<EffectClipId>,
     output: &mut Vec<ProjectParticleSample>,
 ) {
@@ -556,7 +567,7 @@ fn evaluate_project_effect(
         time.clamp(0.0, effect.duration)
     };
     let mut local_samples = Vec::new();
-    evaluate(effect, effect_time, seed, &mut local_samples);
+    evaluate_with_parameters(effect, effect_time, seed, parameters, &mut local_samples);
     output.extend(
         local_samples
             .into_iter()
@@ -574,12 +585,15 @@ fn evaluate_project_effect(
         let Some(child_time) = clip.map_time(effect_time, child) else {
             continue;
         };
+        let mut child_parameters = default_parameter_values(child);
+        apply_compiled_parameter_overrides(child, &clip.parameter_overrides, &mut child_parameters);
         path.push(clip.source_clip);
         evaluate_project_effect(
             project,
             child,
             child_time,
             clip.seed.resolve(seed, clip.source_clip),
+            &child_parameters,
             path,
             output,
         );
@@ -827,6 +841,13 @@ impl EffectInstance {
         Ok(())
     }
 
+    /// Applies compiler-validated values authored on a reusable effect clip.
+    pub fn apply_compiled_parameter_overrides(&mut self, overrides: &[CompiledParameterOverride]) {
+        apply_compiled_parameter_overrides(&self.effect, overrides, &mut self.parameters);
+        self.overridden
+            .extend(overrides.iter().map(|parameter| parameter.slot));
+    }
+
     pub fn clear_parameter(&mut self, id: ParameterId) -> Result<(), ParameterError> {
         let Some(slot) = self.effect.parameter_slots.get(&id).copied() else {
             return Err(ParameterError::Unknown(id));
@@ -880,12 +901,27 @@ impl EffectInstance {
 
 /// Executes a compiled effect with its default parameter values.
 pub fn evaluate(effect: &CompiledEffect, time: f32, seed: u64, output: &mut Vec<ParticleSample>) {
-    let parameters = effect
+    let parameters = default_parameter_values(effect);
+    evaluate_with_parameters(effect, time, seed, &parameters, output);
+}
+
+fn default_parameter_values(effect: &CompiledEffect) -> Vec<RuntimeValue> {
+    effect
         .parameters
         .iter()
         .map(|parameter| parameter.default.clone())
-        .collect::<Vec<_>>();
-    evaluate_with_parameters(effect, time, seed, &parameters, output);
+        .collect()
+}
+
+fn apply_compiled_parameter_overrides(
+    effect: &CompiledEffect,
+    overrides: &[CompiledParameterOverride],
+    parameters: &mut [RuntimeValue],
+) {
+    for parameter in overrides {
+        debug_assert_eq!(effect.parameters[parameter.slot.0].source, parameter.source);
+        parameters[parameter.slot.0] = parameter.value.clone();
+    }
 }
 
 fn evaluate_with_parameters(

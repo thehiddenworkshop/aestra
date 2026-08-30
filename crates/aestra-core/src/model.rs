@@ -259,7 +259,7 @@ impl EffectAsset {
                 clip.id.as_uuid().as_u128(),
                 format!("{path}.id"),
             );
-            clip.validate(&path, self, &mut report);
+            clip.validate(&path, self, &mut report, &mut semantic_ids);
         }
         for (material_index, material) in self.materials.iter().enumerate() {
             let path = format!("effect.materials[{material_index}].properties");
@@ -512,6 +512,9 @@ pub struct EffectClip {
     pub transform: EmitterTransform,
     #[serde(default)]
     pub seed: EffectClipSeed,
+    /// Concrete values replacing exposed parameters on this referenced instance.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub parameter_overrides: BTreeMap<ParameterId, Value>,
 }
 
 impl EffectClip {
@@ -524,6 +527,7 @@ impl EffectClip {
             duration,
             transform: EmitterTransform::default(),
             seed: EffectClipSeed::Inherit,
+            parameter_overrides: BTreeMap::new(),
         }
     }
 
@@ -546,7 +550,13 @@ impl EffectClip {
         })
     }
 
-    fn validate(&self, path: &str, owner: &EffectAsset, report: &mut ValidationReport) {
+    fn validate(
+        &self,
+        path: &str,
+        owner: &EffectAsset,
+        report: &mut ValidationReport,
+        semantic_ids: &mut BTreeMap<u128, String>,
+    ) {
         if self.source.id.is_nil() {
             report.push(Diagnostic::error(
                 DiagnosticCode::NilId,
@@ -594,6 +604,17 @@ impl EffectClip {
                 format!("{path}.transform"),
                 "effect clip transform must be finite, have positive scale, and use a normalized quaternion",
             ));
+        }
+        for (parameter, value) in &self.parameter_overrides {
+            let override_path = format!("{path}.parameter_overrides.{parameter}");
+            validate_value(value, &override_path, report, semantic_ids);
+            if matches!(value, Value::Parameter(_)) {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidValue,
+                    override_path,
+                    "effect clip parameter overrides must be concrete values",
+                ));
+            }
         }
     }
 }

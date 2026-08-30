@@ -2184,8 +2184,12 @@ Make Unique
 orphaned/type-changed override diagnostics
 ```
 
-Status: not started. This is the next user-facing M6 feature slice after the composition release
-gate is green.
+Status: semantic/runtime foundation complete. `EffectClip` now persists typed parameter overrides;
+project compilation accepts only exposed source parameters, lowers values into child parameter
+slots, and reports orphaned, hidden, or type-changed overrides. Nested reference execution and the
+Bevy/GPU editor preview apply the compiled values, while authoring commands provide stable undo and
+reset semantics. Inspector indication/edit/reset controls, explicit source/instance mode, Edit
+Source, and Make Unique remain as the user-facing continuation.
 
 ## Phase H — Nested effect expansion
 

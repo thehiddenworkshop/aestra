@@ -97,10 +97,13 @@ architecture vision; this file is the shorter delivery plan.
   repair, and stable undo/redo. Timeline drag/drop, clip presentation, trimming, reordering,
   instance transforms, Inspector UI, recursive read-only expansion, source navigation, and
   Bevy/GPU child rendering are implemented. Project file watching, guarded rename/move,
-  missing-reference repair, and project-aware preview recompilation are also complete. Instance
-  parameter overrides, Make Unique, usage graphs, reusable extraction, preview-cache identity,
-  markers/events, procedural recipes, mesh/ribbon production paths, renderer sorting, and richer
-  material domains remain.
+  missing-reference repair, and project-aware preview recompilation are also complete. The first
+  instance-override foundation is complete: typed clip overrides persist in v3 assets, compile
+  against exposed source parameters, execute in nested CPU and Bevy/GPU preview instances, report
+  orphaned/type-changed values, and participate in undo/redo. Inspector override controls,
+  Make Unique, usage graphs, reusable extraction, preview-cache identity, markers/events,
+  procedural recipes, mesh/ribbon production paths, renderer sorting, and richer material domains
+  remain.
 
 ## M6 composition release gate
 

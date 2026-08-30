@@ -299,6 +299,9 @@ fn reusable_effect_clips_round_trip_without_bumping_the_v3_format() {
     clip.transform.translation = [3.0, 4.0, 5.0];
     clip.transform.scale = [2.0, 2.0, 2.0];
     clip.seed = EffectClipSeed::Fixed(42);
+    let parameter = ParameterId::new();
+    clip.parameter_overrides
+        .insert(parameter, Value::Scalar(48.0));
     let clip_id = clip.id;
     effect.effect_clips.push(clip);
     effect.choreography_order = vec![aestra_core::ChoreographyTrackId::EffectClip(clip_id)];
@@ -309,6 +312,11 @@ fn reusable_effect_clips_round_trip_without_bumping_the_v3_format() {
     assert_eq!(decoded, effect);
     assert_eq!(decoded.format_version, 3);
     assert!(encoded.contains("effect_clips"));
+    assert!(encoded.contains("parameter_overrides"));
+    assert_eq!(
+        decoded.effect_clips[0].parameter_overrides[&parameter],
+        Value::Scalar(48.0)
+    );
     assert_eq!(
         decoded.effect_clips[0].transform.translation,
         [3.0, 4.0, 5.0]

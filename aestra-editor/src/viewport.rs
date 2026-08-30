@@ -20,7 +20,7 @@ use aestra_bevy::{
     ActiveBackend, AestraSet, EffectClipId, EffectPlayer, EffectRenderMode, EffectRuntimeStatus,
     EmitterId, EmitterShape, EmitterTransform, ModuleId, Value,
 };
-use aestra_runtime::{CompiledEffect, CompiledEffectProject};
+use aestra_runtime::{CompiledEffect, CompiledEffectProject, CompiledParameterOverride};
 use bevy::{
     app::TransformGizmoRenderStep,
     camera::{Viewport, visibility::RenderLayers},
@@ -478,6 +478,7 @@ struct DesiredPreviewInstance {
     time: f32,
     seed: u64,
     transform: Transform,
+    parameter_overrides: Vec<CompiledParameterOverride>,
 }
 
 #[derive(Component)]
@@ -1970,6 +1971,7 @@ fn configured_preview_player(session: &EditorSession) -> Option<EffectPlayer> {
         session.time(),
         session.preview_seed,
         session.speed,
+        &[],
     ))
 }
 
@@ -1978,8 +1980,12 @@ fn configured_preview_instance(
     time: f32,
     seed: u64,
     speed: f32,
+    parameter_overrides: &[CompiledParameterOverride],
 ) -> EffectPlayer {
     let mut player = EffectPlayer::from_compiled(effect);
+    player
+        .instance
+        .apply_compiled_parameter_overrides(parameter_overrides);
     player.playing = false;
     player.speed = speed;
     player.set_seed(seed);
@@ -2446,6 +2452,7 @@ fn desired_preview_instances(
             time,
             seed,
             transform: Transform::IDENTITY,
+            parameter_overrides: Vec::new(),
         });
     }
     collect_effect_clip_instances(
@@ -2506,6 +2513,7 @@ fn collect_effect_clip_instances(
             time: child_time,
             seed,
             transform,
+            parameter_overrides: clip.parameter_overrides.clone(),
         });
         collect_effect_clip_instances(
             project, child, timeline, child_time, seed, transform, path, desired,
@@ -2534,7 +2542,13 @@ fn map_effect_clip_time(
 }
 
 fn spawn_preview_instance(commands: &mut Commands, desired: DesiredPreviewInstance, speed: f32) {
-    let player = configured_preview_instance(desired.effect, desired.time, desired.seed, speed);
+    let player = configured_preview_instance(
+        desired.effect,
+        desired.time,
+        desired.seed,
+        speed,
+        &desired.parameter_overrides,
+    );
     commands.spawn((
         PreviewEffectPlayer,
         PreviewEffectInstancePath(desired.path),
@@ -2578,6 +2592,7 @@ fn sync_rendered_preview(
                     instance.time,
                     instance.seed,
                     session.speed,
+                    &instance.parameter_overrides,
                 );
             } else {
                 commands.entity(entity).despawn();
@@ -3291,9 +3306,23 @@ mod tests {
     fn project_preview_collects_active_effect_clips_with_local_time_and_seed() {
         let temporary = tempfile::tempdir().unwrap();
         let mut child = aestra_bevy::EffectAsset::new("Child", 1.0);
-        child
-            .emitters
-            .push(aestra_bevy::Emitter::basic_sprite("Child emitter", 1.0));
+        let parameter = aestra_bevy::EffectParameter {
+            id: aestra_bevy::ParameterId::new(),
+            name: "Spawn Rate".into(),
+            default: Value::Scalar(4.0),
+            exposed: true,
+        };
+        let parameter_id = parameter.id;
+        let mut emitter = aestra_bevy::Emitter::basic_sprite("Child emitter", 1.0);
+        emitter
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+            .unwrap()
+            .bindings
+            .insert("spawn_rate".into(), parameter_id);
+        child.parameters.push(parameter);
+        child.emitters.push(emitter);
         child
             .save_ron(temporary.path().join("child.aestra.ron"))
             .unwrap();
@@ -3303,6 +3332,8 @@ mod tests {
         clip.source_offset = 0.1;
         clip.seed = aestra_bevy::EffectClipSeed::Fixed(77);
         clip.transform.translation = [5.0, 2.0, -1.0];
+        clip.parameter_overrides
+            .insert(parameter_id, Value::Scalar(20.0));
         let clip_id = clip.id;
         root.effect_clips.push(clip);
         let catalog = ProjectEffectCatalog::scan(temporary.path());
@@ -3325,6 +3356,18 @@ mod tests {
         assert!((active[1].time - 0.35).abs() < 0.000_1);
         assert_eq!(active[1].seed, 77);
         assert_eq!(active[1].transform.translation, Vec3::new(5.0, 2.0, -1.0));
+        assert_eq!(active[1].parameter_overrides.len(), 1);
+        let player = configured_preview_instance(
+            active[1].effect.clone(),
+            active[1].time,
+            active[1].seed,
+            1.0,
+            &active[1].parameter_overrides,
+        );
+        assert_eq!(
+            player.instance.parameter(parameter_id),
+            Some(&aestra_runtime::RuntimeValue::Scalar(20.0))
+        );
     }
 
     #[test]

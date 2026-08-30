@@ -713,6 +713,63 @@ fn effect_clip_commands_are_serializable_and_reversible() {
 }
 
 #[test]
+fn effect_clip_parameter_overrides_are_undoable() {
+    let mut effect = test_effect();
+    let clip = EffectClip::new(EffectId::from_u128(0xC11D), 0.0, 1.0);
+    let clip_id = clip.id;
+    let parameter = ParameterId::new();
+    effect.effect_clips.push(clip);
+    let mut history = CommandHistory::default();
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Override reusable effect parameter",
+                EffectCommand::SetEffectClipParameterOverride {
+                    id: clip_id,
+                    parameter,
+                    value: Value::Scalar(20.0),
+                },
+            ),
+        )
+        .unwrap();
+    assert_eq!(
+        effect.effect_clips[0].parameter_overrides[&parameter],
+        Value::Scalar(20.0)
+    );
+
+    history.undo(&mut effect).unwrap().unwrap();
+    assert!(effect.effect_clips[0].parameter_overrides.is_empty());
+    history.redo(&mut effect).unwrap().unwrap();
+    assert_eq!(
+        effect.effect_clips[0].parameter_overrides[&parameter],
+        Value::Scalar(20.0)
+    );
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Reset reusable effect parameter",
+                EffectCommand::RemoveEffectClipParameterOverride {
+                    id: clip_id,
+                    parameter,
+                },
+            ),
+        )
+        .unwrap();
+    assert!(effect.effect_clips[0].parameter_overrides.is_empty());
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(
+        effect.effect_clips[0].parameter_overrides[&parameter],
+        Value::Scalar(20.0)
+    );
+}
+
+#[test]
 fn effect_clip_transform_and_order_are_undoable_stable_id_edits() {
     let mut effect = test_effect();
     let first = EffectClip::new(EffectId::from_u128(0xC11D), 0.0, 1.0);

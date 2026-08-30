@@ -300,7 +300,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetEffectClipTiming { id, .. }
         | EffectCommand::SetEffectClipSeed { id, .. }
         | EffectCommand::SetEffectClipSource { id, .. }
-        | EffectCommand::SetEffectClipTransform { id, .. } => {
+        | EffectCommand::SetEffectClipTransform { id, .. }
+        | EffectCommand::SetEffectClipParameterOverride { id, .. }
+        | EffectCommand::RemoveEffectClipParameterOverride { id, .. } => {
             (None, Some(SemanticTarget::EffectClip(*id)))
         }
         EffectCommand::RemoveParameter { id } => (None, Some(SemanticTarget::Parameter(*id))),

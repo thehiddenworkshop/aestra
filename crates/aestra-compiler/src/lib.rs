@@ -9,13 +9,14 @@ use aestra_core::{
     ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_SPRITE,
     RendererProperties, ScalarRange, SpriteColorSource, StageKind, ValidationReport,
 };
-use aestra_project::{ProjectAssetIndex, ProjectDependencyReport};
+use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
 use aestra_runtime::{
     CompiledAsset, CompiledCurve, CompiledEffect, CompiledEffectClip, CompiledEffectProject,
     CompiledEmitter, CompiledFlipbook, CompiledGradient, CompiledMaterial, CompiledParameter,
-    ExecutionPlan, Expression, Instruction, IrLocation, MaterialColorPlan, OptimizationStats,
-    ParameterSlot, ParticleAttribute, ParticleLayout, RendererPlan, RendererPlanKind,
-    RuntimeParameterValue, RuntimeStage, RuntimeValue, SimulationSeekMode,
+    CompiledParameterOverride, ExecutionPlan, Expression, Instruction, IrLocation,
+    MaterialColorPlan, OptimizationStats, ParameterSlot, ParticleAttribute, ParticleLayout,
+    RendererPlan, RendererPlanKind, RuntimeParameterValue, RuntimeStage, RuntimeValue,
+    SimulationSeekMode,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -208,20 +209,26 @@ impl EffectCompiler {
         index: &ProjectAssetIndex,
     ) -> Result<CompiledEffectProject, ProjectCompileError> {
         let resolved = index.resolve_effect_project(root)?;
-        let root = Arc::new(self.compile(&resolved.root).map_err(|source| {
+        self.validate_project_parameter_overrides(&resolved)?;
+        let compiled_root = Arc::new(self.compile(&resolved.root).map_err(|source| {
             ProjectCompileError::Effect {
                 effect: resolved.root.id,
                 source,
             }
         })?);
         let mut dependencies = BTreeMap::new();
-        for (id, effect) in resolved.dependencies {
+        for (&id, effect) in &resolved.dependencies {
             let compiled = self
-                .compile(&effect)
+                .compile(effect)
                 .map_err(|source| ProjectCompileError::Effect { effect: id, source })?;
             dependencies.insert(id, Arc::new(compiled));
         }
-        Ok(CompiledEffectProject { root, dependencies })
+        let mut project = CompiledEffectProject {
+            root: compiled_root,
+            dependencies,
+        };
+        populate_project_parameter_overrides(&resolved, &mut project);
+        Ok(project)
     }
 
     pub fn compile(&self, asset: &EffectAsset) -> Result<CompiledEffect, CompileError> {
@@ -450,6 +457,7 @@ impl EffectCompiler {
                     duration: clip.duration,
                     transform: clip.transform,
                     seed: clip.seed,
+                    parameter_overrides: Vec::new(),
                 })
                 .collect(),
             source_map,
@@ -582,6 +590,66 @@ impl EffectCompiler {
         }
     }
 
+    fn validate_project_parameter_overrides(
+        &self,
+        project: &ResolvedEffectProject,
+    ) -> Result<(), ProjectCompileError> {
+        for owner in std::iter::once(&project.root).chain(project.dependencies.values()) {
+            let mut report = ValidationReport::default();
+            for (clip_index, clip) in owner.effect_clips.iter().enumerate() {
+                let Some(source) = project.effect(clip.source.id) else {
+                    continue;
+                };
+                for (parameter_id, value) in &clip.parameter_overrides {
+                    let path = format!(
+                        "effect.effect_clips[{clip_index}].parameter_overrides.{parameter_id}"
+                    );
+                    let Some(parameter) = source
+                        .parameters
+                        .iter()
+                        .find(|parameter| parameter.id == *parameter_id)
+                    else {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::UnknownParameter,
+                            path,
+                            format!(
+                                "effect clip override references missing source parameter {parameter_id}"
+                            ),
+                        ));
+                        continue;
+                    };
+                    if !parameter.exposed {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::UnknownParameter,
+                            path,
+                            format!("source parameter '{}' is not exposed", parameter.name),
+                        ));
+                        continue;
+                    }
+                    let expected = parameter.default.value_type();
+                    let actual = value.value_type();
+                    if expected != actual {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::ParameterTypeMismatch,
+                            path,
+                            format!(
+                                "source parameter '{}' expects {expected:?}, found {actual:?}",
+                                parameter.name
+                            ),
+                        ));
+                    }
+                }
+            }
+            if !report.is_valid() {
+                return Err(ProjectCompileError::Effect {
+                    effect: owner.id,
+                    source: CompileError::Validation(report),
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn validate_attribute_flow(
         &self,
         emitter_index: usize,
@@ -685,6 +753,68 @@ impl EffectCompiler {
             transient,
             discovered,
         }
+    }
+}
+
+fn populate_project_parameter_overrides(
+    authored: &ResolvedEffectProject,
+    compiled: &mut CompiledEffectProject,
+) {
+    let root_overrides = compile_parameter_overrides(&authored.root, compiled);
+    let dependency_overrides = authored
+        .dependencies
+        .iter()
+        .map(|(&id, effect)| (id, compile_parameter_overrides(effect, compiled)))
+        .collect::<BTreeMap<_, _>>();
+
+    apply_parameter_overrides(Arc::make_mut(&mut compiled.root), &root_overrides);
+    for (id, overrides) in dependency_overrides {
+        let effect = compiled
+            .dependencies
+            .get_mut(&id)
+            .expect("resolved dependency must have a compiled artifact");
+        apply_parameter_overrides(Arc::make_mut(effect), &overrides);
+    }
+}
+
+fn compile_parameter_overrides(
+    owner: &EffectAsset,
+    project: &CompiledEffectProject,
+) -> BTreeMap<aestra_core::EffectClipId, Vec<CompiledParameterOverride>> {
+    owner
+        .effect_clips
+        .iter()
+        .map(|clip| {
+            let child = project
+                .effect(clip.source.id)
+                .expect("project resolution guarantees the child artifact exists");
+            let overrides = clip
+                .parameter_overrides
+                .iter()
+                .filter_map(|(parameter, value)| {
+                    let slot = child.parameter_slots.get(parameter).copied()?;
+                    Some(CompiledParameterOverride {
+                        source: *parameter,
+                        slot,
+                        value: RuntimeValue::compile(value)
+                            .expect("validated clip overrides are concrete runtime values"),
+                    })
+                })
+                .collect();
+            (clip.id, overrides)
+        })
+        .collect()
+}
+
+fn apply_parameter_overrides(
+    effect: &mut CompiledEffect,
+    overrides: &BTreeMap<aestra_core::EffectClipId, Vec<CompiledParameterOverride>>,
+) {
+    for clip in &mut effect.effect_clips {
+        clip.parameter_overrides = overrides
+            .get(&clip.source_clip)
+            .cloned()
+            .unwrap_or_default();
     }
 }
 

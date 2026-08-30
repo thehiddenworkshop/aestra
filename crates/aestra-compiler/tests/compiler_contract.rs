@@ -1,4 +1,4 @@
-use aestra_compiler::{EffectCompiler, ModuleRegistry};
+use aestra_compiler::{EffectCompiler, ModuleRegistry, ProjectCompileError};
 use aestra_core::{
     DiagnosticCode, EffectAsset, EffectClip, EffectClipSeed, EffectParameter, Emitter,
     MODULE_EMISSION, MaterialInput, MaterialProperties, ModuleInstance, ModuleParameters,
@@ -356,5 +356,74 @@ fn project_compilation_resolves_and_executes_timed_child_effects() {
     assert_eq!(first, second);
     assert!(first.iter().all(|sample| {
         sample.effect == child.id && sample.instance_path.as_slice() == [clip_id]
+    }));
+}
+
+#[test]
+fn project_compilation_applies_exposed_clip_parameter_overrides() {
+    let temporary = tempfile::tempdir().unwrap();
+    let (child, parameter) = parameterized_effect(true);
+    child
+        .save_ron(temporary.path().join("child.aestra.ron"))
+        .unwrap();
+
+    let mut root = EffectAsset::new("Root", 2.0);
+    let mut clip = EffectClip::new(child.id, 0.0, 2.0);
+    clip.parameter_overrides
+        .insert(parameter, Value::Scalar(20.0));
+    root.effect_clips.push(clip);
+
+    let project = EffectCompiler::default()
+        .compile_project(&root, &ProjectAssetIndex::scan(temporary.path()))
+        .unwrap();
+    let compiled_override = &project.root.effect_clips[0].parameter_overrides[0];
+    assert_eq!(compiled_override.source, parameter);
+
+    let mut samples = Vec::new();
+    project.evaluate(0.5, 42, &mut samples);
+    assert_eq!(samples.len(), 10);
+    assert!(samples.iter().all(|sample| sample.effect == child.id));
+}
+
+#[test]
+fn project_compilation_diagnoses_orphaned_and_type_changed_clip_overrides() {
+    let temporary = tempfile::tempdir().unwrap();
+    let (child, parameter) = parameterized_effect(true);
+    child
+        .save_ron(temporary.path().join("child.aestra.ron"))
+        .unwrap();
+    let index = ProjectAssetIndex::scan(temporary.path());
+
+    let mut root = EffectAsset::new("Root", 2.0);
+    let mut clip = EffectClip::new(child.id, 0.0, 2.0);
+    let missing = ParameterId::new();
+    clip.parameter_overrides
+        .insert(missing, Value::Scalar(10.0));
+    root.effect_clips.push(clip);
+
+    let ProjectCompileError::Effect { source, .. } = EffectCompiler::default()
+        .compile_project(&root, &index)
+        .unwrap_err()
+    else {
+        panic!("orphaned overrides must be compiler diagnostics");
+    };
+    assert!(source.report().diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::UnknownParameter
+            && diagnostic.path.contains(&missing.to_string())
+    }));
+
+    root.effect_clips[0].parameter_overrides.clear();
+    root.effect_clips[0]
+        .parameter_overrides
+        .insert(parameter, Value::Vec2([1.0, 2.0]));
+    let ProjectCompileError::Effect { source, .. } = EffectCompiler::default()
+        .compile_project(&root, &index)
+        .unwrap_err()
+    else {
+        panic!("type-changed overrides must be compiler diagnostics");
+    };
+    assert!(source.report().diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::ParameterTypeMismatch
+            && diagnostic.path.contains(&parameter.to_string())
     }));
 }

@@ -214,6 +214,37 @@ fn apply_command(
                 transform: previous,
             }]
         }
+        EffectCommand::SetEffectClipParameterOverride {
+            id,
+            parameter,
+            value,
+        } => {
+            let clip = effect_clip_mut(effect, *id)?;
+            match clip.parameter_overrides.insert(*parameter, value.clone()) {
+                Some(previous) => vec![EffectCommand::SetEffectClipParameterOverride {
+                    id: *id,
+                    parameter: *parameter,
+                    value: previous,
+                }],
+                None => vec![EffectCommand::RemoveEffectClipParameterOverride {
+                    id: *id,
+                    parameter: *parameter,
+                }],
+            }
+        }
+        EffectCommand::RemoveEffectClipParameterOverride { id, parameter } => {
+            let clip = effect_clip_mut(effect, *id)?;
+            let previous = clip.parameter_overrides.remove(parameter).ok_or_else(|| {
+                CommandError::UnknownParameter {
+                    parameter: parameter.to_string(),
+                }
+            })?;
+            vec![EffectCommand::SetEffectClipParameterOverride {
+                id: *id,
+                parameter: *parameter,
+                value: previous,
+            }]
+        }
         EffectCommand::AddParameter { parameter, index } => {
             checked_insert(
                 &mut effect.parameters,
