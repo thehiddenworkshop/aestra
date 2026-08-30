@@ -12,6 +12,7 @@ domain-specific state and semantic commands.
 
 | Module | Responsibility |
 | --- | --- |
+| `automation_curve` | Reusable antialiased filled curve and gradient canvas with bidirectional value projection |
 | `button` | Editor-action buttons, tool buttons, activation bridging, and action-control auditing |
 | `combo_box` | Data-driven combo options and compact action menus |
 | `color_picker` | HSL plane, lightness/alpha sliders, RGB/HSL channels, editable RGBA hex, preview, and automatic reset |

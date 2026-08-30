@@ -1,3 +1,6 @@
+use crate::feathers::automation_curve::{
+    self, AutomationCurveData, AutomationCurvePoint, AutomationGradientPoint,
+};
 use crate::feathers::color_picker::{ColorPickerLabels, spawn_color_picker};
 use crate::feathers::context_menu::{
     keyboard_context_menu_requested, pointer_position_in_node, should_dismiss_pointer_context_menu,
@@ -7,17 +10,17 @@ use crate::feathers::icon::load_svg_icon;
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
 use crate::library::{ProjectEffectCatalog, ProjectEffectRow};
 use crate::{
-    ComboOption, CurvesState, DockPanel, DocumentAction, EditorNativeControl, EditorTooltip,
-    FeathersActionButton, KeyboardNavigableList, KeyboardNavigableListRow, Localizer, MenuState,
-    ModulePaletteState, PendingFeathersActivation, ProjectEffectEntryId, TransportAction,
-    WorkspaceLayout, mini_button, reveal_dock_panel, session::EditorSession, spawn_combo_control,
-    theme, ui_shell,
+    ComboOption, CurvesState, DockPanel, DocumentAction, EditorModuleRegistry, EditorNativeControl,
+    EditorTooltip, FeathersActionButton, KeyboardNavigableList, KeyboardNavigableListRow,
+    Localizer, MenuState, ModulePaletteState, PendingFeathersActivation, ProjectEffectEntryId,
+    TransportAction, WorkspaceLayout, localized_properties_input, mini_button, module_parameter,
+    reveal_dock_panel, session::EditorSession, spawn_combo_control, theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
     ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload, ChoreographyTrackId,
-    EffectAsset, EffectAssetRef, EffectClip, EffectClipId, EffectMarker, Emitter, EmitterId,
-    MarkerId,
+    ColorKey, CurveKey, EffectAsset, EffectAssetRef, EffectClip, EffectClipId, EffectMarker,
+    Emitter, EmitterId, MarkerId, ModuleId, ModuleParameters, Value,
 };
 #[cfg(test)]
 use bevy::ui_widgets::{ControlOrientation, Scrollbar};
@@ -45,7 +48,10 @@ use bevy::{
 use bevy_resvg::prelude::SvgFile;
 use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
-use std::{collections::BTreeSet, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 const REFERENCED_EMITTER_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -103,6 +109,8 @@ impl Plugin for TimelinePlugin {
                     update_timeline_marker_visuals,
                     update_choreography_event_visuals,
                     update_effect_clip_visuals,
+                    update_automation_key_visuals,
+                    update_automation_curve_drag_preview,
                     update_effect_drop_insertion,
                     sync_effect_drop_track_gap,
                     update_effect_drop_preview,
@@ -161,6 +169,15 @@ pub(crate) enum ChoreographyAction {
     },
     ToggleEmitterSolo(EmitterId),
     ToggleEmitterColorPicker(EmitterId),
+    ToggleEmitterAutomation(EmitterId),
+    SelectAutomationKey(TimelineAutomationKeySelection),
+    AddAutomationKey(AutomationLaneId),
+    AddAutomationKeyAt {
+        lane: AutomationLaneId,
+        normalized_time_bits: u32,
+        value_bits: Option<u32>,
+    },
+    DeleteAutomationKey(TimelineAutomationKeySelection),
 }
 
 fn queue_timeline_action_activation(
@@ -424,6 +441,7 @@ fn execute_choreography_action(
         | state.context_effect_clip.take().is_some();
     match action.clone() {
         ChoreographyAction::SelectEmitter(emitter) => {
+            state.selected_automation_key = None;
             if session
                 .effect
                 .emitters
@@ -445,6 +463,7 @@ fn execute_choreography_action(
             }
         }
         ChoreographyAction::SelectEffectClip(clip) => {
+            state.selected_automation_key = None;
             if session
                 .effect
                 .effect_clips
@@ -462,6 +481,7 @@ fn execute_choreography_action(
             }
         }
         ChoreographyAction::SelectEffectClipEmitter { path, emitter } => {
+            state.selected_automation_key = None;
             let source =
                 resolve_effect_clip_path(&session, &catalog, &path).map(|(_, source)| source);
             if source
@@ -477,6 +497,7 @@ fn execute_choreography_action(
             }
         }
         ChoreographyAction::SelectReferencedEffectClip(path) => {
+            state.selected_automation_key = None;
             if resolve_effect_clip_path(&session, &catalog, &path).is_some() {
                 state.clear_emitter_selection();
                 session.selection.select_effect_clip(path.root());
@@ -596,6 +617,132 @@ fn execute_choreography_action(
             }
         }
         ChoreographyAction::ToggleEmitterColorPicker(_) => unreachable!(),
+        ChoreographyAction::ToggleEmitterAutomation(emitter) => {
+            if !state.expanded_automation_emitters.remove(&emitter) {
+                state.expanded_automation_emitters.insert(emitter);
+            }
+            session.ui_revision += 1;
+        }
+        ChoreographyAction::SelectAutomationKey(selection) => {
+            if automation_lane_keys(&session.effect, &selection.lane)
+                .is_some_and(|keys| selection.key < keys.len())
+            {
+                state.select_only_emitter(selection.lane.emitter);
+                session.select_emitter(selection.lane.emitter);
+                curves.select_key(selection.lane.module, selection.lane.input, selection.key);
+                state.selected_automation_key = Some(selection);
+                state.inspected_child = None;
+                session.status = localizer.text("timeline-selected-automation-key");
+                session.ui_revision += 1;
+            }
+        }
+        ChoreographyAction::AddAutomationKey(lane) => {
+            let Some(emitter) = session
+                .effect
+                .emitters
+                .iter()
+                .find(|emitter| emitter.id == lane.emitter)
+            else {
+                return;
+            };
+            let duration = emitter.duration.max(0.001);
+            let normalized_time =
+                ((session.time() - emitter.start_time) / duration).clamp(0.0, 1.0);
+            commands.trigger(ChoreographyAction::AddAutomationKeyAt {
+                lane,
+                normalized_time_bits: normalized_time.to_bits(),
+                value_bits: None,
+            });
+        }
+        ChoreographyAction::AddAutomationKeyAt {
+            lane,
+            normalized_time_bits,
+            value_bits,
+        } => {
+            let normalized_time = f32::from_bits(normalized_time_bits).clamp(0.0, 1.0);
+            let Some(keys) = automation_lane_keys(&session.effect, &lane) else {
+                return;
+            };
+            if let Some(index) = keys
+                .times()
+                .position(|time| (time - normalized_time).abs() <= 0.0005)
+            {
+                commands.trigger(ChoreographyAction::SelectAutomationKey(
+                    TimelineAutomationKeySelection { lane, key: index },
+                ));
+                return;
+            }
+            let index = keys
+                .times()
+                .position(|time| time > normalized_time)
+                .unwrap_or_else(|| keys.len());
+            let command = match automation_lane_value(&session.effect, &lane) {
+                Some(Value::Curve(curve)) => EffectCommand::AddCurveKey {
+                    emitter: lane.emitter,
+                    module: lane.module,
+                    parameter: lane.parameter.clone(),
+                    key: CurveKey::new(
+                        normalized_time,
+                        value_bits.map_or_else(|| curve.sample(normalized_time), f32::from_bits),
+                    ),
+                    index,
+                },
+                Some(Value::Gradient(gradient)) => EffectCommand::AddGradientKey {
+                    emitter: lane.emitter,
+                    module: lane.module,
+                    parameter: lane.parameter.clone(),
+                    key: ColorKey::new(normalized_time, gradient.sample(normalized_time)),
+                    index,
+                },
+                _ => return,
+            };
+            if session.execute(
+                localizer.text("timeline-add-automation-key-command"),
+                command,
+                true,
+            ) {
+                state.select_only_emitter(lane.emitter);
+                session.select_emitter(lane.emitter);
+                curves.select_key(lane.module, lane.input, index);
+                state.selected_automation_key =
+                    Some(TimelineAutomationKeySelection { lane, key: index });
+            }
+        }
+        ChoreographyAction::DeleteAutomationKey(selection) => {
+            let Some(keys) = automation_lane_keys(&session.effect, &selection.lane) else {
+                return;
+            };
+            if keys.len() <= 2 || selection.key >= keys.len() {
+                session.status = localizer.text("timeline-automation-keep-two-keys");
+                return;
+            }
+            let command = match keys {
+                AutomationLaneKeys::Curve(_) => EffectCommand::RemoveCurveKey {
+                    emitter: selection.lane.emitter,
+                    module: selection.lane.module,
+                    parameter: selection.lane.parameter.clone(),
+                    index: selection.key,
+                },
+                AutomationLaneKeys::Gradient(_) => EffectCommand::RemoveGradientKey {
+                    emitter: selection.lane.emitter,
+                    module: selection.lane.module,
+                    parameter: selection.lane.parameter.clone(),
+                    index: selection.key,
+                },
+            };
+            if session.execute(
+                localizer.text("timeline-delete-automation-key-command"),
+                command,
+                true,
+            ) {
+                let next = selection.key.saturating_sub(1).min(keys.len() - 2);
+                curves.select_key(selection.lane.module, selection.lane.input, next);
+                state.selected_automation_key = Some(TimelineAutomationKeySelection {
+                    lane: selection.lane,
+                    key: next,
+                });
+            }
+        }
     }
     if closed_context_menu && session.ui_revision == revision {
         session.ui_revision += 1;
@@ -639,6 +786,7 @@ fn choreography_keyboard_input(
     session: Res<EditorSession>,
     state: Res<TimelineState>,
     timelines: Query<(), With<TimelineCanvas>>,
+    automation_graphs: Query<(&TimelineAutomationLaneGraph, &RelativeCursorPosition)>,
     focus: Option<Res<InputFocus>>,
     editable_text: Query<(), With<EditableText>>,
 ) {
@@ -656,7 +804,25 @@ fn choreography_keyboard_input(
     if control && keys.just_pressed(KeyCode::KeyD) {
         commands.trigger(ChoreographyAction::DuplicateEmitter(None));
     }
+    if keys.just_pressed(KeyCode::Insert) {
+        let action = automation_graphs.iter().find_map(|(graph, cursor)| {
+            cursor
+                .normalized
+                .filter(|_| cursor.cursor_over())
+                .and_then(|position| {
+                    add_automation_key_at_pointer_action(&session.effect, &graph.0, position)
+                })
+        });
+        if let Some(action) = action {
+            commands.trigger(action);
+            return;
+        }
+    }
     if keys.just_pressed(KeyCode::Delete) {
+        if let Some(selection) = state.selected_automation_key.clone() {
+            commands.trigger(ChoreographyAction::DeleteAutomationKey(selection));
+            return;
+        }
         match session.selection.primary {
             SemanticTarget::Marker(marker) => {
                 commands.trigger(TimelineAction::DeleteMarker(marker));
@@ -744,6 +910,8 @@ mod tests {
         session: Res<EditorSession>,
         state: Res<TimelineState>,
         catalog: Res<ProjectEffectCatalog>,
+        registry: Res<EditorModuleRegistry>,
+        curves: Res<CurvesState>,
         localizer: Res<Localizer>,
     ) {
         commands.spawn(Node::default()).with_children(|parent| {
@@ -752,6 +920,8 @@ mod tests {
                 &session,
                 &state,
                 &catalog,
+                &registry,
+                &curves,
                 &localizer,
                 &asset_server,
             );
@@ -776,6 +946,156 @@ mod tests {
         assert_eq!(timeline_cursor_fraction(-0.5), 0.0);
         assert_eq!(timeline_cursor_fraction(0.0), 0.5);
         assert_eq!(timeline_cursor_fraction(0.5), 1.0);
+    }
+
+    #[test]
+    fn automation_lanes_project_existing_curve_and_gradient_parameters() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = &session.effect.emitters[0];
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+
+        let lanes = emitter_automation_lanes(emitter, &registry, &localizer);
+
+        assert_eq!(lanes.len(), automation_lane_count(emitter));
+        assert!(lanes.iter().any(|lane| lane.id.parameter == "size"));
+        assert!(lanes.iter().any(|lane| lane.id.parameter == "opacity"));
+        assert!(lanes.iter().any(|lane| lane.id.parameter == "color"));
+        assert!(lanes.iter().all(|lane| lane.keys.len() >= 2));
+    }
+
+    #[test]
+    fn expanded_automation_lanes_shift_following_tracks_and_content_height() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let catalog = ProjectEffectCatalog::from_entries(Vec::new());
+        let first = &session.effect.emitters[0];
+        let second = &session.effect.emitters[1];
+        let collapsed = TimelineState::framed(session.playback_duration());
+        let collapsed_row = choreography_grid_row(
+            &session.effect,
+            &collapsed,
+            &catalog,
+            ChoreographyTrackId::Emitter(second.id),
+        );
+        let collapsed_height =
+            timeline_vertical_content_height(&session.effect, &collapsed, &catalog);
+        let mut expanded = collapsed;
+        expanded.expanded_automation_emitters.insert(first.id);
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+        let lanes = emitter_automation_lanes(first, &registry, &localizer);
+        expanded
+            .automation_lane_heights
+            .insert(lanes[0].id.clone(), 118.0);
+
+        assert_eq!(
+            choreography_grid_row(
+                &session.effect,
+                &expanded,
+                &catalog,
+                ChoreographyTrackId::Emitter(second.id),
+            ),
+            collapsed_row + automation_lane_count(first) as i16
+        );
+        assert_eq!(
+            timeline_vertical_content_height(&session.effect, &expanded, &catalog),
+            collapsed_height + automation_lanes_height(&expanded, first)
+        );
+        assert_eq!(expanded.automation_lane_height(&lanes[0].id), 118.0);
+        assert_eq!(
+            expanded.automation_lane_height(&lanes[1].id),
+            automation_curve::DEFAULT_HEIGHT
+        );
+    }
+
+    #[test]
+    fn automation_key_add_and_delete_are_transactional_and_share_curves_selection() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+        let emitter = session.effect.emitters[0].clone();
+        let lane = emitter_automation_lanes(&emitter, &registry, &localizer)
+            .into_iter()
+            .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(_)))
+            .unwrap();
+        let original_len = lane.keys.len();
+        session.seek_time(emitter.start_time + emitter.duration * 0.5);
+        let mut app = choreography_app(session);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::AddAutomationKey(lane.id.clone()));
+        app.update();
+
+        let selected = app
+            .world()
+            .resource::<TimelineState>()
+            .selected_automation_key
+            .clone()
+            .unwrap();
+        assert_eq!(
+            automation_lane_keys(&app.world().resource::<EditorSession>().effect, &lane.id,)
+                .unwrap()
+                .len(),
+            original_len + 1
+        );
+        let curve_selection = app
+            .world()
+            .resource::<CurvesState>()
+            .selected_key()
+            .unwrap();
+        assert_eq!(curve_selection.module, lane.id.module);
+        assert_eq!(curve_selection.input, lane.id.input);
+        assert_eq!(curve_selection.key, selected.key);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::DeleteAutomationKey(selected));
+        app.update();
+        assert_eq!(
+            automation_lane_keys(&app.world().resource::<EditorSession>().effect, &lane.id,)
+                .unwrap()
+                .len(),
+            original_len
+        );
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        assert_eq!(
+            automation_lane_keys(&app.world().resource::<EditorSession>().effect, &lane.id,)
+                .unwrap()
+                .len(),
+            original_len + 1
+        );
+    }
+
+    #[test]
+    fn graph_key_add_uses_the_pointer_time_and_value() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+        let emitter = session.effect.emitters[0].clone();
+        let lane = emitter_automation_lanes(&emitter, &registry, &localizer)
+            .into_iter()
+            .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(_)))
+            .unwrap();
+        let mut app = choreography_app(session);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::AddAutomationKeyAt {
+                lane: lane.id.clone(),
+                normalized_time_bits: 0.375_f32.to_bits(),
+                value_bits: Some(42.5_f32.to_bits()),
+            });
+        app.update();
+
+        let keys = automation_lane_keys(&app.world().resource::<EditorSession>().effect, &lane.id)
+            .unwrap();
+        let AutomationLaneKeys::Curve(keys) = keys else {
+            panic!("expected curve lane");
+        };
+        let inserted = keys
+            .iter()
+            .find(|key| (key.time - 0.375).abs() < 0.0001)
+            .expect("pointer-time key");
+        assert!((inserted.value - 42.5).abs() < 0.0001);
+        assert!(app.world().resource::<EditorSession>().can_undo());
     }
 
     #[test]
@@ -1749,6 +2069,8 @@ mod tests {
         .insert_resource(session)
         .insert_resource(TimelineState::framed(duration))
         .init_resource::<ProjectEffectCatalog>()
+        .init_resource::<EditorModuleRegistry>()
+        .init_resource::<CurvesState>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline);
 
@@ -1845,6 +2167,8 @@ mod tests {
         .insert_resource(session)
         .insert_resource(state)
         .insert_resource(catalog)
+        .init_resource::<EditorModuleRegistry>()
+        .init_resource::<CurvesState>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline);
         app.update();
@@ -2026,6 +2350,8 @@ mod tests {
         .insert_resource(session)
         .insert_resource(TimelineState::framed(duration))
         .init_resource::<ProjectEffectCatalog>()
+        .init_resource::<EditorModuleRegistry>()
+        .init_resource::<CurvesState>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline);
         app.update();
@@ -2123,6 +2449,8 @@ mod tests {
         .insert_resource(session)
         .insert_resource(TimelineState::framed(duration))
         .init_resource::<ProjectEffectCatalog>()
+        .init_resource::<EditorModuleRegistry>()
+        .init_resource::<CurvesState>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline)
         .add_systems(Update, audit_timeline_controls);
@@ -2190,6 +2518,8 @@ mod tests {
         .insert_resource(session)
         .insert_resource(state)
         .init_resource::<ProjectEffectCatalog>()
+        .init_resource::<EditorModuleRegistry>()
+        .init_resource::<CurvesState>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline);
 
@@ -2371,6 +2701,8 @@ mod tests {
         .insert_resource(session)
         .insert_resource(timeline)
         .init_resource::<ProjectEffectCatalog>()
+        .init_resource::<EditorModuleRegistry>()
+        .init_resource::<CurvesState>()
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_systems(Startup, spawn_test_timeline);
 
@@ -3165,6 +3497,67 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn insert_and_delete_shortcuts_edit_the_selected_automation_lane() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+        let emitter = session.effect.emitters[0].clone();
+        let lane = emitter_automation_lanes(&emitter, &registry, &localizer)
+            .into_iter()
+            .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(_)))
+            .unwrap();
+        let original_len = lane.keys.len();
+        session.seek_time(emitter.start_time + emitter.duration * 0.43);
+        let mut app = choreography_app(session);
+        app.init_resource::<ModulePaletteState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(Update, choreography_keyboard_input);
+        app.world_mut().spawn(TimelineCanvas);
+        app.world_mut().spawn((
+            TimelineAutomationLaneGraph(lane.id.clone()),
+            RelativeCursorPosition {
+                cursor_over: true,
+                normalized: Some(Vec2::new(0.17, -0.1)),
+            },
+        ));
+        app.world_mut()
+            .resource_mut::<TimelineState>()
+            .selected_automation_key = Some(TimelineAutomationKeySelection {
+            lane: lane.id.clone(),
+            key: 0,
+        });
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Insert);
+
+        app.update();
+
+        assert_eq!(
+            automation_lane_keys(&app.world().resource::<EditorSession>().effect, &lane.id)
+                .unwrap()
+                .len(),
+            original_len + 1
+        );
+        let inserted =
+            automation_lane_keys(&app.world().resource::<EditorSession>().effect, &lane.id)
+                .unwrap();
+        assert!(inserted.times().any(|time| (time - 0.67).abs() < 0.0001));
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear();
+            keys.release(KeyCode::Insert);
+            keys.press(KeyCode::Delete);
+        }
+        app.update();
+        assert_eq!(
+            automation_lane_keys(&app.world().resource::<EditorSession>().effect, &lane.id)
+                .unwrap()
+                .len(),
+            original_len
+        );
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -3448,6 +3841,114 @@ fn update_effect_clip_visuals(
         let start_time = clip_start + source_start - source_offset;
         let duration = source_end - source_start;
         apply_timeline_bar_geometry(&mut node, start_time, duration, view);
+    }
+}
+
+fn update_automation_key_visuals(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    mut keys: Query<(&TimelineAutomationKeySelection, &mut Node), With<TimelineAutomationKey>>,
+) {
+    let drag_preview = state
+        .automation_key_drag
+        .as_ref()
+        .and_then(|drag| automation_key_drag_preview_data(&session.effect, drag));
+    for (selection, mut node) in &mut keys {
+        let Some(emitter) = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == selection.lane.emitter)
+        else {
+            node.display = Display::None;
+            continue;
+        };
+        let time = state
+            .automation_key_drag
+            .as_ref()
+            .filter(|drag| drag.selection == *selection)
+            .map(|drag| drag.current_time)
+            .or_else(|| {
+                automation_lane_keys(&session.effect, &selection.lane)
+                    .and_then(|keys| keys.times().nth(selection.key))
+                    .map(|normalized| emitter.start_time + normalized * emitter.duration)
+            });
+        let Some(time) = time else {
+            node.display = Display::None;
+            continue;
+        };
+        let position = state.view.normalized_time(time);
+        node.display = if (0.0..=1.0).contains(&position) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        node.left = Val::Percent(position.clamp(0.0, 1.0) * 100.0);
+        if state
+            .automation_key_drag
+            .as_ref()
+            .is_some_and(|drag| drag.selection.lane == selection.lane)
+            && let Some(AutomationCurveData::Curve(_)) = drag_preview.as_ref()
+        {
+            node.top = Val::Percent(
+                drag_preview
+                    .as_ref()
+                    .map_or(50.0, |preview| preview.key_top_percent(selection.key)),
+            );
+        }
+    }
+}
+
+fn automation_key_drag_preview_data(
+    effect: &EffectAsset,
+    drag: &TimelineAutomationKeyDrag,
+) -> Option<AutomationCurveData> {
+    let emitter = effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == drag.selection.lane.emitter)?;
+    let mut preview = automation_lane_keys(effect, &drag.selection.lane)?.graph_data();
+    let normalized_time =
+        ((drag.current_time - emitter.start_time) / emitter.duration.max(0.001)).clamp(0.0, 1.0);
+    match &mut preview {
+        AutomationCurveData::Curve(points) => {
+            let point = points.get_mut(drag.selection.key)?;
+            point.time = normalized_time;
+            if let Some(value) = drag.current_value {
+                point.value = value;
+            }
+        }
+        AutomationCurveData::Gradient(points) => {
+            points.get_mut(drag.selection.key)?.time = normalized_time;
+        }
+    }
+    Some(preview)
+}
+
+fn update_automation_curve_drag_preview(
+    session: Res<EditorSession>,
+    state: Res<TimelineState>,
+    graphs: Query<(&TimelineAutomationLaneGraph, &Children)>,
+    mut rasters: Query<&mut automation_curve::AutomationCurveRaster>,
+) {
+    let Some(drag) = state.automation_key_drag.as_ref() else {
+        return;
+    };
+    let Some(preview) = automation_key_drag_preview_data(&session.effect, drag) else {
+        return;
+    };
+    for (graph, children) in &graphs {
+        if graph.0 != drag.selection.lane {
+            continue;
+        }
+        for child in children.iter() {
+            let Ok(mut raster) = rasters.get_mut(child) else {
+                continue;
+            };
+            if raster.data() != &preview {
+                raster.set_data(preview.clone());
+            }
+        }
     }
 }
 
@@ -3850,6 +4351,62 @@ fn snap_marker_time(
     }
 }
 
+fn snap_automation_key_time(
+    candidate: f32,
+    session: &EditorSession,
+    mode: TimelineSnapMode,
+    view: TimelineView,
+    canvas_width: f32,
+) -> (f32, Option<f32>) {
+    match mode {
+        TimelineSnapMode::None => (candidate, None),
+        TimelineSnapMode::Frames => {
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let snapped = (candidate / frame).round() * frame;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Seconds => {
+            let interval = nice_timeline_step(view.span(), canvas_width) / 5.0;
+            let snapped = (candidate / interval).round() * interval;
+            (snapped, Some(snapped))
+        }
+        TimelineSnapMode::Smart => {
+            let threshold = view.span() / canvas_width.max(1.0) * 9.0;
+            let frame = 1.0 / session.clock.tick_rate().max(1) as f32;
+            let mut targets = vec![
+                0.0,
+                session.playback_duration(),
+                session.time(),
+                (candidate / frame).round() * frame,
+            ];
+            targets.extend(session.effect.markers.iter().map(|marker| marker.time));
+            targets.extend(
+                session
+                    .effect
+                    .choreography_events
+                    .iter()
+                    .map(|event| event.time),
+            );
+            for emitter in &session.effect.emitters {
+                targets.push(emitter.start_time);
+                targets.push(emitter.start_time + emitter.duration);
+            }
+            for clip in &session.effect.effect_clips {
+                targets.push(clip.start_time);
+                targets.push(clip.start_time + clip.duration);
+            }
+            let nearest = targets.into_iter().min_by(|left, right| {
+                (candidate - *left)
+                    .abs()
+                    .total_cmp(&(candidate - *right).abs())
+            });
+            nearest
+                .filter(|target| (candidate - *target).abs() <= threshold)
+                .map_or((candidate, None), |target| (target, Some(target)))
+        }
+    }
+}
+
 fn snap_choreography_event_time(
     candidate: f32,
     event: ChoreographyEventId,
@@ -3979,6 +4536,21 @@ struct TimelineChoreographyEventDrag {
     current_time: f32,
 }
 
+#[derive(Clone, Debug)]
+struct TimelineAutomationKeyDrag {
+    selection: TimelineAutomationKeySelection,
+    original_time: f32,
+    current_time: f32,
+    original_value: Option<f32>,
+    current_value: Option<f32>,
+}
+
+#[derive(Component)]
+struct TimelineAutomationLaneResizeHandle;
+
+#[derive(Component, Clone)]
+struct TimelineAutomationLaneGraph(AutomationLaneId);
+
 #[derive(Component)]
 struct TimelineLibraryDropTarget;
 
@@ -4080,6 +4652,26 @@ struct TimelineTrackContextMenuAnchor;
 
 #[derive(Component)]
 struct TimelineTrackActionControl;
+
+#[derive(Component, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct AutomationLaneId {
+    emitter: EmitterId,
+    module: ModuleId,
+    input: u8,
+    parameter: String,
+}
+
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TimelineAutomationKeySelection {
+    lane: AutomationLaneId,
+    key: usize,
+}
+
+#[derive(Component)]
+struct TimelineAutomationLane;
+
+#[derive(Component)]
+struct TimelineAutomationKey;
 
 #[derive(Component, Clone, Copy)]
 struct EmitterTrackReorderHandle {
@@ -4297,6 +4889,8 @@ pub(crate) struct TimelineNavigationSnapshot {
     view: TimelineView,
     snap: TimelineSnapMode,
     expanded_effect_clips: BTreeSet<EffectClipPath>,
+    expanded_automation_emitters: BTreeSet<EmitterId>,
+    automation_lane_heights: BTreeMap<AutomationLaneId, f32>,
     inspected_child: Option<EffectClipChildSelection>,
     vertical_scroll: f32,
 }
@@ -4323,6 +4917,9 @@ pub(crate) struct TimelineState {
     effect_clip_drag: Option<EffectClipTimelineDrag>,
     marker_drag: Option<TimelineMarkerDrag>,
     choreography_event_drag: Option<TimelineChoreographyEventDrag>,
+    automation_key_drag: Option<TimelineAutomationKeyDrag>,
+    automation_lane_resize: Option<(AutomationLaneId, f32)>,
+    automation_lane_heights: BTreeMap<AutomationLaneId, f32>,
     snap_guide: Option<f32>,
     panning: bool,
     context_emitter: Option<EmitterId>,
@@ -4332,6 +4929,8 @@ pub(crate) struct TimelineState {
     reorder_drag: Option<EmitterId>,
     effect_clip_reorder_drag: Option<EffectClipId>,
     expanded_effect_clips: BTreeSet<EffectClipPath>,
+    expanded_automation_emitters: BTreeSet<EmitterId>,
+    selected_automation_key: Option<TimelineAutomationKeySelection>,
     muted_effect_clips: BTreeSet<EffectClipId>,
     solo_effect_clip: Option<EffectClipId>,
     context_effect_clip: Option<EffectClipId>,
@@ -4367,6 +4966,9 @@ impl TimelineState {
             effect_clip_drag: None,
             marker_drag: None,
             choreography_event_drag: None,
+            automation_key_drag: None,
+            automation_lane_resize: None,
+            automation_lane_heights: BTreeMap::new(),
             snap_guide: None,
             panning: false,
             context_emitter: None,
@@ -4376,6 +4978,8 @@ impl TimelineState {
             reorder_drag: None,
             effect_clip_reorder_drag: None,
             expanded_effect_clips: BTreeSet::new(),
+            expanded_automation_emitters: BTreeSet::new(),
+            selected_automation_key: None,
             muted_effect_clips: BTreeSet::new(),
             solo_effect_clip: None,
             context_effect_clip: None,
@@ -4398,9 +5002,18 @@ impl TimelineState {
             view: self.view,
             snap: self.snap,
             expanded_effect_clips: self.expanded_effect_clips.clone(),
+            expanded_automation_emitters: self.expanded_automation_emitters.clone(),
+            automation_lane_heights: self.automation_lane_heights.clone(),
             inspected_child: self.inspected_child.clone(),
             vertical_scroll: self.vertical_scroll,
         }
+    }
+
+    fn automation_lane_height(&self, lane: &AutomationLaneId) -> f32 {
+        self.automation_lane_heights
+            .get(lane)
+            .copied()
+            .unwrap_or(automation_curve::DEFAULT_HEIGHT)
     }
 
     pub(crate) fn restore_navigation(
@@ -4412,6 +5025,8 @@ impl TimelineState {
         self.view = snapshot.view;
         self.snap = snapshot.snap;
         self.expanded_effect_clips = snapshot.expanded_effect_clips;
+        self.expanded_automation_emitters = snapshot.expanded_automation_emitters;
+        self.automation_lane_heights = snapshot.automation_lane_heights;
         self.inspected_child = snapshot.inspected_child;
         self.vertical_scroll = snapshot.vertical_scroll.max(0.0);
         self.clamp_view(duration.max(0.05));
@@ -4639,6 +5254,42 @@ fn timeline_icon_button(
     entity
 }
 
+fn choreography_icon_button(
+    parent: &mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    icon_path: &'static str,
+    label: String,
+    action: ChoreographyAction,
+) -> Entity {
+    let mut button = parent.spawn_empty();
+    button.apply_scene(ui_shell::feathers_tool_button());
+    let entity = button.id();
+    button
+        .insert((
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.clone()),
+            EditorTooltip::description(label),
+            Node {
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+        ))
+        .with_child((
+            Node {
+                width: Val::Px(13.0),
+                height: Val::Px(13.0),
+                ..default()
+            },
+            UiSvg(load_svg_icon(asset_server, icon_path)),
+            SvgColor(theme::TEXT),
+            Pickable::IGNORE,
+        ));
+    entity
+}
+
 fn emitter_timing_label(localizer: &Localizer, message_id: &str, name: &str) -> String {
     let mut args = FluentArgs::new();
     args.set("name", name);
@@ -4853,11 +5504,176 @@ fn timeline_vertical_content_height(
         {
             height += referenced_track_projections(catalog, state, clip).len() as f32 * 27.0;
         }
+        if let ChoreographyTrackId::Emitter(id) = track
+            && state.expanded_automation_emitters.contains(&id)
+            && let Some(emitter) = effect.emitters.iter().find(|emitter| emitter.id == id)
+        {
+            height += automation_lanes_height(state, emitter);
+        }
     }
     if state.effect_drop_preview.is_some() {
         height += 31.0;
     }
     height
+}
+
+#[derive(Clone)]
+enum AutomationLaneKeys {
+    Curve(Vec<CurveKey>),
+    Gradient(Vec<ColorKey>),
+}
+
+impl AutomationLaneKeys {
+    fn times(&self) -> impl Iterator<Item = f32> + '_ {
+        match self {
+            Self::Curve(keys) => EitherAutomationTimes::Curve(keys.iter()),
+            Self::Gradient(keys) => EitherAutomationTimes::Gradient(keys.iter()),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::Curve(keys) => keys.len(),
+            Self::Gradient(keys) => keys.len(),
+        }
+    }
+
+    fn curve_value(&self, key: usize) -> Option<f32> {
+        match self {
+            Self::Curve(keys) => keys.get(key).map(|key| key.value),
+            Self::Gradient(_) => None,
+        }
+    }
+
+    fn graph_data(&self) -> AutomationCurveData {
+        match self {
+            Self::Curve(keys) => AutomationCurveData::Curve(
+                keys.iter()
+                    .map(|key| AutomationCurvePoint {
+                        time: key.time,
+                        value: key.value,
+                    })
+                    .collect(),
+            ),
+            Self::Gradient(keys) => AutomationCurveData::Gradient(
+                keys.iter()
+                    .map(|key| AutomationGradientPoint {
+                        time: key.time,
+                        color: key.color,
+                    })
+                    .collect(),
+            ),
+        }
+    }
+}
+
+enum EitherAutomationTimes<'a> {
+    Curve(std::slice::Iter<'a, CurveKey>),
+    Gradient(std::slice::Iter<'a, ColorKey>),
+}
+
+impl Iterator for EitherAutomationTimes<'_> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Curve(keys) => keys.next().map(|key| key.time),
+            Self::Gradient(keys) => keys.next().map(|key| key.time),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct AutomationLaneProjection {
+    id: AutomationLaneId,
+    label: String,
+    keys: AutomationLaneKeys,
+}
+
+fn emitter_automation_lanes(
+    emitter: &Emitter,
+    registry: &EditorModuleRegistry,
+    localizer: &Localizer,
+) -> Vec<AutomationLaneProjection> {
+    let mut lanes = Vec::new();
+    for module in &emitter.modules {
+        let Some(metadata) = registry.0.get(&module.module_type) else {
+            continue;
+        };
+        for (input, input_metadata) in metadata.inputs.iter().enumerate() {
+            let keys = match module_parameter(module, input_metadata.name) {
+                Some(Value::Curve(curve)) => AutomationLaneKeys::Curve(curve.keys),
+                Some(Value::Gradient(gradient)) => AutomationLaneKeys::Gradient(gradient.keys),
+                _ => continue,
+            };
+            let display_name = localized_properties_input(
+                localizer,
+                input_metadata.name,
+                input_metadata.display_name,
+                false,
+            );
+            lanes.push(AutomationLaneProjection {
+                id: AutomationLaneId {
+                    emitter: emitter.id,
+                    module: module.id,
+                    input: input as u8,
+                    parameter: input_metadata.name.into(),
+                },
+                label: display_name,
+                keys,
+            });
+        }
+    }
+    lanes
+}
+
+fn automation_lane_count(emitter: &Emitter) -> usize {
+    emitter
+        .modules
+        .iter()
+        .map(|module| match &module.parameters {
+            ModuleParameters::Appearance { .. } => 3,
+            ModuleParameters::Custom(values) => values
+                .values()
+                .filter(|value| matches!(value, Value::Curve(_) | Value::Gradient(_)))
+                .count(),
+            _ => 0,
+        })
+        .sum()
+}
+
+fn automation_lanes_height(state: &TimelineState, emitter: &Emitter) -> f32 {
+    let default_height = automation_curve::DEFAULT_HEIGHT;
+    automation_lane_count(emitter) as f32 * default_height
+        + state
+            .automation_lane_heights
+            .iter()
+            .filter(|(lane, _)| lane.emitter == emitter.id)
+            .map(|(_, height)| *height - default_height)
+            .sum::<f32>()
+}
+
+fn automation_lane_value(effect: &EffectAsset, lane: &AutomationLaneId) -> Option<Value> {
+    let emitter = effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == lane.emitter)?;
+    let module = emitter
+        .modules
+        .iter()
+        .find(|module| module.id == lane.module)?;
+    module_parameter(module, &lane.parameter)
+}
+
+fn automation_lane_keys(
+    effect: &EffectAsset,
+    lane: &AutomationLaneId,
+) -> Option<AutomationLaneKeys> {
+    match automation_lane_value(effect, lane)? {
+        Value::Curve(curve) => Some(AutomationLaneKeys::Curve(curve.keys)),
+        Value::Gradient(gradient) => Some(AutomationLaneKeys::Gradient(gradient.keys)),
+        _ => None,
+    }
 }
 
 fn spawn_effect_clip_track_header(
@@ -5464,6 +6280,8 @@ pub(crate) fn spawn_timeline(
     session: &EditorSession,
     state: &TimelineState,
     catalog: &ProjectEffectCatalog,
+    registry: &EditorModuleRegistry,
+    curves: &CurvesState,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -5797,8 +6615,26 @@ pub(crate) fn spawn_timeline(
                                         emitter.enabled,
                                         emitter.display_color,
                                         grid_row,
+                                        automation_lane_count(emitter),
                                         asset_server,
                                     );
+                                    if state.expanded_automation_emitters.contains(&emitter.id) {
+                                        for (lane_index, lane) in emitter_automation_lanes(
+                                            emitter, registry, localizer,
+                                        )
+                                        .iter()
+                                        .enumerate()
+                                        {
+                                            spawn_automation_lane_header(
+                                                headers,
+                                                localizer,
+                                                state,
+                                                lane,
+                                                grid_row + lane_index as i16 + 1,
+                                                asset_server,
+                                            );
+                                        }
+                                    }
                                 }
                                         spawn_effect_drop_spacer(headers);
                                     });
@@ -6334,6 +7170,28 @@ pub(crate) fn spawn_timeline(
                                                         }
                                                     });
                                             });
+                                            if state
+                                                .expanded_automation_emitters
+                                                .contains(&emitter.id)
+                                            {
+                                                for (lane_index, lane) in emitter_automation_lanes(
+                                                    emitter, registry, localizer,
+                                                )
+                                                .iter()
+                                                .enumerate()
+                                                {
+                                                    spawn_automation_lane_row(
+                                                        rows,
+                                                        session,
+                                                        state,
+                                                        curves,
+                                                        localizer,
+                                                        emitter,
+                                                        lane,
+                                                        grid_row + lane_index as i16 + 1,
+                                                    );
+                                                }
+                                            }
                                         }
                                                 spawn_effect_drop_spacer(rows);
                                             });
@@ -6566,6 +7424,7 @@ fn spawn_emitter_track_header(
     enabled: bool,
     display_color: Option<[f32; 4]>,
     grid_row: i16,
+    automation_lane_count: usize,
     asset_server: &AssetServer,
 ) {
     let primary_emitter = session.selection.emitter(&session.effect);
@@ -6637,6 +7496,39 @@ fn spawn_emitter_track_header(
         .observe(drop_emitter_track_reorder)
         .observe(drop_effect_clip_track_reorder)
         .with_children(|row| {
+            if automation_lane_count > 0 {
+                let expanded = state.expanded_automation_emitters.contains(&emitter);
+                let label = localizer.text(if expanded {
+                    "timeline-collapse-automation"
+                } else {
+                    "timeline-expand-automation"
+                });
+                let disclosure = mini_button(
+                    row,
+                    if expanded { "⌄" } else { ">" },
+                    ChoreographyAction::ToggleEmitterAutomation(emitter),
+                );
+                row.commands().entity(disclosure).insert((
+                    AccessibleLabel(label.clone()),
+                    EditorTooltip::description(label),
+                    Node {
+                        width: Val::Px(18.0),
+                        height: Val::Px(23.0),
+                        flex_shrink: 0.0,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                ));
+                configure_timeline_track_action_control(row.commands(), disclosure);
+            } else {
+                row.spawn(Node {
+                    width: Val::Px(18.0),
+                    height: Val::Px(1.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                });
+            }
             let reorder_label = emitter_timing_label(localizer, "timeline-reorder-emitter", name);
             let handle = row
                 .spawn((
@@ -7089,6 +7981,300 @@ fn layer_color(emitter: EmitterId, display_color: Option<[f32; 4]>) -> Color {
         2 => Color::srgb(0.98, 0.47, 0.21),
         _ => Color::srgb(0.84, 0.29, 0.72),
     }
+}
+
+fn spawn_automation_lane_header(
+    parent: &mut ChildSpawnerCommands,
+    localizer: &Localizer,
+    state: &TimelineState,
+    lane: &AutomationLaneProjection,
+    grid_row: i16,
+    asset_server: &AssetServer,
+) {
+    parent
+        .spawn((
+            TimelineAutomationLane,
+            lane.id.clone(),
+            TimelineChoreographyGridRow(grid_row),
+            Node {
+                width: Val::Percent(100.0),
+                min_width: Val::Px(0.0),
+                height: Val::Px(state.automation_lane_height(&lane.id)),
+                flex_shrink: 0.0,
+                padding: UiRect {
+                    left: Val::Px(41.0),
+                    right: Val::Px(7.0),
+                    ..default()
+                },
+                align_items: AlignItems::FlexStart,
+                column_gap: Val::Px(6.0),
+                border: UiRect::bottom(Val::Px(1.0)),
+                grid_row: GridPlacement::start(grid_row),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+            BorderColor::all(theme::BORDER.with_alpha(0.35)),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(&lane.label),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+                TextLayout::no_wrap(),
+                Node {
+                    min_width: Val::Px(0.0),
+                    flex_grow: 1.0,
+                    margin: UiRect::top(Val::Px(10.0)),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                EditorTooltip::description(&lane.label),
+                Pickable::IGNORE,
+            ));
+            let add_label = localizer.text("timeline-add-automation-key");
+            let add = choreography_icon_button(
+                row,
+                asset_server,
+                "icons/plus.svg",
+                add_label.clone(),
+                ChoreographyAction::AddAutomationKey(lane.id.clone()),
+            );
+            row.commands().entity(add).insert((
+                EditorTooltip::description(add_label).with_shortcut("Insert"),
+                Node {
+                    width: Val::Px(22.0),
+                    height: Val::Px(22.0),
+                    margin: UiRect::top(Val::Px(5.0)),
+                    ..default()
+                },
+            ));
+            if let Some(selection) = state
+                .selected_automation_key
+                .as_ref()
+                .filter(|selection| selection.lane == lane.id)
+            {
+                let remove_label = localizer.text("timeline-delete-automation-key");
+                let remove = choreography_icon_button(
+                    row,
+                    asset_server,
+                    "icons/minus.svg",
+                    remove_label.clone(),
+                    ChoreographyAction::DeleteAutomationKey(selection.clone()),
+                );
+                row.commands().entity(remove).insert((
+                    EditorTooltip::description(remove_label).with_shortcut("Delete"),
+                    Node {
+                        width: Val::Px(22.0),
+                        height: Val::Px(22.0),
+                        margin: UiRect::top(Val::Px(5.0)),
+                        ..default()
+                    },
+                ));
+            }
+        });
+}
+
+fn spawn_automation_lane_row(
+    parent: &mut ChildSpawnerCommands,
+    session: &EditorSession,
+    state: &TimelineState,
+    curves: &CurvesState,
+    localizer: &Localizer,
+    emitter: &Emitter,
+    lane: &AutomationLaneProjection,
+    grid_row: i16,
+) {
+    parent
+        .spawn((
+            TimelineAutomationLane,
+            lane.id.clone(),
+            TimelineChoreographyGridRow(grid_row),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(state.automation_lane_height(&lane.id)),
+                flex_shrink: 0.0,
+                position_type: PositionType::Relative,
+                overflow: Overflow::clip(),
+                border: UiRect::bottom(Val::Px(1.0)),
+                grid_row: GridPlacement::start(grid_row),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK.with_alpha(0.24)),
+            BorderColor::all(theme::BORDER.with_alpha(0.30)),
+        ))
+        .with_children(|row| {
+            let graph_data = lane.keys.graph_data();
+            let graph_start = state.view.normalized_time(emitter.start_time) * 100.0;
+            let graph_width = emitter.duration / state.view.span().max(0.001) * 100.0;
+            let graph_visible = emitter.start_time + emitter.duration > state.view.start
+                && emitter.start_time < state.view.end;
+            row.spawn((
+                TimelineAutomationLaneGraph(lane.id.clone()),
+                RelativeCursorPosition::default(),
+                Node {
+                    display: if graph_visible {
+                        Display::Flex
+                    } else {
+                        Display::None
+                    },
+                    position_type: PositionType::Absolute,
+                    left: Val::Percent(graph_start),
+                    top: Val::Px(0.0),
+                    width: Val::Percent(graph_width),
+                    height: Val::Percent(100.0),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                BackgroundColor(theme::ACCENT.with_alpha(0.035)),
+            ))
+            .observe(add_automation_key_from_graph)
+            .with_children(|graph| {
+                automation_curve::spawn_automation_curve(graph, &graph_data);
+            });
+            let curve_selection = curves.selected_key();
+            let emitter_selected = session.selection.emitter(&session.effect) == Some(emitter.id);
+            for (key, normalized_time) in lane.keys.times().enumerate() {
+                let selection = TimelineAutomationKeySelection {
+                    lane: lane.id.clone(),
+                    key,
+                };
+                let selected = emitter_selected
+                    && curve_selection.is_some_and(|selected| {
+                        selected.module == lane.id.module
+                            && selected.input == lane.id.input
+                            && selected.key == key
+                    });
+                let absolute_time = emitter.start_time + normalized_time * emitter.duration;
+                let position = state.view.normalized_time(absolute_time);
+                let top = graph_data.key_top_percent(key);
+                let visible = (0.0..=1.0).contains(&position);
+                let gradient_handle = matches!(&lane.keys, AutomationLaneKeys::Gradient(_));
+                let mut control = row.spawn((
+                    Button,
+                    EditorNativeControl,
+                    TimelineAutomationKey,
+                    selection.clone(),
+                    ChoreographyAction::SelectAutomationKey(selection),
+                    AccessibleLabel(format!("{} {:.3}", lane.label, absolute_time)),
+                    EntityCursor::System(if gradient_handle {
+                        SystemCursorIcon::EwResize
+                    } else {
+                        SystemCursorIcon::Grab
+                    }),
+                    ZIndex(2),
+                ));
+                if gradient_handle {
+                    control
+                        .insert((
+                            Node {
+                                display: if visible {
+                                    Display::Flex
+                                } else {
+                                    Display::None
+                                },
+                                position_type: PositionType::Absolute,
+                                left: Val::Percent(position.clamp(0.0, 1.0) * 100.0),
+                                top: Val::Px(0.0),
+                                width: Val::Px(11.0),
+                                height: Val::Percent(100.0),
+                                margin: UiRect::left(Val::Px(-5.5)),
+                                justify_content: JustifyContent::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::NONE),
+                        ))
+                        .with_child((
+                            Node {
+                                width: Val::Px(if selected { 3.0 } else { 2.0 }),
+                                height: Val::Percent(100.0),
+                                ..default()
+                            },
+                            BackgroundColor(if selected {
+                                theme::TEXT
+                            } else {
+                                theme::TEXT_MUTED
+                            }),
+                            Pickable::IGNORE,
+                        ));
+                } else {
+                    control.insert((
+                        Node {
+                            display: if visible {
+                                Display::Flex
+                            } else {
+                                Display::None
+                            },
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(position.clamp(0.0, 1.0) * 100.0),
+                            top: Val::Percent(top),
+                            width: Val::Px(11.0),
+                            height: Val::Px(11.0),
+                            margin: UiRect {
+                                left: Val::Px(-5.5),
+                                top: Val::Px(-5.5),
+                                ..default()
+                            },
+                            border: UiRect::all(Val::Px(1.0)),
+                            border_radius: BorderRadius::all(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(if selected {
+                            theme::ACCENT
+                        } else {
+                            theme::TEXT_MUTED
+                        }),
+                        BorderColor::all(if selected {
+                            theme::TEXT
+                        } else {
+                            theme::BORDER_BRIGHT
+                        }),
+                    ));
+                }
+                control
+                    .observe(select_automation_key)
+                    .observe(begin_automation_key_drag)
+                    .observe(move_automation_key_drag)
+                    .observe(finish_automation_key_drag)
+                    .observe(stop_timeline_control_press);
+            }
+            row.spawn((
+                Button,
+                EditorNativeControl,
+                TimelineAutomationLaneResizeHandle,
+                lane.id.clone(),
+                AccessibleLabel(localizer.text("timeline-resize-automation-lane")),
+                EntityCursor::System(SystemCursorIcon::NsResize),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    right: Val::Px(0.0),
+                    bottom: Val::Px(0.0),
+                    height: Val::Px(7.0),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::NONE),
+                ZIndex(4),
+            ))
+            .observe(begin_automation_lane_resize)
+            .observe(move_automation_lane_resize)
+            .observe(finish_automation_lane_resize)
+            .observe(stop_timeline_control_press)
+            .with_child((
+                Node {
+                    width: Val::Px(34.0),
+                    height: Val::Px(2.0),
+                    border_radius: BorderRadius::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BackgroundColor(theme::BORDER_BRIGHT.with_alpha(0.7)),
+                Pickable::IGNORE,
+            ));
+        });
 }
 
 fn effect_reference_color(source: EffectAssetRef) -> Color {
@@ -7998,6 +9184,12 @@ fn choreography_grid_row(
             let child_count = referenced_track_projections(catalog, state, clip).len();
             row = row.saturating_add(child_count.min(i16::MAX as usize) as i16);
         }
+        if let ChoreographyTrackId::Emitter(id) = track
+            && state.expanded_automation_emitters.contains(&id)
+            && let Some(emitter) = effect.emitters.iter().find(|emitter| emitter.id == id)
+        {
+            row = row.saturating_add(automation_lane_count(emitter).min(i16::MAX as usize) as i16);
+        }
     }
     row
 }
@@ -8032,6 +9224,14 @@ fn choreography_insertion_layout(
             let child_count = referenced_track_projections(catalog, state, clip).len();
             row = row.saturating_add(child_count.min(i16::MAX as usize) as i16);
             offset += child_count as f32 * 27.0;
+        }
+        if let ChoreographyTrackId::Emitter(id) = track
+            && state.expanded_automation_emitters.contains(&id)
+            && let Some(emitter) = effect.emitters.iter().find(|emitter| emitter.id == id)
+        {
+            let lane_count = automation_lane_count(emitter);
+            row = row.saturating_add(lane_count.min(i16::MAX as usize) as i16);
+            offset += automation_lanes_height(state, emitter);
         }
     }
     (row, offset)
@@ -8428,6 +9628,113 @@ fn select_timeline_marker(
     click.propagate(false);
 }
 
+fn add_automation_key_from_graph(
+    mut click: On<Pointer<Click>>,
+    graphs: Query<(&TimelineAutomationLaneGraph, &RelativeCursorPosition)>,
+    session: Res<EditorSession>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Primary || click.count < 2 {
+        return;
+    }
+    let Ok((graph, cursor)) = graphs.get(click.event_target()) else {
+        return;
+    };
+    let Some(position) = cursor.normalized else {
+        return;
+    };
+    let Some(action) = add_automation_key_at_pointer_action(&session.effect, &graph.0, position)
+    else {
+        return;
+    };
+    commands.trigger(action);
+    click.propagate(false);
+}
+
+fn add_automation_key_at_pointer_action(
+    effect: &EffectAsset,
+    lane: &AutomationLaneId,
+    position: Vec2,
+) -> Option<ChoreographyAction> {
+    let normalized_time = (position.x + 0.5).clamp(0.0, 1.0);
+    let value_bits = automation_lane_keys(effect, lane)?
+        .graph_data()
+        .value_for_top_percent((position.y + 0.5) * 100.0)
+        .map(f32::to_bits);
+    Some(ChoreographyAction::AddAutomationKeyAt {
+        lane: lane.clone(),
+        normalized_time_bits: normalized_time.to_bits(),
+        value_bits,
+    })
+}
+
+fn begin_automation_lane_resize(
+    mut drag: On<Pointer<DragStart>>,
+    handles: Query<&AutomationLaneId, With<TimelineAutomationLaneResizeHandle>>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(lane) = handles.get(drag.event_target()) else {
+        return;
+    };
+    state.automation_lane_resize = Some((lane.clone(), state.automation_lane_height(lane)));
+    override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::NsResize));
+    **cursor = CursorIcon::System(SystemCursorIcon::NsResize);
+    drag.propagate(false);
+}
+
+fn move_automation_lane_resize(
+    mut drag: On<Pointer<Drag>>,
+    handles: Query<&AutomationLaneId, With<TimelineAutomationLaneResizeHandle>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut state: ResMut<TimelineState>,
+    mut lanes: Query<(&AutomationLaneId, &mut Node), With<TimelineAutomationLane>>,
+) {
+    let Ok(lane) = handles.get(drag.event_target()) else {
+        return;
+    };
+    let Some((active, start)) = state.automation_lane_resize.clone() else {
+        return;
+    };
+    if active != *lane {
+        return;
+    }
+    let distance = screen_distance_to_logical(drag.distance.y, window.scale_factor());
+    let height =
+        (start + distance).clamp(automation_curve::MIN_HEIGHT, automation_curve::MAX_HEIGHT);
+    state.automation_lane_heights.insert(active.clone(), height);
+    for (candidate, mut node) in &mut lanes {
+        if *candidate == active {
+            node.height = Val::Px(height);
+        }
+    }
+    drag.propagate(false);
+}
+
+fn finish_automation_lane_resize(
+    mut drag: On<Pointer<DragEnd>>,
+    handles: Query<&AutomationLaneId, With<TimelineAutomationLaneResizeHandle>>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(lane) = handles.get(drag.event_target()) else {
+        return;
+    };
+    if state
+        .automation_lane_resize
+        .take()
+        .is_some_and(|(active, _)| active == *lane)
+    {
+        session.ui_revision += 1;
+    }
+    override_cursor.0 = None;
+    **cursor = CursorIcon::System(SystemCursorIcon::NsResize);
+    drag.propagate(false);
+}
+
 fn begin_timeline_marker_drag(
     drag: On<Pointer<DragStart>>,
     markers: Query<&TimelineMarker>,
@@ -8544,6 +9851,220 @@ fn select_choreography_event(
     };
     commands.trigger(TimelineAction::SelectChoreographyEvent(event.event));
     click.propagate(false);
+}
+
+fn begin_automation_key_drag(
+    mut drag: On<Pointer<DragStart>>,
+    controls: Query<&TimelineAutomationKeySelection, With<TimelineAutomationKey>>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(selection) = controls.get(drag.event_target()) else {
+        return;
+    };
+    let Some(emitter) = session
+        .effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == selection.lane.emitter)
+    else {
+        return;
+    };
+    let Some(keys) = automation_lane_keys(&session.effect, &selection.lane) else {
+        return;
+    };
+    let Some(normalized) = keys.times().nth(selection.key) else {
+        return;
+    };
+    let time = emitter.start_time + normalized * emitter.duration;
+    let value = keys.curve_value(selection.key);
+    let cursor_icon = if matches!(keys, AutomationLaneKeys::Gradient(_)) {
+        SystemCursorIcon::EwResize
+    } else {
+        SystemCursorIcon::Grabbing
+    };
+    state.automation_key_drag = Some(TimelineAutomationKeyDrag {
+        selection: selection.clone(),
+        original_time: time,
+        current_time: time,
+        original_value: value,
+        current_value: value,
+    });
+    override_cursor.0 = Some(EntityCursor::System(cursor_icon));
+    **cursor = CursorIcon::System(cursor_icon);
+    drag.propagate(false);
+}
+
+fn select_automation_key(
+    mut click: On<Pointer<Click>>,
+    controls: Query<&TimelineAutomationKeySelection, With<TimelineAutomationKey>>,
+    mut commands: Commands,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let Ok(selection) = controls.get(click.event_target()) else {
+        return;
+    };
+    commands.trigger(ChoreographyAction::SelectAutomationKey(selection.clone()));
+    click.propagate(false);
+}
+
+fn move_automation_key_drag(
+    mut drag_event: On<Pointer<Drag>>,
+    controls: Query<&TimelineAutomationKeySelection, With<TimelineAutomationKey>>,
+    canvases: Query<&ComputedNode, With<TimelineCanvas>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    session: Res<EditorSession>,
+    mut state: ResMut<TimelineState>,
+) {
+    let Ok(selection) = controls.get(drag_event.event_target()) else {
+        return;
+    };
+    let Some(mut drag) = state.automation_key_drag.clone() else {
+        return;
+    };
+    if drag.selection != *selection {
+        return;
+    }
+    drag_event.propagate(false);
+    let Some(emitter) = session
+        .effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == selection.lane.emitter)
+    else {
+        return;
+    };
+    let width = canvases
+        .iter()
+        .map(|canvas| canvas.size().x)
+        .fold(0.0, f32::max)
+        .max(1.0);
+    let logical_distance_x =
+        screen_distance_to_logical(drag_event.distance.x, window.scale_factor());
+    let candidate = drag.original_time + logical_distance_x / width * state.view.span();
+    let (candidate, guide) =
+        snap_automation_key_time(candidate, &session, state.snap, state.view, width);
+    let Some(keys) = automation_lane_keys(&session.effect, &selection.lane) else {
+        return;
+    };
+    let epsilon = emitter.duration.max(0.001) * 0.0005;
+    let lower = selection
+        .key
+        .checked_sub(1)
+        .and_then(|index| keys.times().nth(index))
+        .map_or(emitter.start_time, |time| {
+            emitter.start_time + time * emitter.duration + epsilon
+        });
+    let upper = keys
+        .times()
+        .nth(selection.key + 1)
+        .map_or(emitter.start_time + emitter.duration, |time| {
+            emitter.start_time + time * emitter.duration - epsilon
+        });
+    drag.current_time = candidate.clamp(lower.min(upper), upper.max(lower));
+    if let Some(original_value) = drag.original_value {
+        let graph = keys.graph_data();
+        let original_top = graph.top_percent_for_value(original_value).unwrap_or(50.0);
+        let logical_distance_y =
+            screen_distance_to_logical(drag_event.distance.y, window.scale_factor());
+        let candidate_top = original_top
+            + logical_distance_y / state.automation_lane_height(&selection.lane).max(1.0) * 100.0;
+        drag.current_value = graph.value_for_top_percent(candidate_top);
+    }
+    state.automation_key_drag = Some(drag);
+    state.snap_guide = guide.filter(|time| (*time - candidate).abs() <= 0.0001);
+}
+
+fn finish_automation_key_drag(
+    mut drag_event: On<Pointer<DragEnd>>,
+    controls: Query<&TimelineAutomationKeySelection, With<TimelineAutomationKey>>,
+    mut session: ResMut<EditorSession>,
+    mut state: ResMut<TimelineState>,
+    mut curves: ResMut<CurvesState>,
+    localizer: Res<Localizer>,
+    mut override_cursor: ResMut<OverrideCursor>,
+    mut cursor: Single<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    let Ok(selection) = controls.get(drag_event.event_target()) else {
+        return;
+    };
+    let Some(drag) = state.automation_key_drag.take() else {
+        return;
+    };
+    if drag.selection != *selection {
+        state.automation_key_drag = Some(drag);
+        return;
+    }
+    drag_event.propagate(false);
+    state.snap_guide = None;
+    override_cursor.0 = None;
+    **cursor = CursorIcon::System(if drag.original_value.is_some() {
+        SystemCursorIcon::Grab
+    } else {
+        SystemCursorIcon::EwResize
+    });
+    let Some(emitter) = session
+        .effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == selection.lane.emitter)
+    else {
+        return;
+    };
+    let time_changed = (drag.current_time - drag.original_time).abs() > 0.0001;
+    let value_changed = drag
+        .original_value
+        .zip(drag.current_value)
+        .is_some_and(|(original, current)| (current - original).abs() > 0.0001);
+    if !time_changed && !value_changed {
+        return;
+    }
+    let normalized =
+        ((drag.current_time - emitter.start_time) / emitter.duration.max(0.001)).clamp(0.0, 1.0);
+    let command = match automation_lane_value(&session.effect, &selection.lane) {
+        Some(Value::Curve(curve)) => {
+            let Some(mut key) = curve.keys.get(selection.key).copied() else {
+                return;
+            };
+            key.time = normalized;
+            if let Some(value) = drag.current_value {
+                key.value = value;
+            }
+            EffectCommand::SetCurveKey {
+                emitter: selection.lane.emitter,
+                module: selection.lane.module,
+                parameter: selection.lane.parameter.clone(),
+                index: selection.key,
+                key,
+            }
+        }
+        Some(Value::Gradient(gradient)) => {
+            let Some(mut key) = gradient.keys.get(selection.key).copied() else {
+                return;
+            };
+            key.time = normalized;
+            EffectCommand::SetGradientKey {
+                emitter: selection.lane.emitter,
+                module: selection.lane.module,
+                parameter: selection.lane.parameter.clone(),
+                index: selection.key,
+                key,
+            }
+        }
+        _ => return,
+    };
+    if session.execute(
+        localizer.text("timeline-move-automation-key-command"),
+        command,
+        true,
+    ) {
+        curves.select_key(selection.lane.module, selection.lane.input, selection.key);
+        state.selected_automation_key = Some(selection.clone());
+    }
 }
 
 fn begin_choreography_event_drag(

@@ -107,7 +107,11 @@ architecture vision; this file is the shorter delivery plan.
   timing and transform in one undoable transaction. Named timeline markers now provide stable,
   marker-relative anchors for emitters, clips, and choreography events. Typed choreography events
   have a dedicated timeline lane, transactional Properties editing, compiler artifacts, and
-  deterministic interval dispatch across loop boundaries. Top-level local emitter tracks can now
+  deterministic interval dispatch across loop boundaries. Local emitter tracks can now expand
+  their existing curve and gradient properties as automation lanes. Timeline keys share selection
+  with Curves, can be added at the playhead, moved with timeline snapping, deleted with the standard
+  Delete shortcut, and commit through the same undoable semantic curve commands. Top-level local
+  emitter tracks can now
   be multi-selected and extracted into a collision-safe reusable effect asset, optionally replacing
   the source tracks with one referenced clip through an undoable transaction. Usage graphs,
   recursive reusable extraction, preview-cache identity,

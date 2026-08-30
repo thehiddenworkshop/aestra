@@ -4,6 +4,7 @@
 //! reusable editor-facing compositions so panels do not each invent their own spacing, variants,
 //! activation bridge, or overflow behavior.
 
+pub(crate) mod automation_curve;
 pub(crate) mod breadcrumb;
 pub(crate) mod button;
 pub(crate) mod color_picker;
@@ -39,6 +40,7 @@ impl Plugin for AestraFeathersPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(FeathersPlugins)
             .insert_resource(theme::feathers_theme())
+            .init_resource::<automation_curve::AutomationCurveImageCache>()
             .init_resource::<tooltip::TooltipState>()
             .init_resource::<number_input::NumberScrubState>()
             .add_observer(button::queue_action_activation)
@@ -63,6 +65,7 @@ impl Plugin for AestraFeathersPlugin {
             .add_systems(
                 Update,
                 (
+                    automation_curve::rasterize_automation_curves,
                     list_row::update_keyboard_list_focus_visuals,
                     color_picker::sync_color_picker_visuals,
                     number_input::decorate_scrubbable_numbers,

@@ -391,6 +391,8 @@ fn spawn_panel_content(
             sources.session,
             sources.timeline,
             sources.catalog,
+            sources.registry,
+            workspace,
             sources.localizer,
             sources.asset_server,
         ),

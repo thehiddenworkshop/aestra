@@ -2915,6 +2915,8 @@ mod tests {
         catalog: Res<ProjectEffectCatalog>,
         library: Res<LibraryState>,
         timeline: Res<TimelineState>,
+        registry: Res<EditorModuleRegistry>,
+        curves: Res<CurvesState>,
         localizer: Res<Localizer>,
     ) {
         commands
@@ -2951,6 +2953,8 @@ mod tests {
                         &session,
                         &timeline,
                         &catalog,
+                        &registry,
+                        &curves,
                         &localizer,
                         &asset_server,
                     );
@@ -3336,6 +3340,8 @@ mod tests {
             .insert_resource(catalog)
             .init_resource::<LibraryState>()
             .insert_resource(TimelineState::framed(duration))
+            .init_resource::<EditorModuleRegistry>()
+            .init_resource::<CurvesState>()
             .insert_resource(Localizer::new("en-US").unwrap())
             .add_systems(Startup, spawn_pre_m6_acceptance_surface);
 

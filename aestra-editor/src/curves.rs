@@ -31,10 +31,10 @@ pub(crate) enum CurvesAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ComplexSelection {
-    module: ModuleId,
-    input: u8,
-    key: usize,
+pub(crate) struct ComplexSelection {
+    pub(crate) module: ModuleId,
+    pub(crate) input: u8,
+    pub(crate) key: usize,
 }
 
 #[derive(Resource, Default)]
@@ -45,6 +45,14 @@ pub(crate) struct CurvesState {
 impl CurvesState {
     pub(crate) fn clear(&mut self) {
         self.complex = None;
+    }
+
+    pub(crate) fn select_key(&mut self, module: ModuleId, input: u8, key: usize) {
+        self.complex = Some(ComplexSelection { module, input, key });
+    }
+
+    pub(crate) fn selected_key(&self) -> Option<ComplexSelection> {
+        self.complex
     }
 
     #[cfg(test)]
