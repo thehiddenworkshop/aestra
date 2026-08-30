@@ -1,4 +1,8 @@
 use crate::feathers::color_picker::{ColorPickerLabels, spawn_color_picker};
+use crate::feathers::context_menu::{
+    keyboard_context_menu_requested, pointer_position_in_node, should_dismiss_pointer_context_menu,
+    spawn_pointer_context_menu, spawn_pointer_context_menu_item,
+};
 use crate::feathers::icon::load_svg_icon;
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
 use crate::library::{ProjectEffectCatalog, ProjectEffectRow};
@@ -19,7 +23,6 @@ use bevy::{
     feathers::{
         controls::ButtonVariant,
         cursor::{EntityCursor, OverrideCursor},
-        theme::ThemedText,
     },
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     input_focus::{FocusCause, InputFocus, InputFocusVisible, tab_navigation::TabIndex},
@@ -74,6 +77,7 @@ impl Plugin for TimelinePlugin {
                 Update,
                 (
                     choreography_keyboard_input,
+                    open_focused_timeline_context_menu,
                     navigate_timeline,
                     dismiss_timeline_popovers,
                 )
@@ -100,6 +104,7 @@ impl Plugin for TimelinePlugin {
                     sync_effect_drop_track_gap,
                     update_effect_drop_preview,
                     reveal_timeline_emitter,
+                    restore_timeline_context_menu_focus,
                     sync_timeline_vertical_scroll,
                     sync_timeline_horizontal_scroll,
                     sync_emitter_reorder_hints,
@@ -361,6 +366,8 @@ fn execute_choreography_action(
     }
 
     let revision = session.ui_revision;
+    state.restore_context_emitter_focus = state.context_emitter;
+    state.restore_context_effect_clip_focus = state.context_effect_clip;
     let closed_context_menu = state.context_emitter.take().is_some()
         | state.color_picker_emitter.take().is_some()
         | state.context_effect_clip.take().is_some();
@@ -3898,6 +3905,8 @@ pub(crate) struct TimelineState {
     solo_effect_clip: Option<EffectClipId>,
     context_effect_clip: Option<EffectClipId>,
     context_menu_position: Vec2,
+    restore_context_emitter_focus: Option<EmitterId>,
+    restore_context_effect_clip_focus: Option<EffectClipId>,
     pub(crate) inspected_child: Option<EffectClipChildSelection>,
     referenced_emitter_click: Option<ReferencedEmitterClick>,
     reveal_emitter: Option<EmitterId>,
@@ -3936,6 +3945,8 @@ impl TimelineState {
             solo_effect_clip: None,
             context_effect_clip: None,
             context_menu_position: Vec2::ZERO,
+            restore_context_emitter_focus: None,
+            restore_context_effect_clip_focus: None,
             inspected_child: None,
             referenced_emitter_click: None,
             reveal_emitter: None,
@@ -4475,20 +4486,14 @@ fn spawn_effect_clip_track_header(
             Pickable::IGNORE,
         ));
         if state.context_effect_clip == Some(clip.id) {
-            row.spawn((
-                TimelineTrackContextMenuAnchor,
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(state.context_menu_position.x),
-                    top: Val::Px(state.context_menu_position.y),
-                    width: Val::Px(1.0),
-                    height: Val::Px(1.0),
-                    ..default()
-                },
-            ))
-            .with_children(|anchor| {
-                spawn_effect_clip_context_menu(anchor, localizer, clip.id, muted, soloed);
-            });
+            spawn_effect_clip_context_menu(
+                row,
+                localizer,
+                clip.id,
+                muted,
+                soloed,
+                state.context_menu_position,
+            );
         }
     });
 }
@@ -6199,20 +6204,14 @@ fn spawn_emitter_track_header(
                 ));
             }
             if state.context_emitter == Some(emitter) {
-                row.spawn((
-                    TimelineTrackContextMenuAnchor,
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(state.context_menu_position.x),
-                        top: Val::Px(state.context_menu_position.y),
-                        width: Val::Px(1.0),
-                        height: Val::Px(1.0),
-                        ..default()
-                    },
-                ))
-                .with_children(|anchor| {
-                    spawn_emitter_context_menu(anchor, localizer, emitter, enabled, soloed);
-                });
+                spawn_emitter_context_menu(
+                    row,
+                    localizer,
+                    emitter,
+                    enabled,
+                    soloed,
+                    state.context_menu_position,
+                );
             }
         });
 }
@@ -6223,59 +6222,15 @@ fn spawn_emitter_context_menu(
     emitter: EmitterId,
     enabled: bool,
     soloed: bool,
+    position: Vec2,
 ) {
-    parent
-        .spawn((
-            EmitterTrackContextMenu,
-            Popover {
-                positions: vec![
-                    PopoverPlacement {
-                        side: PopoverSide::Right,
-                        align: PopoverAlign::Start,
-                        gap: 4.0,
-                    },
-                    PopoverPlacement {
-                        side: PopoverSide::Bottom,
-                        align: PopoverAlign::End,
-                        gap: 4.0,
-                    },
-                    PopoverPlacement {
-                        side: PopoverSide::Top,
-                        align: PopoverAlign::End,
-                        gap: 4.0,
-                    },
-                    PopoverPlacement {
-                        side: PopoverSide::Left,
-                        align: PopoverAlign::Start,
-                        gap: 4.0,
-                    },
-                ],
-                window_margin: 8.0,
-            },
-            RelativeCursorPosition::default(),
-            OverrideClip,
-            GlobalZIndex(250),
-            Node {
-                position_type: PositionType::Absolute,
-                width: Val::Px(184.0),
-                padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(theme::MENU),
-            BorderColor::all(theme::BORDER_BRIGHT),
-            BoxShadow::new(
-                Color::srgba(0.0, 0.0, 0.0, 0.62),
-                Val::Px(0.0),
-                Val::Px(2.0),
-                Val::Px(3.0),
-                Val::Px(5.0),
-            ),
-        ))
-        .with_children(|menu| {
-            spawn_emitter_context_menu_item(
+    spawn_pointer_context_menu(
+        parent,
+        position,
+        TimelineTrackContextMenuAnchor,
+        EmitterTrackContextMenu,
+        |menu| {
+            spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text(if enabled {
                     "timeline-menu-mute"
@@ -6287,7 +6242,7 @@ fn spawn_emitter_context_menu(
                     enabled: !enabled,
                 },
             );
-            spawn_emitter_context_menu_item(
+            spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text(if soloed {
                     "timeline-menu-unsolo"
@@ -6296,17 +6251,18 @@ fn spawn_emitter_context_menu(
                 }),
                 ChoreographyAction::ToggleEmitterSolo(emitter),
             );
-            spawn_emitter_context_menu_item(
+            spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text("timeline-menu-duplicate"),
                 ChoreographyAction::DuplicateEmitter(Some(emitter)),
             );
-            spawn_emitter_context_menu_item(
+            spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text("timeline-menu-delete"),
                 ChoreographyAction::DeleteEmitter(Some(emitter)),
             );
-        });
+        },
+    );
 }
 
 fn spawn_effect_clip_context_menu(
@@ -6315,59 +6271,20 @@ fn spawn_effect_clip_context_menu(
     clip: EffectClipId,
     muted: bool,
     soloed: bool,
+    position: Vec2,
 ) {
-    parent
-        .spawn((
-            EffectClipTrackContextMenu,
-            Popover {
-                positions: vec![
-                    PopoverPlacement {
-                        side: PopoverSide::Right,
-                        align: PopoverAlign::Start,
-                        gap: 4.0,
-                    },
-                    PopoverPlacement {
-                        side: PopoverSide::Bottom,
-                        align: PopoverAlign::End,
-                        gap: 4.0,
-                    },
-                    PopoverPlacement {
-                        side: PopoverSide::Top,
-                        align: PopoverAlign::End,
-                        gap: 4.0,
-                    },
-                ],
-                window_margin: 8.0,
-            },
-            RelativeCursorPosition::default(),
-            OverrideClip,
-            GlobalZIndex(250),
-            Node {
-                position_type: PositionType::Absolute,
-                width: Val::Px(184.0),
-                padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::all(Val::Px(1.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
-                ..default()
-            },
-            BackgroundColor(theme::MENU),
-            BorderColor::all(theme::BORDER_BRIGHT),
-            BoxShadow::new(
-                Color::srgba(0.0, 0.0, 0.0, 0.62),
-                Val::Px(0.0),
-                Val::Px(2.0),
-                Val::Px(3.0),
-                Val::Px(5.0),
-            ),
-        ))
-        .with_children(|menu| {
-            spawn_emitter_context_menu_item(
+    spawn_pointer_context_menu(
+        parent,
+        position,
+        TimelineTrackContextMenuAnchor,
+        EffectClipTrackContextMenu,
+        |menu| {
+            spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text("timeline-menu-edit-source"),
                 ChoreographyAction::EditEffectClipSource(clip),
             );
-            spawn_emitter_context_menu_item(
+            spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text(if muted {
                     "timeline-menu-unmute"
@@ -6376,7 +6293,7 @@ fn spawn_effect_clip_context_menu(
                 }),
                 ChoreographyAction::ToggleEffectClipMuted(clip),
             );
-            spawn_emitter_context_menu_item(
+            spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text(if soloed {
                     "timeline-menu-unsolo"
@@ -6385,36 +6302,13 @@ fn spawn_effect_clip_context_menu(
                 }),
                 ChoreographyAction::ToggleEffectClipSolo(clip),
             );
-            spawn_emitter_context_menu_item(
+            spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text("timeline-menu-delete"),
                 ChoreographyAction::DeleteEffectClip(clip),
             );
-        });
-}
-
-fn spawn_emitter_context_menu_item(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    action: ChoreographyAction,
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_menu_item())
-        .insert((
-            Interaction::None,
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.to_owned()),
-        ))
-        .with_children(|item| {
-            item.spawn((
-                Text::new(label),
-                ThemedText,
-                TextLayout::no_wrap(),
-                Pickable::IGNORE,
-            ));
-        });
+        },
+    );
 }
 
 fn spawn_emitter_color_picker(
@@ -6614,6 +6508,8 @@ fn navigate_timeline(
             override_cursor.0 = None;
             **cursor = CursorIcon::System(SystemCursorIcon::Default);
         }
+        state.restore_context_emitter_focus = state.context_emitter;
+        state.restore_context_effect_clip_focus = state.context_effect_clip;
         if state.context_emitter.take().is_some()
             | state.color_picker_emitter.take().is_some()
             | state.context_effect_clip.take().is_some()
@@ -6697,6 +6593,7 @@ fn navigate_timeline(
 
 fn dismiss_timeline_popovers(
     buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     color_surfaces: Query<
         &RelativeCursorPosition,
         Or<(
@@ -6715,10 +6612,6 @@ fn dismiss_timeline_popovers(
     mut session: ResMut<EditorSession>,
 ) {
     let primary_pressed = buttons.just_pressed(MouseButton::Left);
-    if !primary_pressed {
-        return;
-    }
-
     let dismiss_color = should_dismiss_timeline_popover(
         state.color_picker_emitter.is_some(),
         color_surfaces
@@ -6726,12 +6619,13 @@ fn dismiss_timeline_popovers(
             .any(RelativeCursorPosition::cursor_over),
         primary_pressed,
     );
-    let dismiss_menu = should_dismiss_timeline_popover(
+    let dismiss_menu = should_dismiss_pointer_context_menu(
         state.context_emitter.is_some() || state.context_effect_clip.is_some(),
+        primary_pressed,
+        keys.just_pressed(KeyCode::Escape),
         menu_surfaces
             .iter()
             .any(RelativeCursorPosition::cursor_over),
-        primary_pressed,
     );
     if !dismiss_color && !dismiss_menu {
         return;
@@ -6740,10 +6634,40 @@ fn dismiss_timeline_popovers(
         state.color_picker_emitter = None;
     }
     if dismiss_menu {
+        state.restore_context_emitter_focus = state.context_emitter;
+        state.restore_context_effect_clip_focus = state.context_effect_clip;
         state.context_emitter = None;
         state.context_effect_clip = None;
     }
     session.ui_revision += 1;
+}
+
+fn restore_timeline_context_menu_focus(
+    mut focus: Option<ResMut<InputFocus>>,
+    emitter_headers: Query<(Entity, &EmitterTrackHeader)>,
+    clip_headers: Query<(Entity, &EffectClipTrackHeader)>,
+    mut state: ResMut<TimelineState>,
+) {
+    let Some(focus) = focus.as_deref_mut() else {
+        return;
+    };
+    if let Some(emitter) = state.restore_context_emitter_focus
+        && let Some((entity, _)) = emitter_headers
+            .iter()
+            .find(|(_, header)| header.emitter == emitter)
+    {
+        focus.set(entity, FocusCause::Navigated);
+        state.restore_context_emitter_focus = None;
+        state.restore_context_effect_clip_focus = None;
+        return;
+    }
+    if let Some(clip) = state.restore_context_effect_clip_focus
+        && let Some((entity, _)) = clip_headers.iter().find(|(_, header)| header.clip == clip)
+    {
+        focus.set(entity, FocusCause::Navigated);
+        state.restore_context_emitter_focus = None;
+        state.restore_context_effect_clip_focus = None;
+    }
 }
 
 fn should_dismiss_timeline_popover(
@@ -8124,6 +8048,82 @@ fn open_timeline_track_context_menu(
     click.propagate(false);
 }
 
+fn open_focused_timeline_context_menu(
+    keys: Res<ButtonInput<KeyCode>>,
+    focus: Option<Res<InputFocus>>,
+    active_descendants: Query<&ActiveDescendant>,
+    emitter_headers: Query<(&EmitterTrackHeader, &ComputedNode)>,
+    clip_headers: Query<(&EffectClipTrackHeader, &ComputedNode)>,
+    parents: Query<&ChildOf>,
+    mut session: ResMut<EditorSession>,
+    mut curves: ResMut<CurvesState>,
+    mut state: ResMut<TimelineState>,
+) {
+    if !keyboard_context_menu_requested(&keys)
+        || state.context_emitter.is_some()
+        || state.context_effect_clip.is_some()
+    {
+        return;
+    }
+    let Some(mut entity) = focus.as_deref().and_then(InputFocus::get) else {
+        return;
+    };
+    if let Ok(active) = active_descendants.get(entity)
+        && let Some(descendant) = active.0
+    {
+        entity = descendant;
+    }
+    loop {
+        if let Ok((header, node)) = emitter_headers.get(entity) {
+            let revision = session.ui_revision;
+            if session
+                .effect
+                .emitters
+                .iter()
+                .any(|candidate| candidate.id == header.emitter)
+            {
+                session.select_emitter(header.emitter);
+                curves.clear();
+            }
+            state.color_picker_emitter = None;
+            state.context_effect_clip = None;
+            state.context_emitter = Some(header.emitter);
+            state.context_menu_position =
+                Vec2::new((node.size().x - 8.0).max(0.0), node.size().y * 0.5);
+            if session.ui_revision == revision {
+                session.ui_revision += 1;
+            }
+            return;
+        }
+        if let Ok((header, node)) = clip_headers.get(entity) {
+            let revision = session.ui_revision;
+            if session
+                .effect
+                .effect_clips
+                .iter()
+                .any(|candidate| candidate.id == header.clip)
+            {
+                session.select_effect_clip(header.clip);
+                curves.clear();
+            }
+            state.inspected_child = None;
+            state.context_emitter = None;
+            state.color_picker_emitter = None;
+            state.context_effect_clip = Some(header.clip);
+            state.context_menu_position =
+                Vec2::new((node.size().x - 8.0).max(0.0), node.size().y * 0.5);
+            if session.ui_revision == revision {
+                session.ui_revision += 1;
+            }
+            return;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    }
+}
+
 fn open_effect_clip_track_context_menu(
     mut click: On<Pointer<Click>>,
     headers: Query<(&EffectClipTrackHeader, &ComputedNode, &UiGlobalTransform)>,
@@ -8167,15 +8167,6 @@ fn open_effect_clip_track_context_menu(
         session.ui_revision += 1;
     }
     click.propagate(false);
-}
-
-fn pointer_position_in_node(
-    pointer: Vec2,
-    node: &ComputedNode,
-    transform: &UiGlobalTransform,
-) -> Vec2 {
-    let top_left = transform.translation.trunc() - node.size() * 0.5;
-    pointer - top_left
 }
 
 fn configure_timeline_track_action_control(mut commands: Commands, entity: Entity) {

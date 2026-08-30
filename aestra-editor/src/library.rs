@@ -1,5 +1,9 @@
 //! Library workspace, project-effect catalog, and panel-local authoring actions.
 
+use crate::feathers::context_menu::{
+    keyboard_context_menu_requested, pointer_position_in_node, should_dismiss_pointer_context_menu,
+    spawn_pointer_context_menu, spawn_pointer_context_menu_item,
+};
 use crate::*;
 use aestra_bevy::{Diagnostic, EffectClipId, ValidationReport};
 use aestra_compiler::{EffectCompiler, ProjectCompileError};
@@ -12,14 +16,12 @@ use aestra_runtime::CompiledEffectProject;
 use bevy::ui_widgets::ScrollArea;
 use bevy::{
     feathers::cursor::EntityCursor,
+    input_focus::InputFocus,
     picking::{
         events::{Click, Drag, DragEnd, DragStart, Pointer},
         pointer::PointerButton,
     },
-    ui_widgets::{
-        Activate,
-        popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
-    },
+    ui_widgets::{Activate, ActiveDescendant},
     window::SystemCursorIcon,
 };
 use std::{
@@ -65,6 +67,7 @@ impl Plugin for EditorLibraryPlugin {
                 Update,
                 (
                     dismiss_library_asset_operation_with_escape,
+                    open_focused_library_context_menu,
                     dismiss_library_context_menu,
                     handle_library_action_buttons,
                     sync_library_asset_operation_overlay,
@@ -72,7 +75,12 @@ impl Plugin for EditorLibraryPlugin {
                     .chain()
                     .in_set(LibrarySet::Actions),
             )
-            .add_systems(Update, sync_library_filtering.in_set(LibrarySet::Sync));
+            .add_systems(
+                Update,
+                (sync_library_filtering, restore_library_context_menu_focus)
+                    .chain()
+                    .in_set(LibrarySet::Sync),
+            );
     }
 }
 
@@ -509,6 +517,7 @@ pub(crate) struct LibraryState {
     pub(crate) kind: LibraryKindFilter,
     pub(crate) context_effect: Option<ProjectEffectEntryId>,
     pub(crate) context_menu_position: Vec2,
+    pub(crate) restore_context_effect_focus: Option<ProjectEffectEntryId>,
 }
 
 impl LibraryState {
@@ -983,8 +992,10 @@ fn open_project_effect_context_menu(
             if !matches!(entry.status, ProjectEffectStatus::Valid) {
                 return;
             }
-            let top_left = transform.translation.trunc() - node.size() * 0.5;
-            break (row.id(), click.pointer_location.position - top_left);
+            break (
+                row.id(),
+                pointer_position_in_node(click.pointer_location.position, node, transform),
+            );
         }
         let Ok(parent) = parents.get(entity) else {
             return;
@@ -1004,13 +1015,60 @@ fn dismiss_library_context_menu(
     mut state: ResMut<LibraryState>,
     mut session: ResMut<EditorSession>,
 ) {
-    let clicked_outside = buttons
+    let primary_pressed = buttons
         .as_deref()
-        .is_some_and(|buttons| buttons.just_pressed(MouseButton::Left))
-        && !surfaces.iter().any(RelativeCursorPosition::cursor_over);
-    if state.context_effect.is_some() && (clicked_outside || keys.just_pressed(KeyCode::Escape)) {
+        .is_some_and(|buttons| buttons.just_pressed(MouseButton::Left));
+    if should_dismiss_pointer_context_menu(
+        state.context_effect.is_some(),
+        primary_pressed,
+        keys.just_pressed(KeyCode::Escape),
+        surfaces.iter().any(RelativeCursorPosition::cursor_over),
+    ) {
+        state.restore_context_effect_focus = state.context_effect;
         state.context_effect = None;
         session.ui_revision += 1;
+    }
+}
+
+fn open_focused_library_context_menu(
+    keys: Res<ButtonInput<KeyCode>>,
+    focus: Option<Res<InputFocus>>,
+    active_descendants: Query<&ActiveDescendant>,
+    rows: Query<(&ProjectEffectRow, &ComputedNode)>,
+    parents: Query<&ChildOf>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut state: ResMut<LibraryState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !keyboard_context_menu_requested(&keys) || state.context_effect.is_some() {
+        return;
+    }
+    let Some(mut entity) = focus.as_deref().and_then(InputFocus::get) else {
+        return;
+    };
+    if let Ok(active) = active_descendants.get(entity)
+        && let Some(descendant) = active.0
+    {
+        entity = descendant;
+    }
+    loop {
+        if let Ok((row, node)) = rows.get(entity) {
+            let Some(entry) = catalog.entry(row.id()) else {
+                return;
+            };
+            if !matches!(entry.status, ProjectEffectStatus::Valid) {
+                return;
+            }
+            state.context_effect = Some(row.id());
+            state.context_menu_position =
+                Vec2::new((node.size().x - 8.0).max(0.0), node.size().y * 0.5);
+            session.ui_revision += 1;
+            return;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
     }
 }
 
@@ -1300,106 +1358,24 @@ fn spawn_project_effect_context_menu(
     source: ProjectEffectEntryId,
     position: Vec2,
 ) {
-    parent
-        .spawn((
-            ProjectEffectContextMenuAnchor,
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(position.x),
-                top: Val::Px(position.y),
-                width: Val::Px(1.0),
-                height: Val::Px(1.0),
-                ..default()
-            },
-        ))
-        .with_children(|anchor| {
-            anchor
-                .spawn((
-                    ProjectEffectContextMenu,
-                    Popover {
-                        positions: vec![
-                            PopoverPlacement {
-                                side: PopoverSide::Right,
-                                align: PopoverAlign::Start,
-                                gap: 2.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Left,
-                                align: PopoverAlign::Start,
-                                gap: 2.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Bottom,
-                                align: PopoverAlign::Start,
-                                gap: 2.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Top,
-                                align: PopoverAlign::Start,
-                                gap: 2.0,
-                            },
-                        ],
-                        window_margin: 8.0,
-                    },
-                    RelativeCursorPosition::default(),
-                    OverrideClip,
-                    GlobalZIndex(250),
-                    Node {
-                        position_type: PositionType::Absolute,
-                        width: Val::Px(184.0),
-                        padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
-                        flex_direction: FlexDirection::Column,
-                        border: UiRect::all(Val::Px(1.0)),
-                        border_radius: BorderRadius::all(Val::Px(4.0)),
-                        ..default()
-                    },
-                    BackgroundColor(theme::MENU),
-                    BorderColor::all(theme::BORDER_BRIGHT),
-                    BoxShadow::new(
-                        Color::srgba(0.0, 0.0, 0.0, 0.62),
-                        Val::Px(0.0),
-                        Val::Px(2.0),
-                        Val::Px(3.0),
-                        Val::Px(5.0),
-                    ),
-                ))
-                .with_children(|menu| {
-                    spawn_project_effect_context_menu_item(
-                        menu,
-                        &localizer.text("library-rename-effect"),
-                        LibraryAction::RenameProjectEffect(source),
-                    );
-                    spawn_project_effect_context_menu_item(
-                        menu,
-                        &localizer.text("library-move-effect"),
-                        LibraryAction::MoveProjectEffect(source),
-                    );
-                });
-        });
-}
-
-fn spawn_project_effect_context_menu_item(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    action: LibraryAction,
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(ui_shell::feathers_menu_item())
-        .insert((
-            Interaction::None,
-            action,
-            FeathersActionButton,
-            AccessibleLabel(label.to_owned()),
-        ))
-        .with_children(|item| {
-            item.spawn((
-                Text::new(label),
-                ThemedText,
-                TextLayout::no_wrap(),
-                Pickable::IGNORE,
-            ));
-        });
+    spawn_pointer_context_menu(
+        parent,
+        position,
+        ProjectEffectContextMenuAnchor,
+        ProjectEffectContextMenu,
+        |menu| {
+            spawn_pointer_context_menu_item(
+                menu,
+                &localizer.text("library-rename-effect"),
+                LibraryAction::RenameProjectEffect(source),
+            );
+            spawn_pointer_context_menu_item(
+                menu,
+                &localizer.text("library-move-effect"),
+                LibraryAction::MoveProjectEffect(source),
+            );
+        },
+    );
 }
 
 fn project_effect_accessible_label(entry: &ProjectEffectEntry, localizer: &Localizer) -> String {
@@ -1743,6 +1719,7 @@ fn handle_library_action_buttons(
                 if menu.tab_context.take().is_some() {
                     session.ui_revision += 1;
                 }
+                library.restore_context_effect_focus = library.context_effect;
                 if library.context_effect.take().is_some() {
                     session.ui_revision += 1;
                 }
@@ -1751,6 +1728,24 @@ fn handle_library_action_buttons(
             _ => {}
         }
     }
+}
+
+fn restore_library_context_menu_focus(
+    mut focus: Option<ResMut<InputFocus>>,
+    rows: Query<(Entity, &ProjectEffectRow)>,
+    mut state: ResMut<LibraryState>,
+) {
+    let Some(focus) = focus.as_deref_mut() else {
+        return;
+    };
+    let Some(source) = state.restore_context_effect_focus else {
+        return;
+    };
+    let Some((entity, _)) = rows.iter().find(|(_, row)| row.id() == source) else {
+        return;
+    };
+    focus.set(entity, bevy::input_focus::FocusCause::Navigated);
+    state.restore_context_effect_focus = None;
 }
 
 fn execute_library_action(
