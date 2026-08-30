@@ -51,6 +51,8 @@ const PREVIEW_GRID_SHADER_PATH: &str = "shaders/preview_grid.wesl";
 const PREVIEW_GRID_Y: f32 = -0.05;
 const VIEWPORT_TOOL_BUTTON_SIZE: f32 = 28.0;
 const VIEWPORT_TOOL_ICON_SIZE: f32 = 20.0;
+const PREVIEW_TRANSFORM_GIZMO_SCREEN_SCALE: f32 = 0.14;
+const PREVIEW_TRANSFORM_GIZMO_HIT_DISTANCE: f32 = 42.0;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ViewportSet {
@@ -65,6 +67,7 @@ pub(crate) struct ViewportPlugin;
 impl Plugin for ViewportPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(TransformGizmoPlugin)
+            .insert_resource(preview_transform_gizmo_settings())
             .add_plugins(MaterialPlugin::<PreviewGridMaterial>::default())
             .init_gizmo_group::<PreviewSceneGizmos>()
             .init_resource::<PreviewCameraController>()
@@ -130,6 +133,14 @@ impl Plugin for ViewportPlugin {
                 ),
             )
             .configure_sets(Update, AestraSet::Playback.after(sync_rendered_preview));
+    }
+}
+
+fn preview_transform_gizmo_settings() -> TransformGizmoSettings {
+    TransformGizmoSettings {
+        screen_scale_factor: PREVIEW_TRANSFORM_GIZMO_SCREEN_SCALE,
+        axis_hit_distance: PREVIEW_TRANSFORM_GIZMO_HIT_DISTANCE,
+        ..default()
     }
 }
 
@@ -2348,6 +2359,23 @@ fn update_preview(
 mod tests {
     use super::*;
     use crate::{EFFECT_PATH, EFFECT_SOURCE};
+
+    #[test]
+    fn preview_transform_gizmo_is_larger_and_easier_to_hit_than_the_bevy_default() {
+        let defaults = TransformGizmoSettings::default();
+        let preview = preview_transform_gizmo_settings();
+
+        assert_eq!(
+            preview.screen_scale_factor,
+            PREVIEW_TRANSFORM_GIZMO_SCREEN_SCALE
+        );
+        assert_eq!(
+            preview.axis_hit_distance,
+            PREVIEW_TRANSFORM_GIZMO_HIT_DISTANCE
+        );
+        assert!(preview.screen_scale_factor > defaults.screen_scale_factor);
+        assert!(preview.axis_hit_distance > defaults.axis_hit_distance);
+    }
 
     fn viewport_action_app() -> (App, tempfile::TempDir) {
         let temporary = tempfile::tempdir().expect("temporary settings directory should exist");
