@@ -100,8 +100,10 @@ architecture vision; this file is the shorter delivery plan.
   missing-reference repair, and project-aware preview recompilation are also complete. The first
   instance-override foundation is complete: typed clip overrides persist in v3 assets, compile
   against exposed source parameters, execute in nested CPU and Bevy/GPU preview instances, report
-  orphaned/type-changed values, and participate in undo/redo. Inspector override controls,
-  Make Unique, usage graphs, reusable extraction, preview-cache identity, markers/events,
+  orphaned/type-changed values, and participate in undo/redo. The Inspector now authors typed
+  property-level public toggles, in-place source defaults, instance overrides, and
+  reset-to-source. Make Unique, usage graphs, reusable extraction, preview-cache identity,
+  markers/events,
   procedural recipes, mesh/ribbon production paths, renderer sorting, and richer material domains
   remain.
 

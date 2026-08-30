@@ -263,6 +263,20 @@ fn apply_command(
             let parameter = effect.parameters.remove(index);
             vec![EffectCommand::AddParameter { parameter, index }]
         }
+        EffectCommand::SetParameter { id, parameter } => {
+            let index = effect
+                .parameters
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| not_found("parameter", id))?;
+            let mut replacement = parameter.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(&mut effect.parameters[index], replacement);
+            vec![EffectCommand::SetParameter {
+                id: *id,
+                parameter: previous,
+            }]
+        }
         EffectCommand::AddMaterial { material, index } => {
             checked_insert(
                 &mut effect.materials,

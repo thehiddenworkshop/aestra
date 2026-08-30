@@ -470,6 +470,48 @@ fn parameter_bindings_are_transactional_and_reversible() {
 }
 
 #[test]
+fn parameter_definitions_are_replaced_atomically_and_reversibly() {
+    let mut effect = test_effect();
+    let parameter = EffectParameter {
+        id: ParameterId::new(),
+        name: "Intensity".into(),
+        default: Value::Scalar(1.0),
+        exposed: true,
+    };
+    let id = parameter.id;
+    effect.parameters.push(parameter.clone());
+    let mut replacement = parameter.clone();
+    replacement.id = ParameterId::new();
+    replacement.name = "Power".into();
+    replacement.default = Value::Scalar(2.5);
+    replacement.exposed = false;
+    let mut history = CommandHistory::default();
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Edit parameter",
+                EffectCommand::SetParameter {
+                    id,
+                    parameter: replacement,
+                },
+            ),
+        )
+        .unwrap();
+
+    assert_eq!(effect.parameters[0].id, id);
+    assert_eq!(effect.parameters[0].name, "Power");
+    assert_eq!(effect.parameters[0].default, Value::Scalar(2.5));
+    assert!(!effect.parameters[0].exposed);
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect.parameters[0], parameter);
+    history.redo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect.parameters[0].name, "Power");
+}
+
+#[test]
 fn invalid_binding_type_leaves_the_document_unchanged() {
     let mut effect = test_effect();
     let parameter = EffectParameter {

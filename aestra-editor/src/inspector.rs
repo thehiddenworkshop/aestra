@@ -10,10 +10,12 @@ use crate::timeline::{
     EffectClipChildSelection, EffectClipPath, TimelineState, resolve_effect_clip_path,
 };
 use crate::*;
-use aestra_bevy::{EffectAsset, EffectClip, EffectClipId, ParameterId, ValueType};
+use aestra_bevy::{EffectAsset, EffectClip, EffectClipId, EffectParameter, ParameterId, ValueType};
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use bevy::{
+    feathers::controls::ButtonVariant,
     ui::InteractionDisabled,
+    ui::Selected,
     ui_widgets::{Activate, SliderValue},
 };
 use fluent_bundle::FluentArgs;
@@ -84,6 +86,7 @@ impl Plugin for InspectorPlugin {
                     scroll_inspector_to_focus,
                     update_inspector_highlight,
                     decorate_numeric_scrub_inputs,
+                    sync_module_input_public_toggle_visibility,
                 )
                     .chain()
                     .in_set(InspectorSet::Sync),
@@ -127,6 +130,10 @@ pub(crate) enum InspectorAction {
     ResetEffectClipParameter {
         clip: EffectClipId,
         parameter: ParameterId,
+    },
+    ToggleModuleInputPublic {
+        module: ModuleId,
+        input: u8,
     },
 }
 
@@ -534,6 +541,15 @@ fn handle_inspector_actions(
                             true,
                         );
                     }
+                    InspectorAction::ToggleModuleInputPublic { module, input } => {
+                        toggle_module_input_public(
+                            &mut session,
+                            &registry.0,
+                            module,
+                            input,
+                            &localizer,
+                        );
+                    }
                     InspectorAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     InspectorAction::DeleteRenderer(id) => {
                         if preview_renderer_deletion(&mut session, id) {
@@ -572,6 +588,140 @@ fn preview_renderer_deletion(session: &mut EditorSession, renderer: RendererId) 
         "Delete renderer",
         EffectCommand::RemoveRenderer { emitter, renderer },
     ))
+}
+
+fn unique_effect_parameter_name_from_base(effect: &EffectAsset, base: &str) -> String {
+    if !effect
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == base)
+    {
+        return base.to_owned();
+    }
+    (2..)
+        .map(|index| format!("{base} {index}"))
+        .find(|name| {
+            !effect
+                .parameters
+                .iter()
+                .any(|parameter| &parameter.name == name)
+        })
+        .expect("the unbounded numeric suffix always yields a unique parameter name")
+}
+
+fn toggle_module_input_public(
+    session: &mut EditorSession,
+    registry: &ModuleRegistry,
+    module_id: ModuleId,
+    input_index: u8,
+    localizer: &Localizer,
+) -> bool {
+    let Some((_, input_name)) =
+        inspector_module_input_target(session, registry, module_id, input_index)
+    else {
+        return false;
+    };
+    let binding = session
+        .effect
+        .emitters
+        .iter()
+        .flat_map(|emitter| emitter.modules.iter())
+        .find(|module| module.id == module_id)
+        .and_then(|module| module.bindings.get(input_name))
+        .copied();
+    let Some(parameter_id) = binding else {
+        return expose_module_input(session, registry, module_id, input_index, localizer);
+    };
+    update_effect_parameter(session, localizer, parameter_id, |parameter| {
+        parameter.exposed = !parameter.exposed;
+    })
+}
+
+fn expose_module_input(
+    session: &mut EditorSession,
+    registry: &ModuleRegistry,
+    module_id: ModuleId,
+    input_index: u8,
+    localizer: &Localizer,
+) -> bool {
+    let Some((emitter, input_name)) =
+        inspector_module_input_target(session, registry, module_id, input_index)
+    else {
+        return false;
+    };
+    let Some(module) = session
+        .effect
+        .emitters
+        .iter()
+        .find(|candidate| candidate.id == emitter)
+        .and_then(|emitter| {
+            emitter
+                .modules
+                .iter()
+                .find(|candidate| candidate.id == module_id)
+        })
+    else {
+        return false;
+    };
+    if module.bindings.contains_key(input_name) {
+        return false;
+    }
+    let Some(default) = module_parameter(module, input_name) else {
+        return false;
+    };
+    let metadata = registry.get(&module.module_type);
+    let display_name = metadata
+        .and_then(|metadata| metadata.inputs.get(input_index as usize))
+        .map_or_else(
+            || input_name.to_owned(),
+            |input| localized_inspector_input(localizer, input.name, input.display_name, false),
+        );
+    let parameter = EffectParameter {
+        id: ParameterId::new(),
+        name: unique_effect_parameter_name_from_base(&session.effect, &display_name),
+        default,
+        exposed: true,
+    };
+    let parameter_id = parameter.id;
+    let parameter_index = session.effect.parameters.len();
+    session.execute_transaction(
+        EffectTransaction::new(
+            localizer.text("inspector-expose-module-input-command"),
+            vec![
+                EffectCommand::AddParameter {
+                    parameter,
+                    index: parameter_index,
+                },
+                EffectCommand::BindModuleParameter {
+                    emitter,
+                    module: module_id,
+                    parameter: input_name.to_owned(),
+                    source: parameter_id,
+                },
+            ],
+        ),
+        true,
+    )
+}
+
+fn inspector_module_input_target<'a>(
+    session: &EditorSession,
+    registry: &'a ModuleRegistry,
+    module: ModuleId,
+    input: u8,
+) -> Option<(EmitterId, &'a str)> {
+    let (emitter, module) = session.effect.emitters.iter().find_map(|emitter| {
+        emitter
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .map(|module| (emitter.id, module))
+    })?;
+    let metadata = registry.get(&module.module_type)?;
+    metadata
+        .inputs
+        .get(input as usize)
+        .map(|input| (emitter, input.name))
 }
 
 // Inspector domain implementation.
@@ -632,6 +782,15 @@ mod tests {
 
     fn test_localizer() -> Localizer {
         Localizer::new("en-US").unwrap()
+    }
+
+    fn clear_effect_parameters_and_bindings(session: &mut EditorSession) {
+        session.effect.parameters.clear();
+        for emitter in &mut session.effect.emitters {
+            for module in &mut emitter.modules {
+                module.bindings.clear();
+            }
+        }
     }
 
     #[test]
@@ -714,6 +873,302 @@ mod tests {
                 .parameter_overrides
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn effect_clip_parameter_scrub_previews_and_commits_one_ordered_override() {
+        let parameter = ParameterId::new();
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xe11ec7));
+        let clip = EffectClip::new(source, 0.0, 1.0);
+        let clip_id = clip.id;
+        session.effect.effect_clips.push(clip);
+        let target = NumericScrubTarget::EffectClipParameter(EffectClipParameterScrubControl {
+            clip: clip_id,
+            parameter,
+            component: 0,
+            values: [0.8, 1.5, 0.0, 0.0],
+            kind: EffectClipParameterScrubKind::Range,
+        });
+
+        assert_eq!(numeric_scrub_step(target), 0.1);
+        assert_eq!(normalize_numeric_scrub_value(&session, target, 2.0), 1.5);
+        assert!(preview_numeric_scrub(&mut session, target, 1.2));
+        assert!(
+            session
+                .effect
+                .effect_clips
+                .iter()
+                .find(|clip| clip.id == clip_id)
+                .unwrap()
+                .parameter_overrides
+                .is_empty()
+        );
+
+        commit_numeric_scrub(&mut session, target, 1.2, &test_localizer());
+        assert_eq!(
+            session
+                .effect
+                .effect_clips
+                .iter()
+                .find(|clip| clip.id == clip_id)
+                .unwrap()
+                .parameter_overrides
+                .get(&parameter),
+            Some(&Value::Range(aestra_bevy::ScalarRange {
+                min: 1.2,
+                max: 1.5
+            })),
+            "{}",
+            session.status
+        );
+        session.undo();
+        assert!(
+            session
+                .effect
+                .effect_clips
+                .iter()
+                .find(|clip| clip.id == clip_id)
+                .unwrap()
+                .parameter_overrides
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn effect_parameter_editor_updates_definition_and_undoes_as_one_edit() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let parameter = EffectParameter {
+            id: ParameterId::new(),
+            name: "Intensity".into(),
+            default: Value::Scalar(1.0),
+            exposed: true,
+        };
+        let id = parameter.id;
+        session.effect.parameters.push(parameter);
+
+        assert!(update_effect_parameter(
+            &mut session,
+            &test_localizer(),
+            id,
+            |parameter| {
+                parameter.name = "Power".into();
+                parameter.default = Value::Scalar(2.0);
+                parameter.exposed = false;
+            }
+        ));
+        let edited = session
+            .effect
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == id)
+            .unwrap();
+        assert_eq!(edited.name, "Power");
+        assert_eq!(edited.default, Value::Scalar(2.0));
+        assert!(!edited.exposed);
+
+        session.undo();
+        let restored = session
+            .effect
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == id)
+            .unwrap();
+        assert_eq!(restored.name, "Intensity");
+        assert_eq!(restored.default, Value::Scalar(1.0));
+        assert!(restored.exposed);
+    }
+
+    #[test]
+    fn public_property_action_is_progressively_disclosed() {
+        let mut app = App::new();
+        app.add_systems(Update, sync_module_input_public_toggle_visibility);
+
+        let private_row = app
+            .world_mut()
+            .spawn((ModuleInputPublicRow, RelativeCursorPosition::default()))
+            .id();
+        let private_toggle = app
+            .world_mut()
+            .spawn((
+                ModuleInputPublicToggle { is_public: false },
+                Visibility::Inherited,
+            ))
+            .id();
+        app.world_mut()
+            .entity_mut(private_row)
+            .add_child(private_toggle);
+
+        let public_row = app
+            .world_mut()
+            .spawn((ModuleInputPublicRow, RelativeCursorPosition::default()))
+            .id();
+        let public_toggle = app
+            .world_mut()
+            .spawn((
+                ModuleInputPublicToggle { is_public: true },
+                Visibility::Hidden,
+            ))
+            .id();
+        app.world_mut()
+            .entity_mut(public_row)
+            .add_child(public_toggle);
+
+        app.update();
+        assert_eq!(
+            app.world().get::<Visibility>(private_toggle),
+            Some(&Visibility::Hidden)
+        );
+        assert_eq!(
+            app.world().get::<Visibility>(public_toggle),
+            Some(&Visibility::Inherited)
+        );
+
+        *app.world_mut()
+            .get_mut::<RelativeCursorPosition>(private_row)
+            .unwrap() = RelativeCursorPosition {
+            cursor_over: true,
+            normalized: Some(Vec2::ZERO),
+        };
+        app.update();
+        assert_eq!(
+            app.world().get::<Visibility>(private_toggle),
+            Some(&Visibility::Inherited)
+        );
+    }
+
+    #[test]
+    fn public_toggle_preserves_the_default_binding_and_parameter_identity() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        clear_effect_parameters_and_bindings(&mut session);
+        let registry = ModuleRegistry::builtin();
+        let module = session.selected_layer().modules[0].id;
+        let module_type = session.selected_layer().modules[0].module_type.clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "spawn_rate")
+            .unwrap() as u8;
+
+        assert!(toggle_module_input_public(
+            &mut session,
+            &registry,
+            module,
+            input,
+            &test_localizer(),
+        ));
+        let parameter_id = session.effect.parameters[0].id;
+        let default = session.effect.parameters[0].default.clone();
+        assert!(session.effect.parameters[0].exposed);
+
+        assert!(toggle_module_input_public(
+            &mut session,
+            &registry,
+            module,
+            input,
+            &test_localizer(),
+        ));
+        assert_eq!(session.effect.parameters[0].id, parameter_id);
+        assert_eq!(session.effect.parameters[0].default, default);
+        assert!(!session.effect.parameters[0].exposed);
+        assert_eq!(
+            session.selected_layer().modules[0].bindings["spawn_rate"],
+            parameter_id
+        );
+
+        session.undo();
+        assert!(session.effect.parameters[0].exposed);
+        assert_eq!(session.effect.parameters[0].id, parameter_id);
+    }
+
+    #[test]
+    fn editing_an_exposed_property_updates_its_source_default_in_place() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        clear_effect_parameters_and_bindings(&mut session);
+        let registry = ModuleRegistry::builtin();
+        let module = session.selected_layer().modules[0].id;
+        let module_type = session.selected_layer().modules[0].module_type.clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "spawn_rate")
+            .unwrap() as u8;
+        let local = module_parameter(&session.selected_layer().modules[0], "spawn_rate").unwrap();
+        assert!(expose_module_input(
+            &mut session,
+            &registry,
+            module,
+            input,
+            &test_localizer(),
+        ));
+        let control = InspectorNumberControl {
+            module,
+            parameter: "spawn_rate",
+            component: 0,
+            kind: InspectorNumberKind::Scalar,
+            step: 1.0,
+            min: Some(0.0),
+            max: None,
+        };
+
+        assert!(apply_inspector_number(
+            &mut session,
+            control,
+            42.0,
+            &test_localizer(),
+        ));
+        assert_eq!(session.effect.parameters[0].default, Value::Scalar(42.0));
+        assert_eq!(
+            inspector_module_parameter(&session, module, "spawn_rate"),
+            Some(Value::Scalar(42.0))
+        );
+        assert_eq!(
+            module_parameter(&session.selected_layer().modules[0], "spawn_rate"),
+            Some(local.clone()),
+            "the hidden local value is not a second source of truth once bound"
+        );
+        session.undo();
+        assert_eq!(session.effect.parameters[0].default, local);
+    }
+
+    #[test]
+    fn exposing_module_input_creates_public_parameter_and_binding_atomically() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        clear_effect_parameters_and_bindings(&mut session);
+        let registry = ModuleRegistry::builtin();
+        let module = session.selected_layer().modules[0].id;
+        let module_type = session.selected_layer().modules[0].module_type.clone();
+        let metadata = registry.get(&module_type).unwrap();
+        let input = metadata
+            .inputs
+            .iter()
+            .position(|input| input.name == "spawn_rate")
+            .unwrap() as u8;
+        let local_value = module_parameter(&session.selected_layer().modules[0], "spawn_rate");
+
+        assert!(expose_module_input(
+            &mut session,
+            &registry,
+            module,
+            input,
+            &test_localizer()
+        ));
+
+        assert_eq!(session.effect.parameters.len(), 1);
+        let parameter = &session.effect.parameters[0];
+        assert!(parameter.exposed);
+        assert_eq!(Some(parameter.default.clone()), local_value);
+        assert_eq!(
+            session.selected_layer().modules[0].bindings["spawn_rate"],
+            parameter.id
+        );
+        session.undo();
+        assert!(session.effect.parameters.is_empty());
+        assert!(session.selected_layer().modules[0].bindings.is_empty());
     }
 
     #[test]
@@ -1077,6 +1532,23 @@ mod tests {
             localized_inspector_input(&localizer, "custom_gain", "Custom Gain", false),
             "Custom Gain"
         );
+    }
+
+    #[test]
+    fn inspector_property_units_are_presented_in_the_tooltip_footer() {
+        let localizer = test_localizer();
+        let tooltip = inspector_property_tooltip(
+            "Rotation applied to each particle.",
+            Some("rad/s"),
+            &localizer,
+        );
+        let accessible = tooltip.accessible_label();
+        assert!(accessible.starts_with("Rotation applied to each particle."));
+        assert!(accessible.contains("Unit:"), "{accessible:?}");
+        assert!(accessible.contains("rad/s"), "{accessible:?}");
+
+        let unitless = inspector_property_tooltip("Normalized opacity.", None, &localizer);
+        assert_eq!(unitless.accessible_label(), "Normalized opacity.");
     }
 
     #[test]
@@ -1627,7 +2099,7 @@ pub(crate) fn set_module_choice(
         );
         return;
     }
-    let current = module_parameter(module, input.name);
+    let current = inspector_module_parameter(session, module_id, input.name);
     let shape = match choice {
         0 => EmitterShape::Point,
         1 => match current {
@@ -1679,7 +2151,15 @@ pub(crate) fn set_module_choice(
             return;
         }
     };
-    session.set_module_parameter(module_id, input.name, Value::Shape(shape));
+    if let Some(command) =
+        inspector_module_parameter_command(session, module_id, input.name, Value::Shape(shape))
+    {
+        session.execute(
+            localizer.text("inspector-edit-module-input-command"),
+            command,
+            true,
+        );
+    }
 }
 
 fn module_palette_keyboard(
@@ -2229,8 +2709,15 @@ fn handle_inspector_toggle_change(
         return;
     };
     let value = Value::Bool(change.value);
-    if current != value {
-        session.set_module_parameter(control.module, control.parameter, value);
+    if current != value
+        && let Some(command) =
+            inspector_module_parameter_command(&session, control.module, control.parameter, value)
+    {
+        session.execute(
+            localizer.text("inspector-edit-module-input-command"),
+            command,
+            true,
+        );
     }
 }
 
@@ -2553,6 +3040,29 @@ fn handle_effect_clip_parameter_toggle_change(
     );
 }
 
+fn update_effect_parameter(
+    session: &mut EditorSession,
+    localizer: &Localizer,
+    id: ParameterId,
+    update: impl FnOnce(&mut EffectParameter),
+) -> bool {
+    let Some(mut parameter) = session
+        .effect
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == id)
+        .cloned()
+    else {
+        return false;
+    };
+    update(&mut parameter);
+    session.execute(
+        localizer.text("inspector-edit-effect-parameter-command"),
+        EffectCommand::SetParameter { id, parameter },
+        true,
+    )
+}
+
 fn set_effect_clip_parameter_override(
     session: &mut EditorSession,
     localizer: &Localizer,
@@ -2594,6 +3104,75 @@ fn effect_clip_parameter_value_with_component(
     Some(value)
 }
 
+fn effect_clip_parameter_scrub_control(
+    control: &EffectClipParameterNumberControl,
+) -> Option<EffectClipParameterScrubControl> {
+    let (values, kind) = match &control.value {
+        Value::U32(value) => (
+            [*value as f32, 0.0, 0.0, 0.0],
+            EffectClipParameterScrubKind::U32,
+        ),
+        Value::Scalar(value) => (
+            [*value, 0.0, 0.0, 0.0],
+            EffectClipParameterScrubKind::Scalar,
+        ),
+        Value::Vec2(value) => (
+            [value[0], value[1], 0.0, 0.0],
+            EffectClipParameterScrubKind::Vec2,
+        ),
+        Value::Vec3(value) => (
+            [value[0], value[1], value[2], 0.0],
+            EffectClipParameterScrubKind::Vec3,
+        ),
+        Value::Vec4(value) => (*value, EffectClipParameterScrubKind::Vec4),
+        Value::Range(value) => (
+            [value.min, value.max, 0.0, 0.0],
+            EffectClipParameterScrubKind::Range,
+        ),
+        _ => return None,
+    };
+    if control.component as usize >= effect_clip_parameter_scrub_component_count(kind) {
+        return None;
+    }
+    Some(EffectClipParameterScrubControl {
+        clip: control.clip,
+        parameter: control.parameter,
+        component: control.component,
+        values,
+        kind,
+    })
+}
+
+fn effect_clip_parameter_scrub_component_count(kind: EffectClipParameterScrubKind) -> usize {
+    match kind {
+        EffectClipParameterScrubKind::U32 | EffectClipParameterScrubKind::Scalar => 1,
+        EffectClipParameterScrubKind::Vec2 | EffectClipParameterScrubKind::Range => 2,
+        EffectClipParameterScrubKind::Vec3 => 3,
+        EffectClipParameterScrubKind::Vec4 => 4,
+    }
+}
+
+fn effect_clip_parameter_scrub_value(
+    control: EffectClipParameterScrubControl,
+    replacement: f32,
+) -> Value {
+    let mut values = control.values;
+    values[control.component as usize] = replacement;
+    match control.kind {
+        EffectClipParameterScrubKind::U32 => {
+            Value::U32(replacement.max(0.0).round().min(u32::MAX as f32) as u32)
+        }
+        EffectClipParameterScrubKind::Scalar => Value::Scalar(replacement),
+        EffectClipParameterScrubKind::Vec2 => Value::Vec2([values[0], values[1]]),
+        EffectClipParameterScrubKind::Vec3 => Value::Vec3([values[0], values[1], values[2]]),
+        EffectClipParameterScrubKind::Vec4 => Value::Vec4(values),
+        EffectClipParameterScrubKind::Range => Value::Range(aestra_bevy::ScalarRange {
+            min: values[0],
+            max: values[1],
+        }),
+    }
+}
+
 fn decorate_numeric_scrub_inputs(
     mut commands: Commands,
     children: Query<&Children>,
@@ -2605,6 +3184,7 @@ fn decorate_numeric_scrub_inputs(
                 With<InspectorNumberControl>,
                 With<EmitterNumberControl>,
                 With<EffectClipNumberControl>,
+                With<EffectClipParameterNumberControl>,
                 With<RendererNumberControl>,
             )>,
         ),
@@ -2630,6 +3210,7 @@ fn begin_numeric_scrub(
     inspector_controls: Query<&InspectorNumberControl>,
     emitter_controls: Query<&EmitterNumberControl>,
     effect_clip_controls: Query<&EffectClipNumberControl>,
+    effect_clip_parameter_controls: Query<&EffectClipParameterNumberControl>,
     renderer_controls: Query<&RendererNumberControl>,
     parents: Query<&ChildOf>,
     session: Res<EditorSession>,
@@ -2646,6 +3227,7 @@ fn begin_numeric_scrub(
         &inspector_controls,
         &emitter_controls,
         &effect_clip_controls,
+        &effect_clip_parameter_controls,
         &renderer_controls,
     ) else {
         return;
@@ -2764,6 +3346,7 @@ fn resolve_numeric_scrub_target(
     inspector_controls: &Query<&InspectorNumberControl>,
     emitter_controls: &Query<&EmitterNumberControl>,
     effect_clip_controls: &Query<&EffectClipNumberControl>,
+    effect_clip_parameter_controls: &Query<&EffectClipParameterNumberControl>,
     renderer_controls: &Query<&RendererNumberControl>,
 ) -> Option<(Entity, NumericScrubTarget)> {
     let mut candidate = entity;
@@ -2776,6 +3359,11 @@ fn resolve_numeric_scrub_target(
         }
         if let Ok(control) = effect_clip_controls.get(candidate) {
             return Some((candidate, NumericScrubTarget::EffectClip(*control)));
+        }
+        if let Ok(control) = effect_clip_parameter_controls.get(candidate)
+            && let Some(control) = effect_clip_parameter_scrub_control(control)
+        {
+            return Some((candidate, NumericScrubTarget::EffectClipParameter(control)));
         }
         if let Ok(control) = renderer_controls.get(candidate) {
             return Some((candidate, NumericScrubTarget::Renderer(*control)));
@@ -2826,6 +3414,13 @@ fn numeric_scrub_step(target: NumericScrubTarget) -> f32 {
             EmitterNumberControl::Scale(_) => 0.05,
             EmitterNumberControl::Start | EmitterNumberControl::Duration => 0.05,
         },
+        NumericScrubTarget::EffectClipParameter(control) => {
+            if control.kind == EffectClipParameterScrubKind::U32 {
+                1.0
+            } else {
+                0.1
+            }
+        }
         NumericScrubTarget::Renderer(control) => renderer_number_step(control),
     }
 }
@@ -2845,6 +3440,9 @@ fn numeric_scrub_value(session: &EditorSession, target: NumericScrubTarget) -> O
         }
         NumericScrubTarget::Emitter(control) => Some(emitter_number_input_value(session, control)),
         NumericScrubTarget::EffectClip(control) => effect_clip_number_input_value(session, control),
+        NumericScrubTarget::EffectClipParameter(control) => {
+            Some(control.values[control.component as usize])
+        }
         NumericScrubTarget::Renderer(control) => renderer_number_input_value(session, control),
     }
 }
@@ -2859,13 +3457,7 @@ fn number_input_value_as_f32(value: NumberInputValue) -> f32 {
 }
 
 fn format_numeric_scrub_value(target: NumericScrubTarget, value: f32, multiplier: f32) -> String {
-    if matches!(
-        target,
-        NumericScrubTarget::Inspector(InspectorNumberControl {
-            kind: InspectorNumberKind::U32,
-            ..
-        })
-    ) {
+    if numeric_scrub_is_integer(target) {
         return (value.max(0.0).round().min(i32::MAX as f32) as i32).to_string();
     }
     let precision = numeric_scrub_precision(target, multiplier);
@@ -2877,16 +3469,23 @@ fn numeric_scrub_precision(target: NumericScrubTarget, multiplier: f32) -> usize
 }
 
 fn round_numeric_scrub_value(target: NumericScrubTarget, value: f32, multiplier: f32) -> f32 {
-    if matches!(
+    if numeric_scrub_is_integer(target) {
+        return value.round();
+    }
+    crate::feathers::number_input::rounded(value, numeric_scrub_precision(target, multiplier))
+}
+
+fn numeric_scrub_is_integer(target: NumericScrubTarget) -> bool {
+    matches!(
         target,
         NumericScrubTarget::Inspector(InspectorNumberControl {
             kind: InspectorNumberKind::U32,
             ..
+        }) | NumericScrubTarget::EffectClipParameter(EffectClipParameterScrubControl {
+            kind: EffectClipParameterScrubKind::U32,
+            ..
         })
-    ) {
-        return value.round();
-    }
-    crate::feathers::number_input::rounded(value, numeric_scrub_precision(target, multiplier))
+    )
 }
 
 fn normalize_numeric_scrub_value(
@@ -2938,6 +3537,14 @@ fn normalize_numeric_scrub_value_with_multiplier(
             ..
         }) => value.max(0.001),
         NumericScrubTarget::EffectClip(_) => value,
+        NumericScrubTarget::EffectClipParameter(control) => match control.kind {
+            EffectClipParameterScrubKind::U32 => value.max(0.0).round(),
+            EffectClipParameterScrubKind::Range if control.component == 0 => {
+                value.min(control.values[1])
+            }
+            EffectClipParameterScrubKind::Range => value.max(control.values[0]),
+            _ => value,
+        },
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(_)) => value.max(0.0),
         NumericScrubTarget::Renderer(RendererNumberControl::Uv(renderer, component)) => {
             normalize_renderer_uv_scrub_value(session, renderer, component, value)
@@ -2997,12 +3604,12 @@ fn numeric_scrub_command(
     value: f32,
 ) -> Option<EffectCommand> {
     match target {
-        NumericScrubTarget::Inspector(control) => Some(EffectCommand::SetModuleParameter {
-            emitter: session.selected_layer().id,
-            module: control.module,
-            parameter: control.parameter.into(),
-            value: updated_inspector_number_value(session, control, value)?,
-        }),
+        NumericScrubTarget::Inspector(control) => inspector_module_parameter_command(
+            session,
+            control.module,
+            control.parameter,
+            updated_inspector_number_value(session, control, value)?,
+        ),
         NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
             let emitter = session.selected_layer();
             let start_time = normalize_numeric_scrub_value(session, target, value);
@@ -3030,6 +3637,13 @@ fn numeric_scrub_command(
         }
         NumericScrubTarget::EffectClip(control) => {
             effect_clip_transform_command(session, control, value)
+        }
+        NumericScrubTarget::EffectClipParameter(control) => {
+            Some(EffectCommand::SetEffectClipParameterOverride {
+                id: control.clip,
+                parameter: control.parameter,
+                value: effect_clip_parameter_scrub_value(control, value),
+            })
         }
         NumericScrubTarget::Renderer(control) => {
             renderer_numeric_scrub_command(session, control, value)
@@ -3127,6 +3741,15 @@ fn commit_numeric_scrub(
                 session.execute("Transformed effect clip", command, true);
             }
         }
+        NumericScrubTarget::EffectClipParameter(_) => {
+            if let Some(command) = numeric_scrub_command(session, target, value) {
+                session.execute(
+                    localizer.text("inspector-set-effect-clip-parameter-command"),
+                    command,
+                    true,
+                );
+            }
+        }
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(renderer)) => {
             session.set_renderer_softness(renderer, value);
         }
@@ -3160,6 +3783,7 @@ fn commit_bounded_slider(
         }
         NumericScrubTarget::Emitter(_) => "Changed emitter value".into(),
         NumericScrubTarget::EffectClip(_) => "Changed effect clip transform".into(),
+        NumericScrubTarget::EffectClipParameter(_) => "Changed instance parameter".into(),
     };
     session.execute(label, command, false)
 }
@@ -3261,7 +3885,47 @@ fn inspector_module_parameter(
         .modules
         .iter()
         .find(|candidate| candidate.id == module)?;
+    if let Some(parameter_id) = module.bindings.get(parameter) {
+        return session
+            .effect
+            .parameters
+            .iter()
+            .find(|candidate| candidate.id == *parameter_id)
+            .map(|parameter| parameter.default.clone());
+    }
     module_parameter(module, parameter)
+}
+
+fn inspector_module_parameter_command(
+    session: &EditorSession,
+    module: ModuleId,
+    input: &str,
+    value: Value,
+) -> Option<EffectCommand> {
+    let module_instance = session
+        .selected_layer()
+        .modules
+        .iter()
+        .find(|candidate| candidate.id == module)?;
+    if let Some(parameter_id) = module_instance.bindings.get(input) {
+        let mut parameter = session
+            .effect
+            .parameters
+            .iter()
+            .find(|candidate| candidate.id == *parameter_id)?
+            .clone();
+        parameter.default = value;
+        return Some(EffectCommand::SetParameter {
+            id: *parameter_id,
+            parameter,
+        });
+    }
+    Some(EffectCommand::SetModuleParameter {
+        emitter: session.selected_layer().id,
+        module,
+        parameter: input.to_owned(),
+        value,
+    })
 }
 
 fn apply_inspector_number(
@@ -3294,8 +3958,26 @@ fn apply_inspector_number(
     if updated == current {
         return false;
     }
-    session.set_module_parameter(control.module, control.parameter, updated);
-    true
+    let is_bound = session
+        .selected_layer()
+        .modules
+        .iter()
+        .find(|module| module.id == control.module)
+        .is_some_and(|module| module.bindings.contains_key(control.parameter));
+    if !is_bound {
+        session.set_module_parameter(control.module, control.parameter, updated);
+        return true;
+    }
+    let Some(command) =
+        inspector_module_parameter_command(session, control.module, control.parameter, updated)
+    else {
+        return false;
+    };
+    session.execute(
+        localizer.text("inspector-edit-module-input-command"),
+        command,
+        true,
+    )
 }
 
 fn updated_inspector_number_value(
@@ -4607,7 +5289,6 @@ pub(crate) fn spawn_inspector(
                         },
                         |stack| {
                     spawn_document_controls(stack, session, localizer);
-                    spawn_inspector_parameters(stack, session);
                     spawn_emitter_transform_controls(stack);
                     spawn_emitter_timing_controls(stack);
                     spawn_event_links(stack, session, localizer);
@@ -5251,68 +5932,6 @@ fn spawn_stage_header(parent: &mut ChildSpawnerCommands, stage: StackStage) {
         });
 }
 
-fn spawn_inspector_parameters(parent: &mut ChildSpawnerCommands, session: &EditorSession) {
-    if session.effect.parameters.is_empty() {
-        return;
-    }
-    parent.spawn((
-        Text::new("EFFECT PARAMETERS"),
-        TextFont {
-            font_size: FontSize::Px(9.0),
-            ..default()
-        },
-        TextColor(theme::ACCENT),
-        Node {
-            margin: UiRect::axes(Val::Px(10.0), Val::Px(7.0)),
-            ..default()
-        },
-    ));
-    for parameter in &session.effect.parameters {
-        parent
-            .spawn((
-                InspectorSemanticTarget {
-                    target: SemanticTarget::Parameter(parameter.id),
-                    base_border: theme::BORDER_BRIGHT,
-                },
-                Node {
-                    width: Val::Auto,
-                    min_height: Val::Px(34.0),
-                    margin: UiRect::axes(Val::Px(9.0), Val::Px(3.0)),
-                    padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(8.0),
-                    border: UiRect::all(Val::Px(1.0)),
-                    border_radius: BorderRadius::all(Val::Px(4.0)),
-                    ..default()
-                },
-                BackgroundColor(theme::PANEL_LIGHT),
-                BorderColor::all(theme::BORDER_BRIGHT),
-            ))
-            .with_children(|row| {
-                row.spawn((
-                    Text::new(&parameter.name),
-                    TextFont {
-                        font_size: FontSize::Px(10.0),
-                        ..default()
-                    },
-                    TextColor(theme::TEXT),
-                    Node {
-                        flex_grow: 1.0,
-                        ..default()
-                    },
-                ));
-                row.spawn((
-                    Text::new(format_value(parameter.default.clone())),
-                    TextFont {
-                        font_size: FontSize::Px(9.0),
-                        ..default()
-                    },
-                    TextColor(theme::TEXT_MUTED),
-                ));
-            });
-    }
-}
-
 fn spawn_module_card(
     parent: &mut ChildSpawnerCommands,
     module: &ModuleInstance,
@@ -5396,7 +6015,7 @@ fn spawn_module_card(
         |card| {
             if let Some(metadata) = metadata {
                 for (input_index, input) in metadata.inputs.iter().enumerate() {
-                    spawn_input_control(card, module, input, input_index as u8, localizer);
+                    spawn_input_control(card, module, input, input_index as u8, session, localizer);
                 }
             }
             spawn_inline_diagnostics(card, diagnostic_path, session);
@@ -5409,14 +6028,17 @@ fn spawn_input_control(
     module: &ModuleInstance,
     input: &InputMetadata,
     input_index: u8,
+    session: &EditorSession,
     localizer: &Localizer,
 ) {
     let display_name = localized_inspector_input(localizer, input.name, input.display_name, false);
     let description = localized_inspector_input(localizer, input.name, input.description, true);
-    let Some(value) = module_parameter(module, input.name) else {
+    let Some(value) = inspector_module_parameter(session, module.id, input.name) else {
         spawn_inspector_read_only_control(parent, &display_name, "Missing authored value");
         return;
     };
+    let public =
+        public_module_input_control(session, module, input, input_index, &value, localizer);
     match (&input.control, value) {
         (InputControl::Curve { .. }, Value::Curve(curve)) => inspector_action_button(
             parent,
@@ -5438,17 +6060,24 @@ fn spawn_input_control(
                 &display_name,
                 &description,
                 value,
+                public,
             );
         }
         (InputControl::Number { .. }, Value::U32(_)) => {
-            spawn_inspector_integer_control(parent, module.id, input, &display_name, &description);
+            spawn_inspector_integer_control(
+                parent,
+                module.id,
+                input,
+                &display_name,
+                inspector_property_tooltip(&description, input.unit, localizer),
+                public,
+            );
         }
         (InputControl::Number { step, min, max }, Value::Scalar(value)) => {
             spawn_inspector_number_controls(
                 parent,
-                input,
                 &display_name,
-                &description,
+                inspector_property_tooltip(&description, input.unit, localizer),
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
@@ -5459,14 +6088,14 @@ fn spawn_input_control(
                     max: *max,
                 },
                 &[("", value, 0)],
+                public,
             );
         }
         (InputControl::Vector { step, min, max }, Value::Vec2(value)) => {
             spawn_inspector_number_controls(
                 parent,
-                input,
                 &display_name,
-                &description,
+                inspector_property_tooltip(&description, input.unit, localizer),
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
@@ -5477,14 +6106,14 @@ fn spawn_input_control(
                     max: *max,
                 },
                 &[("X", value[0], 0), ("Y", value[1], 1)],
+                public,
             );
         }
         (InputControl::Vector { step, min, max }, Value::Vec3(value)) => {
             spawn_inspector_number_controls(
                 parent,
-                input,
                 &display_name,
-                &description,
+                inspector_property_tooltip(&description, input.unit, localizer),
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
@@ -5495,14 +6124,14 @@ fn spawn_input_control(
                     max: *max,
                 },
                 &[("X", value[0], 0), ("Y", value[1], 1), ("Z", value[2], 2)],
+                public,
             );
         }
         (InputControl::Vector { step, min, max }, Value::Vec4(value)) => {
             spawn_inspector_number_controls(
                 parent,
-                input,
                 &display_name,
-                &description,
+                inspector_property_tooltip(&description, input.unit, localizer),
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
@@ -5518,14 +6147,14 @@ fn spawn_input_control(
                     ("Z", value[2], 2),
                     ("W", value[3], 3),
                 ],
+                public,
             );
         }
         (InputControl::Range { step, min, max }, Value::Range(value)) => {
             spawn_inspector_number_controls(
                 parent,
-                input,
                 &display_name,
-                &description,
+                inspector_property_tooltip(&description, input.unit, localizer),
                 InspectorNumberControl {
                     module: module.id,
                     parameter: input.name,
@@ -5536,6 +6165,7 @@ fn spawn_input_control(
                     max: *max,
                 },
                 &[("MIN", value.min, 0), ("MAX", value.max, 1)],
+                public,
             );
         }
         (InputControl::Choice, value) => spawn_inspector_choice_control(
@@ -5546,11 +6176,9 @@ fn spawn_input_control(
             &description,
             &value,
         ),
-        (_, value) => spawn_inspector_read_only_control(
-            parent,
-            &display_name,
-            &format!("{}{}", format_value(value), unit_suffix(input)),
-        ),
+        (_, value) => {
+            spawn_inspector_read_only_control(parent, &display_name, &format_value(value));
+        }
     }
 }
 
@@ -5594,19 +6222,156 @@ pub(crate) fn localized_inspector_input(
     localizer.text(message)
 }
 
+fn inspector_property_tooltip(
+    description: &str,
+    unit: Option<&str>,
+    localizer: &Localizer,
+) -> EditorTooltip {
+    let tooltip = EditorTooltip::description(description);
+    let Some(unit) = unit else {
+        return tooltip;
+    };
+    let mut args = FluentArgs::new();
+    args.set("unit", unit);
+    tooltip.with_footer(localizer.text_with("inspector-property-unit", &args))
+}
+
+#[derive(Debug, Clone)]
+struct ModuleInputPublicControl {
+    module: ModuleId,
+    input: u8,
+    is_public: bool,
+    label: String,
+    description: String,
+}
+
+#[derive(Component)]
+struct ModuleInputPublicRow;
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+struct ModuleInputPublicToggle {
+    is_public: bool,
+}
+
+fn public_module_input_control(
+    session: &EditorSession,
+    module: &ModuleInstance,
+    input: &InputMetadata,
+    input_index: u8,
+    value: &Value,
+    localizer: &Localizer,
+) -> Option<ModuleInputPublicControl> {
+    let supported = matches!(
+        (&input.control, value),
+        (InputControl::Toggle, Value::Bool(_))
+            | (
+                InputControl::Number { .. },
+                Value::U32(_) | Value::Scalar(_)
+            )
+            | (
+                InputControl::Vector { .. },
+                Value::Vec2(_) | Value::Vec3(_) | Value::Vec4(_)
+            )
+            | (InputControl::Range { .. }, Value::Range(_))
+    );
+    if !supported {
+        return None;
+    }
+    let is_public = module
+        .bindings
+        .get(input.name)
+        .and_then(|parameter| {
+            session
+                .effect
+                .parameters
+                .iter()
+                .find(|candidate| candidate.id == *parameter)
+        })
+        .is_some_and(|parameter| parameter.exposed);
+    Some(ModuleInputPublicControl {
+        module: module.id,
+        input: input_index,
+        is_public,
+        label: if is_public {
+            localizer.text("inspector-make-module-input-private")
+        } else {
+            localizer.text("inspector-expose-module-input")
+        },
+        description: if is_public {
+            localizer.text("inspector-make-module-input-private-description")
+        } else {
+            localizer.text("inspector-expose-module-input-description")
+        },
+    })
+}
+
+fn spawn_module_input_public_toggle(
+    parent: &mut ChildSpawnerCommands,
+    public: Option<ModuleInputPublicControl>,
+) {
+    let Some(public) = public else {
+        return;
+    };
+    let button = mini_button(
+        parent,
+        "P",
+        InspectorAction::ToggleModuleInputPublic {
+            module: public.module,
+            input: public.input,
+        },
+    );
+    parent.commands().entity(button).insert((
+        ModuleInputPublicToggle {
+            is_public: public.is_public,
+        },
+        AccessibleLabel(public.label),
+        EditorTooltip::description(public.description),
+        if public.is_public {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        },
+    ));
+    if public.is_public {
+        parent
+            .commands()
+            .entity(button)
+            .insert((Selected, ButtonVariant::Primary));
+    }
+}
+
+fn sync_module_input_public_toggle_visibility(
+    rows: Query<&RelativeCursorPosition, With<ModuleInputPublicRow>>,
+    mut toggles: Query<(&ModuleInputPublicToggle, &ChildOf, &mut Visibility)>,
+) {
+    for (toggle, parent, mut visibility) in &mut toggles {
+        let row_hovered = rows
+            .get(parent.parent())
+            .is_ok_and(RelativeCursorPosition::cursor_over);
+        *visibility = if toggle.is_public || row_hovered {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
 fn spawn_inspector_integer_control(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
     input: &InputMetadata,
     title: &str,
-    description: &str,
+    tooltip: EditorTooltip,
+    public: Option<ModuleInputPublicControl>,
 ) {
     let InputControl::Number { step, min, max } = input.control else {
         return;
     };
     parent
         .spawn((
-            EditorTooltip::description(description),
+            tooltip,
+            ModuleInputPublicRow,
+            RelativeCursorPosition::default(),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(27.0),
@@ -5639,19 +6404,17 @@ fn spawn_inspector_integer_control(
                         AccessibleLabel(title.to_owned()),
                     ));
             });
-            if let Some(unit) = input.unit {
-                row.spawn_empty().apply_scene(label_dim(unit));
-            }
+            spawn_module_input_public_toggle(row, public);
         });
 }
 
 fn spawn_inspector_number_controls(
     parent: &mut ChildSpawnerCommands,
-    input: &InputMetadata,
     title: &str,
-    description: &str,
+    tooltip: EditorTooltip,
     control: InspectorNumberControl,
     values: &[(&'static str, f32, u8)],
+    public: Option<ModuleInputPublicControl>,
 ) {
     let bounded_slider = values
         .first()
@@ -5669,7 +6432,9 @@ fn spawn_inspector_number_controls(
         });
     parent
         .spawn((
-            EditorTooltip::description(description),
+            tooltip,
+            ModuleInputPublicRow,
+            RelativeCursorPosition::default(),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(27.0),
@@ -5736,9 +6501,7 @@ fn spawn_inspector_number_controls(
                     }
                 }
             });
-            if let Some(unit) = input.unit {
-                row.spawn_empty().apply_scene(label_dim(unit));
-            }
+            spawn_module_input_public_toggle(row, public);
         });
 }
 
@@ -5766,10 +6529,13 @@ fn spawn_inspector_toggle_control(
     title: &str,
     description: &str,
     value: bool,
+    public: Option<ModuleInputPublicControl>,
 ) {
     parent
         .spawn((
             EditorTooltip::description(description),
+            ModuleInputPublicRow,
+            RelativeCursorPosition::default(),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(27.0),
@@ -5795,6 +6561,7 @@ fn spawn_inspector_toggle_control(
             if value {
                 checkbox.insert(Checked);
             }
+            spawn_module_input_public_toggle(row, public);
         });
 }
 
@@ -6117,12 +6884,6 @@ fn spawn_inspector_read_only_control(parent: &mut ChildSpawnerCommands, title: &
             });
             row.spawn_empty().apply_scene(label_dim(value.to_owned()));
         });
-}
-
-fn unit_suffix(input: &InputMetadata) -> String {
-    input
-        .unit
-        .map_or_else(String::new, |unit| format!(" {unit}"))
 }
 
 fn spawn_renderer_card(
@@ -6798,6 +7559,25 @@ struct EffectClipParameterNumberControl {
     component: u8,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct EffectClipParameterScrubControl {
+    clip: EffectClipId,
+    parameter: ParameterId,
+    component: u8,
+    values: [f32; 4],
+    kind: EffectClipParameterScrubKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EffectClipParameterScrubKind {
+    U32,
+    Scalar,
+    Vec2,
+    Vec3,
+    Vec4,
+    Range,
+}
+
 #[derive(Component, Debug, Clone)]
 struct EffectClipParameterTextControl {
     clip: EffectClipId,
@@ -6840,6 +7620,7 @@ enum NumericScrubTarget {
     Inspector(InspectorNumberControl),
     Emitter(EmitterNumberControl),
     EffectClip(EffectClipNumberControl),
+    EffectClipParameter(EffectClipParameterScrubControl),
     Renderer(RendererNumberControl),
 }
 

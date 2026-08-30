@@ -65,6 +65,10 @@ pub enum EffectCommand {
     RemoveParameter {
         id: aestra_core::ParameterId,
     },
+    SetParameter {
+        id: aestra_core::ParameterId,
+        parameter: EffectParameter,
+    },
     AddMaterial {
         material: MaterialDefinition,
         index: usize,

@@ -305,7 +305,9 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::RemoveEffectClipParameterOverride { id, .. } => {
             (None, Some(SemanticTarget::EffectClip(*id)))
         }
-        EffectCommand::RemoveParameter { id } => (None, Some(SemanticTarget::Parameter(*id))),
+        EffectCommand::RemoveParameter { id } | EffectCommand::SetParameter { id, .. } => {
+            (None, Some(SemanticTarget::Parameter(*id)))
+        }
         EffectCommand::RemoveEmitter { id }
         | EffectCommand::MoveEmitter { id, .. }
         | EffectCommand::SetEmitterName { id, .. }

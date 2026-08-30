@@ -624,7 +624,8 @@ operation supports it, and virtualization or incremental construction for large 
 
 # 12. Instance Parameter Overrides
 
-Reusable effects need exposed parameters.
+Reusable effects need an intentional public parameter API. Module values remain local until the
+source author exposes them; the persisted `exposed` flag records that public/private boundary.
 
 Example source effect:
 
@@ -679,6 +680,12 @@ Radius  [4.2]    ↺
 ```
 
 where the reset action returns the instance to the source value.
+
+The primary authoring workflow stays on the module property. A compact **Public** toggle exposes
+that property in one undoable transaction, while its existing field remains the source-default
+editor. Turning the property private preserves its stable identity and default so re-exposing it
+does not orphan instance overrides. Parameter objects and bindings remain an implementation detail;
+explicit linking belongs to a future automation, expression, or node-graph workflow.
 
 The user should always understand whether they are:
 
@@ -2184,12 +2191,13 @@ Make Unique
 orphaned/type-changed override diagnostics
 ```
 
-Status: semantic/runtime foundation complete. `EffectClip` now persists typed parameter overrides;
-project compilation accepts only exposed source parameters, lowers values into child parameter
-slots, and reports orphaned, hidden, or type-changed overrides. Nested reference execution and the
-Bevy/GPU editor preview apply the compiled values, while authoring commands provide stable undo and
-reset semantics. Inspector indication/edit/reset controls, explicit source/instance mode, Edit
-Source, and Make Unique remain as the user-facing continuation.
+Status: source and instance parameter workflows complete. `EffectClip` persists typed parameter
+overrides; project compilation accepts only exposed source parameters, lowers values into child
+parameter slots, and reports orphaned, hidden, or type-changed overrides. Nested reference
+execution and the Bevy/GPU editor preview apply the compiled values. The Inspector exposes source
+properties directly, edits their defaults in place, and provides instance overrides with
+reset-to-source through stable undoable commands. Source navigation and explicit instance mode are
+available; Make Unique remains as the user-facing continuation.
 
 ## Phase H — Nested effect expansion
 

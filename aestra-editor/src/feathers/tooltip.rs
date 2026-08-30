@@ -60,7 +60,7 @@ impl EditorTooltip {
         self
     }
 
-    fn accessible_label(&self) -> String {
+    pub(crate) fn accessible_label(&self) -> String {
         [
             self.title.as_deref(),
             Some(self.description.as_str()),
