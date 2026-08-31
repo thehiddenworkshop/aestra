@@ -18,11 +18,12 @@ use crate::{
     reveal_dock_panel, session::EditorSession, spawn_combo_control, theme, ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
+#[cfg(test)]
+use aestra_bevy::ModuleParameters;
 use aestra_bevy::{
     ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload, ChoreographyTrackId,
     ColorKey, CurveKey, EffectAsset, EffectAssetRef, EffectClip, EffectClipId, EffectMarker,
-    EffectParameter, Emitter, EmitterId, EmitterRegion, EmitterRegionId, MarkerId, ModuleId,
-    ModuleParameters, Value,
+    EffectParameter, Emitter, EmitterId, EmitterRegion, EmitterRegionId, MarkerId, ModuleId, Value,
 };
 #[cfg(test)]
 use bevy::ui_widgets::{ControlOrientation, Scrollbar};
@@ -637,25 +638,26 @@ fn execute_choreography_action(
         } => {
             state.expanded_automation_emitters.insert(emitter);
             if visible {
-                state
-                    .hidden_automation_lanes
-                    .retain(|lane| lane.emitter != emitter);
+                state.visible_automation_lanes.extend(lanes);
             } else {
-                state.hidden_automation_lanes.extend(lanes);
+                for lane in lanes {
+                    state.visible_automation_lanes.remove(&lane);
+                }
                 state.selected_automation_key = state
                     .selected_automation_key
                     .take()
                     .filter(|selection| selection.lane.emitter != emitter);
             }
+            state.automation_menu_emitter = None;
             session.ui_revision += 1;
             return;
         }
         ChoreographyAction::SetAutomationLaneVisibility { lane, visible } => {
             state.expanded_automation_emitters.insert(lane.emitter);
             if visible {
-                state.hidden_automation_lanes.remove(&lane);
+                state.visible_automation_lanes.insert(lane);
             } else {
-                state.hidden_automation_lanes.insert(lane.clone());
+                state.visible_automation_lanes.remove(&lane);
                 state.selected_automation_key = state
                     .selected_automation_key
                     .take()
@@ -2010,6 +2012,9 @@ mod tests {
         let localizer = Localizer::new("en-US").unwrap();
         let lanes = emitter_automation_lanes(&session.effect, first, &registry, &localizer);
         expanded
+            .visible_automation_lanes
+            .extend(lanes.iter().map(|lane| lane.id.clone()));
+        expanded
             .automation_lane_heights
             .insert(lanes[0].id.clone(), 118.0);
 
@@ -2034,7 +2039,7 @@ mod tests {
     }
 
     #[test]
-    fn automation_visibility_defaults_to_all_and_updates_layout_per_lane() {
+    fn automation_visibility_defaults_to_hidden_and_updates_layout_per_lane() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let catalog = ProjectEffectCatalog::from_entries(Vec::new());
         let first = &session.effect.emitters[0];
@@ -2045,22 +2050,19 @@ mod tests {
         let mut state = TimelineState::framed(session.playback_duration());
         state.expanded_automation_emitters.insert(first.id);
 
-        assert_eq!(visible_automation_lane_count(&state, first), lanes.len());
-        let all_visible_row = choreography_grid_row(
+        assert_eq!(visible_automation_lane_count(&state, first), 0);
+        let all_hidden_row = choreography_grid_row(
             &session.effect,
             &state,
             &catalog,
             ChoreographyTrackId::Emitter(second.id),
         );
 
-        state.hidden_automation_lanes.insert(lanes[0].id.clone());
+        state.visible_automation_lanes.insert(lanes[0].id.clone());
 
-        assert_eq!(
-            visible_automation_lane_count(&state, first),
-            lanes.len() - 1
-        );
-        assert!(!automation_lane_is_visible(&state, &lanes[0].id));
-        assert!(automation_lane_is_visible(&state, &lanes[1].id));
+        assert_eq!(visible_automation_lane_count(&state, first), 1);
+        assert!(automation_lane_is_visible(&state, &lanes[0].id));
+        assert!(!automation_lane_is_visible(&state, &lanes[1].id));
         assert_eq!(
             choreography_grid_row(
                 &session.effect,
@@ -2068,17 +2070,18 @@ mod tests {
                 &catalog,
                 ChoreographyTrackId::Emitter(second.id),
             ),
-            all_visible_row - 1
+            all_hidden_row + 1
         );
     }
 
     #[test]
-    fn automation_visibility_actions_keep_the_chooser_open() {
+    fn automation_lane_actions_keep_the_chooser_open_and_bulk_actions_close_it() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
         let emitter = session.effect.emitters[0].clone();
         let lanes = emitter_automation_lanes(&session.effect, &emitter, &registry, &localizer);
+        let lane_ids = lanes.iter().map(|lane| lane.id.clone()).collect::<Vec<_>>();
         let lane = lanes[0].id.clone();
         let mut app = choreography_app(session);
 
@@ -2088,27 +2091,46 @@ mod tests {
         app.world_mut()
             .trigger(ChoreographyAction::SetAutomationLaneVisibility {
                 lane: lane.clone(),
-                visible: false,
+                visible: true,
             });
         app.update();
 
         let state = app.world().resource::<TimelineState>();
         assert_eq!(state.automation_menu_emitter, Some(emitter.id));
         assert!(state.expanded_automation_emitters.contains(&emitter.id));
-        assert!(state.hidden_automation_lanes.contains(&lane));
+        assert!(state.visible_automation_lanes.contains(&lane));
 
         app.world_mut()
             .trigger(ChoreographyAction::SetEmitterAutomationVisibility {
                 emitter: emitter.id,
-                lanes: lanes.into_iter().map(|lane| lane.id).collect(),
+                lanes: lane_ids.clone(),
                 visible: true,
             });
         app.update();
+        let state = app.world().resource::<TimelineState>();
+        assert_eq!(state.automation_menu_emitter, None);
         assert!(
-            app.world()
-                .resource::<TimelineState>()
-                .hidden_automation_lanes
-                .is_empty()
+            lane_ids
+                .iter()
+                .all(|lane| state.visible_automation_lanes.contains(lane))
+        );
+
+        app.world_mut()
+            .trigger(ChoreographyAction::ToggleEmitterAutomation(emitter.id));
+        app.update();
+        app.world_mut()
+            .trigger(ChoreographyAction::SetEmitterAutomationVisibility {
+                emitter: emitter.id,
+                lanes: lane_ids.clone(),
+                visible: false,
+            });
+        app.update();
+        let state = app.world().resource::<TimelineState>();
+        assert_eq!(state.automation_menu_emitter, None);
+        assert!(
+            lane_ids
+                .iter()
+                .all(|lane| !state.visible_automation_lanes.contains(lane))
         );
     }
 
@@ -6526,7 +6548,7 @@ pub(crate) struct TimelineNavigationSnapshot {
     snap: TimelineSnapMode,
     expanded_effect_clips: BTreeSet<EffectClipPath>,
     expanded_automation_emitters: BTreeSet<EmitterId>,
-    hidden_automation_lanes: BTreeSet<AutomationLaneId>,
+    visible_automation_lanes: BTreeSet<AutomationLaneId>,
     automation_lane_heights: BTreeMap<AutomationLaneId, f32>,
     inspected_child: Option<EffectClipChildSelection>,
     vertical_scroll: f32,
@@ -6572,7 +6594,7 @@ pub(crate) struct TimelineState {
     effect_clip_reorder_drag: Option<EffectClipId>,
     expanded_effect_clips: BTreeSet<EffectClipPath>,
     expanded_automation_emitters: BTreeSet<EmitterId>,
-    hidden_automation_lanes: BTreeSet<AutomationLaneId>,
+    visible_automation_lanes: BTreeSet<AutomationLaneId>,
     selected_automation_key: Option<TimelineAutomationKeySelection>,
     muted_effect_clips: BTreeSet<EffectClipId>,
     solo_effect_clip: Option<EffectClipId>,
@@ -6627,7 +6649,7 @@ impl TimelineState {
             effect_clip_reorder_drag: None,
             expanded_effect_clips: BTreeSet::new(),
             expanded_automation_emitters: BTreeSet::new(),
-            hidden_automation_lanes: BTreeSet::new(),
+            visible_automation_lanes: BTreeSet::new(),
             selected_automation_key: None,
             muted_effect_clips: BTreeSet::new(),
             solo_effect_clip: None,
@@ -6652,7 +6674,7 @@ impl TimelineState {
             snap: self.snap,
             expanded_effect_clips: self.expanded_effect_clips.clone(),
             expanded_automation_emitters: self.expanded_automation_emitters.clone(),
-            hidden_automation_lanes: self.hidden_automation_lanes.clone(),
+            visible_automation_lanes: self.visible_automation_lanes.clone(),
             automation_lane_heights: self.automation_lane_heights.clone(),
             inspected_child: self.inspected_child.clone(),
             vertical_scroll: self.vertical_scroll,
@@ -6676,7 +6698,7 @@ impl TimelineState {
         self.snap = snapshot.snap;
         self.expanded_effect_clips = snapshot.expanded_effect_clips;
         self.expanded_automation_emitters = snapshot.expanded_automation_emitters;
-        self.hidden_automation_lanes = snapshot.hidden_automation_lanes;
+        self.visible_automation_lanes = snapshot.visible_automation_lanes;
         self.automation_lane_heights = snapshot.automation_lane_heights;
         self.inspected_child = snapshot.inspected_child;
         self.vertical_scroll = snapshot.vertical_scroll.max(0.0);
@@ -7404,6 +7426,7 @@ fn emitter_automation_lanes(
     lanes
 }
 
+#[cfg(test)]
 fn automation_lane_count(emitter: &Emitter) -> usize {
     emitter
         .modules
@@ -7447,13 +7470,11 @@ fn automation_lane_count(emitter: &Emitter) -> usize {
 }
 
 fn visible_automation_lane_count(state: &TimelineState, emitter: &Emitter) -> usize {
-    automation_lane_count(emitter).saturating_sub(
-        state
-            .hidden_automation_lanes
-            .iter()
-            .filter(|lane| emitter_has_automation_lane(emitter, lane))
-            .count(),
-    )
+    state
+        .visible_automation_lanes
+        .iter()
+        .filter(|lane| emitter_has_automation_lane(emitter, lane))
+        .count()
 }
 
 fn emitter_has_automation_lane(emitter: &Emitter, lane: &AutomationLaneId) -> bool {
@@ -7489,6 +7510,7 @@ fn emitter_has_automation_lane(emitter: &Emitter, lane: &AutomationLaneId) -> bo
     )
 }
 
+#[cfg(test)]
 fn source_is_automation(source: aestra_bevy::PropertySource) -> bool {
     matches!(
         source,
@@ -7498,7 +7520,7 @@ fn source_is_automation(source: aestra_bevy::PropertySource) -> bool {
 
 fn automation_lane_is_visible(state: &TimelineState, lane: &AutomationLaneId) -> bool {
     state.expanded_automation_emitters.contains(&lane.emitter)
-        && !state.hidden_automation_lanes.contains(lane)
+        && state.visible_automation_lanes.contains(lane)
 }
 
 fn automation_lanes_height(state: &TimelineState, emitter: &Emitter) -> f32 {
@@ -7509,7 +7531,7 @@ fn automation_lanes_height(state: &TimelineState, emitter: &Emitter) -> f32 {
             .iter()
             .filter(|(lane, _)| {
                 emitter_has_automation_lane(emitter, lane)
-                    && !state.hidden_automation_lanes.contains(*lane)
+                    && state.visible_automation_lanes.contains(*lane)
             })
             .map(|(_, height)| *height - default_height)
             .sum::<f32>()
@@ -9624,7 +9646,7 @@ fn spawn_emitter_track_header(
                 let visible = state.expanded_automation_emitters.contains(&emitter)
                     && automation_lanes
                         .iter()
-                        .any(|lane| !state.hidden_automation_lanes.contains(&lane.id));
+                        .any(|lane| state.visible_automation_lanes.contains(&lane.id));
                 let menu_open = state.automation_menu_emitter == Some(emitter);
                 let label = localizer.text("timeline-automation-visibility");
                 let disclosure = mini_button(
@@ -9761,7 +9783,7 @@ fn spawn_emitter_automation_visibility_menu(
                 },
             );
             for lane in lanes {
-                let is_visible = !state.hidden_automation_lanes.contains(&lane.id);
+                let is_visible = state.visible_automation_lanes.contains(&lane.id);
                 let mut args = FluentArgs::new();
                 args.set("name", lane.label.as_str());
                 let accessible_label = localizer.text_with(
