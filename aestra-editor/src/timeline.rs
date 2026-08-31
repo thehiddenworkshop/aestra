@@ -172,7 +172,9 @@ pub(crate) enum ChoreographyAction {
     DeleteEffectClip(EffectClipId),
     AddEmitter,
     DuplicateEmitter(Option<EmitterId>),
+    DuplicateSelectedEmitterRegions,
     DeleteEmitter(Option<EmitterId>),
+    DeleteSelectedEmitterRegions,
     SetEmitterEnabled {
         emitter: EmitterId,
         enabled: bool,
@@ -874,6 +876,9 @@ fn execute_choreography_action(
                 curves.clear();
             }
         }
+        ChoreographyAction::DuplicateSelectedEmitterRegions => {
+            duplicate_selected_emitter_regions(&mut session, &mut state, &mut curves);
+        }
         ChoreographyAction::DeleteEmitter(target) => {
             if select_choreography_target(&mut session, target)
                 && preview_selected_emitter_deletion(&mut session, &localizer)
@@ -881,6 +886,15 @@ fn execute_choreography_action(
                 reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
                 curves.clear();
             }
+        }
+        ChoreographyAction::DeleteSelectedEmitterRegions => {
+            delete_selected_emitter_regions(
+                &mut session,
+                &mut state,
+                &mut curves,
+                &mut layout,
+                &localizer,
+            );
         }
         ChoreographyAction::SetEmitterEnabled { emitter, enabled } => {
             if select_choreography_target(&mut session, Some(emitter)) {
@@ -1148,6 +1162,181 @@ fn preview_selected_emitter_deletion(session: &mut EditorSession, localizer: &Lo
     ))
 }
 
+fn selected_regions_for_one_emitter(
+    session: &EditorSession,
+    state: &TimelineState,
+) -> Option<(EmitterId, Vec<EmitterRegion>)> {
+    let emitter_id = state.selected_emitter_regions.first()?.0;
+    if state
+        .selected_emitter_regions
+        .iter()
+        .any(|(selected, _)| *selected != emitter_id)
+    {
+        return None;
+    }
+    let emitter = session
+        .effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == emitter_id)?;
+    let mut regions = emitter
+        .timeline_regions()
+        .into_iter()
+        .filter(|region| {
+            state
+                .selected_emitter_regions
+                .contains(&(emitter_id, region.id))
+        })
+        .collect::<Vec<_>>();
+    regions.sort_by(|left, right| left.start_time.total_cmp(&right.start_time));
+    (!regions.is_empty()).then_some((emitter_id, regions))
+}
+
+fn duplicate_selected_emitter_regions(
+    session: &mut EditorSession,
+    state: &mut TimelineState,
+    curves: &mut CurvesState,
+) -> bool {
+    let Some((emitter_id, selected)) = selected_regions_for_one_emitter(session, state) else {
+        session.status = "Select one or more emitter regions to duplicate".into();
+        return false;
+    };
+    let Some(emitter) = session
+        .effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == emitter_id)
+        .cloned()
+    else {
+        return false;
+    };
+    let selected_start = selected
+        .iter()
+        .map(|region| region.start_time)
+        .fold(f32::INFINITY, f32::min);
+    let selected_end = selected
+        .iter()
+        .map(|region| region.end_time())
+        .fold(f32::NEG_INFINITY, f32::max);
+    let span = (selected_end - selected_start).max(0.0);
+    let effect_duration = session.effect.duration.max(span);
+    let target_start = if selected_end + span <= effect_duration + 0.000_1 {
+        selected_end
+    } else if selected_start >= span {
+        selected_start - span
+    } else {
+        session.time().clamp(0.0, (effect_duration - span).max(0.0))
+    };
+    let offset = target_start - selected_start;
+    let mut duplicated = selected
+        .iter()
+        .map(|source| EmitterRegion {
+            id: EmitterRegionId::new(),
+            start_time: source.start_time + offset,
+            source_offset: source.source_offset,
+            duration: source.duration,
+        })
+        .collect::<Vec<_>>();
+    let duplicated_ids = duplicated
+        .iter()
+        .map(|region| region.id)
+        .collect::<Vec<_>>();
+    let mut regions = emitter.timeline_regions();
+    regions.append(&mut duplicated);
+    regions.sort_by(|left, right| left.start_time.total_cmp(&right.start_time));
+    if !session.execute(
+        "Duplicated emitter regions",
+        EffectCommand::SetEmitterRegions {
+            id: emitter_id,
+            regions: emitter.normalize_timeline_regions(regions),
+        },
+        true,
+    ) {
+        return false;
+    }
+    state.select_only_emitter_regions(emitter_id, &duplicated_ids);
+    if let Some(primary) = duplicated_ids.first().copied() {
+        session.select_emitter_region(emitter_id, primary);
+    }
+    curves.clear();
+    true
+}
+
+fn delete_selected_emitter_regions(
+    session: &mut EditorSession,
+    state: &mut TimelineState,
+    curves: &mut CurvesState,
+    layout: &mut WorkspaceLayout,
+    localizer: &Localizer,
+) -> bool {
+    let Some((emitter_id, selected)) = selected_regions_for_one_emitter(session, state) else {
+        session.status = "Select one or more emitter regions to delete".into();
+        return false;
+    };
+    let Some(emitter) = session
+        .effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == emitter_id)
+        .cloned()
+    else {
+        return false;
+    };
+    let regions = emitter.timeline_regions();
+    let selected_ids = selected
+        .iter()
+        .map(|region| region.id)
+        .collect::<BTreeSet<_>>();
+    if selected_ids.len() == regions.len() {
+        session.select_emitter(emitter_id);
+        if preview_selected_emitter_deletion(session, localizer) {
+            state.select_only_emitter(emitter_id);
+            reveal_dock_panel(layout, session, DockPanel::Changes);
+            curves.clear();
+            return true;
+        }
+        return false;
+    }
+
+    let primary_start = state
+        .selected_emitter_region
+        .and_then(|(_, region)| emitter.timeline_region(region))
+        .map_or(selected[0].start_time, |region| region.start_time);
+    let remaining = regions
+        .into_iter()
+        .filter(|region| !selected_ids.contains(&region.id))
+        .collect::<Vec<_>>();
+    let next = remaining
+        .iter()
+        .filter(|region| region.start_time >= primary_start)
+        .min_by(|left, right| left.start_time.total_cmp(&right.start_time))
+        .or_else(|| {
+            remaining
+                .iter()
+                .max_by(|left, right| left.start_time.total_cmp(&right.start_time))
+        })
+        .map(|region| region.id);
+    if !session.execute(
+        "Deleted emitter regions",
+        EffectCommand::SetEmitterRegions {
+            id: emitter_id,
+            regions: emitter.normalize_timeline_regions(remaining),
+        },
+        true,
+    ) {
+        return false;
+    }
+    if let Some(next) = next {
+        state.select_only_emitter_region(emitter_id, next);
+        session.select_emitter_region(emitter_id, next);
+    } else {
+        state.select_only_emitter(emitter_id);
+        session.select_emitter(emitter_id);
+    }
+    curves.clear();
+    true
+}
+
 fn choreography_keyboard_input(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
@@ -1171,7 +1360,11 @@ fn choreography_keyboard_input(
         commands.trigger(ChoreographyAction::AddEmitter);
     }
     if control && keys.just_pressed(KeyCode::KeyD) {
-        commands.trigger(ChoreographyAction::DuplicateEmitter(None));
+        commands.trigger(if state.selected_emitter_regions.is_empty() {
+            ChoreographyAction::DuplicateEmitter(None)
+        } else {
+            ChoreographyAction::DuplicateSelectedEmitterRegions
+        });
     }
     if keys.just_pressed(KeyCode::Insert) {
         let action = automation_graphs.iter().find_map(|(graph, cursor)| {
@@ -1190,6 +1383,10 @@ fn choreography_keyboard_input(
     if keys.just_pressed(KeyCode::Delete) {
         if let Some(selection) = state.selected_automation_key.clone() {
             commands.trigger(ChoreographyAction::DeleteAutomationKey(selection));
+            return;
+        }
+        if !state.selected_emitter_regions.is_empty() {
+            commands.trigger(ChoreographyAction::DeleteSelectedEmitterRegions);
             return;
         }
         match session.selection.primary {
@@ -1350,6 +1547,126 @@ mod tests {
         state.clear_emitter_region_selection();
         assert!(state.selected_emitter_regions.is_empty());
         assert_eq!(state.selected_emitters, BTreeSet::from([emitter.id]));
+    }
+
+    fn session_with_three_regions() -> (EditorSession, EmitterId, [EmitterRegionId; 3]) {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.effect.emitters[0].clone();
+        let first = emitter.implicit_region_id();
+        let second = EmitterRegionId::from_u128(0x7a);
+        let mut regions = emitter
+            .split_timeline_region(first, emitter.start_time + emitter.duration / 3.0, second)
+            .unwrap();
+        let split = regions[1].start_time + regions[1].duration / 2.0;
+        let mut split_emitter = emitter.clone();
+        split_emitter.regions = regions;
+        let third = EmitterRegionId::from_u128(0x7b);
+        regions = split_emitter
+            .split_timeline_region(second, split, third)
+            .unwrap();
+        session.effect.emitters[0].regions = regions;
+        session.select_emitter(emitter.id);
+        (session, emitter.id, [first, second, third])
+    }
+
+    #[test]
+    fn duplicate_selected_regions_is_one_undoable_region_edit() {
+        let (session, emitter, [first, second, third]) = session_with_three_regions();
+        let emitter_count = session.effect.emitters.len();
+        let mut app = choreography_app(session);
+        app.init_resource::<ModulePaletteState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(Update, choreography_keyboard_input);
+        app.world_mut().spawn(TimelineCanvas);
+        {
+            let mut state = app.world_mut().resource_mut::<TimelineState>();
+            state.select_only_emitter_regions(emitter, &[first, third]);
+        }
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ControlLeft);
+            keys.press(KeyCode::KeyD);
+        }
+
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.emitters.len(), emitter_count);
+        let regions = session.effect.emitters[0].timeline_regions();
+        assert_eq!(regions.len(), 5);
+        assert_eq!(
+            app.world()
+                .resource::<TimelineState>()
+                .selected_emitter_regions
+                .len(),
+            2
+        );
+        assert!(
+            app.world()
+                .resource::<TimelineState>()
+                .selected_emitter_regions
+                .iter()
+                .all(|(_, region)| ![first, second, third].contains(region))
+        );
+
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.emitters[0]
+                .timeline_regions()
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn delete_selected_regions_keeps_the_emitter_and_is_one_undoable_edit() {
+        let (session, emitter, [first, second, third]) = session_with_three_regions();
+        let emitter_count = session.effect.emitters.len();
+        let mut app = choreography_app(session);
+        app.world_mut()
+            .resource_mut::<TimelineState>()
+            .select_only_emitter_regions(emitter, &[first, second]);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::DeleteSelectedEmitterRegions);
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.emitters.len(), emitter_count);
+        assert_eq!(session.effect.emitters[0].timeline_regions().len(), 1);
+        assert_eq!(session.effect.emitters[0].timeline_regions()[0].id, third);
+        assert!(session.pending_change.is_none());
+
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.emitters[0]
+                .timeline_regions()
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn deleting_every_selected_region_uses_reviewed_emitter_deletion() {
+        let (session, emitter, regions) = session_with_three_regions();
+        let emitter_count = session.effect.emitters.len();
+        let mut app = choreography_app(session);
+        app.world_mut()
+            .resource_mut::<TimelineState>()
+            .select_only_emitter_regions(emitter, &regions);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::DeleteSelectedEmitterRegions);
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.effect.emitters.len(), emitter_count);
+        assert!(session.pending_change.is_some());
+        assert!(
+            app.world()
+                .resource::<WorkspaceLayout>()
+                .is_visible(DockPanel::Changes)
+        );
     }
 
     #[test]
@@ -6173,6 +6490,14 @@ impl TimelineState {
         self.emitter_region_selection_anchor = Some((emitter, region));
     }
 
+    fn select_only_emitter_regions(&mut self, emitter: EmitterId, regions: &[EmitterRegionId]) {
+        self.select_only_emitter(emitter);
+        self.selected_emitter_regions
+            .extend(regions.iter().map(|region| (emitter, *region)));
+        self.selected_emitter_region = regions.first().map(|region| (emitter, *region));
+        self.emitter_region_selection_anchor = self.selected_emitter_region;
+    }
+
     fn select_emitter_region(
         &mut self,
         emitter: &Emitter,
@@ -8486,6 +8811,7 @@ pub(crate) fn spawn_timeline(
                                                         .observe(move_timeline_clip_drag)
                                                         .observe(finish_timeline_clip_drag)
                                                         .observe(select_timeline_clip)
+                                                        .observe(open_timeline_region_context_menu)
                                                         .observe(stop_timeline_control_press);
                                                         for (kind, left, right) in [
                                                             (
@@ -8575,6 +8901,7 @@ pub(crate) fn spawn_timeline(
                                                             .observe(move_timeline_clip_drag)
                                                             .observe(finish_timeline_clip_drag)
                                                             .observe(select_timeline_clip)
+                                                            .observe(open_timeline_region_context_menu)
                                                             .observe(stop_timeline_control_press)
                                                             .with_child((
                                                                 Node {
@@ -9137,6 +9464,10 @@ fn spawn_emitter_track_header(
                     emitter,
                     enabled,
                     soloed,
+                    state
+                        .selected_emitter_regions
+                        .iter()
+                        .any(|(selected, _)| *selected == emitter),
                     state.context_menu_position,
                 );
             }
@@ -9268,6 +9599,7 @@ fn spawn_emitter_context_menu(
     emitter: EmitterId,
     enabled: bool,
     soloed: bool,
+    has_selected_regions: bool,
     position: Vec2,
 ) {
     spawn_pointer_context_menu(
@@ -9304,13 +9636,29 @@ fn spawn_emitter_context_menu(
             );
             spawn_pointer_context_menu_item(
                 menu,
-                &localizer.text("timeline-menu-duplicate"),
-                ChoreographyAction::DuplicateEmitter(Some(emitter)),
+                &localizer.text(if has_selected_regions {
+                    "timeline-menu-duplicate-regions"
+                } else {
+                    "timeline-menu-duplicate"
+                }),
+                if has_selected_regions {
+                    ChoreographyAction::DuplicateSelectedEmitterRegions
+                } else {
+                    ChoreographyAction::DuplicateEmitter(Some(emitter))
+                },
             );
             spawn_pointer_context_menu_item(
                 menu,
-                &localizer.text("timeline-menu-delete"),
-                ChoreographyAction::DeleteEmitter(Some(emitter)),
+                &localizer.text(if has_selected_regions {
+                    "timeline-menu-delete-regions"
+                } else {
+                    "timeline-menu-delete"
+                }),
+                if has_selected_regions {
+                    ChoreographyAction::DeleteSelectedEmitterRegions
+                } else {
+                    ChoreographyAction::DeleteEmitter(Some(emitter))
+                },
             );
         },
     );
@@ -12234,6 +12582,45 @@ fn open_referenced_emitter_source_from_header(
     ) {
         commands.trigger(resolved);
     }
+}
+
+fn open_timeline_region_context_menu(
+    mut click: On<Pointer<Click>>,
+    targets: Query<&TimelineClipInteraction>,
+    headers: Query<(&EmitterTrackHeader, &ComputedNode, &UiGlobalTransform)>,
+    mut session: ResMut<EditorSession>,
+    mut curves: ResMut<CurvesState>,
+    mut state: ResMut<TimelineState>,
+) {
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    let Ok(target) = targets.get(click.event_target()) else {
+        return;
+    };
+    let selection = (target.emitter, target.region);
+    if !state.selected_emitter_regions.contains(&selection) {
+        state.select_only_emitter_region(target.emitter, target.region);
+    } else {
+        state.selected_emitter_region = Some(selection);
+        state.emitter_region_selection_anchor = Some(selection);
+    }
+    session.select_emitter_region(target.emitter, target.region);
+    curves.clear();
+
+    let position = headers
+        .iter()
+        .find(|(header, _, _)| header.emitter == target.emitter)
+        .map_or(Vec2::ZERO, |(_, node, transform)| {
+            pointer_position_in_node(click.pointer_location.position, node, transform)
+        });
+    state.color_picker_emitter = None;
+    state.automation_menu_emitter = None;
+    state.context_effect_clip = None;
+    state.context_emitter = Some(target.emitter);
+    state.context_menu_position = position;
+    session.ui_revision += 1;
+    click.propagate(false);
 }
 
 fn open_timeline_track_context_menu(
