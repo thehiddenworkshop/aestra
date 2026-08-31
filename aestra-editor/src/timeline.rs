@@ -686,7 +686,12 @@ fn execute_choreography_action(
             {
                 state.select_only_emitter(selection.lane.emitter);
                 session.select_emitter(selection.lane.emitter);
-                curves.select_key(selection.lane.module, selection.lane.input, selection.key);
+                curves.select_key_channel(
+                    selection.lane.module,
+                    selection.lane.input,
+                    selection.key,
+                    selection.lane.channel,
+                );
                 state.selected_automation_key = Some(selection);
                 state.inspected_child = None;
                 session.status = localizer.text("timeline-selected-automation-key");
@@ -735,8 +740,10 @@ fn execute_choreography_action(
                 .unwrap_or_else(|| keys.len());
             let command = match automation_lane_value(&session.effect, &lane) {
                 Some(Value::Curve(mut curve)) => {
-                    let value =
-                        value_bits.map_or_else(|| curve.sample(normalized_time), f32::from_bits);
+                    let value = value_bits.map_or_else(
+                        || curve_stored_sample(&curve, normalized_time),
+                        f32::from_bits,
+                    );
                     curve
                         .keys
                         .insert(index, CurveKey::new(normalized_time, value));
@@ -744,6 +751,29 @@ fn execute_choreography_action(
                         &session.effect,
                         &lane,
                         Value::Curve(curve),
+                    ) else {
+                        return;
+                    };
+                    command
+                }
+                Some(Value::Vec3Curve(mut curves)) => {
+                    let Some(curve) = lane
+                        .channel
+                        .and_then(|channel| curves.curves.get_mut(channel as usize))
+                    else {
+                        return;
+                    };
+                    let value = value_bits.map_or_else(
+                        || curve_stored_sample(curve, normalized_time),
+                        f32::from_bits,
+                    );
+                    curve
+                        .keys
+                        .insert(index, CurveKey::new(normalized_time, value));
+                    let Some(command) = set_automation_lane_value_command(
+                        &session.effect,
+                        &lane,
+                        Value::Vec3Curve(curves),
                     ) else {
                         return;
                     };
@@ -772,7 +802,7 @@ fn execute_choreography_action(
             ) {
                 state.select_only_emitter(lane.emitter);
                 session.select_emitter(lane.emitter);
-                curves.select_key(lane.module, lane.input, index);
+                curves.select_key_channel(lane.module, lane.input, index, lane.channel);
                 state.selected_automation_key =
                     Some(TimelineAutomationKeySelection { lane, key: index });
             }
@@ -797,6 +827,24 @@ fn execute_choreography_action(
                     };
                     command
                 }
+                Some(Value::Vec3Curve(mut curves)) => {
+                    let Some(curve) = selection
+                        .lane
+                        .channel
+                        .and_then(|channel| curves.curves.get_mut(channel as usize))
+                    else {
+                        return;
+                    };
+                    curve.keys.remove(selection.key);
+                    let Some(command) = set_automation_lane_value_command(
+                        &session.effect,
+                        &selection.lane,
+                        Value::Vec3Curve(curves),
+                    ) else {
+                        return;
+                    };
+                    command
+                }
                 Some(Value::Gradient(mut gradient)) => {
                     gradient.keys.remove(selection.key);
                     let Some(command) = set_automation_lane_value_command(
@@ -816,7 +864,12 @@ fn execute_choreography_action(
                 true,
             ) {
                 let next = selection.key.saturating_sub(1).min(keys.len() - 2);
-                curves.select_key(selection.lane.module, selection.lane.input, next);
+                curves.select_key_channel(
+                    selection.lane.module,
+                    selection.lane.input,
+                    next,
+                    selection.lane.channel,
+                );
                 state.selected_automation_key = Some(TimelineAutomationKeySelection {
                     lane: selection.lane,
                     key: next,
@@ -1115,6 +1168,99 @@ mod tests {
         assert_eq!(
             lanes.len(),
             automation_lane_count(&session.effect.emitters[0])
+        );
+    }
+
+    #[test]
+    fn vector_gravity_curve_projects_and_edits_as_three_automation_lanes() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = &mut session.effect.emitters[0];
+        let motion = emitter
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == aestra_bevy::MODULE_MOTION)
+            .unwrap();
+        let module = motion.id;
+        let source =
+            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::ParticleLife);
+        motion.property_sources.insert("gravity".into(), source);
+        let curves = aestra_bevy::Vec3Curve {
+            curves: [
+                aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 0.1), CurveKey::new(1.0, 0.2)]),
+                aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 0.3), CurveKey::new(1.0, 0.4)]),
+                aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 0.5), CurveKey::new(1.0, 0.6)]),
+            ],
+        };
+        motion.property_source_values.insert(
+            "gravity".into(),
+            vec![aestra_bevy::PropertySourceValue::new(
+                source,
+                Value::Vec3Curve(curves.clone()),
+            )],
+        );
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+        let gravity_lanes: Vec<_> = emitter_automation_lanes(
+            &session.effect,
+            &session.effect.emitters[0],
+            &registry,
+            &localizer,
+        )
+        .into_iter()
+        .filter(|lane| lane.id.module == module && lane.id.parameter == "gravity")
+        .collect();
+
+        assert_eq!(gravity_lanes.len(), 3);
+        assert_eq!(
+            gravity_lanes
+                .iter()
+                .map(|lane| lane.id.channel)
+                .collect::<Vec<_>>(),
+            vec![Some(0), Some(1), Some(2)]
+        );
+        assert!(gravity_lanes[0].label.ends_with(" X"));
+        assert!(gravity_lanes[1].label.ends_with(" Y"));
+        assert!(gravity_lanes[2].label.ends_with(" Z"));
+        assert_eq!(automation_lane_count(&session.effect.emitters[0]), 6);
+
+        let y_lane = gravity_lanes[1].id.clone();
+        let mut app = choreography_app(session);
+        app.world_mut()
+            .trigger(ChoreographyAction::AddAutomationKeyAt {
+                lane: y_lane.clone(),
+                normalized_time_bits: 0.5_f32.to_bits(),
+                value_bits: Some(0.35_f32.to_bits()),
+            });
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        let motion = session.effect.emitters[0]
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap();
+        let Value::Vec3Curve(updated) =
+            motion.property_value_for_source("gravity", source).unwrap()
+        else {
+            unreachable!()
+        };
+        assert_eq!(updated.curves[0].keys, curves.curves[0].keys);
+        assert_eq!(updated.curves[1].keys.len(), 3);
+        assert_eq!(updated.curves[1].keys[1], CurveKey::new(0.5, 0.35));
+        assert_eq!(updated.curves[2].keys, curves.curves[2].keys);
+        assert_eq!(
+            app.world()
+                .resource::<TimelineState>()
+                .selected_automation_key
+                .as_ref()
+                .map(|selection| (&selection.lane, selection.key)),
+            Some((&y_lane, 1))
+        );
+        assert_eq!(
+            app.world()
+                .resource::<CurvesState>()
+                .selected_vector_channel(),
+            1
         );
     }
 
@@ -2996,6 +3142,7 @@ mod tests {
             module: ModuleId::new(),
             input: 0,
             parameter: "test".into(),
+            channel: None,
         };
         let mut app = App::new();
         app.insert_resource(session)
@@ -5166,6 +5313,7 @@ pub(crate) struct AutomationLaneId {
     module: ModuleId,
     input: u8,
     parameter: String,
+    channel: Option<u8>,
 }
 
 #[derive(Component, Clone, Debug, PartialEq, Eq)]
@@ -6128,32 +6276,46 @@ fn emitter_automation_lanes(
             let value = bound_automation_parameter(effect, module, input_metadata.name)
                 .map(|parameter| parameter.default.clone())
                 .or_else(|| module_parameter(module, input_metadata.name));
-            let keys = match (source, value) {
-                (Some(aestra_bevy::PropertySource::Curve(_)), Some(Value::Curve(curve))) => {
-                    AutomationLaneKeys::Curve(curve.keys)
-                }
-                (
-                    Some(aestra_bevy::PropertySource::Gradient(_)),
-                    Some(Value::Gradient(gradient)),
-                ) => AutomationLaneKeys::Gradient(gradient.keys),
-                _ => continue,
-            };
             let display_name = localized_properties_input(
                 localizer,
                 input_metadata.name,
                 input_metadata.display_name,
                 false,
             );
-            lanes.push(AutomationLaneProjection {
-                id: AutomationLaneId {
-                    emitter: emitter.id,
-                    module: module.id,
-                    input: input as u8,
-                    parameter: input_metadata.name.into(),
-                },
-                label: display_name,
-                keys,
-            });
+            let lane_id = |channel| AutomationLaneId {
+                emitter: emitter.id,
+                module: module.id,
+                input: input as u8,
+                parameter: input_metadata.name.into(),
+                channel,
+            };
+            match (source, value) {
+                (Some(aestra_bevy::PropertySource::Curve(_)), Some(Value::Curve(curve))) => {
+                    lanes.push(AutomationLaneProjection {
+                        id: lane_id(None),
+                        label: display_name,
+                        keys: AutomationLaneKeys::Curve(curve.keys),
+                    });
+                }
+                (Some(aestra_bevy::PropertySource::Curve(_)), Some(Value::Vec3Curve(curves))) => {
+                    for (channel, curve) in curves.curves.into_iter().enumerate() {
+                        lanes.push(AutomationLaneProjection {
+                            id: lane_id(Some(channel as u8)),
+                            label: format!("{display_name} {}", ["X", "Y", "Z"][channel]),
+                            keys: AutomationLaneKeys::Curve(curve.keys),
+                        });
+                    }
+                }
+                (
+                    Some(aestra_bevy::PropertySource::Gradient(_)),
+                    Some(Value::Gradient(gradient)),
+                ) => lanes.push(AutomationLaneProjection {
+                    id: lane_id(None),
+                    label: display_name,
+                    keys: AutomationLaneKeys::Gradient(gradient.keys),
+                }),
+                _ => {}
+            }
         }
     }
     lanes
@@ -6180,12 +6342,23 @@ fn automation_lane_count(emitter: &Emitter) -> usize {
             };
             parameters
                 .into_iter()
-                .filter(|parameter| {
-                    module
+                .map(|parameter| {
+                    if !module
                         .property_source(parameter)
                         .is_some_and(source_is_automation)
+                    {
+                        return 0;
+                    }
+                    if matches!(
+                        module.active_parameter_value(parameter),
+                        Some(Value::Vec3Curve(_))
+                    ) {
+                        3
+                    } else {
+                        1
+                    }
                 })
-                .count()
+                .sum::<usize>()
         })
         .sum()
 }
@@ -6201,13 +6374,36 @@ fn visible_automation_lane_count(state: &TimelineState, emitter: &Emitter) -> us
 }
 
 fn emitter_has_automation_lane(emitter: &Emitter, lane: &AutomationLaneId) -> bool {
-    lane.emitter == emitter.id
-        && emitter
-            .modules
-            .iter()
-            .find(|module| module.id == lane.module)
-            .and_then(|module| module.property_source(&lane.parameter))
-            .is_some_and(source_is_automation)
+    if lane.emitter != emitter.id {
+        return false;
+    }
+    let Some(module) = emitter
+        .modules
+        .iter()
+        .find(|module| module.id == lane.module)
+    else {
+        return false;
+    };
+    matches!(
+        (
+            module.property_source(&lane.parameter),
+            module.active_parameter_value(&lane.parameter),
+            lane.channel,
+        ),
+        (
+            Some(aestra_bevy::PropertySource::Curve(_)),
+            Some(Value::Vec3Curve(_)),
+            Some(0..=2)
+        ) | (
+            Some(aestra_bevy::PropertySource::Curve(_)),
+            Some(Value::Curve(_)),
+            None
+        ) | (
+            Some(aestra_bevy::PropertySource::Gradient(_)),
+            Some(Value::Gradient(_)),
+            None
+        )
+    )
 }
 
 fn source_is_automation(source: aestra_bevy::PropertySource) -> bool {
@@ -6314,9 +6510,25 @@ fn automation_lane_keys(
 ) -> Option<AutomationLaneKeys> {
     match automation_lane_value(effect, lane)? {
         Value::Curve(curve) => Some(AutomationLaneKeys::Curve(curve.keys)),
+        Value::Vec3Curve(curves) => lane
+            .channel
+            .and_then(|channel| curves.curves.get(channel as usize))
+            .map(|curve| AutomationLaneKeys::Curve(curve.keys.clone())),
         Value::Gradient(gradient) => Some(AutomationLaneKeys::Gradient(gradient.keys)),
         _ => None,
     }
+}
+
+fn curve_stored_sample(curve: &aestra_bevy::Curve, time: f32) -> f32 {
+    let sampled = curve.sample(time);
+    let Some(range) = curve.output_range else {
+        return sampled;
+    };
+    let span = range.max - range.min;
+    if span.abs() <= f32::EPSILON {
+        return curve.keys.first().map_or(0.0, |key| key.value);
+    }
+    ((sampled - range.min) / span).clamp(0.0, 1.0)
 }
 
 fn spawn_effect_clip_track_header(
@@ -8936,6 +9148,10 @@ fn spawn_automation_lane_row(
                         selected.module == lane.id.module
                             && selected.input == lane.id.input
                             && selected.key == key
+                            && lane
+                                .id
+                                .channel
+                                .is_none_or(|channel| curves.selected_vector_channel() == channel)
                     });
                 let absolute_time = emitter.start_time + normalized_time * emitter.duration;
                 let position = state.view.normalized_time(absolute_time);
@@ -10855,6 +11071,31 @@ fn finish_automation_key_drag(
             };
             command
         }
+        Some(Value::Vec3Curve(mut curves_value)) => {
+            let Some(curve) = selection
+                .lane
+                .channel
+                .and_then(|channel| curves_value.curves.get_mut(channel as usize))
+            else {
+                return;
+            };
+            let Some(mut key) = curve.keys.get(selection.key).copied() else {
+                return;
+            };
+            key.time = normalized;
+            if let Some(value) = drag.current_value {
+                key.value = value;
+            }
+            curve.keys[selection.key] = key;
+            let Some(command) = set_automation_lane_value_command(
+                &session.effect,
+                &selection.lane,
+                Value::Vec3Curve(curves_value),
+            ) else {
+                return;
+            };
+            command
+        }
         Some(Value::Gradient(mut gradient)) => {
             let Some(mut key) = gradient.keys.get(selection.key).copied() else {
                 return;
@@ -10877,7 +11118,12 @@ fn finish_automation_key_drag(
         command,
         true,
     ) {
-        curves.select_key(selection.lane.module, selection.lane.input, selection.key);
+        curves.select_key_channel(
+            selection.lane.module,
+            selection.lane.input,
+            selection.key,
+            selection.lane.channel,
+        );
         state.selected_automation_key = Some(selection.clone());
     }
 }

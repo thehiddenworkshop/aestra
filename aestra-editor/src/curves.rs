@@ -61,12 +61,23 @@ impl CurvesState {
         self.vector_channel = 0;
     }
 
-    pub(crate) fn select_key(&mut self, module: ModuleId, input: u8, key: usize) {
+    pub(crate) fn select_key_channel(
+        &mut self,
+        module: ModuleId,
+        input: u8,
+        key: usize,
+        vector_channel: Option<u8>,
+    ) {
         self.complex = Some(ComplexSelection { module, input, key });
+        self.vector_channel = vector_channel.unwrap_or(0).min(2);
     }
 
     pub(crate) fn selected_key(&self) -> Option<ComplexSelection> {
         self.complex
+    }
+
+    pub(crate) fn selected_vector_channel(&self) -> u8 {
+        self.vector_channel
     }
 
     #[cfg(test)]

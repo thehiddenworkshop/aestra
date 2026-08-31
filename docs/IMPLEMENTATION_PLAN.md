@@ -119,7 +119,8 @@ architecture vision; this file is the shorter delivery plan.
   XYZ, stable per-particle XYZ Random Range, and independent X/Y/Z curves over Particle Life,
   including compact per-axis Properties controls and channel editing in Curves. These properties
   run across serialization, source-preserving authoring, CPU compilation/execution, native GPU
-  packing, and WESL; scalar curve/gradient sources also project into Timeline automation lanes.
+  packing, and WESL. Scalar curves, gradients, and vector curves project into Timeline automation
+  lanes; vector curves use independent X/Y/Z lanes that share key/channel selection with Curves.
   Public bindings and reusable-effect overrides use the active source's concrete value type.
   Top-level local emitter tracks can now
   be multi-selected and extracted into a collision-safe reusable effect asset, optionally replacing
