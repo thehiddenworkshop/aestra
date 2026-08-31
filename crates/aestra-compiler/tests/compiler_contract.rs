@@ -6,12 +6,12 @@ use aestra_core::{
     EffectClip, EffectClipSeed, EffectParameter, Emitter, EmitterShape, MODULE_EMISSION,
     MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProperties,
     ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, PropertySourceValue, ScalarRange,
-    StageKind, Value,
+    StageKind, Value, Vec3Curve, Vec3Range,
 };
 use aestra_project::ProjectAssetIndex;
 use aestra_runtime::{
     EffectInstance, Expression, Instruction, ParameterError, ParticleAttribute, RendererPlanKind,
-    RuntimeStage, ScalarSource, SimulationSeekMode,
+    RuntimeStage, ScalarSource, SimulationSeekMode, VectorSource,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -39,7 +39,14 @@ fn builtin_registry_exposes_authoring_and_runtime_metadata() {
     assert_eq!(gravity.unit, Some("units/s²"));
     assert_eq!(gravity.default_value, Value::Vec3([0.0, -18.0, 0.0]));
     assert!(!gravity.description.is_empty());
-    assert_eq!(gravity.sources, [InputSourceKind::Constant]);
+    assert_eq!(
+        gravity.sources,
+        [
+            InputSourceKind::Constant,
+            InputSourceKind::RandomRange,
+            InputSourceKind::Curve(InputEvaluationDomain::ParticleLife),
+        ]
+    );
     let drag = motion
         .inputs
         .iter()
@@ -411,6 +418,92 @@ fn drag_sources_lower_without_losing_their_authored_values() {
 }
 
 #[test]
+fn gravity_sources_lower_without_losing_their_authored_channels() {
+    let mut asset = EffectAsset::from_ron(SAMPLE).unwrap();
+    let motion = asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    let source = InputSourceKind::Curve(InputEvaluationDomain::ParticleLife);
+    let curves = Vec3Curve {
+        curves: [
+            Curve::normalized(
+                vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 1.0)],
+                ScalarRange::new(-2.0, 4.0),
+            ),
+            Curve::normalized(
+                vec![CurveKey::new(0.0, 1.0), CurveKey::new(1.0, 0.0)],
+                ScalarRange::new(-8.0, 2.0),
+            ),
+            Curve::normalized(
+                vec![CurveKey::new(0.0, 0.25), CurveKey::new(1.0, 0.75)],
+                ScalarRange::new(0.0, 12.0),
+            ),
+        ],
+    };
+    motion.property_sources.insert("gravity".into(), source);
+    motion.property_source_values.insert(
+        "gravity".into(),
+        vec![PropertySourceValue::new(
+            source,
+            Value::Vec3Curve(curves.clone()),
+        )],
+    );
+
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let Instruction::Motion { gravity, .. } = compiled.emitters[0]
+        .execution
+        .particle_update
+        .iter()
+        .find(|instruction| matches!(instruction, Instruction::Motion { .. }))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    let VectorSource::Curve { value, domain } = gravity else {
+        panic!("gravity should lower as an XYZ curve source");
+    };
+    assert_eq!(*domain, InputEvaluationDomain::ParticleLife);
+    let Expression::Constant(compiled_curves) = value else {
+        panic!("unbound gravity curves should be constant-folded");
+    };
+    assert_eq!(compiled_curves.sample(0.5), curves.sample(0.5));
+
+    let mut asset = EffectAsset::from_ron(SAMPLE).unwrap();
+    let motion = asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    let range = Vec3Range::new([-4.0, -8.0, 1.0], [5.0, 2.0, 9.0]);
+    motion
+        .property_sources
+        .insert("gravity".into(), InputSourceKind::RandomRange);
+    motion.property_source_values.insert(
+        "gravity".into(),
+        vec![PropertySourceValue::new(
+            InputSourceKind::RandomRange,
+            Value::Vec3Range(range),
+        )],
+    );
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let Instruction::Motion { gravity, .. } = compiled.emitters[0]
+        .execution
+        .particle_update
+        .iter()
+        .find(|instruction| matches!(instruction, Instruction::Motion { .. }))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        gravity,
+        &VectorSource::RandomRange(Expression::Constant(range))
+    );
+}
+
+#[test]
 fn turbulence_sources_lower_without_losing_their_authored_values() {
     let mut asset = EffectAsset::from_ron(SAMPLE).unwrap();
     let motion = asset.emitters[0]
@@ -540,6 +633,71 @@ fn configured_motion_effect() -> EffectAsset {
         turbulence: 0.0,
     };
     asset
+}
+
+#[test]
+fn gravity_curve_and_random_range_control_xyz_motion_deterministically() {
+    let curve_value = [2.0, -4.0, 6.0];
+    let mut curve_asset = configured_motion_effect();
+    let motion = curve_asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    let curve_source = InputSourceKind::Curve(InputEvaluationDomain::ParticleLife);
+    motion
+        .property_sources
+        .insert("gravity".into(), curve_source);
+    motion.property_source_values.insert(
+        "gravity".into(),
+        vec![PropertySourceValue::new(
+            curve_source,
+            Value::Vec3Curve(Vec3Curve::constant(curve_value)),
+        )],
+    );
+    let compiled = EffectCompiler::default().compile(&curve_asset).unwrap();
+    let mut curve_particles = Vec::new();
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut curve_particles);
+
+    let mut constant_asset = configured_motion_effect();
+    let motion = constant_asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    let ModuleParameters::Motion { gravity, .. } = &mut motion.parameters else {
+        unreachable!()
+    };
+    *gravity = curve_value;
+    let compiled = EffectCompiler::default().compile(&constant_asset).unwrap();
+    let mut constant_particles = Vec::new();
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut constant_particles);
+    assert_eq!(curve_particles, constant_particles);
+
+    let mut random_asset = configured_motion_effect();
+    let motion = random_asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    motion
+        .property_sources
+        .insert("gravity".into(), InputSourceKind::RandomRange);
+    motion.property_source_values.insert(
+        "gravity".into(),
+        vec![PropertySourceValue::new(
+            InputSourceKind::RandomRange,
+            Value::Vec3Range(Vec3Range::new([-8.0, -6.0, -4.0], [8.0, 6.0, 4.0])),
+        )],
+    );
+    let compiled = EffectCompiler::default().compile(&random_asset).unwrap();
+    let mut first = Vec::new();
+    let mut repeated = Vec::new();
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut first);
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut repeated);
+    assert_eq!(first, repeated);
+    assert_eq!(first.len(), 2);
+    assert_ne!(first[0].position, first[1].position);
 }
 
 #[test]

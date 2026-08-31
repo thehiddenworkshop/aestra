@@ -1,10 +1,10 @@
 use aestra_core::{
     AssetDefinition, ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode,
     EffectAsset, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter,
-    EmitterId, EmitterShape, EmitterTransform, FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE,
-    MarkerTimeReference, MaterialProperties, ModuleParameters, ParameterId,
+    EmitterId, EmitterShape, EmitterTransform, FlipbookDefinition, MODULE_EMISSION, MODULE_MOTION,
+    MODULE_SHAPE, MarkerTimeReference, MaterialProperties, ModuleParameters, ParameterId,
     PropertyEvaluationDomain, PropertySource, PropertySourceValue, RendererInstance, ScalarRange,
-    Value,
+    Value, Vec3Curve, Vec3Range,
 };
 
 #[test]
@@ -160,6 +160,46 @@ fn alternate_property_source_values_round_trip_without_changing_the_format_versi
         emission.active_parameter_value("spawn_rate"),
         Some(Value::Curve(curve))
     );
+}
+
+#[test]
+fn vector_property_source_values_round_trip_with_independent_curve_ids() {
+    let mut effect = EffectAsset::new("Vector source values", 2.0);
+    effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+    let motion = effect.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    let source = PropertySource::Curve(PropertyEvaluationDomain::ParticleLife);
+    let curves = Vec3Curve::constant([2.0, -4.0, 6.0]);
+    assert_ne!(curves.curves[0].id, curves.curves[1].id);
+    assert_ne!(curves.curves[1].id, curves.curves[2].id);
+    motion.property_sources.insert("gravity".into(), source);
+    motion.property_source_values.insert(
+        "gravity".into(),
+        vec![
+            PropertySourceValue::new(
+                PropertySource::RandomRange,
+                Value::Vec3Range(Vec3Range::new([-3.0; 3], [3.0; 3])),
+            ),
+            PropertySourceValue::new(source, Value::Vec3Curve(curves.clone())),
+        ],
+    );
+
+    assert!(effect.validation_report().is_valid());
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+    let motion = decoded.emitters[0]
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    assert_eq!(
+        motion.active_parameter_value("gravity"),
+        Some(Value::Vec3Curve(curves))
+    );
+    assert!(decoded.validation_report().is_valid());
 }
 
 #[test]

@@ -48,7 +48,10 @@ struct Emitter {
     angular_velocity: vec2<f32>,
     _range_padding: vec2<f32>,
     gravity: vec3<f32>,
-    _gravity_padding: f32,
+    gravity_source: u32,
+    gravity_max: vec3<f32>,
+    _gravity_max_padding: f32,
+    gravity_curves: array<Curve, 3>,
     turbulence: vec2<f32>,
     turbulence_source: u32,
     _turbulence_padding: u32,
@@ -196,6 +199,40 @@ fn resolved_particle_scalar(
         return sample_curve(curve, normalized_particle_life);
     }
     return value.x;
+}
+
+fn resolved_particle_vector(
+    value: vec3<f32>,
+    source: u32,
+    maximum: vec3<f32>,
+    curves: array<Curve, 3>,
+    particle_index: u32,
+    normalized_particle_life: f32,
+    normalized_emitter_time: f32,
+    random_channel: u32,
+) -> vec3<f32> {
+    if source == 1u {
+        return vec3<f32>(
+            mix(value.x, maximum.x, hash01(particle_index, random_channel)),
+            mix(value.y, maximum.y, hash01(particle_index, random_channel + 1u)),
+            mix(value.z, maximum.z, hash01(particle_index, random_channel + 2u)),
+        );
+    }
+    if source == 2u {
+        return vec3<f32>(
+            sample_curve(curves[0], normalized_emitter_time),
+            sample_curve(curves[1], normalized_emitter_time),
+            sample_curve(curves[2], normalized_emitter_time),
+        );
+    }
+    if source == 3u {
+        return vec3<f32>(
+            sample_curve(curves[0], normalized_particle_life),
+            sample_curve(curves[1], normalized_particle_life),
+            sample_curve(curves[2], normalized_particle_life),
+        );
+    }
+    return value;
 }
 
 fn emitted_until(emitter: Emitter, emitter_index: u32, time: f32) -> f32 {
@@ -440,12 +477,22 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         normalized_emitter_time,
         13u,
     );
+    let gravity = resolved_particle_vector(
+        emitter.gravity,
+        emitter.gravity_source,
+        emitter.gravity_max,
+        emitter.gravity_curves,
+        particle_index,
+        normalized_age,
+        normalized_emitter_time,
+        14u,
+    );
     let turbulence = turbulence_strength * vec3<f32>(
         sin(age * 7.0 + hash01(particle_index, 3u) * TAU),
         sin(age * 6.3 + hash01(particle_index, 8u) * TAU),
         sin(age * 7.7 + hash01(particle_index, 10u) * TAU),
     );
-    let local_position = origin + direction * travel + emitter.gravity * age * age * 0.5 + turbulence;
+    let local_position = origin + direction * travel + gravity * age * age * 0.5 + turbulence;
     let position = emitter.translation
         + rotate_by_quaternion(local_position * emitter.scale, emitter.rotation);
     var color = sample_gradient(emitter.color, normalized_age);

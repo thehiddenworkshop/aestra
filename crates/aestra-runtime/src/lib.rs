@@ -16,6 +16,7 @@ use aestra_core::{
     EffectAssetRef, EffectClipId, EffectClipSeed, EffectId, EmitterId, EmitterShape,
     EmitterTransform, FlipbookPlaybackMode, FlipbookTimeSource, Gradient, MaterialId, ModuleId,
     ParameterId, PropertyEvaluationDomain, RendererId, ScalarRange, UvRect, Value, ValueType,
+    Vec3Curve, Vec3Range,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -188,6 +189,23 @@ impl CompiledCurve {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct CompiledVec3Curve {
+    pub curves: [CompiledCurve; 3],
+}
+
+impl CompiledVec3Curve {
+    pub fn compile(curve: &Vec3Curve) -> Self {
+        Self {
+            curves: std::array::from_fn(|axis| CompiledCurve::compile(&curve.curves[axis])),
+        }
+    }
+
+    pub fn sample(&self, time: f32) -> [f32; 3] {
+        std::array::from_fn(|axis| self.curves[axis].sample(time))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct GradientSegment {
     pub start_time: f32,
     pub end_time: f32,
@@ -264,6 +282,8 @@ pub enum RuntimeValue {
     Scalar(f32),
     Vec2([f32; 2]),
     Vec3([f32; 3]),
+    Vec3Range(Vec3Range),
+    Vec3Curve(CompiledVec3Curve),
     Vec4([f32; 4]),
     Text(String),
     Range(ScalarRange),
@@ -282,6 +302,8 @@ impl RuntimeValue {
             Value::Scalar(value) => Self::Scalar(*value),
             Value::Vec2(value) => Self::Vec2(*value),
             Value::Vec3(value) => Self::Vec3(*value),
+            Value::Vec3Range(value) => Self::Vec3Range(*value),
+            Value::Vec3Curve(value) => Self::Vec3Curve(CompiledVec3Curve::compile(value)),
             Value::Vec4(value) => Self::Vec4(*value),
             Value::Text(value) => Self::Text(value.clone()),
             Value::Range(value) => Self::Range(*value),
@@ -301,6 +323,8 @@ impl RuntimeValue {
             Self::Scalar(_) => ValueType::Scalar,
             Self::Vec2(_) => ValueType::Vec2,
             Self::Vec3(_) => ValueType::Vec3,
+            Self::Vec3Range(_) => ValueType::Vec3Range,
+            Self::Vec3Curve(_) => ValueType::Vec3Curve,
             Self::Vec4(_) => ValueType::Vec4,
             Self::Text(_) => ValueType::Text,
             Self::Range(_) => ValueType::Range,
@@ -335,6 +359,8 @@ runtime_parameter_value!(u32, U32);
 runtime_parameter_value!(f32, Scalar);
 runtime_parameter_value!([f32; 2], Vec2);
 runtime_parameter_value!([f32; 3], Vec3);
+runtime_parameter_value!(Vec3Range, Vec3Range);
+runtime_parameter_value!(CompiledVec3Curve, Vec3Curve);
 runtime_parameter_value!([f32; 4], Vec4);
 runtime_parameter_value!(String, Text);
 runtime_parameter_value!(ScalarRange, Range);
@@ -350,6 +376,16 @@ pub enum ScalarSource {
     RandomRange(Expression<ScalarRange>),
     Curve {
         value: Expression<CompiledCurve>,
+        domain: PropertyEvaluationDomain,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum VectorSource {
+    Constant(Expression<[f32; 3]>),
+    RandomRange(Expression<Vec3Range>),
+    Curve {
+        value: Expression<CompiledVec3Curve>,
         domain: PropertyEvaluationDomain,
     },
 }
@@ -376,7 +412,7 @@ pub enum Instruction {
     },
     Motion {
         source: ModuleId,
-        gravity: Expression<[f32; 3]>,
+        gravity: VectorSource,
         drag: ScalarSource,
         turbulence: ScalarSource,
     },
@@ -1119,7 +1155,7 @@ fn evaluate_with_parameters(
             continue;
         };
         let motion = motion(&emitter.execution, parameters).unwrap_or(Motion {
-            gravity: [0.0, 0.0, 0.0],
+            gravity: ResolvedVectorSource::Constant([0.0, 0.0, 0.0]),
             drag: ResolvedScalarSource::Constant(0.0),
             turbulence: ResolvedScalarSource::Constant(0.0),
         });
@@ -1162,6 +1198,15 @@ fn evaluate_with_parameters(
                 local_time / emitter.duration.max(f32::EPSILON),
                 hash01(index, 13, seed),
             );
+            let gravity = motion.gravity.sample(
+                normalized_age,
+                local_time / emitter.duration.max(f32::EPSILON),
+                [
+                    hash01(index, 14, seed),
+                    hash01(index, 15, seed),
+                    hash01(index, 16, seed),
+                ],
+            );
             let direction = sample_direction(
                 initializer.direction,
                 initializer.spread_degrees,
@@ -1185,18 +1230,9 @@ fn evaluate_with_parameters(
                     * (age * 7.7 + hash01(index, 10, seed) * std::f32::consts::TAU).sin(),
             ];
             let local_position = [
-                origin[0]
-                    + direction[0] * travel
-                    + motion.gravity[0] * age * age * 0.5
-                    + turbulence[0],
-                origin[1]
-                    + direction[1] * travel
-                    + motion.gravity[1] * age * age * 0.5
-                    + turbulence[1],
-                origin[2]
-                    + direction[2] * travel
-                    + motion.gravity[2] * age * age * 0.5
-                    + turbulence[2],
+                origin[0] + direction[0] * travel + gravity[0] * age * age * 0.5 + turbulence[0],
+                origin[1] + direction[1] * travel + gravity[1] * age * age * 0.5 + turbulence[1],
+                origin[2] + direction[2] * travel + gravity[2] * age * age * 0.5 + turbulence[2],
             ];
             let position = transform_emitter_position(emitter.transform, local_position);
             let mut color = appearance.color.sample(normalized_age);
@@ -1288,6 +1324,48 @@ enum ResolvedScalarSource<'a> {
     Constant(f32),
     RandomRange(ScalarRange),
     Curve(&'a CompiledCurve, PropertyEvaluationDomain),
+}
+
+#[derive(Clone, Copy)]
+enum ResolvedVectorSource<'a> {
+    Constant([f32; 3]),
+    RandomRange(Vec3Range),
+    Curve(&'a CompiledVec3Curve, PropertyEvaluationDomain),
+}
+
+fn resolve_vector_source<'a>(
+    source: &'a VectorSource,
+    parameters: &'a [RuntimeValue],
+) -> ResolvedVectorSource<'a> {
+    match source {
+        VectorSource::Constant(value) => ResolvedVectorSource::Constant(*value.resolve(parameters)),
+        VectorSource::RandomRange(value) => {
+            ResolvedVectorSource::RandomRange(*value.resolve(parameters))
+        }
+        VectorSource::Curve { value, domain } => {
+            ResolvedVectorSource::Curve(value.resolve(parameters), *domain)
+        }
+    }
+}
+
+impl ResolvedVectorSource<'_> {
+    fn sample(
+        self,
+        normalized_particle_life: f32,
+        normalized_emitter_time: f32,
+        random: [f32; 3],
+    ) -> [f32; 3] {
+        match self {
+            Self::Constant(value) => value,
+            Self::RandomRange(range) => range.sample(random),
+            Self::Curve(curve, PropertyEvaluationDomain::ParticleLife) => {
+                curve.sample(normalized_particle_life)
+            }
+            Self::Curve(curve, PropertyEvaluationDomain::EmitterTime) => {
+                curve.sample(normalized_emitter_time)
+            }
+        }
+    }
 }
 
 fn resolve_scalar_source<'a>(
@@ -1426,7 +1504,7 @@ fn initializer(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Init
 }
 
 struct Motion<'a> {
-    gravity: [f32; 3],
+    gravity: ResolvedVectorSource<'a>,
     drag: ResolvedScalarSource<'a>,
     turbulence: ResolvedScalarSource<'a>,
 }
@@ -1441,7 +1519,7 @@ fn motion<'a>(plan: &'a ExecutionPlan, parameters: &'a [RuntimeValue]) -> Option
                 turbulence,
                 ..
             } => Some(Motion {
-                gravity: *gravity.resolve(parameters),
+                gravity: resolve_vector_source(gravity, parameters),
                 drag: resolve_scalar_source(drag, parameters),
                 turbulence: resolve_scalar_source(turbulence, parameters),
             }),

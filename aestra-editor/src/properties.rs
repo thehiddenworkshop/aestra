@@ -14,7 +14,7 @@ use crate::*;
 use aestra_bevy::{
     ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, ColorKey, Curve,
     CurveKey, EffectAsset, EffectClip, EffectClipId, EffectParameter, Gradient, MarkerId,
-    MarkerTimeReference, ParameterId, ScalarRange, ValueType,
+    MarkerTimeReference, ParameterId, ScalarRange, ValueType, Vec3Curve, Vec3Range,
 };
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, ModuleRegistry,
@@ -962,15 +962,33 @@ fn initial_property_source_value(
         Value::Curve(curve) => Some(curve.sample(0.0)),
         _ => None,
     };
+    let vector = match current {
+        Value::Vec3(value) => Some(*value),
+        Value::Vec3Range(range) => Some(std::array::from_fn(|axis| {
+            (range.min[axis] + range.max[axis]) * 0.5
+        })),
+        Value::Vec3Curve(curves) => Some(curves.sample(0.0)),
+        _ => None,
+    };
     match source {
         PropertySourceKind::RandomRange => {
-            let value = scalar?;
             let (step, min, max) = numeric_source_limits(&input.control)?;
+            if let Some(value) = vector {
+                let low = value
+                    .map(|value| min.map_or(value - step, |minimum| (value - step).max(minimum)));
+                let high = value
+                    .map(|value| max.map_or(value + step, |maximum| (value + step).min(maximum)));
+                return Some(Value::Vec3Range(Vec3Range::new(low, high)));
+            }
+            let value = scalar?;
             let low = min.map_or(value - step, |minimum| (value - step).max(minimum));
             let high = max.map_or(value + step, |maximum| (value + step).min(maximum));
             Some(Value::Range(ScalarRange::new(low.min(high), high.max(low))))
         }
         PropertySourceKind::Curve(_) => {
+            if let Some(value) = vector {
+                return Some(Value::Vec3Curve(Vec3Curve::constant(value)));
+            }
             let value = scalar?;
             Some(Value::Curve(Curve::normalized(
                 vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 0.0)],
@@ -993,9 +1011,9 @@ fn initial_property_source_value(
 
 fn numeric_source_limits(control: &InputControl) -> Option<(f32, Option<f32>, Option<f32>)> {
     match control {
-        InputControl::Number { step, min, max } | InputControl::Range { step, min, max } => {
-            Some((*step, *min, *max))
-        }
+        InputControl::Number { step, min, max }
+        | InputControl::Range { step, min, max }
+        | InputControl::Vector { step, min, max } => Some((*step, *min, *max)),
         InputControl::Curve { step, min, max } => Some((*step, Some(*min), Some(*max))),
         _ => None,
     }
@@ -2042,6 +2060,110 @@ mod tests {
             unreachable!()
         };
         assert_eq!(curve.output_range(), ScalarRange::new(initial_min, 60.0));
+    }
+
+    #[test]
+    fn gravity_source_switching_preserves_per_axis_random_and_curve_values() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        clear_effect_parameters_and_bindings(&mut session);
+        let registry = ModuleRegistry::builtin();
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module.parameter_value("gravity").is_some())
+            .unwrap()
+            .id;
+        let module_type = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap()
+            .module_type
+            .clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "gravity")
+            .unwrap() as u8;
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::RandomRange,
+            &test_localizer(),
+        ));
+        let random_control = PropertiesNumberControl {
+            module,
+            parameter: "gravity",
+            component: 4,
+            kind: PropertiesNumberKind::Vec3Range,
+            step: 5.0,
+            min: None,
+            max: None,
+        };
+        assert!(apply_properties_number(
+            &mut session,
+            random_control,
+            7.0,
+            &test_localizer(),
+        ));
+        let random = properties_module_parameter(&session, module, "gravity").unwrap();
+        let Value::Vec3Range(range) = random else {
+            panic!("gravity random source should be vector-typed");
+        };
+        assert_eq!(range.max[1], 7.0);
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Curve(InputEvaluationDomain::ParticleLife),
+            &test_localizer(),
+        ));
+        let curve_control = PropertiesNumberControl {
+            module,
+            parameter: "gravity",
+            component: 5,
+            kind: PropertiesNumberKind::Vec3CurveOutputRange,
+            step: 5.0,
+            min: None,
+            max: None,
+        };
+        assert!(apply_properties_number(
+            &mut session,
+            curve_control,
+            20.0,
+            &test_localizer(),
+        ));
+        let Value::Vec3Curve(curves) =
+            properties_module_parameter(&session, module, "gravity").unwrap()
+        else {
+            panic!("gravity curve source should be vector-typed");
+        };
+        assert_eq!(curves.curves[2].output_range().max, 20.0);
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::RandomRange,
+            &test_localizer(),
+        ));
+        let Value::Vec3Range(range) =
+            properties_module_parameter(&session, module, "gravity").unwrap()
+        else {
+            unreachable!()
+        };
+        assert_eq!(range.max[1], 7.0);
+        assert!(session.effect.validation_report().is_valid());
     }
 
     #[test]
@@ -3699,6 +3821,16 @@ fn properties_number_input_value(
                 range.max
             }))
         }
+        (PropertiesNumberKind::Vec3CurveOutputRange, Value::Vec3Curve(curves)) => {
+            let axis = control.component as usize / 2;
+            let bound = control.component as usize % 2;
+            let range = curves.curves.get(axis)?.output_range();
+            Some(NumberInputValue::F32(if bound == 0 {
+                range.min
+            } else {
+                range.max
+            }))
+        }
         (PropertiesNumberKind::Vector, Value::Vec2(value)) => value
             .get(control.component as usize)
             .copied()
@@ -3720,6 +3852,15 @@ fn properties_number_input_value(
         }
         (PropertiesNumberKind::RangeConstant, Value::Range(value)) => {
             Some(NumberInputValue::F32((value.min + value.max) * 0.5))
+        }
+        (PropertiesNumberKind::Vec3Range, Value::Vec3Range(value)) => {
+            let component = control.component as usize;
+            let axis = component % 3;
+            Some(NumberInputValue::F32(if component < 3 {
+                value.min[axis]
+            } else {
+                value.max[axis]
+            }))
         }
         (PropertiesNumberKind::Shape, Value::Shape(shape)) => {
             shape_dimension(shape, control.component).map(NumberInputValue::F32)
@@ -5595,6 +5736,20 @@ fn updated_properties_number_value(
             curve.output_range = Some(range);
             Some(Value::Curve(curve))
         }
+        (PropertiesNumberKind::Vec3CurveOutputRange, Value::Vec3Curve(mut curves)) => {
+            let axis = control.component as usize / 2;
+            let bound = control.component as usize % 2;
+            let curve = curves.curves.get_mut(axis)?;
+            curve.normalize_output();
+            let mut range = curve.output_range();
+            if bound == 0 {
+                range.min = value.min(range.max);
+            } else {
+                range.max = value.max(range.min);
+            }
+            curve.output_range = Some(range);
+            Some(Value::Vec3Curve(curves))
+        }
         (PropertiesNumberKind::Vector, Value::Vec2(mut vector)) => {
             let component = vector.get_mut(control.component as usize)?;
             *component = value;
@@ -5620,6 +5775,16 @@ fn updated_properties_number_value(
         }
         (PropertiesNumberKind::RangeConstant, Value::Range(_)) => {
             Some(Value::Range(ScalarRange::new(value, value)))
+        }
+        (PropertiesNumberKind::Vec3Range, Value::Vec3Range(mut range)) => {
+            let component = control.component as usize;
+            let axis = component % 3;
+            if component < 3 {
+                range.min[axis] = value.min(range.max[axis]);
+            } else {
+                range.max[axis] = value.max(range.min[axis]);
+            }
+            Some(Value::Vec3Range(range))
         }
         (PropertiesNumberKind::Shape, Value::Shape(shape)) => {
             shape_with_dimension(shape, control.component, value).map(Value::Shape)
@@ -8066,6 +8231,27 @@ fn spawn_input_control(
         public_module_input_control(session, module, input, input_index, &value, localizer);
     let source = property_source_for_input(module, input, &value);
     if input.sources.len() > 1
+        && matches!(&input.control, InputControl::Vector { .. })
+        && matches!(
+            &value,
+            Value::Vec3(_) | Value::Vec3Range(_) | Value::Vec3Curve(_)
+        )
+    {
+        spawn_properties_vector_source_control(
+            parent,
+            module.id,
+            input,
+            input_index,
+            &display_name,
+            property_tooltip(&description, input.unit, localizer),
+            public,
+            source,
+            asset_server,
+            localizer,
+        );
+        return;
+    }
+    if input.sources.len() > 1
         && matches!(&input.control, InputControl::Number { .. })
         && matches!(&value, Value::Scalar(_))
     {
@@ -8354,7 +8540,11 @@ fn public_module_input_control(
             )
             | (
                 InputControl::Vector { .. },
-                Value::Vec2(_) | Value::Vec3(_) | Value::Vec4(_)
+                Value::Vec2(_)
+                    | Value::Vec3(_)
+                    | Value::Vec4(_)
+                    | Value::Vec3Range(_)
+                    | Value::Vec3Curve(_)
             )
             | (InputControl::Range { .. }, Value::Range(_))
     );
@@ -8438,6 +8628,184 @@ fn sync_module_input_public_toggle_visibility(
             Visibility::Hidden
         };
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_properties_vector_source_control(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: &InputMetadata,
+    input_index: u8,
+    title: &str,
+    tooltip: EditorTooltip,
+    public: Option<ModuleInputPublicControl>,
+    source: PropertySourceKind,
+    asset_server: &AssetServer,
+    localizer: &Localizer,
+) {
+    let InputControl::Vector { step, min, max } = input.control else {
+        return;
+    };
+    parent
+        .spawn((
+            tooltip,
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                ..default()
+            },
+        ))
+        .with_children(|column| {
+            column
+                .spawn((
+                    ModuleInputPublicRow,
+                    RelativeCursorPosition::default(),
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(27.0),
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(6.0),
+                        ..default()
+                    },
+                ))
+                .with_children(|row| {
+                    spawn_property_label(row, title);
+                    if source == PropertySourceKind::Constant {
+                        row.spawn(Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            column_gap: Val::Px(4.0),
+                            ..default()
+                        })
+                        .with_children(|controls| {
+                            for (axis, component, sigil) in [
+                                ("X", 0, tokens::TEXT_INPUT_X_AXIS),
+                                ("Y", 1, tokens::TEXT_INPUT_Y_AXIS),
+                                ("Z", 2, tokens::TEXT_INPUT_Z_AXIS),
+                            ] {
+                                controls
+                                    .spawn(Node {
+                                        flex_grow: 1.0,
+                                        flex_basis: Val::Px(0.0),
+                                        min_width: Val::Px(38.0),
+                                        ..default()
+                                    })
+                                    .with_children(|wrapper| {
+                                        wrapper
+                                            .spawn_empty()
+                                            .apply_scene(ui_shell::feathers_labeled_scalar_input(
+                                                axis, sigil,
+                                            ))
+                                            .insert((
+                                                PropertiesNumberControl {
+                                                    module,
+                                                    parameter: input.name,
+                                                    component,
+                                                    kind: PropertiesNumberKind::Vector,
+                                                    step,
+                                                    min,
+                                                    max,
+                                                },
+                                                AccessibleLabel(format!("{title} {axis}")),
+                                            ));
+                                    });
+                            }
+                        });
+                    } else {
+                        row.spawn(Node {
+                            flex_grow: 1.0,
+                            min_width: Val::Px(0.0),
+                            ..default()
+                        });
+                        if matches!(source, PropertySourceKind::Curve(_)) {
+                            spawn_curve_source_editor_button(
+                                row,
+                                module,
+                                input_index,
+                                title,
+                                asset_server,
+                            );
+                        }
+                    }
+                    spawn_module_input_public_toggle(row, public);
+                    spawn_property_source_menu(
+                        row,
+                        module,
+                        input_index,
+                        source,
+                        &input.sources,
+                        asset_server,
+                        localizer,
+                    );
+                });
+
+            if source != PropertySourceKind::Constant {
+                for (axis_index, axis) in ["X", "Y", "Z"].into_iter().enumerate() {
+                    column
+                        .spawn(Node {
+                            width: Val::Percent(100.0),
+                            min_height: Val::Px(27.0),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(4.0),
+                            ..default()
+                        })
+                        .with_children(|row| {
+                            row.spawn((
+                                Text::new(axis),
+                                ThemedText,
+                                TextFont {
+                                    font_size: FontSize::Px(10.0),
+                                    ..default()
+                                },
+                                Node {
+                                    width: Val::Percent(36.0),
+                                    min_width: Val::Px(82.0),
+                                    padding: UiRect::left(Val::Px(12.0)),
+                                    ..default()
+                                },
+                            ));
+                            for (bound, label) in ["MIN", "MAX"].into_iter().enumerate() {
+                                let (component, kind) = if source == PropertySourceKind::RandomRange
+                                {
+                                    (axis_index + bound * 3, PropertiesNumberKind::Vec3Range)
+                                } else {
+                                    (
+                                        axis_index * 2 + bound,
+                                        PropertiesNumberKind::Vec3CurveOutputRange,
+                                    )
+                                };
+                                row.spawn(Node {
+                                    flex_grow: 1.0,
+                                    flex_basis: Val::Px(0.0),
+                                    min_width: Val::Px(44.0),
+                                    ..default()
+                                })
+                                .with_children(|wrapper| {
+                                    wrapper
+                                        .spawn_empty()
+                                        .apply_scene(ui_shell::feathers_labeled_scalar_input(
+                                            label,
+                                            tokens::TEXT_INPUT_BG,
+                                        ))
+                                        .insert((
+                                            PropertiesNumberControl {
+                                                module,
+                                                parameter: input.name,
+                                                component: component as u8,
+                                                kind,
+                                                step,
+                                                min,
+                                                max,
+                                            },
+                                            AccessibleLabel(format!("{title} {axis} {label}")),
+                                        ));
+                                });
+                            }
+                        });
+                }
+            }
+        });
 }
 
 fn spawn_properties_range_source_control(
@@ -10039,9 +10407,11 @@ enum PropertiesNumberKind {
     Scalar,
     CurveConstant,
     CurveOutputRange,
+    Vec3CurveOutputRange,
     Vector,
     Range,
     RangeConstant,
+    Vec3Range,
     Shape,
 }
 

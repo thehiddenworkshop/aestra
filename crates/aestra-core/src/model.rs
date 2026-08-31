@@ -1729,6 +1729,8 @@ pub enum Value {
     Scalar(f32),
     Vec2([f32; 2]),
     Vec3([f32; 3]),
+    Vec3Range(Vec3Range),
+    Vec3Curve(Vec3Curve),
     Vec4([f32; 4]),
     Text(String),
     Range(ScalarRange),
@@ -1772,7 +1774,11 @@ impl PropertySource {
             Value::Range(range) if (range.max - range.min).abs() > f32::EPSILON => {
                 Self::RandomRange
             }
+            Value::Vec3Range(range) if range.min != range.max => Self::RandomRange,
             Value::Curve(curve) if curve.keys.len() > 1 => {
+                Self::Curve(PropertyEvaluationDomain::ParticleLife)
+            }
+            Value::Vec3Curve(curve) if curve.curves.iter().any(|axis| axis.keys.len() > 1) => {
                 Self::Curve(PropertyEvaluationDomain::ParticleLife)
             }
             Value::Gradient(gradient) if gradient.keys.len() > 1 => {
@@ -1786,8 +1792,8 @@ impl PropertySource {
         matches!(
             (self, value),
             (Self::Constant, _)
-                | (Self::RandomRange, Value::Range(_))
-                | (Self::Curve(_), Value::Curve(_))
+                | (Self::RandomRange, Value::Range(_) | Value::Vec3Range(_))
+                | (Self::Curve(_), Value::Curve(_) | Value::Vec3Curve(_))
                 | (Self::Gradient(_), Value::Gradient(_))
         )
     }
@@ -1800,6 +1806,8 @@ pub enum ValueType {
     Scalar,
     Vec2,
     Vec3,
+    Vec3Range,
+    Vec3Curve,
     Vec4,
     Text,
     Range,
@@ -1819,6 +1827,8 @@ impl Value {
             Self::Scalar(_) => ValueType::Scalar,
             Self::Vec2(_) => ValueType::Vec2,
             Self::Vec3(_) => ValueType::Vec3,
+            Self::Vec3Range(_) => ValueType::Vec3Range,
+            Self::Vec3Curve(_) => ValueType::Vec3Curve,
             Self::Vec4(_) => ValueType::Vec4,
             Self::Text(_) => ValueType::Text,
             Self::Range(_) => ValueType::Range,
@@ -1836,6 +1846,11 @@ impl Value {
     pub fn regenerate_ids(&mut self) {
         match self {
             Value::Curve(curve) => curve.id = CurveId::new(),
+            Value::Vec3Curve(curve) => {
+                for axis in &mut curve.curves {
+                    axis.id = CurveId::new();
+                }
+            }
             Value::Gradient(gradient) => gradient.id = GradientId::new(),
             _ => {}
         }
@@ -2367,6 +2382,48 @@ impl ScalarRange {
     }
 }
 
+/// Per-component bounds for a deterministic random 3D vector source.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct Vec3Range {
+    pub min: [f32; 3],
+    pub max: [f32; 3],
+}
+
+impl Vec3Range {
+    pub const fn new(min: [f32; 3], max: [f32; 3]) -> Self {
+        Self { min, max }
+    }
+
+    pub fn sample(self, random: [f32; 3]) -> [f32; 3] {
+        std::array::from_fn(|axis| {
+            self.min[axis] + (self.max[axis] - self.min[axis]) * random[axis].clamp(0.0, 1.0)
+        })
+    }
+}
+
+/// Three independently editable scalar curves evaluated in one shared domain.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Vec3Curve {
+    pub curves: [Curve; 3],
+}
+
+impl Vec3Curve {
+    pub fn constant(value: [f32; 3]) -> Self {
+        Self {
+            curves: std::array::from_fn(|axis| {
+                Curve::normalized(
+                    vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 0.0)],
+                    ScalarRange::new(value[axis], value[axis]),
+                )
+            }),
+        }
+    }
+
+    pub fn sample(&self, time: f32) -> [f32; 3] {
+        std::array::from_fn(|axis| self.curves[axis].sample(time))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Curve {
     pub id: CurveId,
@@ -2632,6 +2689,28 @@ fn validate_value(
         }
         Value::Vec3(value) if value.iter().any(|item| !item.is_finite()) => {
             invalid_value(report, path, "vector value must be finite");
+        }
+        Value::Vec3Range(range) => {
+            for axis in 0..3 {
+                validate_range(
+                    ScalarRange::new(range.min[axis], range.max[axis]),
+                    &format!("{path}.{axis}"),
+                    "vector range",
+                    report,
+                );
+            }
+        }
+        Value::Vec3Curve(curve) => {
+            for (axis, value) in curve.curves.iter().enumerate() {
+                let axis_path = format!("{path}.curves[{axis}]");
+                validate_curve(value, &axis_path, report);
+                register_id(
+                    report,
+                    semantic_ids,
+                    value.id.as_uuid().as_u128(),
+                    format!("{axis_path}.id"),
+                );
+            }
         }
         Value::Vec4(value) if value.iter().any(|item| !item.is_finite()) => {
             invalid_value(report, path, "vector value must be finite");

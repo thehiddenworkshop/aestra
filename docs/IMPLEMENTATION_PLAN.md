@@ -115,8 +115,11 @@ architecture vision; this file is the shorter delivery plan.
   destructively converting one representation into another. The first end-to-end scalar source
   slice gives Spawn Rate Constant, deterministic Random Range, and Curve over Emitter Time modes;
   Drag and Turbulence now use the same reusable source pipeline for Constant, stable per-particle
-  Random Range, and Curve over Particle Life. These properties run across Properties, Timeline,
-  Curves, serialization, CPU compilation/execution, and native WESL.
+  Random Range, and Curve over Particle Life. Gravity extends that contract to vectors: Constant
+  XYZ, stable per-particle XYZ Random Range, and independent X/Y/Z curves over Particle Life,
+  including compact per-axis Properties controls and channel editing in Curves. These properties
+  run across serialization, source-preserving authoring, CPU compilation/execution, native GPU
+  packing, and WESL; scalar curve/gradient sources also project into Timeline automation lanes.
   Public bindings and reusable-effect overrides use the active source's concrete value type.
   Top-level local emitter tracks can now
   be multi-selected and extracted into a collision-safe reusable effect asset, optionally replacing

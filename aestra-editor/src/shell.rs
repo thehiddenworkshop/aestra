@@ -558,7 +558,17 @@ pub(crate) fn format_value(value: Value) -> String {
         ),
         Value::Text(value) => value,
         Value::Range(value) => format!("{:.2} – {:.2}", value.min, value.max),
+        Value::Vec3Range(value) => format!(
+            "[{:.1}, {:.1}, {:.1}] – [{:.1}, {:.1}, {:.1}]",
+            value.min[0], value.min[1], value.min[2], value.max[0], value.max[1], value.max[2]
+        ),
         Value::Curve(value) => format!("Curve · {} keys", value.keys.len()),
+        Value::Vec3Curve(value) => format!(
+            "XYZ curves · {}/{}/{} keys",
+            value.curves[0].keys.len(),
+            value.curves[1].keys.len(),
+            value.curves[2].keys.len()
+        ),
         Value::Gradient(value) => format!("Gradient · {} keys", value.keys.len()),
         Value::Shape(EmitterShape::Point) => "Point".into(),
         Value::Shape(EmitterShape::Circle { radius }) => format!("Circle · r {radius:.1}"),

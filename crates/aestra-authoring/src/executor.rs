@@ -1267,6 +1267,8 @@ fn value_type(value: &Value) -> &'static str {
         Value::Scalar(_) => "scalar",
         Value::Vec2(_) => "vec2",
         Value::Vec3(_) => "vec3",
+        Value::Vec3Range(_) => "vec3 range",
+        Value::Vec3Curve(_) => "vec3 curve",
         Value::Vec4(_) => "vec4",
         Value::Text(_) => "text",
         Value::Range(_) => "range",

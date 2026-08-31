@@ -4,11 +4,11 @@ mod render;
 
 use aestra_core::{
     BlendMode, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, PropertyEvaluationDomain,
-    ScalarRange,
+    ScalarRange, Vec3Range,
 };
 use aestra_runtime::{
-    CompiledCurve, CompiledGradient, EffectInstance, ExecutionPlan, Instruction, MaterialColorPlan,
-    RendererPlanKind, RuntimeValue, ScalarSource,
+    CompiledCurve, CompiledGradient, CompiledVec3Curve, EffectInstance, ExecutionPlan, Instruction,
+    MaterialColorPlan, RendererPlanKind, RuntimeValue, ScalarSource, VectorSource,
 };
 use bevy::{
     asset::{RenderAssetUsages, embedded_asset},
@@ -118,7 +118,10 @@ pub struct GpuEmitter {
     pub angular_velocity: Vec2,
     pub _range_padding: Vec2,
     pub gravity: Vec3,
-    pub _gravity_padding: f32,
+    pub gravity_source: u32,
+    pub gravity_max: Vec3,
+    pub _gravity_max_padding: f32,
+    pub gravity_curves: [GpuCurve; 3],
     pub turbulence: Vec2,
     pub turbulence_source: u32,
     pub _turbulence_padding: u32,
@@ -334,7 +337,7 @@ impl GpuEffectArtifact {
                 shape,
                 init.lifetime,
                 init.speed,
-                motion.gravity,
+                maximum_absolute_vector_source(motion.gravity),
                 maximum_absolute_scalar_source(motion.turbulence),
                 appearance.size,
             );
@@ -354,6 +357,8 @@ impl GpuEffectArtifact {
             let (drag, drag_source, drag_curve) = pack_scalar_source(motion.drag)?;
             let (turbulence, turbulence_source, turbulence_curve) =
                 pack_scalar_source(motion.turbulence)?;
+            let (gravity, gravity_source, gravity_max, gravity_curves) =
+                pack_vector_source(motion.gravity)?;
             emitters.push(GpuEmitter {
                 slot_offset,
                 max_particles: emitter.max_particles,
@@ -379,8 +384,11 @@ impl GpuEffectArtifact {
                 speed: Vec2::new(init.speed.min, init.speed.max),
                 angular_velocity: Vec2::new(init.angular_velocity.min, init.angular_velocity.max),
                 _range_padding: Vec2::ZERO,
-                gravity: Vec3::from_array(motion.gravity),
-                _gravity_padding: 0.0,
+                gravity,
+                gravity_source,
+                gravity_max,
+                _gravity_max_padding: 0.0,
+                gravity_curves,
                 turbulence,
                 turbulence_source,
                 _turbulence_padding: 0,
@@ -1226,6 +1234,86 @@ enum ResolvedGpuScalarSource<'a> {
     Curve(&'a CompiledCurve, PropertyEvaluationDomain),
 }
 
+#[derive(Clone, Copy)]
+enum ResolvedGpuVectorSource<'a> {
+    Constant([f32; 3]),
+    RandomRange(Vec3Range),
+    Curve(&'a CompiledVec3Curve, PropertyEvaluationDomain),
+}
+
+fn resolve_gpu_vector_source<'a>(
+    source: &'a VectorSource,
+    values: &'a [RuntimeValue],
+) -> ResolvedGpuVectorSource<'a> {
+    match source {
+        VectorSource::Constant(value) => ResolvedGpuVectorSource::Constant(*value.resolve(values)),
+        VectorSource::RandomRange(value) => {
+            ResolvedGpuVectorSource::RandomRange(*value.resolve(values))
+        }
+        VectorSource::Curve { value, domain } => {
+            ResolvedGpuVectorSource::Curve(value.resolve(values), *domain)
+        }
+    }
+}
+
+fn maximum_absolute_curve(curve: &CompiledCurve) -> f32 {
+    curve
+        .first()
+        .map_or(0.0, |(_, value)| value.abs())
+        .max(curve.last_value().abs())
+        .max(
+            curve
+                .segments()
+                .iter()
+                .map(|segment| segment.start_value.abs().max(segment.end_value.abs()))
+                .fold(0.0, f32::max),
+        )
+}
+
+fn maximum_absolute_vector_source(source: ResolvedGpuVectorSource<'_>) -> [f32; 3] {
+    match source {
+        ResolvedGpuVectorSource::Constant(value) => value.map(f32::abs),
+        ResolvedGpuVectorSource::RandomRange(range) => {
+            std::array::from_fn(|axis| range.min[axis].abs().max(range.max[axis].abs()))
+        }
+        ResolvedGpuVectorSource::Curve(curve, _) => {
+            std::array::from_fn(|axis| maximum_absolute_curve(&curve.curves[axis]))
+        }
+    }
+}
+
+fn pack_vector_source(
+    source: ResolvedGpuVectorSource<'_>,
+) -> Result<(Vec3, u32, Vec3, [GpuCurve; 3]), GpuArtifactError> {
+    match source {
+        ResolvedGpuVectorSource::Constant(value) => Ok((
+            Vec3::from_array(value),
+            0,
+            Vec3::from_array(value),
+            [GpuCurve::default(); 3],
+        )),
+        ResolvedGpuVectorSource::RandomRange(range) => Ok((
+            Vec3::from_array(range.min),
+            1,
+            Vec3::from_array(range.max),
+            [GpuCurve::default(); 3],
+        )),
+        ResolvedGpuVectorSource::Curve(curve, domain) => Ok((
+            Vec3::ZERO,
+            match domain {
+                PropertyEvaluationDomain::EmitterTime => 2,
+                PropertyEvaluationDomain::ParticleLife => 3,
+            },
+            Vec3::ZERO,
+            [
+                pack_curve(&curve.curves[0])?,
+                pack_curve(&curve.curves[1])?,
+                pack_curve(&curve.curves[2])?,
+            ],
+        )),
+    }
+}
+
 fn resolve_gpu_scalar_source<'a>(
     source: &'a ScalarSource,
     values: &'a [RuntimeValue],
@@ -1245,17 +1333,7 @@ fn maximum_absolute_scalar_source(source: ResolvedGpuScalarSource<'_>) -> f32 {
     match source {
         ResolvedGpuScalarSource::Constant(value) => value.abs(),
         ResolvedGpuScalarSource::RandomRange(range) => range.min.abs().max(range.max.abs()),
-        ResolvedGpuScalarSource::Curve(curve, _) => curve
-            .first()
-            .map_or(0.0, |(_, value)| value.abs())
-            .max(curve.last_value().abs())
-            .max(
-                curve
-                    .segments()
-                    .iter()
-                    .map(|segment| segment.start_value.abs().max(segment.end_value.abs()))
-                    .fold(0.0, f32::max),
-            ),
+        ResolvedGpuScalarSource::Curve(curve, _) => maximum_absolute_curve(curve),
     }
 }
 
@@ -1337,7 +1415,7 @@ fn initialize(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuInitia
 }
 
 struct GpuMotion<'a> {
-    gravity: [f32; 3],
+    gravity: ResolvedGpuVectorSource<'a>,
     drag: ResolvedGpuScalarSource<'a>,
     turbulence: ResolvedGpuScalarSource<'a>,
 }
@@ -1345,7 +1423,7 @@ struct GpuMotion<'a> {
 impl Default for GpuMotion<'_> {
     fn default() -> Self {
         Self {
-            gravity: [0.0; 3],
+            gravity: ResolvedGpuVectorSource::Constant([0.0; 3]),
             drag: ResolvedGpuScalarSource::Constant(0.0),
             turbulence: ResolvedGpuScalarSource::Constant(0.0),
         }
@@ -1362,7 +1440,7 @@ fn motion<'a>(plan: &'a ExecutionPlan, values: &'a [RuntimeValue]) -> Option<Gpu
                 turbulence,
                 ..
             } => Some(GpuMotion {
-                gravity: *gravity.resolve(values),
+                gravity: resolve_gpu_vector_source(gravity, values),
                 drag: resolve_gpu_scalar_source(drag, values),
                 turbulence: resolve_gpu_scalar_source(turbulence, values),
             }),
@@ -1405,7 +1483,7 @@ mod tests {
         AssetDefinition, BlendMode, Curve, CurveKey, EffectAsset, Emitter, MODULE_EMISSION,
         MODULE_MOTION, MaterialDefinition, MaterialInput, MaterialProperties,
         PropertyEvaluationDomain, PropertySource, PropertySourceValue, RendererInstance, UvRect,
-        Value,
+        Value, Vec3Curve,
     };
     use std::sync::Arc;
 
@@ -1706,6 +1784,16 @@ mod tests {
                 Value::Range(ScalarRange::new(1.0, 5.0)),
             )],
         );
+        motion
+            .property_sources
+            .insert("gravity".into(), curve_source);
+        motion.property_source_values.insert(
+            "gravity".into(),
+            vec![PropertySourceValue::new(
+                curve_source,
+                Value::Vec3Curve(Vec3Curve::constant([2.0, -4.0, 6.0])),
+            )],
+        );
 
         let motion = effect.emitters[1]
             .modules
@@ -1735,6 +1823,16 @@ mod tests {
                 )),
             )],
         );
+        motion
+            .property_sources
+            .insert("gravity".into(), PropertySource::RandomRange);
+        motion.property_source_values.insert(
+            "gravity".into(),
+            vec![PropertySourceValue::new(
+                PropertySource::RandomRange,
+                Value::Vec3Range(Vec3Range::new([-3.0, -6.0, 1.0], [4.0, 2.0, 9.0])),
+            )],
+        );
 
         let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
         let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
@@ -1747,12 +1845,19 @@ mod tests {
         assert_eq!(curve.drag_curve.keys[1], Vec2::new(1.0, 4.0));
         assert_eq!(curve.turbulence_source, 1);
         assert_eq!(curve.turbulence, Vec2::new(1.0, 5.0));
+        assert_eq!(curve.gravity_source, 3);
+        assert_eq!(curve.gravity_curves[0].keys[0], Vec2::new(0.0, 2.0));
+        assert_eq!(curve.gravity_curves[1].keys[1], Vec2::new(1.0, -4.0));
+        assert_eq!(curve.gravity_curves[2].keys[0], Vec2::new(0.0, 6.0));
         assert_eq!(random.drag_source, 1);
         assert_eq!(random.drag, Vec2::new(0.25, 1.5));
         assert_eq!(random.turbulence_source, 3);
         assert_eq!(random.turbulence_curve.count, 2);
         assert_eq!(random.turbulence_curve.keys[0], Vec2::new(0.0, 0.0));
         assert_eq!(random.turbulence_curve.keys[1], Vec2::new(1.0, 6.0));
+        assert_eq!(random.gravity_source, 1);
+        assert_eq!(random.gravity, Vec3::new(-3.0, -6.0, 1.0));
+        assert_eq!(random.gravity_max, Vec3::new(4.0, 2.0, 9.0));
     }
 
     #[test]

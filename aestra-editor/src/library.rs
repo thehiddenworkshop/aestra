@@ -3374,6 +3374,11 @@ fn remap_emitter_resources(
 fn remap_value(value: &mut Value, resources: &ExplodedResourceMap) -> Result<(), String> {
     match value {
         Value::Curve(curve) => curve.id = CurveId::new(),
+        Value::Vec3Curve(curve) => {
+            for axis in &mut curve.curves {
+                axis.id = CurveId::new();
+            }
+        }
         Value::Gradient(gradient) => gradient.id = GradientId::new(),
         Value::Parameter(parameter) => *parameter = mapped_parameter(*parameter, resources)?,
         Value::Asset(asset) => *asset = mapped_asset(*asset, resources)?,
@@ -3386,6 +3391,7 @@ fn remap_value(value: &mut Value, resources: &ExplodedResourceMap) -> Result<(),
         | Value::Vec4(_)
         | Value::Text(_)
         | Value::Range(_)
+        | Value::Vec3Range(_)
         | Value::Shape(_) => {}
     }
     Ok(())

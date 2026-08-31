@@ -15,10 +15,10 @@ use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectP
 use aestra_runtime::{
     CompiledAsset, CompiledChoreographyEvent, CompiledCurve, CompiledEffect, CompiledEffectClip,
     CompiledEffectProject, CompiledEmitter, CompiledFlipbook, CompiledGradient, CompiledMaterial,
-    CompiledParameter, CompiledParameterOverride, ExecutionPlan, Expression, Instruction,
-    IrLocation, MaterialColorPlan, OptimizationStats, ParameterSlot, ParticleAttribute,
-    ParticleLayout, RendererPlan, RendererPlanKind, RuntimeParameterValue, RuntimeStage,
-    RuntimeValue, ScalarSource, SimulationSeekMode,
+    CompiledParameter, CompiledParameterOverride, CompiledVec3Curve, ExecutionPlan, Expression,
+    Instruction, IrLocation, MaterialColorPlan, OptimizationStats, ParameterSlot,
+    ParticleAttribute, ParticleLayout, RendererPlan, RendererPlanKind, RuntimeParameterValue,
+    RuntimeStage, RuntimeValue, ScalarSource, SimulationSeekMode, VectorSource,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -969,7 +969,7 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
             turbulence,
         } => Instruction::Motion {
             source: module.id,
-            gravity: expression(module, "gravity", *gravity, context),
+            gravity: vector_source(module, "gravity", *gravity, context)?,
             drag: scalar_source(module, "drag", *drag, context)?,
             turbulence: scalar_source(module, "turbulence", *turbulence, context)?,
         },
@@ -1038,6 +1038,37 @@ fn scalar_source(
             };
             Some(ScalarSource::Curve {
                 value: expression(module, input, CompiledCurve::compile(&curve), context),
+                domain,
+            })
+        }
+        InputSourceKind::Gradient(_) => None,
+    }
+}
+
+fn vector_source(
+    module: &ModuleInstance,
+    input: &str,
+    fallback: [f32; 3],
+    context: &LoweringContext<'_>,
+) -> Option<VectorSource> {
+    match module.property_source(input)? {
+        InputSourceKind::Constant => Some(VectorSource::Constant(expression(
+            module, input, fallback, context,
+        ))),
+        InputSourceKind::RandomRange => {
+            let aestra_core::Value::Vec3Range(range) = module.active_parameter_value(input)? else {
+                return None;
+            };
+            Some(VectorSource::RandomRange(expression(
+                module, input, range, context,
+            )))
+        }
+        InputSourceKind::Curve(domain) => {
+            let aestra_core::Value::Vec3Curve(curve) = module.active_parameter_value(input)? else {
+                return None;
+            };
+            Some(VectorSource::Curve {
+                value: expression(module, input, CompiledVec3Curve::compile(&curve), context),
                 domain,
             })
         }
@@ -1155,6 +1186,13 @@ fn expression_counts(instruction: &Instruction) -> (usize, usize) {
             ScalarSource::Curve { value, .. } => one(value),
         }
     }
+    fn vector(source: &VectorSource) -> (usize, usize) {
+        match source {
+            VectorSource::Constant(value) => one(value),
+            VectorSource::RandomRange(value) => one(value),
+            VectorSource::Curve { value, .. } => one(value),
+        }
+    }
     match instruction {
         Instruction::Emit {
             spawn_rate,
@@ -1181,7 +1219,7 @@ fn expression_counts(instruction: &Instruction) -> (usize, usize) {
             drag,
             turbulence,
             ..
-        } => sum([one(gravity), scalar(drag), scalar(turbulence)]),
+        } => sum([vector(gravity), scalar(drag), scalar(turbulence)]),
         Instruction::Appearance {
             size,
             opacity,
@@ -1271,6 +1309,11 @@ impl InputMetadata {
         let mut value = self.default_value.clone();
         match &mut value {
             aestra_core::Value::Curve(curve) => curve.id = CurveId::new(),
+            aestra_core::Value::Vec3Curve(curve) => {
+                for axis in &mut curve.curves {
+                    axis.id = CurveId::new();
+                }
+            }
             aestra_core::Value::Gradient(gradient) => gradient.id = GradientId::new(),
             _ => {}
         }
@@ -1486,6 +1529,11 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
                     max: None,
                 },
             )
+            .with_sources(vec![
+                InputSourceKind::Constant,
+                InputSourceKind::RandomRange,
+                InputSourceKind::Curve(InputEvaluationDomain::ParticleLife),
+            ])
             .with_unit("units/s²"),
             input(
                 "drag",

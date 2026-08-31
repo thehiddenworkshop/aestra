@@ -1019,6 +1019,59 @@ impl EditorSession {
         );
     }
 
+    pub(crate) fn set_active_module_property_value(
+        &mut self,
+        module: ModuleId,
+        parameter: &str,
+        value: Value,
+        label: impl Into<String>,
+    ) -> bool {
+        if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
+            let id = effect_parameter.id;
+            effect_parameter.default = value;
+            return self.execute(
+                label,
+                EffectCommand::SetParameter {
+                    id,
+                    parameter: effect_parameter,
+                },
+                true,
+            );
+        }
+        let emitter = self.selected_layer().id;
+        let Some(module_instance) = self
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+        else {
+            return false;
+        };
+        let command = if let Some(source) = module_instance.property_source(parameter)
+            && source != aestra_bevy::PropertySource::Constant
+            && module_instance
+                .property_source_values
+                .get(parameter)
+                .is_some_and(|values| values.iter().any(|value| value.source == source))
+        {
+            EffectCommand::SetModulePropertySourceValue {
+                emitter,
+                module,
+                parameter: parameter.into(),
+                source,
+                value,
+            }
+        } else {
+            EffectCommand::SetModuleParameter {
+                emitter,
+                module,
+                parameter: parameter.into(),
+                value,
+            }
+        };
+        self.execute(label, command, true)
+    }
+
     pub fn add_curve_key(
         &mut self,
         module: ModuleId,
