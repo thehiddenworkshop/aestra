@@ -2,6 +2,12 @@
   <img src="assets/project/title.png" alt="Aestra" width="760">
 </p>
 
+<p align="center">
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License: MIT OR Apache-2.0"></a>
+  <a href="#workspace"><img src="https://img.shields.io/badge/crates-8%20workspace-8a5cf6.svg" alt="8 workspace crates"></a>
+  <a href="https://github.com/TheHiddenWorkshop/aestra/actions/workflows/ci.yml"><img src="https://github.com/TheHiddenWorkshop/aestra/actions/workflows/ci.yml/badge.svg" alt="Build status"></a>
+</p>
+
 > [!WARNING]
 > **Work in progress.** Aestra is under active development; features, APIs, and effect formats may change without notice.
 
