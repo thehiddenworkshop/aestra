@@ -110,6 +110,22 @@ pub(crate) fn spawn_pointer_context_menu_item<A: Component>(
     label: &str,
     action: A,
 ) {
+    spawn_pointer_context_menu_custom_item(parent, label, action, |item| {
+        item.spawn((
+            Text::new(label),
+            ThemedText,
+            TextLayout::no_wrap(),
+            Pickable::IGNORE,
+        ));
+    });
+}
+
+pub(crate) fn spawn_pointer_context_menu_custom_item<A: Component>(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    action: A,
+    build: impl FnOnce(&mut ChildSpawnerCommands),
+) {
     parent
         .spawn_empty()
         .apply_scene(scenes::feathers_menu_item())
@@ -122,14 +138,7 @@ pub(crate) fn spawn_pointer_context_menu_item<A: Component>(
             AccessibleLabel(label.to_owned()),
         ))
         .observe(stop_pointer_context_menu_click_propagation)
-        .with_children(|item| {
-            item.spawn((
-                Text::new(label),
-                ThemedText,
-                TextLayout::no_wrap(),
-                Pickable::IGNORE,
-            ));
-        });
+        .with_children(build);
 }
 
 fn stop_pointer_context_menu_click_propagation(mut click: On<Pointer<Click>>) {

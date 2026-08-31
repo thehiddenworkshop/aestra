@@ -4,7 +4,8 @@ use crate::feathers::automation_curve::{
 use crate::feathers::color_picker::{ColorPickerLabels, spawn_color_picker};
 use crate::feathers::context_menu::{
     keyboard_context_menu_requested, pointer_position_in_node, should_dismiss_pointer_context_menu,
-    spawn_pointer_context_menu, spawn_pointer_context_menu_item,
+    spawn_pointer_context_menu, spawn_pointer_context_menu_custom_item,
+    spawn_pointer_context_menu_item,
 };
 use crate::feathers::icon::load_svg_icon;
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
@@ -171,6 +172,15 @@ pub(crate) enum ChoreographyAction {
     ToggleEmitterSolo(EmitterId),
     ToggleEmitterColorPicker(EmitterId),
     ToggleEmitterAutomation(EmitterId),
+    SetEmitterAutomationVisibility {
+        emitter: EmitterId,
+        lanes: Vec<AutomationLaneId>,
+        visible: bool,
+    },
+    SetAutomationLaneVisibility {
+        lane: AutomationLaneId,
+        visible: bool,
+    },
     SelectAutomationKey(TimelineAutomationKeySelection),
     AddAutomationKey(AutomationLaneId),
     AddAutomationKeyAt {
@@ -413,6 +423,54 @@ fn execute_choreography_action(
     localizer: Res<Localizer>,
     keys: Option<Res<ButtonInput<KeyCode>>>,
 ) {
+    match action.clone() {
+        ChoreographyAction::ToggleEmitterAutomation(emitter) => {
+            state.context_emitter = None;
+            state.color_picker_emitter = None;
+            state.context_effect_clip = None;
+            state.expanded_automation_emitters.insert(emitter);
+            state.automation_menu_emitter =
+                (state.automation_menu_emitter != Some(emitter)).then_some(emitter);
+            session.ui_revision += 1;
+            return;
+        }
+        ChoreographyAction::SetEmitterAutomationVisibility {
+            emitter,
+            lanes,
+            visible,
+        } => {
+            state.expanded_automation_emitters.insert(emitter);
+            if visible {
+                state
+                    .hidden_automation_lanes
+                    .retain(|lane| lane.emitter != emitter);
+            } else {
+                state.hidden_automation_lanes.extend(lanes);
+                state.selected_automation_key = state
+                    .selected_automation_key
+                    .take()
+                    .filter(|selection| selection.lane.emitter != emitter);
+            }
+            session.ui_revision += 1;
+            return;
+        }
+        ChoreographyAction::SetAutomationLaneVisibility { lane, visible } => {
+            state.expanded_automation_emitters.insert(lane.emitter);
+            if visible {
+                state.hidden_automation_lanes.remove(&lane);
+            } else {
+                state.hidden_automation_lanes.insert(lane.clone());
+                state.selected_automation_key = state
+                    .selected_automation_key
+                    .take()
+                    .filter(|selection| selection.lane != lane);
+            }
+            session.ui_revision += 1;
+            return;
+        }
+        _ => {}
+    }
+
     if let ChoreographyAction::ToggleEmitterColorPicker(emitter) = action.clone() {
         let revision = session.ui_revision;
         if session
@@ -439,7 +497,8 @@ fn execute_choreography_action(
     state.restore_context_effect_clip_focus = state.context_effect_clip;
     let closed_context_menu = state.context_emitter.take().is_some()
         | state.color_picker_emitter.take().is_some()
-        | state.context_effect_clip.take().is_some();
+        | state.context_effect_clip.take().is_some()
+        | state.automation_menu_emitter.take().is_some();
     match action.clone() {
         ChoreographyAction::SelectEmitter(emitter) => {
             state.selected_automation_key = None;
@@ -618,12 +677,9 @@ fn execute_choreography_action(
             }
         }
         ChoreographyAction::ToggleEmitterColorPicker(_) => unreachable!(),
-        ChoreographyAction::ToggleEmitterAutomation(emitter) => {
-            if !state.expanded_automation_emitters.remove(&emitter) {
-                state.expanded_automation_emitters.insert(emitter);
-            }
-            session.ui_revision += 1;
-        }
+        ChoreographyAction::ToggleEmitterAutomation(_)
+        | ChoreographyAction::SetEmitterAutomationVisibility { .. }
+        | ChoreographyAction::SetAutomationLaneVisibility { .. } => unreachable!(),
         ChoreographyAction::SelectAutomationKey(selection) => {
             if automation_lane_keys(&session.effect, &selection.lane)
                 .is_some_and(|keys| selection.key < keys.len())
@@ -1006,6 +1062,85 @@ mod tests {
         assert_eq!(
             expanded.automation_lane_height(&lanes[1].id),
             automation_curve::DEFAULT_HEIGHT
+        );
+    }
+
+    #[test]
+    fn automation_visibility_defaults_to_all_and_updates_layout_per_lane() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let catalog = ProjectEffectCatalog::from_entries(Vec::new());
+        let first = &session.effect.emitters[0];
+        let second = &session.effect.emitters[1];
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+        let lanes = emitter_automation_lanes(first, &registry, &localizer);
+        let mut state = TimelineState::framed(session.playback_duration());
+        state.expanded_automation_emitters.insert(first.id);
+
+        assert_eq!(visible_automation_lane_count(&state, first), lanes.len());
+        let all_visible_row = choreography_grid_row(
+            &session.effect,
+            &state,
+            &catalog,
+            ChoreographyTrackId::Emitter(second.id),
+        );
+
+        state.hidden_automation_lanes.insert(lanes[0].id.clone());
+
+        assert_eq!(
+            visible_automation_lane_count(&state, first),
+            lanes.len() - 1
+        );
+        assert!(!automation_lane_is_visible(&state, &lanes[0].id));
+        assert!(automation_lane_is_visible(&state, &lanes[1].id));
+        assert_eq!(
+            choreography_grid_row(
+                &session.effect,
+                &state,
+                &catalog,
+                ChoreographyTrackId::Emitter(second.id),
+            ),
+            all_visible_row - 1
+        );
+    }
+
+    #[test]
+    fn automation_visibility_actions_keep_the_chooser_open() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+        let emitter = session.effect.emitters[0].clone();
+        let lanes = emitter_automation_lanes(&emitter, &registry, &localizer);
+        let lane = lanes[0].id.clone();
+        let mut app = choreography_app(session);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::ToggleEmitterAutomation(emitter.id));
+        app.update();
+        app.world_mut()
+            .trigger(ChoreographyAction::SetAutomationLaneVisibility {
+                lane: lane.clone(),
+                visible: false,
+            });
+        app.update();
+
+        let state = app.world().resource::<TimelineState>();
+        assert_eq!(state.automation_menu_emitter, Some(emitter.id));
+        assert!(state.expanded_automation_emitters.contains(&emitter.id));
+        assert!(state.hidden_automation_lanes.contains(&lane));
+
+        app.world_mut()
+            .trigger(ChoreographyAction::SetEmitterAutomationVisibility {
+                emitter: emitter.id,
+                lanes: lanes.into_iter().map(|lane| lane.id).collect(),
+                visible: true,
+            });
+        app.update();
+        assert!(
+            app.world()
+                .resource::<TimelineState>()
+                .hidden_automation_lanes
+                .is_empty()
         );
     }
 
@@ -2711,6 +2846,7 @@ mod tests {
             .id;
         let mut timeline = TimelineState::framed(session.playback_duration());
         timeline.expanded_automation_emitters.insert(target);
+        timeline.automation_menu_emitter = Some(target);
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
@@ -2729,6 +2865,28 @@ mod tests {
         .add_systems(Startup, spawn_test_timeline);
 
         app.update();
+
+        let menu_count = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<Entity, With<EmitterAutomationVisibilityMenu>>();
+            query.iter(world).count()
+        };
+        assert_eq!(menu_count, 1);
+        let visibility_actions = {
+            let world = app.world_mut();
+            let mut query = world.query::<&ChoreographyAction>();
+            query
+                .iter(world)
+                .filter(|action| {
+                    matches!(
+                        action,
+                        ChoreographyAction::SetEmitterAutomationVisibility { .. }
+                            | ChoreographyAction::SetAutomationLaneVisibility { .. }
+                    )
+                })
+                .count()
+        };
+        assert!(visibility_actions >= 3);
 
         let toggles = {
             let world = app.world_mut();
@@ -4820,6 +4978,9 @@ struct TimelineTrackContextMenuAnchor;
 #[derive(Component)]
 struct TimelineTrackActionControl;
 
+#[derive(Component)]
+struct EmitterAutomationMenuButton;
+
 #[derive(Component, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AutomationLaneId {
     emitter: EmitterId,
@@ -4877,6 +5038,12 @@ struct EmitterTrackColorPickerPopover;
 
 #[derive(Component)]
 struct EmitterTrackContextMenu;
+
+#[derive(Component)]
+struct EmitterAutomationVisibilityMenu;
+
+#[derive(Component)]
+struct EmitterAutomationVisibilityMenuAnchor;
 
 #[derive(Component, Clone, Copy)]
 struct TimelineClip {
@@ -5057,6 +5224,7 @@ pub(crate) struct TimelineNavigationSnapshot {
     snap: TimelineSnapMode,
     expanded_effect_clips: BTreeSet<EffectClipPath>,
     expanded_automation_emitters: BTreeSet<EmitterId>,
+    hidden_automation_lanes: BTreeSet<AutomationLaneId>,
     automation_lane_heights: BTreeMap<AutomationLaneId, f32>,
     inspected_child: Option<EffectClipChildSelection>,
     vertical_scroll: f32,
@@ -5093,10 +5261,12 @@ pub(crate) struct TimelineState {
     selected_emitters: BTreeSet<EmitterId>,
     emitter_selection_anchor: Option<EmitterId>,
     color_picker_emitter: Option<EmitterId>,
+    automation_menu_emitter: Option<EmitterId>,
     reorder_drag: Option<EmitterId>,
     effect_clip_reorder_drag: Option<EffectClipId>,
     expanded_effect_clips: BTreeSet<EffectClipPath>,
     expanded_automation_emitters: BTreeSet<EmitterId>,
+    hidden_automation_lanes: BTreeSet<AutomationLaneId>,
     selected_automation_key: Option<TimelineAutomationKeySelection>,
     muted_effect_clips: BTreeSet<EffectClipId>,
     solo_effect_clip: Option<EffectClipId>,
@@ -5142,10 +5312,12 @@ impl TimelineState {
             selected_emitters: BTreeSet::new(),
             emitter_selection_anchor: None,
             color_picker_emitter: None,
+            automation_menu_emitter: None,
             reorder_drag: None,
             effect_clip_reorder_drag: None,
             expanded_effect_clips: BTreeSet::new(),
             expanded_automation_emitters: BTreeSet::new(),
+            hidden_automation_lanes: BTreeSet::new(),
             selected_automation_key: None,
             muted_effect_clips: BTreeSet::new(),
             solo_effect_clip: None,
@@ -5170,6 +5342,7 @@ impl TimelineState {
             snap: self.snap,
             expanded_effect_clips: self.expanded_effect_clips.clone(),
             expanded_automation_emitters: self.expanded_automation_emitters.clone(),
+            hidden_automation_lanes: self.hidden_automation_lanes.clone(),
             automation_lane_heights: self.automation_lane_heights.clone(),
             inspected_child: self.inspected_child.clone(),
             vertical_scroll: self.vertical_scroll,
@@ -5193,6 +5366,7 @@ impl TimelineState {
         self.snap = snapshot.snap;
         self.expanded_effect_clips = snapshot.expanded_effect_clips;
         self.expanded_automation_emitters = snapshot.expanded_automation_emitters;
+        self.hidden_automation_lanes = snapshot.hidden_automation_lanes;
         self.automation_lane_heights = snapshot.automation_lane_heights;
         self.inspected_child = snapshot.inspected_child;
         self.vertical_scroll = snapshot.vertical_scroll.max(0.0);
@@ -5809,13 +5983,41 @@ fn automation_lane_count(emitter: &Emitter) -> usize {
         .sum()
 }
 
+fn visible_automation_lane_count(state: &TimelineState, emitter: &Emitter) -> usize {
+    automation_lane_count(emitter).saturating_sub(
+        state
+            .hidden_automation_lanes
+            .iter()
+            .filter(|lane| emitter_has_automation_lane(emitter, lane))
+            .count(),
+    )
+}
+
+fn emitter_has_automation_lane(emitter: &Emitter, lane: &AutomationLaneId) -> bool {
+    lane.emitter == emitter.id
+        && emitter
+            .modules
+            .iter()
+            .find(|module| module.id == lane.module)
+            .and_then(|module| module_parameter(module, &lane.parameter))
+            .is_some_and(|value| matches!(value, Value::Curve(_) | Value::Gradient(_)))
+}
+
+fn automation_lane_is_visible(state: &TimelineState, lane: &AutomationLaneId) -> bool {
+    state.expanded_automation_emitters.contains(&lane.emitter)
+        && !state.hidden_automation_lanes.contains(lane)
+}
+
 fn automation_lanes_height(state: &TimelineState, emitter: &Emitter) -> f32 {
     let default_height = automation_curve::DEFAULT_HEIGHT;
-    automation_lane_count(emitter) as f32 * default_height
+    visible_automation_lane_count(state, emitter) as f32 * default_height
         + state
             .automation_lane_heights
             .iter()
-            .filter(|(lane, _)| lane.emitter == emitter.id)
+            .filter(|(lane, _)| {
+                emitter_has_automation_lane(emitter, lane)
+                    && !state.hidden_automation_lanes.contains(*lane)
+            })
             .map(|(_, height)| *height - default_height)
             .sum::<f32>()
 }
@@ -6771,6 +6973,8 @@ pub(crate) fn spawn_timeline(
                                         catalog,
                                         ChoreographyTrackId::Emitter(emitter.id),
                                     );
+                                    let automation_lanes =
+                                        emitter_automation_lanes(emitter, registry, localizer);
                                     spawn_emitter_track_header(
                                         headers,
                                         session,
@@ -6782,14 +6986,15 @@ pub(crate) fn spawn_timeline(
                                         emitter.enabled,
                                         emitter.display_color,
                                         grid_row,
-                                        automation_lane_count(emitter),
+                                        &automation_lanes,
                                         asset_server,
                                     );
                                     if state.expanded_automation_emitters.contains(&emitter.id) {
-                                        for (lane_index, lane) in emitter_automation_lanes(
-                                            emitter, registry, localizer,
-                                        )
-                                        .iter()
+                                        for (lane_index, lane) in automation_lanes
+                                            .iter()
+                                            .filter(|lane| {
+                                                automation_lane_is_visible(state, &lane.id)
+                                            })
                                         .enumerate()
                                         {
                                             spawn_automation_lane_header(
@@ -7345,6 +7550,9 @@ pub(crate) fn spawn_timeline(
                                                     emitter, registry, localizer,
                                                 )
                                                 .iter()
+                                                .filter(|lane| {
+                                                    automation_lane_is_visible(state, &lane.id)
+                                                })
                                                 .enumerate()
                                                 {
                                                     spawn_automation_lane_row(
@@ -7591,7 +7799,7 @@ fn spawn_emitter_track_header(
     enabled: bool,
     display_color: Option<[f32; 4]>,
     grid_row: i16,
-    automation_lane_count: usize,
+    automation_lanes: &[AutomationLaneProjection],
     asset_server: &AssetServer,
 ) {
     let primary_emitter = session.selection.emitter(&session.effect);
@@ -7788,19 +7996,21 @@ fn spawn_emitter_track_header(
                     .entity(solo)
                     .insert((Selected, ButtonVariant::Primary));
             }
-            if automation_lane_count > 0 {
-                let expanded = state.expanded_automation_emitters.contains(&emitter);
-                let label = localizer.text(if expanded {
-                    "timeline-collapse-automation"
-                } else {
-                    "timeline-expand-automation"
-                });
+            if !automation_lanes.is_empty() {
+                let visible = state.expanded_automation_emitters.contains(&emitter)
+                    && automation_lanes
+                        .iter()
+                        .any(|lane| !state.hidden_automation_lanes.contains(&lane.id));
+                let menu_open = state.automation_menu_emitter == Some(emitter);
+                let label = localizer.text("timeline-automation-visibility");
                 let disclosure = mini_button(
                     row,
                     "A",
                     ChoreographyAction::ToggleEmitterAutomation(emitter),
                 );
                 row.commands().entity(disclosure).insert((
+                    EmitterAutomationMenuButton,
+                    RelativeCursorPosition::default(),
                     AccessibleLabel(label.clone()),
                     EditorTooltip::description(label),
                     Node {
@@ -7812,12 +8022,24 @@ fn spawn_emitter_track_header(
                         ..default()
                     },
                 ));
-                if expanded {
+                if visible || menu_open {
                     row.commands()
                         .entity(disclosure)
                         .insert((Selected, ButtonVariant::Primary));
                 }
                 configure_timeline_track_action_control(row.commands(), disclosure);
+                if menu_open {
+                    row.commands().entity(disclosure).with_children(|button| {
+                        spawn_emitter_automation_visibility_menu(
+                            button,
+                            state,
+                            localizer,
+                            emitter,
+                            automation_lanes,
+                            asset_server,
+                        );
+                    });
+                }
             } else {
                 row.spawn(Node {
                     width: Val::Px(23.0),
@@ -7869,6 +8091,125 @@ fn spawn_emitter_track_header(
                 );
             }
         });
+}
+
+fn spawn_emitter_automation_visibility_menu(
+    parent: &mut ChildSpawnerCommands,
+    state: &TimelineState,
+    localizer: &Localizer,
+    emitter: EmitterId,
+    lanes: &[AutomationLaneProjection],
+    asset_server: &AssetServer,
+) {
+    let lane_ids = lanes.iter().map(|lane| lane.id.clone()).collect::<Vec<_>>();
+    spawn_pointer_context_menu(
+        parent,
+        Vec2::new(11.5, 23.0),
+        EmitterAutomationVisibilityMenuAnchor,
+        EmitterAutomationVisibilityMenu,
+        |menu| {
+            spawn_automation_visibility_menu_item(
+                menu,
+                asset_server,
+                &localizer.text("timeline-show-all-automation"),
+                &localizer.text("timeline-show-all-automation"),
+                true,
+                ChoreographyAction::SetEmitterAutomationVisibility {
+                    emitter,
+                    lanes: lane_ids.clone(),
+                    visible: true,
+                },
+            );
+            spawn_automation_visibility_menu_item(
+                menu,
+                asset_server,
+                &localizer.text("timeline-hide-all-automation"),
+                &localizer.text("timeline-hide-all-automation"),
+                false,
+                ChoreographyAction::SetEmitterAutomationVisibility {
+                    emitter,
+                    lanes: lane_ids,
+                    visible: false,
+                },
+            );
+            for lane in lanes {
+                let is_visible = !state.hidden_automation_lanes.contains(&lane.id);
+                let mut args = FluentArgs::new();
+                args.set("name", lane.label.as_str());
+                let accessible_label = localizer.text_with(
+                    if is_visible {
+                        "timeline-hide-automation-lane"
+                    } else {
+                        "timeline-show-automation-lane"
+                    },
+                    &args,
+                );
+                spawn_automation_visibility_menu_item(
+                    menu,
+                    asset_server,
+                    &accessible_label,
+                    &lane.label,
+                    is_visible,
+                    ChoreographyAction::SetAutomationLaneVisibility {
+                        lane: lane.id.clone(),
+                        visible: !is_visible,
+                    },
+                );
+            }
+        },
+    );
+}
+
+fn spawn_automation_visibility_menu_item(
+    parent: &mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    accessible_label: &str,
+    display_label: &str,
+    visible: bool,
+    action: ChoreographyAction,
+) {
+    spawn_pointer_context_menu_custom_item(parent, accessible_label, action, |item| {
+        item.spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_width: Val::Px(0.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(8.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_children(|content| {
+            content.spawn((
+                Node {
+                    width: Val::Px(14.0),
+                    height: Val::Px(14.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                UiSvg(load_svg_icon(
+                    asset_server,
+                    if visible {
+                        "icons/show.svg"
+                    } else {
+                        "icons/hide.svg"
+                    },
+                )),
+                SvgColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+            content.spawn((
+                Text::new(display_label),
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                TextLayout::no_wrap(),
+                Pickable::IGNORE,
+            ));
+        });
+    });
 }
 
 fn spawn_emitter_context_menu(
@@ -8664,6 +9005,7 @@ fn navigate_timeline(
         if state.context_emitter.take().is_some()
             | state.color_picker_emitter.take().is_some()
             | state.context_effect_clip.take().is_some()
+            | state.automation_menu_emitter.take().is_some()
         {
             session.ui_revision += 1;
         }
@@ -8759,6 +9101,13 @@ fn dismiss_timeline_popovers(
             With<EffectClipTrackContextMenu>,
         )>,
     >,
+    automation_surfaces: Query<
+        &RelativeCursorPosition,
+        Or<(
+            With<EmitterAutomationMenuButton>,
+            With<EmitterAutomationVisibilityMenu>,
+        )>,
+    >,
     mut state: ResMut<TimelineState>,
     mut session: ResMut<EditorSession>,
 ) {
@@ -8778,7 +9127,15 @@ fn dismiss_timeline_popovers(
             .iter()
             .any(RelativeCursorPosition::cursor_over),
     );
-    if !dismiss_color && !dismiss_menu {
+    let dismiss_automation = should_dismiss_pointer_context_menu(
+        state.automation_menu_emitter.is_some(),
+        primary_pressed,
+        keys.just_pressed(KeyCode::Escape),
+        automation_surfaces
+            .iter()
+            .any(RelativeCursorPosition::cursor_over),
+    );
+    if !dismiss_color && !dismiss_menu && !dismiss_automation {
         return;
     }
     if dismiss_color {
@@ -8789,6 +9146,9 @@ fn dismiss_timeline_popovers(
         state.restore_context_effect_clip_focus = state.context_effect_clip;
         state.context_emitter = None;
         state.context_effect_clip = None;
+    }
+    if dismiss_automation {
+        state.automation_menu_emitter = None;
     }
     session.ui_revision += 1;
 }
@@ -9356,7 +9716,9 @@ fn choreography_grid_row(
             && state.expanded_automation_emitters.contains(&id)
             && let Some(emitter) = effect.emitters.iter().find(|emitter| emitter.id == id)
         {
-            row = row.saturating_add(automation_lane_count(emitter).min(i16::MAX as usize) as i16);
+            row = row.saturating_add(
+                visible_automation_lane_count(state, emitter).min(i16::MAX as usize) as i16,
+            );
         }
     }
     row
@@ -9397,7 +9759,7 @@ fn choreography_insertion_layout(
             && state.expanded_automation_emitters.contains(&id)
             && let Some(emitter) = effect.emitters.iter().find(|emitter| emitter.id == id)
         {
-            let lane_count = automation_lane_count(emitter);
+            let lane_count = visible_automation_lane_count(state, emitter);
             row = row.saturating_add(lane_count.min(i16::MAX as usize) as i16);
             offset += automation_lanes_height(state, emitter);
         }
@@ -10758,6 +11120,7 @@ fn open_timeline_track_context_menu(
         curves.clear();
     }
     state.color_picker_emitter = None;
+    state.automation_menu_emitter = None;
     state.context_effect_clip = None;
     state.context_emitter = Some(emitter);
     state.context_menu_position = position;
@@ -10808,6 +11171,7 @@ fn open_focused_timeline_context_menu(
                 curves.clear();
             }
             state.color_picker_emitter = None;
+            state.automation_menu_emitter = None;
             state.context_effect_clip = None;
             state.context_emitter = Some(header.emitter);
             state.context_menu_position =
@@ -10832,6 +11196,7 @@ fn open_focused_timeline_context_menu(
             state.inspected_child = None;
             state.context_emitter = None;
             state.color_picker_emitter = None;
+            state.automation_menu_emitter = None;
             state.context_effect_clip = Some(header.clip);
             state.context_menu_position =
                 Vec2::new((node.size().x - 8.0).max(0.0), node.size().y * 0.5);
@@ -10885,6 +11250,7 @@ fn open_effect_clip_track_context_menu(
     state.inspected_child = None;
     state.context_emitter = None;
     state.color_picker_emitter = None;
+    state.automation_menu_emitter = None;
     state.context_effect_clip = Some(clip);
     state.context_menu_position = position;
     if session.ui_revision == revision {

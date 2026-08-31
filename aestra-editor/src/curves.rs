@@ -1,9 +1,15 @@
 //! Curves workspace, curve/gradient selection, and semantic key editing.
 
+use crate::feathers::automation_curve::{
+    self, AutomationCurveData, AutomationCurvePoint, AutomationGradientPoint,
+};
 use crate::*;
 use aestra_bevy::{ColorKey, CurveKey, ModuleId, ModuleInstance, Value};
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
-use bevy::ui_widgets::Activate;
+use bevy::{
+    feathers::cursor::EntityCursor, input_focus::InputFocus, text::EditableText,
+    ui::RelativeCursorPosition, ui_widgets::Activate, window::SystemCursorIcon,
+};
 
 pub(crate) struct EditorCurvesPlugin;
 
@@ -16,7 +22,12 @@ impl Plugin for EditorCurvesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CurvesState>()
             .add_observer(queue_curves_action_activation)
-            .add_systems(Update, handle_curves_actions.in_set(CurvesSet::Actions));
+            .add_systems(
+                Update,
+                (curves_keyboard_input, handle_curves_actions)
+                    .chain()
+                    .in_set(CurvesSet::Actions),
+            );
     }
 }
 
@@ -68,6 +79,43 @@ impl CurvesState {
 
 #[derive(Component)]
 struct CurveGraph;
+
+fn curves_keyboard_input(
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    graphs: Query<&RelativeCursorPosition, With<CurveGraph>>,
+    focus: Option<Res<InputFocus>>,
+    editable_text: Query<(), With<EditableText>>,
+    mut session: ResMut<EditorSession>,
+    registry: Res<EditorModuleRegistry>,
+    mut state: ResMut<CurvesState>,
+) {
+    let Some(keys) = keys else {
+        return;
+    };
+    let editing_text = focus
+        .as_ref()
+        .and_then(|focus| focus.get())
+        .is_some_and(|entity| editable_text.contains(entity));
+    if editing_text {
+        return;
+    }
+    let cursor = graphs
+        .iter()
+        .find_map(|cursor| cursor.normalized.filter(|_| cursor.cursor_over()));
+    let Some(cursor) = cursor else {
+        return;
+    };
+    if keys.just_pressed(KeyCode::Insert) {
+        add_complex_key_at_pointer(&mut session, &registry.0, &mut state, cursor);
+    } else if keys.just_pressed(KeyCode::Delete) {
+        edit_complex_key(
+            &mut session,
+            &registry.0,
+            &mut state,
+            ComplexKeyEdit::Delete,
+        );
+    }
+}
 
 fn queue_curves_action_activation(
     activate: On<Activate>,
@@ -406,6 +454,91 @@ fn resolve_complex_input<'a>(
     Some((module, input, value))
 }
 
+fn curve_graph_data(curve: &aestra_bevy::Curve) -> AutomationCurveData {
+    AutomationCurveData::Curve(
+        curve
+            .keys
+            .iter()
+            .map(|key| AutomationCurvePoint {
+                time: key.time,
+                value: key.value,
+            })
+            .collect(),
+    )
+}
+
+fn gradient_graph_data(gradient: &aestra_bevy::Gradient) -> AutomationCurveData {
+    AutomationCurveData::Gradient(
+        gradient
+            .keys
+            .iter()
+            .map(|key| AutomationGradientPoint {
+                time: key.time,
+                color: key.color,
+            })
+            .collect(),
+    )
+}
+
+fn curve_drag_preview(
+    curve: &aestra_bevy::Curve,
+    key_index: usize,
+    distance: Vec2,
+    graph_size: Vec2,
+    min: f32,
+    max: f32,
+) -> Option<(CurveKey, AutomationCurveData)> {
+    let graph_data = curve_graph_data(curve);
+    let mut key = curve.keys.get(key_index).copied()?;
+    let previous = key_index
+        .checked_sub(1)
+        .and_then(|index| curve.keys.get(index))
+        .map_or(0.0, |key| key.time + 0.001);
+    let next = curve
+        .keys
+        .get(key_index + 1)
+        .map_or(1.0, |key| key.time - 0.001);
+    key.time = (key.time + distance.x / graph_size.x.max(1.0)).clamp(previous, next);
+    let original_top = graph_data.key_top_percent(key_index);
+    let target_top = original_top + distance.y / graph_size.y.max(1.0) * 100.0;
+    key.value = graph_data
+        .value_for_top_percent(target_top)
+        .unwrap_or(key.value)
+        .clamp(min, max);
+    let mut preview = graph_data;
+    let AutomationCurveData::Curve(points) = &mut preview else {
+        return None;
+    };
+    let point = points.get_mut(key_index)?;
+    point.time = key.time;
+    point.value = key.value;
+    Some((key, preview))
+}
+
+fn gradient_drag_preview(
+    gradient: &aestra_bevy::Gradient,
+    key_index: usize,
+    distance_x: f32,
+    graph_width: f32,
+) -> Option<(ColorKey, AutomationCurveData)> {
+    let mut key = gradient.keys.get(key_index).copied()?;
+    let previous = key_index
+        .checked_sub(1)
+        .and_then(|index| gradient.keys.get(index))
+        .map_or(0.0, |key| key.time + 0.001);
+    let next = gradient
+        .keys
+        .get(key_index + 1)
+        .map_or(1.0, |key| key.time - 0.001);
+    key.time = (key.time + distance_x / graph_width.max(1.0)).clamp(previous, next);
+    let mut preview = gradient_graph_data(gradient);
+    let AutomationCurveData::Gradient(points) = &mut preview else {
+        return None;
+    };
+    points.get_mut(key_index)?.time = key.time;
+    Some((key, preview))
+}
+
 fn spawn_curve_graph(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
@@ -428,9 +561,11 @@ fn spawn_curve_graph(
         },
         TextColor(theme::TEXT_MUTED),
     ));
+    let graph_data = curve_graph_data(curve);
     parent
         .spawn((
             CurveGraph,
+            RelativeCursorPosition::default(),
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Px(112.0),
@@ -443,35 +578,26 @@ fn spawn_curve_graph(
             BorderColor::all(theme::BORDER),
         ))
         .with_children(|graph| {
-            for index in 0..64 {
-                let time = index as f32 / 63.0;
-                let normalized = ((curve.sample(time) - min) / (max - min)).clamp(0.0, 1.0);
-                graph.spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Percent(time * 100.0),
-                        top: Val::Percent((1.0 - normalized) * 100.0),
-                        width: Val::Px(2.0),
-                        height: Val::Px(2.0),
-                        ..default()
-                    },
-                    BackgroundColor(theme::ACCENT_DIM),
-                ));
-            }
+            automation_curve::spawn_automation_curve(graph, &graph_data);
             for (key_index, key) in curve.keys.iter().enumerate() {
-                let normalized = ((key.value - min) / (max - min)).clamp(0.0, 1.0);
+                let top = graph_data.key_top_percent(key_index);
                 let parameter = input.name;
                 graph
                     .spawn((
                         Button,
                         EditorNativeControl,
-                        UiTransform::default(),
+                        EntityCursor::System(SystemCursorIcon::Grab),
                         Node {
                             position_type: PositionType::Absolute,
                             left: Val::Percent(key.time * 100.0),
-                            top: Val::Percent((1.0 - normalized) * 100.0),
+                            top: Val::Percent(top),
                             width: Val::Px(11.0),
                             height: Val::Px(11.0),
+                            margin: UiRect {
+                                left: Val::Px(-5.5),
+                                top: Val::Px(-5.5),
+                                ..default()
+                            },
                             border: UiRect::all(Val::Px(if key_index == selected_key {
                                 2.0
                             } else {
@@ -502,25 +628,57 @@ fn spawn_curve_graph(
                         },
                     )
                     .observe(
-                        |drag: On<Pointer<Drag>>, mut transforms: Query<&mut UiTransform>| {
-                            if drag.button == PointerButton::Primary
-                                && let Ok(mut transform) = transforms.get_mut(drag.entity)
-                            {
-                                transform.translation = Val2::px(drag.distance.x, drag.distance.y);
+                        move |drag: On<Pointer<Drag>>,
+                              graph: Single<(&ComputedNode, &Children), With<CurveGraph>>,
+                              session: Res<EditorSession>,
+                              mut nodes: Query<&mut Node>,
+                              mut rasters: Query<
+                            &mut automation_curve::AutomationCurveRaster,
+                        >| {
+                            if drag.button != PointerButton::Primary {
+                                return;
+                            }
+                            let (computed, children) = *graph;
+                            let graph_size = computed.size() * computed.inverse_scale_factor;
+                            let Some(Value::Curve(curve)) = session
+                                .selected_layer()
+                                .modules
+                                .iter()
+                                .find(|item| item.id == module)
+                                .and_then(|item| module_parameter(item, parameter))
+                            else {
+                                return;
+                            };
+                            let Some((key, preview)) = curve_drag_preview(
+                                &curve,
+                                key_index,
+                                drag.distance,
+                                graph_size,
+                                min,
+                                max,
+                            ) else {
+                                return;
+                            };
+                            if let Ok(mut node) = nodes.get_mut(drag.entity) {
+                                node.left = Val::Percent(key.time * 100.0);
+                                node.top = Val::Percent(preview.key_top_percent(key_index));
+                            }
+                            for child in children.iter() {
+                                if let Ok(mut raster) = rasters.get_mut(child)
+                                    && raster.data() != &preview
+                                {
+                                    raster.set_data(preview.clone());
+                                }
                             }
                         },
                     )
                     .observe(
                         move |drag: On<Pointer<DragEnd>>,
                               graph: Single<&ComputedNode, With<CurveGraph>>,
-                              mut transforms: Query<&mut UiTransform>,
                               mut session: ResMut<EditorSession>,
                               mut workspace: ResMut<CurvesState>| {
                             if drag.button != PointerButton::Primary {
                                 return;
-                            }
-                            if let Ok(mut transform) = transforms.get_mut(drag.entity) {
-                                transform.translation = Val2::ZERO;
                             }
                             let graph_size = graph.size() * graph.inverse_scale_factor;
                             let Some(Value::Curve(curve)) = session
@@ -532,21 +690,16 @@ fn spawn_curve_graph(
                             else {
                                 return;
                             };
-                            let Some(mut key) = curve.keys.get(key_index).copied() else {
+                            let Some((key, _)) = curve_drag_preview(
+                                &curve,
+                                key_index,
+                                drag.distance,
+                                graph_size,
+                                min,
+                                max,
+                            ) else {
                                 return;
                             };
-                            let previous = key_index
-                                .checked_sub(1)
-                                .and_then(|index| curve.keys.get(index))
-                                .map_or(0.0, |key| key.time + 0.001);
-                            let next = curve
-                                .keys
-                                .get(key_index + 1)
-                                .map_or(1.0, |key| key.time - 0.001);
-                            key.time =
-                                (key.time + drag.distance.x / graph_size.x).clamp(previous, next);
-                            key.value = (key.value - drag.distance.y / graph_size.y * (max - min))
-                                .clamp(min, max);
                             session.set_curve_key(module, parameter, key_index, key);
                             workspace.complex = Some(ComplexSelection {
                                 module,
@@ -585,9 +738,11 @@ fn spawn_gradient_graph(
         },
         TextColor(theme::TEXT_MUTED),
     ));
+    let graph_data = gradient_graph_data(gradient);
     parent
         .spawn((
             CurveGraph,
+            RelativeCursorPosition::default(),
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Px(82.0),
@@ -600,52 +755,38 @@ fn spawn_gradient_graph(
             BorderColor::all(theme::BORDER),
         ))
         .with_children(|graph| {
-            for index in 0..64 {
-                let time = index as f32 / 63.0;
-                let color = gradient.sample(time);
-                graph.spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Percent(time * 100.0),
-                        top: Val::Px(0.0),
-                        width: Val::Percent(100.0 / 64.0 + 0.1),
-                        height: Val::Percent(100.0),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(color[0], color[1], color[2], color[3])),
-                ));
-            }
+            automation_curve::spawn_automation_curve(graph, &graph_data);
             for (key_index, key) in gradient.keys.iter().enumerate() {
                 let parameter = input.name;
                 graph
                     .spawn((
                         Button,
                         EditorNativeControl,
-                        UiTransform::default(),
+                        EntityCursor::System(SystemCursorIcon::EwResize),
                         Node {
                             position_type: PositionType::Absolute,
                             left: Val::Percent(key.time * 100.0),
-                            bottom: Val::Px(4.0),
-                            width: Val::Px(13.0),
-                            height: Val::Px(20.0),
-                            border: UiRect::all(Val::Px(if key_index == selected_key {
-                                2.0
-                            } else {
-                                1.0
-                            })),
+                            top: Val::Px(0.0),
+                            width: Val::Px(11.0),
+                            height: Val::Percent(100.0),
+                            margin: UiRect::left(Val::Px(-5.5)),
+                            justify_content: JustifyContent::Center,
                             ..default()
                         },
-                        BackgroundColor(Color::srgba(
-                            key.color[0],
-                            key.color[1],
-                            key.color[2],
-                            key.color[3],
-                        )),
-                        BorderColor::all(if key_index == selected_key {
-                            Color::WHITE
+                        BackgroundColor(Color::NONE),
+                    ))
+                    .with_child((
+                        Node {
+                            width: Val::Px(if key_index == selected_key { 3.0 } else { 2.0 }),
+                            height: Val::Percent(100.0),
+                            ..default()
+                        },
+                        BackgroundColor(if key_index == selected_key {
+                            theme::TEXT
                         } else {
-                            theme::BORDER_BRIGHT
+                            theme::TEXT_MUTED
                         }),
+                        Pickable::IGNORE,
                     ))
                     .observe(
                         move |click: On<Pointer<Click>>,
@@ -662,24 +803,54 @@ fn spawn_gradient_graph(
                         },
                     )
                     .observe(
-                        |drag: On<Pointer<Drag>>, mut transforms: Query<&mut UiTransform>| {
-                            if drag.button == PointerButton::Primary
-                                && let Ok(mut transform) = transforms.get_mut(drag.entity)
-                            {
-                                transform.translation = Val2::px(drag.distance.x, 0.0);
+                        move |drag: On<Pointer<Drag>>,
+                              graph: Single<(&ComputedNode, &Children), With<CurveGraph>>,
+                              session: Res<EditorSession>,
+                              mut nodes: Query<&mut Node>,
+                              mut rasters: Query<
+                            &mut automation_curve::AutomationCurveRaster,
+                        >| {
+                            if drag.button != PointerButton::Primary {
+                                return;
+                            }
+                            let (computed, children) = *graph;
+                            let width = computed.size().x * computed.inverse_scale_factor;
+                            let Some(Value::Gradient(gradient)) = session
+                                .selected_layer()
+                                .modules
+                                .iter()
+                                .find(|item| item.id == module)
+                                .and_then(|item| module_parameter(item, parameter))
+                            else {
+                                return;
+                            };
+                            let Some((key, preview)) = gradient_drag_preview(
+                                &gradient,
+                                key_index,
+                                drag.distance.x,
+                                width,
+                            ) else {
+                                return;
+                            };
+                            if let Ok(mut node) = nodes.get_mut(drag.entity) {
+                                node.left = Val::Percent(key.time * 100.0);
+                            }
+                            for child in children.iter() {
+                                if let Ok(mut raster) = rasters.get_mut(child)
+                                    && raster.data() != &preview
+                                {
+                                    raster.set_data(preview.clone());
+                                }
                             }
                         },
                     )
                     .observe(
                         move |drag: On<Pointer<DragEnd>>,
                               graph: Single<&ComputedNode, With<CurveGraph>>,
-                              mut transforms: Query<&mut UiTransform>,
-                              mut session: ResMut<EditorSession>| {
+                              mut session: ResMut<EditorSession>,
+                              mut workspace: ResMut<CurvesState>| {
                             if drag.button != PointerButton::Primary {
                                 return;
-                            }
-                            if let Ok(mut transform) = transforms.get_mut(drag.entity) {
-                                transform.translation = Val2::ZERO;
                             }
                             let width = graph.size().x * graph.inverse_scale_factor;
                             let Some(Value::Gradient(gradient)) = session
@@ -691,19 +862,20 @@ fn spawn_gradient_graph(
                             else {
                                 return;
                             };
-                            let Some(mut key) = gradient.keys.get(key_index).copied() else {
+                            let Some((key, _)) = gradient_drag_preview(
+                                &gradient,
+                                key_index,
+                                drag.distance.x,
+                                width,
+                            ) else {
                                 return;
                             };
-                            let previous = key_index
-                                .checked_sub(1)
-                                .and_then(|index| gradient.keys.get(index))
-                                .map_or(0.0, |key| key.time + 0.001);
-                            let next = gradient
-                                .keys
-                                .get(key_index + 1)
-                                .map_or(1.0, |key| key.time - 0.001);
-                            key.time = (key.time + drag.distance.x / width).clamp(previous, next);
                             session.set_gradient_key(module, parameter, key_index, key);
+                            workspace.complex = Some(ComplexSelection {
+                                module,
+                                input: input_index,
+                                key: key_index,
+                            });
                         },
                     );
             }
@@ -800,6 +972,111 @@ fn spawn_complex_controls(
                 }
             }
         });
+}
+
+fn add_complex_key_at_pointer(
+    session: &mut EditorSession,
+    registry: &ModuleRegistry,
+    workspace: &mut CurvesState,
+    cursor: Vec2,
+) {
+    let Some(selection) = workspace.complex else {
+        session.status = "Select a curve or gradient first".into();
+        return;
+    };
+    let Some(module) = session
+        .selected_layer()
+        .modules
+        .iter()
+        .find(|module| module.id == selection.module)
+    else {
+        session.status = "The selected module no longer exists".into();
+        return;
+    };
+    let Some(input) = registry
+        .get(&module.module_type)
+        .and_then(|metadata| metadata.inputs.get(selection.input as usize))
+    else {
+        session.status = "The selected input metadata no longer exists".into();
+        return;
+    };
+    let parameter = input.name;
+    let control = input.control;
+    let Some(value) = module_parameter(module, parameter) else {
+        session.status = "The selected authored value no longer exists".into();
+        return;
+    };
+    let time = (cursor.x + 0.5).clamp(0.0, 1.0);
+    let top = (cursor.y + 0.5).clamp(0.0, 1.0) * 100.0;
+
+    match value {
+        Value::Curve(curve) => {
+            if let Some(index) = curve
+                .keys
+                .iter()
+                .position(|key| (key.time - time).abs() <= 0.0005)
+            {
+                workspace.complex = Some(ComplexSelection {
+                    key: index,
+                    ..selection
+                });
+                session.ui_revision += 1;
+                return;
+            }
+            let index = curve
+                .keys
+                .iter()
+                .position(|key| key.time > time)
+                .unwrap_or(curve.keys.len());
+            let InputControl::Curve { min, max, .. } = control else {
+                return;
+            };
+            let value = curve_graph_data(&curve)
+                .value_for_top_percent(top)
+                .unwrap_or_else(|| curve.sample(time))
+                .clamp(min, max);
+            session.add_curve_key(
+                selection.module,
+                parameter,
+                index,
+                CurveKey::new(time, value),
+            );
+            workspace.complex = Some(ComplexSelection {
+                key: index,
+                ..selection
+            });
+        }
+        Value::Gradient(gradient) => {
+            if let Some(index) = gradient
+                .keys
+                .iter()
+                .position(|key| (key.time - time).abs() <= 0.0005)
+            {
+                workspace.complex = Some(ComplexSelection {
+                    key: index,
+                    ..selection
+                });
+                session.ui_revision += 1;
+                return;
+            }
+            let index = gradient
+                .keys
+                .iter()
+                .position(|key| key.time > time)
+                .unwrap_or(gradient.keys.len());
+            session.add_gradient_key(
+                selection.module,
+                parameter,
+                index,
+                ColorKey::new(time, gradient.sample(time)),
+            );
+            workspace.complex = Some(ComplexSelection {
+                key: index,
+                ..selection
+            });
+        }
+        _ => session.status = "This property does not contain editable keys".into(),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1080,6 +1357,116 @@ mod tests {
         let registry = app.world().resource::<EditorModuleRegistry>();
         let session = app.world().resource::<EditorSession>();
         assert_eq!(curve_key_count(session, registry, selection), initial);
+    }
+
+    #[test]
+    fn insert_and_delete_shortcuts_edit_the_curve_under_the_pointer() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = EditorModuleRegistry::default();
+        let selection = first_curve_selection(&session, &registry);
+        let initial = curve_key_count(&session, &registry, selection);
+        let mut state = CurvesState::default();
+        state.select_for_test(selection.module, selection.input, selection.key);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(registry)
+            .insert_resource(state)
+            .init_resource::<WorkspaceLayout>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_plugins(EditorCurvesPlugin);
+        app.world_mut().spawn((
+            CurveGraph,
+            RelativeCursorPosition {
+                cursor_over: true,
+                normalized: Some(Vec2::new(0.17, -0.1)),
+            },
+        ));
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Insert);
+
+        app.update();
+
+        let inserted_selection = app
+            .world()
+            .resource::<CurvesState>()
+            .selected_key()
+            .unwrap();
+        let registry = app.world().resource::<EditorModuleRegistry>();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(curve_key_count(session, registry, selection), initial + 1);
+        let (_, _, Value::Curve(curve)) =
+            resolve_complex_input(session, registry, inserted_selection).unwrap()
+        else {
+            panic!("expected curve input");
+        };
+        assert!((curve.keys[inserted_selection.key].time - 0.67).abs() < 0.0001);
+
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear();
+            keys.release(KeyCode::Insert);
+            keys.press(KeyCode::Delete);
+        }
+        app.update();
+
+        let registry = app.world().resource::<EditorModuleRegistry>();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(curve_key_count(session, registry, selection), initial);
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        let registry = app.world().resource::<EditorModuleRegistry>();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(curve_key_count(session, registry, selection), initial + 1);
+    }
+
+    #[test]
+    fn curves_workspace_projects_keys_into_shared_feather_data() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = EditorModuleRegistry::default();
+        let selection = first_curve_selection(&session, &registry);
+        let (_, _, Value::Curve(curve)) =
+            resolve_complex_input(&session, &registry, selection).unwrap()
+        else {
+            panic!("expected curve input");
+        };
+
+        let AutomationCurveData::Curve(points) = curve_graph_data(&curve) else {
+            panic!("expected Feather curve data");
+        };
+        assert_eq!(points.len(), curve.keys.len());
+        assert_eq!(points[selection.key].time, curve.keys[selection.key].time);
+        assert_eq!(points[selection.key].value, curve.keys[selection.key].value);
+    }
+
+    #[test]
+    fn curve_drag_preview_updates_the_shared_raster_data() {
+        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = EditorModuleRegistry::default();
+        let selection = first_curve_selection(&session, &registry);
+        let (_, input, Value::Curve(curve)) =
+            resolve_complex_input(&session, &registry, selection).unwrap()
+        else {
+            panic!("expected curve input");
+        };
+        let InputControl::Curve { min, max, .. } = input.control else {
+            panic!("expected curve metadata");
+        };
+
+        let (key, preview) = curve_drag_preview(
+            &curve,
+            selection.key,
+            Vec2::new(12.0, 8.0),
+            Vec2::new(120.0, 100.0),
+            min,
+            max,
+        )
+        .unwrap();
+        let AutomationCurveData::Curve(points) = preview else {
+            panic!("expected curve preview");
+        };
+        assert_eq!(points[selection.key].time, key.time);
+        assert_eq!(points[selection.key].value, key.value);
+        assert_ne!(key.time, curve.keys[selection.key].time);
     }
 
     #[test]
