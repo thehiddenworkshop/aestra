@@ -55,6 +55,7 @@ semantic_id!(EffectClipId);
 semantic_id!(MarkerId);
 semantic_id!(ChoreographyEventId);
 semantic_id!(EmitterId);
+semantic_id!(EmitterRegionId);
 semantic_id!(ModuleId);
 semantic_id!(RendererId);
 semantic_id!(CurveId);

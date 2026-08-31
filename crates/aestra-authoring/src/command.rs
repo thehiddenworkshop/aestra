@@ -1,10 +1,10 @@
 use aestra_core::{
     AssetDefinition, AssetId, ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload,
     ChoreographyTrackId, ColorKey, CurveKey, EffectAssetRef, EffectClip, EffectClipId,
-    EffectClipSeed, EffectMarker, EffectParameter, Emitter, EmitterId, EmitterTransform, EventId,
-    EventLink, FlipbookDefinition, MarkerId, MarkerTimeReference, MaterialDefinition, MaterialId,
-    ModuleId, ModuleInstance, ParameterId, PropertySource, RendererId, RendererInstance,
-    RendererProperties, Value,
+    EffectClipSeed, EffectMarker, EffectParameter, Emitter, EmitterId, EmitterRegion,
+    EmitterTransform, EventId, EventLink, FlipbookDefinition, MarkerId, MarkerTimeReference,
+    MaterialDefinition, MaterialId, ModuleId, ModuleInstance, ParameterId, PropertySource,
+    RendererId, RendererInstance, RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -173,6 +173,10 @@ pub enum EffectCommand {
         id: EmitterId,
         start_time: f32,
         duration: f32,
+    },
+    SetEmitterRegions {
+        id: EmitterId,
+        regions: Vec<EmitterRegion>,
     },
     SetEmitterStartReference {
         id: EmitterId,

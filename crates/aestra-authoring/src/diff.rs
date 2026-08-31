@@ -331,18 +331,19 @@ fn diff_emitter(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticCha
     if before.start_time != after.start_time
         || before.start_reference != after.start_reference
         || before.duration != after.duration
+        || before.regions != after.regions
     {
         modified(
             changes,
             target,
             "emitter.timing",
             format!(
-                "{} ({:?})..{}",
-                before.start_time, before.start_reference, before.duration
+                "{} ({:?})..{} regions={:?}",
+                before.start_time, before.start_reference, before.duration, before.regions
             ),
             format!(
-                "{} ({:?})..{}",
-                after.start_time, after.start_reference, after.duration
+                "{} ({:?})..{} regions={:?}",
+                after.start_time, after.start_reference, after.duration, after.regions
             ),
         );
     }

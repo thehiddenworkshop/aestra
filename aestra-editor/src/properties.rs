@@ -3584,9 +3584,11 @@ fn sync_effect_clip_parameter_number_inputs(
 
 fn emitter_number_input_value(session: &EditorSession, control: EmitterNumberControl) -> f32 {
     let transform = session.selected_layer().transform;
+    let region = session.selected_emitter_region();
     match control {
-        EmitterNumberControl::Start => session.selected_layer().start_time,
-        EmitterNumberControl::Duration => session.selected_layer().duration,
+        EmitterNumberControl::Start => region.start_time,
+        EmitterNumberControl::Duration => region.duration,
+        EmitterNumberControl::End => region.end_time(),
         _ => emitter_transform_component_value(transform, control)
             .expect("transform control must resolve against an emitter transform"),
     }
@@ -3607,7 +3609,9 @@ fn emitter_transform_component_value(
             Some([x.to_degrees(), y.to_degrees(), z.to_degrees()][component as usize])
         }
         EmitterNumberControl::Scale(component) => Some(transform.scale[component as usize]),
-        EmitterNumberControl::Start | EmitterNumberControl::Duration => None,
+        EmitterNumberControl::Start
+        | EmitterNumberControl::Duration
+        | EmitterNumberControl::End => None,
     }
 }
 
@@ -3682,9 +3686,76 @@ fn set_emitter_transform_value(
         EmitterNumberControl::Scale(component) => {
             transform.scale[component as usize] = value.max(0.001);
         }
-        EmitterNumberControl::Start | EmitterNumberControl::Duration => return None,
+        EmitterNumberControl::Start
+        | EmitterNumberControl::Duration
+        | EmitterNumberControl::End => return None,
     }
     Some(())
+}
+
+fn selected_emitter_region_timing_command(
+    session: &EditorSession,
+    start_time: f32,
+    duration: f32,
+) -> Option<EffectCommand> {
+    let emitter = session.selected_layer();
+    if emitter.regions.is_empty() && (duration - emitter.duration).abs() <= 0.000_1 {
+        return Some(EffectCommand::SetEmitterTiming {
+            id: emitter.id,
+            start_time,
+            duration,
+        });
+    }
+    let selected = session
+        .selected_emitter_region
+        .unwrap_or_else(|| emitter.implicit_region_id());
+    let mut regions = emitter.timeline_regions();
+    let region = regions.iter_mut().find(|region| region.id == selected)?;
+    region.start_time = start_time;
+    region.duration = duration;
+    Some(EffectCommand::SetEmitterRegions {
+        id: emitter.id,
+        regions: emitter.normalize_timeline_regions(regions),
+    })
+}
+
+fn normalized_emitter_region_timing(
+    session: &EditorSession,
+    control: EmitterNumberControl,
+    value: f32,
+) -> (f32, f32) {
+    let emitter = session.selected_layer();
+    let region = session.selected_emitter_region();
+    let minimum = 0.05;
+    let maximum_duration = (emitter.duration - region.source_offset).max(minimum);
+    match control {
+        EmitterNumberControl::Start => {
+            let start = value.clamp(0.0, (session.effect.duration - minimum).max(0.0));
+            let duration = region
+                .duration
+                .min(session.effect.duration - start)
+                .min(maximum_duration)
+                .max(minimum);
+            (start, duration)
+        }
+        EmitterNumberControl::Duration => {
+            let duration = value.clamp(
+                minimum,
+                (session.effect.duration - region.start_time)
+                    .min(maximum_duration)
+                    .max(minimum),
+            );
+            (region.start_time, duration)
+        }
+        EmitterNumberControl::End => {
+            let end = value.clamp(
+                region.start_time + minimum,
+                (region.start_time + maximum_duration).min(session.effect.duration),
+            );
+            (region.start_time, end - region.start_time)
+        }
+        _ => (region.start_time, region.duration),
+    }
 }
 
 fn sync_properties_number_inputs(
@@ -4506,11 +4577,16 @@ fn handle_emitter_scalar_change(
         return;
     }
     match control {
-        EmitterNumberControl::Start => {
-            session.adjust_selected_start(change.value.max(0.0) - current);
-        }
-        EmitterNumberControl::Duration => {
-            session.adjust_selected_duration(change.value.max(0.05) - current);
+        EmitterNumberControl::Start
+        | EmitterNumberControl::Duration
+        | EmitterNumberControl::End => {
+            let (start_time, duration) =
+                normalized_emitter_region_timing(&session, *control, change.value);
+            if let Some(command) =
+                selected_emitter_region_timing_command(&session, start_time, duration)
+            {
+                session.execute("Changed emitter region timing", command, true);
+            }
         }
         EmitterNumberControl::Translation(_)
         | EmitterNumberControl::Rotation(_)
@@ -5036,13 +5112,17 @@ fn numeric_scrub_step(target: NumericScrubTarget) -> f32 {
             EmitterNumberControl::Translation(_) => 0.1,
             EmitterNumberControl::Rotation(_) => 1.0,
             EmitterNumberControl::Scale(_) => 0.05,
-            EmitterNumberControl::Start | EmitterNumberControl::Duration => 0.05,
+            EmitterNumberControl::Start
+            | EmitterNumberControl::Duration
+            | EmitterNumberControl::End => 0.05,
         },
         NumericScrubTarget::EffectClip(control) => match control.control {
             EmitterNumberControl::Translation(_) => 0.1,
             EmitterNumberControl::Rotation(_) => 1.0,
             EmitterNumberControl::Scale(_) => 0.05,
-            EmitterNumberControl::Start | EmitterNumberControl::Duration => 0.05,
+            EmitterNumberControl::Start
+            | EmitterNumberControl::Duration
+            | EmitterNumberControl::End => 0.05,
         },
         NumericScrubTarget::EffectClipParameter(control) => {
             if control.kind == EffectClipParameterScrubKind::U32 {
@@ -5177,13 +5257,19 @@ fn normalize_numeric_scrub_value_with_multiplier(
             }
             value
         }
-        NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
-            value.clamp(0.0, (session.effect.duration - 0.05).max(0.0))
+        NumericScrubTarget::Emitter(
+            control @ (EmitterNumberControl::Start
+            | EmitterNumberControl::Duration
+            | EmitterNumberControl::End),
+        ) => {
+            let (start_time, duration) = normalized_emitter_region_timing(session, control, value);
+            match control {
+                EmitterNumberControl::Start => start_time,
+                EmitterNumberControl::Duration => duration,
+                EmitterNumberControl::End => start_time + duration,
+                _ => unreachable!(),
+            }
         }
-        NumericScrubTarget::Emitter(EmitterNumberControl::Duration) => value.clamp(
-            0.05,
-            (session.effect.duration - session.selected_layer().start_time).max(0.05),
-        ),
         NumericScrubTarget::Emitter(EmitterNumberControl::Scale(_)) => value.max(0.001),
         NumericScrubTarget::Emitter(_) => value,
         NumericScrubTarget::EffectClip(EffectClipNumberControl {
@@ -5273,22 +5359,14 @@ fn numeric_scrub_command(
             control.parameter,
             updated_properties_number_value(session, control, value)?,
         ),
-        NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
-            let emitter = session.selected_layer();
-            let start_time = normalize_numeric_scrub_value(session, target, value);
-            Some(EffectCommand::SetEmitterTiming {
-                id: emitter.id,
-                start_time,
-                duration: emitter.duration.min(session.effect.duration - start_time),
-            })
-        }
-        NumericScrubTarget::Emitter(EmitterNumberControl::Duration) => {
-            let emitter = session.selected_layer();
-            Some(EffectCommand::SetEmitterTiming {
-                id: emitter.id,
-                start_time: emitter.start_time,
-                duration: normalize_numeric_scrub_value(session, target, value),
-            })
+        NumericScrubTarget::Emitter(
+            control @ (EmitterNumberControl::Start
+            | EmitterNumberControl::Duration
+            | EmitterNumberControl::End),
+        ) => {
+            let value = normalize_numeric_scrub_value(session, target, value);
+            let (start_time, duration) = normalized_emitter_region_timing(session, control, value);
+            selected_emitter_region_timing_command(session, start_time, duration)
         }
         NumericScrubTarget::Emitter(control) => {
             let mut transform = session.selected_layer().transform;
@@ -5419,13 +5497,17 @@ fn commit_numeric_scrub(
         NumericScrubTarget::Properties(control) => {
             apply_properties_number(session, control, value, localizer);
         }
-        NumericScrubTarget::Emitter(EmitterNumberControl::Start) => {
-            let current = session.selected_layer().start_time;
-            session.adjust_selected_start(value - current);
-        }
-        NumericScrubTarget::Emitter(EmitterNumberControl::Duration) => {
-            let current = session.selected_layer().duration;
-            session.adjust_selected_duration(value - current);
+        NumericScrubTarget::Emitter(
+            control @ (EmitterNumberControl::Start
+            | EmitterNumberControl::Duration
+            | EmitterNumberControl::End),
+        ) => {
+            let (start_time, duration) = normalized_emitter_region_timing(session, control, value);
+            if let Some(command) =
+                selected_emitter_region_timing_command(session, start_time, duration)
+            {
+                session.execute("Changed emitter region timing", command, true);
+            }
         }
         NumericScrubTarget::Emitter(control) => {
             set_emitter_transform_component(session, control, value, true);
@@ -7869,15 +7951,19 @@ fn spawn_emitter_timing_controls(
     session: &EditorSession,
     localizer: &Localizer,
 ) {
-    spawn_start_reference_controls(
-        parent,
-        session,
-        StartReferenceTarget::Emitter(session.selected_layer().id),
-        localizer,
-    );
+    if session.selected_layer().regions.is_empty() {
+        spawn_start_reference_controls(
+            parent,
+            session,
+            StartReferenceTarget::Emitter(session.selected_layer().id),
+            localizer,
+        );
+    }
     parent
         .spawn((
-            EditorTooltip::description("Start offset and active duration for this emitter."),
+            EditorTooltip::description(
+                "Timeline start, duration, and derived end for the selected emitter region.",
+            ),
             Node {
                 width: Val::Percent(100.0),
                 min_height: Val::Px(29.0),
@@ -7891,6 +7977,7 @@ fn spawn_emitter_timing_controls(
             for (title, control) in [
                 ("Start", EmitterNumberControl::Start),
                 ("Duration", EmitterNumberControl::Duration),
+                ("End", EmitterNumberControl::End),
             ] {
                 row.spawn_empty().apply_scene(label(title));
                 row.spawn(Node {
@@ -10433,6 +10520,7 @@ struct PropertiesSliderControl(PropertiesNumberControl);
 enum EmitterNumberControl {
     Start,
     Duration,
+    End,
     Translation(u8),
     Rotation(u8),
     Scale(u8),

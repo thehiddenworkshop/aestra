@@ -179,7 +179,12 @@ fn apply_command(
                 if let Some(reference) = emitter.start_reference
                     && reference.marker == *id
                 {
-                    emitter.start_time = *time + reference.offset;
+                    let start_time = *time + reference.offset;
+                    let delta = start_time - emitter.start_time;
+                    emitter.start_time = start_time;
+                    for region in &mut emitter.regions {
+                        region.start_time += delta;
+                    }
                 }
             }
             for clip in &mut effect.effect_clips {
@@ -604,6 +609,14 @@ fn apply_command(
                 duration: previous.1,
             }]
         }
+        EffectCommand::SetEmitterRegions { id, regions } => {
+            let emitter = emitter_mut(effect, *id)?;
+            let previous = std::mem::replace(&mut emitter.regions, regions.clone());
+            vec![EffectCommand::SetEmitterRegions {
+                id: *id,
+                regions: previous,
+            }]
+        }
         EffectCommand::SetEmitterStartReference { id, reference } => {
             let resolved = reference
                 .map(|reference| {
@@ -613,9 +626,14 @@ fn apply_command(
             let emitter = emitter_mut(effect, *id)?;
             let previous_reference = emitter.start_reference;
             let previous_timing = (emitter.start_time, emitter.duration);
+            let previous_regions = emitter.regions.clone();
             emitter.start_reference = *reference;
             if let Some(resolved) = resolved {
+                let delta = resolved - emitter.start_time;
                 emitter.start_time = resolved;
+                for region in &mut emitter.regions {
+                    region.start_time += delta;
+                }
             }
             vec![
                 EffectCommand::SetEmitterStartReference {
@@ -626,6 +644,10 @@ fn apply_command(
                     id: *id,
                     start_time: previous_timing.0,
                     duration: previous_timing.1,
+                },
+                EffectCommand::SetEmitterRegions {
+                    id: *id,
+                    regions: previous_regions,
                 },
             ]
         }

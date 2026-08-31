@@ -5,15 +5,47 @@ use aestra_authoring::{
 use aestra_core::{
     BlendMode, ChoreographyEvent, ChoreographyEventPayload, ColorKey, Curve, CurveKey, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter,
-    EmitterTransform, EventId, EventLink, EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION,
-    MODULE_INITIALIZE, MarkerTimeReference, ParameterId, PropertyEvaluationDomain, PropertySource,
-    ScalarRange, Value,
+    EmitterRegionId, EmitterTransform, EventId, EventLink, EventTrigger, MODULE_APPEARANCE,
+    MODULE_EMISSION, MODULE_INITIALIZE, MarkerTimeReference, ParameterId, PropertyEvaluationDomain,
+    PropertySource, ScalarRange, Value,
 };
 
 fn test_effect() -> EffectAsset {
     let mut effect = EffectAsset::new("Authoring Test", 2.0);
     effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
     effect
+}
+
+#[test]
+fn emitter_region_edits_are_transactional_and_undoable() {
+    let mut effect = test_effect();
+    let emitter_id = effect.emitters[0].id;
+    let implicit = effect.emitters[0].implicit_region_id();
+    let regions = effect.emitters[0]
+        .split_timeline_region(implicit, 0.75, EmitterRegionId::from_u128(0x52))
+        .unwrap();
+    let original = effect.clone();
+    let mut history = CommandHistory::default();
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Split emitter region",
+                EffectCommand::SetEmitterRegions {
+                    id: emitter_id,
+                    regions: regions.clone(),
+                },
+            ),
+        )
+        .unwrap();
+    assert_eq!(effect.emitters[0].regions, regions);
+
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect, original);
+    history.redo(&mut effect).unwrap();
+    assert_eq!(effect.emitters[0].regions, regions);
 }
 
 #[test]

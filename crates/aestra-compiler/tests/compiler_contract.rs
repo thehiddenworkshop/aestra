@@ -3,10 +3,10 @@ use aestra_compiler::{
 };
 use aestra_core::{
     ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode, EffectAsset,
-    EffectClip, EffectClipSeed, EffectParameter, Emitter, EmitterShape, MODULE_EMISSION,
-    MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProperties,
-    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, PropertySourceValue, ScalarRange,
-    StageKind, Value, Vec3Curve, Vec3Range,
+    EffectClip, EffectClipSeed, EffectParameter, Emitter, EmitterRegionId, EmitterShape,
+    MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialInput,
+    MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
+    PropertySourceValue, ScalarRange, StageKind, Value, Vec3Curve, Vec3Range,
 };
 use aestra_project::ProjectAssetIndex;
 use aestra_runtime::{
@@ -18,6 +18,42 @@ use std::{collections::BTreeMap, sync::Arc};
 const SAMPLE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
 const TEXTURED_SAMPLE: &str = include_str!("../../../assets/effects/ember_sigil.aestra.ron");
 const FLIPBOOK_SAMPLE: &str = include_str!("../../../assets/effects/plasma_burst.aestra.ron");
+
+#[test]
+fn emitter_regions_lower_to_source_time_preserving_runtime_ranges() {
+    let mut asset = EffectAsset::new("Regions", 2.0);
+    let emitter = Emitter::basic_sprite("Emitter", 2.0);
+    let implicit = emitter.implicit_region_id();
+    asset.emitters.push(emitter);
+    let original = asset.clone();
+    asset.emitters[0].regions = asset.emitters[0]
+        .split_timeline_region(implicit, 0.75, EmitterRegionId::from_u128(0x53))
+        .unwrap();
+
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+
+    assert_eq!(compiled.emitters.len(), 2);
+    assert_eq!(compiled.emitters[0].start_time, 0.0);
+    assert_eq!(compiled.emitters[0].source_offset, 0.0);
+    assert_eq!(compiled.emitters[0].duration, 0.75);
+    assert_eq!(compiled.emitters[1].start_time, 0.75);
+    assert_eq!(compiled.emitters[1].source_offset, 0.75);
+    assert_eq!(compiled.emitters[1].duration, 1.25);
+    assert_eq!(
+        compiled.emitters[0].seed_index,
+        compiled.emitters[1].seed_index
+    );
+
+    let original = EffectCompiler::default().compile(&original).unwrap();
+    let mut uninterrupted = Vec::new();
+    let mut split = Vec::new();
+    aestra_runtime::evaluate(&original, 1.5, 42, &mut uninterrupted);
+    aestra_runtime::evaluate(&compiled, 1.5, 42, &mut split);
+    for sample in &mut split {
+        sample.emitter_index = 0;
+    }
+    assert_eq!(split, uninterrupted);
+}
 
 #[test]
 fn builtin_registry_exposes_authoring_and_runtime_metadata() {

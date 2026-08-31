@@ -29,9 +29,11 @@ struct Emitter {
     shape_kind: u32,
     start_time: f32,
     duration: f32,
+    source_offset: f32,
+    source_duration: f32,
     spawn_rate: vec2<f32>,
     spawn_rate_source: u32,
-    _spawn_rate_padding: u32,
+    seed_index: u32,
     spawn_rate_curve: Curve,
     shape_radius: f32,
     shape_depth: f32,
@@ -175,7 +177,7 @@ fn curve_integral(curve: Curve, time: f32) -> f32 {
 
 fn resolved_spawn_rate(emitter: Emitter, emitter_index: u32) -> f32 {
     if emitter.spawn_rate_source == 1u {
-        return max(sample_range(emitter.spawn_rate, hash01(emitter_index, 0x53504157u)), 0.0);
+        return max(sample_range(emitter.spawn_rate, hash01(emitter.seed_index, 0x53504157u)), 0.0);
     }
     return max(emitter.spawn_rate.x, 0.0);
 }
@@ -237,8 +239,8 @@ fn resolved_particle_vector(
 
 fn emitted_until(emitter: Emitter, emitter_index: u32, time: f32) -> f32 {
     if emitter.spawn_rate_source == 2u {
-        return emitter.duration
-            * max(curve_integral(emitter.spawn_rate_curve, time / max(emitter.duration, 0.000000119)), 0.0);
+        return emitter.source_duration
+            * max(curve_integral(emitter.spawn_rate_curve, time / max(emitter.source_duration, 0.000000119)), 0.0);
     }
     return time * resolved_spawn_rate(emitter, emitter_index);
 }
@@ -248,7 +250,7 @@ fn curve_spawn_time(emitter: Emitter, emitter_index: u32, target_emission: f32) 
         return 0.0;
     }
     var low = 0.0;
-    var high = emitter.duration;
+    var high = emitter.source_duration;
     var iteration = 0u;
     loop {
         if iteration >= 12u {
@@ -353,15 +355,18 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let emitter = emitters[emitter_index];
     let particle_index = slot - emitter.slot_offset;
-    let local_time = globals.time - emitter.start_time;
-    if local_time < 0.0 || local_time > emitter.duration {
+    let region_time = globals.time - emitter.start_time;
+    if region_time < 0.0 {
         particles[slot] = dead_particle(emitter_index);
         append_dead(slot);
         return;
     }
+    let local_time = emitter.source_offset + region_time;
+    let source_end = emitter.source_offset + emitter.duration;
+    let emission_time = min(local_time, source_end);
 
     let emitted = emitter.burst_count
-        + u32(max(floor(emitted_until(emitter, emitter_index, local_time)), 0.0));
+        + u32(max(floor(emitted_until(emitter, emitter_index, emission_time)), 0.0));
     if particle_index >= min(emitted, emitter.max_particles) {
         particles[slot] = dead_particle(emitter_index);
         append_dead(slot);
@@ -371,7 +376,7 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var spawn_time = 0.0;
     if particle_index >= emitter.burst_count {
         let particle_target = f32(particle_index - emitter.burst_count);
-        if emitted_until(emitter, emitter_index, emitter.duration) < particle_target {
+        if emitted_until(emitter, emitter_index, emitter.source_duration) < particle_target {
             particles[slot] = dead_particle(emitter_index);
             append_dead(slot);
             return;
@@ -387,6 +392,11 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
             }
             spawn_time = particle_target / rate;
         }
+    }
+    if spawn_time < emitter.source_offset || spawn_time >= source_end {
+        particles[slot] = dead_particle(emitter_index);
+        append_dead(slot);
+        return;
     }
     let age = local_time - spawn_time;
     let lifetime = sample_range(emitter.lifetime, hash01(particle_index, 0u));
@@ -453,7 +463,7 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         origin = vec3<f32>(cos(shape_angle) * radius, y, sin(shape_angle) * radius);
     }
 
-    let normalized_emitter_time = local_time / max(emitter.duration, 0.000000119);
+    let normalized_emitter_time = local_time / max(emitter.source_duration, 0.000000119);
     let drag = resolved_particle_scalar(
         emitter.drag,
         emitter.drag_source,

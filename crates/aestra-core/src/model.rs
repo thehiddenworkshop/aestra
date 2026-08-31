@@ -1,7 +1,7 @@
 use crate::{
     AssetId, ChoreographyEventId, CurveId, Diagnostic, DiagnosticCode, EffectClipId, EffectId,
-    EmitterId, EventId, GradientId, MarkerId, MaterialId, ModuleId, ParameterId, RendererId,
-    ValidationReport,
+    EmitterId, EmitterRegionId, EventId, GradientId, MarkerId, MaterialId, ModuleId, ParameterId,
+    RendererId, ValidationReport,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -873,10 +873,45 @@ pub struct Emitter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_reference: Option<MarkerTimeReference>,
     pub duration: f32,
+    /// Explicit timeline occurrences of this emitter. An empty list preserves the legacy
+    /// single-region contract represented by `start_time` and `duration`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regions: Vec<EmitterRegion>,
     pub max_particles: u32,
     pub simulation_domain: SimulationDomain,
     pub modules: Vec<ModuleInstance>,
     pub renderers: Vec<RendererInstance>,
+}
+
+/// One editable occurrence of an emitter definition on the effect timeline.
+///
+/// `source_offset` maps the region back into the emitter's original local-time interval. This
+/// makes splitting and rejoining regions lossless and keeps emitter-time curves continuous.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct EmitterRegion {
+    pub id: EmitterRegionId,
+    pub start_time: f32,
+    pub source_offset: f32,
+    pub duration: f32,
+}
+
+impl EmitterRegion {
+    pub fn new(start_time: f32, source_offset: f32, duration: f32) -> Self {
+        Self {
+            id: EmitterRegionId::new(),
+            start_time,
+            source_offset,
+            duration,
+        }
+    }
+
+    pub fn end_time(self) -> f32 {
+        self.start_time + self.duration
+    }
+
+    pub fn source_end(self) -> f32 {
+        self.source_offset + self.duration
+    }
 }
 
 /// Authored local transform applied to one emitter before the effect-instance transform.
@@ -927,6 +962,7 @@ impl Emitter {
             start_time: 0.0,
             start_reference: None,
             duration,
+            regions: Vec::new(),
             max_particles: 128,
             simulation_domain: SimulationDomain::Particle,
             modules: vec![
@@ -964,11 +1000,99 @@ impl Emitter {
 
     pub fn regenerate_ids(&mut self) {
         self.id = EmitterId::new();
+        for region in &mut self.regions {
+            region.id = EmitterRegionId::new();
+        }
         for module in &mut self.modules {
             module.regenerate_ids();
         }
         for renderer in &mut self.renderers {
             renderer.id = RendererId::new();
+        }
+    }
+
+    pub fn implicit_region_id(&self) -> EmitterRegionId {
+        const IMPLICIT_REGION_NAMESPACE: u128 = 0x9e37_79b9_7f4a_7c15_d1b5_4a32_d192_ed03;
+        EmitterRegionId::from_u128(self.id.as_uuid().as_u128() ^ IMPLICIT_REGION_NAMESPACE)
+    }
+
+    pub fn timeline_regions(&self) -> Vec<EmitterRegion> {
+        if self.regions.is_empty() {
+            vec![EmitterRegion {
+                id: self.implicit_region_id(),
+                start_time: self.start_time,
+                source_offset: 0.0,
+                duration: self.duration,
+            }]
+        } else {
+            self.regions.clone()
+        }
+    }
+
+    pub fn timeline_region(&self, id: EmitterRegionId) -> Option<EmitterRegion> {
+        if self.regions.is_empty() {
+            (id == self.implicit_region_id()).then(|| self.timeline_regions()[0])
+        } else {
+            self.regions.iter().find(|region| region.id == id).copied()
+        }
+    }
+
+    pub fn split_timeline_region(
+        &self,
+        id: EmitterRegionId,
+        split_time: f32,
+        right_id: EmitterRegionId,
+    ) -> Option<Vec<EmitterRegion>> {
+        let mut regions = self.timeline_regions();
+        let index = regions.iter().position(|region| region.id == id)?;
+        let region = regions[index];
+        let left_duration = split_time - region.start_time;
+        let right_duration = region.end_time() - split_time;
+        if left_duration <= f32::EPSILON || right_duration <= f32::EPSILON {
+            return None;
+        }
+        regions[index].duration = left_duration;
+        regions.insert(
+            index + 1,
+            EmitterRegion {
+                id: right_id,
+                start_time: split_time,
+                source_offset: region.source_offset + left_duration,
+                duration: right_duration,
+            },
+        );
+        Some(regions)
+    }
+
+    pub fn join_timeline_region_with_next(
+        &self,
+        id: EmitterRegionId,
+    ) -> Option<Vec<EmitterRegion>> {
+        let mut regions = self.timeline_regions();
+        regions.sort_by(|left, right| left.start_time.total_cmp(&right.start_time));
+        let index = regions.iter().position(|region| region.id == id)?;
+        let left = *regions.get(index)?;
+        let right = *regions.get(index + 1)?;
+        let contiguous_timeline = (left.end_time() - right.start_time).abs() <= 0.000_1;
+        let contiguous_source = (left.source_end() - right.source_offset).abs() <= 0.000_1;
+        if !contiguous_timeline || !contiguous_source {
+            return None;
+        }
+        regions[index].duration += right.duration;
+        regions.remove(index + 1);
+        Some(self.normalize_timeline_regions(regions))
+    }
+
+    pub fn normalize_timeline_regions(&self, regions: Vec<EmitterRegion>) -> Vec<EmitterRegion> {
+        if regions.len() == 1
+            && regions[0].id == self.implicit_region_id()
+            && (regions[0].start_time - self.start_time).abs() <= 0.000_1
+            && regions[0].source_offset.abs() <= 0.000_1
+            && (regions[0].duration - self.duration).abs() <= 0.000_1
+        {
+            Vec::new()
+        } else {
+            regions
         }
     }
 
@@ -1176,6 +1300,33 @@ impl Emitter {
                 path,
                 format!("emitter '{}' has invalid timing", self.name),
             ));
+        }
+        for (index, region) in self.regions.iter().enumerate() {
+            let region_path = format!("{path}.regions[{index}]");
+            register_id(
+                report,
+                semantic_ids,
+                region.id.as_uuid().as_u128(),
+                format!("{region_path}.id"),
+            );
+            if !region.start_time.is_finite()
+                || region.start_time < 0.0
+                || !region.source_offset.is_finite()
+                || region.source_offset < 0.0
+                || !region.duration.is_finite()
+                || region.duration <= 0.0
+                || region.end_time() > effect_duration + f32::EPSILON
+                || region.source_end() > self.duration + f32::EPSILON
+            {
+                report.push(Diagnostic::error(
+                    DiagnosticCode::InvalidTiming,
+                    region_path,
+                    format!(
+                        "emitter region {} has invalid timeline or source timing",
+                        region.id
+                    ),
+                ));
+            }
         }
         if self.max_particles == 0 {
             report.push(Diagnostic::error(

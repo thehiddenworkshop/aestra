@@ -21,7 +21,8 @@ use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
     ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload, ChoreographyTrackId,
     ColorKey, CurveKey, EffectAsset, EffectAssetRef, EffectClip, EffectClipId, EffectMarker,
-    EffectParameter, Emitter, EmitterId, MarkerId, ModuleId, ModuleParameters, Value,
+    EffectParameter, Emitter, EmitterId, EmitterRegion, EmitterRegionId, MarkerId, ModuleId,
+    ModuleParameters, Value,
 };
 #[cfg(test)]
 use bevy::ui_widgets::{ControlOrientation, Scrollbar};
@@ -88,6 +89,7 @@ impl Plugin for TimelinePlugin {
                     open_focused_timeline_context_menu,
                     navigate_timeline,
                     dismiss_timeline_popovers,
+                    dismiss_emitter_region_selection,
                 )
                     .chain()
                     .in_set(TimelineSet::Input),
@@ -142,11 +144,17 @@ pub(crate) enum TimelineAction {
     AddChoreographyEvent,
     SelectChoreographyEvent(ChoreographyEventId),
     DeleteChoreographyEvent(ChoreographyEventId),
+    SplitEmitterRegion,
+    JoinEmitterRegion,
 }
 
 #[derive(Component, Event, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ChoreographyAction {
     SelectEmitter(EmitterId),
+    SelectEmitterRegion {
+        emitter: EmitterId,
+        region: EmitterRegionId,
+    },
     SelectEffectClip(EffectClipId),
     SelectEffectClipEmitter {
         path: EffectClipPath,
@@ -329,6 +337,75 @@ fn handle_choreography_action_buttons(
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct EmitterRegionMerge {
+    merged_region: EmitterRegionId,
+    regions: Vec<EmitterRegion>,
+    emitter_start_time: f32,
+    emitter_duration: f32,
+}
+
+fn merge_selected_emitter_regions(
+    effect_duration: f32,
+    emitter: &Emitter,
+    selected: &BTreeSet<EmitterRegionId>,
+) -> Option<EmitterRegionMerge> {
+    if selected.len() < 2 {
+        return None;
+    }
+    let mut regions = emitter.timeline_regions();
+    regions.sort_by(|left, right| left.start_time.total_cmp(&right.start_time));
+    let selected_regions = regions
+        .iter()
+        .copied()
+        .filter(|region| selected.contains(&region.id))
+        .collect::<Vec<_>>();
+    if selected_regions.len() != selected.len() {
+        return None;
+    }
+
+    let first = *selected_regions.first()?;
+    let merged_start = selected_regions
+        .iter()
+        .map(|region| region.start_time)
+        .reduce(f32::min)?;
+    let merged_end = selected_regions
+        .iter()
+        .map(|region| region.end_time())
+        .reduce(f32::max)?;
+    let merged_duration = merged_end - merged_start;
+    let emitter_duration = emitter
+        .duration
+        .max(first.source_offset + merged_duration)
+        .min(effect_duration);
+    let emitter_start_time = emitter
+        .start_time
+        .min((effect_duration - emitter_duration).max(0.0));
+    let source_offset = first
+        .source_offset
+        .min((emitter_duration - merged_duration).max(0.0));
+
+    regions.retain(|region| !selected.contains(&region.id));
+    regions.push(EmitterRegion {
+        id: first.id,
+        start_time: merged_start,
+        source_offset,
+        duration: merged_duration,
+    });
+    regions.sort_by(|left, right| left.start_time.total_cmp(&right.start_time));
+
+    let mut prospective = emitter.clone();
+    prospective.start_time = emitter_start_time;
+    prospective.duration = emitter_duration;
+    let regions = prospective.normalize_timeline_regions(regions);
+    Some(EmitterRegionMerge {
+        merged_region: first.id,
+        regions,
+        emitter_start_time,
+        emitter_duration,
+    })
+}
+
 fn execute_timeline_action(
     action: On<TimelineAction>,
     mut session: ResMut<EditorSession>,
@@ -408,6 +485,123 @@ fn execute_timeline_action(
                 |localizer| localizer.text("timeline-delete-event-command"),
             );
             session.execute(label, EffectCommand::RemoveChoreographyEvent { id }, true);
+        }
+        TimelineAction::SplitEmitterRegion => {
+            let selected_region = state.selected_emitter_region;
+            let Some(emitter_id) = selected_region
+                .map(|(emitter, _)| emitter)
+                .or_else(|| session.selection.emitter(&session.effect))
+            else {
+                session.status = "Select an emitter before splitting".into();
+                return;
+            };
+            let playhead = session.time();
+            let Some(emitter) = session
+                .effect
+                .emitters
+                .iter()
+                .find(|emitter| emitter.id == emitter_id)
+            else {
+                return;
+            };
+            let preferred = selected_region
+                .filter(|(selected_emitter, _)| *selected_emitter == emitter_id)
+                .and_then(|(_, region)| emitter.timeline_region(region))
+                .filter(|region| playhead >= region.start_time && playhead <= region.end_time());
+            let region = preferred.or_else(|| {
+                emitter
+                    .timeline_regions()
+                    .into_iter()
+                    .find(|region| playhead >= region.start_time && playhead <= region.end_time())
+            });
+            let Some(region) = region else {
+                session.status = "Move the playhead inside the selected emitter region".into();
+                return;
+            };
+            let minimum_duration = (1.0 / session.clock.tick_rate().max(1) as f32).max(0.001);
+            if playhead < region.start_time + minimum_duration
+                || playhead > region.end_time() - minimum_duration
+            {
+                session.status = "Move the playhead farther from the region boundary".into();
+                return;
+            }
+            let Some(regions) =
+                emitter.split_timeline_region(region.id, playhead, EmitterRegionId::new())
+            else {
+                return;
+            };
+            if session.execute(
+                "Split emitter region",
+                EffectCommand::SetEmitterRegions {
+                    id: emitter_id,
+                    regions,
+                },
+                true,
+            ) {
+                state.select_only_emitter_region(emitter_id, region.id);
+                session.select_emitter_region(emitter_id, region.id);
+            }
+        }
+        TimelineAction::JoinEmitterRegion => {
+            let selected = state
+                .selected_emitter_regions
+                .iter()
+                .copied()
+                .collect::<Vec<_>>();
+            let Some((emitter_id, _)) = selected.first().copied() else {
+                session.status =
+                    "Select two or more regions from the same emitter to merge them".into();
+                return;
+            };
+            if selected.len() < 2 || selected.iter().any(|(emitter, _)| *emitter != emitter_id) {
+                session.status =
+                    "Select two or more regions from the same emitter to merge them".into();
+                return;
+            }
+            let Some(emitter) = session
+                .effect
+                .emitters
+                .iter()
+                .find(|emitter| emitter.id == emitter_id)
+            else {
+                return;
+            };
+            let selected_ids = selected
+                .iter()
+                .map(|(_, region)| *region)
+                .collect::<BTreeSet<_>>();
+            let Some(merged) =
+                merge_selected_emitter_regions(session.effect.duration, emitter, &selected_ids)
+            else {
+                session.status = "The selected emitter regions no longer exist".into();
+                return;
+            };
+            let selected = if merged.regions.is_empty() {
+                emitter.implicit_region_id()
+            } else {
+                merged.merged_region
+            };
+            let mut commands = Vec::with_capacity(2);
+            if (merged.emitter_start_time - emitter.start_time).abs() > 0.000_1
+                || (merged.emitter_duration - emitter.duration).abs() > 0.000_1
+            {
+                commands.push(EffectCommand::SetEmitterTiming {
+                    id: emitter_id,
+                    start_time: merged.emitter_start_time,
+                    duration: merged.emitter_duration,
+                });
+            }
+            commands.push(EffectCommand::SetEmitterRegions {
+                id: emitter_id,
+                regions: merged.regions,
+            });
+            if session.execute_transaction(
+                EffectTransaction::new("Merged emitter regions", commands),
+                true,
+            ) {
+                state.select_only_emitter_region(emitter_id, selected);
+                session.select_emitter_region(emitter_id, selected);
+            }
         }
     }
 }
@@ -500,6 +694,32 @@ fn execute_choreography_action(
         | state.context_effect_clip.take().is_some()
         | state.automation_menu_emitter.take().is_some();
     match action.clone() {
+        ChoreographyAction::SelectEmitterRegion { emitter, region } => {
+            state.selected_automation_key = None;
+            if let Some(selected_emitter) = session
+                .effect
+                .emitters
+                .iter()
+                .find(|item| item.id == emitter)
+                .filter(|item| item.timeline_region(region).is_some())
+            {
+                let control = keys.as_deref().is_some_and(|keys| {
+                    keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight)
+                });
+                let shift = keys.as_deref().is_some_and(|keys| {
+                    keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight)
+                });
+                let primary = state.select_emitter_region(selected_emitter, region, control, shift);
+                if let Some(primary) = primary {
+                    session.select_emitter_region(emitter, primary);
+                } else {
+                    session.select_emitter(emitter);
+                }
+                state.inspected_child = None;
+                curves.clear();
+                session.ui_revision += 1;
+            }
+        }
         ChoreographyAction::SelectEmitter(emitter) => {
             state.selected_automation_key = None;
             if session
@@ -684,8 +904,16 @@ fn execute_choreography_action(
             if automation_lane_keys(&session.effect, &selection.lane)
                 .is_some_and(|keys| selection.key < keys.len())
             {
+                let selected_region = state
+                    .selected_emitter_region
+                    .filter(|(emitter, _)| *emitter == selection.lane.emitter);
                 state.select_only_emitter(selection.lane.emitter);
-                session.select_emitter(selection.lane.emitter);
+                if let Some((emitter, region)) = selected_region {
+                    state.select_only_emitter_region(emitter, region);
+                    session.select_emitter_region(emitter, region);
+                } else {
+                    session.select_emitter(selection.lane.emitter);
+                }
                 curves.select_key_channel(
                     selection.lane.module,
                     selection.lane.input,
@@ -707,9 +935,17 @@ fn execute_choreography_action(
             else {
                 return;
             };
+            let Some(region) = state
+                .selected_emitter_region
+                .filter(|(selected_emitter, _)| *selected_emitter == emitter.id)
+                .and_then(|(_, region)| emitter.timeline_region(region))
+                .or_else(|| emitter.timeline_regions().into_iter().next())
+            else {
+                return;
+            };
+            let source_start = region.start_time - region.source_offset;
             let duration = emitter.duration.max(0.001);
-            let normalized_time =
-                ((session.time() - emitter.start_time) / duration).clamp(0.0, 1.0);
+            let normalized_time = ((session.time() - source_start) / duration).clamp(0.0, 1.0);
             commands.trigger(ChoreographyAction::AddAutomationKeyAt {
                 lane,
                 normalized_time_bits: normalized_time.to_bits(),
@@ -1079,6 +1315,96 @@ mod tests {
         assert_eq!(timeline_cursor_fraction(-0.5), 0.0);
         assert_eq!(timeline_cursor_fraction(0.0), 0.5);
         assert_eq!(timeline_cursor_fraction(0.5), 1.0);
+    }
+
+    #[test]
+    fn emitter_region_selection_supports_single_toggle_and_range_selection() {
+        let mut emitter = Emitter::basic_sprite("Emitter", 3.0);
+        let first = emitter.implicit_region_id();
+        let second = EmitterRegionId::from_u128(0x71);
+        emitter.regions = emitter.split_timeline_region(first, 1.0, second).unwrap();
+        let third = EmitterRegionId::from_u128(0x72);
+        emitter.regions = emitter.split_timeline_region(second, 2.0, third).unwrap();
+        let mut state = TimelineState::framed(3.0);
+
+        assert_eq!(
+            state.select_emitter_region(&emitter, first, false, false),
+            Some(first)
+        );
+        assert_eq!(state.selected_emitter_regions.len(), 1);
+
+        assert_eq!(
+            state.select_emitter_region(&emitter, third, false, true),
+            Some(third)
+        );
+        assert_eq!(state.selected_emitter_regions.len(), 3);
+
+        state.select_emitter_region(&emitter, second, true, false);
+        assert_eq!(state.selected_emitter_regions.len(), 2);
+        assert!(
+            !state
+                .selected_emitter_regions
+                .contains(&(emitter.id, second))
+        );
+
+        state.clear_emitter_region_selection();
+        assert!(state.selected_emitter_regions.is_empty());
+        assert_eq!(state.selected_emitters, BTreeSet::from([emitter.id]));
+    }
+
+    #[test]
+    fn split_toolbar_action_cuts_the_selected_emitter_region_at_the_playhead() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.effect.emitters[0].clone();
+        let region = emitter.timeline_regions()[0];
+        let split_time = region.start_time + region.duration * 0.5;
+        session.select_emitter(emitter.id);
+        session.seek_time(split_time);
+        let mut app = choreography_app(session);
+        app.add_observer(execute_timeline_action);
+        app.world_mut()
+            .resource_mut::<TimelineState>()
+            .select_only_emitter_region(emitter.id, region.id);
+
+        app.world_mut().trigger(TimelineAction::SplitEmitterRegion);
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        let regions = session.effect.emitters[0].timeline_regions();
+        assert_eq!(regions.len(), 2);
+        assert_eq!(regions[0].id, region.id);
+        assert!((regions[0].end_time() - split_time).abs() <= 0.000_1);
+        assert!((regions[1].start_time - split_time).abs() <= 0.000_1);
+    }
+
+    #[test]
+    fn merge_consolidates_separate_and_overlapping_emitter_regions() {
+        let mut emitter = Emitter::basic_sprite("Emitter", 3.0);
+        let first = emitter.implicit_region_id();
+        let second = EmitterRegionId::from_u128(0x73);
+        emitter.regions = emitter.split_timeline_region(first, 1.0, second).unwrap();
+        let third = EmitterRegionId::from_u128(0x74);
+        emitter.regions = emitter.split_timeline_region(second, 2.0, third).unwrap();
+
+        emitter.regions[2].start_time = 4.0;
+        let separated =
+            merge_selected_emitter_regions(6.0, &emitter, &BTreeSet::from([first, third])).unwrap();
+        assert_eq!(separated.merged_region, first);
+        assert_eq!(separated.emitter_duration, 5.0);
+        assert_eq!(separated.regions.len(), 2);
+        assert_eq!(separated.regions[0].start_time, 0.0);
+        assert_eq!(separated.regions[0].duration, 5.0);
+        assert_eq!(separated.regions[1].id, second);
+
+        emitter.regions[2].start_time = 0.5;
+        let overlapping =
+            merge_selected_emitter_regions(3.0, &emitter, &BTreeSet::from([first, third])).unwrap();
+        assert_eq!(overlapping.merged_region, first);
+        assert_eq!(overlapping.emitter_duration, 3.0);
+        assert_eq!(overlapping.regions.len(), 2);
+        assert_eq!(overlapping.regions[0].start_time, 0.0);
+        assert_eq!(overlapping.regions[0].duration, 1.5);
+        assert_eq!(overlapping.regions[1].id, second);
     }
 
     #[test]
@@ -2464,6 +2790,42 @@ mod tests {
     }
 
     #[test]
+    fn timeline_trim_creates_a_lossless_emitter_region_and_undo_restores_legacy_timing() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.effect.emitters[0].clone();
+        let trim = 0.2_f32.min(emitter.duration * 0.25);
+        let drag = TimelineDrag {
+            emitter: emitter.id,
+            region: emitter.implicit_region_id(),
+            kind: TimelineDragKind::TrimStart,
+            pointer_start: 0.0,
+            original_start: emitter.start_time,
+            original_duration: emitter.duration,
+            original_source_offset: 0.0,
+            current_start: emitter.start_time + trim,
+            current_duration: emitter.duration - trim,
+            current_source_offset: trim,
+            source_duration: emitter.duration,
+        };
+
+        commit_timeline_drag(&mut session, drag);
+
+        let trimmed = session
+            .effect
+            .emitters
+            .iter()
+            .find(|candidate| candidate.id == emitter.id)
+            .unwrap();
+        assert_eq!(trimmed.duration, emitter.duration);
+        assert_eq!(trimmed.regions.len(), 1);
+        assert!((trimmed.regions[0].source_offset - trim).abs() < 0.000_1);
+        assert!((trimmed.regions[0].duration - (emitter.duration - trim)).abs() < 0.000_1);
+
+        session.undo();
+        assert!(session.selected_layer().regions.is_empty());
+    }
+
+    #[test]
     fn timeline_visual_queries_initialize_without_aliasing() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let timeline = TimelineState::framed(session.playback_duration());
@@ -3123,19 +3485,24 @@ mod tests {
     }
 
     #[test]
-    fn automation_graph_follows_the_live_emitter_timing_preview() {
+    fn automation_graph_preserves_source_time_during_region_trim_preview() {
         let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let emitter = session.effect.emitters[0].id;
+        let region = session.effect.emitters[0].implicit_region_id();
         let mut timeline = TimelineState::framed(session.playback_duration());
         let view = timeline.view;
         timeline.drag = Some(TimelineDrag {
             emitter,
+            region,
             kind: TimelineDragKind::TrimEnd,
             pointer_start: 0.0,
             original_start: 0.0,
             original_duration: 1.0,
+            original_source_offset: 0.0,
             current_start: 0.35,
             current_duration: 0.8,
+            current_source_offset: 0.0,
+            source_duration: 1.0,
         });
         let lane = AutomationLaneId {
             emitter,
@@ -3157,7 +3524,7 @@ mod tests {
 
         let node = app.world().get::<Node>(graph).unwrap();
         assert_eq!(node.left, Val::Percent(view.normalized_time(0.35) * 100.0));
-        assert_eq!(node.width, Val::Percent(0.8 / view.span() * 100.0));
+        assert_eq!(node.width, Val::Percent(1.0 / view.span() * 100.0));
     }
 
     #[test]
@@ -3446,7 +3813,13 @@ mod tests {
                 .iter(world)
                 .filter(|(clip, _, _, _)| clip.kind == TimelineDragKind::Move)
                 .map(|(clip, action, label, tooltip)| {
-                    (clip.emitter, action.clone(), label.0.clone(), tooltip)
+                    (
+                        clip.emitter,
+                        clip.region,
+                        action.clone(),
+                        label.0.clone(),
+                        tooltip,
+                    )
                 })
                 .collect::<Vec<_>>()
         };
@@ -3458,13 +3831,16 @@ mod tests {
             assert!(list_item);
             assert!(keyboard_row);
             assert_eq!(action, ChoreographyAction::SelectEmitter(emitter));
-            assert_eq!(
-                clips.iter().find(|clip| clip.0 == emitter).unwrap().1,
-                action
-            );
             let clip = clips.iter().find(|clip| clip.0 == emitter).unwrap();
-            assert!(!clip.2.is_empty());
-            assert!(clip.3);
+            assert_eq!(
+                clip.2,
+                ChoreographyAction::SelectEmitterRegion {
+                    emitter,
+                    region: clip.1,
+                }
+            );
+            assert!(!clip.3.is_empty());
+            assert!(clip.4);
             assert!(!label.is_empty());
         }
         let track_controls = {
@@ -4224,10 +4600,14 @@ fn update_timeline_visuals(
             node.display = Display::None;
             continue;
         };
+        let Some(region) = emitter.timeline_region(clip.region) else {
+            node.display = Display::None;
+            continue;
+        };
         let (start, duration) = state
             .drag
-            .filter(|drag| drag.emitter == clip.emitter)
-            .map_or((emitter.start_time, emitter.duration), |drag| {
+            .filter(|drag| drag.emitter == clip.emitter && drag.region == clip.region)
+            .map_or((region.start_time, region.duration), |drag| {
                 (drag.current_start, drag.current_duration)
             });
         apply_timeline_bar_geometry(&mut node, start, duration, view);
@@ -4243,10 +4623,14 @@ fn update_timeline_visuals(
             node.display = Display::None;
             continue;
         };
+        let Some(region) = emitter.timeline_region(control.region) else {
+            node.display = Display::None;
+            continue;
+        };
         let (start, duration) = state
             .drag
-            .filter(|drag| drag.emitter == control.emitter)
-            .map_or((emitter.start_time, emitter.duration), |drag| {
+            .filter(|drag| drag.emitter == control.emitter && drag.region == control.region)
+            .map_or((region.start_time, region.duration), |drag| {
                 (drag.current_start, drag.current_duration)
             });
         let boundary_visible = match control.kind {
@@ -4473,13 +4857,24 @@ fn emitter_preview_timing(
         .emitters
         .iter()
         .find(|candidate| candidate.id == emitter)?;
+    let region = state
+        .selected_emitter_region
+        .filter(|(selected_emitter, _)| *selected_emitter == emitter.id)
+        .and_then(|(_, region)| emitter.timeline_region(region))
+        .or_else(|| emitter.timeline_regions().into_iter().next())?;
     Some(
         state
             .drag
-            .filter(|drag| drag.emitter == emitter.id)
-            .map_or((emitter.start_time, emitter.duration), |drag| {
-                (drag.current_start, drag.current_duration)
-            }),
+            .filter(|drag| drag.emitter == emitter.id && drag.region == region.id)
+            .map_or(
+                (region.start_time - region.source_offset, emitter.duration),
+                |drag| {
+                    (
+                        drag.current_start - drag.current_source_offset,
+                        drag.source_duration,
+                    )
+                },
+            ),
     )
 }
 
@@ -4554,13 +4949,9 @@ fn automation_key_drag_preview_data(
     effect: &EffectAsset,
     drag: &TimelineAutomationKeyDrag,
 ) -> Option<AutomationCurveData> {
-    let emitter = effect
-        .emitters
-        .iter()
-        .find(|emitter| emitter.id == drag.selection.lane.emitter)?;
     let mut preview = automation_lane_keys(effect, &drag.selection.lane)?.graph_data();
     let normalized_time =
-        ((drag.current_time - emitter.start_time) / emitter.duration.max(0.001)).clamp(0.0, 1.0);
+        ((drag.current_time - drag.source_start) / drag.source_duration.max(0.001)).clamp(0.0, 1.0);
     match &mut preview {
         AutomationCurveData::Curve { points, .. } => {
             let point = points.get_mut(drag.selection.key)?;
@@ -4853,6 +5244,7 @@ fn format_timeline_tick(time: f32, step: f32) -> String {
 fn snap_timeline_boundary(
     candidate: f32,
     emitter: EmitterId,
+    region: EmitterRegionId,
     session: &EditorSession,
     mode: TimelineSnapMode,
     view: TimelineView,
@@ -4880,9 +5272,11 @@ fn snap_timeline_boundary(
                 (candidate / frame).round() * frame,
             ];
             for other in &session.effect.emitters {
-                if other.id != emitter {
-                    targets.push(other.start_time);
-                    targets.push(other.start_time + other.duration);
+                for other_region in other.timeline_regions() {
+                    if other.id != emitter || other_region.id != region {
+                        targets.push(other_region.start_time);
+                        targets.push(other_region.end_time());
+                    }
                 }
             }
             let nearest = targets.into_iter().min_by(|left, right| {
@@ -4927,8 +5321,10 @@ fn snap_effect_clip_boundary(
                 (candidate / frame).round() * frame,
             ];
             for emitter in &session.effect.emitters {
-                targets.push(emitter.start_time);
-                targets.push(emitter.start_time + emitter.duration);
+                for region in emitter.timeline_regions() {
+                    targets.push(region.start_time);
+                    targets.push(region.end_time());
+                }
             }
             for other in &session.effect.effect_clips {
                 if other.id != clip {
@@ -4978,8 +5374,10 @@ fn snap_marker_time(
                 (candidate / frame).round() * frame,
             ];
             for emitter in &session.effect.emitters {
-                targets.push(emitter.start_time);
-                targets.push(emitter.start_time + emitter.duration);
+                for region in emitter.timeline_regions() {
+                    targets.push(region.start_time);
+                    targets.push(region.end_time());
+                }
             }
             for clip in &session.effect.effect_clips {
                 targets.push(clip.start_time);
@@ -5039,8 +5437,10 @@ fn snap_automation_key_time(
                     .map(|event| event.time),
             );
             for emitter in &session.effect.emitters {
-                targets.push(emitter.start_time);
-                targets.push(emitter.start_time + emitter.duration);
+                for region in emitter.timeline_regions() {
+                    targets.push(region.start_time);
+                    targets.push(region.end_time());
+                }
             }
             for clip in &session.effect.effect_clips {
                 targets.push(clip.start_time);
@@ -5138,17 +5538,19 @@ fn snap_moved_timing(
     start: f32,
     duration: f32,
     emitter: EmitterId,
+    region: EmitterRegionId,
     session: &EditorSession,
     mode: TimelineSnapMode,
     view: TimelineView,
     canvas_width: f32,
 ) -> (f32, Option<f32>) {
-    let start_snap = snap_timeline_boundary(start, emitter, session, mode, view, canvas_width);
+    let start_snap =
+        snap_timeline_boundary(start, emitter, region, session, mode, view, canvas_width);
     if mode != TimelineSnapMode::Smart {
         return start_snap;
     }
     let end = start + duration;
-    let end_snap = snap_timeline_boundary(end, emitter, session, mode, view, canvas_width);
+    let end_snap = snap_timeline_boundary(end, emitter, region, session, mode, view, canvas_width);
     let start_delta = (start_snap.0 - start).abs();
     let end_delta = (end_snap.0 - end).abs();
     match (start_snap.1, end_snap.1) {
@@ -5162,6 +5564,9 @@ fn snap_moved_timing(
 
 #[derive(Component)]
 struct TimelineCanvas;
+
+#[derive(Component)]
+struct TimelineRegionToolButton;
 
 #[derive(Component, Clone, Copy)]
 struct TimelineMarker {
@@ -5190,6 +5595,8 @@ struct TimelineChoreographyEventDrag {
 #[derive(Clone, Debug)]
 struct TimelineAutomationKeyDrag {
     selection: TimelineAutomationKeySelection,
+    source_start: f32,
+    source_duration: f32,
     original_time: f32,
     current_time: f32,
     original_value: Option<f32>,
@@ -5375,11 +5782,13 @@ struct EmitterAutomationVisibilityMenuAnchor;
 #[derive(Component, Clone, Copy)]
 struct TimelineClip {
     emitter: EmitterId,
+    region: EmitterRegionId,
 }
 
 #[derive(Component, Clone, Copy)]
 struct TimelineClipInteraction {
     emitter: EmitterId,
+    region: EmitterRegionId,
     kind: TimelineDragKind,
 }
 
@@ -5457,12 +5866,16 @@ enum TimelineDragKind {
 #[derive(Clone, Copy, Debug)]
 struct TimelineDrag {
     emitter: EmitterId,
+    region: EmitterRegionId,
     kind: TimelineDragKind,
     pointer_start: f32,
     original_start: f32,
     original_duration: f32,
+    original_source_offset: f32,
     current_start: f32,
     current_duration: f32,
+    current_source_offset: f32,
+    source_duration: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -5586,6 +5999,9 @@ pub(crate) struct TimelineState {
     panning: bool,
     context_emitter: Option<EmitterId>,
     selected_emitters: BTreeSet<EmitterId>,
+    selected_emitter_region: Option<(EmitterId, EmitterRegionId)>,
+    selected_emitter_regions: BTreeSet<(EmitterId, EmitterRegionId)>,
+    emitter_region_selection_anchor: Option<(EmitterId, EmitterRegionId)>,
     emitter_selection_anchor: Option<EmitterId>,
     color_picker_emitter: Option<EmitterId>,
     automation_menu_emitter: Option<EmitterId>,
@@ -5637,6 +6053,9 @@ impl TimelineState {
             panning: false,
             context_emitter: None,
             selected_emitters: BTreeSet::new(),
+            selected_emitter_region: None,
+            selected_emitter_regions: BTreeSet::new(),
+            emitter_region_selection_anchor: None,
             emitter_selection_anchor: None,
             color_picker_emitter: None,
             automation_menu_emitter: None,
@@ -5731,12 +6150,104 @@ impl TimelineState {
     pub(crate) fn clear_emitter_selection(&mut self) {
         self.selected_emitters.clear();
         self.emitter_selection_anchor = None;
+        self.clear_emitter_region_selection();
+    }
+
+    fn clear_emitter_region_selection(&mut self) {
+        self.selected_emitter_region = None;
+        self.selected_emitter_regions.clear();
+        self.emitter_region_selection_anchor = None;
     }
 
     fn select_only_emitter(&mut self, emitter: EmitterId) {
         self.selected_emitters.clear();
         self.selected_emitters.insert(emitter);
         self.emitter_selection_anchor = Some(emitter);
+        self.clear_emitter_region_selection();
+    }
+
+    fn select_only_emitter_region(&mut self, emitter: EmitterId, region: EmitterRegionId) {
+        self.select_only_emitter(emitter);
+        self.selected_emitter_region = Some((emitter, region));
+        self.selected_emitter_regions.insert((emitter, region));
+        self.emitter_region_selection_anchor = Some((emitter, region));
+    }
+
+    fn select_emitter_region(
+        &mut self,
+        emitter: &Emitter,
+        region: EmitterRegionId,
+        control: bool,
+        shift: bool,
+    ) -> Option<EmitterRegionId> {
+        let emitter_id = emitter.id;
+        let mut order = emitter.timeline_regions();
+        order.sort_by(|left, right| left.start_time.total_cmp(&right.start_time));
+        if !order.iter().any(|candidate| candidate.id == region) {
+            return self
+                .selected_emitter_region
+                .filter(|(selected, _)| *selected == emitter_id)
+                .map(|(_, region)| region);
+        }
+
+        self.selected_emitters.clear();
+        self.selected_emitters.insert(emitter_id);
+        self.emitter_selection_anchor = Some(emitter_id);
+        self.selected_emitter_regions
+            .retain(|(selected, _)| *selected == emitter_id);
+
+        if shift {
+            let anchor = self
+                .emitter_region_selection_anchor
+                .filter(|(selected, anchor)| {
+                    *selected == emitter_id && order.iter().any(|candidate| candidate.id == *anchor)
+                })
+                .map_or(region, |(_, anchor)| anchor);
+            let anchor_index = order
+                .iter()
+                .position(|candidate| candidate.id == anchor)
+                .unwrap_or_default();
+            let region_index = order
+                .iter()
+                .position(|candidate| candidate.id == region)
+                .unwrap_or(anchor_index);
+            let (start, end) = if anchor_index <= region_index {
+                (anchor_index, region_index)
+            } else {
+                (region_index, anchor_index)
+            };
+            self.selected_emitter_regions.clear();
+            self.selected_emitter_regions.extend(
+                order[start..=end]
+                    .iter()
+                    .map(|candidate| (emitter_id, candidate.id)),
+            );
+            self.selected_emitter_region = Some((emitter_id, region));
+            self.emitter_region_selection_anchor = Some((emitter_id, anchor));
+            return Some(region);
+        }
+
+        if control {
+            let selection = (emitter_id, region);
+            if !self.selected_emitter_regions.remove(&selection) {
+                self.selected_emitter_regions.insert(selection);
+                self.selected_emitter_region = Some(selection);
+            } else if self.selected_emitter_region == Some(selection) {
+                self.selected_emitter_region = order
+                    .iter()
+                    .rev()
+                    .find(|candidate| {
+                        self.selected_emitter_regions
+                            .contains(&(emitter_id, candidate.id))
+                    })
+                    .map(|candidate| (emitter_id, candidate.id));
+            }
+            self.emitter_region_selection_anchor = Some(selection);
+            return self.selected_emitter_region.map(|(_, region)| region);
+        }
+
+        self.select_only_emitter_region(emitter_id, region);
+        Some(region)
     }
 
     fn select_emitter(
@@ -7209,6 +7720,34 @@ pub(crate) fn spawn_timeline(
                         localizer.text("timeline-add-event"),
                         TimelineAction::AddChoreographyEvent,
                     );
+                    let cut_tool = timeline_icon_button(
+                        header,
+                        asset_server,
+                        "icons/split-h.svg",
+                        "Split the selected emitter region at the playhead".into(),
+                        TimelineAction::SplitEmitterRegion,
+                    );
+                    header
+                        .commands()
+                        .entity(cut_tool)
+                        .insert((
+                            TimelineRegionToolButton,
+                            RelativeCursorPosition::default(),
+                        ));
+                    let merge_tool = timeline_icon_button(
+                        header,
+                        asset_server,
+                        "icons/merge.svg",
+                        "Consolidate selected emitter regions".into(),
+                        TimelineAction::JoinEmitterRegion,
+                    );
+                    header
+                        .commands()
+                        .entity(merge_tool)
+                        .insert((
+                            TimelineRegionToolButton,
+                            RelativeCursorPosition::default(),
+                        ));
                     let snap_options = TimelineSnapMode::ALL
                         .into_iter()
                         .map(|mode| ComboOption {
@@ -7858,6 +8397,11 @@ pub(crate) fn spawn_timeline(
                                                     && session
                                                         .solo_emitter
                                                         .is_none_or(|solo| solo == emitter.id);
+                                                for region in emitter.timeline_regions() {
+                                                let region_selection = (emitter.id, region.id);
+                                                let region_is_selected = state
+                                                    .selected_emitter_regions
+                                                    .contains(&region_selection);
                                                 let move_label = emitter_timing_label(
                                                     localizer,
                                                     "timeline-move-emitter-clip",
@@ -7870,35 +8414,43 @@ pub(crate) fn spawn_timeline(
                                                     width: Val::Percent(1.0),
                                                     height: Val::Px(21.0),
                                                     border_radius: BorderRadius::all(Val::Px(3.0)),
-                                                    border: UiRect::all(Val::Px(1.0)),
+                                                    border: UiRect::all(Val::Px(
+                                                        if region_is_selected { 2.0 } else { 1.0 },
+                                                    )),
                                                     overflow: Overflow::clip(),
                                                     ..default()
                                                 };
                                                 apply_timeline_bar_geometry(
                                                     &mut clip_node,
-                                                    emitter.start_time,
-                                                    emitter.duration,
+                                                    region.start_time,
+                                                    region.duration,
                                                     state.view,
                                                 );
                                                 track
                                                     .spawn((
                                                         TimelineClip {
                                                             emitter: emitter.id,
+                                                            region: region.id,
                                                         },
+                                                        RelativeCursorPosition::default(),
                                                         clip_node,
                                                         BackgroundColor(
                                                             layer_color(emitter.id, emitter.display_color).with_alpha(
                                                                 if audible_in_preview {
-                                                                    0.28
+                                                                    if region_is_selected { 0.36 } else { 0.28 }
                                                                 } else {
                                                                     0.10
                                                                 },
                                                             ),
                                                         ),
                                                         BorderColor::all(
-                                                            layer_color(emitter.id, emitter.display_color).with_alpha(
-                                                                if audible_in_preview { 1.0 } else { 0.45 },
-                                                            ),
+                                                            if region_is_selected {
+                                                                theme::ACCENT
+                                                            } else {
+                                                                layer_color(emitter.id, emitter.display_color).with_alpha(
+                                                                    if audible_in_preview { 1.0 } else { 0.45 },
+                                                                )
+                                                            },
                                                         ),
                                                     ))
                                                     .with_children(|clip| {
@@ -7907,11 +8459,13 @@ pub(crate) fn spawn_timeline(
                                                             EditorNativeControl,
                                                             TimelineClipInteraction {
                                                                 emitter: emitter.id,
+                                                                region: region.id,
                                                                 kind: TimelineDragKind::Move,
                                                             },
-                                                            ChoreographyAction::SelectEmitter(
-                                                                emitter.id,
-                                                            ),
+                                                            ChoreographyAction::SelectEmitterRegion {
+                                                                emitter: emitter.id,
+                                                                region: region.id,
+                                                            },
                                                             AccessibleLabel(move_label.clone()),
                                                             EditorTooltip::description(move_label),
                                                             EntityCursor::System(
@@ -7963,11 +8517,11 @@ pub(crate) fn spawn_timeline(
                                                                 );
                                                             let boundary = match kind {
                                                                 TimelineDragKind::TrimStart => {
-                                                                    emitter.start_time
+                                                                    region.start_time
                                                                 }
                                                                 TimelineDragKind::TrimEnd => {
-                                                                    emitter.start_time
-                                                                        + emitter.duration
+                                                                    region.start_time
+                                                                        + region.duration
                                                                 }
                                                                 TimelineDragKind::Move => {
                                                                     unreachable!()
@@ -7978,11 +8532,13 @@ pub(crate) fn spawn_timeline(
                                                                 EditorNativeControl,
                                                                 TimelineClipInteraction {
                                                                     emitter: emitter.id,
+                                                                    region: region.id,
                                                                     kind,
                                                                 },
-                                                                ChoreographyAction::SelectEmitter(
-                                                                    emitter.id,
-                                                                ),
+                                                                ChoreographyAction::SelectEmitterRegion {
+                                                                    emitter: emitter.id,
+                                                                    region: region.id,
+                                                                },
                                                                 AccessibleLabel(
                                                                     boundary_label.clone(),
                                                                 ),
@@ -8031,6 +8587,7 @@ pub(crate) fn spawn_timeline(
                                                             ));
                                                         }
                                                     });
+                                                }
                                             });
                                             if state
                                                 .expanded_automation_emitters
@@ -9112,7 +9669,15 @@ fn spawn_automation_lane_row(
             BorderColor::all(theme::BORDER.with_alpha(0.30)),
         ))
         .with_children(|row| {
+            let region = state
+                .selected_emitter_region
+                .filter(|(selected_emitter, _)| *selected_emitter == emitter.id)
+                .and_then(|(_, region)| emitter.timeline_region(region))
+                .or_else(|| emitter.timeline_regions().into_iter().next())
+                .expect("an emitter always projects at least one timeline region");
             let graph_data = lane.keys.graph_data();
+            let source_start = region.start_time - region.source_offset;
+            let source_duration = emitter.duration;
             let mut graph_node = Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(0.0),
@@ -9122,8 +9687,8 @@ fn spawn_automation_lane_row(
             };
             apply_automation_graph_geometry(
                 &mut graph_node,
-                emitter.start_time,
-                emitter.duration,
+                source_start,
+                source_duration,
                 state.view,
             );
             row.spawn((
@@ -9153,7 +9718,7 @@ fn spawn_automation_lane_row(
                                 .channel
                                 .is_none_or(|channel| curves.selected_vector_channel() == channel)
                     });
-                let absolute_time = emitter.start_time + normalized_time * emitter.duration;
+                let absolute_time = source_start + normalized_time * source_duration;
                 let position = state.view.normalized_time(absolute_time);
                 let top = graph_data.key_top_percent(key);
                 let visible = (0.0..=1.0).contains(&position);
@@ -9648,6 +10213,38 @@ fn dismiss_timeline_popovers(
         state.automation_menu_emitter = None;
     }
     session.ui_revision += 1;
+}
+
+fn dismiss_emitter_region_selection(
+    buttons: Res<ButtonInput<MouseButton>>,
+    regions: Query<&RelativeCursorPosition, With<TimelineClip>>,
+    tools: Query<&RelativeCursorPosition, (With<TimelineRegionToolButton>, Without<TimelineClip>)>,
+    mut state: ResMut<TimelineState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+    let over_region = regions.iter().any(RelativeCursorPosition::cursor_over);
+    let over_tool = tools.iter().any(RelativeCursorPosition::cursor_over);
+    if over_region || over_tool {
+        return;
+    }
+
+    if !state.selected_emitter_regions.is_empty() {
+        let emitter = state.selected_emitter_region.map(|(emitter, _)| emitter);
+        state.clear_emitter_region_selection();
+        if let Some(emitter) = emitter
+            && session
+                .effect
+                .emitters
+                .iter()
+                .any(|candidate| candidate.id == emitter)
+        {
+            session.select_emitter(emitter);
+        }
+        session.ui_revision += 1;
+    }
 }
 
 fn restore_timeline_context_menu_focus(
@@ -10905,7 +11502,15 @@ fn begin_automation_key_drag(
     let Some(normalized) = keys.times().nth(selection.key) else {
         return;
     };
-    let time = emitter.start_time + normalized * emitter.duration;
+    let region = state
+        .selected_emitter_region
+        .filter(|(selected_emitter, _)| *selected_emitter == emitter.id)
+        .and_then(|(_, region)| emitter.timeline_region(region))
+        .or_else(|| emitter.timeline_regions().into_iter().next())
+        .expect("an emitter always has a timeline region");
+    let source_start = region.start_time - region.source_offset;
+    let source_duration = emitter.duration;
+    let time = source_start + normalized * source_duration;
     let value = keys.curve_value(selection.key);
     let cursor_icon = if matches!(keys, AutomationLaneKeys::Gradient(_)) {
         SystemCursorIcon::EwResize
@@ -10914,6 +11519,8 @@ fn begin_automation_key_drag(
     };
     state.automation_key_drag = Some(TimelineAutomationKeyDrag {
         selection: selection.clone(),
+        source_start,
+        source_duration,
         original_time: time,
         current_time: time,
         original_value: value,
@@ -10957,14 +11564,6 @@ fn move_automation_key_drag(
         return;
     }
     drag_event.propagate(false);
-    let Some(emitter) = session
-        .effect
-        .emitters
-        .iter()
-        .find(|emitter| emitter.id == selection.lane.emitter)
-    else {
-        return;
-    };
     let width = canvases
         .iter()
         .map(|canvas| canvas.size().x)
@@ -10978,19 +11577,19 @@ fn move_automation_key_drag(
     let Some(keys) = automation_lane_keys(&session.effect, &selection.lane) else {
         return;
     };
-    let epsilon = emitter.duration.max(0.001) * 0.0005;
+    let epsilon = drag.source_duration.max(0.001) * 0.0005;
     let lower = selection
         .key
         .checked_sub(1)
         .and_then(|index| keys.times().nth(index))
-        .map_or(emitter.start_time, |time| {
-            emitter.start_time + time * emitter.duration + epsilon
+        .map_or(drag.source_start, |time| {
+            drag.source_start + time * drag.source_duration + epsilon
         });
     let upper = keys
         .times()
         .nth(selection.key + 1)
-        .map_or(emitter.start_time + emitter.duration, |time| {
-            emitter.start_time + time * emitter.duration - epsilon
+        .map_or(drag.source_start + drag.source_duration, |time| {
+            drag.source_start + time * drag.source_duration - epsilon
         });
     drag.current_time = candidate.clamp(lower.min(upper), upper.max(lower));
     if let Some(original_value) = drag.original_value {
@@ -11034,14 +11633,6 @@ fn finish_automation_key_drag(
     } else {
         SystemCursorIcon::EwResize
     });
-    let Some(emitter) = session
-        .effect
-        .emitters
-        .iter()
-        .find(|emitter| emitter.id == selection.lane.emitter)
-    else {
-        return;
-    };
     let time_changed = (drag.current_time - drag.original_time).abs() > 0.0001;
     let value_changed = drag
         .original_value
@@ -11051,7 +11642,7 @@ fn finish_automation_key_drag(
         return;
     }
     let normalized =
-        ((drag.current_time - emitter.start_time) / emitter.duration.max(0.001)).clamp(0.0, 1.0);
+        ((drag.current_time - drag.source_start) / drag.source_duration.max(0.001)).clamp(0.0, 1.0);
     let command = match automation_lane_value(&session.effect, &selection.lane) {
         Some(Value::Curve(mut curve)) => {
             let Some(mut key) = curve.keys.get(selection.key).copied() else {
@@ -11244,14 +11835,21 @@ fn begin_timeline_clip_drag(
     else {
         return;
     };
+    let Some(region) = emitter.timeline_region(target.region) else {
+        return;
+    };
     state.drag = Some(TimelineDrag {
         emitter: target.emitter,
+        region: target.region,
         kind: target.kind,
         pointer_start: 0.0,
-        original_start: emitter.start_time,
-        original_duration: emitter.duration,
-        current_start: emitter.start_time,
-        current_duration: emitter.duration,
+        original_start: region.start_time,
+        original_duration: region.duration,
+        original_source_offset: region.source_offset,
+        current_start: region.start_time,
+        current_duration: region.duration,
+        current_source_offset: region.source_offset,
+        source_duration: emitter.duration,
     });
     override_cursor.0 = Some(EntityCursor::System(timeline_system_cursor(
         target.kind,
@@ -11275,7 +11873,7 @@ fn move_timeline_clip_drag(
     let Some(mut drag) = state.drag else {
         return;
     };
-    if drag.emitter != target.emitter || drag.kind != target.kind {
+    if drag.emitter != target.emitter || drag.region != target.region || drag.kind != target.kind {
         return;
     }
     let width = canvases
@@ -11314,14 +11912,17 @@ fn finish_timeline_clip_drag(
     let Some(drag) = state.drag.take() else {
         return;
     };
-    if drag.emitter != target.emitter || drag.kind != target.kind {
+    if drag.emitter != target.emitter || drag.region != target.region || drag.kind != target.kind {
         return;
     }
     state.snap_guide = None;
     override_cursor.0 = None;
     **cursor = timeline_drag_cursor(target.kind, false);
     commit_timeline_drag(&mut session, drag);
-    commands.trigger(ChoreographyAction::SelectEmitter(target.emitter));
+    commands.trigger(ChoreographyAction::SelectEmitterRegion {
+        emitter: target.emitter,
+        region: target.region,
+    });
 }
 
 fn begin_effect_clip_timeline_drag(
@@ -11465,6 +12066,7 @@ fn commit_effect_clip_timeline_drag(
 
 fn commit_timeline_drag(session: &mut EditorSession, drag: TimelineDrag) {
     let changed = (drag.current_start - drag.original_start).abs() > 0.000_1
+        || (drag.current_source_offset - drag.original_source_offset).abs() > 0.000_1
         || (drag.current_duration - drag.original_duration).abs() > 0.000_1;
     if changed {
         let label = match drag.kind {
@@ -11473,11 +12075,32 @@ fn commit_timeline_drag(session: &mut EditorSession, drag: TimelineDrag) {
                 "Trimmed emitter on timeline"
             }
         };
-        session.set_emitter_timing(
-            drag.emitter,
-            drag.current_start,
-            drag.current_duration,
+        let Some(emitter) = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == drag.emitter)
+        else {
+            return;
+        };
+        if emitter.regions.is_empty() && drag.kind == TimelineDragKind::Move {
+            session.set_emitter_timing(drag.emitter, drag.current_start, emitter.duration, label);
+            return;
+        }
+        let mut regions = emitter.timeline_regions();
+        let Some(region) = regions.iter_mut().find(|region| region.id == drag.region) else {
+            return;
+        };
+        region.start_time = drag.current_start;
+        region.source_offset = drag.current_source_offset;
+        region.duration = drag.current_duration;
+        session.execute(
             label,
+            EffectCommand::SetEmitterRegions {
+                id: drag.emitter,
+                regions: emitter.normalize_timeline_regions(regions),
+            },
+            false,
         );
     }
 }
@@ -11847,6 +12470,7 @@ fn update_timeline_drag(
                 unsnapped,
                 drag.original_duration,
                 drag.emitter,
+                drag.region,
                 session,
                 snap,
                 view,
@@ -11855,25 +12479,48 @@ fn update_timeline_drag(
             drag.current_start =
                 start.clamp(0.0, (effect_duration - drag.original_duration).max(0.0));
             drag.current_duration = drag.original_duration;
+            drag.current_source_offset = drag.original_source_offset;
             *snap_guide = guide;
         }
         TimelineDragKind::TrimStart => {
             let end = drag.original_start + drag.original_duration;
-            let unsnapped =
-                (drag.original_start + pointer_delta).clamp(0.0, (end - minimum_duration).max(0.0));
-            let (start, guide) =
-                snap_timeline_boundary(unsnapped, drag.emitter, session, snap, view, canvas_width);
-            drag.current_start = start.clamp(0.0, end - minimum_duration);
+            let minimum_start = (drag.original_start - drag.original_source_offset).max(0.0);
+            let unsnapped = (drag.original_start + pointer_delta)
+                .clamp(minimum_start, (end - minimum_duration).max(minimum_start));
+            let (start, guide) = snap_timeline_boundary(
+                unsnapped,
+                drag.emitter,
+                drag.region,
+                session,
+                snap,
+                view,
+                canvas_width,
+            );
+            drag.current_start = start.clamp(minimum_start, end - minimum_duration);
+            drag.current_source_offset =
+                drag.original_source_offset + drag.current_start - drag.original_start;
             drag.current_duration = end - drag.current_start;
             *snap_guide = guide;
         }
         TimelineDragKind::TrimEnd => {
+            let maximum_end = effect_duration.min(
+                drag.original_start
+                    + (drag.source_duration - drag.original_source_offset).max(minimum_duration),
+            );
             let unsnapped = (drag.original_start + drag.original_duration + pointer_delta)
-                .clamp(drag.original_start + minimum_duration, effect_duration);
-            let (end, guide) =
-                snap_timeline_boundary(unsnapped, drag.emitter, session, snap, view, canvas_width);
-            let end = end.clamp(drag.original_start + minimum_duration, effect_duration);
+                .clamp(drag.original_start + minimum_duration, maximum_end);
+            let (end, guide) = snap_timeline_boundary(
+                unsnapped,
+                drag.emitter,
+                drag.region,
+                session,
+                snap,
+                view,
+                canvas_width,
+            );
+            let end = end.clamp(drag.original_start + minimum_duration, maximum_end);
             drag.current_start = drag.original_start;
+            drag.current_source_offset = drag.original_source_offset;
             drag.current_duration = end - drag.original_start;
             *snap_guide = guide;
         }

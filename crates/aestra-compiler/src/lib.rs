@@ -328,6 +328,7 @@ impl EffectCompiler {
         }
 
         for (emitter_index, emitter) in asset.emitters.iter().enumerate() {
+            let compiled_emitter_index = emitters.len();
             let liveness = self.analyze_liveness(&emitter.modules);
             stored_attributes.extend(liveness.stored);
             transient_attributes.extend(liveness.transient);
@@ -357,14 +358,14 @@ impl EffectCompiler {
                 source_map.insert(
                     module.id,
                     IrLocation {
-                        emitter_index,
+                        emitter_index: compiled_emitter_index,
                         stage,
                         instruction_index,
                     },
                 );
             }
 
-            let renderers = emitter
+            let renderers: Vec<RendererPlan> = emitter
                 .renderers
                 .iter()
                 .filter(|renderer| renderer.enabled)
@@ -392,17 +393,23 @@ impl EffectCompiler {
                     _ => unreachable!("compiler validation rejects unsupported renderers"),
                 })
                 .collect();
-            emitters.push(CompiledEmitter {
-                source: emitter.id,
-                name: emitter.name.clone(),
-                enabled: emitter.enabled,
-                transform: emitter.transform,
-                start_time: emitter.start_time,
-                duration: emitter.duration,
-                max_particles: emitter.max_particles,
-                execution,
-                renderers,
-            });
+            for region in emitter.timeline_regions() {
+                emitters.push(CompiledEmitter {
+                    source: emitter.id,
+                    region: region.id,
+                    name: emitter.name.clone(),
+                    enabled: emitter.enabled,
+                    transform: emitter.transform,
+                    start_time: region.start_time,
+                    source_offset: region.source_offset,
+                    source_duration: emitter.duration,
+                    duration: region.duration,
+                    seed_index: emitter_index as u32,
+                    max_particles: emitter.max_particles,
+                    execution: execution.clone(),
+                    renderers: renderers.clone(),
+                });
+            }
         }
 
         optimizations.eliminated_attributes =

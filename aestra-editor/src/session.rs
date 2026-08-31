@@ -4,10 +4,10 @@ use aestra_authoring::{
 };
 use aestra_bevy::{
     AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, EffectClipId,
-    EffectParameter, Emitter, EmitterId, EmitterTransform, EventId, EventLink, EventTrigger,
-    FlipbookDefinition, FlipbookPlaybackMode, FlipbookTimeSource, MaterialDefinition, MaterialId,
-    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance,
-    RendererProperties, ValidationReport, Value,
+    EffectParameter, Emitter, EmitterId, EmitterRegion, EmitterRegionId, EmitterTransform, EventId,
+    EventLink, EventTrigger, FlipbookDefinition, FlipbookPlaybackMode, FlipbookTimeSource,
+    MaterialDefinition, MaterialId, MaterialInput, MaterialProperties, ModuleId, ModuleInstance,
+    RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
@@ -47,6 +47,7 @@ pub(crate) struct EditorSession {
     pub effect: EffectAsset,
     pub source_path: Option<PathBuf>,
     pub selection: Selection,
+    pub selected_emitter_region: Option<EmitterRegionId>,
     pub locks: LockState,
     pub diagnostics: ValidationReport,
     pub last_diff: EffectDiff,
@@ -82,6 +83,7 @@ impl EditorSession {
             effect,
             source_path: Some(path.into()),
             selection,
+            selected_emitter_region: None,
             locks: LockState::default(),
             diagnostics,
             last_diff: EffectDiff::default(),
@@ -394,6 +396,7 @@ impl EditorSession {
         );
         self.source_path = None;
         self.selection = Selection::for_effect(&self.effect);
+        self.selected_emitter_region = None;
         self.locks = LockState::default();
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
@@ -417,6 +420,7 @@ impl EditorSession {
         self.preview = Some(preview);
         self.source_path = Some(path.to_owned());
         self.selection = Selection::for_effect(&self.effect);
+        self.selected_emitter_region = None;
         self.locks = LockState::default();
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
@@ -440,6 +444,7 @@ impl EditorSession {
         self.preview = preview;
         self.source_path = source_path;
         self.selection = Selection::for_effect(&self.effect);
+        self.selected_emitter_region = None;
         self.locks = LockState::default();
         self.diagnostics = self.effect.validation_report();
         self.last_diff = EffectDiff::default();
@@ -515,6 +520,7 @@ impl EditorSession {
                 self.invalidate_effect_checkpoints();
                 self.refresh_preview();
                 self.selection.repair(&self.effect);
+                self.repair_emitter_region_selection();
                 self.clamp_clock();
                 self.update_dirty_state();
                 self.status = label;
@@ -633,6 +639,7 @@ impl EditorSession {
                 self.last_diff = diff;
                 self.invalidate_effect_checkpoints();
                 self.selection.repair(&self.effect);
+                self.repair_emitter_region_selection();
                 self.refresh_preview();
                 self.clamp_clock();
                 self.update_dirty_state();
@@ -670,6 +677,7 @@ impl EditorSession {
         match self.history.undo(&mut self.effect) {
             Ok(Some(result)) => {
                 self.selection.repair(&self.effect);
+                self.repair_emitter_region_selection();
                 self.invalidate_effect_checkpoints();
                 self.refresh_preview();
                 self.last_diff = result.diff;
@@ -691,6 +699,7 @@ impl EditorSession {
         match self.history.redo(&mut self.effect) {
             Ok(Some(result)) => {
                 self.selection.repair(&self.effect);
+                self.repair_emitter_region_selection();
                 self.invalidate_effect_checkpoints();
                 self.refresh_preview();
                 self.last_diff = result.diff;
@@ -734,14 +743,58 @@ impl EditorSession {
             self.status = "Emitter no longer exists".into();
             return false;
         };
-        if self.selection.primary == aestra_authoring::SemanticTarget::Emitter(id) {
+        if self.selection.primary == aestra_authoring::SemanticTarget::Emitter(id)
+            && self.selected_emitter_region.is_none()
+        {
             return false;
         }
         let name = emitter.name.clone();
         self.selection.select_emitter(id);
+        self.selected_emitter_region = None;
         self.status = format!("Selected {name}");
         self.ui_revision += 1;
         true
+    }
+
+    pub fn select_emitter_region(&mut self, emitter: EmitterId, region: EmitterRegionId) -> bool {
+        let Some(layer) = self.effect.emitters.iter().find(|item| item.id == emitter) else {
+            self.status = "Emitter no longer exists".into();
+            return false;
+        };
+        if layer.timeline_region(region).is_none() {
+            self.status = "Emitter region no longer exists".into();
+            return false;
+        }
+        let changed = self.selection.primary != aestra_authoring::SemanticTarget::Emitter(emitter)
+            || self.selected_emitter_region != Some(region);
+        self.selection.select_emitter(emitter);
+        self.selected_emitter_region = Some(region);
+        if changed {
+            self.status = format!("Selected {} region", layer.name);
+            self.ui_revision += 1;
+        }
+        changed
+    }
+
+    pub fn selected_emitter_region(&self) -> EmitterRegion {
+        let emitter = self.selected_layer();
+        self.selected_emitter_region
+            .and_then(|region| emitter.timeline_region(region))
+            .unwrap_or_else(|| emitter.timeline_regions()[0])
+    }
+
+    fn repair_emitter_region_selection(&mut self) {
+        let Some(region) = self.selected_emitter_region else {
+            return;
+        };
+        let valid = self
+            .selection
+            .emitter(&self.effect)
+            .and_then(|emitter| self.effect.emitters.iter().find(|item| item.id == emitter))
+            .is_some_and(|emitter| emitter.timeline_region(region).is_some());
+        if !valid {
+            self.selected_emitter_region = None;
+        }
     }
 
     pub fn select_effect_clip(&mut self, id: EffectClipId) -> bool {
@@ -754,6 +807,7 @@ impl EditorSession {
         }
         let source = clip.source;
         self.selection.select_effect_clip(id);
+        self.selected_emitter_region = None;
         self.status = format!("Selected effect clip {source}");
         self.ui_revision += 1;
         true
@@ -769,6 +823,7 @@ impl EditorSession {
         }
         let name = marker.name.clone();
         self.selection.select_marker(id);
+        self.selected_emitter_region = None;
         self.status = format!("Selected marker {name}");
         self.ui_revision += 1;
         true
@@ -789,6 +844,7 @@ impl EditorSession {
         }
         let name = event.name.clone();
         self.selection.select_choreography_event(id);
+        self.selected_emitter_region = None;
         self.status = format!("Selected choreography event {name}");
         self.ui_revision += 1;
         true
@@ -1741,22 +1797,6 @@ impl EditorSession {
         self.execute("Duplicated renderer", command, true);
     }
 
-    pub fn adjust_selected_start(&mut self, delta: f32) {
-        let emitter = self.selected_layer();
-        let start_time =
-            (emitter.start_time + delta).clamp(0.0, (self.effect.duration - 0.05).max(0.0));
-        let duration = emitter.duration.min(self.effect.duration - start_time);
-        self.execute(
-            "Moved layer",
-            EffectCommand::SetEmitterTiming {
-                id: emitter.id,
-                start_time,
-                duration,
-            },
-            true,
-        );
-    }
-
     pub fn set_emitter_timing(
         &mut self,
         id: EmitterId,
@@ -1775,33 +1815,34 @@ impl EditorSession {
         )
     }
 
-    pub fn adjust_selected_duration(&mut self, delta: f32) {
-        let emitter = self.selected_layer();
-        let duration =
-            (emitter.duration + delta).clamp(0.05, self.effect.duration - emitter.start_time);
-        self.execute(
-            "Trimmed layer",
-            EffectCommand::SetEmitterTiming {
-                id: emitter.id,
-                start_time: emitter.start_time,
-                duration,
-            },
-            true,
-        );
-    }
-
     pub fn adjust_effect_duration(&mut self, delta: f32) {
         let duration = (self.effect.duration + delta).max(0.25);
         let mut commands = vec![EffectCommand::SetEffectDuration { duration }];
-        commands.extend(self.effect.emitters.iter().map(|emitter| {
+        for emitter in &self.effect.emitters {
             let start_time = emitter.start_time.min((duration - 0.05).max(0.0));
             let emitter_duration = emitter.duration.min(duration - start_time).max(0.05);
-            EffectCommand::SetEmitterTiming {
-                id: emitter.id,
-                start_time,
-                duration: emitter_duration,
+            if emitter.regions.is_empty() {
+                commands.push(EffectCommand::SetEmitterTiming {
+                    id: emitter.id,
+                    start_time,
+                    duration: emitter_duration,
+                });
+            } else {
+                let mut regions = emitter.regions.clone();
+                for region in &mut regions {
+                    region.start_time = region.start_time.min((duration - 0.05).max(0.0));
+                    region.duration = region
+                        .duration
+                        .min(duration - region.start_time)
+                        .min((emitter.duration - region.source_offset).max(0.05))
+                        .max(0.05);
+                }
+                commands.push(EffectCommand::SetEmitterRegions {
+                    id: emitter.id,
+                    regions,
+                });
             }
-        }));
+        }
         self.execute_transaction(
             EffectTransaction::new("Changed effect duration", commands),
             true,

@@ -176,6 +176,7 @@ fn migrate_v2_emitter(
         start_time: emitter.start_time,
         start_reference: None,
         duration: emitter.duration,
+        regions: Vec::new(),
         max_particles: emitter.max_particles,
         simulation_domain: emitter.simulation_domain,
         modules: emitter

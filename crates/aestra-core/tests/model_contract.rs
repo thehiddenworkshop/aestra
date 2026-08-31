@@ -1,11 +1,40 @@
 use aestra_core::{
     AssetDefinition, ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode,
     EffectAsset, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter,
-    EmitterId, EmitterShape, EmitterTransform, FlipbookDefinition, MODULE_EMISSION, MODULE_MOTION,
-    MODULE_SHAPE, MarkerTimeReference, MaterialProperties, ModuleParameters, ParameterId,
-    PropertyEvaluationDomain, PropertySource, PropertySourceValue, RendererInstance, ScalarRange,
-    Value, Vec3Curve, Vec3Range,
+    EmitterId, EmitterRegionId, EmitterShape, EmitterTransform, FlipbookDefinition,
+    MODULE_EMISSION, MODULE_MOTION, MODULE_SHAPE, MarkerTimeReference, MaterialProperties,
+    ModuleParameters, ParameterId, PropertyEvaluationDomain, PropertySource, PropertySourceValue,
+    RendererInstance, ScalarRange, Value, Vec3Curve, Vec3Range,
 };
+
+#[test]
+fn emitter_regions_split_and_join_without_changing_source_time() {
+    let emitter = Emitter::basic_sprite("Emitter", 2.0);
+    let implicit = emitter.timeline_regions();
+    assert_eq!(implicit.len(), 1);
+    assert_eq!(implicit[0].start_time, 0.0);
+    assert_eq!(implicit[0].source_offset, 0.0);
+    assert_eq!(implicit[0].duration, 2.0);
+
+    let regions = emitter
+        .split_timeline_region(implicit[0].id, 0.75, EmitterRegionId::from_u128(0x51))
+        .unwrap();
+    assert_eq!(regions.len(), 2);
+    assert_eq!(regions[0].duration, 0.75);
+    assert_eq!(regions[1].start_time, 0.75);
+    assert_eq!(regions[1].source_offset, 0.75);
+    assert_eq!(regions[1].duration, 1.25);
+
+    let mut split = emitter.clone();
+    split.regions = regions;
+    let joined = split
+        .join_timeline_region_with_next(split.regions[0].id)
+        .unwrap();
+    assert!(
+        joined.is_empty(),
+        "joining the original split restores legacy form"
+    );
+}
 
 #[test]
 fn semantic_ids_survive_round_trip() {

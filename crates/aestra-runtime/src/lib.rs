@@ -516,11 +516,15 @@ pub struct IrLocation {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledEmitter {
     pub source: EmitterId,
+    pub region: aestra_core::EmitterRegionId,
     pub name: String,
     pub enabled: bool,
     pub transform: EmitterTransform,
     pub start_time: f32,
+    pub source_offset: f32,
+    pub source_duration: f32,
     pub duration: f32,
+    pub seed_index: u32,
     pub max_particles: u32,
     pub execution: ExecutionPlan,
     pub renderers: Vec<RendererPlan>,
@@ -1140,10 +1144,13 @@ fn evaluate_with_parameters(
         if !emitter.enabled {
             continue;
         }
-        let local_time = effect_time - emitter.start_time;
-        if local_time < 0.0 || local_time > emitter.duration {
+        let region_time = effect_time - emitter.start_time;
+        if region_time < 0.0 {
             continue;
         }
+        let local_time = emitter.source_offset + region_time;
+        let source_end = emitter.source_offset + emitter.duration;
+        let emission_time = local_time.min(source_end);
 
         let Some((spawn_rate, burst_count)) = emission(&emitter.execution, parameters) else {
             continue;
@@ -1163,10 +1170,10 @@ fn evaluate_with_parameters(
             continue;
         };
 
-        let random = hash01(emitter_index as u32, 0x5350_4157, seed);
+        let random = hash01(emitter.seed_index, 0x5350_4157, seed);
         let emission_count = burst_count.saturating_add(
             spawn_rate
-                .emitted_until(local_time, emitter.duration, random)
+                .emitted_until(emission_time, emitter.source_duration, random)
                 .floor()
                 .max(0.0) as u32,
         );
@@ -1174,13 +1181,18 @@ fn evaluate_with_parameters(
         for index in 0..count {
             let spawn_time = if index < burst_count {
                 0.0
-            } else if let Some(spawn_time) =
-                spawn_rate.spawn_time((index - burst_count) as f32, emitter.duration, random)
-            {
+            } else if let Some(spawn_time) = spawn_rate.spawn_time(
+                (index - burst_count) as f32,
+                emitter.source_duration,
+                random,
+            ) {
                 spawn_time
             } else {
                 continue;
             };
+            if spawn_time < emitter.source_offset || spawn_time >= source_end {
+                continue;
+            }
             let age = local_time - spawn_time;
             let life = initializer.lifetime.sample(hash01(index, 0, seed));
             if age < 0.0 || age >= life || life <= 0.0 {
@@ -1190,17 +1202,17 @@ fn evaluate_with_parameters(
             let normalized_age = age / life;
             let drag = motion.drag.sample(
                 normalized_age,
-                local_time / emitter.duration.max(f32::EPSILON),
+                local_time / emitter.source_duration.max(f32::EPSILON),
                 hash01(index, 12, seed),
             );
             let turbulence_strength = motion.turbulence.sample(
                 normalized_age,
-                local_time / emitter.duration.max(f32::EPSILON),
+                local_time / emitter.source_duration.max(f32::EPSILON),
                 hash01(index, 13, seed),
             );
             let gravity = motion.gravity.sample(
                 normalized_age,
-                local_time / emitter.duration.max(f32::EPSILON),
+                local_time / emitter.source_duration.max(f32::EPSILON),
                 [
                     hash01(index, 14, seed),
                     hash01(index, 15, seed),
