@@ -80,6 +80,9 @@ impl CurvesState {
 #[derive(Component)]
 struct CurveGraph;
 
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+struct CurveGraphKey(ComplexSelection);
+
 fn curves_keyboard_input(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     graphs: Query<&RelativeCursorPosition, With<CurveGraph>>,
@@ -622,6 +625,11 @@ fn spawn_curve_graph(
                     .spawn((
                         Button,
                         EditorNativeControl,
+                        CurveGraphKey(ComplexSelection {
+                            module,
+                            input: input_index,
+                            key: key_index,
+                        }),
                         EntityCursor::System(SystemCursorIcon::Grab),
                         Node {
                             position_type: PositionType::Absolute,
@@ -667,7 +675,7 @@ fn spawn_curve_graph(
                         move |drag: On<Pointer<Drag>>,
                               graph: Single<(&ComputedNode, &Children), With<CurveGraph>>,
                               session: Res<EditorSession>,
-                              mut nodes: Query<&mut Node>,
+                              mut key_nodes: Query<(&CurveGraphKey, &mut Node)>,
                               mut rasters: Query<
                             &mut automation_curve::AutomationCurveRaster,
                         >| {
@@ -685,7 +693,7 @@ fn spawn_curve_graph(
                             else {
                                 return;
                             };
-                            let Some((key, preview)) = curve_drag_preview(
+                            let Some((_, preview)) = curve_drag_preview(
                                 &curve,
                                 key_index,
                                 drag.distance,
@@ -695,9 +703,22 @@ fn spawn_curve_graph(
                             ) else {
                                 return;
                             };
-                            if let Ok(mut node) = nodes.get_mut(drag.entity) {
-                                node.left = Val::Percent(key.time * 100.0);
-                                node.top = Val::Percent(preview.key_top_percent(key_index));
+                            let AutomationCurveData::Curve(points) = &preview else {
+                                return;
+                            };
+                            for (selection, mut node) in &mut key_nodes {
+                                if selection.0.module != module
+                                    || selection.0.input != input_index
+                                {
+                                    continue;
+                                }
+                                let Some(point) = points.get(selection.0.key) else {
+                                    continue;
+                                };
+                                node.left = Val::Percent(point.time * 100.0);
+                                node.top = Val::Percent(
+                                    preview.key_top_percent(selection.0.key),
+                                );
                             }
                             for child in children.iter() {
                                 if let Ok(mut raster) = rasters.get_mut(child)
