@@ -110,8 +110,13 @@ architecture vision; this file is the shorter delivery plan.
   deterministic interval dispatch across loop boundaries. Local emitter tracks can now expand
   their existing curve and gradient properties as automation lanes. Timeline keys share selection
   with Curves, can be added at the playhead, moved with timeline snapping, deleted with the standard
-  Delete shortcut, and commit through the same undoable semantic curve commands. Top-level local
-  emitter tracks can now
+  Delete shortcut, and commit through the same undoable semantic curve commands. Module properties
+  now retain separate authored values for each supported source instead of
+  destructively converting one representation into another. The first end-to-end scalar source
+  slice gives Spawn Rate Constant, deterministic Random Range, and Curve over Emitter Time modes
+  across Properties, Timeline, Curves, serialization, CPU compilation/execution, and native WESL.
+  Public bindings and reusable-effect overrides use the active source's concrete value type.
+  Top-level local emitter tracks can now
   be multi-selected and extracted into a collision-safe reusable effect asset, optionally replacing
   the source tracks with one referenced clip through an undoable transaction. The project index now
   exposes deterministic direct and transitive dependency and reverse-usage relations with owning

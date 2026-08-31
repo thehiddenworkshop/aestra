@@ -2,14 +2,15 @@ use aestra_compiler::{
     EffectCompiler, InputEvaluationDomain, InputSourceKind, ModuleRegistry, ProjectCompileError,
 };
 use aestra_core::{
-    ChoreographyEvent, ChoreographyEventPayload, DiagnosticCode, EffectAsset, EffectClip,
-    EffectClipSeed, EffectParameter, Emitter, MODULE_EMISSION, MaterialInput, MaterialProperties,
-    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, ScalarRange, StageKind, Value,
+    ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode, EffectAsset,
+    EffectClip, EffectClipSeed, EffectParameter, Emitter, MODULE_EMISSION, MODULE_INITIALIZE,
+    MaterialInput, MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
+    PropertySourceValue, ScalarRange, StageKind, Value,
 };
 use aestra_project::ProjectAssetIndex;
 use aestra_runtime::{
     EffectInstance, Expression, Instruction, ParameterError, ParticleAttribute, RendererPlanKind,
-    RuntimeStage, SimulationSeekMode,
+    RuntimeStage, ScalarSource, SimulationSeekMode,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -171,6 +172,216 @@ fn explicit_constant_source_controls_lowering_independently_of_curve_key_count()
 }
 
 #[test]
+fn spawn_rate_emitter_curve_is_preserved_and_lowered_as_a_scalar_source() {
+    let mut asset = EffectAsset::from_ron(SAMPLE).unwrap();
+    let emission = asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_EMISSION)
+        .unwrap();
+    let source = InputSourceKind::Curve(InputEvaluationDomain::EmitterTime);
+    let curve = Curve::new(vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 20.0)]);
+    emission.property_source_values.insert(
+        "spawn_rate".into(),
+        vec![PropertySourceValue::new(
+            source,
+            Value::Curve(curve.clone()),
+        )],
+    );
+    emission
+        .property_sources
+        .insert("spawn_rate".into(), source);
+
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let Instruction::Emit { spawn_rate, .. } = &compiled.emitters[0].execution.emitter_update[0]
+    else {
+        panic!("first instruction must emit particles");
+    };
+    let ScalarSource::Curve { value, domain } = spawn_rate else {
+        panic!("spawn rate should lower as a curve source");
+    };
+    assert_eq!(*domain, InputEvaluationDomain::EmitterTime);
+    let Expression::Constant(compiled_curve) = value else {
+        panic!("unbound curve should be constant-folded");
+    };
+    assert_eq!(compiled_curve.sample(0.0), curve.sample(0.0));
+    assert_eq!(compiled_curve.sample(1.0), curve.sample(1.0));
+    assert!((compiled_curve.integral(1.0) - 10.0).abs() < 0.0001);
+}
+
+#[test]
+fn spawn_rate_emitter_curve_controls_accumulated_particle_count() {
+    let mut asset = EffectAsset::new("Emitter-time rate", 2.0);
+    asset.looping = false;
+    asset
+        .emitters
+        .push(Emitter::basic_sprite("Emitter", asset.duration));
+    let emitter = &mut asset.emitters[0];
+    let emission = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_EMISSION)
+        .unwrap();
+    let ModuleParameters::Emission { burst_count, .. } = &mut emission.parameters else {
+        unreachable!()
+    };
+    *burst_count = 0;
+    let source = InputSourceKind::Curve(InputEvaluationDomain::EmitterTime);
+    emission
+        .property_sources
+        .insert("spawn_rate".into(), source);
+    emission.property_source_values.insert(
+        "spawn_rate".into(),
+        vec![PropertySourceValue::new(
+            source,
+            Value::Curve(Curve::new(vec![
+                CurveKey::new(0.0, 0.0),
+                CurveKey::new(1.0, 20.0),
+            ])),
+        )],
+    );
+    let initialize = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_INITIALIZE)
+        .unwrap();
+    initialize.bindings.remove("lifetime");
+    let ModuleParameters::Initialize { lifetime, .. } = &mut initialize.parameters else {
+        unreachable!()
+    };
+    *lifetime = ScalarRange::new(10.0, 10.0);
+
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let mut particles = Vec::new();
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut particles);
+    assert_eq!(particles.len(), 3);
+    aestra_runtime::evaluate(&compiled, 2.0, 42, &mut particles);
+    assert_eq!(particles.len(), 20);
+}
+
+#[test]
+fn spawn_rate_random_range_is_deterministic_for_an_effect_seed() {
+    let mut asset = EffectAsset::new("Random rate", 2.0);
+    asset.looping = false;
+    asset
+        .emitters
+        .push(Emitter::basic_sprite("Emitter", asset.duration));
+    let emitter = &mut asset.emitters[0];
+    let emission = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_EMISSION)
+        .unwrap();
+    let ModuleParameters::Emission { burst_count, .. } = &mut emission.parameters else {
+        unreachable!()
+    };
+    *burst_count = 0;
+    emission
+        .property_sources
+        .insert("spawn_rate".into(), InputSourceKind::RandomRange);
+    emission.property_source_values.insert(
+        "spawn_rate".into(),
+        vec![PropertySourceValue::new(
+            InputSourceKind::RandomRange,
+            Value::Range(ScalarRange::new(10.0, 30.0)),
+        )],
+    );
+    let initialize = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_INITIALIZE)
+        .unwrap();
+    let ModuleParameters::Initialize { lifetime, .. } = &mut initialize.parameters else {
+        unreachable!()
+    };
+    *lifetime = ScalarRange::new(10.0, 10.0);
+
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let Instruction::Emit { spawn_rate, .. } = &compiled.emitters[0].execution.emitter_update[0]
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        spawn_rate,
+        &ScalarSource::RandomRange(Expression::Constant(ScalarRange::new(10.0, 30.0)))
+    );
+    let mut first = Vec::new();
+    let mut repeated = Vec::new();
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut first);
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut repeated);
+    assert_eq!(first, repeated);
+    assert!((10..=30).contains(&first.len()));
+}
+
+#[test]
+fn compiler_uses_the_active_source_specific_range_and_curve_values() {
+    let mut asset = EffectAsset::from_ron(SAMPLE).unwrap();
+    let emitter = &mut asset.emitters[0];
+    let initialize = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_INITIALIZE)
+        .unwrap();
+    initialize.bindings.remove("lifetime");
+    initialize
+        .property_sources
+        .insert("lifetime".into(), InputSourceKind::RandomRange);
+    initialize.property_source_values.insert(
+        "lifetime".into(),
+        vec![PropertySourceValue::new(
+            InputSourceKind::RandomRange,
+            Value::Range(ScalarRange::new(9.0, 10.0)),
+        )],
+    );
+    let appearance = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == aestra_core::MODULE_APPEARANCE)
+        .unwrap();
+    appearance.bindings.remove("size");
+    let curve_source = InputSourceKind::Curve(InputEvaluationDomain::ParticleLife);
+    appearance
+        .property_sources
+        .insert("size".into(), curve_source);
+    appearance.property_source_values.insert(
+        "size".into(),
+        vec![PropertySourceValue::new(
+            curve_source,
+            Value::Curve(Curve::new(vec![
+                CurveKey::new(0.0, 7.0),
+                CurveKey::new(1.0, 8.0),
+            ])),
+        )],
+    );
+
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let Instruction::Initialize { lifetime, .. } = compiled.emitters[0]
+        .execution
+        .particle_spawn
+        .iter()
+        .find(|instruction| matches!(instruction, Instruction::Initialize { .. }))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    assert_eq!(lifetime, &Expression::Constant(ScalarRange::new(9.0, 10.0)));
+    let Instruction::Appearance { size, .. } = compiled.emitters[0]
+        .execution
+        .particle_update
+        .iter()
+        .find(|instruction| matches!(instruction, Instruction::Appearance { .. }))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    let Expression::Constant(size) = size else {
+        unreachable!()
+    };
+    assert_eq!(size.sample(0.0), 7.0);
+    assert_eq!(size.sample(1.0), 8.0);
+}
+
+#[test]
 fn compiler_resolves_texture_assets_into_renderer_plans() {
     let asset = EffectAsset::from_ron(TEXTURED_SAMPLE).unwrap();
     let compiled = EffectCompiler::default().compile(&asset).unwrap();
@@ -229,6 +440,7 @@ fn unregistered_modules_produce_targeted_diagnostics() {
         enabled: true,
         parameters: ModuleParameters::Custom(BTreeMap::new()),
         property_sources: BTreeMap::new(),
+        property_source_values: BTreeMap::new(),
         bindings: BTreeMap::new(),
     });
     asset.emitters.push(emitter);
@@ -326,7 +538,7 @@ fn exposed_bindings_update_instances_without_recompiling() {
     assert!(matches!(
         emission,
         Instruction::Emit {
-            spawn_rate: Expression::Parameter(_),
+            spawn_rate: ScalarSource::Constant(Expression::Parameter(_)),
             ..
         }
     ));
@@ -365,6 +577,9 @@ fn non_exposed_bindings_are_constant_folded() {
     let Instruction::Emit { spawn_rate, .. } = &compiled.emitters[0].execution.emitter_update[0]
     else {
         panic!("first instruction must emit particles");
+    };
+    let ScalarSource::Constant(spawn_rate) = spawn_rate else {
+        panic!("spawn rate should remain constant");
     };
     assert_eq!(spawn_rate.constant_value(), Some(&4.0));
 }

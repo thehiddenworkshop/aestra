@@ -9,11 +9,13 @@ pub use checkpoint::{
 };
 pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource};
 
+#[cfg(test)]
+use aestra_core::CurveKey;
 use aestra_core::{
     AssetId, AssetKind, BlendMode, ChoreographyEventId, ChoreographyEventPayload, Curve,
     EffectAssetRef, EffectClipId, EffectClipSeed, EffectId, EmitterId, EmitterShape,
     EmitterTransform, FlipbookPlaybackMode, FlipbookTimeSource, Gradient, MaterialId, ModuleId,
-    ParameterId, RendererId, ScalarRange, UvRect, Value, ValueType,
+    ParameterId, PropertyEvaluationDomain, RendererId, ScalarRange, UvRect, Value, ValueType,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -135,6 +137,35 @@ impl CompiledCurve {
             }
         }
         self.last_value
+    }
+
+    /// Integrates the normalized curve from zero through `time`.
+    pub fn integral(&self, time: f32) -> f32 {
+        let Some((first_time, first_value)) = self.first else {
+            return 0.0;
+        };
+        let time = time.clamp(0.0, 1.0);
+        let mut area = first_value * time.min(first_time);
+        if time <= first_time {
+            return area;
+        }
+        for segment in &self.segments {
+            if time <= segment.start_time {
+                break;
+            }
+            let span = (segment.end_time - segment.start_time).max(f32::EPSILON);
+            let x = ((time.min(segment.end_time) - segment.start_time) / span).clamp(0.0, 1.0);
+            let delta = segment.end_value - segment.start_value;
+            area += span * (segment.start_value * x + delta * (x * x * x - 0.5 * x.powi(4)));
+            if time <= segment.end_time {
+                return area;
+            }
+        }
+        let last_time = self
+            .segments
+            .last()
+            .map_or(first_time, |segment| segment.end_time);
+        area + self.last_value * (time - last_time).max(0.0)
     }
 
     pub fn first(&self) -> Option<(f32, f32)> {
@@ -307,12 +338,22 @@ runtime_parameter_value!(EmitterShape, Shape);
 runtime_parameter_value!(AssetId, Asset);
 runtime_parameter_value!(MaterialId, Material);
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScalarSource {
+    Constant(Expression<f32>),
+    RandomRange(Expression<ScalarRange>),
+    Curve {
+        value: Expression<CompiledCurve>,
+        domain: PropertyEvaluationDomain,
+    },
+}
+
 /// A typed operation in a compiled emitter execution plan.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     Emit {
         source: ModuleId,
-        spawn_rate: Expression<f32>,
+        spawn_rate: ScalarSource,
         burst_count: Expression<u32>,
     },
     SampleShape {
@@ -1080,14 +1121,21 @@ fn evaluate_with_parameters(
             continue;
         };
 
-        let emission_count =
-            burst_count.saturating_add((local_time * spawn_rate).floor().max(0.0) as u32);
+        let random = hash01(emitter_index as u32, 0x5350_4157, seed);
+        let emission_count = burst_count.saturating_add(
+            spawn_rate
+                .emitted_until(local_time, emitter.duration, random)
+                .floor()
+                .max(0.0) as u32,
+        );
         let count = emission_count.min(emitter.max_particles);
         for index in 0..count {
             let spawn_time = if index < burst_count {
                 0.0
-            } else if spawn_rate > 0.0 {
-                (index - burst_count) as f32 / spawn_rate
+            } else if let Some(spawn_time) =
+                spawn_rate.spawn_time((index - burst_count) as f32, emitter.duration, random)
+            {
+                spawn_time
             } else {
                 continue;
             };
@@ -1219,7 +1267,61 @@ pub fn flipbook_frame_index(flipbook: &CompiledFlipbook, context: FlipbookFrameC
     }
 }
 
-fn emission(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<(f32, u32)> {
+#[derive(Clone, Copy)]
+enum ResolvedScalarSource<'a> {
+    Constant(f32),
+    RandomRange(ScalarRange),
+    Curve(&'a CompiledCurve, PropertyEvaluationDomain),
+}
+
+impl ResolvedScalarSource<'_> {
+    fn emitted_until(self, time: f32, duration: f32, random: f32) -> f32 {
+        match self {
+            Self::Constant(value) => time * value.max(0.0),
+            Self::RandomRange(range) => time * range.sample(random).max(0.0),
+            Self::Curve(curve, PropertyEvaluationDomain::EmitterTime) => {
+                duration * curve.integral(time / duration.max(f32::EPSILON)).max(0.0)
+            }
+            Self::Curve(curve, PropertyEvaluationDomain::ParticleLife) => {
+                time * curve.sample(time / duration.max(f32::EPSILON)).max(0.0)
+            }
+        }
+    }
+
+    fn spawn_time(self, target: f32, duration: f32, random: f32) -> Option<f32> {
+        if target <= 0.0 {
+            return Some(0.0);
+        }
+        match self {
+            Self::Constant(value) => (value > 0.0).then_some(target / value),
+            Self::RandomRange(range) => {
+                let value = range.sample(random);
+                (value > 0.0).then_some(target / value)
+            }
+            Self::Curve(_, _) => {
+                if self.emitted_until(duration, duration, random) < target {
+                    return None;
+                }
+                let mut low = 0.0;
+                let mut high = duration;
+                for _ in 0..20 {
+                    let middle = (low + high) * 0.5;
+                    if self.emitted_until(middle, duration, random) < target {
+                        low = middle;
+                    } else {
+                        high = middle;
+                    }
+                }
+                Some((low + high) * 0.5)
+            }
+        }
+    }
+}
+
+fn emission<'a>(
+    plan: &'a ExecutionPlan,
+    parameters: &'a [RuntimeValue],
+) -> Option<(ResolvedScalarSource<'a>, u32)> {
     plan.emitter_update
         .iter()
         .find_map(|instruction| match instruction {
@@ -1227,10 +1329,20 @@ fn emission(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<(f32, u
                 spawn_rate,
                 burst_count,
                 ..
-            } => Some((
-                *spawn_rate.resolve(parameters),
-                *burst_count.resolve(parameters),
-            )),
+            } => {
+                let spawn_rate = match spawn_rate {
+                    ScalarSource::Constant(value) => {
+                        ResolvedScalarSource::Constant(*value.resolve(parameters))
+                    }
+                    ScalarSource::RandomRange(value) => {
+                        ResolvedScalarSource::RandomRange(*value.resolve(parameters))
+                    }
+                    ScalarSource::Curve { value, domain } => {
+                        ResolvedScalarSource::Curve(value.resolve(parameters), *domain)
+                    }
+                };
+                Some((spawn_rate, *burst_count.resolve(parameters)))
+            }
             _ => None,
         })
 }
@@ -1579,6 +1691,35 @@ mod tests {
         assert_eq!(
             frame(FlipbookPlaybackMode::Forward, true),
             frame(FlipbookPlaybackMode::Forward, true)
+        );
+    }
+
+    #[test]
+    fn emitter_time_curve_integrates_emission_and_inverts_spawn_times() {
+        let curve = CompiledCurve::compile(&Curve::new(vec![
+            CurveKey::new(0.0, 0.0),
+            CurveKey::new(1.0, 20.0),
+        ]));
+        let source = ResolvedScalarSource::Curve(&curve, PropertyEvaluationDomain::EmitterTime);
+
+        assert!((source.emitted_until(1.0, 2.0, 0.0) - 3.75).abs() < 0.0001);
+        assert!((source.emitted_until(2.0, 2.0, 0.0) - 20.0).abs() < 0.0001);
+        assert_eq!(source.spawn_time(0.0, 2.0, 0.0), Some(0.0));
+        let tenth_spawn = source.spawn_time(10.0, 2.0, 0.0).unwrap();
+        assert!((source.emitted_until(tenth_spawn, 2.0, 0.0) - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn random_range_scalar_source_is_seed_sampled_but_time_stable() {
+        let source = ResolvedScalarSource::RandomRange(ScalarRange::new(10.0, 30.0));
+        let random = hash01(3, 0x5350_4157, 42);
+        let first_second = source.emitted_until(1.0, 4.0, random);
+        let second_second = source.emitted_until(2.0, 4.0, random);
+
+        assert!((second_second - first_second * 2.0).abs() < 0.0001);
+        assert_eq!(
+            source.emitted_until(1.0, 4.0, random),
+            source.emitted_until(1.0, 4.0, random)
         );
     }
 }

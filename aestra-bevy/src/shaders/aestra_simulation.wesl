@@ -29,7 +29,10 @@ struct Emitter {
     shape_kind: u32,
     start_time: f32,
     duration: f32,
-    spawn_rate: f32,
+    spawn_rate: vec2<f32>,
+    spawn_rate_source: u32,
+    _spawn_rate_padding: u32,
+    spawn_rate_curve: Curve,
     shape_radius: f32,
     shape_depth: f32,
     shape_extent_z: f32,
@@ -127,6 +130,76 @@ fn sample_curve(curve: Curve, time: f32) -> f32 {
     return curve.keys[curve.count - 1u].y;
 }
 
+fn curve_integral(curve: Curve, time: f32) -> f32 {
+    if curve.count == 0u {
+        return 0.0;
+    }
+    let t = clamp(time, 0.0, 1.0);
+    let first = curve.keys[0];
+    var area = first.y * min(t, first.x);
+    if t <= first.x {
+        return area;
+    }
+    var index = 1u;
+    loop {
+        if index >= curve.count || index >= MAX_CURVE_KEYS {
+            break;
+        }
+        let start = curve.keys[index - 1u];
+        let end = curve.keys[index];
+        if t > start.x {
+            let span = max(end.x - start.x, 0.000000119);
+            let x = clamp((min(t, end.x) - start.x) / span, 0.0, 1.0);
+            let x3 = x * x * x;
+            let x4 = x3 * x;
+            area += span * (start.y * x + (end.y - start.y) * (x3 - 0.5 * x4));
+        }
+        if t <= end.x {
+            return area;
+        }
+        index += 1u;
+    }
+    let last = curve.keys[curve.count - 1u];
+    return area + last.y * max(t - last.x, 0.0);
+}
+
+fn resolved_spawn_rate(emitter: Emitter, emitter_index: u32) -> f32 {
+    if emitter.spawn_rate_source == 1u {
+        return max(sample_range(emitter.spawn_rate, hash01(emitter_index, 0x53504157u)), 0.0);
+    }
+    return max(emitter.spawn_rate.x, 0.0);
+}
+
+fn emitted_until(emitter: Emitter, emitter_index: u32, time: f32) -> f32 {
+    if emitter.spawn_rate_source == 2u {
+        return emitter.duration
+            * max(curve_integral(emitter.spawn_rate_curve, time / max(emitter.duration, 0.000000119)), 0.0);
+    }
+    return time * resolved_spawn_rate(emitter, emitter_index);
+}
+
+fn curve_spawn_time(emitter: Emitter, emitter_index: u32, target_emission: f32) -> f32 {
+    if target_emission <= 0.0 {
+        return 0.0;
+    }
+    var low = 0.0;
+    var high = emitter.duration;
+    var iteration = 0u;
+    loop {
+        if iteration >= 12u {
+            break;
+        }
+        let middle = (low + high) * 0.5;
+        if emitted_until(emitter, emitter_index, middle) < target_emission {
+            low = middle;
+        } else {
+            high = middle;
+        }
+        iteration += 1u;
+    }
+    return (low + high) * 0.5;
+}
+
 fn sample_gradient(gradient: Gradient, time: f32) -> vec4<f32> {
     if gradient.count == 0u {
         return vec4<f32>(1.0);
@@ -222,7 +295,8 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
-    let emitted = emitter.burst_count + u32(max(floor(local_time * emitter.spawn_rate), 0.0));
+    let emitted = emitter.burst_count
+        + u32(max(floor(emitted_until(emitter, emitter_index, local_time)), 0.0));
     if particle_index >= min(emitted, emitter.max_particles) {
         particles[slot] = dead_particle(emitter_index);
         append_dead(slot);
@@ -231,12 +305,23 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     var spawn_time = 0.0;
     if particle_index >= emitter.burst_count {
-        if emitter.spawn_rate <= 0.0 {
+        let particle_target = f32(particle_index - emitter.burst_count);
+        if emitted_until(emitter, emitter_index, emitter.duration) < particle_target {
             particles[slot] = dead_particle(emitter_index);
             append_dead(slot);
             return;
         }
-        spawn_time = f32(particle_index - emitter.burst_count) / emitter.spawn_rate;
+        if emitter.spawn_rate_source == 2u {
+            spawn_time = curve_spawn_time(emitter, emitter_index, particle_target);
+        } else {
+            let rate = resolved_spawn_rate(emitter, emitter_index);
+            if rate <= 0.0 {
+                particles[slot] = dead_particle(emitter_index);
+                append_dead(slot);
+                return;
+            }
+            spawn_time = particle_target / rate;
+        }
     }
     let age = local_time - spawn_time;
     let lifetime = sample_range(emitter.lifetime, hash01(particle_index, 0u));

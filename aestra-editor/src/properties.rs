@@ -759,9 +759,10 @@ fn expose_module_input(
     if module.bindings.contains_key(input_name) {
         return false;
     }
-    let Some(default) = module_parameter(module, input_name) else {
+    let Some(mut default) = module_parameter(module, input_name) else {
         return false;
     };
+    default.regenerate_ids();
     let metadata = registry.get(&module.module_type);
     let display_name = metadata
         .and_then(|metadata| metadata.inputs.get(input_index as usize))
@@ -854,64 +855,83 @@ fn set_module_input_source(
     let Some(current) = properties_module_parameter(session, module, parameter) else {
         return false;
     };
-    let updated = match (current.clone(), source) {
-        (Value::Curve(curve), PropertySourceKind::Constant) if curve.keys.len() > 1 => {
-            Value::Curve(Curve::new(vec![CurveKey::new(0.0, curve.sample(0.0))]))
-        }
-        (Value::Curve(curve), PropertySourceKind::Curve(_)) if curve.keys.len() <= 1 => {
-            let value = curve.sample(0.0);
-            Value::Curve(Curve::new(vec![
-                CurveKey::new(0.0, value),
-                CurveKey::new(1.0, value),
-            ]))
-        }
-        (Value::Gradient(gradient), PropertySourceKind::Constant) if gradient.keys.len() > 1 => {
-            Value::Gradient(Gradient::new(vec![ColorKey::new(
-                0.0,
-                gradient.sample(0.0),
-            )]))
-        }
-        (Value::Gradient(gradient), PropertySourceKind::Gradient(_))
-            if gradient.keys.len() <= 1 =>
-        {
-            let color = gradient.sample(0.0);
-            Value::Gradient(Gradient::new(vec![
-                ColorKey::new(0.0, color),
-                ColorKey::new(1.0, color),
-            ]))
-        }
-        (Value::Range(range), PropertySourceKind::Constant)
-            if (range.max - range.min).abs() > f32::EPSILON =>
-        {
-            let value = (range.min + range.max) * 0.5;
-            Value::Range(ScalarRange::new(value, value))
-        }
-        (Value::Range(range), PropertySourceKind::RandomRange)
-            if (range.max - range.min).abs() <= f32::EPSILON =>
-        {
-            let InputControl::Range { step, min, max } = input.control else {
-                return false;
-            };
-            let low = min.map_or(range.min - step, |minimum| (range.min - step).max(minimum));
-            let high = max.map_or(range.max + step, |maximum| (range.max + step).min(maximum));
-            Value::Range(ScalarRange::new(low.min(high), high.max(low)))
-        }
-        (Value::Curve(curve), PropertySourceKind::Curve(_))
-        | (Value::Curve(curve), PropertySourceKind::Constant) => Value::Curve(curve),
-        (Value::Gradient(gradient), PropertySourceKind::Gradient(_))
-        | (Value::Gradient(gradient), PropertySourceKind::Constant) => Value::Gradient(gradient),
-        (Value::Range(range), PropertySourceKind::Constant)
-        | (Value::Range(range), PropertySourceKind::RandomRange) => Value::Range(range),
-        _ => return false,
+    let mut commands = Vec::with_capacity(4);
+    let Some(active_source) = module_instance.property_source(parameter) else {
+        return false;
     };
-    let mut commands = Vec::with_capacity(2);
-    if updated != current {
-        let Some(command) =
-            properties_module_parameter_command(session, module, parameter, updated)
+    let active_has_stored_value = module_instance
+        .property_source_values
+        .get(parameter)
+        .is_some_and(|values| {
+            values
+                .iter()
+                .any(|candidate| candidate.source == active_source)
+        });
+    if active_source != PropertySourceKind::Constant
+        && (module_instance.bindings.contains_key(parameter) || !active_has_stored_value)
+    {
+        commands.push(EffectCommand::SetModulePropertySourceValue {
+            emitter,
+            module,
+            parameter: parameter.to_owned(),
+            source: active_source,
+            value: current.clone(),
+        });
+    }
+    let target_value = if source == PropertySourceKind::Constant {
+        module_instance.parameter_value(parameter)
+    } else {
+        module_instance
+            .property_value_for_source(parameter, source)
+            .or_else(|| initial_property_source_value(input, &current, source))
+    };
+    if source != PropertySourceKind::Constant
+        && module_instance
+            .property_value_for_source(parameter, source)
+            .is_none()
+    {
+        let Some(value) = target_value.clone() else {
+            return false;
+        };
+        commands.push(EffectCommand::SetModulePropertySourceValue {
+            emitter,
+            module,
+            parameter: parameter.to_owned(),
+            source,
+            value,
+        });
+    }
+    if let Some(parameter_id) = module_instance.bindings.get(parameter) {
+        let Some(mut effect_parameter) = session
+            .effect
+            .parameters
+            .iter()
+            .find(|candidate| candidate.id == *parameter_id)
+            .cloned()
         else {
             return false;
         };
-        commands.push(command);
+        let Some(value) = target_value else {
+            return false;
+        };
+        effect_parameter.default = detached_property_value(value);
+        commands.push(EffectCommand::SetParameter {
+            id: *parameter_id,
+            parameter: effect_parameter,
+        });
+    } else if source == PropertySourceKind::Constant
+        && active_source != PropertySourceKind::Constant
+        && !active_has_stored_value
+    {
+        let Some(value) = target_value else {
+            return false;
+        };
+        commands.push(EffectCommand::SetModuleParameter {
+            emitter,
+            module,
+            parameter: parameter.to_owned(),
+            value: detached_property_value(value),
+        });
     }
     commands.push(EffectCommand::SetModulePropertySource {
         emitter,
@@ -923,6 +943,88 @@ fn set_module_input_source(
         EffectTransaction::new(localizer.text("properties-change-source-command"), commands),
         true,
     )
+}
+
+fn detached_property_value(mut value: Value) -> Value {
+    value.regenerate_ids();
+    value
+}
+
+fn initial_property_source_value(
+    input: &InputMetadata,
+    current: &Value,
+    source: PropertySourceKind,
+) -> Option<Value> {
+    let scalar = match current {
+        Value::Scalar(value) => Some(*value),
+        Value::Range(range) => Some((range.min + range.max) * 0.5),
+        Value::Curve(curve) => Some(curve.sample(0.0)),
+        _ => None,
+    };
+    match source {
+        PropertySourceKind::RandomRange => {
+            let value = scalar?;
+            let (step, min, max) = numeric_source_limits(&input.control)?;
+            let low = min.map_or(value - step, |minimum| (value - step).max(minimum));
+            let high = max.map_or(value + step, |maximum| (value + step).min(maximum));
+            Some(Value::Range(ScalarRange::new(low.min(high), high.max(low))))
+        }
+        PropertySourceKind::Curve(_) => {
+            let value = scalar?;
+            Some(Value::Curve(Curve::new(vec![
+                CurveKey::new(0.0, value),
+                CurveKey::new(1.0, value),
+            ])))
+        }
+        PropertySourceKind::Gradient(_) => {
+            let Value::Gradient(gradient) = current else {
+                return None;
+            };
+            let color = gradient.sample(0.0);
+            Some(Value::Gradient(Gradient::new(vec![
+                ColorKey::new(0.0, color),
+                ColorKey::new(1.0, color),
+            ])))
+        }
+        PropertySourceKind::Constant => None,
+    }
+}
+
+fn numeric_source_limits(control: &InputControl) -> Option<(f32, Option<f32>, Option<f32>)> {
+    match control {
+        InputControl::Number { step, min, max } | InputControl::Range { step, min, max } => {
+            Some((*step, *min, *max))
+        }
+        InputControl::Curve { step, min, max } => Some((*step, Some(*min), Some(*max))),
+        _ => None,
+    }
+}
+
+fn properties_curve_limits(input: &InputMetadata, curve: &Curve) -> Option<(f32, f32, f32)> {
+    let (step, min, max) = numeric_source_limits(&input.control)?;
+    let authored_min = curve
+        .keys
+        .iter()
+        .map(|key| key.value)
+        .fold(f32::INFINITY, f32::min);
+    let authored_max = curve
+        .keys
+        .iter()
+        .map(|key| key.value)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let minimum = min.unwrap_or(if authored_min.is_finite() {
+        authored_min
+    } else {
+        0.0
+    });
+    let maximum = max.unwrap_or_else(|| {
+        if authored_max.is_finite() {
+            authored_max.max(minimum + step)
+        } else {
+            minimum + step
+        }
+    });
+    Some((step, minimum, maximum.max(minimum + f32::EPSILON)))
 }
 
 // Properties domain implementation.
@@ -1322,8 +1424,6 @@ mod tests {
         else {
             panic!("size should be curve-authored");
         };
-        let preserved = original.sample(0.0);
-
         assert!(set_module_input_source(
             &mut session,
             &registry,
@@ -1336,7 +1436,8 @@ mod tests {
         else {
             panic!("constant source remains a typed scalar curve");
         };
-        assert_eq!(constant.keys, vec![CurveKey::new(0.0, preserved)]);
+        assert_eq!(constant.keys, original.keys);
+        assert_ne!(constant.id, original.id);
         assert_eq!(
             session
                 .selected_layer()
@@ -1360,9 +1461,7 @@ mod tests {
         else {
             panic!("curve source should remain typed");
         };
-        assert_eq!(curve.keys.len(), 2);
-        assert_eq!(curve.keys[0].value, preserved);
-        assert_eq!(curve.keys[1].value, preserved);
+        assert_eq!(curve, original);
         assert_eq!(
             session
                 .selected_layer()
@@ -1382,7 +1481,7 @@ mod tests {
         else {
             panic!("undo should restore the constant source");
         };
-        assert_eq!(restored_constant.keys.len(), 1);
+        assert_eq!(restored_constant, constant);
         assert_eq!(
             session
                 .selected_layer()
@@ -1421,6 +1520,7 @@ mod tests {
             .iter()
             .position(|input| input.name == "opacity")
             .unwrap() as u8;
+        let original = properties_module_parameter(&session, module, "opacity").unwrap();
         assert!(set_module_input_source(
             &mut session,
             &registry,
@@ -1454,6 +1554,76 @@ mod tests {
             panic!("constant source remains curve-typed");
         };
         assert_eq!(curve.keys.len(), 1);
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Curve(InputEvaluationDomain::ParticleLife),
+            &test_localizer(),
+        ));
+        let Some(Value::Curve(restored)) = properties_module_parameter(&session, module, "opacity")
+        else {
+            unreachable!()
+        };
+        let Value::Curve(original) = original else {
+            unreachable!()
+        };
+        assert_eq!(restored.keys, original.keys);
+    }
+
+    #[test]
+    fn exposing_a_curve_property_copies_it_with_a_distinct_semantic_identity() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        clear_effect_parameters_and_bindings(&mut session);
+        let registry = ModuleRegistry::builtin();
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module.parameter_value("opacity").is_some())
+            .unwrap()
+            .id;
+        let module_type = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap()
+            .module_type
+            .clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "opacity")
+            .unwrap() as u8;
+        let Value::Curve(local) = module_parameter(
+            session
+                .selected_layer()
+                .modules
+                .iter()
+                .find(|candidate| candidate.id == module)
+                .unwrap(),
+            "opacity",
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+
+        assert!(expose_module_input(
+            &mut session,
+            &registry,
+            module,
+            input,
+            &test_localizer(),
+        ));
+        let Value::Curve(public) = &session.effect.parameters[0].default else {
+            unreachable!()
+        };
+        assert_ne!(public.id, local.id);
+        assert!(session.effect.validation_report().is_valid());
     }
 
     #[test]
@@ -1483,6 +1653,11 @@ mod tests {
             .position(|input| input.name == "lifetime")
             .unwrap() as u8;
 
+        let Value::Range(original) =
+            properties_module_parameter(&session, module, "lifetime").unwrap()
+        else {
+            panic!("lifetime should be range-authored");
+        };
         assert!(set_module_input_source(
             &mut session,
             &registry,
@@ -1496,7 +1671,7 @@ mod tests {
         else {
             panic!("lifetime should remain range-typed");
         };
-        assert_eq!(constant.min, constant.max);
+        assert_eq!(constant, original);
 
         assert!(set_module_input_source(
             &mut session,
@@ -1511,8 +1686,173 @@ mod tests {
         else {
             panic!("random lifetime should remain range-typed");
         };
-        assert!(random.min < random.max);
+        assert_eq!(random, original);
         assert!(session.can_undo());
+    }
+
+    #[test]
+    fn spawn_rate_sources_preserve_constant_random_and_emitter_curve_values() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        clear_effect_parameters_and_bindings(&mut session);
+        let registry = ModuleRegistry::builtin();
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module.parameter_value("spawn_rate").is_some())
+            .unwrap()
+            .id;
+        let module_type = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap()
+            .module_type
+            .clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "spawn_rate")
+            .unwrap() as u8;
+        let original = properties_module_parameter(&session, module, "spawn_rate").unwrap();
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::RandomRange,
+            &test_localizer(),
+        ));
+        let random = properties_module_parameter(&session, module, "spawn_rate").unwrap();
+        assert!(matches!(random, Value::Range(_)));
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Curve(InputEvaluationDomain::EmitterTime),
+            &test_localizer(),
+        ));
+        let curve = properties_module_parameter(&session, module, "spawn_rate").unwrap();
+        assert!(matches!(curve, Value::Curve(_)));
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Constant,
+            &test_localizer(),
+        ));
+        assert_eq!(
+            properties_module_parameter(&session, module, "spawn_rate"),
+            Some(original)
+        );
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::RandomRange,
+            &test_localizer(),
+        ));
+        assert_eq!(
+            properties_module_parameter(&session, module, "spawn_rate"),
+            Some(random)
+        );
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Curve(InputEvaluationDomain::EmitterTime),
+            &test_localizer(),
+        ));
+        assert_eq!(
+            properties_module_parameter(&session, module, "spawn_rate"),
+            Some(curve)
+        );
+        assert!(
+            session
+                .effect
+                .to_pretty_ron()
+                .unwrap()
+                .contains("property_source_values")
+        );
+    }
+
+    #[test]
+    fn public_spawn_rate_tracks_the_active_source_without_losing_alternates() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        clear_effect_parameters_and_bindings(&mut session);
+        let registry = ModuleRegistry::builtin();
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module.parameter_value("spawn_rate").is_some())
+            .unwrap()
+            .id;
+        let module_type = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap()
+            .module_type
+            .clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "spawn_rate")
+            .unwrap() as u8;
+        assert!(expose_module_input(
+            &mut session,
+            &registry,
+            module,
+            input,
+            &test_localizer(),
+        ));
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::RandomRange,
+            &test_localizer(),
+        ));
+        let random = session.effect.parameters[0].default.clone();
+        assert!(matches!(random, Value::Range(_)));
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Curve(InputEvaluationDomain::EmitterTime),
+            &test_localizer(),
+        ));
+        assert!(matches!(
+            session.effect.parameters[0].default,
+            Value::Curve(_)
+        ));
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::RandomRange,
+            &test_localizer(),
+        ));
+        assert_eq!(session.effect.parameters[0].default, random);
+        assert!(session.effect.validation_report().is_valid());
     }
 
     #[test]
@@ -4876,6 +5216,21 @@ fn properties_module_parameter_command(
             parameter,
         });
     }
+    if let Some(source) = module_instance.property_source(input)
+        && source != PropertySourceKind::Constant
+        && module_instance
+            .property_source_values
+            .get(input)
+            .is_some_and(|values| values.iter().any(|value| value.source == source))
+    {
+        return Some(EffectCommand::SetModulePropertySourceValue {
+            emitter: session.selected_layer().id,
+            module,
+            parameter: input.to_owned(),
+            source,
+            value,
+        });
+    }
     Some(EffectCommand::SetModuleParameter {
         emitter: session.selected_layer().id,
         module,
@@ -7424,6 +7779,56 @@ fn spawn_input_control(
     let public =
         public_module_input_control(session, module, input, input_index, &value, localizer);
     let source = property_source_for_input(module, input, &value);
+    if input.sources.len() > 1
+        && matches!(&input.control, InputControl::Number { .. })
+        && matches!(&value, Value::Scalar(_))
+    {
+        spawn_properties_scalar_source_control(
+            parent,
+            module.id,
+            input,
+            input_index,
+            &display_name,
+            property_tooltip(&description, input.unit, localizer),
+            public,
+            source,
+            asset_server,
+            localizer,
+        );
+        return;
+    }
+    if source == PropertySourceKind::RandomRange && matches!(&value, Value::Range(_)) {
+        spawn_properties_range_source_control(
+            parent,
+            module.id,
+            input,
+            input_index,
+            &display_name,
+            property_tooltip(&description, input.unit, localizer),
+            public,
+            source,
+            asset_server,
+            localizer,
+        );
+        return;
+    }
+    if matches!(source, PropertySourceKind::Curve(_))
+        && let Value::Curve(curve) = &value
+    {
+        spawn_properties_curve_source_control(
+            parent,
+            module.id,
+            input,
+            input_index,
+            &display_name,
+            property_tooltip(&description, input.unit, localizer),
+            curve,
+            source,
+            asset_server,
+            localizer,
+        );
+        return;
+    }
     match (&input.control, value) {
         (InputControl::Curve { .. }, Value::Curve(curve)) => {
             spawn_properties_curve_source_control(
@@ -7659,7 +8064,7 @@ fn public_module_input_control(
         (InputControl::Toggle, Value::Bool(_))
             | (
                 InputControl::Number { .. },
-                Value::U32(_) | Value::Scalar(_)
+                Value::U32(_) | Value::Scalar(_) | Value::Range(_) | Value::Curve(_)
             )
             | (
                 InputControl::Vector { .. },
@@ -7761,7 +8166,7 @@ fn spawn_properties_range_source_control(
     asset_server: &AssetServer,
     localizer: &Localizer,
 ) {
-    let InputControl::Range { step, min, max } = input.control else {
+    let Some((step, min, max)) = numeric_source_limits(&input.control) else {
         return;
     };
     parent
@@ -7847,6 +8252,72 @@ fn spawn_properties_range_source_control(
         });
 }
 
+#[allow(clippy::too_many_arguments)]
+fn spawn_properties_scalar_source_control(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: &InputMetadata,
+    input_index: u8,
+    title: &str,
+    tooltip: EditorTooltip,
+    public: Option<ModuleInputPublicControl>,
+    source: PropertySourceKind,
+    asset_server: &AssetServer,
+    localizer: &Localizer,
+) {
+    let InputControl::Number { step, min, max } = input.control else {
+        return;
+    };
+    parent
+        .spawn((
+            tooltip,
+            ModuleInputPublicRow,
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|row| {
+            spawn_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                ..default()
+            })
+            .with_children(|control| {
+                control
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_scalar_input())
+                    .insert((
+                        PropertiesNumberControl {
+                            module,
+                            parameter: input.name,
+                            component: 0,
+                            kind: PropertiesNumberKind::Scalar,
+                            step,
+                            min,
+                            max,
+                        },
+                        AccessibleLabel(title.to_owned()),
+                    ));
+            });
+            spawn_module_input_public_toggle(row, public);
+            spawn_property_source_menu(
+                row,
+                module,
+                input_index,
+                source,
+                &input.sources,
+                asset_server,
+                localizer,
+            );
+        });
+}
+
 fn spawn_properties_curve_source_control(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
@@ -7859,7 +8330,7 @@ fn spawn_properties_curve_source_control(
     asset_server: &AssetServer,
     localizer: &Localizer,
 ) {
-    let InputControl::Curve { step, min, max } = input.control else {
+    let Some((step, min, max)) = properties_curve_limits(input, curve) else {
         return;
     };
     parent
@@ -9134,7 +9605,7 @@ fn module_matches(metadata: &ModuleMetadata, query: &str) -> bool {
 }
 
 pub(crate) fn module_parameter(module: &ModuleInstance, name: &str) -> Option<Value> {
-    module.parameter_value(name)
+    module.active_parameter_value(name)
 }
 
 fn select_properties_header(

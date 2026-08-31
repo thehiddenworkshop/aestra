@@ -5,7 +5,7 @@ mod render;
 use aestra_core::{BlendMode, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, ScalarRange};
 use aestra_runtime::{
     CompiledCurve, CompiledGradient, EffectInstance, ExecutionPlan, Instruction, MaterialColorPlan,
-    RendererPlanKind, RuntimeValue,
+    RendererPlanKind, RuntimeValue, ScalarSource,
 };
 use bevy::{
     asset::{RenderAssetUsages, embedded_asset},
@@ -96,7 +96,10 @@ pub struct GpuEmitter {
     pub shape_kind: u32,
     pub start_time: f32,
     pub duration: f32,
-    pub spawn_rate: f32,
+    pub spawn_rate: Vec2,
+    pub spawn_rate_source: u32,
+    pub _spawn_rate_padding: u32,
+    pub spawn_rate_curve: GpuCurve,
     pub shape_radius: f32,
     pub shape_depth: f32,
     pub shape_extent_z: f32,
@@ -333,6 +336,19 @@ impl GpuEffectArtifact {
             ));
             let rotation = Quat::from_array(emitter.transform.rotation).normalize();
             let scale = Vec3::from_array(emitter.transform.scale);
+            let (spawn_rate, spawn_rate_source, spawn_rate_curve) = if emitter.enabled {
+                match spawn_rate {
+                    ResolvedGpuScalarSource::Constant(value) => {
+                        (Vec2::splat(value), 0, GpuCurve::default())
+                    }
+                    ResolvedGpuScalarSource::RandomRange(range) => {
+                        (Vec2::new(range.min, range.max), 1, GpuCurve::default())
+                    }
+                    ResolvedGpuScalarSource::Curve(curve) => (Vec2::ZERO, 2, pack_curve(curve)?),
+                }
+            } else {
+                (Vec2::ZERO, 0, GpuCurve::default())
+            };
             emitters.push(GpuEmitter {
                 slot_offset,
                 max_particles: emitter.max_particles,
@@ -340,7 +356,10 @@ impl GpuEffectArtifact {
                 shape_kind,
                 start_time: emitter.start_time,
                 duration: emitter.duration,
-                spawn_rate: if emitter.enabled { spawn_rate } else { 0.0 },
+                spawn_rate,
+                spawn_rate_source,
+                _spawn_rate_padding: 0,
+                spawn_rate_curve,
                 shape_radius,
                 shape_depth,
                 shape_extent_z,
@@ -1188,7 +1207,16 @@ fn pack_gradient(gradient: &CompiledGradient) -> Result<GpuGradient, GpuArtifact
     Ok(packed)
 }
 
-fn emission(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<(f32, u32)> {
+enum ResolvedGpuScalarSource<'a> {
+    Constant(f32),
+    RandomRange(ScalarRange),
+    Curve(&'a CompiledCurve),
+}
+
+fn emission<'a>(
+    plan: &'a ExecutionPlan,
+    values: &'a [RuntimeValue],
+) -> Option<(ResolvedGpuScalarSource<'a>, u32)> {
     plan.emitter_update
         .iter()
         .find_map(|instruction| match instruction {
@@ -1196,7 +1224,20 @@ fn emission(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<(f32, u32)>
                 spawn_rate,
                 burst_count,
                 ..
-            } => Some((*spawn_rate.resolve(values), *burst_count.resolve(values))),
+            } => {
+                let spawn_rate = match spawn_rate {
+                    ScalarSource::Constant(value) => {
+                        ResolvedGpuScalarSource::Constant(*value.resolve(values))
+                    }
+                    ScalarSource::RandomRange(value) => {
+                        ResolvedGpuScalarSource::RandomRange(*value.resolve(values))
+                    }
+                    ScalarSource::Curve { value, .. } => {
+                        ResolvedGpuScalarSource::Curve(value.resolve(values))
+                    }
+                };
+                Some((spawn_rate, *burst_count.resolve(values)))
+            }
             _ => None,
         })
 }
@@ -1297,8 +1338,9 @@ mod tests {
     use super::*;
     use aestra_compiler::EffectCompiler;
     use aestra_core::{
-        AssetDefinition, BlendMode, EffectAsset, Emitter, MaterialDefinition, MaterialInput,
-        MaterialProperties, RendererInstance, UvRect,
+        AssetDefinition, BlendMode, Curve, CurveKey, EffectAsset, Emitter, MODULE_EMISSION,
+        MaterialDefinition, MaterialInput, MaterialProperties, PropertyEvaluationDomain,
+        PropertySource, PropertySourceValue, RendererInstance, UvRect, Value,
     };
     use std::sync::Arc;
 
@@ -1524,6 +1566,42 @@ mod tests {
         assert!(output.contains("fn reset"));
         assert!(output.contains("emitter_index * 4u"));
         assert!(output.contains("emitter.slot_offset + compact_index"));
+    }
+
+    #[test]
+    fn artifact_packs_spawn_rate_curve_sources_for_wesl() {
+        let mut effect = EffectAsset::new("GPU curve rate", 2.0);
+        effect
+            .emitters
+            .push(Emitter::basic_sprite("Emitter", effect.duration));
+        let emission = effect.emitters[0]
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == MODULE_EMISSION)
+            .unwrap();
+        let source = PropertySource::Curve(PropertyEvaluationDomain::EmitterTime);
+        emission
+            .property_sources
+            .insert("spawn_rate".into(), source);
+        emission.property_source_values.insert(
+            "spawn_rate".into(),
+            vec![PropertySourceValue::new(
+                source,
+                Value::Curve(Curve::new(vec![
+                    CurveKey::new(0.0, 2.0),
+                    CurveKey::new(1.0, 20.0),
+                ])),
+            )],
+        );
+
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
+        let emitter = artifact.emitters[0];
+
+        assert_eq!(emitter.spawn_rate_source, 2);
+        assert_eq!(emitter.spawn_rate_curve.count, 2);
+        assert_eq!(emitter.spawn_rate_curve.keys[0], Vec2::new(0.0, 2.0));
+        assert_eq!(emitter.spawn_rate_curve.keys[1], Vec2::new(1.0, 20.0));
     }
 
     #[test]

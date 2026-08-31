@@ -3,10 +3,11 @@ use aestra_authoring::{
     LockState, Selection, SemanticTarget,
 };
 use aestra_core::{
-    BlendMode, ChoreographyEvent, ChoreographyEventPayload, ColorKey, CurveKey, EffectAsset,
+    BlendMode, ChoreographyEvent, ChoreographyEventPayload, ColorKey, Curve, CurveKey, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter,
     EmitterTransform, EventId, EventLink, EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION,
-    MODULE_INITIALIZE, MarkerTimeReference, ParameterId, PropertySource, ScalarRange, Value,
+    MODULE_INITIALIZE, MarkerTimeReference, ParameterId, PropertyEvaluationDomain, PropertySource,
+    ScalarRange, Value,
 };
 
 fn test_effect() -> EffectAsset {
@@ -1270,4 +1271,65 @@ fn effect_clip_selection_repairs_after_deletion() {
 
     assert_eq!(selection.effect_clip(), None);
     assert_eq!(selection.emitter(&effect), Some(effect.emitters[0].id));
+}
+
+#[test]
+fn source_specific_values_switch_and_undo_without_destroying_the_constant() {
+    let mut effect = test_effect();
+    let original = effect.clone();
+    let emitter = effect.emitters[0].id;
+    let module_id = effect.emitters[0]
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == MODULE_EMISSION)
+        .unwrap()
+        .id;
+    let original_constant = effect.emitters[0]
+        .modules
+        .iter()
+        .find(|module| module.id == module_id)
+        .unwrap()
+        .parameter_value("spawn_rate");
+    let source = PropertySource::Curve(PropertyEvaluationDomain::EmitterTime);
+    let curve = Curve::new(vec![CurveKey::new(0.0, 4.0), CurveKey::new(1.0, 24.0)]);
+    let mut history = CommandHistory::default();
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::new(
+                "Use a spawn-rate curve",
+                vec![
+                    EffectCommand::SetModulePropertySourceValue {
+                        emitter,
+                        module: module_id,
+                        parameter: "spawn_rate".into(),
+                        source,
+                        value: Value::Curve(curve.clone()),
+                    },
+                    EffectCommand::SetModulePropertySource {
+                        emitter,
+                        module: module_id,
+                        parameter: "spawn_rate".into(),
+                        source,
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+
+    let emission = effect.emitters[0]
+        .modules
+        .iter()
+        .find(|module| module.id == module_id)
+        .unwrap();
+    assert_eq!(emission.parameter_value("spawn_rate"), original_constant);
+    assert_eq!(
+        emission.active_parameter_value("spawn_rate"),
+        Some(Value::Curve(curve))
+    );
+
+    history.undo(&mut effect).unwrap().unwrap();
+    assert_eq!(effect, original);
 }

@@ -1,9 +1,10 @@
 use aestra_core::{
-    AssetDefinition, ChoreographyEvent, ChoreographyEventPayload, DiagnosticCode, EffectAsset,
-    EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter, EmitterId,
-    EmitterShape, EmitterTransform, FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE,
+    AssetDefinition, ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode,
+    EffectAsset, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter,
+    EmitterId, EmitterShape, EmitterTransform, FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE,
     MarkerTimeReference, MaterialProperties, ModuleParameters, ParameterId,
-    PropertyEvaluationDomain, PropertySource, RendererInstance, ScalarRange, Value,
+    PropertyEvaluationDomain, PropertySource, PropertySourceValue, RendererInstance, ScalarRange,
+    Value,
 };
 
 #[test]
@@ -78,6 +79,48 @@ fn missing_property_sources_are_inferred_and_explicit_overrides_persist() {
     assert_eq!(
         appearance.property_source("size"),
         Some(PropertySource::Constant)
+    );
+}
+
+#[test]
+fn alternate_property_source_values_round_trip_without_changing_the_format_version() {
+    let mut effect = EffectAsset::new("Source values", 2.0);
+    effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+    let emission = effect.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_EMISSION)
+        .unwrap();
+    let source = PropertySource::Curve(PropertyEvaluationDomain::EmitterTime);
+    let curve = Curve::new(vec![CurveKey::new(0.0, 2.0), CurveKey::new(1.0, 20.0)]);
+    emission
+        .property_sources
+        .insert("spawn_rate".into(), source);
+    emission.property_source_values.insert(
+        "spawn_rate".into(),
+        vec![PropertySourceValue::new(
+            source,
+            Value::Curve(curve.clone()),
+        )],
+    );
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    assert!(encoded.contains("property_source_values"));
+    assert!(encoded.contains("version: 3"));
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+    let emission = decoded.emitters[0]
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == MODULE_EMISSION)
+        .unwrap();
+
+    assert_eq!(
+        emission.parameter_value("spawn_rate"),
+        Some(Value::Scalar(24.0))
+    );
+    assert_eq!(
+        emission.active_parameter_value("spawn_rate"),
+        Some(Value::Curve(curve))
     );
 }
 

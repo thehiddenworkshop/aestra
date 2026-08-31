@@ -9,7 +9,7 @@ use aestra_core::{
     EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
     MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProperties, ModuleInstance,
     ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_SPRITE,
-    RendererProperties, ScalarRange, SpriteColorSource, StageKind, ValidationReport,
+    RendererProperties, ScalarRange, SpriteColorSource, StageKind, ValidationReport, Value,
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
 use aestra_runtime::{
@@ -18,7 +18,7 @@ use aestra_runtime::{
     CompiledParameter, CompiledParameterOverride, ExecutionPlan, Expression, Instruction,
     IrLocation, MaterialColorPlan, OptimizationStats, ParameterSlot, ParticleAttribute,
     ParticleLayout, RendererPlan, RendererPlanKind, RuntimeParameterValue, RuntimeStage,
-    RuntimeValue, SimulationSeekMode,
+    RuntimeValue, ScalarSource, SimulationSeekMode,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -559,6 +559,42 @@ impl EffectCompiler {
                         );
                     }
                 }
+                for (input_name, values) in &module.property_source_values {
+                    let source_path = format!("{path}.property_source_values.{input_name}");
+                    let Some(input) = metadata
+                        .inputs
+                        .iter()
+                        .find(|input| input.name == input_name)
+                    else {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::UnknownParameter,
+                                source_path,
+                                format!(
+                                    "module '{}' has no registered input named '{input_name}'",
+                                    module.module_type.0
+                                ),
+                            ),
+                        );
+                        continue;
+                    };
+                    for (value_index, value) in values.iter().enumerate() {
+                        if !input.sources.contains(&value.source) {
+                            push_unique(
+                                report,
+                                Diagnostic::error(
+                                    DiagnosticCode::InvalidValue,
+                                    format!("{source_path}[{value_index}].source"),
+                                    format!(
+                                        "input '{input_name}' does not support stored source {:?}",
+                                        value.source
+                                    ),
+                                ),
+                            );
+                        }
+                    }
+                }
                 for (input_name, parameter_id) in &module.bindings {
                     let binding_path = format!("{path}.bindings.{input_name}");
                     let Some(input) = metadata
@@ -584,8 +620,11 @@ impl EffectCompiler {
                         .iter()
                         .find(|parameter| parameter.id == *parameter_id)
                     {
+                        let expected = module
+                            .active_parameter_value(input_name)
+                            .map_or(input.value_type, |value| value.value_type());
                         let actual = parameter.default.value_type();
-                        if actual != input.value_type {
+                        if actual != expected {
                             push_unique(
                                 report,
                                 Diagnostic::error(
@@ -593,7 +632,7 @@ impl EffectCompiler {
                                     binding_path,
                                     format!(
                                         "input '{input_name}' expects {:?}, but parameter '{}' is {actual:?}",
-                                        input.value_type, parameter.name
+                                        expected, parameter.name
                                     ),
                                 ),
                             );
@@ -888,7 +927,7 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
             burst_count,
         } => Instruction::Emit {
             source: module.id,
-            spawn_rate: expression(module, "spawn_rate", *spawn_rate, context),
+            spawn_rate: scalar_source(module, "spawn_rate", *spawn_rate, context)?,
             burst_count: expression(module, "burst_count", *burst_count, context),
         },
         ModuleParameters::Shape { shape } => Instruction::SampleShape {
@@ -960,38 +999,81 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
 }
 
 fn sourced_range(module: &ModuleInstance, input: &str, range: ScalarRange) -> ScalarRange {
-    if matches!(
-        module.property_source(input),
-        Some(InputSourceKind::Constant)
-    ) {
-        let value = (range.min + range.max) * 0.5;
-        ScalarRange::new(value, value)
-    } else {
-        range
+    match module.property_source(input) {
+        Some(InputSourceKind::Constant) => {
+            let value = (range.min + range.max) * 0.5;
+            ScalarRange::new(value, value)
+        }
+        Some(InputSourceKind::RandomRange) => {
+            let Some(Value::Range(active)) = module.active_parameter_value(input) else {
+                return range;
+            };
+            active
+        }
+        _ => range,
+    }
+}
+
+fn scalar_source(
+    module: &ModuleInstance,
+    input: &str,
+    fallback: f32,
+    context: &LoweringContext<'_>,
+) -> Option<ScalarSource> {
+    match module.property_source(input)? {
+        InputSourceKind::Constant => Some(ScalarSource::Constant(expression(
+            module, input, fallback, context,
+        ))),
+        InputSourceKind::RandomRange => {
+            let aestra_core::Value::Range(range) = module.active_parameter_value(input)? else {
+                return None;
+            };
+            Some(ScalarSource::RandomRange(expression(
+                module, input, range, context,
+            )))
+        }
+        InputSourceKind::Curve(domain) => {
+            let aestra_core::Value::Curve(curve) = module.active_parameter_value(input)? else {
+                return None;
+            };
+            Some(ScalarSource::Curve {
+                value: expression(module, input, CompiledCurve::compile(&curve), context),
+                domain,
+            })
+        }
+        InputSourceKind::Gradient(_) => None,
     }
 }
 
 fn sourced_curve(module: &ModuleInstance, input: &str, curve: &Curve) -> CompiledCurve {
-    if matches!(
-        module.property_source(input),
-        Some(InputSourceKind::Constant)
-    ) {
-        let constant = Curve::new(vec![CurveKey::new(0.0, curve.sample(0.0))]);
-        CompiledCurve::compile(&constant)
-    } else {
-        CompiledCurve::compile(curve)
+    match module.property_source(input) {
+        Some(InputSourceKind::Constant) => {
+            let constant = Curve::new(vec![CurveKey::new(0.0, curve.sample(0.0))]);
+            CompiledCurve::compile(&constant)
+        }
+        Some(InputSourceKind::Curve(_)) => {
+            let Some(Value::Curve(active)) = module.active_parameter_value(input) else {
+                return CompiledCurve::compile(curve);
+            };
+            CompiledCurve::compile(&active)
+        }
+        _ => CompiledCurve::compile(curve),
     }
 }
 
 fn sourced_gradient(module: &ModuleInstance, input: &str, gradient: &Gradient) -> CompiledGradient {
-    if matches!(
-        module.property_source(input),
-        Some(InputSourceKind::Constant)
-    ) {
-        let constant = Gradient::new(vec![ColorKey::new(0.0, gradient.sample(0.0))]);
-        CompiledGradient::compile(&constant)
-    } else {
-        CompiledGradient::compile(gradient)
+    match module.property_source(input) {
+        Some(InputSourceKind::Constant) => {
+            let constant = Gradient::new(vec![ColorKey::new(0.0, gradient.sample(0.0))]);
+            CompiledGradient::compile(&constant)
+        }
+        Some(InputSourceKind::Gradient(_)) => {
+            let Some(Value::Gradient(active)) = module.active_parameter_value(input) else {
+                return CompiledGradient::compile(gradient);
+            };
+            CompiledGradient::compile(&active)
+        }
+        _ => CompiledGradient::compile(gradient),
     }
 }
 
@@ -1066,12 +1148,19 @@ fn expression_counts(instruction: &Instruction) -> (usize, usize) {
             (total.0 + value.0, total.1 + value.1)
         })
     }
+    fn scalar(source: &ScalarSource) -> (usize, usize) {
+        match source {
+            ScalarSource::Constant(value) => one(value),
+            ScalarSource::RandomRange(value) => one(value),
+            ScalarSource::Curve { value, .. } => one(value),
+        }
+    }
     match instruction {
         Instruction::Emit {
             spawn_rate,
             burst_count,
             ..
-        } => sum([one(spawn_rate), one(burst_count)]),
+        } => sum([scalar(spawn_rate), one(burst_count)]),
         Instruction::SampleShape { shape, .. } => one(shape),
         Instruction::Initialize {
             lifetime,
@@ -1192,6 +1281,11 @@ impl InputMetadata {
         self.unit = Some(unit);
         self
     }
+
+    fn with_sources(mut self, sources: Vec<InputSourceKind>) -> Self {
+        self.sources = sources;
+        self
+    }
 }
 
 fn metadata(
@@ -1261,6 +1355,11 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
                     max: None,
                 },
             )
+            .with_sources(vec![
+                InputSourceKind::Constant,
+                InputSourceKind::RandomRange,
+                InputSourceKind::Curve(InputEvaluationDomain::EmitterTime),
+            ])
             .with_unit("particles/s"),
             input(
                 "burst_count",

@@ -4,7 +4,12 @@ use crate::{
     ValidationReport,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, fs, io::Write, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    io::Write,
+    path::Path,
+};
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
@@ -205,7 +210,11 @@ impl EffectAsset {
             for (module_index, module) in emitter.modules.iter().enumerate() {
                 for (input, parameter_id) in &module.bindings {
                     let path = format!("{emitter_path}.modules[{module_index}].bindings.{input}");
-                    let Some(expected) = module.parameter_type(input) else {
+                    let Some(expected) = module
+                        .active_parameter_value(input)
+                        .map(|value| value.value_type())
+                        .or_else(|| module.parameter_type(input))
+                    else {
                         report.push(Diagnostic::error(
                             DiagnosticCode::UnknownParameter,
                             path,
@@ -1269,6 +1278,8 @@ pub struct ModuleInstance {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub property_sources: BTreeMap<String, PropertySource>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub property_source_values: BTreeMap<String, Vec<PropertySourceValue>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub bindings: BTreeMap<String, ParameterId>,
 }
 
@@ -1284,6 +1295,7 @@ impl ModuleInstance {
                 burst_count,
             },
             property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1296,6 +1308,7 @@ impl ModuleInstance {
             enabled: true,
             parameters: ModuleParameters::Shape { shape },
             property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1320,6 +1333,7 @@ impl ModuleInstance {
                 angular_velocity,
             },
             property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1336,6 +1350,7 @@ impl ModuleInstance {
                 turbulence,
             },
             property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1352,6 +1367,7 @@ impl ModuleInstance {
                 color,
             },
             property_sources: BTreeMap::new(),
+            property_source_values: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1375,6 +1391,11 @@ impl ModuleInstance {
                 }
             }
             _ => {}
+        }
+        for values in self.property_source_values.values_mut() {
+            for value in values {
+                value.value.regenerate_ids();
+            }
         }
     }
 
@@ -1447,6 +1468,40 @@ impl ModuleInstance {
         })
     }
 
+    pub fn property_value_for_source(
+        &self,
+        parameter: &str,
+        source: PropertySource,
+    ) -> Option<Value> {
+        if source != PropertySource::Constant
+            && let Some(value) = self
+                .property_source_values
+                .get(parameter)
+                .and_then(|values| values.iter().find(|value| value.source == source))
+        {
+            return Some(value.value.clone());
+        }
+        self.parameter_value(parameter)
+            .filter(|value| source.accepts(value))
+    }
+
+    pub fn active_parameter_value(&self, parameter: &str) -> Option<Value> {
+        let source = self.property_source(parameter)?;
+        self.property_value_for_source(parameter, source)
+    }
+
+    pub fn property_source_value_mut(
+        &mut self,
+        parameter: &str,
+        source: PropertySource,
+    ) -> Option<&mut Value> {
+        self.property_source_values
+            .get_mut(parameter)?
+            .iter_mut()
+            .find(|value| value.source == source)
+            .map(|value| &mut value.value)
+    }
+
     fn validate(
         &self,
         path: &str,
@@ -1461,11 +1516,11 @@ impl ModuleInstance {
         );
         for (parameter, source) in &self.property_sources {
             let source_path = format!("{path}.property_sources.{parameter}");
-            let Some(value) = self.parameter_value(parameter) else {
+            let Some(value) = self.property_value_for_source(parameter, *source) else {
                 invalid_value(
                     report,
                     &source_path,
-                    "property source references an unknown module parameter",
+                    "property source has no compatible authored value",
                 );
                 continue;
             };
@@ -1474,6 +1529,43 @@ impl ModuleInstance {
                     report,
                     &source_path,
                     "property source is incompatible with the authored value type",
+                );
+            }
+        }
+        for (parameter, values) in &self.property_source_values {
+            if self.parameter_value(parameter).is_none() {
+                invalid_value(
+                    report,
+                    &format!("{path}.property_source_values.{parameter}"),
+                    "property source values reference an unknown module parameter",
+                );
+                continue;
+            }
+            let mut sources = BTreeSet::new();
+            for (index, source_value) in values.iter().enumerate() {
+                let value_path = format!("{path}.property_source_values.{parameter}[{index}]");
+                if source_value.source == PropertySource::Constant {
+                    invalid_value(
+                        report,
+                        &value_path,
+                        "constant values are stored in the module parameter",
+                    );
+                }
+                if !sources.insert(source_value.source) {
+                    invalid_value(report, &value_path, "property source value is duplicated");
+                }
+                if !source_value.source.accepts(&source_value.value) {
+                    invalid_value(
+                        report,
+                        &value_path,
+                        "property source value is incompatible with its source",
+                    );
+                }
+                validate_value(
+                    &source_value.value,
+                    &format!("{value_path}.value"),
+                    report,
+                    semantic_ids,
                 );
             }
         }
@@ -1648,18 +1740,30 @@ pub enum Value {
     Material(MaterialId),
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PropertyEvaluationDomain {
     ParticleLife,
     EmitterTime,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PropertySource {
     Constant,
     RandomRange,
     Curve(PropertyEvaluationDomain),
     Gradient(PropertyEvaluationDomain),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PropertySourceValue {
+    pub source: PropertySource,
+    pub value: Value,
+}
+
+impl PropertySourceValue {
+    pub fn new(source: PropertySource, value: Value) -> Self {
+        Self { source, value }
+    }
 }
 
 impl PropertySource {
@@ -1727,7 +1831,9 @@ impl Value {
         }
     }
 
-    fn regenerate_ids(&mut self) {
+    /// Gives nested curve and gradient payloads fresh semantic identities when a value is copied
+    /// into a second authored storage location.
+    pub fn regenerate_ids(&mut self) {
         match self {
             Value::Curve(curve) => curve.id = CurveId::new(),
             Value::Gradient(gradient) => gradient.id = GradientId::new(),

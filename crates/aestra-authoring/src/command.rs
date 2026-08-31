@@ -213,6 +213,19 @@ pub enum EffectCommand {
         parameter: String,
         source: PropertySource,
     },
+    SetModulePropertySourceValue {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        source: PropertySource,
+        value: Value,
+    },
+    RemoveModulePropertySourceValue {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        source: PropertySource,
+    },
     RemoveModulePropertySource {
         emitter: EmitterId,
         module: ModuleId,

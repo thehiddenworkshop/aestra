@@ -4,10 +4,10 @@ use aestra_authoring::{
 };
 use aestra_bevy::{
     AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, EffectClipId,
-    Emitter, EmitterId, EmitterTransform, EventId, EventLink, EventTrigger, FlipbookDefinition,
-    FlipbookPlaybackMode, FlipbookTimeSource, MaterialDefinition, MaterialId, MaterialInput,
-    MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties,
-    ValidationReport, Value,
+    EffectParameter, Emitter, EmitterId, EmitterTransform, EventId, EventLink, EventTrigger,
+    FlipbookDefinition, FlipbookPlaybackMode, FlipbookTimeSource, MaterialDefinition, MaterialId,
+    MaterialInput, MaterialProperties, ModuleId, ModuleInstance, RendererId, RendererInstance,
+    RendererProperties, ValidationReport, Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
@@ -1025,6 +1025,25 @@ impl EditorSession {
         index: usize,
         key: CurveKey,
     ) {
+        if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
+            let Value::Curve(curve) = &mut effect_parameter.default else {
+                return;
+            };
+            if index > curve.keys.len() {
+                return;
+            }
+            curve.keys.insert(index, key);
+            let id = effect_parameter.id;
+            self.execute(
+                format!("Added {parameter} curve key"),
+                EffectCommand::SetParameter {
+                    id,
+                    parameter: effect_parameter,
+                },
+                true,
+            );
+            return;
+        }
         let emitter = self.selected_layer().id;
         self.execute(
             format!("Added {parameter} curve key"),
@@ -1046,6 +1065,25 @@ impl EditorSession {
         index: usize,
         key: CurveKey,
     ) {
+        if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
+            let Value::Curve(curve) = &mut effect_parameter.default else {
+                return;
+            };
+            let Some(previous) = curve.keys.get_mut(index) else {
+                return;
+            };
+            *previous = key;
+            let id = effect_parameter.id;
+            self.execute(
+                format!("Changed {parameter} curve key"),
+                EffectCommand::SetParameter {
+                    id,
+                    parameter: effect_parameter,
+                },
+                true,
+            );
+            return;
+        }
         let emitter = self.selected_layer().id;
         self.execute(
             format!("Changed {parameter} curve key"),
@@ -1061,6 +1099,25 @@ impl EditorSession {
     }
 
     pub fn remove_curve_key(&mut self, module: ModuleId, parameter: &str, index: usize) {
+        if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
+            let Value::Curve(curve) = &mut effect_parameter.default else {
+                return;
+            };
+            if index >= curve.keys.len() {
+                return;
+            }
+            curve.keys.remove(index);
+            let id = effect_parameter.id;
+            self.execute(
+                format!("Removed {parameter} curve key"),
+                EffectCommand::SetParameter {
+                    id,
+                    parameter: effect_parameter,
+                },
+                true,
+            );
+            return;
+        }
         let emitter = self.selected_layer().id;
         self.execute(
             format!("Removed {parameter} curve key"),
@@ -1081,6 +1138,25 @@ impl EditorSession {
         index: usize,
         key: ColorKey,
     ) {
+        if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
+            let Value::Gradient(gradient) = &mut effect_parameter.default else {
+                return;
+            };
+            if index > gradient.keys.len() {
+                return;
+            }
+            gradient.keys.insert(index, key);
+            let id = effect_parameter.id;
+            self.execute(
+                format!("Added {parameter} gradient key"),
+                EffectCommand::SetParameter {
+                    id,
+                    parameter: effect_parameter,
+                },
+                true,
+            );
+            return;
+        }
         let emitter = self.selected_layer().id;
         self.execute(
             format!("Added {parameter} gradient key"),
@@ -1102,6 +1178,25 @@ impl EditorSession {
         index: usize,
         key: ColorKey,
     ) {
+        if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
+            let Value::Gradient(gradient) = &mut effect_parameter.default else {
+                return;
+            };
+            let Some(previous) = gradient.keys.get_mut(index) else {
+                return;
+            };
+            *previous = key;
+            let id = effect_parameter.id;
+            self.execute(
+                format!("Changed {parameter} gradient key"),
+                EffectCommand::SetParameter {
+                    id,
+                    parameter: effect_parameter,
+                },
+                true,
+            );
+            return;
+        }
         let emitter = self.selected_layer().id;
         self.execute(
             format!("Changed {parameter} gradient key"),
@@ -1117,6 +1212,25 @@ impl EditorSession {
     }
 
     pub fn remove_gradient_key(&mut self, module: ModuleId, parameter: &str, index: usize) {
+        if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
+            let Value::Gradient(gradient) = &mut effect_parameter.default else {
+                return;
+            };
+            if index >= gradient.keys.len() {
+                return;
+            }
+            gradient.keys.remove(index);
+            let id = effect_parameter.id;
+            self.execute(
+                format!("Removed {parameter} gradient key"),
+                EffectCommand::SetParameter {
+                    id,
+                    parameter: effect_parameter,
+                },
+                true,
+            );
+            return;
+        }
         let emitter = self.selected_layer().id;
         self.execute(
             format!("Removed {parameter} gradient key"),
@@ -1128,6 +1242,21 @@ impl EditorSession {
             },
             true,
         );
+    }
+
+    fn bound_effect_parameter(&self, module: ModuleId, input: &str) -> Option<EffectParameter> {
+        let parameter_id = self
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)?
+            .bindings
+            .get(input)?;
+        self.effect
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == *parameter_id)
+            .cloned()
     }
 
     pub fn toggle_module(&mut self, id: ModuleId) {
@@ -2321,7 +2450,10 @@ mod tests {
             .execution
             .emitter_update[0];
         match instruction {
-            aestra_runtime::Instruction::Emit { spawn_rate, .. } => *spawn_rate
+            aestra_runtime::Instruction::Emit {
+                spawn_rate: aestra_runtime::ScalarSource::Constant(spawn_rate),
+                ..
+            } => *spawn_rate
                 .constant_value()
                 .expect("editor-authored spawn rate is constant"),
             _ => panic!("first emitter instruction must be emission"),

@@ -268,16 +268,12 @@ impl LockState {
                 .iter()
                 .find(|item| item.id == emitter)
                 .and_then(|item| item.modules.iter().find(|item| item.id == module))
-            && let ModuleParameters::Appearance {
-                size,
-                opacity,
-                color,
-            } = &module.parameters
         {
-            let target = match parameter {
-                "size" => Some(SemanticTarget::Curve(size.id)),
-                "opacity" => Some(SemanticTarget::Curve(opacity.id)),
-                "color" => Some(SemanticTarget::Gradient(color.id)),
+            let target = match module.active_parameter_value(parameter) {
+                Some(aestra_core::Value::Curve(curve)) => Some(SemanticTarget::Curve(curve.id)),
+                Some(aestra_core::Value::Gradient(gradient)) => {
+                    Some(SemanticTarget::Gradient(gradient.id))
+                }
                 _ => None,
             };
             if target.is_some_and(|target| self.is_locked(target)) {
@@ -398,6 +394,12 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
             emitter, module, ..
         }
         | EffectCommand::SetModulePropertySource {
+            emitter, module, ..
+        }
+        | EffectCommand::SetModulePropertySourceValue {
+            emitter, module, ..
+        }
+        | EffectCommand::RemoveModulePropertySourceValue {
             emitter, module, ..
         }
         | EffectCommand::RemoveModulePropertySource {

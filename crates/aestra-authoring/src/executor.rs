@@ -720,11 +720,11 @@ fn apply_command(
             source,
         } => {
             let module_instance = module_mut(effect, *emitter, *module)?;
-            let value = module_instance.parameter_value(parameter).ok_or_else(|| {
-                CommandError::UnknownParameter {
+            let value = module_instance
+                .property_value_for_source(parameter, *source)
+                .ok_or_else(|| CommandError::UnknownParameter {
                     parameter: parameter.clone(),
-                }
-            })?;
+                })?;
             if !source.accepts(&value) {
                 return Err(CommandError::ParameterType {
                     parameter: parameter.clone(),
@@ -748,6 +748,87 @@ fn apply_command(
                     parameter: parameter.clone(),
                 }],
             }
+        }
+        EffectCommand::SetModulePropertySourceValue {
+            emitter,
+            module,
+            parameter,
+            source,
+            value,
+        } => {
+            if *source == aestra_core::PropertySource::Constant || !source.accepts(value) {
+                return Err(CommandError::ParameterType {
+                    parameter: parameter.clone(),
+                    expected: property_source_expected_type(*source),
+                    actual: value_type(value),
+                });
+            }
+            let module_instance = module_mut(effect, *emitter, *module)?;
+            if module_instance.parameter_value(parameter).is_none() {
+                return Err(CommandError::UnknownParameter {
+                    parameter: parameter.clone(),
+                });
+            }
+            let values = module_instance
+                .property_source_values
+                .entry(parameter.clone())
+                .or_default();
+            let previous = values
+                .iter_mut()
+                .find(|candidate| candidate.source == *source)
+                .map(|candidate| std::mem::replace(&mut candidate.value, value.clone()));
+            match previous {
+                Some(value) => vec![EffectCommand::SetModulePropertySourceValue {
+                    emitter: *emitter,
+                    module: *module,
+                    parameter: parameter.clone(),
+                    source: *source,
+                    value,
+                }],
+                None => {
+                    values.push(aestra_core::PropertySourceValue::new(
+                        *source,
+                        value.clone(),
+                    ));
+                    vec![EffectCommand::RemoveModulePropertySourceValue {
+                        emitter: *emitter,
+                        module: *module,
+                        parameter: parameter.clone(),
+                        source: *source,
+                    }]
+                }
+            }
+        }
+        EffectCommand::RemoveModulePropertySourceValue {
+            emitter,
+            module,
+            parameter,
+            source,
+        } => {
+            let module_instance = module_mut(effect, *emitter, *module)?;
+            let values = module_instance
+                .property_source_values
+                .get_mut(parameter)
+                .ok_or_else(|| CommandError::UnknownParameter {
+                    parameter: parameter.clone(),
+                })?;
+            let index = values
+                .iter()
+                .position(|candidate| candidate.source == *source)
+                .ok_or_else(|| CommandError::UnknownParameter {
+                    parameter: parameter.clone(),
+                })?;
+            let value = values.remove(index).value;
+            if values.is_empty() {
+                module_instance.property_source_values.remove(parameter);
+            }
+            vec![EffectCommand::SetModulePropertySourceValue {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                source: *source,
+                value,
+            }]
         }
         EffectCommand::RemoveModulePropertySource {
             emitter,
@@ -785,6 +866,10 @@ fn apply_command(
                     parameter: parameter.clone(),
                 })?;
             let source = module_instance.property_sources.remove(parameter);
+            let source_values = module_instance
+                .property_source_values
+                .remove(parameter)
+                .unwrap_or_default();
             let mut inverse = vec![EffectCommand::SetModuleParameter {
                 emitter: *emitter,
                 module: *module,
@@ -799,6 +884,15 @@ fn apply_command(
                     source,
                 });
             }
+            inverse.extend(source_values.into_iter().map(|source_value| {
+                EffectCommand::SetModulePropertySourceValue {
+                    emitter: *emitter,
+                    module: *module,
+                    parameter: parameter.clone(),
+                    source: source_value.source,
+                    value: source_value.value,
+                }
+            }));
             inverse
         }
         EffectCommand::BindModuleParameter {
@@ -1325,6 +1419,32 @@ fn module_curve_mut<'a>(
     parameter: &str,
 ) -> Result<&'a mut aestra_core::Curve, CommandError> {
     let module = module_mut(effect, emitter, module)?;
+    let payload_index = module.property_source(parameter).and_then(|source| {
+        matches!(source, aestra_core::PropertySource::Curve(_))
+            .then(|| {
+                module
+                    .property_source_values
+                    .get(parameter)?
+                    .iter()
+                    .position(|value| value.source == source)
+            })
+            .flatten()
+    });
+    if let Some(index) = payload_index {
+        let value = &mut module
+            .property_source_values
+            .get_mut(parameter)
+            .expect("payload index came from this property")[index]
+            .value;
+        return match value {
+            Value::Curve(curve) => Ok(curve),
+            value => Err(CommandError::ParameterType {
+                parameter: parameter.into(),
+                expected: "curve",
+                actual: value_type(value),
+            }),
+        };
+    }
     match (&mut module.parameters, parameter) {
         (ModuleParameters::Appearance { size, .. }, "size") => Ok(size),
         (ModuleParameters::Appearance { opacity, .. }, "opacity") => Ok(opacity),
@@ -1352,6 +1472,32 @@ fn module_gradient_mut<'a>(
     parameter: &str,
 ) -> Result<&'a mut aestra_core::Gradient, CommandError> {
     let module = module_mut(effect, emitter, module)?;
+    let payload_index = module.property_source(parameter).and_then(|source| {
+        matches!(source, aestra_core::PropertySource::Gradient(_))
+            .then(|| {
+                module
+                    .property_source_values
+                    .get(parameter)?
+                    .iter()
+                    .position(|value| value.source == source)
+            })
+            .flatten()
+    });
+    if let Some(index) = payload_index {
+        let value = &mut module
+            .property_source_values
+            .get_mut(parameter)
+            .expect("payload index came from this property")[index]
+            .value;
+        return match value {
+            Value::Gradient(gradient) => Ok(gradient),
+            value => Err(CommandError::ParameterType {
+                parameter: parameter.into(),
+                expected: "gradient",
+                actual: value_type(value),
+            }),
+        };
+    }
     match (&mut module.parameters, parameter) {
         (ModuleParameters::Appearance { color, .. }, "color") => Ok(color),
         (ModuleParameters::Custom(values), parameter) => match values.get_mut(parameter) {

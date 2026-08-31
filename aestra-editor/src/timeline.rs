@@ -21,7 +21,7 @@ use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
     ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload, ChoreographyTrackId,
     ColorKey, CurveKey, EffectAsset, EffectAssetRef, EffectClip, EffectClipId, EffectMarker,
-    Emitter, EmitterId, MarkerId, ModuleId, ModuleParameters, Value,
+    EffectParameter, Emitter, EmitterId, MarkerId, ModuleId, ModuleParameters, Value,
 };
 #[cfg(test)]
 use bevy::ui_widgets::{ControlOrientation, Scrollbar};
@@ -734,23 +734,35 @@ fn execute_choreography_action(
                 .position(|time| time > normalized_time)
                 .unwrap_or_else(|| keys.len());
             let command = match automation_lane_value(&session.effect, &lane) {
-                Some(Value::Curve(curve)) => EffectCommand::AddCurveKey {
-                    emitter: lane.emitter,
-                    module: lane.module,
-                    parameter: lane.parameter.clone(),
-                    key: CurveKey::new(
-                        normalized_time,
-                        value_bits.map_or_else(|| curve.sample(normalized_time), f32::from_bits),
-                    ),
-                    index,
-                },
-                Some(Value::Gradient(gradient)) => EffectCommand::AddGradientKey {
-                    emitter: lane.emitter,
-                    module: lane.module,
-                    parameter: lane.parameter.clone(),
-                    key: ColorKey::new(normalized_time, gradient.sample(normalized_time)),
-                    index,
-                },
+                Some(Value::Curve(mut curve)) => {
+                    let value =
+                        value_bits.map_or_else(|| curve.sample(normalized_time), f32::from_bits);
+                    curve
+                        .keys
+                        .insert(index, CurveKey::new(normalized_time, value));
+                    let Some(command) = set_automation_lane_value_command(
+                        &session.effect,
+                        &lane,
+                        Value::Curve(curve),
+                    ) else {
+                        return;
+                    };
+                    command
+                }
+                Some(Value::Gradient(mut gradient)) => {
+                    let color = gradient.sample(normalized_time);
+                    gradient
+                        .keys
+                        .insert(index, ColorKey::new(normalized_time, color));
+                    let Some(command) = set_automation_lane_value_command(
+                        &session.effect,
+                        &lane,
+                        Value::Gradient(gradient),
+                    ) else {
+                        return;
+                    };
+                    command
+                }
                 _ => return,
             };
             if session.execute(
@@ -773,19 +785,30 @@ fn execute_choreography_action(
                 session.status = localizer.text("timeline-automation-keep-two-keys");
                 return;
             }
-            let command = match keys {
-                AutomationLaneKeys::Curve(_) => EffectCommand::RemoveCurveKey {
-                    emitter: selection.lane.emitter,
-                    module: selection.lane.module,
-                    parameter: selection.lane.parameter.clone(),
-                    index: selection.key,
-                },
-                AutomationLaneKeys::Gradient(_) => EffectCommand::RemoveGradientKey {
-                    emitter: selection.lane.emitter,
-                    module: selection.lane.module,
-                    parameter: selection.lane.parameter.clone(),
-                    index: selection.key,
-                },
+            let command = match automation_lane_value(&session.effect, &selection.lane) {
+                Some(Value::Curve(mut curve)) => {
+                    curve.keys.remove(selection.key);
+                    let Some(command) = set_automation_lane_value_command(
+                        &session.effect,
+                        &selection.lane,
+                        Value::Curve(curve),
+                    ) else {
+                        return;
+                    };
+                    command
+                }
+                Some(Value::Gradient(mut gradient)) => {
+                    gradient.keys.remove(selection.key);
+                    let Some(command) = set_automation_lane_value_command(
+                        &session.effect,
+                        &selection.lane,
+                        Value::Gradient(gradient),
+                    ) else {
+                        return;
+                    };
+                    command
+                }
+                _ => return,
             };
             if session.execute(
                 localizer.text("timeline-delete-automation-key-command"),
@@ -1012,7 +1035,7 @@ mod tests {
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
 
-        let lanes = emitter_automation_lanes(emitter, &registry, &localizer);
+        let lanes = emitter_automation_lanes(&session.effect, emitter, &registry, &localizer);
 
         assert_eq!(lanes.len(), automation_lane_count(emitter));
         assert!(lanes.iter().any(|lane| lane.id.parameter == "size"));
@@ -1034,7 +1057,8 @@ mod tests {
             panic!("sample emitter should have appearance automation");
         };
         size.keys.truncate(1);
-        let one_key_lanes = emitter_automation_lanes(&constant_size, &registry, &localizer);
+        let one_key_lanes =
+            emitter_automation_lanes(&session.effect, &constant_size, &registry, &localizer);
         assert!(one_key_lanes.iter().any(|lane| lane.id.parameter == "size"));
         constant_size
             .modules
@@ -1043,13 +1067,137 @@ mod tests {
             .unwrap()
             .property_sources
             .insert("size".into(), aestra_bevy::PropertySource::Constant);
-        let constant_lanes = emitter_automation_lanes(&constant_size, &registry, &localizer);
+        let constant_lanes =
+            emitter_automation_lanes(&session.effect, &constant_size, &registry, &localizer);
         assert!(
             !constant_lanes
                 .iter()
                 .any(|lane| lane.id.parameter == "size")
         );
         assert_eq!(constant_lanes.len(), automation_lane_count(&constant_size));
+    }
+
+    #[test]
+    fn emitter_time_spawn_rate_curve_projects_as_an_automation_lane() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = &mut session.effect.emitters[0];
+        let emission = emitter
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+            .unwrap();
+        let source =
+            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::EmitterTime);
+        emission
+            .property_sources
+            .insert("spawn_rate".into(), source);
+        emission.property_source_values.insert(
+            "spawn_rate".into(),
+            vec![aestra_bevy::PropertySourceValue::new(
+                source,
+                Value::Curve(aestra_bevy::Curve::new(vec![
+                    CurveKey::new(0.0, 4.0),
+                    CurveKey::new(1.0, 24.0),
+                ])),
+            )],
+        );
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+
+        let lanes = emitter_automation_lanes(
+            &session.effect,
+            &session.effect.emitters[0],
+            &registry,
+            &localizer,
+        );
+
+        assert!(lanes.iter().any(|lane| lane.id.parameter == "spawn_rate"));
+        assert_eq!(
+            lanes.len(),
+            automation_lane_count(&session.effect.emitters[0])
+        );
+    }
+
+    #[test]
+    fn timeline_curve_edits_update_the_bound_public_value() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = &mut session.effect.emitters[0];
+        let emission = emitter
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+            .unwrap();
+        let module = emission.id;
+        let source =
+            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::EmitterTime);
+        emission
+            .property_sources
+            .insert("spawn_rate".into(), source);
+        let bank_curve =
+            aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 4.0), CurveKey::new(1.0, 24.0)]);
+        emission.property_source_values.insert(
+            "spawn_rate".into(),
+            vec![aestra_bevy::PropertySourceValue::new(
+                source,
+                Value::Curve(bank_curve.clone()),
+            )],
+        );
+        let parameter_id = aestra_bevy::ParameterId::new();
+        emission.bindings.insert("spawn_rate".into(), parameter_id);
+        let public_curve =
+            aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 8.0), CurveKey::new(1.0, 16.0)]);
+        session.effect.parameters.push(EffectParameter {
+            id: parameter_id,
+            name: "Spawn Rate".into(),
+            default: Value::Curve(public_curve),
+            exposed: true,
+        });
+        let registry = EditorModuleRegistry::default();
+        let localizer = Localizer::new("en-US").unwrap();
+        let lane = emitter_automation_lanes(
+            &session.effect,
+            &session.effect.emitters[0],
+            &registry,
+            &localizer,
+        )
+        .into_iter()
+        .find(|lane| lane.id.module == module && lane.id.parameter == "spawn_rate")
+        .unwrap();
+        let mut app = choreography_app(session);
+
+        app.world_mut()
+            .trigger(ChoreographyAction::AddAutomationKeyAt {
+                lane: lane.id,
+                normalized_time_bits: 0.5_f32.to_bits(),
+                value_bits: Some(12.0_f32.to_bits()),
+            });
+        app.update();
+
+        let session = app.world().resource::<EditorSession>();
+        let Value::Curve(public_curve) = &session
+            .effect
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == parameter_id)
+            .unwrap()
+            .default
+        else {
+            unreachable!()
+        };
+        assert_eq!(public_curve.keys.len(), 3);
+        let emission = session.effect.emitters[0]
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap();
+        let Value::Curve(stored_curve) = emission
+            .property_value_for_source("spawn_rate", source)
+            .unwrap()
+        else {
+            unreachable!()
+        };
+        assert_eq!(stored_curve.keys, bank_curve.keys);
+        assert!(session.effect.validation_report().is_valid());
     }
 
     #[test]
@@ -1071,7 +1219,7 @@ mod tests {
         expanded.expanded_automation_emitters.insert(first.id);
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
-        let lanes = emitter_automation_lanes(first, &registry, &localizer);
+        let lanes = emitter_automation_lanes(&session.effect, first, &registry, &localizer);
         expanded
             .automation_lane_heights
             .insert(lanes[0].id.clone(), 118.0);
@@ -1104,7 +1252,7 @@ mod tests {
         let second = &session.effect.emitters[1];
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
-        let lanes = emitter_automation_lanes(first, &registry, &localizer);
+        let lanes = emitter_automation_lanes(&session.effect, first, &registry, &localizer);
         let mut state = TimelineState::framed(session.playback_duration());
         state.expanded_automation_emitters.insert(first.id);
 
@@ -1141,7 +1289,7 @@ mod tests {
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
         let emitter = session.effect.emitters[0].clone();
-        let lanes = emitter_automation_lanes(&emitter, &registry, &localizer);
+        let lanes = emitter_automation_lanes(&session.effect, &emitter, &registry, &localizer);
         let lane = lanes[0].id.clone();
         let mut app = choreography_app(session);
 
@@ -1181,7 +1329,7 @@ mod tests {
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
         let emitter = session.effect.emitters[0].clone();
-        let lane = emitter_automation_lanes(&emitter, &registry, &localizer)
+        let lane = emitter_automation_lanes(&session.effect, &emitter, &registry, &localizer)
             .into_iter()
             .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(_)))
             .unwrap();
@@ -1238,7 +1386,7 @@ mod tests {
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
         let emitter = session.effect.emitters[0].clone();
-        let lane = emitter_automation_lanes(&emitter, &registry, &localizer)
+        let lane = emitter_automation_lanes(&session.effect, &emitter, &registry, &localizer)
             .into_iter()
             .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(_)))
             .unwrap();
@@ -3813,7 +3961,7 @@ mod tests {
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
         let emitter = session.effect.emitters[0].clone();
-        let lane = emitter_automation_lanes(&emitter, &registry, &localizer)
+        let lane = emitter_automation_lanes(&session.effect, &emitter, &registry, &localizer)
             .into_iter()
             .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(_)))
             .unwrap();
@@ -5963,6 +6111,7 @@ struct AutomationLaneProjection {
 }
 
 fn emitter_automation_lanes(
+    effect: &EffectAsset,
     emitter: &Emitter,
     registry: &EditorModuleRegistry,
     localizer: &Localizer,
@@ -5974,7 +6123,10 @@ fn emitter_automation_lanes(
         };
         for (input, input_metadata) in metadata.inputs.iter().enumerate() {
             let source = module.property_source(input_metadata.name);
-            let keys = match (source, module_parameter(module, input_metadata.name)) {
+            let value = bound_automation_parameter(effect, module, input_metadata.name)
+                .map(|parameter| parameter.default.clone())
+                .or_else(|| module_parameter(module, input_metadata.name));
+            let keys = match (source, value) {
                 (Some(aestra_bevy::PropertySource::Curve(_)), Some(Value::Curve(curve))) => {
                     AutomationLaneKeys::Curve(curve.keys)
                 }
@@ -6009,24 +6161,29 @@ fn automation_lane_count(emitter: &Emitter) -> usize {
     emitter
         .modules
         .iter()
-        .map(|module| match &module.parameters {
-            ModuleParameters::Appearance { .. } => ["size", "opacity", "color"]
+        .map(|module| {
+            let parameters: Vec<&str> = match &module.parameters {
+                ModuleParameters::Emission { .. } => vec!["spawn_rate", "burst_count"],
+                ModuleParameters::Shape { .. } => vec!["shape"],
+                ModuleParameters::Initialize { .. } => vec![
+                    "lifetime",
+                    "speed",
+                    "direction",
+                    "spread_degrees",
+                    "angular_velocity",
+                ],
+                ModuleParameters::Motion { .. } => vec!["gravity", "drag", "turbulence"],
+                ModuleParameters::Appearance { .. } => vec!["size", "opacity", "color"],
+                ModuleParameters::Custom(values) => values.keys().map(String::as_str).collect(),
+            };
+            parameters
                 .into_iter()
                 .filter(|parameter| {
                     module
                         .property_source(parameter)
                         .is_some_and(source_is_automation)
                 })
-                .count(),
-            ModuleParameters::Custom(values) => values
-                .keys()
-                .filter(|parameter| {
-                    module
-                        .property_source(parameter)
-                        .is_some_and(source_is_automation)
-                })
-                .count(),
-            _ => 0,
+                .count()
         })
         .sum()
 }
@@ -6086,7 +6243,67 @@ fn automation_lane_value(effect: &EffectAsset, lane: &AutomationLaneId) -> Optio
         .modules
         .iter()
         .find(|module| module.id == lane.module)?;
+    if let Some(parameter) = bound_automation_parameter(effect, module, &lane.parameter) {
+        return Some(parameter.default.clone());
+    }
     module_parameter(module, &lane.parameter)
+}
+
+fn bound_automation_parameter<'a>(
+    effect: &'a EffectAsset,
+    module: &aestra_bevy::ModuleInstance,
+    input: &str,
+) -> Option<&'a EffectParameter> {
+    let parameter_id = module.bindings.get(input)?;
+    effect
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == *parameter_id)
+}
+
+fn set_automation_lane_value_command(
+    effect: &EffectAsset,
+    lane: &AutomationLaneId,
+    value: Value,
+) -> Option<EffectCommand> {
+    let emitter = effect
+        .emitters
+        .iter()
+        .find(|emitter| emitter.id == lane.emitter)?;
+    let module = emitter
+        .modules
+        .iter()
+        .find(|module| module.id == lane.module)?;
+    if let Some(mut parameter) =
+        bound_automation_parameter(effect, module, &lane.parameter).cloned()
+    {
+        parameter.default = value;
+        return Some(EffectCommand::SetParameter {
+            id: parameter.id,
+            parameter,
+        });
+    }
+    if let Some(source) = module.property_source(&lane.parameter)
+        && source != aestra_bevy::PropertySource::Constant
+        && module
+            .property_source_values
+            .get(&lane.parameter)
+            .is_some_and(|values| values.iter().any(|candidate| candidate.source == source))
+    {
+        return Some(EffectCommand::SetModulePropertySourceValue {
+            emitter: lane.emitter,
+            module: lane.module,
+            parameter: lane.parameter.clone(),
+            source,
+            value,
+        });
+    }
+    Some(EffectCommand::SetModuleParameter {
+        emitter: lane.emitter,
+        module: lane.module,
+        parameter: lane.parameter.clone(),
+        value,
+    })
 }
 
 fn automation_lane_keys(
@@ -7028,8 +7245,12 @@ pub(crate) fn spawn_timeline(
                                         catalog,
                                         ChoreographyTrackId::Emitter(emitter.id),
                                     );
-                                    let automation_lanes =
-                                        emitter_automation_lanes(emitter, registry, localizer);
+                                    let automation_lanes = emitter_automation_lanes(
+                                        &session.effect,
+                                        emitter,
+                                        registry,
+                                        localizer,
+                                    );
                                     spawn_emitter_track_header(
                                         headers,
                                         session,
@@ -7602,7 +7823,10 @@ pub(crate) fn spawn_timeline(
                                                 .contains(&emitter.id)
                                             {
                                                 for (lane_index, lane) in emitter_automation_lanes(
-                                                    emitter, registry, localizer,
+                                                    &session.effect,
+                                                    emitter,
+                                                    registry,
+                                                    localizer,
                                                 )
                                                 .iter()
                                                 .filter(|lane| {
@@ -10611,7 +10835,7 @@ fn finish_automation_key_drag(
     let normalized =
         ((drag.current_time - emitter.start_time) / emitter.duration.max(0.001)).clamp(0.0, 1.0);
     let command = match automation_lane_value(&session.effect, &selection.lane) {
-        Some(Value::Curve(curve)) => {
+        Some(Value::Curve(mut curve)) => {
             let Some(mut key) = curve.keys.get(selection.key).copied() else {
                 return;
             };
@@ -10619,26 +10843,30 @@ fn finish_automation_key_drag(
             if let Some(value) = drag.current_value {
                 key.value = value;
             }
-            EffectCommand::SetCurveKey {
-                emitter: selection.lane.emitter,
-                module: selection.lane.module,
-                parameter: selection.lane.parameter.clone(),
-                index: selection.key,
-                key,
-            }
+            curve.keys[selection.key] = key;
+            let Some(command) = set_automation_lane_value_command(
+                &session.effect,
+                &selection.lane,
+                Value::Curve(curve),
+            ) else {
+                return;
+            };
+            command
         }
-        Some(Value::Gradient(gradient)) => {
+        Some(Value::Gradient(mut gradient)) => {
             let Some(mut key) = gradient.keys.get(selection.key).copied() else {
                 return;
             };
             key.time = normalized;
-            EffectCommand::SetGradientKey {
-                emitter: selection.lane.emitter,
-                module: selection.lane.module,
-                parameter: selection.lane.parameter.clone(),
-                index: selection.key,
-                key,
-            }
+            gradient.keys[selection.key] = key;
+            let Some(command) = set_automation_lane_value_command(
+                &session.effect,
+                &selection.lane,
+                Value::Gradient(gradient),
+            ) else {
+                return;
+            };
+            command
         }
         _ => return,
     };

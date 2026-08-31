@@ -380,11 +380,7 @@ fn spawn_complex_input_list(
                             continue;
                         };
                         for (input_index, input) in metadata.inputs.iter().enumerate() {
-                            if !matches!(
-                                input.control,
-                                InputControl::Curve { .. } | InputControl::Gradient
-                            ) || !complex_input_is_visible(module, input)
-                            {
+                            if !complex_input_is_visible(module, input) {
                                 continue;
                             }
                             let selected = workspace.complex.is_some_and(|selection| {
@@ -474,8 +470,24 @@ fn resolve_complex_input<'a>(
         .get(&module.module_type)?
         .inputs
         .get(selection.input as usize)?;
-    let value = module_parameter(module, input.name)?;
+    let value = curve_module_parameter(session, module, input.name)?;
     Some((module, input, value))
+}
+
+fn curve_module_parameter(
+    session: &EditorSession,
+    module: &ModuleInstance,
+    parameter: &str,
+) -> Option<Value> {
+    if let Some(parameter_id) = module.bindings.get(parameter) {
+        return session
+            .effect
+            .parameters
+            .iter()
+            .find(|candidate| candidate.id == *parameter_id)
+            .map(|parameter| parameter.default.clone());
+    }
+    module_parameter(module, parameter)
 }
 
 fn curve_graph_data(curve: &aestra_bevy::Curve) -> AutomationCurveData {
@@ -572,7 +584,7 @@ fn spawn_curve_graph(
     selected_key: usize,
     localizer: &Localizer,
 ) {
-    let InputControl::Curve { step, min, max } = input.control else {
+    let Some((step, min, max)) = curve_value_bounds(&input.control, curve) else {
         return;
     };
     let display_name = localized_properties_input(localizer, input.name, input.display_name, false);
@@ -669,7 +681,7 @@ fn spawn_curve_graph(
                                 .modules
                                 .iter()
                                 .find(|item| item.id == module)
-                                .and_then(|item| module_parameter(item, parameter))
+                                .and_then(|item| curve_module_parameter(&session, item, parameter))
                             else {
                                 return;
                             };
@@ -710,7 +722,7 @@ fn spawn_curve_graph(
                                 .modules
                                 .iter()
                                 .find(|item| item.id == module)
-                                .and_then(|item| module_parameter(item, parameter))
+                                .and_then(|item| curve_module_parameter(&session, item, parameter))
                             else {
                                 return;
                             };
@@ -844,7 +856,7 @@ fn spawn_gradient_graph(
                                 .modules
                                 .iter()
                                 .find(|item| item.id == module)
-                                .and_then(|item| module_parameter(item, parameter))
+                                .and_then(|item| curve_module_parameter(&session, item, parameter))
                             else {
                                 return;
                             };
@@ -882,7 +894,7 @@ fn spawn_gradient_graph(
                                 .modules
                                 .iter()
                                 .find(|item| item.id == module)
-                                .and_then(|item| module_parameter(item, parameter))
+                                .and_then(|item| curve_module_parameter(&session, item, parameter))
                             else {
                                 return;
                             };
@@ -1026,7 +1038,7 @@ fn add_complex_key_at_pointer(
     };
     let parameter = input.name;
     let control = input.control;
-    let Some(value) = module_parameter(module, parameter) else {
+    let Some(value) = curve_module_parameter(session, module, parameter) else {
         session.status = "The selected authored value no longer exists".into();
         return;
     };
@@ -1052,7 +1064,7 @@ fn add_complex_key_at_pointer(
                 .iter()
                 .position(|key| key.time > time)
                 .unwrap_or(curve.keys.len());
-            let InputControl::Curve { min, max, .. } = control else {
+            let Some((_, min, max)) = curve_value_bounds(&control, &curve) else {
                 return;
             };
             let value = curve_graph_data(&curve)
@@ -1140,7 +1152,7 @@ fn edit_complex_key(
     };
     let parameter = input.name;
     let control = input.control;
-    let Some(value) = module_parameter(module, parameter) else {
+    let Some(value) = curve_module_parameter(session, module, parameter) else {
         session.status = "The selected authored value no longer exists".into();
         return;
     };
@@ -1230,7 +1242,7 @@ fn edit_complex_key(
             let Some(mut key) = curve.keys.get(selection.key).copied() else {
                 return;
             };
-            let InputControl::Curve { step, min, max } = control else {
+            let Some((step, min, max)) = curve_value_bounds(&control, &curve) else {
                 return;
             };
             key.value = (key.value + direction as f32 * step).clamp(min, max);
@@ -1247,6 +1259,41 @@ fn edit_complex_key(
             session.set_gradient_key(selection.module, parameter, selection.key, key);
         }
         _ => session.status = "This edit does not apply to the selected property".into(),
+    }
+}
+
+fn curve_value_bounds(
+    control: &InputControl,
+    curve: &aestra_bevy::Curve,
+) -> Option<(f32, f32, f32)> {
+    match control {
+        InputControl::Curve { step, min, max } => Some((*step, *min, *max)),
+        InputControl::Number { step, min, max } => {
+            let authored_min = curve
+                .keys
+                .iter()
+                .map(|key| key.value)
+                .fold(f32::INFINITY, f32::min);
+            let authored_max = curve
+                .keys
+                .iter()
+                .map(|key| key.value)
+                .fold(f32::NEG_INFINITY, f32::max);
+            let minimum = min.unwrap_or(if authored_min.is_finite() {
+                authored_min
+            } else {
+                0.0
+            });
+            let maximum = max.unwrap_or_else(|| {
+                if authored_max.is_finite() {
+                    authored_max.max(minimum + *step)
+                } else {
+                    minimum + *step
+                }
+            });
+            Some((*step, minimum, maximum.max(minimum + f32::EPSILON)))
+        }
+        _ => None,
     }
 }
 
