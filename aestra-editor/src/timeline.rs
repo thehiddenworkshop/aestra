@@ -3086,12 +3086,17 @@ mod tests {
         let emitter = session.effect.emitters[0].clone();
         let ui_revision = session.ui_revision;
 
-        assert!(session.set_emitter_timing(
-            emitter.id,
-            emitter.start_time + 0.1,
-            emitter.duration - 0.1,
-            "Moved emitter on timeline",
-        ));
+        let transaction = session
+            .emitter_region_timing_transaction(
+                emitter.id,
+                emitter.implicit_region_id(),
+                emitter.start_time + 0.1,
+                0.0,
+                emitter.duration,
+                "Moved emitter on timeline",
+            )
+            .unwrap();
+        assert!(session.execute_transaction(transaction, false));
         assert!(session.can_undo());
         assert_eq!(session.ui_revision, ui_revision);
         session.undo();
@@ -3104,6 +3109,200 @@ mod tests {
             .unwrap();
         assert_eq!(restored.start_time, emitter.start_time);
         assert_eq!(restored.duration, emitter.duration);
+    }
+
+    #[test]
+    fn moving_one_selected_region_previews_and_commits_the_whole_group() {
+        let (mut session, emitter_id, [first, second, third]) = session_with_three_regions();
+        let emitter = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == emitter_id)
+            .unwrap()
+            .clone();
+        let original = emitter.timeline_regions();
+        let first_region = emitter.timeline_region(first).unwrap();
+        let third_region = emitter.timeline_region(third).unwrap();
+        let drag_regions = vec![
+            TimelineRegionMove {
+                region: first,
+                original_start: first_region.start_time,
+                duration: first_region.duration,
+            },
+            TimelineRegionMove {
+                region: third,
+                original_start: third_region.start_time,
+                duration: third_region.duration,
+            },
+        ];
+        let mut drag = TimelineDrag {
+            emitter: emitter_id,
+            region: first,
+            kind: TimelineDragKind::Move,
+            pointer_start: 0.0,
+            original_start: first_region.start_time,
+            original_duration: first_region.duration,
+            original_source_offset: first_region.source_offset,
+            current_start: first_region.start_time,
+            current_duration: first_region.duration,
+            current_source_offset: first_region.source_offset,
+            source_duration: emitter.duration,
+        };
+        let requested_delta = 0.2_f32.min(
+            (session.effect.duration - third_region.end_time())
+                .max(0.0)
+                .max(0.05),
+        );
+        let view = TimelineView {
+            start: 0.0,
+            end: session.effect.duration,
+        };
+        update_timeline_drag(
+            &mut drag,
+            &drag_regions,
+            requested_delta,
+            &session,
+            TimelineSnapMode::None,
+            view,
+            1_000.0,
+            &mut None,
+        );
+        let delta = drag.current_start - drag.original_start;
+        assert!(delta > 0.0);
+        let state = TimelineState {
+            drag: Some(drag),
+            drag_regions: drag_regions.clone(),
+            ..TimelineState::framed(session.effect.duration)
+        };
+        let preview = timeline_region_preview_timing(&state, emitter_id, third_region);
+        assert!((preview.0 - (third_region.start_time + delta)).abs() <= 0.000_1);
+
+        commit_timeline_drag(&mut session, drag, &drag_regions);
+        let moved = session
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == emitter_id)
+            .unwrap();
+        assert!(
+            (moved.timeline_region(first).unwrap().start_time - (first_region.start_time + delta))
+                .abs()
+                <= 0.000_1
+        );
+        assert!(
+            (moved.timeline_region(third).unwrap().start_time - (third_region.start_time + delta))
+                .abs()
+                <= 0.000_1
+        );
+        assert_eq!(
+            moved.timeline_region(second).unwrap().start_time,
+            emitter.timeline_region(second).unwrap().start_time
+        );
+        session.undo();
+        assert_eq!(session.effect.emitters[0].timeline_regions(), original);
+    }
+
+    #[test]
+    fn trimming_an_emitter_region_can_grow_its_source_to_the_effect_end() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.effect.emitters[0].clone();
+        let region = emitter.timeline_regions()[0];
+        let available = session.effect.duration - region.start_time;
+        assert!(available > region.duration);
+        let mut drag = TimelineDrag {
+            emitter: emitter.id,
+            region: region.id,
+            kind: TimelineDragKind::TrimEnd,
+            pointer_start: 0.0,
+            original_start: region.start_time,
+            original_duration: region.duration,
+            original_source_offset: region.source_offset,
+            current_start: region.start_time,
+            current_duration: region.duration,
+            current_source_offset: region.source_offset,
+            source_duration: emitter.duration,
+        };
+        let requested_growth = (available - region.duration).min(0.4);
+        update_timeline_drag(
+            &mut drag,
+            &[],
+            requested_growth,
+            &session,
+            TimelineSnapMode::None,
+            TimelineView {
+                start: 0.0,
+                end: session.effect.duration,
+            },
+            1_000.0,
+            &mut None,
+        );
+        assert!(drag.current_duration > emitter.duration);
+
+        commit_timeline_drag(&mut session, drag, &[]);
+        let grown = session
+            .effect
+            .emitters
+            .iter()
+            .find(|candidate| candidate.id == emitter.id)
+            .unwrap();
+        assert!((grown.duration - drag.current_duration).abs() <= 0.000_1);
+        assert!((grown.timeline_regions()[0].duration - drag.current_duration).abs() <= 0.000_1);
+        session.undo();
+        assert_eq!(session.effect.emitters[0], emitter);
+    }
+
+    #[test]
+    fn trimming_an_emitter_region_left_can_grow_before_source_zero() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let emitter = session.effect.emitters[0].clone();
+        let region = emitter.timeline_regions()[0];
+        assert!(region.start_time > 0.0);
+        let original_end = region.end_time();
+        let growth = region.start_time.min(0.2);
+        let mut drag = TimelineDrag {
+            emitter: emitter.id,
+            region: region.id,
+            kind: TimelineDragKind::TrimStart,
+            pointer_start: 0.0,
+            original_start: region.start_time,
+            original_duration: region.duration,
+            original_source_offset: region.source_offset,
+            current_start: region.start_time,
+            current_duration: region.duration,
+            current_source_offset: region.source_offset,
+            source_duration: emitter.duration,
+        };
+        update_timeline_drag(
+            &mut drag,
+            &[],
+            -growth,
+            &session,
+            TimelineSnapMode::None,
+            TimelineView {
+                start: 0.0,
+                end: session.effect.duration,
+            },
+            1_000.0,
+            &mut None,
+        );
+        assert!(drag.current_start < region.start_time);
+        assert_eq!(drag.current_source_offset, 0.0);
+        assert!((drag.current_start + drag.current_duration - original_end).abs() <= 0.000_1);
+
+        commit_timeline_drag(&mut session, drag, &[]);
+        let grown = session
+            .effect
+            .emitters
+            .iter()
+            .find(|candidate| candidate.id == emitter.id)
+            .unwrap();
+        let grown_region = grown.timeline_regions()[0];
+        assert!((grown_region.start_time - drag.current_start).abs() <= 0.000_1);
+        assert!((grown_region.duration - drag.current_duration).abs() <= 0.000_1);
+        assert!((grown_region.end_time() - original_end).abs() <= 0.000_1);
+        session.undo();
+        assert_eq!(session.effect.emitters[0], emitter);
     }
 
     #[test]
@@ -3125,7 +3324,7 @@ mod tests {
             source_duration: emitter.duration,
         };
 
-        commit_timeline_drag(&mut session, drag);
+        commit_timeline_drag(&mut session, drag, &[]);
 
         let trimmed = session
             .effect
@@ -4921,12 +5120,7 @@ fn update_timeline_visuals(
             node.display = Display::None;
             continue;
         };
-        let (start, duration) = state
-            .drag
-            .filter(|drag| drag.emitter == clip.emitter && drag.region == clip.region)
-            .map_or((region.start_time, region.duration), |drag| {
-                (drag.current_start, drag.current_duration)
-            });
+        let (start, duration) = timeline_region_preview_timing(&state, clip.emitter, region);
         apply_timeline_bar_geometry(&mut node, start, duration, view);
     }
 
@@ -4944,12 +5138,7 @@ fn update_timeline_visuals(
             node.display = Display::None;
             continue;
         };
-        let (start, duration) = state
-            .drag
-            .filter(|drag| drag.emitter == control.emitter && drag.region == control.region)
-            .map_or((region.start_time, region.duration), |drag| {
-                (drag.current_start, drag.current_duration)
-            });
+        let (start, duration) = timeline_region_preview_timing(&state, control.emitter, region);
         let boundary_visible = match control.kind {
             TimelineDragKind::Move => true,
             TimelineDragKind::TrimStart => timeline_boundary_is_visible(start, view),
@@ -4998,6 +5187,31 @@ fn update_timeline_visuals(
             text.0 = format_timeline_tick(time, step);
         }
     }
+}
+
+fn timeline_region_preview_timing(
+    state: &TimelineState,
+    emitter: EmitterId,
+    region: EmitterRegion,
+) -> (f32, f32) {
+    let Some(drag) = state.drag.filter(|drag| drag.emitter == emitter) else {
+        return (region.start_time, region.duration);
+    };
+    if drag.region == region.id {
+        return (drag.current_start, drag.current_duration);
+    }
+    if drag.kind == TimelineDragKind::Move
+        && let Some(member) = state
+            .drag_regions
+            .iter()
+            .find(|member| member.region == region.id)
+    {
+        return (
+            member.original_start + drag.current_start - drag.original_start,
+            member.duration,
+        );
+    }
+    (region.start_time, region.duration)
 }
 
 fn update_timeline_marker_visuals(
@@ -5562,6 +5776,7 @@ fn snap_timeline_boundary(
     candidate: f32,
     emitter: EmitterId,
     region: EmitterRegionId,
+    ignored_regions: &[TimelineRegionMove],
     session: &EditorSession,
     mode: TimelineSnapMode,
     view: TimelineView,
@@ -5590,7 +5805,12 @@ fn snap_timeline_boundary(
             ];
             for other in &session.effect.emitters {
                 for other_region in other.timeline_regions() {
-                    if other.id != emitter || other_region.id != region {
+                    if other.id != emitter
+                        || (other_region.id != region
+                            && !ignored_regions
+                                .iter()
+                                .any(|ignored| ignored.region == other_region.id))
+                    {
                         targets.push(other_region.start_time);
                         targets.push(other_region.end_time());
                     }
@@ -5856,18 +6076,36 @@ fn snap_moved_timing(
     duration: f32,
     emitter: EmitterId,
     region: EmitterRegionId,
+    ignored_regions: &[TimelineRegionMove],
     session: &EditorSession,
     mode: TimelineSnapMode,
     view: TimelineView,
     canvas_width: f32,
 ) -> (f32, Option<f32>) {
-    let start_snap =
-        snap_timeline_boundary(start, emitter, region, session, mode, view, canvas_width);
+    let start_snap = snap_timeline_boundary(
+        start,
+        emitter,
+        region,
+        ignored_regions,
+        session,
+        mode,
+        view,
+        canvas_width,
+    );
     if mode != TimelineSnapMode::Smart {
         return start_snap;
     }
     let end = start + duration;
-    let end_snap = snap_timeline_boundary(end, emitter, region, session, mode, view, canvas_width);
+    let end_snap = snap_timeline_boundary(
+        end,
+        emitter,
+        region,
+        ignored_regions,
+        session,
+        mode,
+        view,
+        canvas_width,
+    );
     let start_delta = (start_snap.0 - start).abs();
     let end_delta = (end_snap.0 - end).abs();
     match (start_snap.1, end_snap.1) {
@@ -6196,6 +6434,13 @@ struct TimelineDrag {
 }
 
 #[derive(Clone, Copy, Debug)]
+struct TimelineRegionMove {
+    region: EmitterRegionId,
+    original_start: f32,
+    duration: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct EffectClipTimelineDrag {
     clip: EffectClipId,
     kind: TimelineDragKind,
@@ -6306,6 +6551,7 @@ pub(crate) struct TimelineState {
     view: TimelineView,
     snap: TimelineSnapMode,
     drag: Option<TimelineDrag>,
+    drag_regions: Vec<TimelineRegionMove>,
     effect_clip_drag: Option<EffectClipTimelineDrag>,
     marker_drag: Option<TimelineMarkerDrag>,
     choreography_event_drag: Option<TimelineChoreographyEventDrag>,
@@ -6360,6 +6606,7 @@ impl TimelineState {
             },
             snap: TimelineSnapMode::Smart,
             drag: None,
+            drag_regions: Vec::new(),
             effect_clip_drag: None,
             marker_drag: None,
             choreography_event_drag: None,
@@ -12186,6 +12433,34 @@ fn begin_timeline_clip_drag(
     let Some(region) = emitter.timeline_region(target.region) else {
         return;
     };
+    state.drag_regions = if target.kind == TimelineDragKind::Move
+        && state
+            .selected_emitter_regions
+            .contains(&(target.emitter, target.region))
+    {
+        emitter
+            .timeline_regions()
+            .into_iter()
+            .filter(|region| {
+                state
+                    .selected_emitter_regions
+                    .contains(&(target.emitter, region.id))
+            })
+            .map(|region| TimelineRegionMove {
+                region: region.id,
+                original_start: region.start_time,
+                duration: region.duration,
+            })
+            .collect()
+    } else if target.kind == TimelineDragKind::Move {
+        vec![TimelineRegionMove {
+            region: region.id,
+            original_start: region.start_time,
+            duration: region.duration,
+        }]
+    } else {
+        Vec::new()
+    };
     state.drag = Some(TimelineDrag {
         emitter: target.emitter,
         region: target.region,
@@ -12232,8 +12507,10 @@ fn move_timeline_clip_drag(
     let logical_distance = screen_distance_to_logical(drag_event.distance.x, window.scale_factor());
     let pointer_time = logical_distance / width * state.view.span();
     let mut snap_guide = state.snap_guide;
+    let drag_regions = state.drag_regions.clone();
     update_timeline_drag(
         &mut drag,
+        &drag_regions,
         pointer_time,
         &session,
         state.snap,
@@ -12264,13 +12541,19 @@ fn finish_timeline_clip_drag(
         return;
     }
     state.snap_guide = None;
+    let drag_regions = std::mem::take(&mut state.drag_regions);
     override_cursor.0 = None;
     **cursor = timeline_drag_cursor(target.kind, false);
-    commit_timeline_drag(&mut session, drag);
-    commands.trigger(ChoreographyAction::SelectEmitterRegion {
-        emitter: target.emitter,
-        region: target.region,
-    });
+    let preserve_multi_selection = drag.kind == TimelineDragKind::Move && drag_regions.len() > 1;
+    commit_timeline_drag(&mut session, drag, &drag_regions);
+    if preserve_multi_selection {
+        session.select_emitter_region(target.emitter, target.region);
+    } else {
+        commands.trigger(ChoreographyAction::SelectEmitterRegion {
+            emitter: target.emitter,
+            region: target.region,
+        });
+    }
 }
 
 fn begin_effect_clip_timeline_drag(
@@ -12412,7 +12695,11 @@ fn commit_effect_clip_timeline_drag(
     );
 }
 
-fn commit_timeline_drag(session: &mut EditorSession, drag: TimelineDrag) {
+fn commit_timeline_drag(
+    session: &mut EditorSession,
+    drag: TimelineDrag,
+    drag_regions: &[TimelineRegionMove],
+) {
     let changed = (drag.current_start - drag.original_start).abs() > 0.000_1
         || (drag.current_source_offset - drag.original_source_offset).abs() > 0.000_1
         || (drag.current_duration - drag.original_duration).abs() > 0.000_1;
@@ -12428,28 +12715,43 @@ fn commit_timeline_drag(session: &mut EditorSession, drag: TimelineDrag) {
             .emitters
             .iter()
             .find(|emitter| emitter.id == drag.emitter)
+            .cloned()
         else {
             return;
         };
-        if emitter.regions.is_empty() && drag.kind == TimelineDragKind::Move {
-            session.set_emitter_timing(drag.emitter, drag.current_start, emitter.duration, label);
+        if drag.kind == TimelineDragKind::Move && drag_regions.len() > 1 {
+            let delta = drag.current_start - drag.original_start;
+            let moved = drag_regions
+                .iter()
+                .map(|member| member.region)
+                .collect::<BTreeSet<_>>();
+            let mut regions = emitter.timeline_regions();
+            for region in &mut regions {
+                if moved.contains(&region.id) {
+                    region.start_time += delta;
+                }
+            }
+            session.execute(
+                label,
+                EffectCommand::SetEmitterRegions {
+                    id: drag.emitter,
+                    regions: emitter.normalize_timeline_regions(regions),
+                },
+                false,
+            );
             return;
         }
-        let mut regions = emitter.timeline_regions();
-        let Some(region) = regions.iter_mut().find(|region| region.id == drag.region) else {
+        let Some(transaction) = session.emitter_region_timing_transaction(
+            drag.emitter,
+            drag.region,
+            drag.current_start,
+            drag.current_source_offset,
+            drag.current_duration,
+            label,
+        ) else {
             return;
         };
-        region.start_time = drag.current_start;
-        region.source_offset = drag.current_source_offset;
-        region.duration = drag.current_duration;
-        session.execute(
-            label,
-            EffectCommand::SetEmitterRegions {
-                id: drag.emitter,
-                regions: emitter.normalize_timeline_regions(regions),
-            },
-            false,
-        );
+        session.execute_transaction(transaction, false);
     }
 }
 
@@ -12838,6 +13140,7 @@ fn timeline_system_cursor(kind: TimelineDragKind, active: bool) -> SystemCursorI
 
 fn update_timeline_drag(
     drag: &mut TimelineDrag,
+    drag_regions: &[TimelineRegionMove],
     pointer_time: f32,
     session: &EditorSession,
     snap: TimelineSnapMode,
@@ -12851,33 +13154,44 @@ fn update_timeline_drag(
     *snap_guide = None;
     match drag.kind {
         TimelineDragKind::Move => {
+            let group_start = drag_regions
+                .iter()
+                .map(|region| region.original_start)
+                .fold(drag.original_start, f32::min);
+            let group_end = drag_regions
+                .iter()
+                .map(|region| region.original_start + region.duration)
+                .fold(drag.original_start + drag.original_duration, f32::max);
+            let minimum_start = drag.original_start - group_start;
+            let maximum_start = drag.original_start + effect_duration - group_end;
             let unsnapped = (drag.original_start + pointer_delta)
-                .clamp(0.0, (effect_duration - drag.original_duration).max(0.0));
+                .clamp(minimum_start, maximum_start.max(minimum_start));
             let (start, guide) = snap_moved_timing(
                 unsnapped,
                 drag.original_duration,
                 drag.emitter,
                 drag.region,
+                drag_regions,
                 session,
                 snap,
                 view,
                 canvas_width,
             );
-            drag.current_start =
-                start.clamp(0.0, (effect_duration - drag.original_duration).max(0.0));
+            drag.current_start = start.clamp(minimum_start, maximum_start.max(minimum_start));
             drag.current_duration = drag.original_duration;
             drag.current_source_offset = drag.original_source_offset;
             *snap_guide = guide;
         }
         TimelineDragKind::TrimStart => {
             let end = drag.original_start + drag.original_duration;
-            let minimum_start = (drag.original_start - drag.original_source_offset).max(0.0);
+            let minimum_start = 0.0;
             let unsnapped = (drag.original_start + pointer_delta)
                 .clamp(minimum_start, (end - minimum_duration).max(minimum_start));
             let (start, guide) = snap_timeline_boundary(
                 unsnapped,
                 drag.emitter,
                 drag.region,
+                &[],
                 session,
                 snap,
                 view,
@@ -12885,21 +13199,19 @@ fn update_timeline_drag(
             );
             drag.current_start = start.clamp(minimum_start, end - minimum_duration);
             drag.current_source_offset =
-                drag.original_source_offset + drag.current_start - drag.original_start;
+                (drag.original_source_offset + drag.current_start - drag.original_start).max(0.0);
             drag.current_duration = end - drag.current_start;
             *snap_guide = guide;
         }
         TimelineDragKind::TrimEnd => {
-            let maximum_end = effect_duration.min(
-                drag.original_start
-                    + (drag.source_duration - drag.original_source_offset).max(minimum_duration),
-            );
+            let maximum_end = effect_duration;
             let unsnapped = (drag.original_start + drag.original_duration + pointer_delta)
                 .clamp(drag.original_start + minimum_duration, maximum_end);
             let (end, guide) = snap_timeline_boundary(
                 unsnapped,
                 drag.emitter,
                 drag.region,
+                &[],
                 session,
                 snap,
                 view,

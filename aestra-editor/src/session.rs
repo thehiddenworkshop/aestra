@@ -1797,22 +1797,58 @@ impl EditorSession {
         self.execute("Duplicated renderer", command, true);
     }
 
-    pub fn set_emitter_timing(
-        &mut self,
+    pub(crate) fn emitter_region_timing_transaction(
+        &self,
         id: EmitterId,
+        region: EmitterRegionId,
         start_time: f32,
+        source_offset: f32,
         duration: f32,
         label: impl Into<String>,
-    ) -> bool {
-        self.execute(
-            label,
-            EffectCommand::SetEmitterTiming {
+    ) -> Option<EffectTransaction> {
+        let emitter = self
+            .effect
+            .emitters
+            .iter()
+            .find(|emitter| emitter.id == id)?;
+        emitter.timeline_region(region)?;
+        if emitter.regions.is_empty()
+            && source_offset.abs() <= 0.000_1
+            && duration + 0.000_1 >= emitter.duration
+        {
+            return Some(EffectTransaction::single(
+                label,
+                EffectCommand::SetEmitterTiming {
+                    id,
+                    start_time,
+                    duration,
+                },
+            ));
+        }
+
+        let mut regions = emitter.timeline_regions();
+        let edited = regions
+            .iter_mut()
+            .find(|candidate| candidate.id == region)?;
+        edited.start_time = start_time;
+        edited.source_offset = source_offset;
+        edited.duration = duration;
+        let source_duration = emitter.duration.max(edited.source_end());
+        let mut prospective = emitter.clone();
+        prospective.duration = source_duration;
+        let regions = prospective.normalize_timeline_regions(regions);
+        let mut commands = Vec::with_capacity(2);
+        if (source_duration - emitter.duration).abs() > 0.000_1 {
+            commands.push(EffectCommand::SetEmitterTiming {
                 id,
-                start_time,
-                duration,
-            },
-            false,
-        )
+                start_time: emitter.start_time,
+                duration: source_duration,
+            });
+        }
+        if regions != emitter.regions {
+            commands.push(EffectCommand::SetEmitterRegions { id, regions });
+        }
+        (!commands.is_empty()).then(|| EffectTransaction::new(label, commands))
     }
 
     pub fn adjust_effect_duration(&mut self, delta: f32) {
@@ -2109,7 +2145,15 @@ mod tests {
         let secondary = session.selected_layer().id;
         assert!(session.set_selected_emitter_name("Sparks"));
         assert!(session.set_selected_emitter_capacity(512));
-        assert!(session.set_emitter_timing(secondary, 0.25, 1.5, "Timed Sparks"));
+        assert!(session.execute(
+            "Timed Sparks",
+            EffectCommand::SetEmitterTiming {
+                id: secondary,
+                start_time: 0.25,
+                duration: 1.5,
+            },
+            false,
+        ));
         assert!(
             session
                 .add_event_link(EventTrigger::OnDeath, primary)
