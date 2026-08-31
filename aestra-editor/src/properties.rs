@@ -825,23 +825,30 @@ fn set_module_input_source(
     source: PropertySourceKind,
     localizer: &Localizer,
 ) -> bool {
-    let Some((_, parameter)) =
+    let Some((emitter, parameter)) =
         properties_module_input_target(session, registry, module, input_index)
     else {
         return false;
     };
-    let Some(input) = session
+    let Some((module_instance, input)) = session
         .effect
         .emitters
         .iter()
         .flat_map(|emitter| emitter.modules.iter())
         .find(|candidate| candidate.id == module)
-        .and_then(|module| registry.get(&module.module_type))
-        .and_then(|metadata| metadata.inputs.get(input_index as usize))
+        .and_then(|module| {
+            registry
+                .get(&module.module_type)
+                .and_then(|metadata| metadata.inputs.get(input_index as usize))
+                .map(|input| (module, input))
+        })
     else {
         return false;
     };
     if !input.sources.contains(&source) {
+        return false;
+    }
+    if module_instance.property_source(parameter) == Some(source) {
         return false;
     }
     let Some(current) = properties_module_parameter(session, module, parameter) else {
@@ -897,19 +904,25 @@ fn set_module_input_source(
         | (Value::Range(range), PropertySourceKind::RandomRange) => Value::Range(range),
         _ => return false,
     };
-    if updated == current {
-        return false;
+    let mut commands = Vec::with_capacity(2);
+    if updated != current {
+        let Some(command) =
+            properties_module_parameter_command(session, module, parameter, updated)
+        else {
+            return false;
+        };
+        commands.push(command);
     }
-    let Some(command) = properties_module_parameter_command(session, module, parameter, updated)
-    else {
-        return false;
-    };
-    session.execute(
-        localizer.text("properties-change-source-command"),
-        command,
+    commands.push(EffectCommand::SetModulePropertySource {
+        emitter,
+        module,
+        parameter: parameter.to_owned(),
+        source,
+    });
+    session.execute_transaction(
+        EffectTransaction::new(localizer.text("properties-change-source-command"), commands),
         true,
-    );
-    true
+    )
 }
 
 // Properties domain implementation.
@@ -1324,6 +1337,16 @@ mod tests {
             panic!("constant source remains a typed scalar curve");
         };
         assert_eq!(constant.keys, vec![CurveKey::new(0.0, preserved)]);
+        assert_eq!(
+            session
+                .selected_layer()
+                .modules
+                .iter()
+                .find(|candidate| candidate.id == module)
+                .unwrap()
+                .property_source("size"),
+            Some(PropertySourceKind::Constant)
+        );
 
         assert!(set_module_input_source(
             &mut session,
@@ -1340,6 +1363,18 @@ mod tests {
         assert_eq!(curve.keys.len(), 2);
         assert_eq!(curve.keys[0].value, preserved);
         assert_eq!(curve.keys[1].value, preserved);
+        assert_eq!(
+            session
+                .selected_layer()
+                .modules
+                .iter()
+                .find(|candidate| candidate.id == module)
+                .unwrap()
+                .property_source("size"),
+            Some(PropertySourceKind::Curve(
+                InputEvaluationDomain::ParticleLife
+            ))
+        );
 
         session.undo();
         let Value::Curve(restored_constant) =
@@ -1348,6 +1383,16 @@ mod tests {
             panic!("undo should restore the constant source");
         };
         assert_eq!(restored_constant.keys.len(), 1);
+        assert_eq!(
+            session
+                .selected_layer()
+                .modules
+                .iter()
+                .find(|candidate| candidate.id == module)
+                .unwrap()
+                .property_source("size"),
+            Some(PropertySourceKind::Constant)
+        );
     }
 
     #[test]
@@ -7378,6 +7423,7 @@ fn spawn_input_control(
     };
     let public =
         public_module_input_control(session, module, input, input_index, &value, localizer);
+    let source = property_source_for_input(module, input, &value);
     match (&input.control, value) {
         (InputControl::Curve { .. }, Value::Curve(curve)) => {
             spawn_properties_curve_source_control(
@@ -7388,6 +7434,7 @@ fn spawn_input_control(
                 &display_name,
                 property_tooltip(&description, input.unit, localizer),
                 &curve,
+                source,
                 asset_server,
                 localizer,
             );
@@ -7401,6 +7448,7 @@ fn spawn_input_control(
                 &display_name,
                 &description,
                 &gradient,
+                source,
                 asset_server,
                 localizer,
             );
@@ -7503,7 +7551,7 @@ fn spawn_input_control(
                 public,
             );
         }
-        (InputControl::Range { .. }, Value::Range(value)) => {
+        (InputControl::Range { .. }, Value::Range(_)) => {
             spawn_properties_range_source_control(
                 parent,
                 module.id,
@@ -7511,8 +7559,8 @@ fn spawn_input_control(
                 input_index,
                 &display_name,
                 property_tooltip(&description, input.unit, localizer),
-                value,
                 public,
+                source,
                 asset_server,
                 localizer,
             );
@@ -7708,15 +7756,14 @@ fn spawn_properties_range_source_control(
     input_index: u8,
     title: &str,
     tooltip: EditorTooltip,
-    value: ScalarRange,
     public: Option<ModuleInputPublicControl>,
+    source: PropertySourceKind,
     asset_server: &AssetServer,
     localizer: &Localizer,
 ) {
     let InputControl::Range { step, min, max } = input.control else {
         return;
     };
-    let source = property_source_for_value(input, &Value::Range(value));
     parent
         .spawn((
             tooltip,
@@ -7808,13 +7855,13 @@ fn spawn_properties_curve_source_control(
     title: &str,
     tooltip: EditorTooltip,
     curve: &Curve,
+    source: PropertySourceKind,
     asset_server: &AssetServer,
     localizer: &Localizer,
 ) {
     let InputControl::Curve { step, min, max } = input.control else {
         return;
     };
-    let source = property_source_for_value(input, &Value::Curve(curve.clone()));
     parent
         .spawn((
             tooltip,
@@ -7879,10 +7926,10 @@ fn spawn_properties_gradient_source_control(
     title: &str,
     description: &str,
     gradient: &Gradient,
+    source: PropertySourceKind,
     asset_server: &AssetServer,
     localizer: &Localizer,
 ) {
-    let source = property_source_for_value(input, &Value::Gradient(gradient.clone()));
     parent
         .spawn((
             EditorTooltip::description(description),
@@ -8014,27 +8061,18 @@ fn property_source_icon(source: PropertySourceKind) -> &'static str {
     }
 }
 
-fn property_source_for_value(input: &InputMetadata, value: &Value) -> PropertySourceKind {
-    match value {
-        Value::Range(range) if (range.max - range.min).abs() > f32::EPSILON => input
-            .sources
-            .iter()
-            .copied()
-            .find(|source| matches!(source, PropertySourceKind::RandomRange))
-            .unwrap_or(PropertySourceKind::Constant),
-        Value::Curve(curve) if curve.keys.len() > 1 => input
-            .sources
-            .iter()
-            .copied()
-            .find(|source| matches!(source, PropertySourceKind::Curve(_)))
-            .unwrap_or(PropertySourceKind::Constant),
-        Value::Gradient(gradient) if gradient.keys.len() > 1 => input
-            .sources
-            .iter()
-            .copied()
-            .find(|source| matches!(source, PropertySourceKind::Gradient(_)))
-            .unwrap_or(PropertySourceKind::Constant),
-        _ => PropertySourceKind::Constant,
+fn property_source_for_input(
+    module: &ModuleInstance,
+    input: &InputMetadata,
+    value: &Value,
+) -> PropertySourceKind {
+    let source = module
+        .property_source(input.name)
+        .unwrap_or_else(|| PropertySourceKind::infer_legacy(value));
+    if input.sources.contains(&source) {
+        source
+    } else {
+        PropertySourceKind::Constant
     }
 }
 
@@ -9096,49 +9134,7 @@ fn module_matches(metadata: &ModuleMetadata, query: &str) -> bool {
 }
 
 pub(crate) fn module_parameter(module: &ModuleInstance, name: &str) -> Option<Value> {
-    match (&module.parameters, name) {
-        (
-            ModuleParameters::Emission {
-                spawn_rate,
-                burst_count: _,
-            },
-            "spawn_rate",
-        ) => Some(Value::Scalar(*spawn_rate)),
-        (ModuleParameters::Emission { burst_count, .. }, "burst_count") => {
-            Some(Value::U32(*burst_count))
-        }
-        (ModuleParameters::Shape { shape }, "shape") => Some(Value::Shape(*shape)),
-        (ModuleParameters::Initialize { lifetime, .. }, "lifetime") => {
-            Some(Value::Range(*lifetime))
-        }
-        (ModuleParameters::Initialize { speed, .. }, "speed") => Some(Value::Range(*speed)),
-        (ModuleParameters::Initialize { direction, .. }, "direction") => {
-            Some(Value::Vec3(*direction))
-        }
-        (ModuleParameters::Initialize { spread_degrees, .. }, "spread_degrees") => {
-            Some(Value::Scalar(*spread_degrees))
-        }
-        (
-            ModuleParameters::Initialize {
-                angular_velocity, ..
-            },
-            "angular_velocity",
-        ) => Some(Value::Range(*angular_velocity)),
-        (ModuleParameters::Motion { gravity, .. }, "gravity") => Some(Value::Vec3(*gravity)),
-        (ModuleParameters::Motion { drag, .. }, "drag") => Some(Value::Scalar(*drag)),
-        (ModuleParameters::Motion { turbulence, .. }, "turbulence") => {
-            Some(Value::Scalar(*turbulence))
-        }
-        (ModuleParameters::Appearance { size, .. }, "size") => Some(Value::Curve(size.clone())),
-        (ModuleParameters::Appearance { opacity, .. }, "opacity") => {
-            Some(Value::Curve(opacity.clone()))
-        }
-        (ModuleParameters::Appearance { color, .. }, "color") => {
-            Some(Value::Gradient(color.clone()))
-        }
-        (ModuleParameters::Custom(values), name) => values.get(name).cloned(),
-        _ => None,
-    }
+    module.parameter_value(name)
 }
 
 fn select_properties_header(

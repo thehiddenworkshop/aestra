@@ -30,8 +30,8 @@ use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
     AestraPlugin, AssetKind, BlendMode, DiagnosticCode, DiagnosticSeverity, EffectAsset, EmitterId,
     EmitterShape, EmitterTransform, EventId, EventTrigger, FlipbookPlaybackMode,
-    FlipbookTimeSource, MaterialInput, MaterialProperties, ModuleId, ModuleInstance,
-    ModuleParameters, RendererId, RendererProperties, StageKind, Value,
+    FlipbookTimeSource, MaterialInput, MaterialProperties, ModuleId, ModuleInstance, RendererId,
+    RendererProperties, StageKind, Value,
 };
 use aestra_compiler::ModuleMetadata;
 pub(crate) use aestra_project::{EffectAssetRef, ProjectSourceId as ProjectEffectEntryId};

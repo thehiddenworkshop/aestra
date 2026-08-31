@@ -2,8 +2,8 @@ use aestra_core::{
     AssetDefinition, ChoreographyEvent, ChoreographyEventPayload, DiagnosticCode, EffectAsset,
     EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter, EmitterId,
     EmitterShape, EmitterTransform, FlipbookDefinition, MODULE_EMISSION, MODULE_SHAPE,
-    MarkerTimeReference, MaterialProperties, ModuleParameters, ParameterId, RendererInstance,
-    ScalarRange, Value,
+    MarkerTimeReference, MaterialProperties, ModuleParameters, ParameterId,
+    PropertyEvaluationDomain, PropertySource, RendererInstance, ScalarRange, Value,
 };
 
 #[test]
@@ -18,6 +18,67 @@ fn semantic_ids_survive_round_trip() {
 
     assert_eq!(decoded.id, effect_id);
     assert_eq!(decoded.emitters[0].id, emitter_id);
+}
+
+#[test]
+fn missing_property_sources_are_inferred_and_explicit_overrides_persist() {
+    let mut effect = EffectAsset::new("Legacy sources", 1.5);
+    effect.emitters.push(Emitter::basic_sprite("Emitter", 1.5));
+    for module in &mut effect.emitters[0].modules {
+        module.property_sources.clear();
+    }
+    let legacy = effect.to_pretty_ron().unwrap();
+    assert!(!legacy.contains("property_sources"));
+
+    let decoded = EffectAsset::from_ron(&legacy).unwrap();
+    let initialize = decoded.emitters[0]
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == aestra_core::MODULE_INITIALIZE)
+        .unwrap();
+    assert_eq!(
+        initialize.property_source("lifetime"),
+        Some(PropertySource::RandomRange)
+    );
+    let appearance = decoded.emitters[0]
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == aestra_core::MODULE_APPEARANCE)
+        .unwrap();
+    assert_eq!(
+        appearance.property_source("size"),
+        Some(PropertySource::Curve(
+            PropertyEvaluationDomain::ParticleLife
+        ))
+    );
+    assert!(
+        !decoded
+            .to_pretty_ron()
+            .unwrap()
+            .contains("property_sources")
+    );
+
+    let mut overridden = decoded;
+    let appearance = overridden.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == aestra_core::MODULE_APPEARANCE)
+        .unwrap();
+    appearance
+        .property_sources
+        .insert("size".into(), PropertySource::Constant);
+    let encoded = overridden.to_pretty_ron().unwrap();
+    assert!(encoded.contains("property_sources"));
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+    let appearance = decoded.emitters[0]
+        .modules
+        .iter()
+        .find(|module| module.module_type.0 == aestra_core::MODULE_APPEARANCE)
+        .unwrap();
+    assert_eq!(
+        appearance.property_source("size"),
+        Some(PropertySource::Constant)
+    );
 }
 
 #[test]

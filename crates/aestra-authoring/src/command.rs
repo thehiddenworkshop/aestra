@@ -3,7 +3,8 @@ use aestra_core::{
     ChoreographyTrackId, ColorKey, CurveKey, EffectAssetRef, EffectClip, EffectClipId,
     EffectClipSeed, EffectMarker, EffectParameter, Emitter, EmitterId, EmitterTransform, EventId,
     EventLink, FlipbookDefinition, MarkerId, MarkerTimeReference, MaterialDefinition, MaterialId,
-    ModuleId, ModuleInstance, ParameterId, RendererId, RendererInstance, RendererProperties, Value,
+    ModuleId, ModuleInstance, ParameterId, PropertySource, RendererId, RendererInstance,
+    RendererProperties, Value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -205,6 +206,17 @@ pub enum EffectCommand {
         module: ModuleId,
         parameter: String,
         value: Value,
+    },
+    SetModulePropertySource {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
+        source: PropertySource,
+    },
+    RemoveModulePropertySource {
+        emitter: EmitterId,
+        module: ModuleId,
+        parameter: String,
     },
     RemoveModuleParameter {
         emitter: EmitterId,

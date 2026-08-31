@@ -397,6 +397,12 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::SetModuleParameter {
             emitter, module, ..
         }
+        | EffectCommand::SetModulePropertySource {
+            emitter, module, ..
+        }
+        | EffectCommand::RemoveModulePropertySource {
+            emitter, module, ..
+        }
         | EffectCommand::RemoveModuleParameter {
             emitter, module, ..
         }

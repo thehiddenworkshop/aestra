@@ -713,6 +713,61 @@ fn apply_command(
                 }],
             }
         }
+        EffectCommand::SetModulePropertySource {
+            emitter,
+            module,
+            parameter,
+            source,
+        } => {
+            let module_instance = module_mut(effect, *emitter, *module)?;
+            let value = module_instance.parameter_value(parameter).ok_or_else(|| {
+                CommandError::UnknownParameter {
+                    parameter: parameter.clone(),
+                }
+            })?;
+            if !source.accepts(&value) {
+                return Err(CommandError::ParameterType {
+                    parameter: parameter.clone(),
+                    expected: property_source_expected_type(*source),
+                    actual: value_type(&value),
+                });
+            }
+            let previous = module_instance
+                .property_sources
+                .insert(parameter.clone(), *source);
+            match previous {
+                Some(source) => vec![EffectCommand::SetModulePropertySource {
+                    emitter: *emitter,
+                    module: *module,
+                    parameter: parameter.clone(),
+                    source,
+                }],
+                None => vec![EffectCommand::RemoveModulePropertySource {
+                    emitter: *emitter,
+                    module: *module,
+                    parameter: parameter.clone(),
+                }],
+            }
+        }
+        EffectCommand::RemoveModulePropertySource {
+            emitter,
+            module,
+            parameter,
+        } => {
+            let module_instance = module_mut(effect, *emitter, *module)?;
+            let source = module_instance
+                .property_sources
+                .remove(parameter)
+                .ok_or_else(|| CommandError::UnknownParameter {
+                    parameter: parameter.clone(),
+                })?;
+            vec![EffectCommand::SetModulePropertySource {
+                emitter: *emitter,
+                module: *module,
+                parameter: parameter.clone(),
+                source,
+            }]
+        }
         EffectCommand::RemoveModuleParameter {
             emitter,
             module,
@@ -729,12 +784,22 @@ fn apply_command(
                 .ok_or_else(|| CommandError::UnknownParameter {
                     parameter: parameter.clone(),
                 })?;
-            vec![EffectCommand::SetModuleParameter {
+            let source = module_instance.property_sources.remove(parameter);
+            let mut inverse = vec![EffectCommand::SetModuleParameter {
                 emitter: *emitter,
                 module: *module,
                 parameter: parameter.clone(),
                 value,
-            }]
+            }];
+            if let Some(source) = source {
+                inverse.push(EffectCommand::SetModulePropertySource {
+                    emitter: *emitter,
+                    module: *module,
+                    parameter: parameter.clone(),
+                    source,
+                });
+            }
+            inverse
         }
         EffectCommand::BindModuleParameter {
             emitter,
@@ -981,6 +1046,8 @@ fn set_module_parameter(
     parameter: &str,
     value: Value,
 ) -> Result<Option<Value>, CommandError> {
+    let inferred_source = aestra_core::PropertySource::infer_legacy(&value);
+    let custom_parameter = matches!(module.parameters, ModuleParameters::Custom(_));
     let unknown = || CommandError::UnknownParameter {
         parameter: parameter.into(),
     };
@@ -1063,6 +1130,12 @@ fn set_module_parameter(
             return Err(mismatch(expected, value_type(&value)));
         }
     };
+    if custom_parameter && previous.is_none() {
+        module
+            .property_sources
+            .entry(parameter.into())
+            .or_insert(inferred_source);
+    }
     Ok(previous)
 }
 
@@ -1081,6 +1154,15 @@ fn expected_parameter_type(parameters: &ModuleParameters, parameter: &str) -> Op
         (ModuleParameters::Appearance { .. }, "size" | "opacity") => Some("curve"),
         (ModuleParameters::Appearance { .. }, "color") => Some("gradient"),
         _ => None,
+    }
+}
+
+fn property_source_expected_type(source: aestra_core::PropertySource) -> &'static str {
+    match source {
+        aestra_core::PropertySource::Constant => "any value",
+        aestra_core::PropertySource::RandomRange => "range",
+        aestra_core::PropertySource::Curve(_) => "curve",
+        aestra_core::PropertySource::Gradient(_) => "gradient",
     }
 }
 

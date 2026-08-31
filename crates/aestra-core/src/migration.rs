@@ -251,6 +251,7 @@ fn migrate_v2_module(
         stage: module.stage,
         enabled: module.enabled,
         parameters,
+        property_sources: BTreeMap::new(),
         bindings: module.bindings,
     }
 }

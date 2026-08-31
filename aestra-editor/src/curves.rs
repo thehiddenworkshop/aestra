@@ -295,7 +295,7 @@ pub(crate) fn spawn_curves_workspace(
                         ));
                         return;
                     };
-                    if !value_is_active_complex_source(&value) {
+                    if !complex_input_is_visible(module, input) {
                         body.spawn((
                             Text::new(localizer.text("curves-choose-property")),
                             TextFont {
@@ -411,15 +411,11 @@ fn spawn_complex_input_list(
 }
 
 fn complex_input_is_visible(module: &ModuleInstance, input: &InputMetadata) -> bool {
-    module_parameter(module, input.name).is_some_and(|value| value_is_active_complex_source(&value))
-}
-
-fn value_is_active_complex_source(value: &Value) -> bool {
-    match value {
-        Value::Curve(curve) => curve.keys.len() > 1,
-        Value::Gradient(gradient) => gradient.keys.len() > 1,
-        _ => false,
-    }
+    matches!(
+        module.property_source(input.name),
+        Some(aestra_bevy::PropertySource::Curve(_))
+            | Some(aestra_bevy::PropertySource::Gradient(_))
+    )
 }
 
 fn parent_list_button<A: Component>(
@@ -1293,7 +1289,8 @@ mod tests {
                 if matches!(
                     module_parameter(module, metadata.name),
                     Some(Value::Curve(_))
-                ) {
+                ) && complex_input_is_visible(module, metadata)
+                {
                     return ComplexSelection {
                         module: module.id,
                         input: input as u8,
@@ -1467,7 +1464,7 @@ mod tests {
     }
 
     #[test]
-    fn constant_sources_are_not_visible_in_the_curves_workspace() {
+    fn curves_workspace_visibility_uses_the_explicit_source_not_key_count() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         let registry = EditorModuleRegistry::default();
         let selection = first_curve_selection(&session, &registry);
@@ -1479,6 +1476,23 @@ mod tests {
         let parameter = input.name;
         curve.keys.truncate(1);
         session.set_module_parameter(selection.module, parameter, Value::Curve(curve));
+        let module = session
+            .effect
+            .emitters
+            .iter_mut()
+            .flat_map(|emitter| emitter.modules.iter_mut())
+            .find(|module| module.id == selection.module)
+            .unwrap();
+        module.property_sources.insert(
+            parameter.into(),
+            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::ParticleLife),
+        );
+        let input = &registry.0.get(&module.module_type).unwrap().inputs[selection.input as usize];
+        assert!(complex_input_is_visible(module, input));
+
+        module
+            .property_sources
+            .insert(parameter.into(), aestra_bevy::PropertySource::Constant);
 
         let module = session
             .selected_layer()
@@ -1489,8 +1503,6 @@ mod tests {
         let input = &registry.0.get(&module.module_type).unwrap().inputs[selection.input as usize];
 
         assert!(!complex_input_is_visible(module, input));
-        let (_, _, value) = resolve_complex_input(&session, &registry, selection).unwrap();
-        assert!(!value_is_active_complex_source(&value));
     }
 
     #[test]

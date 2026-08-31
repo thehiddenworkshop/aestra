@@ -1267,6 +1267,8 @@ pub struct ModuleInstance {
     pub enabled: bool,
     pub parameters: ModuleParameters,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub property_sources: BTreeMap<String, PropertySource>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub bindings: BTreeMap<String, ParameterId>,
 }
 
@@ -1281,6 +1283,7 @@ impl ModuleInstance {
                 spawn_rate,
                 burst_count,
             },
+            property_sources: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1292,6 +1295,7 @@ impl ModuleInstance {
             stage: StageKind::ParticleSpawn,
             enabled: true,
             parameters: ModuleParameters::Shape { shape },
+            property_sources: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1315,6 +1319,7 @@ impl ModuleInstance {
                 spread_degrees,
                 angular_velocity,
             },
+            property_sources: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1330,6 +1335,7 @@ impl ModuleInstance {
                 drag,
                 turbulence,
             },
+            property_sources: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1345,6 +1351,7 @@ impl ModuleInstance {
                 opacity,
                 color,
             },
+            property_sources: BTreeMap::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -1390,6 +1397,56 @@ impl ModuleInstance {
         }
     }
 
+    pub fn parameter_value(&self, parameter: &str) -> Option<Value> {
+        match (&self.parameters, parameter) {
+            (ModuleParameters::Emission { spawn_rate, .. }, "spawn_rate") => {
+                Some(Value::Scalar(*spawn_rate))
+            }
+            (ModuleParameters::Emission { burst_count, .. }, "burst_count") => {
+                Some(Value::U32(*burst_count))
+            }
+            (ModuleParameters::Shape { shape }, "shape") => Some(Value::Shape(*shape)),
+            (ModuleParameters::Initialize { lifetime, .. }, "lifetime") => {
+                Some(Value::Range(*lifetime))
+            }
+            (ModuleParameters::Initialize { speed, .. }, "speed") => Some(Value::Range(*speed)),
+            (ModuleParameters::Initialize { direction, .. }, "direction") => {
+                Some(Value::Vec3(*direction))
+            }
+            (ModuleParameters::Initialize { spread_degrees, .. }, "spread_degrees") => {
+                Some(Value::Scalar(*spread_degrees))
+            }
+            (
+                ModuleParameters::Initialize {
+                    angular_velocity, ..
+                },
+                "angular_velocity",
+            ) => Some(Value::Range(*angular_velocity)),
+            (ModuleParameters::Motion { gravity, .. }, "gravity") => Some(Value::Vec3(*gravity)),
+            (ModuleParameters::Motion { drag, .. }, "drag") => Some(Value::Scalar(*drag)),
+            (ModuleParameters::Motion { turbulence, .. }, "turbulence") => {
+                Some(Value::Scalar(*turbulence))
+            }
+            (ModuleParameters::Appearance { size, .. }, "size") => Some(Value::Curve(size.clone())),
+            (ModuleParameters::Appearance { opacity, .. }, "opacity") => {
+                Some(Value::Curve(opacity.clone()))
+            }
+            (ModuleParameters::Appearance { color, .. }, "color") => {
+                Some(Value::Gradient(color.clone()))
+            }
+            (ModuleParameters::Custom(values), name) => values.get(name).cloned(),
+            _ => None,
+        }
+    }
+
+    pub fn property_source(&self, parameter: &str) -> Option<PropertySource> {
+        self.property_sources.get(parameter).copied().or_else(|| {
+            self.parameter_value(parameter)
+                .as_ref()
+                .map(PropertySource::infer_legacy)
+        })
+    }
+
     fn validate(
         &self,
         path: &str,
@@ -1402,6 +1459,24 @@ impl ModuleInstance {
             self.id.as_uuid().as_u128(),
             format!("{path}.id"),
         );
+        for (parameter, source) in &self.property_sources {
+            let source_path = format!("{path}.property_sources.{parameter}");
+            let Some(value) = self.parameter_value(parameter) else {
+                invalid_value(
+                    report,
+                    &source_path,
+                    "property source references an unknown module parameter",
+                );
+                continue;
+            };
+            if !source.accepts(&value) {
+                invalid_value(
+                    report,
+                    &source_path,
+                    "property source is incompatible with the authored value type",
+                );
+            }
+        }
         let expected = match &self.parameters {
             ModuleParameters::Emission { .. } => (MODULE_EMISSION, StageKind::EmitterUpdate),
             ModuleParameters::Shape { .. } => (MODULE_SHAPE, StageKind::ParticleSpawn),
@@ -1571,6 +1646,47 @@ pub enum Value {
     Parameter(ParameterId),
     Asset(AssetId),
     Material(MaterialId),
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PropertyEvaluationDomain {
+    ParticleLife,
+    EmitterTime,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PropertySource {
+    Constant,
+    RandomRange,
+    Curve(PropertyEvaluationDomain),
+    Gradient(PropertyEvaluationDomain),
+}
+
+impl PropertySource {
+    pub fn infer_legacy(value: &Value) -> Self {
+        match value {
+            Value::Range(range) if (range.max - range.min).abs() > f32::EPSILON => {
+                Self::RandomRange
+            }
+            Value::Curve(curve) if curve.keys.len() > 1 => {
+                Self::Curve(PropertyEvaluationDomain::ParticleLife)
+            }
+            Value::Gradient(gradient) if gradient.keys.len() > 1 => {
+                Self::Gradient(PropertyEvaluationDomain::ParticleLife)
+            }
+            _ => Self::Constant,
+        }
+    }
+
+    pub fn accepts(self, value: &Value) -> bool {
+        matches!(
+            (self, value),
+            (Self::Constant, _)
+                | (Self::RandomRange, Value::Range(_))
+                | (Self::Curve(_), Value::Curve(_))
+                | (Self::Gradient(_), Value::Gradient(_))
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

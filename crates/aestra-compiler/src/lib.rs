@@ -1,6 +1,8 @@
 //! Module discovery, compiler validation, optimization, and typed lowering.
 
-pub use aestra_core::ValueType;
+pub use aestra_core::{
+    PropertyEvaluationDomain as InputEvaluationDomain, PropertySource as InputSourceKind, ValueType,
+};
 
 use aestra_core::{
     ColorKey, Curve, CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
@@ -34,20 +36,6 @@ pub struct InputMetadata {
     pub unit: Option<&'static str>,
     pub control: InputControl,
     pub sources: Vec<InputSourceKind>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputEvaluationDomain {
-    ParticleLife,
-    EmitterTime,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputSourceKind {
-    Constant,
-    RandomRange,
-    Curve(InputEvaluationDomain),
-    Gradient(InputEvaluationDomain),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -540,6 +528,37 @@ impl EffectCompiler {
                         ),
                     );
                 }
+                for (input_name, source) in &module.property_sources {
+                    let source_path = format!("{path}.property_sources.{input_name}");
+                    let Some(input) = metadata
+                        .inputs
+                        .iter()
+                        .find(|input| input.name == input_name)
+                    else {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::UnknownParameter,
+                                source_path,
+                                format!(
+                                    "module '{}' has no registered input named '{input_name}'",
+                                    module.module_type.0
+                                ),
+                            ),
+                        );
+                        continue;
+                    };
+                    if !input.sources.contains(source) {
+                        push_unique(
+                            report,
+                            Diagnostic::error(
+                                DiagnosticCode::InvalidValue,
+                                source_path,
+                                format!("input '{input_name}' does not support source {source:?}"),
+                            ),
+                        );
+                    }
+                }
                 for (input_name, parameter_id) in &module.bindings {
                     let binding_path = format!("{path}.bindings.{input_name}");
                     let Some(input) = metadata
@@ -884,11 +903,26 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
             angular_velocity,
         } => Instruction::Initialize {
             source: module.id,
-            lifetime: expression(module, "lifetime", *lifetime, context),
-            speed: expression(module, "speed", *speed, context),
+            lifetime: expression(
+                module,
+                "lifetime",
+                sourced_range(module, "lifetime", *lifetime),
+                context,
+            ),
+            speed: expression(
+                module,
+                "speed",
+                sourced_range(module, "speed", *speed),
+                context,
+            ),
             direction: expression(module, "direction", *direction, context),
             spread_degrees: expression(module, "spread_degrees", *spread_degrees, context),
-            angular_velocity: expression(module, "angular_velocity", *angular_velocity, context),
+            angular_velocity: expression(
+                module,
+                "angular_velocity",
+                sourced_range(module, "angular_velocity", *angular_velocity),
+                context,
+            ),
         },
         ModuleParameters::Motion {
             gravity,
@@ -906,13 +940,59 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
             color,
         } => Instruction::Appearance {
             source: module.id,
-            size: expression(module, "size", CompiledCurve::compile(size), context),
-            opacity: expression(module, "opacity", CompiledCurve::compile(opacity), context),
-            color: expression(module, "color", CompiledGradient::compile(color), context),
+            size: expression(module, "size", sourced_curve(module, "size", size), context),
+            opacity: expression(
+                module,
+                "opacity",
+                sourced_curve(module, "opacity", opacity),
+                context,
+            ),
+            color: expression(
+                module,
+                "color",
+                sourced_gradient(module, "color", color),
+                context,
+            ),
         },
         ModuleParameters::Custom(_) => return None,
     };
     Some(instruction)
+}
+
+fn sourced_range(module: &ModuleInstance, input: &str, range: ScalarRange) -> ScalarRange {
+    if matches!(
+        module.property_source(input),
+        Some(InputSourceKind::Constant)
+    ) {
+        let value = (range.min + range.max) * 0.5;
+        ScalarRange::new(value, value)
+    } else {
+        range
+    }
+}
+
+fn sourced_curve(module: &ModuleInstance, input: &str, curve: &Curve) -> CompiledCurve {
+    if matches!(
+        module.property_source(input),
+        Some(InputSourceKind::Constant)
+    ) {
+        let constant = Curve::new(vec![CurveKey::new(0.0, curve.sample(0.0))]);
+        CompiledCurve::compile(&constant)
+    } else {
+        CompiledCurve::compile(curve)
+    }
+}
+
+fn sourced_gradient(module: &ModuleInstance, input: &str, gradient: &Gradient) -> CompiledGradient {
+    if matches!(
+        module.property_source(input),
+        Some(InputSourceKind::Constant)
+    ) {
+        let constant = Gradient::new(vec![ColorKey::new(0.0, gradient.sample(0.0))]);
+        CompiledGradient::compile(&constant)
+    } else {
+        CompiledGradient::compile(gradient)
+    }
 }
 
 fn expression<T>(

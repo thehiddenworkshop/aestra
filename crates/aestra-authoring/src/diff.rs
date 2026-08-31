@@ -398,12 +398,12 @@ fn diff_modules(before: &Emitter, after: &Emitter, changes: &mut Vec<SemanticCha
                 target,
                 path: format!("module.{}", module.module_type.0),
                 before: Some(format!(
-                    "{:?} bindings={:?}",
-                    module.parameters, module.bindings
+                    "{:?} sources={:?} bindings={:?}",
+                    module.parameters, module.property_sources, module.bindings
                 )),
                 after: Some(format!(
-                    "{:?} bindings={:?}",
-                    after_module.parameters, after_module.bindings
+                    "{:?} sources={:?} bindings={:?}",
+                    after_module.parameters, after_module.property_sources, after_module.bindings
                 )),
             });
         }

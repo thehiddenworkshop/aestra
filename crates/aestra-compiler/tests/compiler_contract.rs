@@ -139,6 +139,38 @@ fn compiler_lowers_ordered_stages_and_records_source_locations() {
 }
 
 #[test]
+fn explicit_constant_source_controls_lowering_independently_of_curve_key_count() {
+    let mut asset = EffectAsset::from_ron(SAMPLE).unwrap();
+    let appearance = asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == aestra_core::MODULE_APPEARANCE)
+        .unwrap();
+    let Value::Curve(authored) = appearance.parameter_value("size").unwrap() else {
+        panic!("size must retain its authored curve data");
+    };
+    assert!(authored.keys.len() > 1);
+    appearance
+        .property_sources
+        .insert("size".into(), InputSourceKind::Constant);
+
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let Instruction::Appearance { size, .. } = compiled.emitters[0]
+        .execution
+        .particle_update
+        .iter()
+        .find(|instruction| matches!(instruction, Instruction::Appearance { .. }))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    let Expression::Constant(size) = size else {
+        panic!("unbound size should lower to a constant expression");
+    };
+    assert_eq!(size.sample(0.0), size.sample(1.0));
+}
+
+#[test]
 fn compiler_resolves_texture_assets_into_renderer_plans() {
     let asset = EffectAsset::from_ron(TEXTURED_SAMPLE).unwrap();
     let compiled = EffectCompiler::default().compile(&asset).unwrap();
@@ -196,6 +228,7 @@ fn unregistered_modules_produce_targeted_diagnostics() {
         stage: StageKind::ParticleUpdate,
         enabled: true,
         parameters: ModuleParameters::Custom(BTreeMap::new()),
+        property_sources: BTreeMap::new(),
         bindings: BTreeMap::new(),
     });
     asset.emitters.push(emitter);

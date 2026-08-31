@@ -6,7 +6,7 @@ use aestra_core::{
     BlendMode, ChoreographyEvent, ChoreographyEventPayload, ColorKey, CurveKey, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter,
     EmitterTransform, EventId, EventLink, EventTrigger, MODULE_APPEARANCE, MODULE_EMISSION,
-    MODULE_INITIALIZE, MarkerTimeReference, ParameterId, ScalarRange, Value,
+    MODULE_INITIALIZE, MarkerTimeReference, ParameterId, PropertySource, ScalarRange, Value,
 };
 
 fn test_effect() -> EffectAsset {
@@ -334,6 +334,54 @@ fn semantic_parameter_command_executes_without_ui() {
     assert_eq!(effect.emitters[0].spawn_rate(), 72.0);
     assert!(!outcome.diff.is_empty());
     assert_eq!(outcome.inverse.commands.len(), 1);
+}
+
+#[test]
+fn property_source_command_is_explicit_and_undoable() {
+    let mut effect = test_effect();
+    let emitter = effect.emitters[0].id;
+    let module = effect.emitters[0]
+        .module_by_type(MODULE_APPEARANCE)
+        .unwrap()
+        .id;
+    let original = effect.emitters[0]
+        .module_by_type(MODULE_APPEARANCE)
+        .unwrap()
+        .property_source("size")
+        .unwrap();
+    let mut history = CommandHistory::default();
+
+    history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Set constant source",
+                EffectCommand::SetModulePropertySource {
+                    emitter,
+                    module,
+                    parameter: "size".into(),
+                    source: PropertySource::Constant,
+                },
+            ),
+        )
+        .unwrap();
+
+    assert_eq!(
+        effect.emitters[0]
+            .module_by_type(MODULE_APPEARANCE)
+            .unwrap()
+            .property_source("size"),
+        Some(PropertySource::Constant)
+    );
+    history.undo(&mut effect).unwrap();
+    assert_eq!(
+        effect.emitters[0]
+            .module_by_type(MODULE_APPEARANCE)
+            .unwrap()
+            .property_source("size"),
+        Some(original)
+    );
 }
 
 #[test]
