@@ -92,7 +92,7 @@ use feathers::{
         EditorNativeControl, FeathersActionButton, PendingFeathersActivation,
         spawn_action_button as spawn_feathers_action_button, spawn_tool_button as mini_button,
     },
-    combo_box::{ComboOption, spawn_action_menu, spawn_combo_control},
+    combo_box::{ComboOption, spawn_action_menu, spawn_combo_control, spawn_icon_action_menu},
     list_row::{
         KeyboardNavigableList, KeyboardNavigableListRow, ListRowStatus, spawn_action_list_row,
         spawn_info_list_row, spawn_list_empty_state, spawn_list_section_header,

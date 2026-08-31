@@ -1,12 +1,13 @@
 //! Data-driven editor combo boxes and compact action menus.
 
-use super::{button::FeathersActionButton, scenes};
+use super::{button::FeathersActionButton, icon::load_svg_icon, scenes, tooltip::EditorTooltip};
 use crate::{EditorAction, theme};
 use bevy::{
     feathers::{constants::icons, display::icon, theme::ThemedText},
     prelude::*,
     ui_widgets::popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
 };
+use bevy_resvg::prelude::{SvgColor, UiSvg};
 
 pub(crate) struct ComboOption<A = EditorAction> {
     pub(crate) label: String,
@@ -135,6 +136,76 @@ pub(crate) fn spawn_compact_action_menu<A: Component + Copy>(
         options,
         ActionMenuTrigger::Ellipsis,
     );
+}
+
+/// Spawns a compact action menu whose trigger communicates its current semantic mode with an SVG.
+pub(crate) fn spawn_icon_action_menu<A: Component + Copy>(
+    parent: &mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    icon_path: &'static str,
+    accessible_label: &str,
+    tooltip: &str,
+    options: &[ComboOption<A>],
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(scenes::feathers_menu())
+        .with_children(|menu| {
+            menu.spawn_empty()
+                .apply_scene(scenes::feathers_menu_button())
+                .insert((
+                    AccessibleLabel(accessible_label.to_owned()),
+                    EditorTooltip::description(tooltip),
+                    Node {
+                        width: Val::Px(28.0),
+                        height: Val::Px(28.0),
+                        flex_shrink: 0.0,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                ))
+                .with_child((
+                    Node {
+                        width: Val::Px(15.0),
+                        height: Val::Px(15.0),
+                        ..default()
+                    },
+                    UiSvg(load_svg_icon(asset_server, icon_path)),
+                    SvgColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
+            menu.spawn_empty()
+                .apply_scene(scenes::feathers_menu_popup())
+                .insert((
+                    Popover {
+                        positions: vec![
+                            PopoverPlacement {
+                                side: PopoverSide::Bottom,
+                                align: PopoverAlign::End,
+                                gap: 2.0,
+                            },
+                            PopoverPlacement {
+                                side: PopoverSide::Top,
+                                align: PopoverAlign::End,
+                                gap: 2.0,
+                            },
+                            PopoverPlacement {
+                                side: PopoverSide::Left,
+                                align: PopoverAlign::Start,
+                                gap: 2.0,
+                            },
+                        ],
+                        window_margin: 8.0,
+                    },
+                    OverrideClip,
+                ))
+                .with_children(|popup| {
+                    for option in options {
+                        spawn_combo_option(popup, option);
+                    }
+                });
+        });
 }
 
 #[derive(Clone, Copy)]

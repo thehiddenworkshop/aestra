@@ -1,4 +1,6 @@
-use aestra_compiler::{EffectCompiler, ModuleRegistry, ProjectCompileError};
+use aestra_compiler::{
+    EffectCompiler, InputEvaluationDomain, InputSourceKind, ModuleRegistry, ProjectCompileError,
+};
 use aestra_core::{
     ChoreographyEvent, ChoreographyEventPayload, DiagnosticCode, EffectAsset, EffectClip,
     EffectClipSeed, EffectParameter, Emitter, MODULE_EMISSION, MaterialInput, MaterialProperties,
@@ -35,6 +37,37 @@ fn builtin_registry_exposes_authoring_and_runtime_metadata() {
     assert_eq!(gravity.unit, Some("units/s²"));
     assert_eq!(gravity.default_value, Value::Vec3([0.0, -18.0, 0.0]));
     assert!(!gravity.description.is_empty());
+    assert_eq!(gravity.sources, [InputSourceKind::Constant]);
+
+    let initialize = registry
+        .iter()
+        .find(|metadata| metadata.type_id.0 == "aestra.spawn.initialize")
+        .expect("initialize metadata must be registered");
+    assert_eq!(
+        initialize.inputs[0].sources,
+        [InputSourceKind::Constant, InputSourceKind::RandomRange]
+    );
+
+    let appearance = registry
+        .iter()
+        .find(|metadata| metadata.type_id.0 == "aestra.update.appearance")
+        .expect("appearance metadata must be registered");
+    assert_eq!(appearance.display_name, "Appearance");
+    assert_eq!(appearance.inputs[0].display_name, "Size");
+    assert_eq!(
+        appearance.inputs[0].sources,
+        [
+            InputSourceKind::Constant,
+            InputSourceKind::Curve(InputEvaluationDomain::ParticleLife),
+        ]
+    );
+    assert_eq!(
+        appearance.inputs[2].sources,
+        [
+            InputSourceKind::Constant,
+            InputSourceKind::Gradient(InputEvaluationDomain::ParticleLife),
+        ]
+    );
 }
 
 #[test]

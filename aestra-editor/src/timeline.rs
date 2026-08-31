@@ -1019,6 +1019,25 @@ mod tests {
         assert!(lanes.iter().any(|lane| lane.id.parameter == "opacity"));
         assert!(lanes.iter().any(|lane| lane.id.parameter == "color"));
         assert!(lanes.iter().all(|lane| lane.keys.len() >= 2));
+
+        let mut constant_size = emitter.clone();
+        let ModuleParameters::Appearance { size, .. } = &mut constant_size
+            .modules
+            .iter_mut()
+            .find(|module| matches!(&module.parameters, ModuleParameters::Appearance { .. }))
+            .unwrap()
+            .parameters
+        else {
+            panic!("sample emitter should have appearance automation");
+        };
+        size.keys.truncate(1);
+        let constant_lanes = emitter_automation_lanes(&constant_size, &registry, &localizer);
+        assert!(
+            !constant_lanes
+                .iter()
+                .any(|lane| lane.id.parameter == "size")
+        );
+        assert_eq!(constant_lanes.len(), automation_lane_count(&constant_size));
     }
 
     #[test]
@@ -5943,8 +5962,12 @@ fn emitter_automation_lanes(
         };
         for (input, input_metadata) in metadata.inputs.iter().enumerate() {
             let keys = match module_parameter(module, input_metadata.name) {
-                Some(Value::Curve(curve)) => AutomationLaneKeys::Curve(curve.keys),
-                Some(Value::Gradient(gradient)) => AutomationLaneKeys::Gradient(gradient.keys),
+                Some(Value::Curve(curve)) if curve.keys.len() > 1 => {
+                    AutomationLaneKeys::Curve(curve.keys)
+                }
+                Some(Value::Gradient(gradient)) if gradient.keys.len() > 1 => {
+                    AutomationLaneKeys::Gradient(gradient.keys)
+                }
                 _ => continue,
             };
             let display_name = localized_properties_input(
@@ -5973,10 +5996,21 @@ fn automation_lane_count(emitter: &Emitter) -> usize {
         .modules
         .iter()
         .map(|module| match &module.parameters {
-            ModuleParameters::Appearance { .. } => 3,
+            ModuleParameters::Appearance {
+                size,
+                opacity,
+                color,
+            } => [
+                size.keys.len() > 1,
+                opacity.keys.len() > 1,
+                color.keys.len() > 1,
+            ]
+            .into_iter()
+            .filter(|automated| *automated)
+            .count(),
             ModuleParameters::Custom(values) => values
                 .values()
-                .filter(|value| matches!(value, Value::Curve(_) | Value::Gradient(_)))
+                .filter(|value| value_is_automation(value))
                 .count(),
             _ => 0,
         })
@@ -6000,7 +6034,15 @@ fn emitter_has_automation_lane(emitter: &Emitter, lane: &AutomationLaneId) -> bo
             .iter()
             .find(|module| module.id == lane.module)
             .and_then(|module| module_parameter(module, &lane.parameter))
-            .is_some_and(|value| matches!(value, Value::Curve(_) | Value::Gradient(_)))
+            .is_some_and(|value| value_is_automation(&value))
+}
+
+fn value_is_automation(value: &Value) -> bool {
+    match value {
+        Value::Curve(curve) => curve.keys.len() > 1,
+        Value::Gradient(gradient) => gradient.keys.len() > 1,
+        _ => false,
+    }
 }
 
 fn automation_lane_is_visible(state: &TimelineState, lane: &AutomationLaneId) -> bool {

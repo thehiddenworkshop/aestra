@@ -295,6 +295,21 @@ pub(crate) fn spawn_curves_workspace(
                         ));
                         return;
                     };
+                    if !value_is_active_complex_source(&value) {
+                        body.spawn((
+                            Text::new(localizer.text("curves-choose-property")),
+                            TextFont {
+                                font_size: FontSize::Px(12.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT_MUTED),
+                            Node {
+                                margin: UiRect::all(Val::Px(28.0)),
+                                ..default()
+                            },
+                        ));
+                        return;
+                    }
                     body.spawn(Node {
                         flex_grow: 1.0,
                         height: Val::Percent(100.0),
@@ -368,7 +383,8 @@ fn spawn_complex_input_list(
                             if !matches!(
                                 input.control,
                                 InputControl::Curve { .. } | InputControl::Gradient
-                            ) {
+                            ) || !complex_input_is_visible(module, input)
+                            {
                                 continue;
                             }
                             let selected = workspace.complex.is_some_and(|selection| {
@@ -392,6 +408,18 @@ fn spawn_complex_input_list(
                 },
             );
         });
+}
+
+fn complex_input_is_visible(module: &ModuleInstance, input: &InputMetadata) -> bool {
+    module_parameter(module, input.name).is_some_and(|value| value_is_active_complex_source(&value))
+}
+
+fn value_is_active_complex_source(value: &Value) -> bool {
+    match value {
+        Value::Curve(curve) => curve.keys.len() > 1,
+        Value::Gradient(gradient) => gradient.keys.len() > 1,
+        _ => false,
+    }
 }
 
 fn parent_list_button<A: Component>(
@@ -1436,6 +1464,33 @@ mod tests {
         assert_eq!(points.len(), curve.keys.len());
         assert_eq!(points[selection.key].time, curve.keys[selection.key].time);
         assert_eq!(points[selection.key].value, curve.keys[selection.key].value);
+    }
+
+    #[test]
+    fn constant_sources_are_not_visible_in_the_curves_workspace() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = EditorModuleRegistry::default();
+        let selection = first_curve_selection(&session, &registry);
+        let (_, input, Value::Curve(mut curve)) =
+            resolve_complex_input(&session, &registry, selection).unwrap()
+        else {
+            panic!("expected curve input");
+        };
+        let parameter = input.name;
+        curve.keys.truncate(1);
+        session.set_module_parameter(selection.module, parameter, Value::Curve(curve));
+
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module.id == selection.module)
+            .unwrap();
+        let input = &registry.0.get(&module.module_type).unwrap().inputs[selection.input as usize];
+
+        assert!(!complex_input_is_visible(module, input));
+        let (_, _, value) = resolve_complex_input(&session, &registry, selection).unwrap();
+        assert!(!value_is_active_complex_source(&value));
     }
 
     #[test]

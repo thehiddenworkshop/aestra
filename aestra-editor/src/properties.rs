@@ -11,10 +11,13 @@ use crate::timeline::{
 };
 use crate::*;
 use aestra_bevy::{
-    ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, EffectAsset, EffectClip,
-    EffectClipId, EffectParameter, MarkerId, MarkerTimeReference, ParameterId, ValueType,
+    ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, ColorKey, Curve,
+    CurveKey, EffectAsset, EffectClip, EffectClipId, EffectParameter, Gradient, MarkerId,
+    MarkerTimeReference, ParameterId, ScalarRange, ValueType,
 };
-use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
+use aestra_compiler::{
+    InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, ModuleRegistry,
+};
 use bevy::{
     feathers::controls::ButtonVariant,
     ui::InteractionDisabled,
@@ -162,7 +165,14 @@ pub(crate) enum PropertiesAction {
         module: ModuleId,
         input: u8,
     },
+    SetModuleInputSource {
+        module: ModuleId,
+        input: u8,
+        source: PropertySourceKind,
+    },
 }
+
+pub(crate) type PropertySourceKind = InputSourceKind;
 
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct EffectClipRepairState {
@@ -619,6 +629,20 @@ fn handle_properties_actions(
                             &localizer,
                         );
                     }
+                    PropertiesAction::SetModuleInputSource {
+                        module,
+                        input,
+                        source,
+                    } => {
+                        set_module_input_source(
+                            &mut session,
+                            &registry.0,
+                            module,
+                            input,
+                            source,
+                            &localizer,
+                        );
+                    }
                     PropertiesAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     PropertiesAction::DeleteRenderer(id) => {
                         if preview_renderer_deletion(&mut session, id) {
@@ -791,6 +815,101 @@ fn properties_module_input_target<'a>(
         .inputs
         .get(input as usize)
         .map(|input| (emitter, input.name))
+}
+
+fn set_module_input_source(
+    session: &mut EditorSession,
+    registry: &ModuleRegistry,
+    module: ModuleId,
+    input_index: u8,
+    source: PropertySourceKind,
+    localizer: &Localizer,
+) -> bool {
+    let Some((_, parameter)) =
+        properties_module_input_target(session, registry, module, input_index)
+    else {
+        return false;
+    };
+    let Some(input) = session
+        .effect
+        .emitters
+        .iter()
+        .flat_map(|emitter| emitter.modules.iter())
+        .find(|candidate| candidate.id == module)
+        .and_then(|module| registry.get(&module.module_type))
+        .and_then(|metadata| metadata.inputs.get(input_index as usize))
+    else {
+        return false;
+    };
+    if !input.sources.contains(&source) {
+        return false;
+    }
+    let Some(current) = properties_module_parameter(session, module, parameter) else {
+        return false;
+    };
+    let updated = match (current.clone(), source) {
+        (Value::Curve(curve), PropertySourceKind::Constant) if curve.keys.len() > 1 => {
+            Value::Curve(Curve::new(vec![CurveKey::new(0.0, curve.sample(0.0))]))
+        }
+        (Value::Curve(curve), PropertySourceKind::Curve(_)) if curve.keys.len() <= 1 => {
+            let value = curve.sample(0.0);
+            Value::Curve(Curve::new(vec![
+                CurveKey::new(0.0, value),
+                CurveKey::new(1.0, value),
+            ]))
+        }
+        (Value::Gradient(gradient), PropertySourceKind::Constant) if gradient.keys.len() > 1 => {
+            Value::Gradient(Gradient::new(vec![ColorKey::new(
+                0.0,
+                gradient.sample(0.0),
+            )]))
+        }
+        (Value::Gradient(gradient), PropertySourceKind::Gradient(_))
+            if gradient.keys.len() <= 1 =>
+        {
+            let color = gradient.sample(0.0);
+            Value::Gradient(Gradient::new(vec![
+                ColorKey::new(0.0, color),
+                ColorKey::new(1.0, color),
+            ]))
+        }
+        (Value::Range(range), PropertySourceKind::Constant)
+            if (range.max - range.min).abs() > f32::EPSILON =>
+        {
+            let value = (range.min + range.max) * 0.5;
+            Value::Range(ScalarRange::new(value, value))
+        }
+        (Value::Range(range), PropertySourceKind::RandomRange)
+            if (range.max - range.min).abs() <= f32::EPSILON =>
+        {
+            let InputControl::Range { step, min, max } = input.control else {
+                return false;
+            };
+            let low = min.map_or(range.min - step, |minimum| (range.min - step).max(minimum));
+            let high = max.map_or(range.max + step, |maximum| (range.max + step).min(maximum));
+            Value::Range(ScalarRange::new(low.min(high), high.max(low)))
+        }
+        (Value::Curve(curve), PropertySourceKind::Curve(_))
+        | (Value::Curve(curve), PropertySourceKind::Constant) => Value::Curve(curve),
+        (Value::Gradient(gradient), PropertySourceKind::Gradient(_))
+        | (Value::Gradient(gradient), PropertySourceKind::Constant) => Value::Gradient(gradient),
+        (Value::Range(range), PropertySourceKind::Constant)
+        | (Value::Range(range), PropertySourceKind::RandomRange) => Value::Range(range),
+        _ => return false,
+    };
+    if updated == current {
+        return false;
+    }
+    let Some(command) = properties_module_parameter_command(session, module, parameter, updated)
+    else {
+        return false;
+    };
+    session.execute(
+        localizer.text("properties-change-source-command"),
+        command,
+        true,
+    );
+    true
 }
 
 // Properties domain implementation.
@@ -1158,6 +1277,197 @@ mod tests {
         session.undo();
         assert!(session.effect.parameters[0].exposed);
         assert_eq!(session.effect.parameters[0].id, parameter_id);
+    }
+
+    #[test]
+    fn curve_property_source_switches_are_undoable_and_keep_a_valid_value() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = ModuleRegistry::builtin();
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "size").is_some())
+            .unwrap()
+            .id;
+        let module_type = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap()
+            .module_type
+            .clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "size")
+            .unwrap() as u8;
+        let Value::Curve(original) = properties_module_parameter(&session, module, "size").unwrap()
+        else {
+            panic!("size should be curve-authored");
+        };
+        let preserved = original.sample(0.0);
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Constant,
+            &test_localizer(),
+        ));
+        let Value::Curve(constant) = properties_module_parameter(&session, module, "size").unwrap()
+        else {
+            panic!("constant source remains a typed scalar curve");
+        };
+        assert_eq!(constant.keys, vec![CurveKey::new(0.0, preserved)]);
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Curve(InputEvaluationDomain::ParticleLife),
+            &test_localizer(),
+        ));
+        let Value::Curve(curve) = properties_module_parameter(&session, module, "size").unwrap()
+        else {
+            panic!("curve source should remain typed");
+        };
+        assert_eq!(curve.keys.len(), 2);
+        assert_eq!(curve.keys[0].value, preserved);
+        assert_eq!(curve.keys[1].value, preserved);
+
+        session.undo();
+        let Value::Curve(restored_constant) =
+            properties_module_parameter(&session, module, "size").unwrap()
+        else {
+            panic!("undo should restore the constant source");
+        };
+        assert_eq!(restored_constant.keys.len(), 1);
+    }
+
+    #[test]
+    fn constant_curve_source_uses_the_standard_numeric_editor() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = ModuleRegistry::builtin();
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "opacity").is_some())
+            .unwrap()
+            .id;
+        let module_type = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap()
+            .module_type
+            .clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "opacity")
+            .unwrap() as u8;
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Constant,
+            &test_localizer(),
+        ));
+        let control = PropertiesNumberControl {
+            module,
+            parameter: "opacity",
+            component: 0,
+            kind: PropertiesNumberKind::CurveConstant,
+            step: 0.05,
+            min: Some(0.0),
+            max: Some(1.0),
+        };
+
+        assert!(apply_properties_number(
+            &mut session,
+            control,
+            0.65,
+            &test_localizer(),
+        ));
+        assert_eq!(
+            properties_number_input_value(&session, control),
+            Some(NumberInputValue::F32(0.65))
+        );
+        let Value::Curve(curve) = properties_module_parameter(&session, module, "opacity").unwrap()
+        else {
+            panic!("constant source remains curve-typed");
+        };
+        assert_eq!(curve.keys.len(), 1);
+    }
+
+    #[test]
+    fn random_range_source_switches_to_a_constant_and_back() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let registry = ModuleRegistry::builtin();
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module_parameter(module, "lifetime").is_some())
+            .unwrap()
+            .id;
+        let module_type = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap()
+            .module_type
+            .clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "lifetime")
+            .unwrap() as u8;
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Constant,
+            &test_localizer(),
+        ));
+        let Value::Range(constant) =
+            properties_module_parameter(&session, module, "lifetime").unwrap()
+        else {
+            panic!("lifetime should remain range-typed");
+        };
+        assert_eq!(constant.min, constant.max);
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::RandomRange,
+            &test_localizer(),
+        ));
+        let Value::Range(random) =
+            properties_module_parameter(&session, module, "lifetime").unwrap()
+        else {
+            panic!("random lifetime should remain range-typed");
+        };
+        assert!(random.min < random.max);
+        assert!(session.can_undo());
     }
 
     #[test]
@@ -2716,6 +3026,10 @@ fn properties_number_input_value(
             Some(NumberInputValue::I32(value.min(i32::MAX as u32) as i32))
         }
         (PropertiesNumberKind::Scalar, Value::Scalar(value)) => Some(NumberInputValue::F32(value)),
+        (PropertiesNumberKind::CurveConstant, Value::Curve(curve)) => curve
+            .keys
+            .first()
+            .map(|key| NumberInputValue::F32(key.value)),
         (PropertiesNumberKind::Vector, Value::Vec2(value)) => value
             .get(control.component as usize)
             .copied()
@@ -2734,6 +3048,9 @@ fn properties_number_input_value(
             } else {
                 value.max
             }))
+        }
+        (PropertiesNumberKind::RangeConstant, Value::Range(value)) => {
+            Some(NumberInputValue::F32((value.min + value.max) * 0.5))
         }
         (PropertiesNumberKind::Shape, Value::Shape(shape)) => {
             shape_dimension(shape, control.component).map(NumberInputValue::F32)
@@ -4586,6 +4903,12 @@ fn updated_properties_number_value(
             value.max(0.0).round().min(u32::MAX as f32) as u32,
         )),
         (PropertiesNumberKind::Scalar, Value::Scalar(_)) => Some(Value::Scalar(value)),
+        (PropertiesNumberKind::CurveConstant, Value::Curve(mut curve)) => {
+            let key = curve.keys.first_mut()?;
+            key.value = value;
+            curve.keys.truncate(1);
+            Some(Value::Curve(curve))
+        }
         (PropertiesNumberKind::Vector, Value::Vec2(mut vector)) => {
             let component = vector.get_mut(control.component as usize)?;
             *component = value;
@@ -4608,6 +4931,9 @@ fn updated_properties_number_value(
                 range.max = value.max(range.min);
             }
             Some(Value::Range(range))
+        }
+        (PropertiesNumberKind::RangeConstant, Value::Range(_)) => {
+            Some(Value::Range(ScalarRange::new(value, value)))
         }
         (PropertiesNumberKind::Shape, Value::Shape(shape)) => {
             shape_with_dimension(shape, control.component, value).map(Value::Shape)
@@ -5961,6 +6287,7 @@ pub(crate) fn spawn_properties(
                                 session,
                                 localizer,
                                 properties_module_collapsed(settings, module),
+                                asset_server,
                             );
                         }
                         spawn_stage_diagnostics(
@@ -6942,6 +7269,7 @@ fn spawn_module_card(
     session: &EditorSession,
     localizer: &Localizer,
     collapsed: bool,
+    asset_server: &AssetServer,
 ) {
     let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
     let help = metadata.map_or(
@@ -7017,7 +7345,15 @@ fn spawn_module_card(
         |card| {
             if let Some(metadata) = metadata {
                 for (input_index, input) in metadata.inputs.iter().enumerate() {
-                    spawn_input_control(card, module, input, input_index as u8, session, localizer);
+                    spawn_input_control(
+                        card,
+                        module,
+                        input,
+                        input_index as u8,
+                        session,
+                        localizer,
+                        asset_server,
+                    );
                 }
             }
             spawn_inline_diagnostics(card, diagnostic_path, session);
@@ -7032,6 +7368,7 @@ fn spawn_input_control(
     input_index: u8,
     session: &EditorSession,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     let display_name = localized_properties_input(localizer, input.name, input.display_name, false);
     let description = localized_properties_input(localizer, input.name, input.description, true);
@@ -7042,18 +7379,32 @@ fn spawn_input_control(
     let public =
         public_module_input_control(session, module, input, input_index, &value, localizer);
     match (&input.control, value) {
-        (InputControl::Curve { .. }, Value::Curve(curve)) => properties_action_button(
-            parent,
-            &format!("{}  ·  {} keys  →", display_name, curve.keys.len()),
-            CurvesAction::OpenInput(module.id, input_index),
-            Some(&description),
-        ),
-        (InputControl::Gradient, Value::Gradient(gradient)) => properties_action_button(
-            parent,
-            &format!("{}  ·  {} color keys  →", display_name, gradient.keys.len()),
-            CurvesAction::OpenInput(module.id, input_index),
-            Some(&description),
-        ),
+        (InputControl::Curve { .. }, Value::Curve(curve)) => {
+            spawn_properties_curve_source_control(
+                parent,
+                module.id,
+                input,
+                input_index,
+                &display_name,
+                property_tooltip(&description, input.unit, localizer),
+                &curve,
+                asset_server,
+                localizer,
+            );
+        }
+        (InputControl::Gradient, Value::Gradient(gradient)) => {
+            spawn_properties_gradient_source_control(
+                parent,
+                module.id,
+                input,
+                input_index,
+                &display_name,
+                &description,
+                &gradient,
+                asset_server,
+                localizer,
+            );
+        }
         (InputControl::Toggle, Value::Bool(value)) => {
             spawn_properties_toggle_control(
                 parent,
@@ -7152,22 +7503,18 @@ fn spawn_input_control(
                 public,
             );
         }
-        (InputControl::Range { step, min, max }, Value::Range(value)) => {
-            spawn_properties_number_controls(
+        (InputControl::Range { .. }, Value::Range(value)) => {
+            spawn_properties_range_source_control(
                 parent,
+                module.id,
+                input,
+                input_index,
                 &display_name,
                 property_tooltip(&description, input.unit, localizer),
-                PropertiesNumberControl {
-                    module: module.id,
-                    parameter: input.name,
-                    component: 0,
-                    kind: PropertiesNumberKind::Range,
-                    step: *step,
-                    min: *min,
-                    max: *max,
-                },
-                &[("MIN", value.min, 0), ("MAX", value.max, 1)],
+                value,
                 public,
+                asset_server,
+                localizer,
             );
         }
         (InputControl::Choice, value) => spawn_properties_choice_control(
@@ -7213,12 +7560,12 @@ pub(crate) fn localized_properties_input(
         ("drag", true) => "properties-input-drag-description",
         ("turbulence", false) => "properties-input-turbulence",
         ("turbulence", true) => "properties-input-turbulence-description",
-        ("size", false) => "properties-input-size-over-life",
-        ("size", true) => "properties-input-size-over-life-description",
-        ("opacity", false) => "properties-input-opacity-over-life",
-        ("opacity", true) => "properties-input-opacity-over-life-description",
-        ("color", false) => "properties-input-color-over-life",
-        ("color", true) => "properties-input-color-over-life-description",
+        ("size", false) => "properties-input-size",
+        ("size", true) => "properties-input-size-description",
+        ("opacity", false) => "properties-input-opacity",
+        ("opacity", true) => "properties-input-opacity-description",
+        ("color", false) => "properties-input-color",
+        ("color", true) => "properties-input-color-description",
         _ => return fallback.to_owned(),
     };
     localizer.text(message)
@@ -7351,6 +7698,343 @@ fn sync_module_input_public_toggle_visibility(
         } else {
             Visibility::Hidden
         };
+    }
+}
+
+fn spawn_properties_range_source_control(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: &InputMetadata,
+    input_index: u8,
+    title: &str,
+    tooltip: EditorTooltip,
+    value: ScalarRange,
+    public: Option<ModuleInputPublicControl>,
+    asset_server: &AssetServer,
+    localizer: &Localizer,
+) {
+    let InputControl::Range { step, min, max } = input.control else {
+        return;
+    };
+    let source = property_source_for_value(input, &Value::Range(value));
+    parent
+        .spawn((
+            tooltip,
+            ModuleInputPublicRow,
+            RelativeCursorPosition::default(),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|row| {
+            spawn_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                column_gap: Val::Px(4.0),
+                ..default()
+            })
+            .with_children(|controls| {
+                if source == PropertySourceKind::Constant {
+                    controls
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_scalar_input())
+                        .insert((
+                            PropertiesNumberControl {
+                                module,
+                                parameter: input.name,
+                                component: 0,
+                                kind: PropertiesNumberKind::RangeConstant,
+                                step,
+                                min,
+                                max,
+                            },
+                            AccessibleLabel(title.to_owned()),
+                        ));
+                } else {
+                    for (axis, component) in [("MIN", 0), ("MAX", 1)] {
+                        controls
+                            .spawn(Node {
+                                flex_grow: 1.0,
+                                flex_basis: Val::Px(0.0),
+                                min_width: Val::Px(44.0),
+                                ..default()
+                            })
+                            .with_children(|wrapper| {
+                                wrapper
+                                    .spawn_empty()
+                                    .apply_scene(ui_shell::feathers_labeled_scalar_input(
+                                        axis,
+                                        tokens::TEXT_INPUT_BG,
+                                    ))
+                                    .insert((
+                                        PropertiesNumberControl {
+                                            module,
+                                            parameter: input.name,
+                                            component,
+                                            kind: PropertiesNumberKind::Range,
+                                            step,
+                                            min,
+                                            max,
+                                        },
+                                        AccessibleLabel(format!("{title} {axis}")),
+                                    ));
+                            });
+                    }
+                }
+            });
+            spawn_module_input_public_toggle(row, public);
+            spawn_property_source_menu(
+                row,
+                module,
+                input_index,
+                source,
+                &input.sources,
+                asset_server,
+                localizer,
+            );
+        });
+}
+
+fn spawn_properties_curve_source_control(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: &InputMetadata,
+    input_index: u8,
+    title: &str,
+    tooltip: EditorTooltip,
+    curve: &Curve,
+    asset_server: &AssetServer,
+    localizer: &Localizer,
+) {
+    let InputControl::Curve { step, min, max } = input.control else {
+        return;
+    };
+    let source = property_source_for_value(input, &Value::Curve(curve.clone()));
+    parent
+        .spawn((
+            tooltip,
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|row| {
+            spawn_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                ..default()
+            })
+            .with_children(|control| {
+                if source == PropertySourceKind::Constant {
+                    control
+                        .spawn_empty()
+                        .apply_scene(ui_shell::feathers_scalar_input())
+                        .insert((
+                            PropertiesNumberControl {
+                                module,
+                                parameter: input.name,
+                                component: 0,
+                                kind: PropertiesNumberKind::CurveConstant,
+                                step,
+                                min: Some(min),
+                                max: Some(max),
+                            },
+                            AccessibleLabel(title.to_owned()),
+                        ));
+                } else {
+                    spawn_property_source_editor_button(
+                        control,
+                        &format!("{} keys  →", curve.keys.len()),
+                        title,
+                        CurvesAction::OpenInput(module, input_index),
+                    );
+                }
+            });
+            spawn_property_source_menu(
+                row,
+                module,
+                input_index,
+                source,
+                &input.sources,
+                asset_server,
+                localizer,
+            );
+        });
+}
+
+fn spawn_properties_gradient_source_control(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: &InputMetadata,
+    input_index: u8,
+    title: &str,
+    description: &str,
+    gradient: &Gradient,
+    asset_server: &AssetServer,
+    localizer: &Localizer,
+) {
+    let source = property_source_for_value(input, &Value::Gradient(gradient.clone()));
+    parent
+        .spawn((
+            EditorTooltip::description(description),
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|row| {
+            spawn_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                min_width: Val::Px(0.0),
+                ..default()
+            })
+            .with_children(|control| {
+                let summary = if source == PropertySourceKind::Constant {
+                    localizer.text("properties-source-constant-color")
+                } else {
+                    format!("{} color keys  →", gradient.keys.len())
+                };
+                spawn_property_source_editor_button(
+                    control,
+                    &summary,
+                    title,
+                    CurvesAction::OpenInput(module, input_index),
+                );
+            });
+            spawn_property_source_menu(
+                row,
+                module,
+                input_index,
+                source,
+                &input.sources,
+                asset_server,
+                localizer,
+            );
+        });
+}
+
+fn spawn_property_source_editor_button<A: Component>(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    accessible_label: &str,
+    action: A,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_button())
+        .insert((
+            action,
+            FeathersActionButton,
+            AccessibleLabel(accessible_label.to_owned()),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(28.0),
+                min_width: Val::Px(0.0),
+                padding: UiRect::horizontal(Val::Px(8.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::FlexStart,
+                ..default()
+            },
+        ))
+        .with_child((Text::new(label), ThemedText, Pickable::IGNORE));
+}
+
+fn spawn_property_source_menu(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: u8,
+    current: PropertySourceKind,
+    supported: &[PropertySourceKind],
+    asset_server: &AssetServer,
+    localizer: &Localizer,
+) {
+    let options = supported
+        .iter()
+        .map(|source| ComboOption {
+            label: property_source_label(*source, localizer),
+            selected: *source == current,
+            action: PropertiesAction::SetModuleInputSource {
+                module,
+                input,
+                source: *source,
+            },
+        })
+        .collect::<Vec<_>>();
+    let current_label = property_source_label(current, localizer);
+    let mut args = FluentArgs::new();
+    args.set("source", current_label.clone());
+    spawn_icon_action_menu(
+        parent,
+        asset_server,
+        property_source_icon(current),
+        &localizer.text_with("properties-source-accessible", &args),
+        &localizer.text_with("properties-source-tooltip", &args),
+        &options,
+    );
+}
+
+fn property_source_label(source: PropertySourceKind, localizer: &Localizer) -> String {
+    localizer.text(match source {
+        PropertySourceKind::Constant => "properties-source-constant",
+        PropertySourceKind::RandomRange => "properties-source-random",
+        PropertySourceKind::Curve(InputEvaluationDomain::ParticleLife) => {
+            "properties-source-curve-particle-life"
+        }
+        PropertySourceKind::Curve(InputEvaluationDomain::EmitterTime) => {
+            "properties-source-curve-emitter-time"
+        }
+        PropertySourceKind::Gradient(InputEvaluationDomain::ParticleLife) => {
+            "properties-source-gradient-particle-life"
+        }
+        PropertySourceKind::Gradient(InputEvaluationDomain::EmitterTime) => {
+            "properties-source-gradient-emitter-time"
+        }
+    })
+}
+
+fn property_source_icon(source: PropertySourceKind) -> &'static str {
+    match source {
+        PropertySourceKind::Constant => "icons/source-constant.svg",
+        PropertySourceKind::RandomRange => "icons/source-random.svg",
+        PropertySourceKind::Curve(_) => "icons/source-curve.svg",
+        PropertySourceKind::Gradient(_) => "icons/source-gradient.svg",
+    }
+}
+
+fn property_source_for_value(input: &InputMetadata, value: &Value) -> PropertySourceKind {
+    match value {
+        Value::Range(range) if (range.max - range.min).abs() > f32::EPSILON => input
+            .sources
+            .iter()
+            .copied()
+            .find(|source| matches!(source, PropertySourceKind::RandomRange))
+            .unwrap_or(PropertySourceKind::Constant),
+        Value::Curve(curve) if curve.keys.len() > 1 => input
+            .sources
+            .iter()
+            .copied()
+            .find(|source| matches!(source, PropertySourceKind::Curve(_)))
+            .unwrap_or(PropertySourceKind::Constant),
+        Value::Gradient(gradient) if gradient.keys.len() > 1 => input
+            .sources
+            .iter()
+            .copied()
+            .find(|source| matches!(source, PropertySourceKind::Gradient(_)))
+            .unwrap_or(PropertySourceKind::Constant),
+        _ => PropertySourceKind::Constant,
     }
 }
 
@@ -8515,8 +9199,10 @@ pub(crate) struct PropertiesFocus {
 enum PropertiesNumberKind {
     U32,
     Scalar,
+    CurveConstant,
     Vector,
     Range,
+    RangeConstant,
     Shape,
 }
 

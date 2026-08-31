@@ -33,6 +33,21 @@ pub struct InputMetadata {
     pub default_value: aestra_core::Value,
     pub unit: Option<&'static str>,
     pub control: InputControl,
+    pub sources: Vec<InputSourceKind>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputEvaluationDomain {
+    ParticleLife,
+    EmitterTime,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputSourceKind {
+    Constant,
+    RandomRange,
+    Curve(InputEvaluationDomain),
+    Gradient(InputEvaluationDomain),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1055,6 +1070,20 @@ fn input(
     default_value: aestra_core::Value,
     control: InputControl,
 ) -> InputMetadata {
+    let sources = match control {
+        InputControl::Range { .. } => {
+            vec![InputSourceKind::Constant, InputSourceKind::RandomRange]
+        }
+        InputControl::Curve { .. } => vec![
+            InputSourceKind::Constant,
+            InputSourceKind::Curve(InputEvaluationDomain::ParticleLife),
+        ],
+        InputControl::Gradient => vec![
+            InputSourceKind::Constant,
+            InputSourceKind::Gradient(InputEvaluationDomain::ParticleLife),
+        ],
+        _ => vec![InputSourceKind::Constant],
+    };
     InputMetadata {
         name,
         display_name,
@@ -1063,6 +1092,7 @@ fn input(
         default_value,
         unit: None,
         control,
+        sources,
     }
 }
 
@@ -1309,16 +1339,16 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
         .with_cost(6),
         metadata(
             MODULE_APPEARANCE,
-            "Appearance Over Life",
-            "Shapes particle size, opacity, and color across normalized lifetime.",
+            "Appearance",
+            "Controls particle size, opacity, and color.",
             "Appearance",
             StageKind::ParticleUpdate,
         )
         .with_inputs(vec![
             input(
                 "size",
-                "Size Over Life",
-                "Particle size over normalized lifetime.",
+                "Size",
+                "Particle size. The selected source controls how it varies.",
                 aestra_core::Value::Curve(Curve {
                     id: CurveId::from_u128(0),
                     keys: vec![
@@ -1335,8 +1365,8 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
             ),
             input(
                 "opacity",
-                "Opacity Over Life",
-                "Particle opacity over normalized lifetime.",
+                "Opacity",
+                "Particle opacity. The selected source controls how it varies.",
                 aestra_core::Value::Curve(Curve {
                     id: CurveId::from_u128(0),
                     keys: vec![
@@ -1353,8 +1383,8 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
             ),
             input(
                 "color",
-                "Color Over Life",
-                "Particle color and alpha over normalized lifetime.",
+                "Color",
+                "Particle color and alpha. The selected source controls how they vary.",
                 aestra_core::Value::Gradient(Gradient {
                     id: GradientId::from_u128(0),
                     keys: vec![
