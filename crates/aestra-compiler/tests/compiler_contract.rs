@@ -180,7 +180,10 @@ fn spawn_rate_emitter_curve_is_preserved_and_lowered_as_a_scalar_source() {
         .find(|module| module.module_type.0 == MODULE_EMISSION)
         .unwrap();
     let source = InputSourceKind::Curve(InputEvaluationDomain::EmitterTime);
-    let curve = Curve::new(vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 20.0)]);
+    let curve = Curve::normalized(
+        vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 1.0)],
+        ScalarRange::new(0.0, 20.0),
+    );
     emission.property_source_values.insert(
         "spawn_rate".into(),
         vec![PropertySourceValue::new(

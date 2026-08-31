@@ -2,6 +2,7 @@
 //! navigation focus, and contextual help.
 
 use crate::feathers::breadcrumb::{BreadcrumbItem, BreadcrumbProps, spawn_breadcrumb};
+use crate::feathers::icon::load_svg_icon;
 use crate::feathers::panel_card::{
     PanelCardProps, RememberedPanelCard, spawn_panel_card as spawn_remembered_panel_card,
 };
@@ -20,10 +21,10 @@ use aestra_compiler::{
 };
 use bevy::{
     feathers::controls::ButtonVariant,
-    ui::InteractionDisabled,
-    ui::Selected,
+    ui::{BackgroundGradient, ColorStop, InteractionDisabled, LinearGradient, Selected},
     ui_widgets::{Activate, SliderValue},
 };
+use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 
 pub(crate) const PROPERTIES_HIGHLIGHT_DURATION: f32 = 1.6;
@@ -971,10 +972,10 @@ fn initial_property_source_value(
         }
         PropertySourceKind::Curve(_) => {
             let value = scalar?;
-            Some(Value::Curve(Curve::new(vec![
-                CurveKey::new(0.0, value),
-                CurveKey::new(1.0, value),
-            ])))
+            Some(Value::Curve(Curve::normalized(
+                vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 0.0)],
+                ScalarRange::new(value, value),
+            )))
         }
         PropertySourceKind::Gradient(_) => {
             let Value::Gradient(gradient) = current else {
@@ -1000,31 +1001,11 @@ fn numeric_source_limits(control: &InputControl) -> Option<(f32, Option<f32>, Op
     }
 }
 
-fn properties_curve_limits(input: &InputMetadata, curve: &Curve) -> Option<(f32, f32, f32)> {
-    let (step, min, max) = numeric_source_limits(&input.control)?;
-    let authored_min = curve
-        .keys
-        .iter()
-        .map(|key| key.value)
-        .fold(f32::INFINITY, f32::min);
-    let authored_max = curve
-        .keys
-        .iter()
-        .map(|key| key.value)
-        .fold(f32::NEG_INFINITY, f32::max);
-    let minimum = min.unwrap_or(if authored_min.is_finite() {
-        authored_min
-    } else {
-        0.0
-    });
-    let maximum = max.unwrap_or_else(|| {
-        if authored_max.is_finite() {
-            authored_max.max(minimum + step)
-        } else {
-            minimum + step
-        }
-    });
-    Some((step, minimum, maximum.max(minimum + f32::EPSILON)))
+fn properties_curve_limits(
+    input: &InputMetadata,
+    _curve: &Curve,
+) -> Option<(f32, Option<f32>, Option<f32>)> {
+    numeric_source_limits(&input.control)
 }
 
 // Properties domain implementation.
@@ -1785,6 +1766,120 @@ mod tests {
                 .unwrap()
                 .contains("property_source_values")
         );
+    }
+
+    #[test]
+    fn curve_output_range_is_editable_without_changing_its_normalized_shape() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        clear_effect_parameters_and_bindings(&mut session);
+        let registry = ModuleRegistry::builtin();
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module.parameter_value("spawn_rate").is_some())
+            .unwrap()
+            .id;
+        let module_type = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap()
+            .module_type
+            .clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "spawn_rate")
+            .unwrap() as u8;
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Curve(InputEvaluationDomain::EmitterTime),
+            &test_localizer(),
+        ));
+        let Value::Curve(initial_curve) =
+            properties_module_parameter(&session, module, "spawn_rate").unwrap()
+        else {
+            unreachable!()
+        };
+        let initial_min = initial_curve.output_range().min;
+        let control = PropertiesNumberControl {
+            module,
+            parameter: "spawn_rate",
+            component: 1,
+            kind: PropertiesNumberKind::CurveOutputRange,
+            step: 1.0,
+            min: Some(0.0),
+            max: None,
+        };
+
+        assert!(apply_properties_number(
+            &mut session,
+            control,
+            60.0,
+            &test_localizer(),
+        ));
+        assert!(apply_properties_number(
+            &mut session,
+            PropertiesNumberControl {
+                component: 0,
+                ..control
+            },
+            10.0,
+            &test_localizer(),
+        ));
+
+        let Value::Curve(curve) =
+            properties_module_parameter(&session, module, "spawn_rate").unwrap()
+        else {
+            panic!("spawn rate should remain curve-typed");
+        };
+        assert_eq!(curve.output_range(), ScalarRange::new(10.0, 60.0));
+        assert!(curve.output_range.is_some());
+        assert!(
+            curve
+                .keys
+                .iter()
+                .all(|key| (0.0..=1.0).contains(&key.value))
+        );
+        assert_eq!(
+            properties_number_input_value(&session, control),
+            Some(NumberInputValue::F32(60.0))
+        );
+        assert!(session.effect.validation_report().is_valid());
+
+        session.undo();
+        let Value::Curve(curve) =
+            properties_module_parameter(&session, module, "spawn_rate").unwrap()
+        else {
+            unreachable!()
+        };
+        assert_eq!(curve.output_range(), ScalarRange::new(initial_min, 60.0));
+    }
+
+    #[test]
+    fn gradient_property_preview_preserves_authored_stop_positions() {
+        let gradient = Gradient::new(vec![
+            ColorKey::new(0.0, [1.0, 0.0, 0.0, 1.0]),
+            ColorKey::new(0.35, [0.0, 1.0, 0.0, 1.0]),
+            ColorKey::new(1.0, [0.0, 0.0, 1.0, 1.0]),
+        ]);
+
+        let preview = gradient_preview_background(&gradient);
+        let bevy::ui::Gradient::Linear(preview) = &preview.0[0] else {
+            panic!("gradient property preview should be linear");
+        };
+        assert_eq!(preview.angle, LinearGradient::TO_RIGHT);
+        assert_eq!(preview.stops.len(), 3);
+        assert_eq!(preview.stops[0].point, Val::Percent(0.0));
+        assert_eq!(preview.stops[1].point, Val::Percent(35.0));
+        assert_eq!(preview.stops[2].point, Val::Percent(100.0));
     }
 
     #[test]
@@ -3414,7 +3509,15 @@ fn properties_number_input_value(
         (PropertiesNumberKind::CurveConstant, Value::Curve(curve)) => curve
             .keys
             .first()
-            .map(|key| NumberInputValue::F32(key.value)),
+            .map(|_| NumberInputValue::F32(curve.sample(0.0))),
+        (PropertiesNumberKind::CurveOutputRange, Value::Curve(curve)) => {
+            let range = curve.output_range();
+            Some(NumberInputValue::F32(if control.component == 0 {
+                range.min
+            } else {
+                range.max
+            }))
+        }
         (PropertiesNumberKind::Vector, Value::Vec2(value)) => value
             .get(control.component as usize)
             .copied()
@@ -5269,16 +5372,6 @@ fn apply_properties_number(
     if updated == current {
         return false;
     }
-    let is_bound = session
-        .selected_layer()
-        .modules
-        .iter()
-        .find(|module| module.id == control.module)
-        .is_some_and(|module| module.bindings.contains_key(control.parameter));
-    if !is_bound {
-        session.set_module_parameter(control.module, control.parameter, updated);
-        return true;
-    }
     let Some(command) =
         properties_module_parameter_command(session, control.module, control.parameter, updated)
     else {
@@ -5307,6 +5400,18 @@ fn updated_properties_number_value(
             let key = curve.keys.first_mut()?;
             key.value = value;
             curve.keys.truncate(1);
+            curve.output_range = None;
+            Some(Value::Curve(curve))
+        }
+        (PropertiesNumberKind::CurveOutputRange, Value::Curve(mut curve)) => {
+            curve.normalize_output();
+            let mut range = curve.output_range();
+            if control.component == 0 {
+                range.min = value.min(range.max);
+            } else {
+                range.max = value.max(range.min);
+            }
+            curve.output_range = Some(range);
             Some(Value::Curve(curve))
         }
         (PropertiesNumberKind::Vector, Value::Vec2(mut vector)) => {
@@ -8349,11 +8454,12 @@ fn spawn_properties_curve_source_control(
             row.spawn(Node {
                 flex_grow: 1.0,
                 min_width: Val::Px(0.0),
+                column_gap: Val::Px(4.0),
                 ..default()
             })
-            .with_children(|control| {
+            .with_children(|controls| {
                 if source == PropertySourceKind::Constant {
-                    control
+                    controls
                         .spawn_empty()
                         .apply_scene(ui_shell::feathers_scalar_input())
                         .insert((
@@ -8363,17 +8469,47 @@ fn spawn_properties_curve_source_control(
                                 component: 0,
                                 kind: PropertiesNumberKind::CurveConstant,
                                 step,
-                                min: Some(min),
-                                max: Some(max),
+                                min,
+                                max,
                             },
                             AccessibleLabel(title.to_owned()),
                         ));
                 } else {
-                    spawn_property_source_editor_button(
-                        control,
-                        &format!("{} keys  →", curve.keys.len()),
+                    for (axis, component) in [("MIN", 0), ("MAX", 1)] {
+                        controls
+                            .spawn(Node {
+                                flex_grow: 1.0,
+                                flex_basis: Val::Px(0.0),
+                                min_width: Val::Px(44.0),
+                                ..default()
+                            })
+                            .with_children(|wrapper| {
+                                wrapper
+                                    .spawn_empty()
+                                    .apply_scene(ui_shell::feathers_labeled_scalar_input(
+                                        axis,
+                                        tokens::TEXT_INPUT_BG,
+                                    ))
+                                    .insert((
+                                        PropertiesNumberControl {
+                                            module,
+                                            parameter: input.name,
+                                            component,
+                                            kind: PropertiesNumberKind::CurveOutputRange,
+                                            step,
+                                            min,
+                                            max,
+                                        },
+                                        AccessibleLabel(format!("{title} {axis}")),
+                                    ));
+                            });
+                    }
+                    spawn_curve_source_editor_button(
+                        controls,
+                        module,
+                        input_index,
                         title,
-                        CurvesAction::OpenInput(module, input_index),
+                        asset_server,
                     );
                 }
             });
@@ -8420,16 +8556,11 @@ fn spawn_properties_gradient_source_control(
                 ..default()
             })
             .with_children(|control| {
-                let summary = if source == PropertySourceKind::Constant {
-                    localizer.text("properties-source-constant-color")
-                } else {
-                    format!("{} color keys  →", gradient.keys.len())
-                };
-                spawn_property_source_editor_button(
+                spawn_property_gradient_editor_button(
                     control,
-                    &summary,
                     title,
                     CurvesAction::OpenInput(module, input_index),
+                    gradient,
                 );
             });
             spawn_property_source_menu(
@@ -8444,11 +8575,25 @@ fn spawn_properties_gradient_source_control(
         });
 }
 
-fn spawn_property_source_editor_button<A: Component>(
+fn gradient_preview_background(gradient: &Gradient) -> BackgroundGradient {
+    let stops = gradient
+        .keys
+        .iter()
+        .map(|key| {
+            ColorStop::percent(
+                Color::srgba(key.color[0], key.color[1], key.color[2], key.color[3]),
+                key.time.clamp(0.0, 1.0) * 100.0,
+            )
+        })
+        .collect();
+    BackgroundGradient::from(LinearGradient::to_right(stops))
+}
+
+fn spawn_property_gradient_editor_button<A: Component>(
     parent: &mut ChildSpawnerCommands,
-    label: &str,
     accessible_label: &str,
     action: A,
+    gradient: &Gradient,
 ) {
     parent
         .spawn_empty()
@@ -8461,13 +8606,58 @@ fn spawn_property_source_editor_button<A: Component>(
                 width: Val::Percent(100.0),
                 height: Val::Px(28.0),
                 min_width: Val::Px(0.0),
-                padding: UiRect::horizontal(Val::Px(8.0)),
+                padding: UiRect::all(Val::Px(5.0)),
                 align_items: AlignItems::Center,
-                justify_content: JustifyContent::FlexStart,
                 ..default()
             },
         ))
-        .with_child((Text::new(label), ThemedText, Pickable::IGNORE));
+        .with_child((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+            gradient_preview_background(gradient),
+            BorderColor::all(theme::BORDER_BRIGHT),
+            Pickable::IGNORE,
+        ));
+}
+
+fn spawn_curve_source_editor_button(
+    parent: &mut ChildSpawnerCommands,
+    module: ModuleId,
+    input: u8,
+    title: &str,
+    asset_server: &AssetServer,
+) {
+    parent
+        .spawn_empty()
+        .apply_scene(ui_shell::feathers_tool_button())
+        .insert((
+            CurvesAction::OpenInput(module, input),
+            FeathersActionButton,
+            AccessibleLabel(title.to_owned()),
+            Node {
+                width: Val::Px(28.0),
+                height: Val::Px(28.0),
+                flex_shrink: 0.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+        ))
+        .with_child((
+            Node {
+                width: Val::Px(12.0),
+                height: Val::Px(12.0),
+                ..default()
+            },
+            UiSvg(load_svg_icon(asset_server, "icons/chevron-right.svg")),
+            SvgColor(theme::TEXT),
+            Pickable::IGNORE,
+        ));
 }
 
 fn spawn_property_source_menu(
@@ -9667,6 +9857,7 @@ enum PropertiesNumberKind {
     U32,
     Scalar,
     CurveConstant,
+    CurveOutputRange,
     Vector,
     Range,
     RangeConstant,

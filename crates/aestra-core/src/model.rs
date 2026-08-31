@@ -2371,6 +2371,10 @@ impl ScalarRange {
 pub struct Curve {
     pub id: CurveId,
     pub keys: Vec<CurveKey>,
+    /// Maps normalized key values into authored output units. Missing on legacy curves whose keys
+    /// already contain output values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_range: Option<ScalarRange>,
 }
 
 impl Curve {
@@ -2378,7 +2382,59 @@ impl Curve {
         Self {
             id: CurveId::new(),
             keys,
+            output_range: None,
         }
+    }
+
+    /// Creates a curve whose keys describe a normalized shape and whose range provides output
+    /// units.
+    pub fn normalized(keys: Vec<CurveKey>, output_range: ScalarRange) -> Self {
+        Self {
+            id: CurveId::new(),
+            keys,
+            output_range: Some(output_range),
+        }
+    }
+
+    /// Returns the semantic output range. Legacy absolute-valued curves derive it from their keys.
+    pub fn output_range(&self) -> ScalarRange {
+        self.output_range.unwrap_or_else(|| {
+            let mut minimum = f32::INFINITY;
+            let mut maximum = f32::NEG_INFINITY;
+            for key in &self.keys {
+                if key.value.is_finite() {
+                    minimum = minimum.min(key.value);
+                    maximum = maximum.max(key.value);
+                }
+            }
+            if minimum.is_finite() && maximum.is_finite() {
+                ScalarRange::new(minimum, maximum)
+            } else {
+                ScalarRange::new(0.0, 0.0)
+            }
+        })
+    }
+
+    /// Converts a legacy absolute-valued curve to normalized shape keys without changing output.
+    pub fn normalize_output(&mut self) {
+        if self.output_range.is_some() {
+            return;
+        }
+        let range = self.output_range();
+        let span = range.max - range.min;
+        for key in &mut self.keys {
+            key.value = if span.abs() <= f32::EPSILON {
+                0.0
+            } else {
+                ((key.value - range.min) / span).clamp(0.0, 1.0)
+            };
+        }
+        self.output_range = Some(range);
+    }
+
+    /// Maps a stored key value to the curve's authored output units.
+    pub fn output_value(&self, value: f32) -> f32 {
+        self.output_range.map_or(value, |range| range.sample(value))
     }
 
     pub fn sample(&self, time: f32) -> f32 {
@@ -2386,19 +2442,23 @@ impl Curve {
             return 0.0;
         };
         let time = time.clamp(0.0, 1.0);
-        if time <= first.time {
-            return first.value;
-        }
-        for pair in self.keys.windows(2) {
-            let (a, b) = (&pair[0], &pair[1]);
-            if time <= b.time {
-                let span = (b.time - a.time).max(f32::EPSILON);
-                let x = ((time - a.time) / span).clamp(0.0, 1.0);
-                let smooth = x * x * (3.0 - 2.0 * x);
-                return a.value + (b.value - a.value) * smooth;
+        let value = if time <= first.time {
+            first.value
+        } else {
+            let mut sampled = None;
+            for pair in self.keys.windows(2) {
+                let (a, b) = (&pair[0], &pair[1]);
+                if time <= b.time {
+                    let span = (b.time - a.time).max(f32::EPSILON);
+                    let x = ((time - a.time) / span).clamp(0.0, 1.0);
+                    let smooth = x * x * (3.0 - 2.0 * x);
+                    sampled = Some(a.value + (b.value - a.value) * smooth);
+                    break;
+                }
             }
-        }
-        self.keys.last().map_or(0.0, |key| key.value)
+            sampled.unwrap_or_else(|| self.keys.last().map_or(0.0, |key| key.value))
+        };
+        self.output_value(value)
     }
 }
 
@@ -2524,6 +2584,20 @@ fn validate_curve(curve: &Curve, path: &str, report: &mut ValidationReport) {
             .any(|pair| pair[0].time > pair[1].time)
     {
         invalid_value(report, path, "curve keys are invalid or empty");
+    }
+    if let Some(range) = curve.output_range {
+        validate_range(range, path, "curve output", report);
+        if curve
+            .keys
+            .iter()
+            .any(|key| !(0.0..=1.0).contains(&key.value))
+        {
+            invalid_value(
+                report,
+                path,
+                "normalized curve key values must be between zero and one",
+            );
+        }
     }
 }
 

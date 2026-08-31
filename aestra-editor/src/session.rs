@@ -1004,6 +1004,7 @@ impl EditorSession {
         }
     }
 
+    #[cfg(test)]
     pub fn set_module_parameter(&mut self, module: ModuleId, parameter: &str, value: Value) {
         let emitter = self.selected_layer().id;
         self.execute(

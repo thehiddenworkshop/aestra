@@ -83,6 +83,9 @@ struct CurveGraph;
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 struct CurveGraphKey(ComplexSelection);
 
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+struct CurveGraphValueLabel(ComplexSelection);
+
 fn curves_keyboard_input(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     graphs: Query<&RelativeCursorPosition, With<CurveGraph>>,
@@ -494,8 +497,14 @@ fn curve_module_parameter(
 }
 
 fn curve_graph_data(curve: &aestra_bevy::Curve) -> AutomationCurveData {
-    AutomationCurveData::Curve(
-        curve
+    let output_range = curve.output_range();
+    let value_bounds = if curve.output_range.is_some() {
+        Some((0.0, 1.0))
+    } else {
+        Some((output_range.min, output_range.max))
+    };
+    AutomationCurveData::Curve {
+        points: curve
             .keys
             .iter()
             .map(|key| AutomationCurvePoint {
@@ -503,7 +512,16 @@ fn curve_graph_data(curve: &aestra_bevy::Curve) -> AutomationCurveData {
                 value: key.value,
             })
             .collect(),
-    )
+        value_bounds,
+    }
+}
+
+fn formatted_curve_output_value(value: f32) -> String {
+    crate::feathers::number_input::formatted(value, 3)
+}
+
+fn curve_key_output_value(curve: &aestra_bevy::Curve, key: CurveKey) -> f32 {
+    curve.output_value(key.value)
 }
 
 fn gradient_graph_data(gradient: &aestra_bevy::Gradient) -> AutomationCurveData {
@@ -545,7 +563,7 @@ fn curve_drag_preview(
         .unwrap_or(key.value)
         .clamp(min, max);
     let mut preview = graph_data;
-    let AutomationCurveData::Curve(points) = &mut preview else {
+    let AutomationCurveData::Curve { points, .. } = &mut preview else {
         return None;
     };
     let point = points.get_mut(key_index)?;
@@ -578,6 +596,92 @@ fn gradient_drag_preview(
     Some((key, preview))
 }
 
+fn spawn_curve_ordinate(parent: &mut ChildSpawnerCommands, minimum: f32, maximum: f32) {
+    parent
+        .spawn(Node {
+            width: Val::Px(48.0),
+            height: Val::Percent(100.0),
+            flex_shrink: 0.0,
+            position_type: PositionType::Relative,
+            border: UiRect::right(Val::Px(1.0)),
+            ..default()
+        })
+        .insert(BorderColor::all(theme::BORDER))
+        .with_children(|axis| {
+            for (value, top, bottom) in [
+                (maximum, Val::Percent(3.0), Val::Auto),
+                (minimum, Val::Auto, Val::Percent(3.0)),
+            ] {
+                axis.spawn((
+                    Text::new(formatted_curve_output_value(value)),
+                    TextFont {
+                        font_size: FontSize::Px(9.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_MUTED),
+                    TextLayout::justify(Justify::Right),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(3.0),
+                        right: Val::Px(6.0),
+                        top,
+                        bottom,
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ));
+            }
+        });
+}
+
+fn curve_drag_label_margin(time: f32, top: f32) -> UiRect {
+    UiRect {
+        left: Val::Px(if time > 0.82 { -62.0 } else { 9.0 }),
+        top: Val::Px(if top < 18.0 { 8.0 } else { -24.0 }),
+        ..default()
+    }
+}
+
+fn spawn_curve_drag_value_label(
+    graph: &mut ChildSpawnerCommands,
+    selection: ComplexSelection,
+    key: CurveKey,
+    top: f32,
+    curve: &aestra_bevy::Curve,
+) {
+    graph.spawn((
+        CurveGraphValueLabel(selection),
+        Text::new(formatted_curve_output_value(curve_key_output_value(
+            curve, key,
+        ))),
+        TextFont {
+            font_size: FontSize::Px(10.0),
+            ..default()
+        },
+        TextColor(theme::TEXT),
+        TextLayout::no_wrap(),
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Percent(key.time * 100.0),
+            top: Val::Percent(top),
+            min_width: Val::Px(50.0),
+            height: Val::Px(18.0),
+            padding: UiRect::horizontal(Val::Px(5.0)),
+            margin: curve_drag_label_margin(key.time, top),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            border: UiRect::all(Val::Px(1.0)),
+            border_radius: BorderRadius::all(Val::Px(3.0)),
+            ..default()
+        },
+        BackgroundColor(theme::PANEL),
+        BorderColor::all(theme::BORDER_BRIGHT),
+        Visibility::Hidden,
+        ZIndex(3),
+        Pickable::IGNORE,
+    ));
+}
+
 fn spawn_curve_graph(
     parent: &mut ChildSpawnerCommands,
     module: ModuleId,
@@ -601,10 +705,9 @@ fn spawn_curve_graph(
         TextColor(theme::TEXT_MUTED),
     ));
     let graph_data = curve_graph_data(curve);
+    let output_range = curve.output_range();
     parent
         .spawn((
-            CurveGraph,
-            RelativeCursorPosition::default(),
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Px(112.0),
@@ -616,12 +719,27 @@ fn spawn_curve_graph(
             BackgroundColor(theme::TIMELINE_BG),
             BorderColor::all(theme::BORDER),
         ))
-        .with_children(|graph| {
-            automation_curve::spawn_automation_curve(graph, &graph_data);
-            for (key_index, key) in curve.keys.iter().enumerate() {
-                let top = graph_data.key_top_percent(key_index);
-                let parameter = input.name;
-                graph
+        .with_children(|container| {
+            spawn_curve_ordinate(container, output_range.min, output_range.max);
+            container
+                .spawn((
+                    CurveGraph,
+                    RelativeCursorPosition::default(),
+                    Node {
+                        flex_grow: 1.0,
+                        min_width: Val::Px(0.0),
+                        height: Val::Percent(100.0),
+                        position_type: PositionType::Relative,
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                ))
+                .with_children(|graph| {
+                    automation_curve::spawn_automation_curve(graph, &graph_data);
+                    for (key_index, key) in curve.keys.iter().enumerate() {
+                        let top = graph_data.key_top_percent(key_index);
+                        let parameter = input.name;
+                        graph
                     .spawn((
                         Button,
                         EditorNativeControl,
@@ -675,7 +793,19 @@ fn spawn_curve_graph(
                         move |drag: On<Pointer<Drag>>,
                               graph: Single<(&ComputedNode, &Children), With<CurveGraph>>,
                               session: Res<EditorSession>,
-                              mut key_nodes: Query<(&CurveGraphKey, &mut Node)>,
+                              mut key_nodes: Query<
+                                  (&CurveGraphKey, &mut Node),
+                                  Without<CurveGraphValueLabel>,
+                              >,
+                              mut value_labels: Query<
+                                  (
+                                      &CurveGraphValueLabel,
+                                      &mut Node,
+                                      &mut Text,
+                                      &mut Visibility,
+                                  ),
+                                  Without<CurveGraphKey>,
+                              >,
                               mut rasters: Query<
                             &mut automation_curve::AutomationCurveRaster,
                         >| {
@@ -693,7 +823,7 @@ fn spawn_curve_graph(
                             else {
                                 return;
                             };
-                            let Some((_, preview)) = curve_drag_preview(
+                            let Some((key, preview)) = curve_drag_preview(
                                 &curve,
                                 key_index,
                                 drag.distance,
@@ -703,7 +833,7 @@ fn spawn_curve_graph(
                             ) else {
                                 return;
                             };
-                            let AutomationCurveData::Curve(points) = &preview else {
+                            let AutomationCurveData::Curve { points, .. } = &preview else {
                                 return;
                             };
                             for (selection, mut node) in &mut key_nodes {
@@ -720,6 +850,27 @@ fn spawn_curve_graph(
                                     preview.key_top_percent(selection.0.key),
                                 );
                             }
+                            let top = preview.key_top_percent(key_index);
+                            for (selection, mut node, mut text, mut visibility) in
+                                &mut value_labels
+                            {
+                                if selection.0
+                                    != (ComplexSelection {
+                                        module,
+                                        input: input_index,
+                                        key: key_index,
+                                    })
+                                {
+                                    continue;
+                                }
+                                node.left = Val::Percent(key.time * 100.0);
+                                node.top = Val::Percent(top);
+                                node.margin = curve_drag_label_margin(key.time, top);
+                                text.0 = formatted_curve_output_value(curve_key_output_value(
+                                    &curve, key,
+                                ));
+                                *visibility = Visibility::Visible;
+                            }
                             for child in children.iter() {
                                 if let Ok(mut raster) = rasters.get_mut(child)
                                     && raster.data() != &preview
@@ -733,9 +884,24 @@ fn spawn_curve_graph(
                         move |drag: On<Pointer<DragEnd>>,
                               graph: Single<&ComputedNode, With<CurveGraph>>,
                               mut session: ResMut<EditorSession>,
-                              mut workspace: ResMut<CurvesState>| {
+                              mut workspace: ResMut<CurvesState>,
+                              mut value_labels: Query<
+                                  (&CurveGraphValueLabel, &mut Visibility),
+                                  Without<CurveGraphKey>,
+                              >| {
                             if drag.button != PointerButton::Primary {
                                 return;
+                            }
+                            for (selection, mut visibility) in &mut value_labels {
+                                if selection.0
+                                    == (ComplexSelection {
+                                        module,
+                                        input: input_index,
+                                        key: key_index,
+                                    })
+                                {
+                                    *visibility = Visibility::Hidden;
+                                }
                             }
                             let graph_size = graph.size() * graph.inverse_scale_factor;
                             let Some(Value::Curve(curve)) = session
@@ -765,7 +931,19 @@ fn spawn_curve_graph(
                             });
                         },
                     );
-            }
+                        spawn_curve_drag_value_label(
+                            graph,
+                            ComplexSelection {
+                                module,
+                                input: input_index,
+                                key: key_index,
+                            },
+                            *key,
+                            top,
+                            curve,
+                        );
+                    }
+                });
         });
     spawn_complex_controls(
         parent,
@@ -1287,6 +1465,9 @@ fn curve_value_bounds(
     control: &InputControl,
     curve: &aestra_bevy::Curve,
 ) -> Option<(f32, f32, f32)> {
+    if curve.output_range.is_some() {
+        return Some((0.01, 0.0, 1.0));
+    }
     match control {
         InputControl::Curve { step, min, max } => Some((*step, *min, *max)),
         InputControl::Number { step, min, max } => {
@@ -1523,12 +1704,34 @@ mod tests {
             panic!("expected curve input");
         };
 
-        let AutomationCurveData::Curve(points) = curve_graph_data(&curve) else {
+        let AutomationCurveData::Curve { points, .. } = curve_graph_data(&curve) else {
             panic!("expected Feather curve data");
         };
         assert_eq!(points.len(), curve.keys.len());
         assert_eq!(points[selection.key].time, curve.keys[selection.key].time);
         assert_eq!(points[selection.key].value, curve.keys[selection.key].value);
+    }
+
+    #[test]
+    fn normalized_curve_graph_uses_fixed_shape_bounds_and_real_output_labels() {
+        let curve = aestra_bevy::Curve::normalized(
+            vec![CurveKey::new(0.0, 0.25), CurveKey::new(1.0, 0.75)],
+            aestra_bevy::ScalarRange::new(5.8, 32.0),
+        );
+        let AutomationCurveData::Curve { value_bounds, .. } = curve_graph_data(&curve) else {
+            panic!("expected Feather curve data");
+        };
+
+        assert_eq!(value_bounds, Some((0.0, 1.0)));
+        assert_eq!(
+            formatted_curve_output_value(curve.output_range().min),
+            "5.8"
+        );
+        assert_eq!(formatted_curve_output_value(curve.output_range().max), "32");
+        assert_eq!(
+            formatted_curve_output_value(curve_key_output_value(&curve, curve.keys[1])),
+            "25.45"
+        );
     }
 
     #[test]
@@ -1596,7 +1799,7 @@ mod tests {
             max,
         )
         .unwrap();
-        let AutomationCurveData::Curve(points) = preview else {
+        let AutomationCurveData::Curve { points, .. } = preview else {
             panic!("expected curve preview");
         };
         assert_eq!(points[selection.key].time, key.time);

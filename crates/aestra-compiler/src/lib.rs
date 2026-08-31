@@ -1535,6 +1535,7 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
                         CurveKey::new(0.35, 10.0),
                         CurveKey::new(1.0, 1.0),
                     ],
+                    output_range: None,
                 }),
                 InputControl::Curve {
                     step: 0.5,
@@ -1553,6 +1554,7 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
                         CurveKey::new(0.12, 1.0),
                         CurveKey::new(1.0, 0.0),
                     ],
+                    output_range: None,
                 }),
                 InputControl::Curve {
                     step: 0.05,

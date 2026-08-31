@@ -22,6 +22,44 @@ fn semantic_ids_survive_round_trip() {
 }
 
 #[test]
+fn normalized_curve_output_ranges_preserve_shape_and_output_units() {
+    let curve = Curve::normalized(
+        vec![
+            CurveKey::new(0.0, 0.0),
+            CurveKey::new(0.5, 1.0),
+            CurveKey::new(1.0, 0.0),
+        ],
+        ScalarRange::new(10.0, 30.0),
+    );
+
+    assert_eq!(curve.sample(0.0), 10.0);
+    assert_eq!(curve.sample(0.5), 30.0);
+    assert_eq!(curve.output_range(), ScalarRange::new(10.0, 30.0));
+
+    let encoded = ron::to_string(&curve).unwrap();
+    let decoded: Curve = ron::from_str(&encoded).unwrap();
+    assert_eq!(decoded, curve);
+}
+
+#[test]
+fn legacy_curve_normalization_does_not_change_sampled_output() {
+    let mut curve = Curve::new(vec![
+        CurveKey::new(0.0, 4.0),
+        CurveKey::new(0.5, 12.0),
+        CurveKey::new(1.0, 8.0),
+    ]);
+    let samples = [0.0, 0.25, 0.5, 0.75, 1.0].map(|time| curve.sample(time));
+
+    curve.normalize_output();
+
+    assert_eq!(curve.output_range(), ScalarRange::new(4.0, 12.0));
+    assert_eq!(
+        [0.0, 0.25, 0.5, 0.75, 1.0].map(|time| curve.sample(time)),
+        samples
+    );
+}
+
+#[test]
 fn missing_property_sources_are_inferred_and_explicit_overrides_persist() {
     let mut effect = EffectAsset::new("Legacy sources", 1.5);
     effect.emitters.push(Emitter::basic_sprite("Emitter", 1.5));

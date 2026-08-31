@@ -40,16 +40,23 @@ pub(crate) struct AutomationGradientPoint {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum AutomationCurveData {
-    Curve(Vec<AutomationCurvePoint>),
+    Curve {
+        points: Vec<AutomationCurvePoint>,
+        value_bounds: Option<(f32, f32)>,
+    },
     Gradient(Vec<AutomationGradientPoint>),
 }
 
 impl AutomationCurveData {
     pub(crate) fn key_top_percent(&self, key: usize) -> f32 {
         match self {
-            Self::Curve(keys) => {
-                let bounds = curve_bounds(keys);
-                keys.get(key)
+            Self::Curve {
+                points,
+                value_bounds,
+            } => {
+                let bounds = resolved_curve_bounds(points, *value_bounds);
+                points
+                    .get(key)
                     .map_or(50.0, |key| curve_top_percent(key.value, bounds))
             }
             Self::Gradient(_) => 50.0,
@@ -58,16 +65,26 @@ impl AutomationCurveData {
 
     pub(crate) fn top_percent_for_value(&self, value: f32) -> Option<f32> {
         match self {
-            Self::Curve(keys) => Some(curve_top_percent(value, curve_bounds(keys))),
+            Self::Curve {
+                points,
+                value_bounds,
+            } => Some(curve_top_percent(
+                value,
+                resolved_curve_bounds(points, *value_bounds),
+            )),
             Self::Gradient(_) => None,
         }
     }
 
     pub(crate) fn value_for_top_percent(&self, top: f32) -> Option<f32> {
-        let Self::Curve(keys) = self else {
+        let Self::Curve {
+            points,
+            value_bounds,
+        } = self
+        else {
             return None;
         };
-        let (minimum, maximum) = curve_bounds(keys);
+        let (minimum, maximum) = resolved_curve_bounds(points, *value_bounds);
         let normalized = 1.0 - ((top.clamp(0.0, 100.0) - 8.0) / 84.0);
         Some(minimum + normalized * (maximum - minimum))
     }
@@ -75,9 +92,15 @@ impl AutomationCurveData {
     fn cache_key(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         match self {
-            Self::Curve(keys) => {
+            Self::Curve {
+                points,
+                value_bounds,
+            } => {
                 0_u8.hash(&mut hasher);
-                for key in keys {
+                value_bounds
+                    .map(|bounds| (bounds.0.to_bits(), bounds.1.to_bits()))
+                    .hash(&mut hasher);
+                for key in points {
                     key.time.to_bits().hash(&mut hasher);
                     key.value.to_bits().hash(&mut hasher);
                 }
@@ -134,6 +157,17 @@ fn curve_bounds(keys: &[AutomationCurvePoint]) -> (f32, f32) {
         let padding = (maximum - minimum) * 0.12;
         (minimum - padding, maximum + padding)
     }
+}
+
+fn resolved_curve_bounds(
+    keys: &[AutomationCurvePoint],
+    value_bounds: Option<(f32, f32)>,
+) -> (f32, f32) {
+    value_bounds
+        .filter(|(minimum, maximum)| {
+            minimum.is_finite() && maximum.is_finite() && maximum > minimum
+        })
+        .unwrap_or_else(|| curve_bounds(keys))
 }
 
 fn curve_top_percent(value: f32, bounds: (f32, f32)) -> f32 {
@@ -238,7 +272,10 @@ fn render_image(data: &AutomationCurveData) -> Image {
     let mut pixmap =
         Pixmap::new(RASTER_WIDTH, RASTER_HEIGHT).expect("valid automation raster size");
     match data {
-        AutomationCurveData::Curve(keys) => render_curve(&mut pixmap, keys),
+        AutomationCurveData::Curve {
+            points,
+            value_bounds,
+        } => render_curve(&mut pixmap, points, *value_bounds),
         AutomationCurveData::Gradient(keys) => render_gradient(&mut pixmap, keys),
     }
     let mut rgba = Vec::with_capacity((RASTER_WIDTH * RASTER_HEIGHT * 4) as usize);
@@ -268,7 +305,11 @@ fn paint(color: Color) -> Paint<'static> {
     paint
 }
 
-fn render_curve(pixmap: &mut Pixmap, keys: &[AutomationCurvePoint]) {
+fn render_curve(
+    pixmap: &mut Pixmap,
+    keys: &[AutomationCurvePoint],
+    value_bounds: Option<(f32, f32)>,
+) {
     let width = RASTER_WIDTH as f32;
     let height = RASTER_HEIGHT as f32;
     for fraction in [0.25, 0.5, 0.75] {
@@ -286,7 +327,7 @@ fn render_curve(pixmap: &mut Pixmap, keys: &[AutomationCurvePoint]) {
         }
     }
 
-    let bounds = curve_bounds(keys);
+    let bounds = resolved_curve_bounds(keys, value_bounds);
     let mut line = PathBuilder::new();
     let mut fill = PathBuilder::new();
     fill.move_to(0.0, height);
@@ -367,16 +408,19 @@ mod tests {
 
     #[test]
     fn curve_keys_map_high_values_above_low_values_with_padding() {
-        let data = AutomationCurveData::Curve(vec![
-            AutomationCurvePoint {
-                time: 0.0,
-                value: 0.25,
-            },
-            AutomationCurvePoint {
-                time: 1.0,
-                value: 1.0,
-            },
-        ]);
+        let data = AutomationCurveData::Curve {
+            points: vec![
+                AutomationCurvePoint {
+                    time: 0.0,
+                    value: 0.25,
+                },
+                AutomationCurvePoint {
+                    time: 1.0,
+                    value: 1.0,
+                },
+            ],
+            value_bounds: None,
+        };
 
         assert!(data.key_top_percent(1) < data.key_top_percent(0));
         assert!((8.0..=92.0).contains(&data.key_top_percent(0)));
@@ -385,18 +429,42 @@ mod tests {
 
     #[test]
     fn value_projection_round_trips_through_the_curve_area() {
-        let data = AutomationCurveData::Curve(vec![
-            AutomationCurvePoint {
-                time: 0.0,
-                value: -2.0,
-            },
-            AutomationCurvePoint {
-                time: 1.0,
-                value: 6.0,
-            },
-        ]);
+        let data = AutomationCurveData::Curve {
+            points: vec![
+                AutomationCurvePoint {
+                    time: 0.0,
+                    value: -2.0,
+                },
+                AutomationCurvePoint {
+                    time: 1.0,
+                    value: 6.0,
+                },
+            ],
+            value_bounds: None,
+        };
         let top = data.top_percent_for_value(2.0).unwrap();
         assert!((data.value_for_top_percent(top).unwrap() - 2.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn explicit_value_bounds_keep_normalized_curves_on_a_fixed_ordinate() {
+        let data = AutomationCurveData::Curve {
+            points: vec![
+                AutomationCurvePoint {
+                    time: 0.0,
+                    value: 0.25,
+                },
+                AutomationCurvePoint {
+                    time: 1.0,
+                    value: 0.75,
+                },
+            ],
+            value_bounds: Some((0.0, 1.0)),
+        };
+
+        assert!((data.key_top_percent(0) - 71.0).abs() < 0.0001);
+        assert!((data.key_top_percent(1) - 29.0).abs() < 0.0001);
+        assert!((data.value_for_top_percent(50.0).unwrap() - 0.5).abs() < 0.0001);
     }
 
     #[test]
@@ -411,7 +479,10 @@ mod tests {
                 value: 2.0,
             },
         ];
-        let data = AutomationCurveData::Curve(keys);
+        let data = AutomationCurveData::Curve {
+            points: keys,
+            value_bounds: None,
+        };
 
         assert_eq!(data.key_top_percent(0), 50.0);
         assert_eq!(data.key_top_percent(1), 50.0);
@@ -425,16 +496,19 @@ mod tests {
             .add_systems(Update, rasterize_automation_curves);
         let entity = app
             .world_mut()
-            .spawn(AutomationCurveRaster(AutomationCurveData::Curve(vec![
-                AutomationCurvePoint {
-                    time: 0.0,
-                    value: 0.0,
-                },
-                AutomationCurvePoint {
-                    time: 1.0,
-                    value: 1.0,
-                },
-            ])))
+            .spawn(AutomationCurveRaster(AutomationCurveData::Curve {
+                points: vec![
+                    AutomationCurvePoint {
+                        time: 0.0,
+                        value: 0.0,
+                    },
+                    AutomationCurvePoint {
+                        time: 1.0,
+                        value: 1.0,
+                    },
+                ],
+                value_bounds: None,
+            }))
             .id();
         app.update();
         let first = app.world().get::<ImageNode>(entity).unwrap().image.id();
@@ -442,16 +516,19 @@ mod tests {
         app.world_mut()
             .get_mut::<AutomationCurveRaster>(entity)
             .unwrap()
-            .set_data(AutomationCurveData::Curve(vec![
-                AutomationCurvePoint {
-                    time: 0.0,
-                    value: 1.0,
-                },
-                AutomationCurvePoint {
-                    time: 1.0,
-                    value: 0.0,
-                },
-            ]));
+            .set_data(AutomationCurveData::Curve {
+                points: vec![
+                    AutomationCurvePoint {
+                        time: 0.0,
+                        value: 1.0,
+                    },
+                    AutomationCurvePoint {
+                        time: 1.0,
+                        value: 0.0,
+                    },
+                ],
+                value_bounds: None,
+            });
         app.update();
 
         let second = app.world().get::<ImageNode>(entity).unwrap().image.id();

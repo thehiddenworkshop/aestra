@@ -105,16 +105,22 @@ pub struct CompiledCurve {
 impl CompiledCurve {
     pub fn compile(curve: &Curve) -> Self {
         Self {
-            first: curve.keys.first().map(|key| (key.time, key.value)),
-            last_value: curve.keys.last().map_or(0.0, |key| key.value),
+            first: curve
+                .keys
+                .first()
+                .map(|key| (key.time, curve.output_value(key.value))),
+            last_value: curve
+                .keys
+                .last()
+                .map_or(0.0, |key| curve.output_value(key.value)),
             segments: curve
                 .keys
                 .windows(2)
                 .map(|pair| CurveSegment {
                     start_time: pair[0].time,
                     end_time: pair[1].time,
-                    start_value: pair[0].value,
-                    end_value: pair[1].value,
+                    start_value: curve.output_value(pair[0].value),
+                    end_value: curve.output_value(pair[1].value),
                 })
                 .collect(),
         }
@@ -1707,6 +1713,22 @@ mod tests {
         assert_eq!(source.spawn_time(0.0, 2.0, 0.0), Some(0.0));
         let tenth_spawn = source.spawn_time(10.0, 2.0, 0.0).unwrap();
         assert!((source.emitted_until(tenth_spawn, 2.0, 0.0) - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn compiled_curves_lower_normalized_shapes_into_output_units() {
+        let curve = CompiledCurve::compile(&Curve::normalized(
+            vec![
+                CurveKey::new(0.0, 0.0),
+                CurveKey::new(0.5, 1.0),
+                CurveKey::new(1.0, 0.0),
+            ],
+            ScalarRange::new(8.0, 24.0),
+        ));
+
+        assert_eq!(curve.sample(0.0), 8.0);
+        assert_eq!(curve.sample(0.5), 24.0);
+        assert_eq!(curve.sample(1.0), 8.0);
     }
 
     #[test]

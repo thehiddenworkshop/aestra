@@ -4392,7 +4392,7 @@ fn update_automation_key_visuals(
             .automation_key_drag
             .as_ref()
             .is_some_and(|drag| drag.selection.lane == selection.lane)
-            && let Some(AutomationCurveData::Curve(_)) = drag_preview.as_ref()
+            && let Some(AutomationCurveData::Curve { .. }) = drag_preview.as_ref()
         {
             node.top = Val::Percent(
                 drag_preview
@@ -4415,7 +4415,7 @@ fn automation_key_drag_preview_data(
     let normalized_time =
         ((drag.current_time - emitter.start_time) / emitter.duration.max(0.001)).clamp(0.0, 1.0);
     match &mut preview {
-        AutomationCurveData::Curve(points) => {
+        AutomationCurveData::Curve { points, .. } => {
             let point = points.get_mut(drag.selection.key)?;
             point.time = normalized_time;
             if let Some(value) = drag.current_value {
@@ -6067,14 +6067,16 @@ impl AutomationLaneKeys {
 
     fn graph_data(&self) -> AutomationCurveData {
         match self {
-            Self::Curve(keys) => AutomationCurveData::Curve(
-                keys.iter()
+            Self::Curve(keys) => AutomationCurveData::Curve {
+                points: keys
+                    .iter()
                     .map(|key| AutomationCurvePoint {
                         time: key.time,
                         value: key.value,
                     })
                     .collect(),
-            ),
+                value_bounds: None,
+            },
             Self::Gradient(keys) => AutomationCurveData::Gradient(
                 keys.iter()
                     .map(|key| AutomationGradientPoint {

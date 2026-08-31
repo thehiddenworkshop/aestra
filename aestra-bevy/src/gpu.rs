@@ -1587,10 +1587,10 @@ mod tests {
             "spawn_rate".into(),
             vec![PropertySourceValue::new(
                 source,
-                Value::Curve(Curve::new(vec![
-                    CurveKey::new(0.0, 2.0),
-                    CurveKey::new(1.0, 20.0),
-                ])),
+                Value::Curve(Curve::normalized(
+                    vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 1.0)],
+                    ScalarRange::new(2.0, 20.0),
+                )),
             )],
         );
 
