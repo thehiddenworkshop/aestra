@@ -64,6 +64,7 @@ use bevy::{
     },
 };
 use bevy_resvg::prelude::SvgPlugin;
+use bevy_winit::WINIT_WINDOWS;
 pub(crate) use changes::spawn_changes_workspace;
 use changes::{ChangesSet, EditorChangesPlugin};
 pub(crate) use compiler_inspector::spawn_compiler_inspector_workspace;
@@ -141,6 +142,35 @@ use viewport::{
 const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
 const EDITOR_ASSET_ROOT: &str = "../assets";
+const EDITOR_ICON: &[u8] = include_bytes!("../../assets/project/icon.png");
+
+fn set_editor_window_icon(world: &mut World) {
+    let Some(window_entity) = world
+        .query_filtered::<Entity, With<PrimaryWindow>>()
+        .iter(world)
+        .next()
+    else {
+        warn!("Aestra window icon could not be applied: primary window is missing");
+        return;
+    };
+    let Ok(image) = image::load_from_memory(EDITOR_ICON) else {
+        warn!("Aestra window icon could not be decoded");
+        return;
+    };
+    let image = image.into_rgba8();
+    let (width, height) = image.dimensions();
+    let Ok(icon) = winit::window::Icon::from_rgba(image.into_raw(), width, height) else {
+        warn!("Aestra window icon has invalid RGBA dimensions");
+        return;
+    };
+    WINIT_WINDOWS.with_borrow(|windows| {
+        let Some(window) = windows.get_window(window_entity) else {
+            warn!("Aestra window icon could not be applied: native window is missing");
+            return;
+        };
+        window.set_window_icon(Some(icon));
+    });
+}
 
 fn main() {
     let (mut settings, persistence) = SettingsPersistence::load();
@@ -192,6 +222,7 @@ fn main() {
         .add_plugins(TimelinePlugin)
         .add_plugins(EditorTransportPlugin)
         .add_plugins(ViewportPlugin)
+        .add_systems(Startup, set_editor_window_icon)
         .configure_sets(
             Startup,
             (
@@ -351,6 +382,19 @@ mod tests {
                 "missing bundled transport icon {icon}"
             );
         }
+    }
+
+    #[test]
+    fn bundled_window_icon_is_valid_rgba() {
+        let icon = image::load_from_memory(EDITOR_ICON)
+            .expect("bundled window icon should decode")
+            .into_rgba8();
+        assert!(icon.width() > 0);
+        assert!(icon.height() > 0);
+        assert_eq!(
+            icon.as_raw().len(),
+            (icon.width() * icon.height() * 4) as usize
+        );
     }
 
     #[test]

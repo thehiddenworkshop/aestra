@@ -1,4 +1,6 @@
-# Aestra
+<p align="center">
+  <img src="assets/project/title.png" alt="Aestra" width="760">
+</p>
 
 > [!WARNING]
 > **Work in progress.** Aestra is under active development; features, APIs, and effect formats may change without notice.

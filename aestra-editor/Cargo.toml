@@ -15,10 +15,13 @@ aestra-project = { path = "../crates/aestra-project" }
 aestra-runtime = { path = "../crates/aestra-runtime" }
 bevy.workspace = true
 bevy_resvg.workspace = true
+bevy_winit = "0.19.1"
 fluent-bundle.workspace = true
+image.workspace = true
 rfd = "0.15"
 ron.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
 unic-langid.workspace = true
+winit = "0.30"
