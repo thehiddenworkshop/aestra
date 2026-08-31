@@ -2,7 +2,10 @@
 
 mod render;
 
-use aestra_core::{BlendMode, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, ScalarRange};
+use aestra_core::{
+    BlendMode, EmitterShape, FlipbookPlaybackMode, FlipbookTimeSource, PropertyEvaluationDomain,
+    ScalarRange,
+};
 use aestra_runtime::{
     CompiledCurve, CompiledGradient, EffectInstance, ExecutionPlan, Instruction, MaterialColorPlan,
     RendererPlanKind, RuntimeValue, ScalarSource,
@@ -104,7 +107,10 @@ pub struct GpuEmitter {
     pub shape_depth: f32,
     pub shape_extent_z: f32,
     pub spread_radians: f32,
-    pub drag: f32,
+    pub drag: Vec2,
+    pub drag_source: u32,
+    pub _drag_padding: u32,
+    pub drag_curve: GpuCurve,
     pub direction: Vec3,
     pub _direction_padding: f32,
     pub lifetime: Vec2,
@@ -337,18 +343,11 @@ impl GpuEffectArtifact {
             let rotation = Quat::from_array(emitter.transform.rotation).normalize();
             let scale = Vec3::from_array(emitter.transform.scale);
             let (spawn_rate, spawn_rate_source, spawn_rate_curve) = if emitter.enabled {
-                match spawn_rate {
-                    ResolvedGpuScalarSource::Constant(value) => {
-                        (Vec2::splat(value), 0, GpuCurve::default())
-                    }
-                    ResolvedGpuScalarSource::RandomRange(range) => {
-                        (Vec2::new(range.min, range.max), 1, GpuCurve::default())
-                    }
-                    ResolvedGpuScalarSource::Curve(curve) => (Vec2::ZERO, 2, pack_curve(curve)?),
-                }
+                pack_scalar_source(spawn_rate)?
             } else {
                 (Vec2::ZERO, 0, GpuCurve::default())
             };
+            let (drag, drag_source, drag_curve) = pack_scalar_source(motion.drag)?;
             emitters.push(GpuEmitter {
                 slot_offset,
                 max_particles: emitter.max_particles,
@@ -364,7 +363,10 @@ impl GpuEffectArtifact {
                 shape_depth,
                 shape_extent_z,
                 spread_radians: init.spread_degrees.to_radians(),
-                drag: motion.drag,
+                drag,
+                drag_source,
+                _drag_padding: 0,
+                drag_curve,
                 direction: Vec3::from_array(init.direction).normalize_or_zero(),
                 _direction_padding: 0.0,
                 lifetime: Vec2::new(init.lifetime.min, init.lifetime.max),
@@ -1210,7 +1212,26 @@ fn pack_gradient(gradient: &CompiledGradient) -> Result<GpuGradient, GpuArtifact
 enum ResolvedGpuScalarSource<'a> {
     Constant(f32),
     RandomRange(ScalarRange),
-    Curve(&'a CompiledCurve),
+    Curve(&'a CompiledCurve, PropertyEvaluationDomain),
+}
+
+fn pack_scalar_source(
+    source: ResolvedGpuScalarSource<'_>,
+) -> Result<(Vec2, u32, GpuCurve), GpuArtifactError> {
+    match source {
+        ResolvedGpuScalarSource::Constant(value) => {
+            Ok((Vec2::splat(value), 0, GpuCurve::default()))
+        }
+        ResolvedGpuScalarSource::RandomRange(range) => {
+            Ok((Vec2::new(range.min, range.max), 1, GpuCurve::default()))
+        }
+        ResolvedGpuScalarSource::Curve(curve, PropertyEvaluationDomain::EmitterTime) => {
+            Ok((Vec2::ZERO, 2, pack_curve(curve)?))
+        }
+        ResolvedGpuScalarSource::Curve(curve, PropertyEvaluationDomain::ParticleLife) => {
+            Ok((Vec2::ZERO, 3, pack_curve(curve)?))
+        }
+    }
 }
 
 fn emission<'a>(
@@ -1232,8 +1253,8 @@ fn emission<'a>(
                     ScalarSource::RandomRange(value) => {
                         ResolvedGpuScalarSource::RandomRange(*value.resolve(values))
                     }
-                    ScalarSource::Curve { value, .. } => {
-                        ResolvedGpuScalarSource::Curve(value.resolve(values))
+                    ScalarSource::Curve { value, domain } => {
+                        ResolvedGpuScalarSource::Curve(value.resolve(values), *domain)
                     }
                 };
                 Some((spawn_rate, *burst_count.resolve(values)))
@@ -1281,14 +1302,23 @@ fn initialize(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuInitia
         })
 }
 
-#[derive(Default)]
-struct GpuMotion {
+struct GpuMotion<'a> {
     gravity: [f32; 3],
-    drag: f32,
+    drag: ResolvedGpuScalarSource<'a>,
     turbulence: f32,
 }
 
-fn motion(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuMotion> {
+impl Default for GpuMotion<'_> {
+    fn default() -> Self {
+        Self {
+            gravity: [0.0; 3],
+            drag: ResolvedGpuScalarSource::Constant(0.0),
+            turbulence: 0.0,
+        }
+    }
+}
+
+fn motion<'a>(plan: &'a ExecutionPlan, values: &'a [RuntimeValue]) -> Option<GpuMotion<'a>> {
     plan.particle_update
         .iter()
         .find_map(|instruction| match instruction {
@@ -1299,7 +1329,17 @@ fn motion(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuMotion> {
                 ..
             } => Some(GpuMotion {
                 gravity: *gravity.resolve(values),
-                drag: *drag.resolve(values),
+                drag: match drag {
+                    ScalarSource::Constant(value) => {
+                        ResolvedGpuScalarSource::Constant(*value.resolve(values))
+                    }
+                    ScalarSource::RandomRange(value) => {
+                        ResolvedGpuScalarSource::RandomRange(*value.resolve(values))
+                    }
+                    ScalarSource::Curve { value, domain } => {
+                        ResolvedGpuScalarSource::Curve(value.resolve(values), *domain)
+                    }
+                },
                 turbulence: *turbulence.resolve(values),
             }),
             _ => None,
@@ -1339,8 +1379,9 @@ mod tests {
     use aestra_compiler::EffectCompiler;
     use aestra_core::{
         AssetDefinition, BlendMode, Curve, CurveKey, EffectAsset, Emitter, MODULE_EMISSION,
-        MaterialDefinition, MaterialInput, MaterialProperties, PropertyEvaluationDomain,
-        PropertySource, PropertySourceValue, RendererInstance, UvRect, Value,
+        MODULE_MOTION, MaterialDefinition, MaterialInput, MaterialProperties,
+        PropertyEvaluationDomain, PropertySource, PropertySourceValue, RendererInstance, UvRect,
+        Value,
     };
     use std::sync::Arc;
 
@@ -1602,6 +1643,63 @@ mod tests {
         assert_eq!(emitter.spawn_rate_curve.count, 2);
         assert_eq!(emitter.spawn_rate_curve.keys[0], Vec2::new(0.0, 2.0));
         assert_eq!(emitter.spawn_rate_curve.keys[1], Vec2::new(1.0, 20.0));
+    }
+
+    #[test]
+    fn artifact_packs_drag_curve_and_random_sources_for_wesl() {
+        let mut effect = EffectAsset::new("GPU drag sources", 2.0);
+        effect
+            .emitters
+            .push(Emitter::basic_sprite("Curve", effect.duration));
+        effect
+            .emitters
+            .push(Emitter::basic_sprite("Random", effect.duration));
+
+        let motion = effect.emitters[0]
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == MODULE_MOTION)
+            .unwrap();
+        let curve_source = PropertySource::Curve(PropertyEvaluationDomain::ParticleLife);
+        motion.property_sources.insert("drag".into(), curve_source);
+        motion.property_source_values.insert(
+            "drag".into(),
+            vec![PropertySourceValue::new(
+                curve_source,
+                Value::Curve(Curve::normalized(
+                    vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 1.0)],
+                    ScalarRange::new(0.0, 4.0),
+                )),
+            )],
+        );
+
+        let motion = effect.emitters[1]
+            .modules
+            .iter_mut()
+            .find(|module| module.module_type.0 == MODULE_MOTION)
+            .unwrap();
+        motion
+            .property_sources
+            .insert("drag".into(), PropertySource::RandomRange);
+        motion.property_source_values.insert(
+            "drag".into(),
+            vec![PropertySourceValue::new(
+                PropertySource::RandomRange,
+                Value::Range(ScalarRange::new(0.25, 1.5)),
+            )],
+        );
+
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
+        let curve = artifact.emitters[0];
+        let random = artifact.emitters[1];
+
+        assert_eq!(curve.drag_source, 3);
+        assert_eq!(curve.drag_curve.count, 2);
+        assert_eq!(curve.drag_curve.keys[0], Vec2::new(0.0, 0.0));
+        assert_eq!(curve.drag_curve.keys[1], Vec2::new(1.0, 4.0));
+        assert_eq!(random.drag_source, 1);
+        assert_eq!(random.drag, Vec2::new(0.25, 1.5));
     }
 
     #[test]

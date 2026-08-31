@@ -970,7 +970,7 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
         } => Instruction::Motion {
             source: module.id,
             gravity: expression(module, "gravity", *gravity, context),
-            drag: expression(module, "drag", *drag, context),
+            drag: scalar_source(module, "drag", *drag, context)?,
             turbulence: expression(module, "turbulence", *turbulence, context),
         },
         ModuleParameters::Appearance {
@@ -1181,7 +1181,7 @@ fn expression_counts(instruction: &Instruction) -> (usize, usize) {
             drag,
             turbulence,
             ..
-        } => sum([one(gravity), one(drag), one(turbulence)]),
+        } => sum([one(gravity), scalar(drag), one(turbulence)]),
         Instruction::Appearance {
             size,
             opacity,
@@ -1497,7 +1497,12 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
                     min: Some(0.0),
                     max: None,
                 },
-            ),
+            )
+            .with_sources(vec![
+                InputSourceKind::Constant,
+                InputSourceKind::RandomRange,
+                InputSourceKind::Curve(InputEvaluationDomain::ParticleLife),
+            ]),
             input(
                 "turbulence",
                 "Turbulence",

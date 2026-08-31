@@ -377,7 +377,7 @@ pub enum Instruction {
     Motion {
         source: ModuleId,
         gravity: Expression<[f32; 3]>,
-        drag: Expression<f32>,
+        drag: ScalarSource,
         turbulence: Expression<f32>,
     },
     Appearance {
@@ -1120,7 +1120,7 @@ fn evaluate_with_parameters(
         };
         let motion = motion(&emitter.execution, parameters).unwrap_or(Motion {
             gravity: [0.0, 0.0, 0.0],
-            drag: 0.0,
+            drag: ResolvedScalarSource::Constant(0.0),
             turbulence: 0.0,
         });
         let Some(appearance) = appearance(&emitter.execution, parameters) else {
@@ -1152,6 +1152,11 @@ fn evaluate_with_parameters(
             }
 
             let normalized_age = age / life;
+            let drag = motion.drag.sample(
+                normalized_age,
+                local_time / emitter.duration.max(f32::EPSILON),
+                hash01(index, 12, seed),
+            );
             let direction = sample_direction(
                 initializer.direction,
                 initializer.spread_degrees,
@@ -1160,11 +1165,11 @@ fn evaluate_with_parameters(
             );
             let speed = initializer.speed.sample(hash01(index, 2, seed));
             let origin = sample_shape(shape, index, seed);
-            let damping = (-motion.drag.max(0.0) * age).exp();
-            let travel = if motion.drag.abs() < 0.0001 {
+            let damping = (-drag.max(0.0) * age).exp();
+            let travel = if drag.abs() < 0.0001 {
                 speed * age
             } else {
-                speed * (1.0 - damping) / motion.drag.max(0.0001)
+                speed * (1.0 - damping) / drag.max(0.0001)
             };
             let turbulence = [
                 motion.turbulence
@@ -1281,6 +1286,24 @@ enum ResolvedScalarSource<'a> {
 }
 
 impl ResolvedScalarSource<'_> {
+    fn sample(
+        self,
+        normalized_particle_life: f32,
+        normalized_emitter_time: f32,
+        random: f32,
+    ) -> f32 {
+        match self {
+            Self::Constant(value) => value,
+            Self::RandomRange(range) => range.sample(random),
+            Self::Curve(curve, PropertyEvaluationDomain::ParticleLife) => {
+                curve.sample(normalized_particle_life)
+            }
+            Self::Curve(curve, PropertyEvaluationDomain::EmitterTime) => {
+                curve.sample(normalized_emitter_time)
+            }
+        }
+    }
+
     fn emitted_until(self, time: f32, duration: f32, random: f32) -> f32 {
         match self {
             Self::Constant(value) => time * value.max(0.0),
@@ -1392,13 +1415,13 @@ fn initializer(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Init
         })
 }
 
-struct Motion {
+struct Motion<'a> {
     gravity: [f32; 3],
-    drag: f32,
+    drag: ResolvedScalarSource<'a>,
     turbulence: f32,
 }
 
-fn motion(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Motion> {
+fn motion<'a>(plan: &'a ExecutionPlan, parameters: &'a [RuntimeValue]) -> Option<Motion<'a>> {
     plan.particle_update
         .iter()
         .find_map(|instruction| match instruction {
@@ -1409,7 +1432,17 @@ fn motion(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Motion> {
                 ..
             } => Some(Motion {
                 gravity: *gravity.resolve(parameters),
-                drag: *drag.resolve(parameters),
+                drag: match drag {
+                    ScalarSource::Constant(value) => {
+                        ResolvedScalarSource::Constant(*value.resolve(parameters))
+                    }
+                    ScalarSource::RandomRange(value) => {
+                        ResolvedScalarSource::RandomRange(*value.resolve(parameters))
+                    }
+                    ScalarSource::Curve { value, domain } => {
+                        ResolvedScalarSource::Curve(value.resolve(parameters), *domain)
+                    }
+                },
                 turbulence: *turbulence.resolve(parameters),
             }),
             _ => None,

@@ -113,8 +113,10 @@ architecture vision; this file is the shorter delivery plan.
   Delete shortcut, and commit through the same undoable semantic curve commands. Module properties
   now retain separate authored values for each supported source instead of
   destructively converting one representation into another. The first end-to-end scalar source
-  slice gives Spawn Rate Constant, deterministic Random Range, and Curve over Emitter Time modes
-  across Properties, Timeline, Curves, serialization, CPU compilation/execution, and native WESL.
+  slice gives Spawn Rate Constant, deterministic Random Range, and Curve over Emitter Time modes;
+  Drag now uses the same source pipeline for Constant, stable per-particle Random Range, and Curve
+  over Particle Life. Both properties run across Properties, Timeline, Curves, serialization, CPU
+  compilation/execution, and native WESL.
   Public bindings and reusable-effect overrides use the active source's concrete value type.
   Top-level local emitter tracks can now
   be multi-selected and extracted into a collision-safe reusable effect asset, optionally replacing
