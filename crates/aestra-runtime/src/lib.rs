@@ -378,7 +378,7 @@ pub enum Instruction {
         source: ModuleId,
         gravity: Expression<[f32; 3]>,
         drag: ScalarSource,
-        turbulence: Expression<f32>,
+        turbulence: ScalarSource,
     },
     Appearance {
         source: ModuleId,
@@ -1121,7 +1121,7 @@ fn evaluate_with_parameters(
         let motion = motion(&emitter.execution, parameters).unwrap_or(Motion {
             gravity: [0.0, 0.0, 0.0],
             drag: ResolvedScalarSource::Constant(0.0),
-            turbulence: 0.0,
+            turbulence: ResolvedScalarSource::Constant(0.0),
         });
         let Some(appearance) = appearance(&emitter.execution, parameters) else {
             continue;
@@ -1157,6 +1157,11 @@ fn evaluate_with_parameters(
                 local_time / emitter.duration.max(f32::EPSILON),
                 hash01(index, 12, seed),
             );
+            let turbulence_strength = motion.turbulence.sample(
+                normalized_age,
+                local_time / emitter.duration.max(f32::EPSILON),
+                hash01(index, 13, seed),
+            );
             let direction = sample_direction(
                 initializer.direction,
                 initializer.spread_degrees,
@@ -1172,11 +1177,11 @@ fn evaluate_with_parameters(
                 speed * (1.0 - damping) / drag.max(0.0001)
             };
             let turbulence = [
-                motion.turbulence
+                turbulence_strength
                     * (age * 7.0 + hash01(index, 3, seed) * std::f32::consts::TAU).sin(),
-                motion.turbulence
+                turbulence_strength
                     * (age * 6.3 + hash01(index, 8, seed) * std::f32::consts::TAU).sin(),
-                motion.turbulence
+                turbulence_strength
                     * (age * 7.7 + hash01(index, 10, seed) * std::f32::consts::TAU).sin(),
             ];
             let local_position = [
@@ -1285,6 +1290,21 @@ enum ResolvedScalarSource<'a> {
     Curve(&'a CompiledCurve, PropertyEvaluationDomain),
 }
 
+fn resolve_scalar_source<'a>(
+    source: &'a ScalarSource,
+    parameters: &'a [RuntimeValue],
+) -> ResolvedScalarSource<'a> {
+    match source {
+        ScalarSource::Constant(value) => ResolvedScalarSource::Constant(*value.resolve(parameters)),
+        ScalarSource::RandomRange(value) => {
+            ResolvedScalarSource::RandomRange(*value.resolve(parameters))
+        }
+        ScalarSource::Curve { value, domain } => {
+            ResolvedScalarSource::Curve(value.resolve(parameters), *domain)
+        }
+    }
+}
+
 impl ResolvedScalarSource<'_> {
     fn sample(
         self,
@@ -1359,17 +1379,7 @@ fn emission<'a>(
                 burst_count,
                 ..
             } => {
-                let spawn_rate = match spawn_rate {
-                    ScalarSource::Constant(value) => {
-                        ResolvedScalarSource::Constant(*value.resolve(parameters))
-                    }
-                    ScalarSource::RandomRange(value) => {
-                        ResolvedScalarSource::RandomRange(*value.resolve(parameters))
-                    }
-                    ScalarSource::Curve { value, domain } => {
-                        ResolvedScalarSource::Curve(value.resolve(parameters), *domain)
-                    }
-                };
+                let spawn_rate = resolve_scalar_source(spawn_rate, parameters);
                 Some((spawn_rate, *burst_count.resolve(parameters)))
             }
             _ => None,
@@ -1418,7 +1428,7 @@ fn initializer(plan: &ExecutionPlan, parameters: &[RuntimeValue]) -> Option<Init
 struct Motion<'a> {
     gravity: [f32; 3],
     drag: ResolvedScalarSource<'a>,
-    turbulence: f32,
+    turbulence: ResolvedScalarSource<'a>,
 }
 
 fn motion<'a>(plan: &'a ExecutionPlan, parameters: &'a [RuntimeValue]) -> Option<Motion<'a>> {
@@ -1432,18 +1442,8 @@ fn motion<'a>(plan: &'a ExecutionPlan, parameters: &'a [RuntimeValue]) -> Option
                 ..
             } => Some(Motion {
                 gravity: *gravity.resolve(parameters),
-                drag: match drag {
-                    ScalarSource::Constant(value) => {
-                        ResolvedScalarSource::Constant(*value.resolve(parameters))
-                    }
-                    ScalarSource::RandomRange(value) => {
-                        ResolvedScalarSource::RandomRange(*value.resolve(parameters))
-                    }
-                    ScalarSource::Curve { value, domain } => {
-                        ResolvedScalarSource::Curve(value.resolve(parameters), *domain)
-                    }
-                },
-                turbulence: *turbulence.resolve(parameters),
+                drag: resolve_scalar_source(drag, parameters),
+                turbulence: resolve_scalar_source(turbulence, parameters),
             }),
             _ => None,
         })

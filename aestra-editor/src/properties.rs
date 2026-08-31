@@ -1860,6 +1860,96 @@ mod tests {
     }
 
     #[test]
+    fn turbulence_sources_preserve_constant_random_and_particle_curve_values() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        clear_effect_parameters_and_bindings(&mut session);
+        let registry = ModuleRegistry::builtin();
+        let module = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|module| module.parameter_value("turbulence").is_some())
+            .unwrap()
+            .id;
+        let module_type = session
+            .selected_layer()
+            .modules
+            .iter()
+            .find(|candidate| candidate.id == module)
+            .unwrap()
+            .module_type
+            .clone();
+        let input = registry
+            .get(&module_type)
+            .unwrap()
+            .inputs
+            .iter()
+            .position(|input| input.name == "turbulence")
+            .unwrap() as u8;
+        let original = properties_module_parameter(&session, module, "turbulence").unwrap();
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::RandomRange,
+            &test_localizer(),
+        ));
+        let random = properties_module_parameter(&session, module, "turbulence").unwrap();
+        assert!(matches!(random, Value::Range(_)));
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Curve(InputEvaluationDomain::ParticleLife),
+            &test_localizer(),
+        ));
+        let curve = properties_module_parameter(&session, module, "turbulence").unwrap();
+        assert!(matches!(curve, Value::Curve(_)));
+
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Constant,
+            &test_localizer(),
+        ));
+        assert_eq!(
+            properties_module_parameter(&session, module, "turbulence"),
+            Some(original)
+        );
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::RandomRange,
+            &test_localizer(),
+        ));
+        assert_eq!(
+            properties_module_parameter(&session, module, "turbulence"),
+            Some(random)
+        );
+        assert!(set_module_input_source(
+            &mut session,
+            &registry,
+            module,
+            input,
+            PropertySourceKind::Curve(InputEvaluationDomain::ParticleLife),
+            &test_localizer(),
+        ));
+        assert_eq!(
+            properties_module_parameter(&session, module, "turbulence"),
+            Some(curve)
+        );
+        assert!(session.effect.validation_report().is_valid());
+    }
+
+    #[test]
     fn curve_output_range_is_editable_without_changing_its_normalized_shape() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         clear_effect_parameters_and_bindings(&mut session);

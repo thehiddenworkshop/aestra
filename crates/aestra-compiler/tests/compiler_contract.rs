@@ -53,6 +53,12 @@ fn builtin_registry_exposes_authoring_and_runtime_metadata() {
             InputSourceKind::Curve(InputEvaluationDomain::ParticleLife),
         ]
     );
+    let turbulence = motion
+        .inputs
+        .iter()
+        .find(|input| input.name == "turbulence")
+        .expect("motion turbulence metadata must be registered");
+    assert_eq!(turbulence.sources, drag.sources);
 
     let initialize = registry
         .iter()
@@ -405,66 +411,140 @@ fn drag_sources_lower_without_losing_their_authored_values() {
 }
 
 #[test]
-fn drag_curve_and_random_range_control_particle_motion_deterministically() {
-    fn configured_effect() -> EffectAsset {
-        let mut asset = EffectAsset::new("Variable drag", 2.0);
-        asset.looping = false;
-        asset
-            .emitters
-            .push(Emitter::basic_sprite("Emitter", asset.duration));
-        let emitter = &mut asset.emitters[0];
-        emitter.max_particles = 8;
-        for module in &mut emitter.modules {
-            module.bindings.clear();
-        }
-        let emission = emitter
-            .modules
-            .iter_mut()
-            .find(|module| module.module_type.0 == MODULE_EMISSION)
-            .unwrap();
-        let ModuleParameters::Emission {
-            spawn_rate,
-            burst_count,
-        } = &mut emission.parameters
-        else {
-            unreachable!()
-        };
-        *spawn_rate = 0.0;
-        *burst_count = 2;
-        let shape = emitter
-            .modules
-            .iter_mut()
-            .find(|module| module.module_type.0 == MODULE_SHAPE)
-            .unwrap();
-        shape.parameters = ModuleParameters::Shape {
-            shape: EmitterShape::Point,
-        };
-        let initialize = emitter
-            .modules
-            .iter_mut()
-            .find(|module| module.module_type.0 == MODULE_INITIALIZE)
-            .unwrap();
-        initialize.parameters = ModuleParameters::Initialize {
-            lifetime: ScalarRange::new(2.0, 2.0),
-            speed: ScalarRange::new(10.0, 10.0),
-            direction: [1.0, 0.0, 0.0],
-            spread_degrees: 0.0,
-            angular_velocity: ScalarRange::new(0.0, 0.0),
-        };
-        let motion = emitter
-            .modules
-            .iter_mut()
-            .find(|module| module.module_type.0 == MODULE_MOTION)
-            .unwrap();
-        motion.parameters = ModuleParameters::Motion {
-            gravity: [0.0; 3],
-            drag: 0.0,
-            turbulence: 0.0,
-        };
-        asset
-    }
+fn turbulence_sources_lower_without_losing_their_authored_values() {
+    let mut asset = EffectAsset::from_ron(SAMPLE).unwrap();
+    let motion = asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    let source = InputSourceKind::Curve(InputEvaluationDomain::ParticleLife);
+    let curve = Curve::normalized(
+        vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 1.0)],
+        ScalarRange::new(0.0, 6.0),
+    );
+    motion.property_sources.insert("turbulence".into(), source);
+    motion.property_source_values.insert(
+        "turbulence".into(),
+        vec![PropertySourceValue::new(
+            source,
+            Value::Curve(curve.clone()),
+        )],
+    );
 
-    let mut curve_asset = configured_effect();
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let Instruction::Motion { turbulence, .. } = compiled.emitters[0]
+        .execution
+        .particle_update
+        .iter()
+        .find(|instruction| matches!(instruction, Instruction::Motion { .. }))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    let ScalarSource::Curve { value, domain } = turbulence else {
+        panic!("turbulence should lower as a curve source");
+    };
+    assert_eq!(*domain, InputEvaluationDomain::ParticleLife);
+    let Expression::Constant(compiled_curve) = value else {
+        panic!("unbound turbulence curve should be constant-folded");
+    };
+    assert_eq!(compiled_curve.sample(0.0), curve.sample(0.0));
+    assert_eq!(compiled_curve.sample(1.0), curve.sample(1.0));
+
+    let mut asset = EffectAsset::from_ron(SAMPLE).unwrap();
+    let motion = asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    motion
+        .property_sources
+        .insert("turbulence".into(), InputSourceKind::RandomRange);
+    motion.property_source_values.insert(
+        "turbulence".into(),
+        vec![PropertySourceValue::new(
+            InputSourceKind::RandomRange,
+            Value::Range(ScalarRange::new(1.0, 5.0)),
+        )],
+    );
+    let compiled = EffectCompiler::default().compile(&asset).unwrap();
+    let Instruction::Motion { turbulence, .. } = compiled.emitters[0]
+        .execution
+        .particle_update
+        .iter()
+        .find(|instruction| matches!(instruction, Instruction::Motion { .. }))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        turbulence,
+        &ScalarSource::RandomRange(Expression::Constant(ScalarRange::new(1.0, 5.0)))
+    );
+}
+
+fn configured_motion_effect() -> EffectAsset {
+    let mut asset = EffectAsset::new("Variable motion", 2.0);
+    asset.looping = false;
+    asset
+        .emitters
+        .push(Emitter::basic_sprite("Emitter", asset.duration));
+    let emitter = &mut asset.emitters[0];
+    emitter.max_particles = 8;
+    for module in &mut emitter.modules {
+        module.bindings.clear();
+    }
+    let emission = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_EMISSION)
+        .unwrap();
+    let ModuleParameters::Emission {
+        spawn_rate,
+        burst_count,
+    } = &mut emission.parameters
+    else {
+        unreachable!()
+    };
+    *spawn_rate = 0.0;
+    *burst_count = 2;
+    let shape = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_SHAPE)
+        .unwrap();
+    shape.parameters = ModuleParameters::Shape {
+        shape: EmitterShape::Point,
+    };
+    let initialize = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_INITIALIZE)
+        .unwrap();
+    initialize.parameters = ModuleParameters::Initialize {
+        lifetime: ScalarRange::new(2.0, 2.0),
+        speed: ScalarRange::new(10.0, 10.0),
+        direction: [1.0, 0.0, 0.0],
+        spread_degrees: 0.0,
+        angular_velocity: ScalarRange::new(0.0, 0.0),
+    };
+    let motion = emitter
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    motion.parameters = ModuleParameters::Motion {
+        gravity: [0.0; 3],
+        drag: 0.0,
+        turbulence: 0.0,
+    };
+    asset
+}
+
+#[test]
+fn drag_curve_and_random_range_control_particle_motion_deterministically() {
+    let mut curve_asset = configured_motion_effect();
     let motion = curve_asset.emitters[0]
         .modules
         .iter_mut()
@@ -489,7 +569,7 @@ fn drag_curve_and_random_range_control_particle_motion_deterministically() {
     let expected_travel = 10.0 * (1.0 - (-2.0_f32).exp()) / 2.0;
     assert!((curve_particles[0].position[0] - expected_travel).abs() < 0.0001);
 
-    let mut random_asset = configured_effect();
+    let mut random_asset = configured_motion_effect();
     let motion = random_asset.emitters[0]
         .modules
         .iter_mut()
@@ -513,6 +593,72 @@ fn drag_curve_and_random_range_control_particle_motion_deterministically() {
     assert_eq!(first, repeated);
     assert_eq!(first.len(), 2);
     assert_ne!(first[0].position[0], first[1].position[0]);
+}
+
+#[test]
+fn turbulence_curve_and_random_range_control_particle_motion_deterministically() {
+    let mut curve_asset = configured_motion_effect();
+    let motion = curve_asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    let curve_source = InputSourceKind::Curve(InputEvaluationDomain::ParticleLife);
+    motion
+        .property_sources
+        .insert("turbulence".into(), curve_source);
+    motion.property_source_values.insert(
+        "turbulence".into(),
+        vec![PropertySourceValue::new(
+            curve_source,
+            Value::Curve(Curve::normalized(
+                vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 1.0)],
+                ScalarRange::new(0.0, 4.0),
+            )),
+        )],
+    );
+    let compiled = EffectCompiler::default().compile(&curve_asset).unwrap();
+    let mut curve_particles = Vec::new();
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut curve_particles);
+
+    let mut constant_asset = configured_motion_effect();
+    let motion = constant_asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    let ModuleParameters::Motion { turbulence, .. } = &mut motion.parameters else {
+        unreachable!()
+    };
+    *turbulence = 2.0;
+    let compiled = EffectCompiler::default().compile(&constant_asset).unwrap();
+    let mut constant_particles = Vec::new();
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut constant_particles);
+    assert_eq!(curve_particles, constant_particles);
+
+    let mut random_asset = configured_motion_effect();
+    let motion = random_asset.emitters[0]
+        .modules
+        .iter_mut()
+        .find(|module| module.module_type.0 == MODULE_MOTION)
+        .unwrap();
+    motion
+        .property_sources
+        .insert("turbulence".into(), InputSourceKind::RandomRange);
+    motion.property_source_values.insert(
+        "turbulence".into(),
+        vec![PropertySourceValue::new(
+            InputSourceKind::RandomRange,
+            Value::Range(ScalarRange::new(1.0, 5.0)),
+        )],
+    );
+    let compiled = EffectCompiler::default().compile(&random_asset).unwrap();
+    let mut first = Vec::new();
+    let mut repeated = Vec::new();
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut first);
+    aestra_runtime::evaluate(&compiled, 1.0, 42, &mut repeated);
+    assert_eq!(first, repeated);
+    assert_eq!(first.len(), 2);
 }
 
 #[test]

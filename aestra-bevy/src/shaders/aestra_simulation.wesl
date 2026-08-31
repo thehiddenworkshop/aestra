@@ -48,7 +48,11 @@ struct Emitter {
     angular_velocity: vec2<f32>,
     _range_padding: vec2<f32>,
     gravity: vec3<f32>,
-    turbulence: f32,
+    _gravity_padding: f32,
+    turbulence: vec2<f32>,
+    turbulence_source: u32,
+    _turbulence_padding: u32,
+    turbulence_curve: Curve,
     translation: vec3<f32>,
     max_scale: f32,
     rotation: vec4<f32>,
@@ -173,22 +177,25 @@ fn resolved_spawn_rate(emitter: Emitter, emitter_index: u32) -> f32 {
     return max(emitter.spawn_rate.x, 0.0);
 }
 
-fn resolved_drag(
-    emitter: Emitter,
+fn resolved_particle_scalar(
+    value: vec2<f32>,
+    source: u32,
+    curve: Curve,
     particle_index: u32,
     normalized_particle_life: f32,
     normalized_emitter_time: f32,
+    random_channel: u32,
 ) -> f32 {
-    if emitter.drag_source == 1u {
-        return sample_range(emitter.drag, hash01(particle_index, 12u));
+    if source == 1u {
+        return sample_range(value, hash01(particle_index, random_channel));
     }
-    if emitter.drag_source == 2u {
-        return sample_curve(emitter.drag_curve, normalized_emitter_time);
+    if source == 2u {
+        return sample_curve(curve, normalized_emitter_time);
     }
-    if emitter.drag_source == 3u {
-        return sample_curve(emitter.drag_curve, normalized_particle_life);
+    if source == 3u {
+        return sample_curve(curve, normalized_particle_life);
     }
-    return emitter.drag.x;
+    return value.x;
 }
 
 fn emitted_until(emitter: Emitter, emitter_index: u32, time: f32) -> f32 {
@@ -409,18 +416,31 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         origin = vec3<f32>(cos(shape_angle) * radius, y, sin(shape_angle) * radius);
     }
 
-    let drag = resolved_drag(
-        emitter,
+    let normalized_emitter_time = local_time / max(emitter.duration, 0.000000119);
+    let drag = resolved_particle_scalar(
+        emitter.drag,
+        emitter.drag_source,
+        emitter.drag_curve,
         particle_index,
         normalized_age,
-        local_time / max(emitter.duration, 0.000000119),
+        normalized_emitter_time,
+        12u,
     );
     let damping = exp(-max(drag, 0.0) * age);
     var travel = speed * age;
     if abs(drag) >= 0.0001 {
         travel = speed * (1.0 - damping) / max(drag, 0.0001);
     }
-    let turbulence = emitter.turbulence * vec3<f32>(
+    let turbulence_strength = resolved_particle_scalar(
+        emitter.turbulence,
+        emitter.turbulence_source,
+        emitter.turbulence_curve,
+        particle_index,
+        normalized_age,
+        normalized_emitter_time,
+        13u,
+    );
+    let turbulence = turbulence_strength * vec3<f32>(
         sin(age * 7.0 + hash01(particle_index, 3u) * TAU),
         sin(age * 6.3 + hash01(particle_index, 8u) * TAU),
         sin(age * 7.7 + hash01(particle_index, 10u) * TAU),

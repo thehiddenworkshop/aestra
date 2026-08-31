@@ -971,7 +971,7 @@ fn lower_module(module: &ModuleInstance, context: &LoweringContext<'_>) -> Optio
             source: module.id,
             gravity: expression(module, "gravity", *gravity, context),
             drag: scalar_source(module, "drag", *drag, context)?,
-            turbulence: expression(module, "turbulence", *turbulence, context),
+            turbulence: scalar_source(module, "turbulence", *turbulence, context)?,
         },
         ModuleParameters::Appearance {
             size,
@@ -1181,7 +1181,7 @@ fn expression_counts(instruction: &Instruction) -> (usize, usize) {
             drag,
             turbulence,
             ..
-        } => sum([one(gravity), scalar(drag), one(turbulence)]),
+        } => sum([one(gravity), scalar(drag), scalar(turbulence)]),
         Instruction::Appearance {
             size,
             opacity,
@@ -1513,7 +1513,12 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
                     min: None,
                     max: None,
                 },
-            ),
+            )
+            .with_sources(vec![
+                InputSourceKind::Constant,
+                InputSourceKind::RandomRange,
+                InputSourceKind::Curve(InputEvaluationDomain::ParticleLife),
+            ]),
         ])
         .with_flow(
             vec![A::Position, A::Velocity, A::Age],

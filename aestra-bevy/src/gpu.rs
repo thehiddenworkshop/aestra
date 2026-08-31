@@ -118,7 +118,11 @@ pub struct GpuEmitter {
     pub angular_velocity: Vec2,
     pub _range_padding: Vec2,
     pub gravity: Vec3,
-    pub turbulence: f32,
+    pub _gravity_padding: f32,
+    pub turbulence: Vec2,
+    pub turbulence_source: u32,
+    pub _turbulence_padding: u32,
+    pub turbulence_curve: GpuCurve,
     pub translation: Vec3,
     pub max_scale: f32,
     pub rotation: Vec4,
@@ -331,7 +335,7 @@ impl GpuEffectArtifact {
                 init.lifetime,
                 init.speed,
                 motion.gravity,
-                motion.turbulence,
+                maximum_absolute_scalar_source(motion.turbulence),
                 appearance.size,
             );
             bounds_half_extents = bounds_half_extents.max(transformed_emitter_bounds(
@@ -348,6 +352,8 @@ impl GpuEffectArtifact {
                 (Vec2::ZERO, 0, GpuCurve::default())
             };
             let (drag, drag_source, drag_curve) = pack_scalar_source(motion.drag)?;
+            let (turbulence, turbulence_source, turbulence_curve) =
+                pack_scalar_source(motion.turbulence)?;
             emitters.push(GpuEmitter {
                 slot_offset,
                 max_particles: emitter.max_particles,
@@ -374,7 +380,11 @@ impl GpuEffectArtifact {
                 angular_velocity: Vec2::new(init.angular_velocity.min, init.angular_velocity.max),
                 _range_padding: Vec2::ZERO,
                 gravity: Vec3::from_array(motion.gravity),
-                turbulence: motion.turbulence,
+                _gravity_padding: 0.0,
+                turbulence,
+                turbulence_source,
+                _turbulence_padding: 0,
+                turbulence_curve,
                 translation: Vec3::from_array(emitter.transform.translation),
                 max_scale: scale.max_element(),
                 rotation: Vec4::from_array(rotation.to_array()),
@@ -1209,10 +1219,44 @@ fn pack_gradient(gradient: &CompiledGradient) -> Result<GpuGradient, GpuArtifact
     Ok(packed)
 }
 
+#[derive(Clone, Copy)]
 enum ResolvedGpuScalarSource<'a> {
     Constant(f32),
     RandomRange(ScalarRange),
     Curve(&'a CompiledCurve, PropertyEvaluationDomain),
+}
+
+fn resolve_gpu_scalar_source<'a>(
+    source: &'a ScalarSource,
+    values: &'a [RuntimeValue],
+) -> ResolvedGpuScalarSource<'a> {
+    match source {
+        ScalarSource::Constant(value) => ResolvedGpuScalarSource::Constant(*value.resolve(values)),
+        ScalarSource::RandomRange(value) => {
+            ResolvedGpuScalarSource::RandomRange(*value.resolve(values))
+        }
+        ScalarSource::Curve { value, domain } => {
+            ResolvedGpuScalarSource::Curve(value.resolve(values), *domain)
+        }
+    }
+}
+
+fn maximum_absolute_scalar_source(source: ResolvedGpuScalarSource<'_>) -> f32 {
+    match source {
+        ResolvedGpuScalarSource::Constant(value) => value.abs(),
+        ResolvedGpuScalarSource::RandomRange(range) => range.min.abs().max(range.max.abs()),
+        ResolvedGpuScalarSource::Curve(curve, _) => curve
+            .first()
+            .map_or(0.0, |(_, value)| value.abs())
+            .max(curve.last_value().abs())
+            .max(
+                curve
+                    .segments()
+                    .iter()
+                    .map(|segment| segment.start_value.abs().max(segment.end_value.abs()))
+                    .fold(0.0, f32::max),
+            ),
+    }
 }
 
 fn pack_scalar_source(
@@ -1246,17 +1290,7 @@ fn emission<'a>(
                 burst_count,
                 ..
             } => {
-                let spawn_rate = match spawn_rate {
-                    ScalarSource::Constant(value) => {
-                        ResolvedGpuScalarSource::Constant(*value.resolve(values))
-                    }
-                    ScalarSource::RandomRange(value) => {
-                        ResolvedGpuScalarSource::RandomRange(*value.resolve(values))
-                    }
-                    ScalarSource::Curve { value, domain } => {
-                        ResolvedGpuScalarSource::Curve(value.resolve(values), *domain)
-                    }
-                };
+                let spawn_rate = resolve_gpu_scalar_source(spawn_rate, values);
                 Some((spawn_rate, *burst_count.resolve(values)))
             }
             _ => None,
@@ -1305,7 +1339,7 @@ fn initialize(plan: &ExecutionPlan, values: &[RuntimeValue]) -> Option<GpuInitia
 struct GpuMotion<'a> {
     gravity: [f32; 3],
     drag: ResolvedGpuScalarSource<'a>,
-    turbulence: f32,
+    turbulence: ResolvedGpuScalarSource<'a>,
 }
 
 impl Default for GpuMotion<'_> {
@@ -1313,7 +1347,7 @@ impl Default for GpuMotion<'_> {
         Self {
             gravity: [0.0; 3],
             drag: ResolvedGpuScalarSource::Constant(0.0),
-            turbulence: 0.0,
+            turbulence: ResolvedGpuScalarSource::Constant(0.0),
         }
     }
 }
@@ -1329,18 +1363,8 @@ fn motion<'a>(plan: &'a ExecutionPlan, values: &'a [RuntimeValue]) -> Option<Gpu
                 ..
             } => Some(GpuMotion {
                 gravity: *gravity.resolve(values),
-                drag: match drag {
-                    ScalarSource::Constant(value) => {
-                        ResolvedGpuScalarSource::Constant(*value.resolve(values))
-                    }
-                    ScalarSource::RandomRange(value) => {
-                        ResolvedGpuScalarSource::RandomRange(*value.resolve(values))
-                    }
-                    ScalarSource::Curve { value, domain } => {
-                        ResolvedGpuScalarSource::Curve(value.resolve(values), *domain)
-                    }
-                },
-                turbulence: *turbulence.resolve(values),
+                drag: resolve_gpu_scalar_source(drag, values),
+                turbulence: resolve_gpu_scalar_source(turbulence, values),
             }),
             _ => None,
         })
@@ -1646,8 +1670,8 @@ mod tests {
     }
 
     #[test]
-    fn artifact_packs_drag_curve_and_random_sources_for_wesl() {
-        let mut effect = EffectAsset::new("GPU drag sources", 2.0);
+    fn artifact_packs_motion_curve_and_random_sources_for_wesl() {
+        let mut effect = EffectAsset::new("GPU motion sources", 2.0);
         effect
             .emitters
             .push(Emitter::basic_sprite("Curve", effect.duration));
@@ -1672,6 +1696,16 @@ mod tests {
                 )),
             )],
         );
+        motion
+            .property_sources
+            .insert("turbulence".into(), PropertySource::RandomRange);
+        motion.property_source_values.insert(
+            "turbulence".into(),
+            vec![PropertySourceValue::new(
+                PropertySource::RandomRange,
+                Value::Range(ScalarRange::new(1.0, 5.0)),
+            )],
+        );
 
         let motion = effect.emitters[1]
             .modules
@@ -1688,6 +1722,19 @@ mod tests {
                 Value::Range(ScalarRange::new(0.25, 1.5)),
             )],
         );
+        motion
+            .property_sources
+            .insert("turbulence".into(), curve_source);
+        motion.property_source_values.insert(
+            "turbulence".into(),
+            vec![PropertySourceValue::new(
+                curve_source,
+                Value::Curve(Curve::normalized(
+                    vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 1.0)],
+                    ScalarRange::new(0.0, 6.0),
+                )),
+            )],
+        );
 
         let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
         let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
@@ -1698,8 +1745,14 @@ mod tests {
         assert_eq!(curve.drag_curve.count, 2);
         assert_eq!(curve.drag_curve.keys[0], Vec2::new(0.0, 0.0));
         assert_eq!(curve.drag_curve.keys[1], Vec2::new(1.0, 4.0));
+        assert_eq!(curve.turbulence_source, 1);
+        assert_eq!(curve.turbulence, Vec2::new(1.0, 5.0));
         assert_eq!(random.drag_source, 1);
         assert_eq!(random.drag, Vec2::new(0.25, 1.5));
+        assert_eq!(random.turbulence_source, 3);
+        assert_eq!(random.turbulence_curve.count, 2);
+        assert_eq!(random.turbulence_curve.keys[0], Vec2::new(0.0, 0.0));
+        assert_eq!(random.turbulence_curve.keys[1], Vec2::new(1.0, 6.0));
     }
 
     #[test]
