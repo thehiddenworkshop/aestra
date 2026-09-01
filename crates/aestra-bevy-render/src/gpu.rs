@@ -322,6 +322,7 @@ pub(crate) fn prepare_gpu_effects(
             commands.entity(entity).insert(GpuPresentationPrepared);
             continue;
         }
+        apply_semantic_sprite_compatibility_to_artifact(&mut artifact, player);
         let renderer_draws = artifact
             .renderers
             .iter_mut()
@@ -337,9 +338,6 @@ pub(crate) fn prepare_gpu_effects(
             .map(|((index, renderer), plan)| {
                 let material = player.effect().material(plan.material);
                 let runtime_binding = player.material_binding(plan.material);
-                if let Some(binding) = runtime_binding {
-                    apply_semantic_sprite_compatibility(renderer, binding);
-                }
                 let semantic_material = runtime_binding
                     .map(|binding| material_resources.prepare(binding, player.effect()))
                     .transpose()
@@ -524,6 +522,24 @@ fn apply_semantic_sprite_compatibility(
     }
 }
 
+fn apply_semantic_sprite_compatibility_to_artifact(
+    artifact: &mut GpuEffectArtifact,
+    player: &PresentedEffect,
+) {
+    for (renderer, plan) in artifact.renderers.iter_mut().zip(
+        player
+            .effect()
+            .emitters
+            .iter()
+            .filter(|emitter| emitter.enabled)
+            .flat_map(|emitter| emitter.renderers.iter()),
+    ) {
+        if let Some(binding) = player.material_binding(plan.material) {
+            apply_semantic_sprite_compatibility(renderer, binding);
+        }
+    }
+}
+
 fn publish_gpu_capabilities(
     render_device: Res<RenderDevice>,
     adapter: Res<RenderAdapter>,
@@ -652,7 +668,8 @@ fn update_gpu_inputs(
     mut draw_instances: Query<(&mut GpuDrawInstance, &mut RenderLayers), Without<PresentedEffect>>,
 ) {
     for (player, transform, gpu, render_layers, children) in &players {
-        if let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance) {
+        if let Ok(mut artifact) = GpuEffectArtifact::from_instance(&player.instance) {
+            apply_semantic_sprite_compatibility_to_artifact(&mut artifact, player);
             if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
                 buffer.set_data(artifact.emitters);
             }
@@ -917,13 +934,15 @@ mod tests {
     use super::*;
     use aestra_compiler::{EffectCompiler, MaterialCompiler};
     use aestra_core::material::{
-        MaterialInstance, MaterialProgram, MaterialProgramRef, MaterialRenderState,
+        LEGACY_SPRITE_SOFTNESS_PARAMETER, MaterialEvaluationDomain, MaterialExpression,
+        MaterialExpressionKind, MaterialInstance, MaterialParameter, MaterialParameterValue,
+        MaterialProgram, MaterialProgramRef, MaterialRenderState, MaterialValue, MaterialValueType,
     };
     use aestra_core::{
         AssetDefinition, BlendMode, Curve, CurveKey, EffectAsset, Emitter, EmitterShape,
-        MODULE_EMISSION, MODULE_MOTION, MaterialDefinition, MaterialInput, MaterialProperties,
-        PropertyEvaluationDomain, PropertySource, PropertySourceValue, RendererInstance,
-        ScalarRange, UvRect, Value, Vec3Curve, Vec3Range,
+        MODULE_EMISSION, MODULE_MOTION, MaterialDefinition, MaterialExpressionId, MaterialInput,
+        MaterialParameterId, MaterialProperties, PropertyEvaluationDomain, PropertySource,
+        PropertySourceValue, RendererInstance, ScalarRange, UvRect, Value, Vec3Curve, Vec3Range,
     };
     use aestra_gpu::{
         INDIRECT_DRAW_BYTES,
@@ -934,12 +953,27 @@ mod tests {
 
     #[test]
     fn semantic_material_instance_reaches_the_gpu_draw_artifact_without_legacy_material_data() {
-        let program = MaterialProgram::additive_sprite("Deterministic additive flame");
+        let softness = MaterialParameterId::from_u128(0xA501);
+        let mut program = MaterialProgram::additive_sprite("Deterministic additive flame");
+        program.parameters.push(MaterialParameter {
+            id: softness,
+            name: LEGACY_SPRITE_SOFTNESS_PARAMETER.into(),
+            value_type: MaterialValueType::Float,
+            evaluation_domain: MaterialEvaluationDomain::Instance,
+            default: Some(MaterialValue::Float(1.0)),
+        });
+        program.expressions.push(MaterialExpression {
+            id: MaterialExpressionId::from_u128(0xA502),
+            kind: MaterialExpressionKind::Parameter(softness),
+        });
         let material = MaterialId::from_u128(0xA500);
         let instance = MaterialInstance {
             id: material,
             program: MaterialProgramRef::Project(program.id),
-            values: BTreeMap::new(),
+            values: BTreeMap::from([(
+                softness,
+                MaterialParameterValue::Constant(MaterialValue::Float(0.08)),
+            )]),
             render_state: MaterialRenderState::additive_sprite(),
         };
         let mut effect = EffectAsset::new("Semantic flame fixture", 2.0);
@@ -962,10 +996,13 @@ mod tests {
             MaterialRuntimeBinding::from_instance(compiled_program, &instance).unwrap(),
         );
 
-        let artifact = GpuEffectArtifact::from_instance(&presented.instance).unwrap();
+        let mut artifact = GpuEffectArtifact::from_instance(&presented.instance).unwrap();
         assert_eq!(artifact.renderers.len(), 1);
         assert_eq!(artifact.renderers[0].blend_mode, GpuBlend::Additive as u32);
+        assert_eq!(artifact.renderers[0].softness, 1.0);
         assert!(presented.material_binding(material).is_some());
+        apply_semantic_sprite_compatibility_to_artifact(&mut artifact, &presented);
+        assert_eq!(artifact.renderers[0].softness, 0.08);
     }
 
     #[test]

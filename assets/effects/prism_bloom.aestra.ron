@@ -3,7 +3,7 @@
     id: "8f245a4d-4c55-4d8b-a404-09a20cf67a01",
     name: "Prism Bloom",
     duration: 2.8,
-    looping: true,
+    playback_mode: LoopContinuous,
     materials: [
         (
             id: "a3574a00-0000-4000-8000-000000000011",
@@ -42,7 +42,38 @@
             ),
         ),
     ],
-    parameters: [],
+    parameters: [
+        (
+            id: "cd6d9f4f-77b3-4dc2-a3de-ce0e75ff9d80",
+            name: "Speed",
+            default: Range((
+                min: 8.0,
+                max: 28.0,
+            )),
+            exposed: false,
+        ),
+        (
+            id: "ec827f6e-e16f-4823-805f-513fb7757ded",
+            name: "Lifetime",
+            default: Range((
+                min: 0.7,
+                max: 1.25,
+            )),
+            exposed: false,
+        ),
+        (
+            id: "a38a3ec2-cb15-432a-a01d-af3293184af4",
+            name: "Direction",
+            default: Vec3((0.0, 1.0, 0.0)),
+            exposed: false,
+        ),
+        (
+            id: "8b6f21c1-afde-470e-811c-6b15640cb221",
+            name: "Spread",
+            default: Scalar(360.0),
+            exposed: true,
+        ),
+    ],
     emitters: [
         (
             id: "19ea9132-e094-4daa-b0a5-3dc435cd9431",
@@ -53,8 +84,8 @@
                 rotation: (0.0, 0.0, 0.0, 1.0),
                 scale: (1.0, 1.0, 1.0),
             ),
-            start_time: 0.0,
-            duration: 2.8,
+            start_time: 0.35000002,
+            duration: 1.2,
             max_particles: 96,
             simulation_domain: Particle,
             modules: [
@@ -100,6 +131,12 @@
                             max: 2.0,
                         ),
                     ),
+                    bindings: {
+                        "direction": "a38a3ec2-cb15-432a-a01d-af3293184af4",
+                        "lifetime": "ec827f6e-e16f-4823-805f-513fb7757ded",
+                        "speed": "cd6d9f4f-77b3-4dc2-a3de-ce0e75ff9d80",
+                        "spread_degrees": "8b6f21c1-afde-470e-811c-6b15640cb221",
+                    },
                 ),
                 (
                     id: "f5814718-83be-45fd-a4ac-a46784252ba8",
@@ -126,8 +163,8 @@
                                     value: 15.0,
                                 ),
                                 (
-                                    time: 0.18,
-                                    value: 22.0,
+                                    time: 0.4074075,
+                                    value: 8.158041,
                                 ),
                                 (
                                     time: 1.0,
@@ -147,8 +184,8 @@
                                     value: 0.9,
                                 ),
                                 (
-                                    time: 0.75,
-                                    value: 0.55,
+                                    time: 0.7777778,
+                                    value: 0.30252105,
                                 ),
                                 (
                                     time: 1.0,
@@ -164,7 +201,7 @@
                                     color: (0.86, 0.78, 1.0, 1.0),
                                 ),
                                 (
-                                    time: 0.45,
+                                    time: 0.5,
                                     color: (0.46, 0.22, 1.0, 1.0),
                                 ),
                                 (
@@ -333,8 +370,8 @@
                 rotation: (0.0, 0.0, 0.0, 1.0),
                 scale: (1.0, 1.0, 1.0),
             ),
-            start_time: 0.25,
-            duration: 2.55,
+            start_time: 0.0,
+            duration: 2.8,
             max_particles: 120,
             simulation_domain: Particle,
             modules: [
@@ -603,13 +640,20 @@
             target: "5a8a1c6e-fb49-4486-a0dd-41a2d2257fbb",
         ),
     ],
+    markers: [
+        (
+            id: "33ae820c-4af2-4d3d-91e6-b40838e91b5a",
+            name: "Marker 1",
+            time: 1.2833333,
+        ),
+    ],
     effect_clips: [
         (
             id: "1036430a-9863-4f21-9a2b-f3a2026c2271",
             source: "2c4ebbb0-12cf-4e28-83fc-f6f19487fbd0",
-            start_time: 0.25,
-            source_offset: 0.0,
-            duration: 1.6333334,
+            start_time: 0.0,
+            source_offset: 2.15,
+            duration: 2.8,
             seed: Inherit,
         ),
     ],

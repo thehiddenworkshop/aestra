@@ -371,15 +371,14 @@ outdated or future format.
 - [x] deterministic seeds, backend capability selection, and per-effect particle budgets
 - [ ] quality tiers and aggregate global VFX budgets
 
-### Pre-material authoring hardening gate (in progress)
+### Pre-material authoring hardening gate (complete)
 
 - [x] replace showcase-dependent behavioral tests with deterministic semantic fixtures
 - [x] split Timeline and Properties implementation details into focused internal modules
 - [x] reconcile roadmap status with the implemented renderer, composition, and automation slices
 - [x] audit the current material contract and define compatibility fixtures/test expectations
-- [ ] approve the semantic-material showcase path through the native-GPU visual gate (format,
-  migration-command, effect-compiler, and portable shader gates are complete)
-- [ ] deliver the animated additive-flame material vertical slice before a material node graph
+- [x] approve the semantic-material showcase path through the native-GPU visual gate
+- [x] deliver the animated additive-flame material vertical slice before a material node graph
 
 ### Phase 4 — professional workflow (in progress)
 

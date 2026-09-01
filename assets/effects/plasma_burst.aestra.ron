@@ -18,10 +18,22 @@
             name: "Plasma Bloom",
             texture: "38ff510c-03c0-47fd-83db-f034006ea196",
             frames: [
-                (min: (0.0, 0.0), max: (0.5, 0.5)),
-                (min: (0.5, 0.0), max: (1.0, 0.5)),
-                (min: (0.0, 0.5), max: (0.5, 1.0)),
-                (min: (0.5, 0.5), max: (1.0, 1.0)),
+                (
+                    min: (0.0, 0.0),
+                    max: (0.5, 0.5),
+                ),
+                (
+                    min: (0.5, 0.0),
+                    max: (1.0, 0.5),
+                ),
+                (
+                    min: (0.0, 0.5),
+                    max: (0.5, 1.0),
+                ),
+                (
+                    min: (0.5, 0.5),
+                    max: (1.0, 1.0),
+                ),
             ],
             frame_rate: 8.0,
             looping: true,
@@ -38,42 +50,167 @@
             ),
         ),
     ],
+    parameters: [
+        (
+            id: "bdd6c059-e36d-49c3-b4e2-6e2b94b917b4",
+            name: "Lifetime",
+            default: Range((
+                min: 0.7,
+                max: 1.25,
+            )),
+            exposed: true,
+        ),
+        (
+            id: "06a3447d-bedf-4c10-89d9-a2a0bb10fe4f",
+            name: "Speed",
+            default: Range((
+                min: 8.0,
+                max: 26.0,
+            )),
+            exposed: true,
+        ),
+        (
+            id: "1c6b096d-b511-426b-a983-6383d9a9f634",
+            name: "Direction",
+            default: Vec3((0.0, 1.0, 0.0)),
+            exposed: true,
+        ),
+    ],
     emitters: [
         (
             id: "f87393ec-3fd9-4524-b066-ec2ff3422686",
             name: "Plasma Motes",
             enabled: true,
-            transform: (translation: (0.0, 0.0, 0.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0)),
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
             start_time: 0.0,
             duration: 2.0,
             max_particles: 96,
             simulation_domain: Particle,
             modules: [
-                (id: "2c7e55b9-2524-47b6-8958-1496c9e6948b", module_type: "aestra.emission.rate", stage: EmitterUpdate, enabled: true, parameters: Emission(spawn_rate: 12.0, burst_count: 8)),
-                (id: "3f3d086d-3946-44b5-bd84-4cc8d7a614fc", module_type: "aestra.spawn.shape", stage: ParticleSpawn, enabled: true, parameters: Shape(shape: Sphere(radius: 12.0))),
+                (
+                    id: "2c7e55b9-2524-47b6-8958-1496c9e6948b",
+                    module_type: "aestra.emission.rate",
+                    stage: EmitterUpdate,
+                    enabled: true,
+                    parameters: Emission(
+                        spawn_rate: 12.0,
+                        burst_count: 8,
+                    ),
+                ),
+                (
+                    id: "3f3d086d-3946-44b5-bd84-4cc8d7a614fc",
+                    module_type: "aestra.spawn.shape",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Shape(
+                        shape: Sphere(
+                            radius: 12.0,
+                        ),
+                    ),
+                ),
                 (
                     id: "51e700a0-f8cd-45af-a69c-c98122c578b2",
                     module_type: "aestra.spawn.initialize",
                     stage: ParticleSpawn,
                     enabled: true,
                     parameters: Initialize(
-                        lifetime: (min: 0.7, max: 1.25),
-                        speed: (min: 8.0, max: 26.0),
+                        lifetime: (
+                            min: 0.7,
+                            max: 1.25,
+                        ),
+                        speed: (
+                            min: 8.0,
+                            max: 26.0,
+                        ),
                         direction: (0.0, 1.0, 0.0),
                         spread_degrees: 360.0,
-                        angular_velocity: (min: -0.8, max: 0.8),
+                        angular_velocity: (
+                            min: -0.8,
+                            max: 0.8,
+                        ),
+                    ),
+                    bindings: {
+                        "direction": "1c6b096d-b511-426b-a983-6383d9a9f634",
+                        "lifetime": "bdd6c059-e36d-49c3-b4e2-6e2b94b917b4",
+                        "speed": "06a3447d-bedf-4c10-89d9-a2a0bb10fe4f",
+                    },
+                ),
+                (
+                    id: "ae8da36f-cf4b-4380-b44f-ffab33f1d761",
+                    module_type: "aestra.update.motion",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Motion(
+                        gravity: (0.0, 8.0, 0.0),
+                        drag: 1.1,
+                        turbulence: 2.0,
                     ),
                 ),
-                (id: "ae8da36f-cf4b-4380-b44f-ffab33f1d761", module_type: "aestra.update.motion", stage: ParticleUpdate, enabled: true, parameters: Motion(gravity: (0.0, 8.0, 0.0), drag: 1.1, turbulence: 2.0)),
                 (
                     id: "99c9c045-f511-4ac2-9f27-3b921e698cb5",
                     module_type: "aestra.update.appearance",
                     stage: ParticleUpdate,
                     enabled: true,
                     parameters: Appearance(
-                        size: (id: "cb09d4a1-66fa-4cb6-af60-4cba7b5344ce", keys: [(time: 0.0, value: 28.0), (time: 0.35, value: 58.0), (time: 1.0, value: 12.0)]),
-                        opacity: (id: "53b5e6f5-5d94-4c5d-bafb-30491104bf8e", keys: [(time: 0.0, value: 0.0), (time: 0.08, value: 1.0), (time: 0.72, value: 0.72), (time: 1.0, value: 0.0)]),
-                        color: (id: "f25e6cd3-2416-4f0d-a34c-1eb51eeb4576", keys: [(time: 0.0, color: (0.72, 0.9, 1.0, 1.0)), (time: 0.5, color: (0.62, 0.32, 1.0, 1.0)), (time: 1.0, color: (0.15, 0.04, 0.4, 0.0))]),
+                        size: (
+                            id: "cb09d4a1-66fa-4cb6-af60-4cba7b5344ce",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    value: 28.0,
+                                ),
+                                (
+                                    time: 0.35,
+                                    value: 58.0,
+                                ),
+                                (
+                                    time: 1.0,
+                                    value: 12.0,
+                                ),
+                            ],
+                        ),
+                        opacity: (
+                            id: "53b5e6f5-5d94-4c5d-bafb-30491104bf8e",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    value: 0.0,
+                                ),
+                                (
+                                    time: 0.08,
+                                    value: 1.0,
+                                ),
+                                (
+                                    time: 0.72,
+                                    value: 0.72,
+                                ),
+                                (
+                                    time: 1.0,
+                                    value: 0.0,
+                                ),
+                            ],
+                        ),
+                        color: (
+                            id: "f25e6cd3-2416-4f0d-a34c-1eb51eeb4576",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    color: (0.72, 0.9, 1.0, 1.0),
+                                ),
+                                (
+                                    time: 0.5,
+                                    color: (0.62, 0.32, 1.0, 1.0),
+                                ),
+                                (
+                                    time: 1.0,
+                                    color: (0.15, 0.04, 0.4, 0.0),
+                                ),
+                            ],
+                        ),
                     ),
                 ),
             ],
@@ -93,4 +230,21 @@
             ],
         ),
     ],
+    events: [],
+    effect_clips: [
+        (
+            id: "5b10f2a7-f30f-49b3-8ae3-031eefe65f40",
+            source: "8f245a4d-4c55-4d8b-a404-09a20cf67a01",
+            start_time: 0.0,
+            source_offset: 0.0,
+            duration: 2.0,
+            seed: Inherit,
+        ),
+    ],
+    choreography_order: [
+        Emitter("f87393ec-3fd9-4524-b066-ec2ff3422686"),
+        EffectClip("5b10f2a7-f30f-49b3-8ae3-031eefe65f40"),
+    ],
+    dependencies: [],
+    metadata: {},
 )

@@ -179,27 +179,26 @@ surface to mutable examples and monolithic panel modules.
    exposed-parameter/instance-override, automation, choreography-event, artifact, and portability
    slices from the remaining mesh/ribbon/trail, authored sorting, quality-budget, release packaging,
    and semantic material-program work.
-4. **Approve showcase content independently — semantic compile gate complete, GPU approval
-   pending.** Keep editable examples outside ordinary semantic unit-test assumptions. The Material
-   5 bundle-boundary contract now migrates all three showcases in memory, validates the command
-   result, compiles the effects, and compiles every generated program for the portable GPU ABI.
-   Intentional visual changes still require the self-hosted native-GPU workflow.
+4. **Approve showcase content independently — complete.** Keep editable examples outside ordinary
+   semantic unit-test assumptions. The Material 5 bundle-boundary contract migrates all three
+   showcases in memory, validates the command result, compiles the effects and every generated
+   program for the portable GPU ABI, and passes the native-GPU semantic reference comparisons.
+   Intentional future visual changes still require the self-hosted native-GPU workflow.
 5. **Audit the current material contract — complete.**
    [`material-system/current-state.md`](material-system/current-state.md) inventories semantic and
    compiled types, renderer relationships, WESL entry points, render state, commands, editor
    surfaces, compatibility fixtures, migration classification, and the first-slice test contract.
-6. **Begin the material vertical slice — in progress.** The repository-aligned semantic core,
+6. **Deliver the first material vertical slice — complete.** The repository-aligned semantic core,
    complete semantic validation, baseline transactional command layer, and typed backend-neutral
    material IR are implemented. The portable WESL/resource ABI and backend layout adapter are also
-   complete. The live runtime bridge and non-destructive legacy migration transaction are complete;
-   continue the animated additive-flame path through native-GPU preview approval before adding a
-   node-graph projection.
+   complete. The live runtime bridge, non-destructive legacy migration transaction, animated
+   additive-flame path, and native-GPU preview approval are complete. Reflection and dynamic
+   parameter binding are the next slice; the node-graph projection remains deferred.
 
 Exit gate: deterministic behavioral tests remain stable when showcase timing or playback changes;
 Timeline and Properties have focused internal ownership; roadmap status matches the shipped code;
 the three showcase effects pass format/compiler checks plus native-GPU approval; and the first
-material slice has an agreed semantic contract and test plan. The roadmap and material-audit parts
-of this gate are complete; showcase approval and the vertical slice remain.
+material slice has an agreed semantic contract and test plan. This gate is complete.
 
 ## Semantic material-program delivery milestone
 
@@ -234,16 +233,16 @@ the current sprite-material path until the native-GPU compatibility gate approve
   program fingerprints from render-state/target/sample/feature pipeline keys. Ordinary instance
   values and texture asset IDs affect neither key. `aestra-bevy-render` maps physical device limits
   and the portable layout into Bevy/WGPU descriptors without introducing backend types upstream.
-- [ ] **Material 5 — legacy migration and visual approval (implementation complete; GPU approval
-  pending).** The live 2D
+- [x] **Material 5 — legacy migration and visual approval.** The live 2D
   and 3D sprite pipelines accept compiled semantic fragment shaders, deterministic group-2 resource
   layouts, constant/default instance values, explicit samplers, missing-texture fallbacks, and
   portable pipeline keys while preserving the legacy compatibility draw. A deterministic,
   non-destructive command transaction now converts legacy sprite/flipbook presentation into
   semantic programs and instances, including tint/particle color, sampled alpha, UV rectangles,
   texture/flipbook resources, blend state, and the temporary softness-coverage adapter. The viewer's
-  `--semantic-materials` path powers the scheduled showcase comparison. Material 5 closes when the
-  self-hosted native-GPU references approve this path; this is not a claim of CPU pixel parity.
+  `--semantic-materials` path powers the scheduled showcase comparison. The native-GPU references
+  approve this path with pixel-identical legacy/semantic showcase output; this is not a claim of
+  CPU pixel parity.
 
 ### Phase B — useful artist workflow
 

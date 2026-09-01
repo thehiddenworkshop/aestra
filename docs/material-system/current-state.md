@@ -1,6 +1,6 @@
 # Current Material System Audit
 
-Status: Material authoring Milestone 0 complete
+Status: Material authoring Milestone 5 complete; Material 6 next
 Audited: 2026-09-01
 
 This document records the material and renderer contract that exists before Aestra introduces a
@@ -240,7 +240,9 @@ renderers only through baseline semantic commands. Sprite textures, flipbook atl
 particle/constant/parameter tint, sampled alpha, UV rectangles, blend state, and softness are
 covered. Softness uses a named reflected compatibility value until coverage becomes a first-class
 semantic primitive. The viewer's opt-in `--semantic-materials` path performs this migration in
-memory and binds the resulting shaders without rewriting the source effect.
+memory and binds the resulting shaders without rewriting the source effect. Native-GPU comparison
+now verifies pixel-identical legacy and semantic output for all three showcase sources, and the
+approved images are the scheduled workflow baseline.
 
 ## Migration classification
 
@@ -295,6 +297,6 @@ Material Milestone 1 may begin with an additive unlit sprite domain and only `Fl
 The node graph remains deferred. It will be a projection of the semantic program after the typed
 model, compiler path, runtime binding, and preview are stable.
 
-Items 1–6 of this entrance contract are complete. The deterministic legacy migration covers the
-current sprite and flipbook showcase paths. Native-GPU approval remains the final Material 5 release
-gate.
+Items 1–7 of this entrance contract are complete. The deterministic legacy migration covers the
+current sprite and flipbook showcase paths, and native-GPU approval closes the Material 5 release
+gate. Material 6 continues with reflected dynamic parameter and resource binding.

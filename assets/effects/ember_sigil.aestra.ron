@@ -24,7 +24,38 @@
             ),
         ),
     ],
-    parameters: [],
+    parameters: [
+        (
+            id: "e5881fff-d6d0-4409-9029-fcf0f6964d88",
+            name: "Lifetime",
+            default: Range((
+                min: 0.8,
+                max: 1.5,
+            )),
+            exposed: true,
+        ),
+        (
+            id: "f55d1c43-24da-41c6-949a-d46afdcf6f94",
+            name: "Speed",
+            default: Range((
+                min: 22.0,
+                max: 58.0,
+            )),
+            exposed: true,
+        ),
+        (
+            id: "7091bec3-a4e9-40fc-995c-fbe82c535514",
+            name: "Direction",
+            default: Vec3((0.0, 1.0, 0.0)),
+            exposed: true,
+        ),
+        (
+            id: "1ffae3d2-ca1d-4f81-b2c1-8ff64e9e8934",
+            name: "Spread",
+            default: Scalar(360.0),
+            exposed: true,
+        ),
+    ],
     emitters: [
         (
             id: "92a44d4a-0fb0-4597-a54d-14aa03516de4",
@@ -82,6 +113,12 @@
                             max: 1.2,
                         ),
                     ),
+                    bindings: {
+                        "direction": "7091bec3-a4e9-40fc-995c-fbe82c535514",
+                        "lifetime": "e5881fff-d6d0-4409-9029-fcf0f6964d88",
+                        "speed": "f55d1c43-24da-41c6-949a-d46afdcf6f94",
+                        "spread_degrees": "1ffae3d2-ca1d-4f81-b2c1-8ff64e9e8934",
+                    },
                 ),
                 (
                     id: "55c1470c-09a9-4dd9-91c6-c7861840340e",
@@ -93,6 +130,67 @@
                         drag: 0.85,
                         turbulence: 3.5,
                     ),
+                    property_sources: {
+                        "gravity": Curve(ParticleLife),
+                    },
+                    property_source_values: {
+                        "gravity": [
+                            (
+                                source: Curve(ParticleLife),
+                                value: Vec3Curve((
+                                    curves: ((
+                                        id: "61abbb7a-9366-4038-87b3-60259da02d94",
+                                        keys: [
+                                            (
+                                                time: 0.0,
+                                                value: 0.0,
+                                            ),
+                                            (
+                                                time: 1.0,
+                                                value: 0.0,
+                                            ),
+                                        ],
+                                        output_range: Some((
+                                            min: 0.0,
+                                            max: 0.0,
+                                        )),
+                                    ), (
+                                        id: "66bdc816-0954-456c-aa3d-170464c34c94",
+                                        keys: [
+                                            (
+                                                time: 0.0,
+                                                value: 0.0,
+                                            ),
+                                            (
+                                                time: 1.0,
+                                                value: 0.0,
+                                            ),
+                                        ],
+                                        output_range: Some((
+                                            min: 28.0,
+                                            max: 28.0,
+                                        )),
+                                    ), (
+                                        id: "b8dfacdf-af15-47a2-9876-93c3632abc3a",
+                                        keys: [
+                                            (
+                                                time: 0.0,
+                                                value: 0.0,
+                                            ),
+                                            (
+                                                time: 1.0,
+                                                value: 0.0,
+                                            ),
+                                        ],
+                                        output_range: Some((
+                                            min: 0.0,
+                                            max: 0.0,
+                                        )),
+                                    )),
+                                )),
+                            ),
+                        ],
+                    },
                 ),
                 (
                     id: "1f877141-f09e-4769-9a4e-c896449a36c7",
