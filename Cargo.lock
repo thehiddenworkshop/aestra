@@ -151,6 +151,7 @@ dependencies = [
  "aestra-core",
  "aestra-project",
  "aestra-runtime",
+ "serde",
  "tempfile",
  "thiserror 2.0.20",
 ]

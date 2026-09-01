@@ -1,5 +1,9 @@
 //! Module discovery, compiler validation, optimization, and typed lowering.
 
+mod material_ir;
+
+pub use material_ir::*;
+
 pub use aestra_core::{
     PropertyEvaluationDomain as InputEvaluationDomain, PropertySource as InputSourceKind, ValueType,
 };

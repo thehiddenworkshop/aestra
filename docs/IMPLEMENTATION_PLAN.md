@@ -134,8 +134,10 @@ architecture vision; this file is the shorter delivery plan.
   procedural recipes, mesh/ribbon production paths, authored renderer sorting controls, and richer material domains
   remain. The semantic material-program foundation now includes backend-independent expression
   type and evaluation-domain inference, deterministic socket/output/resource/domain/render-state
-  diagnostics, and one transactional authoring boundary for project programs, effect-local
-  instances, renderer assignments, semantic diffs, and bounded undo/redo.
+  diagnostics, one transactional authoring boundary for project programs, effect-local instances,
+  renderer assignments, semantic diffs, and bounded undo/redo, plus deterministic lowering into a
+  typed backend-neutral IR with source mapping, constant folding, trivial arithmetic
+  simplification, and dead-value elimination.
 
 ## M6 composition release gate
 
@@ -181,9 +183,9 @@ surface to mutable examples and monolithic panel modules.
    compiled types, renderer relationships, WESL entry points, render state, commands, editor
    surfaces, compatibility fixtures, migration classification, and the first-slice test contract.
 6. **Begin the material vertical slice — in progress.** The repository-aligned semantic core,
-   complete semantic validation, and baseline transactional command layer are implemented.
-   Continue the animated additive-flame path through typed IR, WESL generation, runtime binding,
-   and preview before adding a node-graph projection.
+   complete semantic validation, baseline transactional command layer, and typed backend-neutral
+   material IR are implemented. Continue the animated additive-flame path through WESL generation,
+   runtime binding, and preview before adding a node-graph projection.
 
 Exit gate: deterministic behavioral tests remain stable when showcase timing or playback changes;
 Timeline and Properties have focused internal ownership; roadmap status matches the shipped code;
@@ -212,8 +214,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   resources, and render-state policy. `aestra-authoring` now provides atomic add/remove/replace,
   output, expression rewiring, instance-parameter/render-state, and renderer-assignment commands
   with semantic diffs, stable identity checks, and bounded undo/redo.
-- [ ] **Material 3 — typed material IR.** Lower valid semantic programs into backend-neutral IR
-  with source mapping and the first deterministic optimizations.
+- [x] **Material 3 — typed material IR.** Valid semantic programs lower deterministically into a
+  typed backend-neutral SSA-like value graph. Bidirectional expression/value source mapping
+  survives aliases and records eliminated expressions; authored sRGB constants become linear; and
+  constant folding, trivial add/multiply simplification, and dead-value elimination run before the
+  artifact is exposed. Invalid programs never reach lowering.
 - [ ] **Material 4 — WESL and resource ABI.** Generate WESL, deterministic multi-texture/sampler
   layouts, reflection, program fingerprints, and pipeline cache keys through `aestra-gpu` and the
   isolated `aestra-bevy-render` adapter.

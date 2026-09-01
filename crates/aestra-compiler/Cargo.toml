@@ -11,6 +11,7 @@ repository.workspace = true
 aestra-core = { path = "../aestra-core" }
 aestra-project = { path = "../aestra-project" }
 aestra-runtime = { path = "../aestra-runtime" }
+serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
