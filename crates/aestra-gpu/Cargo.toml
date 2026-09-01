@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+aestra-compiler = { path = "../aestra-compiler" }
 aestra-core = { path = "../aestra-core" }
 aestra-runtime = { path = "../aestra-runtime" }
 encase.workspace = true
@@ -15,6 +16,3 @@ glam.workspace = true
 naga.workspace = true
 thiserror.workspace = true
 wesl.workspace = true
-
-[dev-dependencies]
-aestra-compiler = { path = "../aestra-compiler" }

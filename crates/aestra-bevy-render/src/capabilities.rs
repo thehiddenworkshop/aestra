@@ -5,6 +5,7 @@ use crate::{
     BackendCapabilities, CompatibilityReport, CompatibilityTarget, EffectRequirements,
     PresentationMode, RendererCapability,
 };
+use aestra_gpu::material::MaterialBackendCapabilities;
 
 pub const DEFAULT_GPU_PARTICLE_BUDGET: u32 = 262_144;
 
@@ -25,6 +26,9 @@ pub struct GpuCapabilities {
     pub max_bindings_per_bind_group: u32,
     pub max_storage_buffers_per_shader_stage: u32,
     pub max_storage_buffer_binding_size: u64,
+    pub max_sampled_textures_per_shader_stage: u32,
+    pub max_samplers_per_shader_stage: u32,
+    pub max_uniform_buffer_binding_size: u64,
     pub max_buffer_size: u64,
     pub max_compute_workgroups_per_dimension: u32,
     pub max_compute_invocations_per_workgroup: u32,
@@ -50,6 +54,9 @@ impl Default for GpuCapabilities {
             max_bindings_per_bind_group: 0,
             max_storage_buffers_per_shader_stage: 0,
             max_storage_buffer_binding_size: 0,
+            max_sampled_textures_per_shader_stage: 0,
+            max_samplers_per_shader_stage: 0,
+            max_uniform_buffer_binding_size: 0,
             max_buffer_size: 0,
             max_compute_workgroups_per_dimension: 0,
             max_compute_invocations_per_workgroup: 0,
@@ -90,6 +97,17 @@ impl GpuCapabilities {
                 RendererCapability::SpriteParticles,
                 RendererCapability::FlipbookParticles,
             ]),
+        }
+    }
+
+    /// Converts concrete device limits into the portable semantic-material ABI contract.
+    pub fn material_backend_capabilities(&self) -> MaterialBackendCapabilities {
+        MaterialBackendCapabilities {
+            max_bind_groups: self.max_bind_groups,
+            max_bindings_per_bind_group: self.max_bindings_per_bind_group,
+            max_sampled_textures_per_shader_stage: self.max_sampled_textures_per_shader_stage,
+            max_samplers_per_shader_stage: self.max_samplers_per_shader_stage,
+            max_uniform_buffer_binding_size: self.max_uniform_buffer_binding_size,
         }
     }
 }
@@ -275,6 +293,26 @@ mod tests {
             },
             ..GpuCapabilities::default()
         }
+    }
+
+    #[test]
+    fn semantic_material_limits_translate_without_backend_types() {
+        let capabilities = GpuCapabilities {
+            max_bind_groups: 4,
+            max_bindings_per_bind_group: 12,
+            max_sampled_textures_per_shader_stage: 8,
+            max_samplers_per_shader_stage: 6,
+            max_uniform_buffer_binding_size: 32_768,
+            ..GpuCapabilities::default()
+        };
+
+        let material = capabilities.material_backend_capabilities();
+
+        assert_eq!(material.max_bind_groups, 4);
+        assert_eq!(material.max_bindings_per_bind_group, 12);
+        assert_eq!(material.max_sampled_textures_per_shader_stage, 8);
+        assert_eq!(material.max_samplers_per_shader_stage, 6);
+        assert_eq!(material.max_uniform_buffer_binding_size, 32_768);
     }
 
     #[test]

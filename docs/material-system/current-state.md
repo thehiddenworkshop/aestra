@@ -138,7 +138,7 @@ analytic softness mask or authored blend mode. Therefore:
 
 ## Current shader and render-pipeline contract
 
-The engine-neutral `aestra-gpu` crate owns two WESL modules:
+The engine-neutral `aestra-gpu` crate owns two shared runtime WESL modules:
 
 | Module | Entry points | Responsibility |
 | --- | --- | --- |
@@ -148,6 +148,14 @@ The engine-neutral `aestra-gpu` crate owns two WESL modules:
 The sprite module also contains a diagnostic `fragment_wireframe` presentation entry point.
 WESL composition produces reviewable WGSL which is parsed and validated by Naga. Portability CI
 also requires the representative simulation and sprite programs to translate to SPIR-V and HLSL.
+
+The semantic material path additionally generates one inspectable WESL/WGSL fragment module per
+typed material IR program. The same portable compilation produces deterministic uniform,
+multi-texture, and descriptor-shared sampler bindings; parameter and required-input reflection;
+backend-limit diagnostics; stable program fingerprints; and render-state/target pipeline keys.
+`aestra-bevy-render` translates the emitted resource layout into the corresponding WGPU descriptor.
+The live sprite pipeline continues to use the compatibility material path until Material Milestone
+5 migrates and visually approves existing effects.
 
 The current sprite surface function:
 
@@ -201,8 +209,10 @@ approved native-GPU visuals.
 | Format/validation | `aestra-core/tests/model_contract.rs`: stable texture references, flipbook frames, multiple renderers, serialization |
 | Semantic editing | `aestra-authoring/tests/authoring_contract.rs`: transactional material replacement, undo, referenced-material deletion guard |
 | Compiler lowering | `aestra-compiler/tests/compiler_contract.rs`: texture resolution, flipbook metadata, material parameter folding/runtime slots |
+| Material IR | `aestra-compiler/tests/material_ir_contract.rs`: deterministic typed lowering, source mapping, optimization, invalid-program rejection |
 | GPU ABI | `aestra-bevy-render/src/gpu.rs` tests: multiple renderers, blend selectors, softness, tint, texture/UV, flipbook packing |
 | Shader source | `aestra-gpu/tests/shader_contract.rs`: WESL/WGSL snapshots, Naga validation, SPIR-V/HLSL translation |
+| Generated material shader | `aestra-gpu/tests/material_shader_contract.rs`: two-texture flame WESL, resource ABI, reflection, fingerprints, pipeline keys, and capability diagnostics |
 | Runtime ingestion | `aestra-bevy/tests/v3_contract.rs`: immutable v3 and textured-effect compilation/profile contract |
 | Native appearance | `aestra-viewer/tests/references/*`: eight fixed-seed reference frames for Prism Bloom, Ember Sigil, and Plasma Burst |
 | GPU approval | `.github/workflows/gpu-visual.yml`: native GPU conformance, editor viewport smoke, and showcase comparisons |
@@ -239,10 +249,10 @@ adapter. A destructive format migration is not required to prove the first verti
 
 ## Known gaps
 
-- no typed material AST or material-specific validation/IR;
-- no arithmetic, interpolation, clamping, or texture-sample expression nodes;
-- no reflection describing program inputs and outputs;
-- no custom WESL functions or generated material WESL;
+- semantic material WESL/resource layouts are not yet bound by the live sprite pipeline;
+- the initial generated backend supports UV0, particle color/opacity, effect time, arithmetic,
+  interpolation, clamping, and sampled Texture2D parameters; richer inputs remain explicit errors;
+- no validated custom WESL functions;
 - no mesh, ribbon, trail, lit, decal, or volumetric material domains;
 - no authored depth, cull, sorting, or stencil controls;
 - no CPU pixel-reference evaluator for blend and softness;
@@ -265,3 +275,6 @@ Material Milestone 1 may begin with an additive unlit sprite domain and only `Fl
 
 The node graph remains deferred. It will be a projection of the semantic program after the typed
 model, compiler path, runtime binding, and preview are stable.
+
+Items 1–4 of this entrance contract are complete. Runtime binding, compatibility migration, and
+native-GPU approval remain the next release gate.

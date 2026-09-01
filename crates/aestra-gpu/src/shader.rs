@@ -53,6 +53,14 @@ pub struct CompiledGpuShader {
     pub wgsl: String,
 }
 
+/// One engine-neutral WESL module after composition and Naga validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompiledWesl {
+    pub module_name: String,
+    pub wesl: String,
+    pub wgsl: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GpuShaderArtifactLayout {
     pub emitter_count: u32,
@@ -90,50 +98,63 @@ impl GpuShaderPackage {
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum GpuShaderError {
     #[error("failed to parse WESL module path '{module}': {message}")]
-    ModulePath {
-        module: &'static str,
-        message: String,
-    },
+    ModulePath { module: String, message: String },
     #[error("failed to compose WESL module '{module}': {message}")]
     Wesl {
-        module: &'static str,
+        module: String,
         message: String,
+        wesl: String,
     },
     #[error("generated WGSL for '{module}' could not be parsed: {message}")]
     Wgsl {
-        module: &'static str,
+        module: String,
         message: String,
+        wesl: String,
         wgsl: String,
     },
     #[error("generated WGSL for '{module}' failed Naga validation: {message}")]
     Validation {
-        module: &'static str,
+        module: String,
         message: String,
+        wesl: String,
         wgsl: String,
     },
     #[error("generated WGSL for '{module}' is missing entry point '{entry_point}'")]
-    MissingEntryPoint {
-        module: &'static str,
-        entry_point: &'static str,
-    },
+    MissingEntryPoint { module: String, entry_point: String },
 }
 
 pub fn compile(kind: GpuShaderKind) -> Result<CompiledGpuShader, GpuShaderError> {
     let module_name = kind.module_name();
+    let compiled = compile_wesl(module_name, kind.wesl(), kind.required_entry_points())?;
+    Ok(CompiledGpuShader {
+        kind,
+        module_name,
+        wesl: kind.wesl(),
+        wgsl: compiled.wgsl,
+    })
+}
+
+/// Composes one WESL module and validates the generated WGSL without an engine backend.
+pub fn compile_wesl(
+    module_name: &str,
+    wesl: &str,
+    required_entry_points: &[&str],
+) -> Result<CompiledWesl, GpuShaderError> {
     let module: ModulePath = module_name
         .parse()
         .map_err(|error| GpuShaderError::ModulePath {
-            module: module_name,
+            module: module_name.to_owned(),
             message: format!("{error:?}"),
         })?;
     let mut resolver = VirtualResolver::new();
-    resolver.add_module(module.clone(), kind.wesl().into());
+    resolver.add_module(module.clone(), wesl.into());
     let wgsl = Wesl::new("")
         .set_custom_resolver(resolver)
         .compile(&module)
         .map_err(|error| GpuShaderError::Wesl {
-            module: module_name,
+            module: module_name.to_owned(),
             message: error.to_string(),
+            wesl: wesl.to_owned(),
         })?
         .to_string();
 
@@ -141,8 +162,9 @@ pub fn compile(kind: GpuShaderKind) -> Result<CompiledGpuShader, GpuShaderError>
         Ok(module) => module,
         Err(error) => {
             return Err(GpuShaderError::Wgsl {
-                module: module_name,
+                module: module_name.to_owned(),
                 message: error.emit_to_string(&wgsl),
+                wesl: wesl.to_owned(),
                 wgsl,
             });
         }
@@ -150,28 +172,28 @@ pub fn compile(kind: GpuShaderKind) -> Result<CompiledGpuShader, GpuShaderError>
     Validator::new(ValidationFlags::all(), Capabilities::all())
         .validate(&naga_module)
         .map_err(|error| GpuShaderError::Validation {
-            module: module_name,
+            module: module_name.to_owned(),
             message: error.to_string(),
+            wesl: wesl.to_owned(),
             wgsl: wgsl.clone(),
         })?;
 
-    for &entry_point in kind.required_entry_points() {
+    for &entry_point in required_entry_points {
         if !naga_module
             .entry_points
             .iter()
             .any(|entry| entry.name == entry_point)
         {
             return Err(GpuShaderError::MissingEntryPoint {
-                module: module_name,
-                entry_point,
+                module: module_name.to_owned(),
+                entry_point: entry_point.to_owned(),
             });
         }
     }
 
-    Ok(CompiledGpuShader {
-        kind,
-        module_name,
-        wesl: kind.wesl(),
+    Ok(CompiledWesl {
+        module_name: module_name.to_owned(),
+        wesl: wesl.to_owned(),
         wgsl,
     })
 }

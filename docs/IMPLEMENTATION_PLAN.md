@@ -137,7 +137,11 @@ architecture vision; this file is the shorter delivery plan.
   diagnostics, one transactional authoring boundary for project programs, effect-local instances,
   renderer assignments, semantic diffs, and bounded undo/redo, plus deterministic lowering into a
   typed backend-neutral IR with source mapping, constant folding, trivial arithmetic
-  simplification, and dead-value elimination.
+  simplification, and dead-value elimination. `aestra-gpu` now lowers that IR into inspectable,
+  Naga-validated WESL/WGSL; emits deterministic uniform, multi-texture, and shared-sampler layouts;
+  reflects parameter and required-input bindings; validates portable backend limits; and separates
+  shader fingerprints from render-state/target pipeline keys. `aestra-bevy-render` translates the
+  portable resource ABI and device limits without owning material semantics.
 
 ## M6 composition release gate
 
@@ -184,8 +188,9 @@ surface to mutable examples and monolithic panel modules.
    surfaces, compatibility fixtures, migration classification, and the first-slice test contract.
 6. **Begin the material vertical slice — in progress.** The repository-aligned semantic core,
    complete semantic validation, baseline transactional command layer, and typed backend-neutral
-   material IR are implemented. Continue the animated additive-flame path through WESL generation,
-   runtime binding, and preview before adding a node-graph projection.
+   material IR are implemented. The portable WESL/resource ABI and backend layout adapter are also
+   complete. Continue the animated additive-flame path through live runtime binding, migration, and
+   preview approval before adding a node-graph projection.
 
 Exit gate: deterministic behavioral tests remain stable when showcase timing or playback changes;
 Timeline and Properties have focused internal ownership; roadmap status matches the shipped code;
@@ -219,9 +224,13 @@ the current sprite-material path until the native-GPU compatibility gate approve
   survives aliases and records eliminated expressions; authored sRGB constants become linear; and
   constant folding, trivial add/multiply simplification, and dead-value elimination run before the
   artifact is exposed. Invalid programs never reach lowering.
-- [ ] **Material 4 — WESL and resource ABI.** Generate WESL, deterministic multi-texture/sampler
-  layouts, reflection, program fingerprints, and pipeline cache keys through `aestra-gpu` and the
-  isolated `aestra-bevy-render` adapter.
+- [x] **Material 4 — WESL and resource ABI.** `aestra-gpu` generates inspectable,
+  Naga-validated WESL/WGSL from typed IR; assigns deterministic 16-byte uniform slots plus stable
+  multi-texture and descriptor-shared sampler bindings; emits parameter/input reflection and a
+  visible missing-texture fallback contract; validates backend limits; and separates normalized
+  program fingerprints from render-state/target/sample/feature pipeline keys. Ordinary instance
+  values and texture asset IDs affect neither key. `aestra-bevy-render` maps physical device limits
+  and the portable layout into Bevy/WGPU descriptors without introducing backend types upstream.
 - [ ] **Material 5 — legacy migration and visual approval.** Migrate existing sprite materials
   through semantic commands and approve native-GPU references without claiming CPU pixel parity.
 

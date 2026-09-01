@@ -4,6 +4,7 @@
 //! GPU simulation and rendering. It intentionally contains no Bevy, WGPU,
 //! windowing, ECS, shader loading, dispatch, or drawing integration.
 
+pub mod material;
 pub mod shader;
 
 use aestra_core::{

@@ -7,6 +7,7 @@
 mod capabilities;
 mod cpu;
 pub mod gpu;
+pub mod material;
 
 pub use aestra_runtime::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,

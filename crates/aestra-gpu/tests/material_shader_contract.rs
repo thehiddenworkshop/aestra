@@ -1,0 +1,427 @@
+use aestra_compiler::MaterialCompiler;
+use aestra_core::{
+    AssetId, MaterialExpressionId, MaterialParameterId, MaterialProgramId,
+    material::{
+        MaterialAddressMode, MaterialCullMode, MaterialDepthTest, MaterialEvaluationDomain,
+        MaterialExpression, MaterialExpressionKind, MaterialFilterMode, MaterialInput,
+        MaterialMipFilterMode, MaterialParameter, MaterialRenderState, MaterialSamplerDescriptor,
+        MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
+    },
+};
+use aestra_gpu::material::{
+    MATERIAL_BIND_GROUP, MISSING_TEXTURE_FALLBACK_RGBA, MaterialBackendCapabilities,
+    MaterialCapabilityIssueCode, MaterialColorTargetFormat, MaterialGpuError,
+    MaterialParameterBinding, MaterialPipelineVariant, MaterialShaderCompiler,
+};
+use naga::{
+    back::{hlsl, spv},
+    valid::{Capabilities, ValidationFlags, Validator},
+};
+
+fn assert_portable_shader_targets(wgsl: &str) {
+    let module = naga::front::wgsl::parse_str(wgsl).unwrap();
+    let info = Validator::new(ValidationFlags::all(), Capabilities::all())
+        .validate(&module)
+        .unwrap();
+    let spirv = spv::write_vec(&module, &info, &spv::Options::default(), None).unwrap();
+    assert_eq!(spirv.first(), Some(&0x0723_0203));
+
+    let mut output = String::new();
+    let reflection = hlsl::Writer::new(
+        &mut output,
+        &hlsl::Options::default(),
+        &hlsl::PipelineOptions::default(),
+    )
+    .write(&module, &info, None)
+    .unwrap();
+    assert!(!output.is_empty());
+    assert!(reflection.entry_point_names.iter().all(Result::is_ok));
+}
+
+fn sampler(address_u: MaterialAddressMode) -> MaterialSamplerDescriptor {
+    MaterialSamplerDescriptor {
+        filter: MaterialFilterMode::Linear,
+        mip_filter: MaterialMipFilterMode::Linear,
+        address_u,
+        address_v: MaterialAddressMode::Repeat,
+    }
+}
+
+fn texture_descriptor(
+    color_space: MaterialTextureColorSpace,
+    address_u: MaterialAddressMode,
+) -> MaterialTextureDescriptor {
+    MaterialTextureDescriptor {
+        color_space,
+        sampler: sampler(address_u),
+    }
+}
+
+fn two_texture_flame_program() -> aestra_core::material::MaterialProgram {
+    let main_parameter = MaterialParameterId::from_u128(0x1001);
+    let noise_parameter = MaterialParameterId::from_u128(0x1002);
+    let tint_parameter = MaterialParameterId::from_u128(0x1003);
+    let intensity_parameter = MaterialParameterId::from_u128(0x1004);
+    let main = MaterialExpressionId::from_u128(0x2001);
+    let noise = MaterialExpressionId::from_u128(0x2002);
+    let tint = MaterialExpressionId::from_u128(0x2003);
+    let intensity = MaterialExpressionId::from_u128(0x2004);
+    let uv = MaterialExpressionId::from_u128(0x2005);
+    let main_sample = MaterialExpressionId::from_u128(0x2006);
+    let noise_sample = MaterialExpressionId::from_u128(0x2007);
+    let combined = MaterialExpressionId::from_u128(0x2008);
+    let tinted = MaterialExpressionId::from_u128(0x2009);
+    let bright = MaterialExpressionId::from_u128(0x200a);
+    let particle_color = MaterialExpressionId::from_u128(0x200b);
+    let color = MaterialExpressionId::from_u128(0x200c);
+    let opacity = MaterialExpressionId::from_u128(0x200d);
+    let alpha = MaterialExpressionId::from_u128(0x200e);
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Two Texture Flame");
+    program.id = MaterialProgramId::from_u128(0x1000);
+    program.parameters = vec![
+        MaterialParameter {
+            id: main_parameter,
+            name: "main_texture".into(),
+            value_type: MaterialValueType::Texture2D(texture_descriptor(
+                MaterialTextureColorSpace::SrgbColor,
+                MaterialAddressMode::Repeat,
+            )),
+            evaluation_domain: MaterialEvaluationDomain::Instance,
+            default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x3001))),
+        },
+        MaterialParameter {
+            id: noise_parameter,
+            name: "noise_texture".into(),
+            value_type: MaterialValueType::Texture2D(texture_descriptor(
+                MaterialTextureColorSpace::LinearData,
+                MaterialAddressMode::ClampToEdge,
+            )),
+            evaluation_domain: MaterialEvaluationDomain::Instance,
+            default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x3002))),
+        },
+        MaterialParameter {
+            id: tint_parameter,
+            name: "tint".into(),
+            value_type: MaterialValueType::Color,
+            evaluation_domain: MaterialEvaluationDomain::Instance,
+            default: Some(MaterialValue::ColorSrgb([1.0, 0.5, 0.25, 1.0])),
+        },
+        MaterialParameter {
+            id: intensity_parameter,
+            name: "intensity".into(),
+            value_type: MaterialValueType::Float,
+            evaluation_domain: MaterialEvaluationDomain::Effect,
+            default: Some(MaterialValue::Float(2.0)),
+        },
+    ];
+    program.expressions = vec![
+        MaterialExpression {
+            id: main,
+            kind: MaterialExpressionKind::Parameter(main_parameter),
+        },
+        MaterialExpression {
+            id: noise,
+            kind: MaterialExpressionKind::Parameter(noise_parameter),
+        },
+        MaterialExpression {
+            id: tint,
+            kind: MaterialExpressionKind::Parameter(tint_parameter),
+        },
+        MaterialExpression {
+            id: intensity,
+            kind: MaterialExpressionKind::Parameter(intensity_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: main_sample,
+            kind: MaterialExpressionKind::SampleTexture { texture: main, uv },
+        },
+        MaterialExpression {
+            id: noise_sample,
+            kind: MaterialExpressionKind::SampleTexture { texture: noise, uv },
+        },
+        MaterialExpression {
+            id: combined,
+            kind: MaterialExpressionKind::Multiply(main_sample, noise_sample),
+        },
+        MaterialExpression {
+            id: tinted,
+            kind: MaterialExpressionKind::Multiply(combined, tint),
+        },
+        MaterialExpression {
+            id: bright,
+            kind: MaterialExpressionKind::Multiply(tinted, intensity),
+        },
+        MaterialExpression {
+            id: particle_color,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleColor),
+        },
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Multiply(bright, particle_color),
+        },
+        MaterialExpression {
+            id: opacity,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Multiply(opacity, intensity),
+        },
+    ];
+    program.outputs.color = color;
+    program.outputs.alpha = alpha;
+    program
+}
+
+fn compile(
+    program: &aestra_core::material::MaterialProgram,
+) -> aestra_gpu::material::CompiledMaterialProgram {
+    let ir = MaterialCompiler.compile(program).unwrap();
+    MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap()
+}
+
+#[test]
+fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
+    let compiled = compile(&two_texture_flame_program());
+
+    assert_eq!(compiled.resource_layout.group, MATERIAL_BIND_GROUP);
+    assert_eq!(compiled.resource_layout.uniforms.binding, Some(0));
+    assert_eq!(compiled.resource_layout.uniforms.size, 32);
+    assert_eq!(compiled.resource_layout.textures.len(), 2);
+    assert_eq!(compiled.resource_layout.samplers.len(), 2);
+    assert_eq!(compiled.resource_layout.textures[0].binding, 1);
+    assert_eq!(compiled.resource_layout.textures[1].binding, 2);
+    assert_eq!(compiled.resource_layout.samplers[0].binding, 3);
+    assert_eq!(compiled.resource_layout.samplers[1].binding, 4);
+    assert_eq!(MISSING_TEXTURE_FALLBACK_RGBA, [255, 0, 255, 255]);
+    assert!(compiled.shader.wesl.contains("@group(2) @binding(1)"));
+    assert!(compiled.shader.wesl.contains("textureSample"));
+    assert!(compiled.shader.wgsl.contains("fn fragment_material"));
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+    let texture_line = compiled
+        .shader
+        .wesl
+        .lines()
+        .position(|line| line.contains("textureSample"))
+        .unwrap() as u32
+        + 1;
+    let texture_value = compiled.source_map.wesl_lines[&texture_line];
+    assert!(
+        !compiled.source_map.ir.expressions[&texture_value].is_empty(),
+        "generated shader diagnostics must resolve back to semantic expressions"
+    );
+    assert_eq!(
+        compiled.program_fingerprint.to_string(),
+        "fb26041b7d08fe78f19bbd5c9c19a6d36d68f0836a4e7b5585df3de3d5e10230"
+    );
+    assert_eq!(
+        compiled.reflection.required_vertex_inputs,
+        vec![MaterialInput::Uv0]
+    );
+    assert_eq!(
+        compiled.reflection.required_particle_inputs,
+        vec![MaterialInput::ParticleColor, MaterialInput::ParticleOpacity]
+    );
+}
+
+#[test]
+fn authored_order_does_not_change_layout_shader_or_fingerprint() {
+    let program = two_texture_flame_program();
+    let mut reordered = program.clone();
+    reordered.parameters.reverse();
+    reordered.expressions.reverse();
+
+    assert_eq!(compile(&program), compile(&reordered));
+}
+
+#[test]
+fn equal_sampler_descriptors_share_one_stable_binding() {
+    let mut program = two_texture_flame_program();
+    let main_descriptor = match program.parameters[0].value_type {
+        MaterialValueType::Texture2D(descriptor) => descriptor,
+        _ => unreachable!(),
+    };
+    program.parameters[1].value_type = MaterialValueType::Texture2D(MaterialTextureDescriptor {
+        color_space: MaterialTextureColorSpace::LinearData,
+        sampler: main_descriptor.sampler,
+    });
+
+    let compiled = compile(&program);
+
+    assert_eq!(compiled.resource_layout.samplers.len(), 1);
+    assert_eq!(
+        compiled.resource_layout.textures[0].sampler_binding,
+        compiled.resource_layout.textures[1].sampler_binding
+    );
+}
+
+#[test]
+fn ordinary_instance_defaults_and_texture_assets_do_not_rebuild_shader_or_pipeline() {
+    let program = two_texture_flame_program();
+    let mut edited = program.clone();
+    edited.parameters[0].default = Some(MaterialValue::Texture2D(AssetId::from_u128(0x9999)));
+    edited.parameters[2].default = Some(MaterialValue::ColorSrgb([0.1, 0.2, 0.3, 1.0]));
+    edited.parameters[3].default = Some(MaterialValue::Float(9.0));
+
+    let first = compile(&program);
+    let second = compile(&edited);
+    let variant = MaterialPipelineVariant {
+        target_format: MaterialColorTargetFormat::Bgra8UnormSrgb,
+        sample_count: 4,
+        feature_bits: 3,
+    };
+
+    assert_eq!(first.program_fingerprint, second.program_fingerprint);
+    assert_eq!(first.shader.wesl, second.shader.wesl);
+    assert_eq!(
+        first
+            .pipeline_key(program.render_state_policy.default, variant)
+            .unwrap(),
+        second
+            .pipeline_key(edited.render_state_policy.default, variant)
+            .unwrap()
+    );
+}
+
+#[test]
+fn shader_static_values_rebuild_shader_but_render_state_only_changes_pipeline_key() {
+    let mut program = two_texture_flame_program();
+    program.parameters[3].evaluation_domain = MaterialEvaluationDomain::ShaderStatic;
+    let mut specialized = program.clone();
+    specialized.parameters[3].default = Some(MaterialValue::Float(4.0));
+    let first = compile(&program);
+    let second = compile(&specialized);
+
+    assert_ne!(first.program_fingerprint, second.program_fingerprint);
+    assert_ne!(first.shader.wesl, second.shader.wesl);
+
+    let alpha_state = MaterialRenderState {
+        blend: aestra_core::BlendMode::Alpha,
+        depth_test: MaterialDepthTest::LessEqual,
+        depth_write: false,
+        cull_mode: MaterialCullMode::None,
+    };
+    let mut flexible = two_texture_flame_program();
+    flexible.render_state_policy.allowed.push(alpha_state);
+    let compiled = compile(&flexible);
+    let variant = MaterialPipelineVariant {
+        target_format: MaterialColorTargetFormat::Rgba16Float,
+        sample_count: 1,
+        feature_bits: 0,
+    };
+    let additive = compiled
+        .pipeline_key(flexible.render_state_policy.default, variant)
+        .unwrap();
+    let alpha = compiled.pipeline_key(alpha_state, variant).unwrap();
+
+    assert_ne!(additive.digest(), alpha.digest());
+    assert_eq!(additive.program, alpha.program);
+}
+
+#[test]
+fn backend_limits_fail_with_structured_capability_issues() {
+    let ir = MaterialCompiler
+        .compile(&two_texture_flame_program())
+        .unwrap();
+    let capabilities = MaterialBackendCapabilities {
+        max_bind_groups: 2,
+        max_bindings_per_bind_group: 3,
+        max_sampled_textures_per_shader_stage: 1,
+        max_samplers_per_shader_stage: 1,
+        max_uniform_buffer_binding_size: 16,
+    };
+
+    let error = MaterialShaderCompiler
+        .compile(&ir, &capabilities)
+        .unwrap_err();
+    let MaterialGpuError::Capabilities(report) = error else {
+        panic!("expected a capability report");
+    };
+    for code in [
+        MaterialCapabilityIssueCode::BindGroupUnavailable,
+        MaterialCapabilityIssueCode::BindingLimitExceeded,
+        MaterialCapabilityIssueCode::TextureLimitExceeded,
+        MaterialCapabilityIssueCode::SamplerLimitExceeded,
+        MaterialCapabilityIssueCode::UniformLimitExceeded,
+    ] {
+        assert!(report.issues.iter().any(|issue| issue.code == code));
+    }
+}
+
+#[test]
+fn unsupported_inputs_report_their_semantic_expression() {
+    let mut program = two_texture_flame_program();
+    let opacity = program.outputs.alpha;
+    program
+        .expressions
+        .iter_mut()
+        .find(|expression| expression.id == opacity)
+        .unwrap()
+        .kind = MaterialExpressionKind::Input(MaterialInput::SceneDepth);
+    let ir = MaterialCompiler.compile(&program).unwrap();
+
+    let error = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        MaterialGpuError::UnsupportedInput {
+            input: MaterialInput::SceneDepth,
+            expressions,
+        } if expressions == vec![opacity]
+    ));
+}
+
+#[test]
+fn effect_time_is_reflected_as_a_scene_input() {
+    let mut program = two_texture_flame_program();
+    let alpha = program.outputs.alpha;
+    program
+        .expressions
+        .iter_mut()
+        .find(|expression| expression.id == alpha)
+        .unwrap()
+        .kind = MaterialExpressionKind::Input(MaterialInput::EffectTime);
+
+    let compiled = compile(&program);
+
+    assert_eq!(
+        compiled.reflection.required_scene_inputs,
+        vec![MaterialInput::EffectTime]
+    );
+    assert!(compiled.shader.wesl.contains("input.effect_time"));
+}
+
+#[test]
+fn reflection_links_each_parameter_to_its_portable_binding() {
+    let compiled = compile(&two_texture_flame_program());
+
+    assert!(matches!(
+        compiled.reflection.parameters[0].binding,
+        MaterialParameterBinding::Texture {
+            binding: 1,
+            sampler_binding: 4,
+        }
+    ));
+    assert!(matches!(
+        compiled.reflection.parameters[2].binding,
+        MaterialParameterBinding::Uniform {
+            binding: 0,
+            offset: 0,
+        }
+    ));
+    assert!(matches!(
+        compiled.reflection.parameters[3].binding,
+        MaterialParameterBinding::Uniform {
+            binding: 0,
+            offset: 16,
+        }
+    ));
+}
