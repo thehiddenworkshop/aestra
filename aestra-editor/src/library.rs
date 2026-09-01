@@ -6,14 +6,14 @@ use crate::feathers::context_menu::{
 };
 use crate::timeline::TimelineState;
 use crate::*;
-use aestra_bevy::{
+use aestra_compiler::{EffectCompiler, ProjectCompileError};
+use aestra_core::{
     AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipId, EffectId, EffectParameter, Emitter, EmitterId,
     EmitterTransform, EventId, EventLink, FlipbookDefinition, GradientId, MaterialDefinition,
     MaterialId, MaterialInput, ModuleParameters, ParameterId, RendererProperties,
     SpriteColorSource, ValidationReport, Value,
 };
-use aestra_compiler::{EffectCompiler, ProjectCompileError};
 use aestra_project::{
     ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectAssetOperationError,
     ProjectDependencyDiagnosticCode, ProjectEffectDeletePolicy, ProjectEffectEntry,
@@ -3498,7 +3498,7 @@ mod tests {
     use crate::session::blank_effect;
     use crate::test_support;
     use crate::timeline::{TimelineState, spawn_timeline};
-    use aestra_bevy::EventTrigger;
+    use aestra_core::EventTrigger;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
     #[derive(Resource, Default)]
@@ -3629,7 +3629,7 @@ mod tests {
     }
 
     fn test_effect_ref(value: u128) -> EffectAssetRef {
-        EffectAssetRef::new(aestra_bevy::EffectId::from_u128(value))
+        EffectAssetRef::new(aestra_core::EffectId::from_u128(value))
     }
 
     #[test]
@@ -3732,7 +3732,7 @@ mod tests {
             unsupported.status,
             ProjectEffectStatus::Unsupported {
                 found: 99,
-                current: aestra_bevy::CURRENT_FORMAT_VERSION,
+                current: aestra_core::CURRENT_FORMAT_VERSION,
             }
         );
         assert_eq!(
@@ -3830,7 +3830,7 @@ mod tests {
                 path: PathBuf::from("assets/effects/future.aestra.ron"),
                 status: ProjectEffectStatus::Unsupported {
                     found: 99,
-                    current: aestra_bevy::CURRENT_FORMAT_VERSION,
+                    current: aestra_core::CURRENT_FORMAT_VERSION,
                 },
             },
         ]);
@@ -3953,7 +3953,7 @@ mod tests {
         );
         let unsupported_label = &rows.iter().find(|row| row.0 == unsupported_id).unwrap().4;
         assert!(unsupported_label.contains("99"));
-        assert!(unsupported_label.contains(&aestra_bevy::CURRENT_FORMAT_VERSION.to_string()));
+        assert!(unsupported_label.contains(&aestra_core::CURRENT_FORMAT_VERSION.to_string()));
 
         let exposes_raw_id = {
             let world = app.world_mut();
@@ -4253,13 +4253,13 @@ mod tests {
     fn project_catalog_rejects_self_and_transitive_effect_cycles() {
         let temporary = tempfile::tempdir().unwrap();
         let mut owner = test_support::effect_with_timing_slack();
-        owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
+        owner.id = aestra_core::EffectId::from_u128(0xa11ce);
         owner.name = "Owner".into();
         owner.effect_clips.clear();
         let mut child = test_support::effect_with_timing_slack();
-        child.id = aestra_bevy::EffectId::from_u128(0xc41d);
+        child.id = aestra_core::EffectId::from_u128(0xc41d);
         child.name = "Child".into();
-        child.effect_clips = vec![aestra_bevy::EffectClip::new(
+        child.effect_clips = vec![aestra_core::EffectClip::new(
             EffectAssetRef::new(owner.id),
             0.0,
             0.5,
@@ -4286,9 +4286,9 @@ mod tests {
     fn missing_project_references_are_projected_into_editor_diagnostics() {
         let temporary = tempfile::tempdir().unwrap();
         let mut owner = test_support::effect_with_timing_slack();
-        owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
-        owner.effect_clips = vec![aestra_bevy::EffectClip::new(
-            EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xdead)),
+        owner.id = aestra_core::EffectId::from_u128(0xa11ce);
+        owner.effect_clips = vec![aestra_core::EffectClip::new(
+            EffectAssetRef::new(aestra_core::EffectId::from_u128(0xdead)),
             0.25,
             0.75,
         )];
@@ -4665,8 +4665,8 @@ mod tests {
         child
             .emitters
             .push(Emitter::basic_sprite("First", child.duration));
-        let parameter = aestra_bevy::ParameterId::new();
-        child.parameters.push(aestra_bevy::EffectParameter {
+        let parameter = aestra_core::ParameterId::new();
+        child.parameters.push(aestra_core::EffectParameter {
             id: parameter,
             name: "Intensity".into(),
             default: Value::Scalar(1.0),
@@ -4675,7 +4675,7 @@ mod tests {
         child.emitters[0]
             .modules
             .iter_mut()
-            .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+            .find(|module| module.module_type.0 == aestra_core::MODULE_EMISSION)
             .unwrap()
             .bindings
             .insert("spawn_rate".into(), parameter);
@@ -4692,7 +4692,7 @@ mod tests {
             owner,
             temporary.path().join("owner.aestra.ron"),
         );
-        let mut clip = aestra_bevy::EffectClip::new(child_reference, 0.25, 1.0);
+        let mut clip = aestra_core::EffectClip::new(child_reference, 0.25, 1.0);
         let clip_id = clip.id;
         clip.transform.translation = [2.0, 0.0, 0.0];
         clip.parameter_overrides
@@ -4745,7 +4745,7 @@ mod tests {
             local_emitters[0]
                 .modules
                 .iter()
-                .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+                .find(|module| module.module_type.0 == aestra_core::MODULE_EMISSION)
                 .unwrap()
                 .bindings["spawn_rate"],
             local_parameter.id
@@ -4803,14 +4803,14 @@ mod tests {
     #[test]
     fn baking_rejects_invalid_overrides_instead_of_silently_discarding_them() {
         let mut child = EffectAsset::new("Child", 1.0);
-        let parameter = aestra_bevy::ParameterId::new();
-        child.parameters.push(aestra_bevy::EffectParameter {
+        let parameter = aestra_core::ParameterId::new();
+        child.parameters.push(aestra_core::EffectParameter {
             id: parameter,
             name: "Count".into(),
             default: Value::U32(2),
             exposed: true,
         });
-        let mut clip = aestra_bevy::EffectClip::new(child.id, 0.0, 1.0);
+        let mut clip = aestra_core::EffectClip::new(child.id, 0.0, 1.0);
         clip.parameter_overrides
             .insert(parameter, Value::Scalar(2.0));
 
@@ -4832,7 +4832,7 @@ mod tests {
             .unwrap();
 
         let mut child = EffectAsset::new("Child", 2.0);
-        let mut nested_clip = aestra_bevy::EffectClip::new(grandchild.id, 0.5, 1.0);
+        let mut nested_clip = aestra_core::EffectClip::new(grandchild.id, 0.5, 1.0);
         nested_clip.transform.translation = [2.0, 0.0, 0.0];
         child.effect_clips.push(nested_clip);
         child

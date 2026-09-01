@@ -4,8 +4,9 @@ use crate::feathers::panel::{
     spawn_panel_empty_state, spawn_panel_label_value, spawn_panel_section,
 };
 use crate::*;
-use aestra_bevy::ParticleSample;
-use aestra_runtime::{CompiledEffect, EffectProfile, ProfileValue, ProfileValueSource};
+use aestra_runtime::{
+    CompiledEffect, EffectProfile, ParticleSample, ProfileValue, ProfileValueSource,
+};
 use bevy::ui_widgets::Activate;
 use fluent_bundle::FluentArgs;
 use std::{collections::VecDeque, time::Duration};

@@ -152,14 +152,14 @@ pub(super) fn emitter_automation_lanes(
                 channel,
             };
             match (source, value) {
-                (Some(aestra_bevy::PropertySource::Curve(_)), Some(Value::Curve(curve))) => {
+                (Some(aestra_core::PropertySource::Curve(_)), Some(Value::Curve(curve))) => {
                     lanes.push(AutomationLaneProjection {
                         id: lane_id(None),
                         label: display_name,
                         keys: AutomationLaneKeys::Curve(curve.keys),
                     });
                 }
-                (Some(aestra_bevy::PropertySource::Curve(_)), Some(Value::Vec3Curve(curves))) => {
+                (Some(aestra_core::PropertySource::Curve(_)), Some(Value::Vec3Curve(curves))) => {
                     for (channel, curve) in curves.curves.into_iter().enumerate() {
                         lanes.push(AutomationLaneProjection {
                             id: lane_id(Some(channel as u8)),
@@ -169,7 +169,7 @@ pub(super) fn emitter_automation_lanes(
                     }
                 }
                 (
-                    Some(aestra_bevy::PropertySource::Gradient(_)),
+                    Some(aestra_core::PropertySource::Gradient(_)),
                     Some(Value::Gradient(gradient)),
                 ) => lanes.push(AutomationLaneProjection {
                     id: lane_id(None),
@@ -252,15 +252,15 @@ fn emitter_has_automation_lane(emitter: &Emitter, lane: &AutomationLaneId) -> bo
             lane.channel,
         ),
         (
-            Some(aestra_bevy::PropertySource::Curve(_)),
+            Some(aestra_core::PropertySource::Curve(_)),
             Some(Value::Vec3Curve(_)),
             Some(0..=2)
         ) | (
-            Some(aestra_bevy::PropertySource::Curve(_)),
+            Some(aestra_core::PropertySource::Curve(_)),
             Some(Value::Curve(_)),
             None
         ) | (
-            Some(aestra_bevy::PropertySource::Gradient(_)),
+            Some(aestra_core::PropertySource::Gradient(_)),
             Some(Value::Gradient(_)),
             None
         )
@@ -268,10 +268,10 @@ fn emitter_has_automation_lane(emitter: &Emitter, lane: &AutomationLaneId) -> bo
 }
 
 #[cfg(test)]
-pub(super) fn source_is_automation(source: aestra_bevy::PropertySource) -> bool {
+pub(super) fn source_is_automation(source: aestra_core::PropertySource) -> bool {
     matches!(
         source,
-        aestra_bevy::PropertySource::Curve(_) | aestra_bevy::PropertySource::Gradient(_)
+        aestra_core::PropertySource::Curve(_) | aestra_core::PropertySource::Gradient(_)
     )
 }
 
@@ -314,7 +314,7 @@ pub(super) fn automation_lane_value(
 
 fn bound_automation_parameter<'a>(
     effect: &'a EffectAsset,
-    module: &aestra_bevy::ModuleInstance,
+    module: &aestra_core::ModuleInstance,
     input: &str,
 ) -> Option<&'a EffectParameter> {
     let parameter_id = module.bindings.get(input)?;
@@ -347,7 +347,7 @@ pub(super) fn set_automation_lane_value_command(
         });
     }
     if let Some(source) = module.property_source(&lane.parameter)
-        && source != aestra_bevy::PropertySource::Constant
+        && source != aestra_core::PropertySource::Constant
         && module
             .property_source_values
             .get(&lane.parameter)
@@ -384,7 +384,7 @@ pub(super) fn automation_lane_keys(
     }
 }
 
-pub(super) fn curve_stored_sample(curve: &aestra_bevy::Curve, time: f32) -> f32 {
+pub(super) fn curve_stored_sample(curve: &aestra_core::Curve, time: f32) -> f32 {
     let sampled = curve.sample(time);
     let Some(range) = curve.output_range else {
         return sampled;
@@ -1270,7 +1270,7 @@ mod tests {
             .unwrap();
         appearance.property_sources.insert(
             "size".into(),
-            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::ParticleLife),
+            aestra_core::PropertySource::Curve(aestra_core::PropertyEvaluationDomain::ParticleLife),
         );
         let ModuleParameters::Appearance { size, .. } = &mut appearance.parameters else {
             panic!("fixture emitter should have appearance automation");
@@ -1285,7 +1285,7 @@ mod tests {
             .find(|module| matches!(&module.parameters, ModuleParameters::Appearance { .. }))
             .unwrap()
             .property_sources
-            .insert("size".into(), aestra_bevy::PropertySource::Constant);
+            .insert("size".into(), aestra_core::PropertySource::Constant);
         let constant_lanes =
             emitter_automation_lanes(&session.effect, &constant_size, &registry, &localizer);
         assert!(
@@ -1303,18 +1303,18 @@ mod tests {
         let emission = emitter
             .modules
             .iter_mut()
-            .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+            .find(|module| module.module_type.0 == aestra_core::MODULE_EMISSION)
             .unwrap();
         let source =
-            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::EmitterTime);
+            aestra_core::PropertySource::Curve(aestra_core::PropertyEvaluationDomain::EmitterTime);
         emission
             .property_sources
             .insert("spawn_rate".into(), source);
         emission.property_source_values.insert(
             "spawn_rate".into(),
-            vec![aestra_bevy::PropertySourceValue::new(
+            vec![aestra_core::PropertySourceValue::new(
                 source,
-                Value::Curve(aestra_bevy::Curve::new(vec![
+                Value::Curve(aestra_core::Curve::new(vec![
                     CurveKey::new(0.0, 4.0),
                     CurveKey::new(1.0, 24.0),
                 ])),

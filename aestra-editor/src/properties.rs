@@ -8,13 +8,13 @@ use crate::feathers::panel_card::{
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
 use crate::timeline::{EffectClipChildSelection, EffectClipPath, TimelineState};
 use crate::*;
-use aestra_bevy::{
+use aestra_compiler::{
+    InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, ModuleRegistry,
+};
+use aestra_core::{
     ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, ColorKey, Curve,
     CurveKey, EffectAsset, EffectClip, EffectClipId, EffectParameter, Gradient, MarkerId,
     MarkerTimeReference, ParameterId, ScalarRange, ValueType, Vec3Curve, Vec3Range,
-};
-use aestra_compiler::{
-    InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, ModuleRegistry,
 };
 use bevy::{
     feathers::controls::ButtonVariant,
@@ -620,7 +620,7 @@ pub(crate) fn focus_compiled_target(
 mod tests {
     use super::*;
     use crate::test_support;
-    use aestra_bevy::{EffectClipSeed, EffectMarker};
+    use aestra_core::{EffectClipSeed, EffectMarker};
 
     fn test_localizer() -> Localizer {
         Localizer::new("en-US").unwrap()
@@ -642,13 +642,13 @@ mod tests {
         let missing = ParameterId::new();
         let mut source = test_support::effect_with_timing_slack();
         source.parameters = vec![
-            aestra_bevy::EffectParameter {
+            aestra_core::EffectParameter {
                 id: exposed,
                 name: "Intensity".into(),
                 default: Value::Scalar(2.0),
                 exposed: true,
             },
-            aestra_bevy::EffectParameter {
+            aestra_core::EffectParameter {
                 id: hidden,
                 name: "Internal".into(),
                 default: Value::Bool(false),
@@ -686,7 +686,7 @@ mod tests {
     fn effect_clip_parameter_edit_creates_an_undoable_override() {
         let parameter = ParameterId::new();
         let mut session = test_support::session_with_timing_slack();
-        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xe11ec7));
+        let source = EffectAssetRef::new(aestra_core::EffectId::from_u128(0xe11ec7));
         let clip = EffectClip::new(source, 0.0, 1.0);
         let clip_id = clip.id;
         session.effect.effect_clips.push(clip);
@@ -721,7 +721,7 @@ mod tests {
     fn effect_clip_parameter_scrub_previews_and_commits_one_ordered_override() {
         let parameter = ParameterId::new();
         let mut session = test_support::session_with_timing_slack();
-        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xe11ec7));
+        let source = EffectAssetRef::new(aestra_core::EffectId::from_u128(0xe11ec7));
         let clip = EffectClip::new(source, 0.0, 1.0);
         let clip_id = clip.id;
         session.effect.effect_clips.push(clip);
@@ -757,7 +757,7 @@ mod tests {
                 .unwrap()
                 .parameter_overrides
                 .get(&parameter),
-            Some(&Value::Range(aestra_bevy::ScalarRange {
+            Some(&Value::Range(aestra_core::ScalarRange {
                 min: 1.2,
                 max: 1.5
             })),
@@ -1877,7 +1877,7 @@ mod tests {
     fn repairing_a_clip_source_preserves_instance_state_and_is_undoable() {
         let temporary = tempfile::tempdir().unwrap();
         let mut replacement = test_support::effect_with_timing_slack();
-        replacement.id = aestra_bevy::EffectId::from_u128(0xc41d);
+        replacement.id = aestra_core::EffectId::from_u128(0xc41d);
         replacement.name = "Replacement".into();
         replacement.duration = 4.0;
         replacement.playback_mode = EffectPlaybackMode::Once;
@@ -1886,10 +1886,10 @@ mod tests {
             .save_ron(temporary.path().join("replacement.aestra.ron"))
             .unwrap();
 
-        let missing = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xdead));
+        let missing = EffectAssetRef::new(aestra_core::EffectId::from_u128(0xdead));
         let replacement_ref = EffectAssetRef::new(replacement.id);
         let mut owner = test_support::effect_with_timing_slack();
-        owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
+        owner.id = aestra_core::EffectId::from_u128(0xa11ce);
         owner.effect_clips.clear();
         let mut clip = EffectClip::new(missing, 0.75, 1.5);
         clip.source_offset = 0.5;
@@ -1944,15 +1944,15 @@ mod tests {
     fn repair_candidates_reject_invalid_windows_and_reference_cycles() {
         let temporary = tempfile::tempdir().unwrap();
         let mut owner = test_support::effect_with_timing_slack();
-        owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
+        owner.id = aestra_core::EffectId::from_u128(0xa11ce);
         owner.effect_clips.clear();
-        let missing = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xdead));
+        let missing = EffectAssetRef::new(aestra_core::EffectId::from_u128(0xdead));
         let mut clip = EffectClip::new(missing, 0.0, 3.5);
         clip.source_offset = 0.75;
         owner.effect_clips.push(clip.clone());
 
         let mut short = test_support::effect_with_timing_slack();
-        short.id = aestra_bevy::EffectId::from_u128(0x5107);
+        short.id = aestra_core::EffectId::from_u128(0x5107);
         short.name = "Short".into();
         short.playback_mode = EffectPlaybackMode::Once;
         short.effect_clips.clear();
@@ -1961,7 +1961,7 @@ mod tests {
             .unwrap();
 
         let mut cycle = test_support::effect_with_timing_slack();
-        cycle.id = aestra_bevy::EffectId::from_u128(0xc1c1e);
+        cycle.id = aestra_core::EffectId::from_u128(0xc1c1e);
         cycle.name = "Cycle".into();
         cycle.effect_clips = vec![EffectClip::new(EffectAssetRef::new(owner.id), 0.0, 0.5)];
         cycle
@@ -2701,7 +2701,7 @@ mod tests {
     #[test]
     fn properties_effect_clip_transform_is_semantic_and_undoable() {
         let mut session = test_support::session_with_timing_slack();
-        let clip = aestra_bevy::EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 1.0);
+        let clip = aestra_core::EffectClip::new(aestra_core::EffectId::from_u128(0xC11D), 0.0, 1.0);
         let clip_id = clip.id;
         session.effect.effect_clips.push(clip);
         let control = EffectClipNumberControl {
@@ -2739,14 +2739,14 @@ mod tests {
     fn nested_reference_breadcrumbs_include_every_effect_level() {
         let temporary = tempfile::tempdir().unwrap();
         let mut leaf = test_support::effect_with_timing_slack();
-        leaf.id = aestra_bevy::EffectId::from_u128(0x1EAF);
+        leaf.id = aestra_core::EffectId::from_u128(0x1EAF);
         leaf.name = "Leaf".into();
         leaf.effect_clips.clear();
         leaf.save_ron(temporary.path().join("leaf.aestra.ron"))
             .unwrap();
 
         let mut child = test_support::effect_with_timing_slack();
-        child.id = aestra_bevy::EffectId::from_u128(0xC111D);
+        child.id = aestra_core::EffectId::from_u128(0xC111D);
         child.name = "Child".into();
         child.effect_clips.clear();
         let nested = EffectClip::new(EffectAssetRef::new(leaf.id), 0.0, 1.0);
@@ -2757,7 +2757,7 @@ mod tests {
             .unwrap();
 
         let mut root = test_support::effect_with_timing_slack();
-        root.id = aestra_bevy::EffectId::from_u128(0xA007);
+        root.id = aestra_core::EffectId::from_u128(0xA007);
         root.name = "Root".into();
         root.effect_clips.clear();
         let parent = EffectClip::new(EffectAssetRef::new(child.id), 0.0, 1.0);
@@ -4247,7 +4247,7 @@ fn effect_clip_parameter_scrub_value(
         EffectClipParameterScrubKind::Vec2 => Value::Vec2([values[0], values[1]]),
         EffectClipParameterScrubKind::Vec3 => Value::Vec3([values[0], values[1], values[2]]),
         EffectClipParameterScrubKind::Vec4 => Value::Vec4(values),
-        EffectClipParameterScrubKind::Range => Value::Range(aestra_bevy::ScalarRange {
+        EffectClipParameterScrubKind::Range => Value::Range(aestra_core::ScalarRange {
             min: values[0],
             max: values[1],
         }),
@@ -5686,7 +5686,7 @@ fn choreography_event_kind_label(localizer: &Localizer, kind: ChoreographyEventK
 
 fn spawn_choreography_event_payload_control(
     parent: &mut ChildSpawnerCommands,
-    event: &aestra_bevy::ChoreographyEvent,
+    event: &aestra_core::ChoreographyEvent,
     localizer: &Localizer,
 ) {
     match &event.payload {

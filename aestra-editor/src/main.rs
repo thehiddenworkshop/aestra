@@ -2,6 +2,7 @@
 // dependencies explicit is clearer than hiding them behind editor-specific parameter bundles.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+mod bevy_preview;
 mod changes;
 mod compiler_inspector;
 mod curves;
@@ -29,13 +30,13 @@ mod transport;
 mod viewport;
 
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
-use aestra_bevy::{
-    AestraPlugin, AssetKind, BlendMode, DiagnosticCode, DiagnosticSeverity, EffectAsset,
-    EffectPlaybackMode, EmitterId, EmitterShape, EmitterTransform, EventId, EventTrigger,
-    FlipbookPlaybackMode, FlipbookTimeSource, MaterialInput, MaterialProperties, ModuleId,
-    ModuleInstance, RendererId, RendererProperties, StageKind, Value,
-};
 use aestra_compiler::ModuleMetadata;
+use aestra_core::{
+    AssetKind, BlendMode, DiagnosticCode, DiagnosticSeverity, EffectAsset, EffectPlaybackMode,
+    EmitterId, EmitterShape, EmitterTransform, EventId, EventTrigger, FlipbookPlaybackMode,
+    FlipbookTimeSource, MaterialInput, MaterialProperties, ModuleId, ModuleInstance, RendererId,
+    RendererProperties, StageKind, Value,
+};
 pub(crate) use aestra_project::{EffectAssetRef, ProjectSourceId as ProjectEffectEntryId};
 #[cfg(test)]
 use bevy::ui_widgets::Activate;
@@ -65,6 +66,7 @@ use bevy::{
         WindowMoved, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
     },
 };
+use bevy_preview::AestraPlugin;
 use bevy_resvg::prelude::SvgPlugin;
 use bevy_winit::WINIT_WINDOWS;
 pub(crate) use changes::spawn_changes_workspace;

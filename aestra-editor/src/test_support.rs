@@ -4,7 +4,7 @@
 //! compact builders unless the test explicitly verifies bundled content or end-to-end examples.
 
 use crate::session::EditorSession;
-use aestra_bevy::{
+use aestra_core::{
     AssetDefinition, AssetId, ChoreographyTrackId, CurveId, EffectAsset, EffectId,
     EffectPlaybackMode, Emitter, EmitterId, GradientId, MaterialProperties, ModuleId,
     ModuleParameters, RendererId,

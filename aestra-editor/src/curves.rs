@@ -4,8 +4,8 @@ use crate::feathers::automation_curve::{
     self, AutomationCurveData, AutomationCurvePoint, AutomationGradientPoint,
 };
 use crate::*;
-use aestra_bevy::{ColorKey, CurveKey, ModuleId, ModuleInstance, Value};
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
+use aestra_core::{ColorKey, CurveKey, ModuleId, ModuleInstance, Value};
 use bevy::{
     feathers::cursor::EntityCursor, input_focus::InputFocus, text::EditableText,
     ui::RelativeCursorPosition, ui_widgets::Activate, window::SystemCursorIcon,
@@ -470,8 +470,8 @@ fn spawn_complex_input_list(
 fn complex_input_is_visible(module: &ModuleInstance, input: &InputMetadata) -> bool {
     matches!(
         module.property_source(input.name),
-        Some(aestra_bevy::PropertySource::Curve(_))
-            | Some(aestra_bevy::PropertySource::Gradient(_))
+        Some(aestra_core::PropertySource::Curve(_))
+            | Some(aestra_core::PropertySource::Gradient(_))
     )
 }
 
@@ -592,7 +592,7 @@ fn editable_curve(
     module: ModuleId,
     parameter: &str,
     vector_channel: Option<u8>,
-) -> Option<aestra_bevy::Curve> {
+) -> Option<aestra_core::Curve> {
     let module = session
         .selected_layer()
         .modules
@@ -616,7 +616,7 @@ fn update_vector_curve(
     parameter: &str,
     channel: u8,
     label: &str,
-    edit: impl FnOnce(&mut aestra_bevy::Curve) -> bool,
+    edit: impl FnOnce(&mut aestra_core::Curve) -> bool,
 ) -> bool {
     let Some(module_instance) = session
         .selected_layer()
@@ -715,7 +715,7 @@ fn remove_vector_curve_key(
     );
 }
 
-fn curve_graph_data(curve: &aestra_bevy::Curve) -> AutomationCurveData {
+fn curve_graph_data(curve: &aestra_core::Curve) -> AutomationCurveData {
     let output_range = curve.output_range();
     let value_bounds = if curve.output_range.is_some() {
         Some((0.0, 1.0))
@@ -739,11 +739,11 @@ fn formatted_curve_output_value(value: f32) -> String {
     crate::feathers::number_input::formatted(value, 3)
 }
 
-fn curve_key_output_value(curve: &aestra_bevy::Curve, key: CurveKey) -> f32 {
+fn curve_key_output_value(curve: &aestra_core::Curve, key: CurveKey) -> f32 {
     curve.output_value(key.value)
 }
 
-fn gradient_graph_data(gradient: &aestra_bevy::Gradient) -> AutomationCurveData {
+fn gradient_graph_data(gradient: &aestra_core::Gradient) -> AutomationCurveData {
     AutomationCurveData::Gradient(
         gradient
             .keys
@@ -757,7 +757,7 @@ fn gradient_graph_data(gradient: &aestra_bevy::Gradient) -> AutomationCurveData 
 }
 
 fn curve_drag_preview(
-    curve: &aestra_bevy::Curve,
+    curve: &aestra_core::Curve,
     key_index: usize,
     distance: Vec2,
     graph_size: Vec2,
@@ -792,7 +792,7 @@ fn curve_drag_preview(
 }
 
 fn gradient_drag_preview(
-    gradient: &aestra_bevy::Gradient,
+    gradient: &aestra_core::Gradient,
     key_index: usize,
     distance_x: f32,
     graph_width: f32,
@@ -866,7 +866,7 @@ fn spawn_curve_drag_value_label(
     selection: ComplexSelection,
     key: CurveKey,
     top: f32,
-    curve: &aestra_bevy::Curve,
+    curve: &aestra_core::Curve,
 ) {
     graph.spawn((
         CurveGraphValueLabel(selection),
@@ -906,7 +906,7 @@ fn spawn_curve_graph(
     module: ModuleId,
     input_index: u8,
     input: &InputMetadata,
-    curve: &aestra_bevy::Curve,
+    curve: &aestra_core::Curve,
     selected_key: usize,
     vector_channel: Option<u8>,
     localizer: &Localizer,
@@ -1186,7 +1186,7 @@ fn spawn_gradient_graph(
     module: ModuleId,
     input_index: u8,
     input: &InputMetadata,
-    gradient: &aestra_bevy::Gradient,
+    gradient: &aestra_core::Gradient,
     selected_key: usize,
     localizer: &Localizer,
 ) {
@@ -1800,7 +1800,7 @@ fn edit_complex_key(
 
 fn curve_value_bounds(
     control: &InputControl,
-    curve: &aestra_bevy::Curve,
+    curve: &aestra_core::Curve,
 ) -> Option<(f32, f32, f32)> {
     if curve.output_range.is_some() {
         return Some((0.01, 0.0, 1.0));
@@ -1836,7 +1836,7 @@ fn curve_value_bounds(
     }
 }
 
-fn curve_stored_sample(curve: &aestra_bevy::Curve, time: f32) -> f32 {
+fn curve_stored_sample(curve: &aestra_core::Curve, time: f32) -> f32 {
     let sampled = curve.sample(time);
     let Some(range) = curve.output_range else {
         return sampled;
@@ -2083,7 +2083,7 @@ mod tests {
             .position(|input| input.name == "gravity")
             .unwrap() as u8;
         let source =
-            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::ParticleLife);
+            aestra_core::PropertySource::Curve(aestra_core::PropertyEvaluationDomain::ParticleLife);
         let module = session
             .effect
             .emitters
@@ -2094,9 +2094,9 @@ mod tests {
         module.property_sources.insert("gravity".into(), source);
         module.property_source_values.insert(
             "gravity".into(),
-            vec![aestra_bevy::PropertySourceValue::new(
+            vec![aestra_core::PropertySourceValue::new(
                 source,
-                Value::Vec3Curve(aestra_bevy::Vec3Curve::constant([1.0, 2.0, 3.0])),
+                Value::Vec3Curve(aestra_core::Vec3Curve::constant([1.0, 2.0, 3.0])),
             )],
         );
         let selection = ComplexSelection {
@@ -2130,9 +2130,9 @@ mod tests {
 
     #[test]
     fn normalized_curve_graph_uses_fixed_shape_bounds_and_real_output_labels() {
-        let curve = aestra_bevy::Curve::normalized(
+        let curve = aestra_core::Curve::normalized(
             vec![CurveKey::new(0.0, 0.25), CurveKey::new(1.0, 0.75)],
-            aestra_bevy::ScalarRange::new(5.8, 32.0),
+            aestra_core::ScalarRange::new(5.8, 32.0),
         );
         let AutomationCurveData::Curve { value_bounds, .. } = curve_graph_data(&curve) else {
             panic!("expected Feather curve data");
@@ -2172,14 +2172,14 @@ mod tests {
             .unwrap();
         module.property_sources.insert(
             parameter.into(),
-            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::ParticleLife),
+            aestra_core::PropertySource::Curve(aestra_core::PropertyEvaluationDomain::ParticleLife),
         );
         let input = &registry.0.get(&module.module_type).unwrap().inputs[selection.input as usize];
         assert!(complex_input_is_visible(module, input));
 
         module
             .property_sources
-            .insert(parameter.into(), aestra_bevy::PropertySource::Constant);
+            .insert(parameter.into(), aestra_core::PropertySource::Constant);
 
         let module = session
             .selected_layer()

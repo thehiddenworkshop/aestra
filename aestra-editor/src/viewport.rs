@@ -3,6 +3,7 @@
 use crate::{
     EditorNativeControl, FeathersActionButton, MenuState, PendingFeathersActivation,
     ProjectEffectCatalog,
+    bevy_preview::{ActiveBackend, AestraSet, EffectPlayer, EffectRenderMode, EffectRuntimeStatus},
     feathers::icon::load_svg_icon,
     feathers::tooltip::EditorTooltip,
     localization::Localizer,
@@ -16,10 +17,7 @@ use crate::{
     ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
-use aestra_bevy::{
-    ActiveBackend, AestraSet, EffectClipId, EffectPlayer, EffectRenderMode, EffectRuntimeStatus,
-    EmitterId, EmitterShape, EmitterTransform, ModuleId, Value,
-};
+use aestra_core::{EffectClipId, EmitterId, EmitterShape, EmitterTransform, ModuleId, Value};
 use aestra_runtime::{CompiledEffect, CompiledEffectProject, CompiledParameterOverride};
 use bevy::{
     app::TransformGizmoRenderStep,
@@ -2702,7 +2700,7 @@ fn update_preview(
 mod tests {
     use super::*;
     use crate::test_support;
-    use aestra_bevy::EffectPlaybackMode;
+    use aestra_core::EffectPlaybackMode;
 
     #[test]
     fn preview_transform_gizmo_is_larger_and_easier_to_hit_than_the_bevy_default() {
@@ -3167,7 +3165,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         let shape_module = session
             .selected_layer()
-            .module_by_type(aestra_bevy::MODULE_SHAPE)
+            .module_by_type(aestra_core::MODULE_SHAPE)
             .unwrap()
             .id;
         session.selection.primary = SemanticTarget::Module(shape_module);
@@ -3322,19 +3320,19 @@ mod tests {
     #[test]
     fn project_preview_collects_active_effect_clips_with_local_time_and_seed() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut child = aestra_bevy::EffectAsset::new("Child", 1.0);
-        let parameter = aestra_bevy::EffectParameter {
-            id: aestra_bevy::ParameterId::new(),
+        let mut child = aestra_core::EffectAsset::new("Child", 1.0);
+        let parameter = aestra_core::EffectParameter {
+            id: aestra_core::ParameterId::new(),
             name: "Spawn Rate".into(),
             default: Value::Scalar(4.0),
             exposed: true,
         };
         let parameter_id = parameter.id;
-        let mut emitter = aestra_bevy::Emitter::basic_sprite("Child emitter", 1.0);
+        let mut emitter = aestra_core::Emitter::basic_sprite("Child emitter", 1.0);
         emitter
             .modules
             .iter_mut()
-            .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+            .find(|module| module.module_type.0 == aestra_core::MODULE_EMISSION)
             .unwrap()
             .bindings
             .insert("spawn_rate".into(), parameter_id);
@@ -3344,11 +3342,11 @@ mod tests {
             .save_ron(temporary.path().join("child.aestra.ron"))
             .unwrap();
 
-        let mut root = aestra_bevy::EffectAsset::new("Root", 2.0);
+        let mut root = aestra_core::EffectAsset::new("Root", 2.0);
         root.playback_mode = EffectPlaybackMode::LoopContinuous;
-        let mut clip = aestra_bevy::EffectClip::new(child.id, 0.5, 1.0);
+        let mut clip = aestra_core::EffectClip::new(child.id, 0.5, 1.0);
         clip.source_offset = 0.1;
-        clip.seed = aestra_bevy::EffectClipSeed::Fixed(77);
+        clip.seed = aestra_core::EffectClipSeed::Fixed(77);
         clip.transform.translation = [5.0, 2.0, -1.0];
         clip.parameter_overrides
             .insert(parameter_id, Value::Scalar(20.0));
@@ -3396,11 +3394,11 @@ mod tests {
     #[test]
     fn project_preview_error_identifies_a_missing_effect_reference() {
         let mut session = test_support::session_with_timing_slack();
-        let missing = aestra_bevy::EffectId::from_u128(0xfeed_cafe);
+        let missing = aestra_core::EffectId::from_u128(0xfeed_cafe);
         session
             .effect
             .effect_clips
-            .push(aestra_bevy::EffectClip::new(missing, 0.0, 0.5));
+            .push(aestra_core::EffectClip::new(missing, 0.0, 0.5));
         let mut app = App::new();
         app.insert_resource(session)
             .insert_resource(ProjectEffectCatalog::from_entries(Vec::new()))
@@ -3422,10 +3420,10 @@ mod tests {
     fn project_preview_recompiles_referenced_effects_when_the_catalog_refreshes() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("child.aestra.ron");
-        let mut child = aestra_bevy::EffectAsset::new("Child A", 1.0);
+        let mut child = aestra_core::EffectAsset::new("Child A", 1.0);
         child
             .emitters
-            .push(aestra_bevy::Emitter::basic_sprite("Child emitter", 1.0));
+            .push(aestra_core::Emitter::basic_sprite("Child emitter", 1.0));
         child.save_ron(&path).unwrap();
         let child_id = child.id;
         let mut session = test_support::session_with_timing_slack();
@@ -3433,7 +3431,7 @@ mod tests {
         session
             .effect
             .effect_clips
-            .push(aestra_bevy::EffectClip::new(child_id, 0.0, 0.5));
+            .push(aestra_core::EffectClip::new(child_id, 0.0, 0.5));
         let mut app = App::new();
         app.insert_resource(session)
             .insert_resource(ProjectEffectCatalog::scan(temporary.path()))
@@ -3476,19 +3474,19 @@ mod tests {
     #[test]
     fn project_preview_players_follow_seek_and_restart_deterministically() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut child = aestra_bevy::EffectAsset::new("Child", 1.0);
+        let mut child = aestra_core::EffectAsset::new("Child", 1.0);
         child
             .emitters
-            .push(aestra_bevy::Emitter::basic_sprite("Child emitter", 1.0));
+            .push(aestra_core::Emitter::basic_sprite("Child emitter", 1.0));
         child
             .save_ron(temporary.path().join("child.aestra.ron"))
             .unwrap();
 
         let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
-        let mut clip = aestra_bevy::EffectClip::new(child.id, 0.5, 1.0);
+        let mut clip = aestra_core::EffectClip::new(child.id, 0.5, 1.0);
         clip.source_offset = 0.1;
-        clip.seed = aestra_bevy::EffectClipSeed::Fixed(77);
+        clip.seed = aestra_core::EffectClipSeed::Fixed(77);
         let clip_id = clip.id;
         assert!(session.execute(
             "Add child",

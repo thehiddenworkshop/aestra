@@ -1,4 +1,4 @@
-use aestra_bevy::EffectAsset;
+use aestra_core::EffectAsset;
 use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -179,13 +179,13 @@ fn load_candidate(path: &Path) -> io::Result<RecoveryCandidate> {
             ),
         ));
     }
-    if snapshot.effect.format_version != aestra_bevy::CURRENT_FORMAT_VERSION {
+    if snapshot.effect.format_version != aestra_core::CURRENT_FORMAT_VERSION {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
                 "unsupported recovered effect format {}; expected {}",
                 snapshot.effect.format_version,
-                aestra_bevy::CURRENT_FORMAT_VERSION
+                aestra_core::CURRENT_FORMAT_VERSION
             ),
         ));
     }

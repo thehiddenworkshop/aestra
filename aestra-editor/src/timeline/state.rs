@@ -375,7 +375,7 @@ mod tests {
     #[test]
     fn navigation_snapshot_restores_nested_context_and_view() {
         let mut session = test_support::session_with_timing_slack();
-        let clip = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 1.0);
+        let clip = EffectClip::new(aestra_core::EffectId::from_u128(0xC11D), 0.0, 1.0);
         let path = EffectClipPath::root_path(clip.id);
         session.effect.effect_clips.push(clip);
         let mut state = TimelineState::framed(10.0);

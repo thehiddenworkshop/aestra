@@ -19,8 +19,8 @@ use crate::{
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 #[cfg(test)]
-use aestra_bevy::ModuleParameters;
-use aestra_bevy::{
+use aestra_core::ModuleParameters;
+use aestra_core::{
     ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload, ChoreographyTrackId,
     ColorKey, CurveKey, EffectAsset, EffectAssetRef, EffectClip, EffectClipId, EffectMarker,
     EffectParameter, Emitter, EmitterId, EmitterRegion, EmitterRegionId, MarkerId, ModuleId, Value,
@@ -1010,22 +1010,22 @@ mod tests {
         let motion = emitter
             .modules
             .iter_mut()
-            .find(|module| module.module_type.0 == aestra_bevy::MODULE_MOTION)
+            .find(|module| module.module_type.0 == aestra_core::MODULE_MOTION)
             .unwrap();
         let module = motion.id;
         let source =
-            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::ParticleLife);
+            aestra_core::PropertySource::Curve(aestra_core::PropertyEvaluationDomain::ParticleLife);
         motion.property_sources.insert("gravity".into(), source);
-        let curves = aestra_bevy::Vec3Curve {
+        let curves = aestra_core::Vec3Curve {
             curves: [
-                aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 0.1), CurveKey::new(1.0, 0.2)]),
-                aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 0.3), CurveKey::new(1.0, 0.4)]),
-                aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 0.5), CurveKey::new(1.0, 0.6)]),
+                aestra_core::Curve::new(vec![CurveKey::new(0.0, 0.1), CurveKey::new(1.0, 0.2)]),
+                aestra_core::Curve::new(vec![CurveKey::new(0.0, 0.3), CurveKey::new(1.0, 0.4)]),
+                aestra_core::Curve::new(vec![CurveKey::new(0.0, 0.5), CurveKey::new(1.0, 0.6)]),
             ],
         };
         motion.property_source_values.insert(
             "gravity".into(),
-            vec![aestra_bevy::PropertySourceValue::new(
+            vec![aestra_core::PropertySourceValue::new(
                 source,
                 Value::Vec3Curve(curves.clone()),
             )],
@@ -1103,27 +1103,27 @@ mod tests {
         let emission = emitter
             .modules
             .iter_mut()
-            .find(|module| module.module_type.0 == aestra_bevy::MODULE_EMISSION)
+            .find(|module| module.module_type.0 == aestra_core::MODULE_EMISSION)
             .unwrap();
         let module = emission.id;
         let source =
-            aestra_bevy::PropertySource::Curve(aestra_bevy::PropertyEvaluationDomain::EmitterTime);
+            aestra_core::PropertySource::Curve(aestra_core::PropertyEvaluationDomain::EmitterTime);
         emission
             .property_sources
             .insert("spawn_rate".into(), source);
         let bank_curve =
-            aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 4.0), CurveKey::new(1.0, 24.0)]);
+            aestra_core::Curve::new(vec![CurveKey::new(0.0, 4.0), CurveKey::new(1.0, 24.0)]);
         emission.property_source_values.insert(
             "spawn_rate".into(),
-            vec![aestra_bevy::PropertySourceValue::new(
+            vec![aestra_core::PropertySourceValue::new(
                 source,
                 Value::Curve(bank_curve.clone()),
             )],
         );
-        let parameter_id = aestra_bevy::ParameterId::new();
+        let parameter_id = aestra_core::ParameterId::new();
         emission.bindings.insert("spawn_rate".into(), parameter_id);
         let public_curve =
-            aestra_bevy::Curve::new(vec![CurveKey::new(0.0, 8.0), CurveKey::new(1.0, 16.0)]);
+            aestra_core::Curve::new(vec![CurveKey::new(0.0, 8.0), CurveKey::new(1.0, 16.0)]);
         session.effect.parameters.push(EffectParameter {
             id: parameter_id,
             name: "Spawn Rate".into(),
@@ -1692,7 +1692,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         let original_clips = session.effect.effect_clips.clone();
         let fallback_emitter = session.effect.emitters[0].id;
-        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
+        let source = EffectAssetRef::new(aestra_core::EffectId::from_u128(0xfeed));
         let clip = EffectClip::new(source, 0.4, 0.8);
         let id = clip.id;
 
@@ -1753,7 +1753,7 @@ mod tests {
     #[test]
     fn effect_clip_track_state_toggles_and_delete_are_coherent() {
         let mut session = test_support::session_with_timing_slack();
-        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
+        let source = EffectAssetRef::new(aestra_core::EffectId::from_u128(0xfeed));
         let clip = EffectClip::new(source, 0.2, 0.7);
         let id = clip.id;
         assert!(session.execute(
@@ -1926,7 +1926,7 @@ mod tests {
     #[test]
     fn effect_clip_drag_commit_is_one_undoable_timing_command() {
         let mut session = test_support::session_with_timing_slack();
-        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xbeef));
+        let source = EffectAssetRef::new(aestra_core::EffectId::from_u128(0xbeef));
         let mut clip = EffectClip::new(source, 0.4, 0.8);
         clip.source_offset = 0.2;
         let id = clip.id;
@@ -2047,9 +2047,9 @@ mod tests {
     #[test]
     fn effect_clip_reorder_is_one_undoable_stable_id_edit() {
         let mut session = test_support::session_with_timing_slack();
-        let first = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 0.8);
+        let first = EffectClip::new(aestra_core::EffectId::from_u128(0xC11D), 0.0, 0.8);
         let first_id = first.id;
-        let second = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11E), 0.8, 0.8);
+        let second = EffectClip::new(aestra_core::EffectId::from_u128(0xC11E), 0.8, 0.8);
         let second_id = second.id;
         session.effect.effect_clips = vec![first, second];
         session.selection.select_effect_clip(first_id);
@@ -2079,7 +2079,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         session.effect.choreography_order.clear();
-        let clip = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 0.8);
+        let clip = EffectClip::new(aestra_core::EffectId::from_u128(0xC11D), 0.0, 0.8);
         let clip_id = clip.id;
         let emitter_id = session.effect.emitters[0].id;
         session.effect.effect_clips.push(clip);
@@ -3233,7 +3233,7 @@ mod tests {
             .choreography_order
             .retain(|track| matches!(track, ChoreographyTrackId::Emitter(_)));
         let effect_clip = EffectClip::new(
-            EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xcafe)),
+            EffectAssetRef::new(aestra_core::EffectId::from_u128(0xcafe)),
             0.2,
             0.6,
         );
@@ -3242,8 +3242,8 @@ mod tests {
         session.effect.emitters[1].enabled = false;
         let solo = session.effect.emitters[0].id;
         assert!(session.toggle_preview_solo(solo));
-        session.diagnostics.push(aestra_bevy::Diagnostic::error(
-            aestra_bevy::DiagnosticCode::InvalidTiming,
+        session.diagnostics.push(aestra_core::Diagnostic::error(
+            aestra_core::DiagnosticCode::InvalidTiming,
             "effect.emitters[1].duration",
             "test diagnostic",
         ));
@@ -3717,7 +3717,7 @@ mod tests {
         });
         app.insert_resource({
             let mut curves = CurvesState::default();
-            curves.select_for_test(aestra_bevy::ModuleId::new(), 0, 0);
+            curves.select_for_test(aestra_core::ModuleId::new(), 0, 0);
             curves
         });
 
@@ -3887,7 +3887,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         session.effect.effect_clips.push(EffectClip::new(
-            EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0x5010)),
+            EffectAssetRef::new(aestra_core::EffectId::from_u128(0x5010)),
             0.0,
             1.0,
         ));
@@ -3935,7 +3935,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         let clip = EffectClip::new(
-            EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0x5010)),
+            EffectAssetRef::new(aestra_core::EffectId::from_u128(0x5010)),
             0.0,
             1.0,
         );

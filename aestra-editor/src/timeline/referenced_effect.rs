@@ -809,7 +809,7 @@ mod tests {
 
     #[test]
     fn referenced_emitter_timing_is_clipped_and_mapped_into_parent_time() {
-        let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
+        let source = EffectAssetRef::new(aestra_core::EffectId::from_u128(0xfeed));
         let mut clip = EffectClip::new(source, 1.0, 2.0);
         clip.source_offset = 0.5;
         let mut emitter = Emitter::basic_sprite("Child", 2.0);

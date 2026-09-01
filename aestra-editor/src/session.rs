@@ -2,7 +2,8 @@ use aestra_authoring::{
     CommandError, CommandExecutor, CommandHistory, EffectCommand, EffectDiff, EffectTransaction,
     LockState, Selection, TransactionPreview,
 };
-use aestra_bevy::{
+use aestra_compiler::{CompileError, EffectCompiler};
+use aestra_core::{
     AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, EffectClipId,
     EffectParameter, EffectPlaybackMode, Emitter, EmitterId, EmitterRegion, EmitterRegionId,
     EmitterTransform, EventId, EventLink, EventTrigger, FlipbookDefinition, FlipbookPlaybackMode,
@@ -10,7 +11,6 @@ use aestra_bevy::{
     ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties, ValidationReport,
     Value,
 };
-use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointStore, EffectInstance, PlaybackClock,
     SeekOrigin, SeekPlan, SimulationSeekMode,
@@ -60,7 +60,7 @@ pub(crate) struct EditorSession {
     pub speed: f32,
     pub dirty: bool,
     pub status: String,
-    pub samples: Vec<aestra_bevy::ParticleSample>,
+    pub samples: Vec<aestra_runtime::ParticleSample>,
     pub preview: Option<EffectInstance>,
     pub ui_revision: u64,
     history: CommandHistory,
@@ -272,7 +272,7 @@ impl EditorSession {
         }
     }
 
-    pub fn evaluate_preview(&mut self, output: &mut Vec<aestra_bevy::ParticleSample>) {
+    pub fn evaluate_preview(&mut self, output: &mut Vec<aestra_runtime::ParticleSample>) {
         let time = self.simulation_time();
         let mode = self.seek_mode();
         let Some(preview) = &mut self.preview else {
@@ -844,7 +844,7 @@ impl EditorSession {
         true
     }
 
-    pub fn select_marker(&mut self, id: aestra_bevy::MarkerId) -> bool {
+    pub fn select_marker(&mut self, id: aestra_core::MarkerId) -> bool {
         let Some(marker) = self.effect.markers.iter().find(|marker| marker.id == id) else {
             self.status = "Marker no longer exists".into();
             return false;
@@ -860,7 +860,7 @@ impl EditorSession {
         true
     }
 
-    pub fn select_choreography_event(&mut self, id: aestra_bevy::ChoreographyEventId) -> bool {
+    pub fn select_choreography_event(&mut self, id: aestra_core::ChoreographyEventId) -> bool {
         let Some(event) = self
             .effect
             .choreography_events
@@ -1135,7 +1135,7 @@ impl EditorSession {
             return false;
         };
         let command = if let Some(source) = module_instance.property_source(parameter)
-            && source != aestra_bevy::PropertySource::Constant
+            && source != aestra_core::PropertySource::Constant
             && module_instance
                 .property_source_values
                 .get(parameter)
@@ -2033,7 +2033,7 @@ mod tests {
         let emitter = session.selected_layer().id;
         let module = session
             .selected_layer()
-            .module_by_type(aestra_bevy::MODULE_SHAPE)
+            .module_by_type(aestra_core::MODULE_SHAPE)
             .unwrap()
             .id;
 
@@ -2041,7 +2041,7 @@ mod tests {
             emitter,
             module,
             parameter: "shape".into(),
-            value: Value::Shape(aestra_bevy::EmitterShape::Circle { radius: 42.0 }),
+            value: Value::Shape(aestra_core::EmitterShape::Circle { radius: 42.0 }),
         };
         assert!(
             session
@@ -2063,7 +2063,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         let original = session.effect.emitters[0].spawn_rate();
         let module = session.effect.emitters[0]
-            .module_by_type(aestra_bevy::MODULE_EMISSION)
+            .module_by_type(aestra_core::MODULE_EMISSION)
             .unwrap()
             .id;
         session.set_module_parameter(module, "spawn_rate", Value::Scalar(77.0));
@@ -2081,7 +2081,7 @@ mod tests {
     fn dirty_state_tracks_the_saved_document_across_undo_and_redo() {
         let mut session = test_support::session_with_timing_slack();
         let module = session.effect.emitters[0]
-            .module_by_type(aestra_bevy::MODULE_EMISSION)
+            .module_by_type(aestra_core::MODULE_EMISSION)
             .unwrap()
             .id;
         let original = session.effect.emitters[0].spawn_rate();
@@ -2366,7 +2366,7 @@ mod tests {
     fn curve_key_edits_recompile_and_undo() {
         let mut session = test_support::session_with_timing_slack();
         let module = session.effect.emitters[0]
-            .module_by_type(aestra_bevy::MODULE_APPEARANCE)
+            .module_by_type(aestra_core::MODULE_APPEARANCE)
             .unwrap()
             .id;
         let original = session.effect.emitters[0].size_curve().keys[1];
@@ -2383,7 +2383,7 @@ mod tests {
         let mut session = test_support::session_with_playback_mode(EffectPlaybackMode::LoopRestart);
         let emitter = session.effect.emitters[0].id;
         let module = session.effect.emitters[0]
-            .module_by_type(aestra_bevy::MODULE_EMISSION)
+            .module_by_type(aestra_core::MODULE_EMISSION)
             .unwrap()
             .id;
         let original = session.effect.emitters[0].spawn_rate();
@@ -2443,7 +2443,7 @@ mod tests {
 
         let emitter = session.effect.emitters[0].id;
         let required_module = session.effect.emitters[0]
-            .module_by_type(aestra_bevy::MODULE_EMISSION)
+            .module_by_type(aestra_core::MODULE_EMISSION)
             .unwrap()
             .id;
         assert!(session.preview_transaction(EffectTransaction::single(
@@ -2509,7 +2509,7 @@ mod tests {
         session.seek_time(1.0);
         assert!(!session.checkpoints.is_empty());
         let module = session.effect.emitters[0]
-            .module_by_type(aestra_bevy::MODULE_EMISSION)
+            .module_by_type(aestra_core::MODULE_EMISSION)
             .unwrap()
             .id;
         session.set_module_parameter(module, "spawn_rate", Value::Scalar(25.0));
@@ -2576,7 +2576,7 @@ mod tests {
         }
     }
 
-    fn preview_samples(session: &mut EditorSession) -> Vec<aestra_bevy::ParticleSample> {
+    fn preview_samples(session: &mut EditorSession) -> Vec<aestra_runtime::ParticleSample> {
         let time = session.time();
         let preview = session.preview.as_mut().unwrap();
         preview.seek(time);

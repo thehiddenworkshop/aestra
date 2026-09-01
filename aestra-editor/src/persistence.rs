@@ -3,9 +3,8 @@
 use crate::recovery::{RecoveryCandidate, RecoveryPersistence};
 use crate::timeline::{TimelineNavigationSnapshot, TimelineState};
 use crate::*;
-use aestra_bevy::{
-    EffectAssetLoad, EffectAssetMigration, EffectClipId, EffectCompiler, prepare_effect_asset,
-};
+use aestra_compiler::EffectCompiler;
+use aestra_core::{EffectAssetLoad, EffectAssetMigration, EffectClipId, prepare_effect_asset};
 use bevy::ui_widgets::Activate;
 use fluent_bundle::FluentArgs;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
@@ -1394,12 +1393,12 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let child_path = temporary.path().join("child.aestra.ron");
         let mut child = EffectAsset::new("Child", 1.0);
-        child.id = aestra_bevy::EffectId::from_u128(0xC101);
+        child.id = aestra_core::EffectId::from_u128(0xC101);
         child.save_ron(&child_path).unwrap();
         let owner_path = temporary.path().join("owner.aestra.ron");
         let mut owner = EffectAsset::new("Owner", 1.0);
-        owner.id = aestra_bevy::EffectId::from_u128(0xC102);
-        let clip = aestra_bevy::EffectClip::new(child.id, 0.0, 1.0);
+        owner.id = aestra_core::EffectId::from_u128(0xC102);
+        let clip = aestra_core::EffectClip::new(child.id, 0.0, 1.0);
         let clip_id = clip.id;
         owner.effect_clips.push(clip);
         owner.save_ron(&owner_path).unwrap();
@@ -1438,14 +1437,14 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let source_path = temporary.path().join("source.aestra.ron");
         let mut source = test_support::effect_with_timing_slack();
-        source.id = aestra_bevy::EffectId::from_u128(0x50A1CE);
+        source.id = aestra_core::EffectId::from_u128(0x50A1CE);
         source.name = "Source".into();
         let target_id = source.emitters[1].id;
         source.save_ron(&source_path).unwrap();
 
         let parent_path = temporary.path().join("parent.aestra.ron");
         let mut parent = test_support::effect_with_timing_slack();
-        parent.id = aestra_bevy::EffectId::from_u128(0xA11CE);
+        parent.id = aestra_core::EffectId::from_u128(0xA11CE);
         parent.name = "Parent".into();
         parent.save_ron(&parent_path).unwrap();
 
@@ -1494,16 +1493,16 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let grandchild_path = temporary.path().join("grandchild.aestra.ron");
         let mut grandchild = test_support::effect_with_timing_slack();
-        grandchild.id = aestra_bevy::EffectId::from_u128(0x6A11D);
+        grandchild.id = aestra_core::EffectId::from_u128(0x6A11D);
         grandchild.name = "Grandchild".into();
         grandchild.save_ron(&grandchild_path).unwrap();
 
         let child_path = temporary.path().join("child.aestra.ron");
         let mut child = test_support::effect_with_timing_slack();
-        child.id = aestra_bevy::EffectId::from_u128(0xC111D);
+        child.id = aestra_core::EffectId::from_u128(0xC111D);
         child.name = "Child".into();
         child.effect_clips.clear();
-        child.effect_clips.push(aestra_bevy::EffectClip::new(
+        child.effect_clips.push(aestra_core::EffectClip::new(
             EffectAssetRef::new(grandchild.id),
             0.0,
             1.0,
@@ -1512,10 +1511,10 @@ mod tests {
 
         let parent_path = temporary.path().join("parent.aestra.ron");
         let mut parent = test_support::effect_with_timing_slack();
-        parent.id = aestra_bevy::EffectId::from_u128(0xA11CE);
+        parent.id = aestra_core::EffectId::from_u128(0xA11CE);
         parent.name = "Parent".into();
         parent.effect_clips.clear();
-        let clip = aestra_bevy::EffectClip::new(EffectAssetRef::new(child.id), 0.0, 1.0);
+        let clip = aestra_core::EffectClip::new(EffectAssetRef::new(child.id), 0.0, 1.0);
         let clip_id = clip.id;
         parent.effect_clips.push(clip);
         parent.save_ron(&parent_path).unwrap();
@@ -1648,7 +1647,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         fs::write(temporary.path().join("broken.aestra.ron"), "not RON").unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
-        let missing_reference = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xBAD));
+        let missing_reference = EffectAssetRef::new(aestra_core::EffectId::from_u128(0xBAD));
         let session = test_support::session_with_timing_slack();
         let original_id = session.effect.id;
         let autosave = AutosaveState::new(&session, true);
@@ -1737,8 +1736,8 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("effect-with-clip.aestra.ron");
         let mut session = test_support::session_with_timing_slack();
-        let clip = aestra_bevy::EffectClip::new(
-            EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xc11d)),
+        let clip = aestra_core::EffectClip::new(
+            EffectAssetRef::new(aestra_core::EffectId::from_u128(0xc11d)),
             0.25,
             1.0,
         );
@@ -1764,7 +1763,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("catalog-effect.aestra.ron");
         let mut catalog_effect = test_support::effect_with_timing_slack();
-        catalog_effect.id = aestra_bevy::EffectId::from_u128(0xca7a10);
+        catalog_effect.id = aestra_core::EffectId::from_u128(0xca7a10);
         catalog_effect.name = "Catalog target".into();
         catalog_effect.save_ron(&path).unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
@@ -1803,7 +1802,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let target_path = temporary.path().join("catalog-target.aestra.ron");
         let mut target = test_support::effect_with_timing_slack();
-        target.id = aestra_bevy::EffectId::from_u128(0xca7a10);
+        target.id = aestra_core::EffectId::from_u128(0xca7a10);
         target.name = "Catalog target".into();
         target.save_ron(&target_path).unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
@@ -1811,9 +1810,9 @@ mod tests {
 
         let source_path = temporary.path().join("source.aestra.ron");
         let mut session = test_support::session_with_timing_slack();
-        session.effect.id = aestra_bevy::EffectId::from_u128(0x50a7ce);
+        session.effect.id = aestra_core::EffectId::from_u128(0x50a7ce);
         session.save_as(&source_path).unwrap();
-        let clip = aestra_bevy::EffectClip::new(reference, 0.25, 1.0);
+        let clip = aestra_core::EffectClip::new(reference, 0.25, 1.0);
         assert!(session.execute(
             "Add referenced effect clip",
             EffectCommand::AddEffectClip { clip, index: 0 },

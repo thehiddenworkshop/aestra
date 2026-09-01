@@ -2,7 +2,7 @@
 
 use crate::*;
 use aestra_authoring::{ChangeKind, SemanticTarget};
-use aestra_bevy::DiagnosticSeverity;
+use aestra_core::DiagnosticSeverity;
 use bevy::ui_widgets::Activate;
 use fluent_bundle::FluentArgs;
 

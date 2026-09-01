@@ -53,7 +53,7 @@ pub(super) fn handle_renderer_action(
         PropertiesAction::SetRendererTexture(id, index) => {
             let texture = index
                 .and_then(|index| session.effect.assets.get(index))
-                .filter(|asset| asset.kind == aestra_bevy::AssetKind::Texture)
+                .filter(|asset| asset.kind == aestra_core::AssetKind::Texture)
                 .map(|asset| asset.id);
             session.set_renderer_texture(id, texture);
         }
@@ -391,18 +391,18 @@ pub(super) fn handle_renderer_toggle_change(
 
 pub(super) fn properties_renderer_collapsed(
     settings: &EditorSettings,
-    renderer: &aestra_bevy::RendererInstance,
+    renderer: &aestra_core::RendererInstance,
 ) -> bool {
     properties_renderer_card_memory(renderer).collapsed(&settings.properties.section_expansion)
 }
 
 pub(super) fn properties_renderer_card_memory(
-    renderer: &aestra_bevy::RendererInstance,
+    renderer: &aestra_core::RendererInstance,
 ) -> RememberedPanelCard {
     RememberedPanelCard::new(properties_renderer_key(renderer), false)
 }
 
-pub(super) fn properties_renderer_key(renderer: &aestra_bevy::RendererInstance) -> String {
+pub(super) fn properties_renderer_key(renderer: &aestra_core::RendererInstance) -> String {
     match renderer.properties {
         RendererProperties::Sprite => "renderer/sprite",
         RendererProperties::Flipbook { .. } => "renderer/flipbook",
@@ -507,7 +507,7 @@ fn spawn_renderer_toggle_control(
 
 pub(super) fn spawn_renderer_card(
     parent: &mut ChildSpawnerCommands,
-    renderer: &aestra_bevy::RendererInstance,
+    renderer: &aestra_core::RendererInstance,
     diagnostic_path: &str,
     session: &EditorSession,
     collapsed: bool,
@@ -632,7 +632,7 @@ pub(super) fn spawn_renderer_card(
                             .assets
                             .iter()
                             .enumerate()
-                            .filter(|(_, asset)| asset.kind == aestra_bevy::AssetKind::Texture)
+                            .filter(|(_, asset)| asset.kind == aestra_core::AssetKind::Texture)
                             .map(|(index, asset)| ComboOption {
                                 label: asset.name.clone(),
                                 selected: Some(asset.id) == *texture,

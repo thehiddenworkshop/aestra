@@ -144,6 +144,7 @@ dependencies = [
  "aestra-authoring",
  "aestra-bevy",
  "aestra-compiler",
+ "aestra-core",
  "aestra-project",
  "aestra-runtime",
  "bevy",

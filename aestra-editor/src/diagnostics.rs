@@ -2,7 +2,7 @@
 
 use crate::feathers::panel::spawn_panel_empty_state;
 use crate::*;
-use aestra_bevy::{Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, ValidationReport};
+use aestra_core::{Diagnostic, DiagnosticCode, DiagnosticSeverity, EffectAsset, ValidationReport};
 use bevy::ui_widgets::Activate;
 
 pub(crate) struct EditorDiagnosticsPlugin;
@@ -827,7 +827,7 @@ mod tests {
     fn diagnostic_paths_resolve_to_semantic_targets() {
         let mut effect = test_support::effect_with_timing_slack();
         effect.effect_clips.clear();
-        let clip = aestra_bevy::EffectClip::new(aestra_bevy::EffectId::from_u128(0x5155), 0.0, 1.0);
+        let clip = aestra_core::EffectClip::new(aestra_core::EffectId::from_u128(0x5155), 0.0, 1.0);
         let clip_id = clip.id;
         effect.effect_clips.push(clip);
         let emitter = &effect.emitters[1];
