@@ -1,6 +1,6 @@
 use aestra_core::{
-    DiagnosticCode, DiagnosticSeverity, MaterialExpressionId, MaterialId, MaterialParameterId,
-    MaterialProgramId, ParameterId,
+    DiagnosticCode, DiagnosticSeverity, EffectAsset, Emitter, MaterialExpressionId, MaterialId,
+    MaterialParameterId, MaterialProgramId, ParameterId,
     material::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInstance,
         MaterialParameter, MaterialParameterValue, MaterialProgram, MaterialProgramRef,
@@ -174,4 +174,70 @@ fn material_instance_rejects_invalid_dynamic_sources() {
             .iter()
             .any(|diagnostic| diagnostic.code == DiagnosticCode::InvalidValue)
     );
+}
+
+#[test]
+fn effect_local_material_instances_round_trip_and_can_back_renderer_references() {
+    let material = MaterialId::from_u128(0x800);
+    let mut effect = EffectAsset::new("Semantic material owner", 1.0);
+    effect.material_instances.push(MaterialInstance {
+        id: material,
+        program: MaterialProgramRef::Project(MaterialProgramId::from_u128(0x801)),
+        values: BTreeMap::new(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
+    emitter.renderers[0].material = material;
+    effect.emitters.push(emitter);
+
+    let encoded = effect.to_pretty_ron().unwrap();
+    let decoded = EffectAsset::from_ron(&encoded).unwrap();
+
+    assert_eq!(decoded, effect);
+    assert!(encoded.contains("material_instances"));
+    assert_eq!(decoded.emitters[0].renderers[0].material, material);
+}
+
+#[test]
+fn legacy_and_semantic_materials_share_one_effect_local_identity_namespace() {
+    let mut effect = EffectAsset::new("Duplicate material identity", 1.0);
+    effect.material_instances.push(MaterialInstance {
+        id: effect.materials[0].id,
+        program: MaterialProgramRef::Project(MaterialProgramId::from_u128(0x802)),
+        values: BTreeMap::new(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+
+    let report = effect.validation_report();
+
+    assert!(!report.is_valid());
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == DiagnosticCode::DuplicateId)
+    );
+}
+
+#[test]
+fn effect_local_material_bindings_must_reference_owned_effect_parameters() {
+    let missing = ParameterId::from_u128(0x900);
+    let mut effect = EffectAsset::new("Missing material binding", 1.0);
+    effect.material_instances.push(MaterialInstance {
+        id: MaterialId::from_u128(0x901),
+        program: MaterialProgramRef::Project(MaterialProgramId::from_u128(0x902)),
+        values: BTreeMap::from([(
+            MaterialParameterId::from_u128(0x903),
+            MaterialParameterValue::EffectParameter(missing),
+        )]),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+
+    let report = effect.validation_report();
+
+    assert!(!report.is_valid());
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidReference
+            && diagnostic.message.contains(&missing.to_string())
+    }));
 }

@@ -1,12 +1,15 @@
 //! Engine-independent discovery and resolution of project-level Aestra assets.
 //!
-//! Source paths are locations, not semantic identity. Valid effect references use the persisted
-//! [`EffectId`] stored inside each effect asset, so moving or renaming a file cannot break a
-//! reference. [`ProjectSourceId`] exists only to identify rows and diagnostics for source files
-//! that may be invalid and therefore have no readable semantic ID.
+//! Source paths are locations, not semantic identity. Valid effect and material-program references
+//! use persisted semantic IDs, so moving or renaming a file cannot break a reference.
+//! [`ProjectSourceId`] exists only to identify rows and diagnostics for source files that may be
+//! invalid and therefore have no readable semantic ID.
 
 pub use aestra_core::EffectAssetRef;
-use aestra_core::{AssetError, EffectAsset, EffectClipId, EffectId};
+use aestra_core::{
+    AssetError, EffectAsset, EffectClipId, EffectId, MaterialId, MaterialProgramId,
+    material::{MaterialProgram, MaterialProgramError, MaterialProgramRef},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -17,16 +20,23 @@ use thiserror::Error;
 
 /// The stable identity of any project-level asset.
 ///
-/// The enum leaves room for typed project mesh, material, and flipbook assets without weakening
-/// the typed reference APIs used by consumers.
+/// The enum leaves room for typed project mesh, texture, and flipbook assets without weakening the
+/// typed reference APIs used by consumers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ProjectAssetId {
     Effect(EffectId),
+    MaterialProgram(MaterialProgramId),
 }
 
 impl From<EffectAssetRef> for ProjectAssetId {
     fn from(reference: EffectAssetRef) -> Self {
         Self::Effect(reference.id)
+    }
+}
+
+impl From<MaterialProgramRef> for ProjectAssetId {
+    fn from(reference: MaterialProgramRef) -> Self {
+        Self::MaterialProgram(reference.id())
     }
 }
 
@@ -72,6 +82,33 @@ pub struct ProjectEffectEntry {
     pub display_name: String,
     pub path: PathBuf,
     pub status: ProjectEffectStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectMaterialProgramStatus {
+    Valid,
+    DuplicateId {
+        reference: MaterialProgramRef,
+        sources: Vec<PathBuf>,
+    },
+    Invalid {
+        message: String,
+    },
+}
+
+impl ProjectMaterialProgramStatus {
+    pub fn is_resolvable(&self) -> bool {
+        matches!(self, Self::Valid)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectMaterialProgramEntry {
+    pub id: ProjectSourceId,
+    pub reference: Option<MaterialProgramRef>,
+    pub display_name: String,
+    pub path: PathBuf,
+    pub status: ProjectMaterialProgramStatus,
 }
 
 /// One authored effect-clip relationship in the project dependency graph.
@@ -147,9 +184,11 @@ pub struct ProjectAssetDiagnostic {
 pub struct ProjectAssetIndex {
     root: PathBuf,
     effects: Vec<ProjectEffectEntry>,
+    material_programs: Vec<ProjectMaterialProgramEntry>,
     availability: ProjectAssetIndexAvailability,
     diagnostics: Vec<ProjectAssetDiagnostic>,
     effect_sources: BTreeMap<EffectId, Vec<usize>>,
+    material_program_sources: BTreeMap<MaterialProgramId, Vec<usize>>,
 }
 
 impl ProjectAssetIndex {
@@ -167,21 +206,31 @@ impl ProjectAssetIndex {
             return Self {
                 root: root.clone(),
                 effects: Vec::new(),
+                material_programs: Vec::new(),
                 availability: ProjectAssetIndexAvailability::Unavailable { root, message },
                 diagnostics,
                 effect_sources: BTreeMap::new(),
+                material_program_sources: BTreeMap::new(),
             };
         }
         paths.sort();
         paths.dedup();
 
-        let effects = paths
+        let (material_paths, effect_paths): (Vec<_>, Vec<_>) = paths
+            .into_iter()
+            .partition(|path| is_material_program_source(path));
+        let effects = effect_paths
             .into_iter()
             .map(|path| index_effect_source(&root, path, &mut diagnostics))
+            .collect();
+        let material_programs = material_paths
+            .into_iter()
+            .map(|path| index_material_program_source(&root, path, &mut diagnostics))
             .collect();
         Self::from_parts(
             root,
             effects,
+            material_programs,
             ProjectAssetIndexAvailability::Ready,
             diagnostics,
         )
@@ -194,6 +243,7 @@ impl ProjectAssetIndex {
         Self::from_parts(
             root.into(),
             entries,
+            Vec::new(),
             ProjectAssetIndexAvailability::Ready,
             Vec::new(),
         )
@@ -202,6 +252,7 @@ impl ProjectAssetIndex {
     fn from_parts(
         root: PathBuf,
         mut effects: Vec<ProjectEffectEntry>,
+        mut material_programs: Vec<ProjectMaterialProgramEntry>,
         availability: ProjectAssetIndexAvailability,
         mut diagnostics: Vec<ProjectAssetDiagnostic>,
     ) -> Self {
@@ -212,6 +263,17 @@ impl ProjectAssetIndex {
             }
         }
         effects.sort_by(|left, right| {
+            left.display_name
+                .to_lowercase()
+                .cmp(&right.display_name.to_lowercase())
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        for entry in &mut material_programs {
+            while !source_ids.insert(entry.id) {
+                entry.id.0 = entry.id.0.wrapping_add(1);
+            }
+        }
+        material_programs.sort_by(|left, right| {
             left.display_name
                 .to_lowercase()
                 .cmp(&right.display_name.to_lowercase())
@@ -250,12 +312,49 @@ impl ProjectAssetIndex {
             });
         }
 
+        let mut material_program_sources = BTreeMap::<MaterialProgramId, Vec<usize>>::new();
+        for (index, entry) in material_programs.iter().enumerate() {
+            if let Some(reference) = entry.reference {
+                material_program_sources
+                    .entry(reference.id())
+                    .or_default()
+                    .push(index);
+            }
+        }
+        for (id, indexes) in &material_program_sources {
+            if indexes.len() <= 1 {
+                continue;
+            }
+            let reference = MaterialProgramRef::Project(*id);
+            let sources = indexes
+                .iter()
+                .map(|index| material_programs[*index].path.clone())
+                .collect::<Vec<_>>();
+            for index in indexes {
+                material_programs[*index].status = ProjectMaterialProgramStatus::DuplicateId {
+                    reference,
+                    sources: sources.clone(),
+                };
+            }
+            diagnostics.push(ProjectAssetDiagnostic {
+                code: ProjectAssetDiagnosticCode::DuplicateId,
+                path: None,
+                message: format!(
+                    "material program ID {} is declared by {} project sources",
+                    id,
+                    sources.len()
+                ),
+            });
+        }
+
         Self {
             root,
             effects,
+            material_programs,
             availability,
             diagnostics,
             effect_sources,
+            material_program_sources,
         }
     }
 
@@ -267,8 +366,19 @@ impl ProjectAssetIndex {
         &self.effects
     }
 
+    pub fn material_programs(&self) -> &[ProjectMaterialProgramEntry] {
+        &self.material_programs
+    }
+
     pub fn entry(&self, id: ProjectSourceId) -> Option<&ProjectEffectEntry> {
         self.effects.iter().find(|entry| entry.id == id)
+    }
+
+    pub fn material_program_entry(
+        &self,
+        id: ProjectSourceId,
+    ) -> Option<&ProjectMaterialProgramEntry> {
+        self.material_programs.iter().find(|entry| entry.id == id)
     }
 
     pub fn availability(&self) -> &ProjectAssetIndexAvailability {
@@ -312,6 +422,42 @@ impl ProjectAssetIndex {
         }
     }
 
+    pub fn resolve_material_program(
+        &self,
+        reference: MaterialProgramRef,
+    ) -> Result<&ProjectMaterialProgramEntry, ResolveMaterialProgramError> {
+        if let ProjectAssetIndexAvailability::Unavailable { root, message } = &self.availability {
+            return Err(ResolveMaterialProgramError::IndexUnavailable {
+                root: root.clone(),
+                message: message.clone(),
+            });
+        }
+        let MaterialProgramRef::Project(id) = reference else {
+            return Err(ResolveMaterialProgramError::BuiltInNotIndexed { reference });
+        };
+        let Some(indexes) = self.material_program_sources.get(&id) else {
+            return Err(ResolveMaterialProgramError::Missing { reference });
+        };
+        if indexes.len() != 1 {
+            return Err(ResolveMaterialProgramError::Duplicate {
+                reference,
+                sources: indexes
+                    .iter()
+                    .map(|index| self.material_programs[*index].path.clone())
+                    .collect(),
+            });
+        }
+        let entry = &self.material_programs[indexes[0]];
+        if entry.status.is_resolvable() {
+            Ok(entry)
+        } else {
+            Err(ResolveMaterialProgramError::Unresolvable {
+                reference,
+                path: entry.path.clone(),
+            })
+        }
+    }
+
     /// Resolves and loads the latest source contents for one reusable effect reference.
     pub fn load_effect(
         &self,
@@ -338,6 +484,32 @@ impl ProjectAssetIndex {
         Ok(effect)
     }
 
+    pub fn load_material_program(
+        &self,
+        reference: MaterialProgramRef,
+    ) -> Result<MaterialProgram, ResolveMaterialProgramError> {
+        let entry = self.resolve_material_program(reference)?;
+        let program = MaterialProgram::load_ron(&entry.path).map_err(|error| {
+            ResolveMaterialProgramError::SourceChanged {
+                reference,
+                path: entry.path.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        if program.id != reference.id() {
+            return Err(ResolveMaterialProgramError::SourceChanged {
+                reference,
+                path: entry.path.clone(),
+                message: format!(
+                    "indexed material program ID {} was replaced by {}",
+                    reference.id(),
+                    program.id
+                ),
+            });
+        }
+        Ok(program)
+    }
+
     /// Resolves the complete transitive dependency set for an authored root effect.
     ///
     /// The root may contain unsaved edits and therefore does not need to be the same bytes as the
@@ -349,19 +521,23 @@ impl ProjectAssetIndex {
         let mut resolver = DependencyResolver {
             index: self,
             resolved: BTreeMap::new(),
+            material_programs: BTreeMap::new(),
             visiting: Vec::new(),
             visited: BTreeSet::new(),
             diagnostics: Vec::new(),
+            material_diagnostics: Vec::new(),
         };
         resolver.visit(root);
-        if resolver.diagnostics.is_empty() {
+        if resolver.diagnostics.is_empty() && resolver.material_diagnostics.is_empty() {
             Ok(ResolvedEffectProject {
                 root: root.clone(),
                 dependencies: resolver.resolved,
+                material_programs: resolver.material_programs,
             })
         } else {
             Err(ProjectDependencyReport {
                 diagnostics: resolver.diagnostics,
+                material_diagnostics: resolver.material_diagnostics,
             })
         }
     }
@@ -415,6 +591,179 @@ impl ProjectAssetIndex {
         self.resolve(reference)
             .cloned()
             .map_err(|error| ProjectAssetOperationError::Refresh {
+                reference,
+                message: error.to_string(),
+            })
+    }
+
+    pub fn create_material_program_source(
+        &mut self,
+        program: &MaterialProgram,
+    ) -> Result<ProjectMaterialProgramEntry, ProjectMaterialProgramOperationError> {
+        let name = program.name.trim();
+        let Some(stem) = effect_source_stem(name) else {
+            return Err(ProjectMaterialProgramOperationError::InvalidName);
+        };
+        let destination = self.root.join(format!("{stem}.aestra.material.ron"));
+        if destination.exists() {
+            return Err(ProjectMaterialProgramOperationError::DestinationExists {
+                path: destination,
+            });
+        }
+        program.save_ron(&destination).map_err(|error| {
+            ProjectMaterialProgramOperationError::Asset {
+                path: destination.clone(),
+                message: error.to_string(),
+            }
+        })?;
+
+        let reference = MaterialProgramRef::Project(program.id);
+        self.refresh();
+        self.resolve_material_program(reference)
+            .cloned()
+            .map_err(|error| ProjectMaterialProgramOperationError::Refresh {
+                reference,
+                message: error.to_string(),
+            })
+    }
+
+    pub fn rename_material_program_source(
+        &mut self,
+        source: ProjectSourceId,
+        new_name: &str,
+    ) -> Result<ProjectMaterialProgramEntry, ProjectMaterialProgramOperationError> {
+        let entry = self.material_program_source_for_operation(source)?;
+        let reference = entry
+            .reference
+            .expect("a resolvable material program source has a semantic reference");
+        let new_name = new_name.trim();
+        let Some(stem) = effect_source_stem(new_name) else {
+            return Err(ProjectMaterialProgramOperationError::InvalidName);
+        };
+        let Some(parent) = entry.path.parent() else {
+            return Err(ProjectMaterialProgramOperationError::InvalidSource {
+                path: entry.path.clone(),
+            });
+        };
+        let destination = parent.join(format!("{stem}.aestra.material.ron"));
+        let same_file = destination.exists()
+            && fs::canonicalize(&entry.path).ok() == fs::canonicalize(&destination).ok();
+        let moved = destination != entry.path && !same_file;
+        if destination.exists() && !same_file {
+            return Err(ProjectMaterialProgramOperationError::DestinationExists {
+                path: destination,
+            });
+        }
+
+        let mut program = MaterialProgram::load_ron(&entry.path).map_err(|error| {
+            ProjectMaterialProgramOperationError::Asset {
+                path: entry.path.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        if program.id != reference.id() {
+            return Err(ProjectMaterialProgramOperationError::IdentityChanged {
+                reference,
+                path: entry.path,
+            });
+        }
+
+        if moved {
+            fs::rename(&entry.path, &destination).map_err(|error| {
+                ProjectMaterialProgramOperationError::FileSystem {
+                    operation: "rename",
+                    path: entry.path.clone(),
+                    message: error.to_string(),
+                }
+            })?;
+        }
+        program.name = new_name.to_owned();
+        if let Err(error) = program.save_ron(&destination) {
+            let rollback = moved
+                .then(|| fs::rename(&destination, &entry.path))
+                .and_then(Result::err)
+                .map(|error| format!("; restoring the original source also failed: {error}"))
+                .unwrap_or_default();
+            return Err(ProjectMaterialProgramOperationError::Asset {
+                path: destination,
+                message: format!("{error}{rollback}"),
+            });
+        }
+
+        self.refresh();
+        self.resolve_material_program(reference)
+            .cloned()
+            .map_err(|error| ProjectMaterialProgramOperationError::Refresh {
+                reference,
+                message: error.to_string(),
+            })
+    }
+
+    pub fn move_material_program_source(
+        &mut self,
+        source: ProjectSourceId,
+        destination_directory: impl AsRef<Path>,
+    ) -> Result<ProjectMaterialProgramEntry, ProjectMaterialProgramOperationError> {
+        let entry = self.material_program_source_for_operation(source)?;
+        let reference = entry
+            .reference
+            .expect("a resolvable material program source has a semantic reference");
+        let destination_directory = destination_directory.as_ref();
+        if !destination_directory.is_dir() {
+            return Err(ProjectMaterialProgramOperationError::InvalidDestination {
+                path: destination_directory.to_owned(),
+            });
+        }
+        let root = fs::canonicalize(&self.root).map_err(|error| {
+            ProjectMaterialProgramOperationError::FileSystem {
+                operation: "resolve project root",
+                path: self.root.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        let destination_directory = fs::canonicalize(destination_directory).map_err(|error| {
+            ProjectMaterialProgramOperationError::FileSystem {
+                operation: "resolve destination",
+                path: destination_directory.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        if !destination_directory.starts_with(&root) {
+            return Err(
+                ProjectMaterialProgramOperationError::DestinationOutsideRoot {
+                    destination: destination_directory,
+                    root,
+                },
+            );
+        }
+        let Some(file_name) = entry.path.file_name() else {
+            return Err(ProjectMaterialProgramOperationError::InvalidSource {
+                path: entry.path.clone(),
+            });
+        };
+        let destination = destination_directory.join(file_name);
+        if destination.exists() {
+            let source_path = fs::canonicalize(&entry.path).ok();
+            let destination_path = fs::canonicalize(&destination).ok();
+            if source_path == destination_path {
+                return Ok(entry);
+            }
+            return Err(ProjectMaterialProgramOperationError::DestinationExists {
+                path: destination,
+            });
+        }
+        fs::rename(&entry.path, &destination).map_err(|error| {
+            ProjectMaterialProgramOperationError::FileSystem {
+                operation: "move",
+                path: entry.path,
+                message: error.to_string(),
+            }
+        })?;
+
+        self.refresh();
+        self.resolve_material_program(reference)
+            .cloned()
+            .map_err(|error| ProjectMaterialProgramOperationError::Refresh {
                 reference,
                 message: error.to_string(),
             })
@@ -644,6 +993,23 @@ impl ProjectAssetIndex {
         }
         Ok(entry)
     }
+
+    fn material_program_source_for_operation(
+        &self,
+        source: ProjectSourceId,
+    ) -> Result<ProjectMaterialProgramEntry, ProjectMaterialProgramOperationError> {
+        let entry = self
+            .material_program_entry(source)
+            .cloned()
+            .ok_or(ProjectMaterialProgramOperationError::SourceMissing { id: source })?;
+        if !entry.status.is_resolvable() || entry.reference.is_none() {
+            return Err(ProjectMaterialProgramOperationError::SourceNotResolvable {
+                id: source,
+                path: entry.path,
+            });
+        }
+        Ok(entry)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -688,6 +1054,44 @@ pub enum ProjectAssetOperationError {
     #[error("effect {reference} no longer resolves after the asset operation: {message}")]
     Refresh {
         reference: EffectAssetRef,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ProjectMaterialProgramOperationError {
+    #[error("project source {id:?} is no longer present in the material-program index")]
+    SourceMissing { id: ProjectSourceId },
+    #[error("project source {id:?} at {path} is not a resolvable material program")]
+    SourceNotResolvable { id: ProjectSourceId, path: PathBuf },
+    #[error("material program name must contain at least one letter or number")]
+    InvalidName,
+    #[error("material program source path {path} has no valid parent or filename")]
+    InvalidSource { path: PathBuf },
+    #[error("destination {path} is not an existing directory")]
+    InvalidDestination { path: PathBuf },
+    #[error("destination {destination} is outside the project root {root}")]
+    DestinationOutsideRoot { destination: PathBuf, root: PathBuf },
+    #[error("destination source already exists at {path}")]
+    DestinationExists { path: PathBuf },
+    #[error("material program source at {path} changed semantic identity from {reference:?}")]
+    IdentityChanged {
+        reference: MaterialProgramRef,
+        path: PathBuf,
+    },
+    #[error("could not read or save material program source at {path}: {message}")]
+    Asset { path: PathBuf, message: String },
+    #[error("could not {operation} {path}: {message}")]
+    FileSystem {
+        operation: &'static str,
+        path: PathBuf,
+        message: String,
+    },
+    #[error(
+        "material program {reference:?} no longer resolves after the asset operation: {message}"
+    )]
+    Refresh {
+        reference: MaterialProgramRef,
         message: String,
     },
 }
@@ -796,11 +1200,38 @@ pub enum ResolveEffectError {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ResolveMaterialProgramError {
+    #[error("project asset index at {root} is unavailable: {message}")]
+    IndexUnavailable { root: PathBuf, message: String },
+    #[error("built-in material program {reference:?} is not owned by the project index")]
+    BuiltInNotIndexed { reference: MaterialProgramRef },
+    #[error("material program {reference:?} is missing from the project index")]
+    Missing { reference: MaterialProgramRef },
+    #[error("material program {reference:?} is declared by multiple sources: {sources:?}")]
+    Duplicate {
+        reference: MaterialProgramRef,
+        sources: Vec<PathBuf>,
+    },
+    #[error("material program {reference:?} at {path} is not resolvable")]
+    Unresolvable {
+        reference: MaterialProgramRef,
+        path: PathBuf,
+    },
+    #[error("material program {reference:?} changed after indexing at {path}: {message}")]
+    SourceChanged {
+        reference: MaterialProgramRef,
+        path: PathBuf,
+        message: String,
+    },
+}
+
 /// A root effect plus every unique reusable effect it transitively references.
 #[derive(Debug, Clone)]
 pub struct ResolvedEffectProject {
     pub root: EffectAsset,
     pub dependencies: BTreeMap<EffectId, EffectAsset>,
+    pub material_programs: BTreeMap<MaterialProgramId, MaterialProgram>,
 }
 
 impl ResolvedEffectProject {
@@ -824,6 +1255,26 @@ pub enum ProjectDependencyDiagnosticCode {
     Cycle,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectMaterialDependencyDiagnosticCode {
+    Missing,
+    Duplicate,
+    Unresolvable,
+    IndexUnavailable,
+    SourceChanged,
+    InvalidInstance,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectMaterialDependencyDiagnostic {
+    pub code: ProjectMaterialDependencyDiagnosticCode,
+    pub owner: EffectId,
+    pub material: MaterialId,
+    pub reference: MaterialProgramRef,
+    pub path: String,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectDependencyDiagnostic {
     pub code: ProjectDependencyDiagnosticCode,
@@ -835,17 +1286,23 @@ pub struct ProjectDependencyDiagnostic {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("effect dependency resolution failed with {count} diagnostic(s)", count = .diagnostics.len())]
+#[error(
+    "project dependency resolution failed with {count} diagnostic(s)",
+    count = .diagnostics.len() + .material_diagnostics.len()
+)]
 pub struct ProjectDependencyReport {
     pub diagnostics: Vec<ProjectDependencyDiagnostic>,
+    pub material_diagnostics: Vec<ProjectMaterialDependencyDiagnostic>,
 }
 
 struct DependencyResolver<'a> {
     index: &'a ProjectAssetIndex,
     resolved: BTreeMap<EffectId, EffectAsset>,
+    material_programs: BTreeMap<MaterialProgramId, MaterialProgram>,
     visiting: Vec<EffectId>,
     visited: BTreeSet<EffectId>,
     diagnostics: Vec<ProjectDependencyDiagnostic>,
+    material_diagnostics: Vec<ProjectMaterialDependencyDiagnostic>,
 }
 
 impl DependencyResolver<'_> {
@@ -854,6 +1311,48 @@ impl DependencyResolver<'_> {
             return;
         }
         self.visiting.push(effect.id);
+        for instance in &effect.material_instances {
+            let reference = instance.program;
+            let MaterialProgramRef::Project(program_id) = reference else {
+                continue;
+            };
+            let program = if let Some(program) = self.material_programs.get(&program_id) {
+                program.clone()
+            } else {
+                match self.index.load_material_program(reference) {
+                    Ok(program) => {
+                        self.material_programs.insert(program.id, program.clone());
+                        program
+                    }
+                    Err(error) => {
+                        self.material_diagnostics
+                            .push(ProjectMaterialDependencyDiagnostic {
+                                code: material_dependency_code(&error),
+                                owner: effect.id,
+                                material: instance.id,
+                                reference,
+                                path: "program".into(),
+                                message: error.to_string(),
+                            });
+                        continue;
+                    }
+                }
+            };
+            for diagnostic in instance.validate_against(&program).diagnostics {
+                if diagnostic.severity != aestra_core::DiagnosticSeverity::Error {
+                    continue;
+                }
+                self.material_diagnostics
+                    .push(ProjectMaterialDependencyDiagnostic {
+                        code: ProjectMaterialDependencyDiagnosticCode::InvalidInstance,
+                        owner: effect.id,
+                        material: instance.id,
+                        reference,
+                        path: diagnostic.path,
+                        message: diagnostic.message,
+                    });
+            }
+        }
         for clip in &effect.effect_clips {
             let reference = clip.source;
             if let Some(cycle_start) = self
@@ -928,6 +1427,29 @@ fn dependency_code(error: &ResolveEffectError) -> ProjectDependencyDiagnosticCod
     }
 }
 
+fn material_dependency_code(
+    error: &ResolveMaterialProgramError,
+) -> ProjectMaterialDependencyDiagnosticCode {
+    match error {
+        ResolveMaterialProgramError::IndexUnavailable { .. } => {
+            ProjectMaterialDependencyDiagnosticCode::IndexUnavailable
+        }
+        ResolveMaterialProgramError::BuiltInNotIndexed { .. }
+        | ResolveMaterialProgramError::Missing { .. } => {
+            ProjectMaterialDependencyDiagnosticCode::Missing
+        }
+        ResolveMaterialProgramError::Duplicate { .. } => {
+            ProjectMaterialDependencyDiagnosticCode::Duplicate
+        }
+        ResolveMaterialProgramError::Unresolvable { .. } => {
+            ProjectMaterialDependencyDiagnosticCode::Unresolvable
+        }
+        ResolveMaterialProgramError::SourceChanged { .. } => {
+            ProjectMaterialDependencyDiagnosticCode::SourceChanged
+        }
+    }
+}
+
 fn collect_effect_sources(
     directory: &Path,
     paths: &mut Vec<PathBuf>,
@@ -980,6 +1502,12 @@ fn is_ron_source(path: &Path) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case("ron"))
 }
 
+fn is_material_program_source(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.to_lowercase().ends_with(".aestra.material.ron"))
+}
+
 fn index_effect_source(
     root: &Path,
     path: PathBuf,
@@ -1029,6 +1557,49 @@ fn index_effect_source(
                 display_name: fallback_name,
                 path,
                 status: ProjectEffectStatus::Invalid { message },
+            }
+        }
+    }
+}
+
+fn index_material_program_source(
+    root: &Path,
+    path: PathBuf,
+    diagnostics: &mut Vec<ProjectAssetDiagnostic>,
+) -> ProjectMaterialProgramEntry {
+    let id = source_id(root, &path);
+    let fallback_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Unnamed material")
+        .trim_end_matches(".ron")
+        .trim_end_matches(".material")
+        .trim_end_matches(".aestra")
+        .replace(['_', '-'], " ");
+    match MaterialProgram::load_ron(&path) {
+        Ok(program) => ProjectMaterialProgramEntry {
+            id,
+            reference: Some(MaterialProgramRef::Project(program.id)),
+            display_name: program.name,
+            path,
+            status: ProjectMaterialProgramStatus::Valid,
+        },
+        Err(error @ MaterialProgramError::Validation(_))
+        | Err(error @ MaterialProgramError::Parse(_))
+        | Err(error @ MaterialProgramError::Io(_))
+        | Err(error @ MaterialProgramError::Serialize(_)) => {
+            let message = error.to_string();
+            diagnostics.push(ProjectAssetDiagnostic {
+                code: ProjectAssetDiagnosticCode::InvalidAsset,
+                path: Some(path.clone()),
+                message: message.clone(),
+            });
+            ProjectMaterialProgramEntry {
+                id,
+                reference: None,
+                display_name: fallback_name,
+                path,
+                status: ProjectMaterialProgramStatus::Invalid { message },
             }
         }
     }

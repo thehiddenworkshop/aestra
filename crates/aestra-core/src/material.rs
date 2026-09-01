@@ -9,13 +9,19 @@ use crate::{
     MaterialId, MaterialParameterId, MaterialProgramId, ParameterId, ValidationReport,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 use thiserror::Error;
 
 pub const CURRENT_MATERIAL_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Error)]
 pub enum MaterialProgramError {
+    #[error("could not read or write the material program: {0}")]
+    Io(#[from] std::io::Error),
     #[error("could not parse the material program: {0}")]
     Parse(#[from] ron::error::SpannedError),
     #[error("could not serialize the material program: {0}")]
@@ -339,6 +345,63 @@ impl MaterialInstance {
     pub fn validate(&self) -> Result<(), ValidationReport> {
         self.validate_structure().into_result()
     }
+
+    pub fn validate_against(&self, program: &MaterialProgram) -> ValidationReport {
+        let mut report = self.validate_structure();
+        if self.program.id() != program.id {
+            error(
+                &mut report,
+                DiagnosticCode::InvalidReference,
+                "material_instance.program",
+                format!(
+                    "material instance references program {}, but was validated against {}",
+                    self.program.id(),
+                    program.id
+                ),
+            );
+        }
+        if !program.render_state_policy.allows(self.render_state) {
+            error(
+                &mut report,
+                DiagnosticCode::InvalidValue,
+                "material_instance.render_state",
+                "material instance render state is not allowed by its program",
+            );
+        }
+
+        for (parameter_id, value) in &self.values {
+            let path = format!("material_instance.values[{parameter_id}]");
+            let Some(parameter) = program
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == *parameter_id)
+            else {
+                error(
+                    &mut report,
+                    DiagnosticCode::UnknownParameter,
+                    path,
+                    "material instance overrides an unknown program parameter",
+                );
+                continue;
+            };
+            validate_parameter_override(&mut report, &path, parameter, value);
+        }
+
+        for parameter in &program.parameters {
+            if parameter.default.is_none() && !self.values.contains_key(&parameter.id) {
+                error(
+                    &mut report,
+                    DiagnosticCode::InvalidReference,
+                    format!("material_instance.values[{}]", parameter.id),
+                    format!(
+                        "material parameter '{}' has no default and requires an instance value",
+                        parameter.name
+                    ),
+                );
+            }
+        }
+        report
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -504,12 +567,21 @@ impl MaterialProgram {
         Ok(program.normalized())
     }
 
+    pub fn load_ron(path: impl AsRef<Path>) -> Result<Self, MaterialProgramError> {
+        Self::from_ron(&fs::read_to_string(path)?)
+    }
+
     pub fn to_pretty_ron(&self) -> Result<String, MaterialProgramError> {
         self.validate()?;
         Ok(ron::ser::to_string_pretty(
             &self.normalized(),
             ron::ser::PrettyConfig::new().depth_limit(12),
         )?)
+    }
+
+    pub fn save_ron(&self, path: impl AsRef<Path>) -> Result<(), MaterialProgramError> {
+        crate::model::atomic_write(path.as_ref(), self.to_pretty_ron()?.as_bytes())?;
+        Ok(())
     }
 
     pub fn validate(&self) -> Result<(), ValidationReport> {
@@ -777,6 +849,79 @@ fn validate_instance_value(report: &mut ValidationReport, path: &str, value: &Ma
             path,
             "material instance value must contain finite values and valid assets",
         );
+    }
+}
+
+fn validate_parameter_override(
+    report: &mut ValidationReport,
+    path: &str,
+    parameter: &MaterialParameter,
+    value: &MaterialParameterValue,
+) {
+    match value {
+        MaterialParameterValue::Constant(value) => {
+            if !parameter.value_type.accepts(value) {
+                error(
+                    report,
+                    DiagnosticCode::ParameterTypeMismatch,
+                    path,
+                    format!(
+                        "material parameter '{}' override does not match its declared type",
+                        parameter.name
+                    ),
+                );
+            }
+        }
+        MaterialParameterValue::EffectParameter(_) => {
+            if parameter.evaluation_domain != MaterialEvaluationDomain::Effect {
+                error(
+                    report,
+                    DiagnosticCode::InvalidValue,
+                    path,
+                    format!(
+                        "material parameter '{}' does not allow effect-rate bindings",
+                        parameter.name
+                    ),
+                );
+            }
+        }
+        MaterialParameterValue::EmitterParameter(_) => {
+            if parameter.evaluation_domain != MaterialEvaluationDomain::Emitter {
+                error(
+                    report,
+                    DiagnosticCode::InvalidValue,
+                    path,
+                    format!(
+                        "material parameter '{}' does not allow emitter-rate bindings",
+                        parameter.name
+                    ),
+                );
+            }
+        }
+        MaterialParameterValue::RandomRange { min, max, domain } => {
+            if *domain != parameter.evaluation_domain {
+                error(
+                    report,
+                    DiagnosticCode::InvalidValue,
+                    path,
+                    format!(
+                        "material parameter '{}' random domain does not match its declaration",
+                        parameter.name
+                    ),
+                );
+            }
+            if !parameter.value_type.accepts(min) || !parameter.value_type.accepts(max) {
+                error(
+                    report,
+                    DiagnosticCode::ParameterTypeMismatch,
+                    path,
+                    format!(
+                        "material parameter '{}' random range does not match its declared type",
+                        parameter.name
+                    ),
+                );
+            }
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::material::{MaterialInstance, MaterialParameterValue};
 use crate::{
     AssetId, ChoreographyEventId, CurveId, Diagnostic, DiagnosticCode, EffectClipId, EffectId,
     EmitterId, EmitterRegionId, EventId, GradientId, MarkerId, MaterialId, ModuleId, ParameterId,
@@ -43,6 +44,12 @@ pub struct EffectAsset {
     pub flipbooks: Vec<FlipbookDefinition>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub materials: Vec<MaterialDefinition>,
+    /// Effect-local instances of project or built-in semantic material programs.
+    ///
+    /// Legacy sprite materials remain in `materials` until the material compiler
+    /// migration passes the native-GPU compatibility gate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub material_instances: Vec<MaterialInstance>,
     #[serde(default)]
     pub parameters: Vec<EffectParameter>,
     #[serde(default)]
@@ -76,6 +83,7 @@ impl EffectAsset {
             assets: Vec::new(),
             flipbooks: Vec::new(),
             materials: vec![MaterialDefinition::default_sprite()],
+            material_instances: Vec::new(),
             parameters: Vec::new(),
             emitters: Vec::new(),
             events: Vec::new(),
@@ -147,6 +155,43 @@ impl EffectAsset {
                 &mut semantic_ids,
             );
         }
+        for (index, instance) in self.material_instances.iter().enumerate() {
+            let path = format!("effect.material_instances[{index}]");
+            register_id(
+                &mut report,
+                &mut semantic_ids,
+                instance.id.as_uuid().as_u128(),
+                format!("{path}.id"),
+            );
+            for mut diagnostic in instance.validate_structure().diagnostics {
+                diagnostic.path = diagnostic
+                    .path
+                    .strip_prefix("material_instance")
+                    .map_or_else(
+                        || format!("{path}.{}", diagnostic.path),
+                        |suffix| format!("{path}{suffix}"),
+                    );
+                report.push(diagnostic);
+            }
+            for (parameter, value) in &instance.values {
+                let (MaterialParameterValue::EffectParameter(binding)
+                | MaterialParameterValue::EmitterParameter(binding)) = value
+                else {
+                    continue;
+                };
+                if !self
+                    .parameters
+                    .iter()
+                    .any(|candidate| candidate.id == *binding)
+                {
+                    report.push(Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        format!("{path}.values[{parameter}]"),
+                        format!("material value references missing effect parameter {binding}"),
+                    ));
+                }
+            }
+        }
         for (index, parameter) in self.parameters.iter().enumerate() {
             let path = format!("effect.parameters[{index}]");
             register_id(
@@ -205,6 +250,10 @@ impl EffectAsset {
                             renderer.renderer_type.0, material.name
                         ),
                     )),
+                    None if self
+                        .material_instances
+                        .iter()
+                        .any(|instance| instance.id == renderer.material) => {}
                     None => report.push(Diagnostic::error(
                         DiagnosticCode::InvalidReference,
                         path,
@@ -692,7 +741,7 @@ pub enum ChoreographyTrackId {
     Emitter(EmitterId),
 }
 
-fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())

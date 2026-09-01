@@ -198,10 +198,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
 
 - [x] **Material 0 — current-system audit.** The compatibility contract, fixtures, and migration
   classification are recorded in [`material-system/current-state.md`](material-system/current-state.md).
-- [ ] **Material 1 — semantic core types (in progress).** Add stable program, parameter, and
-  expression IDs; project/built-in program references; effect-local instances; typed values;
-  render-state policy; the semantic expression DAG; resource metadata; structural validation; and
-  normalized RON round-trip tests in `aestra-core`.
+- [x] **Material 1 — semantic core types.** Stable program, parameter, and expression IDs;
+  project/built-in references; effect-local instances; typed values; render-state policy; the
+  semantic expression DAG; resource metadata; structural/program-aware validation; normalized RON;
+  and project indexing are implemented. Material-program sources retain identity across create,
+  rename, and move operations; duplicate, replaced, missing, and invalid program dependencies
+  produce typed diagnostics while the legacy sprite-material path remains compatible.
 - [ ] **Material 2 — validation and baseline commands.** Complete type/domain validation and make
   transactional `aestra-authoring` commands the only migration and editor mutation path.
 - [ ] **Material 3 — typed material IR.** Lower valid semantic programs into backend-neutral IR

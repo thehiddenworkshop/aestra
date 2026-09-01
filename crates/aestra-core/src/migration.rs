@@ -154,6 +154,7 @@ fn migrate_v2_to_v3(source: &str) -> Result<EffectAsset, AssetError> {
         assets: legacy.assets,
         flipbooks: legacy.flipbooks,
         materials: legacy.materials,
+        material_instances: Vec::new(),
         parameters,
         emitters,
         events: legacy.events,
