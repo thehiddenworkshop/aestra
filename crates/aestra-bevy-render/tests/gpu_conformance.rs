@@ -19,6 +19,11 @@ use std::{
 use wgpu::util::DeviceExt;
 
 const REQUIRED_GPU_ENV: &str = "AESTRA_REQUIRE_GPU_CONFORMANCE";
+// Shader/pipeline warm-up on a busy software or self-hosted CI adapter can exceed 30 seconds even
+// though the submission is healthy. Keep the wait bounded below the workflow timeout, but allow
+// enough time for the first native submission to compile and complete.
+const GPU_SUBMISSION_TIMEOUT: Duration = Duration::from_secs(120);
+const GPU_MAP_CALLBACK_TIMEOUT: Duration = Duration::from_secs(5);
 const TEST_SEED: u64 = 0x1234_5678_9abc_def0;
 const ONCE_SAMPLE_TIMES: [f32; 4] = [0.05, 0.55, 1.1, 1.65];
 const RESTART_SAMPLE_TIMES: [f32; 4] = [1.95, 2.05, 2.55, 4.1];
@@ -972,12 +977,23 @@ impl GpuHarness {
         self.device
             .poll(wgpu::PollType::Wait {
                 submission_index: Some(submission),
-                timeout: Some(Duration::from_secs(30)),
+                timeout: Some(GPU_SUBMISSION_TIMEOUT),
             })
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| {
+                format!(
+                    "GPU submission did not complete within {:.0}s: {error}",
+                    GPU_SUBMISSION_TIMEOUT.as_secs_f32()
+                )
+            })?;
         receiver
-            .recv_timeout(Duration::from_secs(1))
-            .map_err(|error| error.to_string())?
+            .recv_timeout(GPU_MAP_CALLBACK_TIMEOUT)
+            .map_err(|error| {
+                format!(
+                    "GPU readback callback was not delivered within {:.0}s after submission: \
+                     {error}",
+                    GPU_MAP_CALLBACK_TIMEOUT.as_secs_f32()
+                )
+            })?
             .map_err(|error| error.to_string())?;
         let bytes = slice.get_mapped_range().to_vec();
         staging.unmap();
