@@ -160,8 +160,8 @@ surface to mutable examples and monolithic panel modules.
    focused internal modules. This is a behavior-preserving refactor guarded by the existing tests.
    Timeline semantic actions, state/view/navigation, emitter-region interaction, automation
    interaction, and referenced-effect presentation are now extracted with focused tests. Properties
-   module actions, source authoring, and card composition are extracted; renderer and referenced-
-   effect controls remain.
+   module actions, source authoring, card composition, referenced-effect navigation, repair,
+   instance overrides, and nested read-only presentation are extracted; renderer controls remain.
 3. **Reconcile roadmap status.** Update architecture and implementation documentation so completed
    GPU, flipbook, composition, exposed-parameter, automation, and event work is distinguishable from
    the remaining renderer and material breadth.
