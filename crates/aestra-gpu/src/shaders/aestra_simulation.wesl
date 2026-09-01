@@ -110,10 +110,6 @@ fn hash01_seeded(index: u32, channel: u32, seed: u32) -> f32 {
     return f32(value) / 4294967295.0;
 }
 
-fn hash01(index: u32, channel: u32) -> f32 {
-    return hash01_seeded(index, channel, globals.seed);
-}
-
 fn multiply_high(left: u32, right: u32) -> u32 {
     let left_low = left & 0xffffu;
     let left_high = left >> 16u;
@@ -201,9 +197,15 @@ fn curve_integral(curve: Curve, time: f32) -> f32 {
     return area + last.y * max(t - last.x, 0.0);
 }
 
-fn resolved_spawn_rate(emitter: Emitter, emitter_index: u32) -> f32 {
+fn resolved_spawn_rate(emitter: Emitter, seed: u32) -> f32 {
     if emitter.spawn_rate_source == 1u {
-        return max(sample_range(emitter.spawn_rate, hash01(emitter.seed_index, 0x53504157u)), 0.0);
+        return max(
+            sample_range(
+                emitter.spawn_rate,
+                hash01_seeded(emitter.seed_index, 0x53504157u, seed),
+            ),
+            0.0,
+        );
     }
     return max(emitter.spawn_rate.x, 0.0);
 }
@@ -265,15 +267,15 @@ fn resolved_particle_vector(
     return value;
 }
 
-fn emitted_until(emitter: Emitter, emitter_index: u32, time: f32) -> f32 {
+fn emitted_until(emitter: Emitter, time: f32, seed: u32) -> f32 {
     if emitter.spawn_rate_source == 2u {
         return emitter.source_duration
             * max(curve_integral(emitter.spawn_rate_curve, time / max(emitter.source_duration, 0.000000119)), 0.0);
     }
-    return time * resolved_spawn_rate(emitter, emitter_index);
+    return time * resolved_spawn_rate(emitter, seed);
 }
 
-fn curve_spawn_time(emitter: Emitter, emitter_index: u32, target_emission: f32) -> f32 {
+fn curve_spawn_time(emitter: Emitter, target_emission: f32, seed: u32) -> f32 {
     if target_emission <= 0.0 {
         return 0.0;
     }
@@ -285,7 +287,7 @@ fn curve_spawn_time(emitter: Emitter, emitter_index: u32, target_emission: f32) 
             break;
         }
         let middle = (low + high) * 0.5;
-        if emitted_until(emitter, emitter_index, middle) < target_emission {
+        if emitted_until(emitter, middle, seed) < target_emission {
             low = middle;
         } else {
             high = middle;
@@ -390,35 +392,52 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let current_cycle = u32(floor(globals.time / globals.duration));
         let phase = globals.time - f32(current_cycle) * globals.duration;
         let cycle_source_end = emitter.source_offset + emitter.duration;
-        let emitted_per_cycle = emitter.burst_count
-            + u32(max(floor(emitted_until(emitter, emitter_index, cycle_source_end)), 0.0));
-        if emitted_per_cycle == 0u {
+        let oldest_time = max(
+            globals.time - globals.duration - max(emitter.lifetime.x, emitter.lifetime.y),
+            0.0,
+        );
+        let oldest_cycle = u32(floor(oldest_time / globals.duration));
+        var remaining_index = particle_index;
+        var candidate_cycle = current_cycle;
+        var found_cycle = false;
+        loop {
+            let candidate_seed = seed_for_cycle(candidate_cycle);
+            var candidate_emission_time = cycle_source_end;
+            if candidate_cycle == current_cycle {
+                let phase_region_time = phase - emitter.start_time;
+                if phase_region_time < 0.0 {
+                    candidate_emission_time = -1.0;
+                } else {
+                    let phase_local_time = emitter.source_offset + phase_region_time;
+                    candidate_emission_time = min(phase_local_time, cycle_source_end);
+                }
+            }
+            var emitted_in_cycle = 0u;
+            if candidate_emission_time >= 0.0 {
+                emitted_in_cycle = emitter.burst_count
+                    + u32(max(
+                        floor(emitted_until(emitter, candidate_emission_time, candidate_seed)),
+                        0.0,
+                    ));
+            }
+            if remaining_index < emitted_in_cycle {
+                particle_cycle = candidate_cycle;
+                particle_index = remaining_index;
+                particle_seed = candidate_seed;
+                found_cycle = true;
+                break;
+            }
+            remaining_index -= emitted_in_cycle;
+            if candidate_cycle == oldest_cycle {
+                break;
+            }
+            candidate_cycle -= 1u;
+        }
+        if !found_cycle {
             particles[slot] = dead_particle(emitter_index);
             append_dead(slot);
             return;
         }
-        let phase_region_time = phase - emitter.start_time;
-        var emitted_this_cycle = 0u;
-        if phase_region_time >= 0.0 {
-            let phase_local_time = emitter.source_offset + phase_region_time;
-            let phase_emission_time = min(phase_local_time, cycle_source_end);
-            emitted_this_cycle = emitter.burst_count
-                + u32(max(floor(emitted_until(emitter, emitter_index, phase_emission_time)), 0.0));
-        }
-        if particle_index < emitted_this_cycle {
-            particle_cycle = current_cycle;
-        } else {
-            let previous_cycle_index = particle_index - emitted_this_cycle;
-            let cycles_back = 1u + previous_cycle_index / emitted_per_cycle;
-            if cycles_back > current_cycle {
-                particles[slot] = dead_particle(emitter_index);
-                append_dead(slot);
-                return;
-            }
-            particle_cycle = current_cycle - cycles_back;
-            particle_index = previous_cycle_index % emitted_per_cycle;
-        }
-        particle_seed = seed_for_cycle(particle_cycle);
         cycle_start = f32(particle_cycle) * globals.duration;
     }
     let region_time = globals.time - cycle_start - emitter.start_time;
@@ -432,7 +451,10 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let emission_time = min(local_time, source_end);
 
     let emitted = emitter.burst_count
-        + u32(max(floor(emitted_until(emitter, emitter_index, emission_time)), 0.0));
+        + u32(max(
+            floor(emitted_until(emitter, emission_time, particle_seed)),
+            0.0,
+        ));
     if particle_index >= min(emitted, emitter.max_particles) {
         particles[slot] = dead_particle(emitter_index);
         append_dead(slot);
@@ -442,15 +464,15 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var spawn_time = 0.0;
     if particle_index >= emitter.burst_count {
         let particle_target = f32(particle_index - emitter.burst_count);
-        if emitted_until(emitter, emitter_index, emitter.source_duration) < particle_target {
+        if emitted_until(emitter, emitter.source_duration, particle_seed) < particle_target {
             particles[slot] = dead_particle(emitter_index);
             append_dead(slot);
             return;
         }
         if emitter.spawn_rate_source == 2u {
-            spawn_time = curve_spawn_time(emitter, emitter_index, particle_target);
+            spawn_time = curve_spawn_time(emitter, particle_target, particle_seed);
         } else {
-            let rate = resolved_spawn_rate(emitter, emitter_index);
+            let rate = resolved_spawn_rate(emitter, particle_seed);
             if rate <= 0.0 {
                 particles[slot] = dead_particle(emitter_index);
                 append_dead(slot);

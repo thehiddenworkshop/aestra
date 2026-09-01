@@ -109,7 +109,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Exercises generated simulation WGSL through a deterministic native-compute conformance harness;
   fixed-time particle readback is compared with the CPU semantic reference across once,
   restart-loop, and continuous-loop playback, including emitter regions and surviving prior-cycle
-  particles.
+  particles. The same harness covers emitter-time and particle-life curves plus deterministic
+  scalar and vector random-range sources.
 - Is shared by the editor preview and `aestra-bevy`; neither consumer depends on the other.
 
 ### `aestra-authoring`

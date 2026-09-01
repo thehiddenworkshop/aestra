@@ -1,7 +1,8 @@
 use aestra_compiler::EffectCompiler;
 use aestra_core::{
     ColorKey, Curve, CurveKey, EffectAsset, EffectPlaybackMode, Emitter, EmitterRegion,
-    EmitterShape, Gradient, ModuleParameters, ScalarRange,
+    EmitterShape, Gradient, ModuleInstance, ModuleParameters, PropertyEvaluationDomain,
+    PropertySource, PropertySourceValue, ScalarRange, Value, Vec3Curve, Vec3Range,
 };
 use aestra_gpu::{
     GpuEffectArtifact, GpuGlobals, GpuParticle, WORKGROUP_SIZE, fold_seed, indirect_draw_commands,
@@ -21,9 +22,11 @@ const TEST_SEED: u64 = 0x1234_5678_9abc_def0;
 const ONCE_SAMPLE_TIMES: [f32; 4] = [0.05, 0.55, 1.1, 1.65];
 const RESTART_SAMPLE_TIMES: [f32; 4] = [1.95, 2.05, 2.55, 4.1];
 const CONTINUOUS_SAMPLE_TIMES: [f32; 6] = [1.9, 2.1, 2.55, 4.15, 4.55, 131_072.55];
+const SOURCE_SAMPLE_TIMES: [f32; 4] = [0.35, 0.9, 1.4, 1.85];
+const CONTINUOUS_SOURCE_SAMPLE_TIMES: [f32; 5] = [2.4, 2.9, 4.4, 4.9, 131_072.9];
 
 #[test]
-fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_modes() {
+fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_and_source_modes() {
     let once = conformance_effect(EffectPlaybackMode::Once, false);
     let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(once.clone())).unwrap();
     let shaders = GpuShaderPackage::for_artifact(&artifact).unwrap();
@@ -51,6 +54,24 @@ fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_modes() {
         &harness,
         conformance_effect(EffectPlaybackMode::LoopContinuous, true),
         &CONTINUOUS_SAMPLE_TIMES,
+    );
+    assert_effect_matches_at_times(
+        &harness,
+        source_conformance_effect(EffectPlaybackMode::Once, SourceFixture::Curves),
+        &SOURCE_SAMPLE_TIMES,
+    );
+    assert_effect_matches_at_times(
+        &harness,
+        source_conformance_effect(EffectPlaybackMode::Once, SourceFixture::RandomRanges),
+        &SOURCE_SAMPLE_TIMES,
+    );
+    assert_effect_matches_at_times(
+        &harness,
+        source_conformance_effect(
+            EffectPlaybackMode::LoopContinuous,
+            SourceFixture::RandomRanges,
+        ),
+        &CONTINUOUS_SOURCE_SAMPLE_TIMES,
     );
 }
 
@@ -95,6 +116,10 @@ fn conformance_effect(
     playback_mode: EffectPlaybackMode,
     use_emitter_region: bool,
 ) -> Arc<aestra_runtime::CompiledEffect> {
+    compile_effect(conformance_asset(playback_mode, use_emitter_region))
+}
+
+fn conformance_asset(playback_mode: EffectPlaybackMode, use_emitter_region: bool) -> EffectAsset {
     let mut effect = EffectAsset::new("CPU GPU conformance", 2.0);
     effect.playback_mode = playback_mode;
     let mut emitter = Emitter::basic_sprite("Deterministic fixture", effect.duration);
@@ -172,6 +197,131 @@ fn conformance_effect(
         }
     }
     effect.emitters.push(emitter);
+    effect
+}
+
+#[derive(Clone, Copy)]
+enum SourceFixture {
+    Curves,
+    RandomRanges,
+}
+
+fn source_conformance_effect(
+    playback_mode: EffectPlaybackMode,
+    fixture: SourceFixture,
+) -> Arc<aestra_runtime::CompiledEffect> {
+    let mut effect = conformance_asset(playback_mode, false);
+    let emitter = &mut effect.emitters[0];
+    emitter.max_particles = 48;
+
+    for module in &mut emitter.modules {
+        match &mut module.parameters {
+            ModuleParameters::Emission {
+                spawn_rate,
+                burst_count,
+            } => {
+                *spawn_rate = 5.0;
+                *burst_count = 2;
+                match fixture {
+                    SourceFixture::Curves => set_source(
+                        module,
+                        "spawn_rate",
+                        PropertySource::Curve(PropertyEvaluationDomain::EmitterTime),
+                        Value::Curve(Curve::new(vec![
+                            CurveKey::new(0.0, 2.0),
+                            CurveKey::new(0.45, 11.0),
+                            CurveKey::new(1.0, 4.0),
+                        ])),
+                    ),
+                    SourceFixture::RandomRanges => set_source(
+                        module,
+                        "spawn_rate",
+                        PropertySource::RandomRange,
+                        Value::Range(ScalarRange::new(3.0, 9.0)),
+                    ),
+                }
+            }
+            ModuleParameters::Initialize { lifetime, .. } => {
+                *lifetime = ScalarRange::new(3.5, 3.5);
+            }
+            ModuleParameters::Motion { .. } => match fixture {
+                SourceFixture::Curves => {
+                    let particle_curve =
+                        PropertySource::Curve(PropertyEvaluationDomain::ParticleLife);
+                    set_source(
+                        module,
+                        "drag",
+                        particle_curve,
+                        Value::Curve(Curve::new(vec![
+                            CurveKey::new(0.0, 0.1),
+                            CurveKey::new(0.5, 1.1),
+                            CurveKey::new(1.0, 0.35),
+                        ])),
+                    );
+                    set_source(
+                        module,
+                        "turbulence",
+                        particle_curve,
+                        Value::Curve(Curve::new(vec![
+                            CurveKey::new(0.0, 0.0),
+                            CurveKey::new(0.4, 0.8),
+                            CurveKey::new(1.0, 0.2),
+                        ])),
+                    );
+                    set_source(
+                        module,
+                        "gravity",
+                        particle_curve,
+                        Value::Vec3Curve(Vec3Curve {
+                            curves: [
+                                Curve::new(vec![CurveKey::new(0.0, -1.0), CurveKey::new(1.0, 2.0)]),
+                                Curve::new(vec![
+                                    CurveKey::new(0.0, -5.0),
+                                    CurveKey::new(0.6, 1.0),
+                                    CurveKey::new(1.0, -2.0),
+                                ]),
+                                Curve::new(vec![CurveKey::new(0.0, 0.5), CurveKey::new(1.0, 3.0)]),
+                            ],
+                        }),
+                    );
+                }
+                SourceFixture::RandomRanges => {
+                    set_source(
+                        module,
+                        "drag",
+                        PropertySource::RandomRange,
+                        Value::Range(ScalarRange::new(0.05, 1.25)),
+                    );
+                    set_source(
+                        module,
+                        "turbulence",
+                        PropertySource::RandomRange,
+                        Value::Range(ScalarRange::new(0.1, 0.9)),
+                    );
+                    set_source(
+                        module,
+                        "gravity",
+                        PropertySource::RandomRange,
+                        Value::Vec3Range(Vec3Range::new([-2.0, -6.0, -1.0], [3.0, 1.0, 4.0])),
+                    );
+                }
+            },
+            _ => {}
+        }
+    }
+
+    compile_effect(effect)
+}
+
+fn set_source(module: &mut ModuleInstance, property: &str, source: PropertySource, value: Value) {
+    module.property_sources.insert(property.into(), source);
+    module.property_source_values.insert(
+        property.into(),
+        vec![PropertySourceValue::new(source, value)],
+    );
+}
+
+fn compile_effect(effect: EffectAsset) -> Arc<aestra_runtime::CompiledEffect> {
     Arc::new(EffectCompiler::default().compile(&effect).unwrap())
 }
 
