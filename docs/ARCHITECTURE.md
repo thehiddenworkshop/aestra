@@ -110,7 +110,9 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   fixed-time particle readback is compared with the CPU semantic reference across once,
   restart-loop, and continuous-loop playback, including emitter regions and surviving prior-cycle
   particles. The same harness covers emitter-time and particle-life curves plus deterministic
-  scalar and vector random-range sources.
+  scalar and vector random-range sources. Live scalar, range, vector, curve, and gradient instance
+  parameters—and compiler-validated reusable-clip overrides—are compared without recompiling the
+  source effect.
 - Is shared by the editor preview and `aestra-bevy`; neither consumer depends on the other.
 
 ### `aestra-authoring`

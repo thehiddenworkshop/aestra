@@ -1,14 +1,15 @@
 use aestra_compiler::EffectCompiler;
 use aestra_core::{
-    ColorKey, Curve, CurveKey, EffectAsset, EffectPlaybackMode, Emitter, EmitterRegion,
-    EmitterShape, Gradient, ModuleInstance, ModuleParameters, PropertyEvaluationDomain,
-    PropertySource, PropertySourceValue, ScalarRange, Value, Vec3Curve, Vec3Range,
+    ColorKey, Curve, CurveKey, EffectAsset, EffectParameter, EffectPlaybackMode, Emitter,
+    EmitterRegion, EmitterShape, Gradient, ModuleInstance, ModuleParameters, ParameterId,
+    PropertyEvaluationDomain, PropertySource, PropertySourceValue, ScalarRange, Value, Vec3Curve,
+    Vec3Range,
 };
 use aestra_gpu::{
     GpuEffectArtifact, GpuGlobals, GpuParticle, WORKGROUP_SIZE, fold_seed, indirect_draw_commands,
     shader::GpuShaderPackage,
 };
-use aestra_runtime::{EffectInstance, ParticleSample};
+use aestra_runtime::{CompiledParameterOverride, EffectInstance, ParticleSample, RuntimeValue};
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use std::{
     borrow::Cow,
@@ -24,9 +25,10 @@ const RESTART_SAMPLE_TIMES: [f32; 4] = [1.95, 2.05, 2.55, 4.1];
 const CONTINUOUS_SAMPLE_TIMES: [f32; 6] = [1.9, 2.1, 2.55, 4.15, 4.55, 131_072.55];
 const SOURCE_SAMPLE_TIMES: [f32; 4] = [0.35, 0.9, 1.4, 1.85];
 const CONTINUOUS_SOURCE_SAMPLE_TIMES: [f32; 5] = [2.4, 2.9, 4.4, 4.9, 131_072.9];
+const PARAMETER_SAMPLE_TIMES: [f32; 3] = [0.4, 1.0, 1.7];
 
 #[test]
-fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_and_source_modes() {
+fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_sources_and_parameters() {
     let once = conformance_effect(EffectPlaybackMode::Once, false);
     let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(once.clone())).unwrap();
     let shaders = GpuShaderPackage::for_artifact(&artifact).unwrap();
@@ -73,6 +75,7 @@ fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_and_sourc
         ),
         &CONTINUOUS_SOURCE_SAMPLE_TIMES,
     );
+    assert_parameter_overrides_match_without_recompiling(&harness);
 }
 
 fn assert_effect_matches_at_times(
@@ -81,7 +84,16 @@ fn assert_effect_matches_at_times(
     times: &[f32],
 ) {
     let template = EffectInstance::with_seed(effect.clone(), TEST_SEED);
-    let artifact = GpuEffectArtifact::from_instance(&template).unwrap();
+    assert_instance_matches_at_times(harness, &template, times);
+}
+
+fn assert_instance_matches_at_times(
+    harness: &GpuHarness,
+    template: &EffectInstance,
+    times: &[f32],
+) {
+    let effect = template.effect().clone();
+    let artifact = GpuEffectArtifact::from_instance(template).unwrap();
     for &elapsed in times {
         let mut instance = template.clone();
         instance.advance(elapsed);
@@ -109,6 +121,84 @@ fn assert_effect_matches_at_times(
                 )
             });
         assert_particle_samples_match(effect.playback_mode, elapsed, simulation_time, &cpu, &gpu);
+    }
+}
+
+fn assert_parameter_overrides_match_without_recompiling(harness: &GpuHarness) {
+    let (effect, overrides) = parameter_conformance_effect();
+    let default_instance = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+    assert_instance_matches_at_times(harness, &default_instance, &PARAMETER_SAMPLE_TIMES);
+    let default_artifact = GpuEffectArtifact::from_instance(&default_instance).unwrap();
+    let default_samples = evaluated_samples(&default_instance, 1.0);
+
+    for (index, (parameter, value)) in overrides.iter().enumerate() {
+        let mut individual = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+        individual.set_parameter(*parameter, value.clone()).unwrap();
+        assert!(Arc::ptr_eq(default_instance.effect(), individual.effect()));
+        assert_instance_matches_at_times(harness, &individual, &PARAMETER_SAMPLE_TIMES);
+        assert_ne!(default_samples, evaluated_samples(&individual, 1.0));
+        assert_parameter_artifact_changed(
+            index,
+            &default_artifact,
+            &GpuEffectArtifact::from_instance(&individual).unwrap(),
+        );
+    }
+
+    let mut overridden_instance = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+    for (parameter, value) in &overrides {
+        overridden_instance
+            .set_parameter(*parameter, value.clone())
+            .unwrap();
+    }
+    assert!(Arc::ptr_eq(
+        default_instance.effect(),
+        overridden_instance.effect()
+    ));
+    assert_eq!(
+        overridden_instance.overridden_parameters().count(),
+        overrides.len()
+    );
+    assert_instance_matches_at_times(harness, &overridden_instance, &PARAMETER_SAMPLE_TIMES);
+
+    let mut clip_override_instance = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+    let compiled_overrides = overrides
+        .iter()
+        .map(|(parameter, value)| CompiledParameterOverride {
+            source: *parameter,
+            slot: effect.parameter_slots[parameter],
+            value: RuntimeValue::compile(value).unwrap(),
+        })
+        .collect::<Vec<_>>();
+    clip_override_instance.apply_compiled_parameter_overrides(&compiled_overrides);
+    assert_eq!(
+        clip_override_instance.parameter_values(),
+        overridden_instance.parameter_values()
+    );
+    assert_instance_matches_at_times(harness, &clip_override_instance, &PARAMETER_SAMPLE_TIMES);
+}
+
+fn evaluated_samples(instance: &EffectInstance, elapsed: f32) -> Vec<ParticleSample> {
+    let mut instance = instance.clone();
+    instance.advance(elapsed);
+    let mut samples = Vec::new();
+    instance.evaluate(&mut samples);
+    samples
+}
+
+fn assert_parameter_artifact_changed(
+    parameter_index: usize,
+    default: &GpuEffectArtifact,
+    overridden: &GpuEffectArtifact,
+) {
+    let default = &default.emitters[0];
+    let overridden = &overridden.emitters[0];
+    match parameter_index {
+        0 => assert_ne!(default.spawn_rate, overridden.spawn_rate),
+        1 => assert_ne!(default.lifetime, overridden.lifetime),
+        2 => assert_ne!(default.gravity, overridden.gravity),
+        3 => assert_ne!(default.size.keys[1], overridden.size.keys[1]),
+        4 => assert_ne!(default.color.keys[0].color, overridden.color.keys[0].color),
+        _ => panic!("unexpected conformance parameter {parameter_index}"),
     }
 }
 
@@ -311,6 +401,96 @@ fn source_conformance_effect(
     }
 
     compile_effect(effect)
+}
+
+fn parameter_conformance_effect() -> (
+    Arc<aestra_runtime::CompiledEffect>,
+    Vec<(ParameterId, Value)>,
+) {
+    let mut effect = conformance_asset(EffectPlaybackMode::Once, false);
+    effect.name = "CPU GPU runtime parameters".into();
+    effect.emitters[0].max_particles = 48;
+
+    let definitions = [
+        ("Spawn Rate", Value::Scalar(5.0), Value::Scalar(9.0)),
+        (
+            "Lifetime",
+            Value::Range(ScalarRange::new(1.1, 1.8)),
+            Value::Range(ScalarRange::new(2.4, 3.1)),
+        ),
+        (
+            "Gravity",
+            Value::Vec3([0.0, -2.0, 0.0]),
+            Value::Vec3([2.0, -7.0, 1.5]),
+        ),
+        (
+            "Size",
+            Value::Curve(Curve::new(vec![
+                CurveKey::new(0.0, 0.5),
+                CurveKey::new(0.5, 1.5),
+                CurveKey::new(1.0, 0.25),
+            ])),
+            Value::Curve(Curve::new(vec![
+                CurveKey::new(0.0, 2.0),
+                CurveKey::new(0.35, 4.5),
+                CurveKey::new(1.0, 1.0),
+            ])),
+        ),
+        (
+            "Color",
+            Value::Gradient(Gradient::new(vec![
+                ColorKey::new(0.0, [0.1, 0.4, 1.0, 1.0]),
+                ColorKey::new(1.0, [0.8, 0.1, 0.2, 0.0]),
+            ])),
+            Value::Gradient(Gradient::new(vec![
+                ColorKey::new(0.0, [1.0, 0.8, 0.1, 0.9]),
+                ColorKey::new(0.45, [0.8, 0.1, 1.0, 0.7]),
+                ColorKey::new(1.0, [0.05, 0.2, 0.1, 0.0]),
+            ])),
+        ),
+    ];
+    let mut parameter_ids = Vec::with_capacity(definitions.len());
+    let mut overrides = Vec::with_capacity(definitions.len());
+    for (name, default, overridden) in definitions {
+        let parameter = EffectParameter {
+            id: ParameterId::new(),
+            name: name.into(),
+            default,
+            exposed: true,
+        };
+        overrides.push((parameter.id, overridden));
+        parameter_ids.push(parameter.id);
+        effect.parameters.push(parameter);
+    }
+
+    for module in &mut effect.emitters[0].modules {
+        match &module.parameters {
+            ModuleParameters::Emission { .. } => {
+                module
+                    .bindings
+                    .insert("spawn_rate".into(), parameter_ids[0]);
+            }
+            ModuleParameters::Initialize { .. } => {
+                module.bindings.insert("lifetime".into(), parameter_ids[1]);
+            }
+            ModuleParameters::Motion { .. } => {
+                module.bindings.insert("gravity".into(), parameter_ids[2]);
+            }
+            ModuleParameters::Appearance { .. } => {
+                module.bindings.insert("size".into(), parameter_ids[3]);
+                module.bindings.insert("color".into(), parameter_ids[4]);
+            }
+            _ => {}
+        }
+    }
+
+    let compiled = compile_effect(effect);
+    assert_eq!(compiled.parameters.len(), overrides.len());
+    assert_eq!(
+        compiled.optimizations.runtime_parameter_reads,
+        overrides.len()
+    );
+    (compiled, overrides)
 }
 
 fn set_source(module: &mut ModuleInstance, property: &str, source: PropertySource, value: Value) {
