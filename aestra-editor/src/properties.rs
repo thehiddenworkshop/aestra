@@ -27,6 +27,19 @@ use bevy::{
 use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 
+mod module_controls;
+
+pub(crate) use module_controls::PropertySourceKind;
+#[cfg(test)]
+use module_controls::{
+    expose_module_input, preview_module_deletion, properties_module_key, set_module_input_source,
+    toggle_module_input_public,
+};
+use module_controls::{
+    handle_module_action, numeric_source_limits, properties_curve_limits,
+    properties_module_card_memory, properties_module_collapsed, spawn_module_card,
+};
+
 pub(crate) const PROPERTIES_HIGHLIGHT_DURATION: f32 = 1.6;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -172,8 +185,6 @@ pub(crate) enum PropertiesAction {
         source: PropertySourceKind,
     },
 }
-
-pub(crate) type PropertySourceKind = InputSourceKind;
 
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct EffectClipRepairState {
@@ -400,34 +411,18 @@ fn handle_properties_actions(
                 if menu.tab_context.take().is_some() {
                     session.ui_revision += 1;
                 }
+                if handle_module_action(
+                    *action,
+                    &mut session,
+                    &registry.0,
+                    &mut palette,
+                    &mut workspace,
+                    &mut layout,
+                    &localizer,
+                ) {
+                    continue;
+                }
                 match *action {
-                    PropertiesAction::OpenModulePalette(stage) => {
-                        palette.open = true;
-                        palette.stage = stage;
-                        palette.query.clear();
-                        session.ui_revision += 1;
-                    }
-                    PropertiesAction::CloseModulePalette => {
-                        palette.open = false;
-                        session.ui_revision += 1;
-                    }
-                    PropertiesAction::AddModule(index) => {
-                        let module = registry
-                            .0
-                            .iter()
-                            .nth(index)
-                            .and_then(|metadata| registry.0.instantiate(&metadata.type_id));
-                        if let Some(module) = module {
-                            session.add_module(module);
-                            palette.open = false;
-                        } else {
-                            set_properties_status(
-                                &mut session,
-                                &localizer,
-                                PropertiesStatus::ModuleRegistryUnavailable,
-                            );
-                        }
-                    }
                     PropertiesAction::AddSpriteRenderer => {
                         session.add_sprite_renderer();
                         palette.open = false;
@@ -435,28 +430,6 @@ fn handle_properties_actions(
                     PropertiesAction::AddFlipbookRenderer => {
                         session.add_flipbook_renderer();
                         palette.open = false;
-                    }
-                    PropertiesAction::SetModuleChoice {
-                        module,
-                        input,
-                        choice,
-                    } => set_module_choice(
-                        &mut session,
-                        &registry.0,
-                        module,
-                        input,
-                        choice,
-                        &localizer,
-                    ),
-                    PropertiesAction::MoveModule(id, direction) => {
-                        session.move_module(id, direction);
-                    }
-                    PropertiesAction::DuplicateModule(id) => session.duplicate_module(id),
-                    PropertiesAction::DeleteModule(id) => {
-                        if preview_module_deletion(&mut session, id) {
-                            reveal_dock_panel(&mut layout, &mut session, DockPanel::Changes);
-                            workspace.clear();
-                        }
                     }
                     PropertiesAction::SetRendererMaterial(id, index) => {
                         if let Some(material) = session
@@ -621,29 +594,15 @@ fn handle_properties_actions(
                             true,
                         );
                     }
-                    PropertiesAction::ToggleModuleInputPublic { module, input } => {
-                        toggle_module_input_public(
-                            &mut session,
-                            &registry.0,
-                            module,
-                            input,
-                            &localizer,
-                        );
-                    }
-                    PropertiesAction::SetModuleInputSource {
-                        module,
-                        input,
-                        source,
-                    } => {
-                        set_module_input_source(
-                            &mut session,
-                            &registry.0,
-                            module,
-                            input,
-                            source,
-                            &localizer,
-                        );
-                    }
+                    PropertiesAction::OpenModulePalette(_)
+                    | PropertiesAction::CloseModulePalette
+                    | PropertiesAction::AddModule(_)
+                    | PropertiesAction::SetModuleChoice { .. }
+                    | PropertiesAction::MoveModule(_, _)
+                    | PropertiesAction::DuplicateModule(_)
+                    | PropertiesAction::DeleteModule(_)
+                    | PropertiesAction::ToggleModuleInputPublic { .. }
+                    | PropertiesAction::SetModuleInputSource { .. } => unreachable!(),
                     PropertiesAction::DuplicateRenderer(id) => session.duplicate_renderer(id),
                     PropertiesAction::DeleteRenderer(id) => {
                         if preview_renderer_deletion(&mut session, id) {
@@ -668,362 +627,12 @@ fn handle_properties_actions(
     }
 }
 
-fn preview_module_deletion(session: &mut EditorSession, module: ModuleId) -> bool {
-    let emitter = session.selected_layer().id;
-    session.preview_transaction(EffectTransaction::single(
-        "Delete module",
-        EffectCommand::RemoveModule { emitter, module },
-    ))
-}
-
 fn preview_renderer_deletion(session: &mut EditorSession, renderer: RendererId) -> bool {
     let emitter = session.selected_layer().id;
     session.preview_transaction(EffectTransaction::single(
         "Delete renderer",
         EffectCommand::RemoveRenderer { emitter, renderer },
     ))
-}
-
-fn unique_effect_parameter_name_from_base(effect: &EffectAsset, base: &str) -> String {
-    if !effect
-        .parameters
-        .iter()
-        .any(|parameter| parameter.name == base)
-    {
-        return base.to_owned();
-    }
-    (2..)
-        .map(|index| format!("{base} {index}"))
-        .find(|name| {
-            !effect
-                .parameters
-                .iter()
-                .any(|parameter| &parameter.name == name)
-        })
-        .expect("the unbounded numeric suffix always yields a unique parameter name")
-}
-
-fn toggle_module_input_public(
-    session: &mut EditorSession,
-    registry: &ModuleRegistry,
-    module_id: ModuleId,
-    input_index: u8,
-    localizer: &Localizer,
-) -> bool {
-    let Some((_, input_name)) =
-        properties_module_input_target(session, registry, module_id, input_index)
-    else {
-        return false;
-    };
-    let binding = session
-        .effect
-        .emitters
-        .iter()
-        .flat_map(|emitter| emitter.modules.iter())
-        .find(|module| module.id == module_id)
-        .and_then(|module| module.bindings.get(input_name))
-        .copied();
-    let Some(parameter_id) = binding else {
-        return expose_module_input(session, registry, module_id, input_index, localizer);
-    };
-    update_effect_parameter(session, localizer, parameter_id, |parameter| {
-        parameter.exposed = !parameter.exposed;
-    })
-}
-
-fn expose_module_input(
-    session: &mut EditorSession,
-    registry: &ModuleRegistry,
-    module_id: ModuleId,
-    input_index: u8,
-    localizer: &Localizer,
-) -> bool {
-    let Some((emitter, input_name)) =
-        properties_module_input_target(session, registry, module_id, input_index)
-    else {
-        return false;
-    };
-    let Some(module) = session
-        .effect
-        .emitters
-        .iter()
-        .find(|candidate| candidate.id == emitter)
-        .and_then(|emitter| {
-            emitter
-                .modules
-                .iter()
-                .find(|candidate| candidate.id == module_id)
-        })
-    else {
-        return false;
-    };
-    if module.bindings.contains_key(input_name) {
-        return false;
-    }
-    let Some(mut default) = module_parameter(module, input_name) else {
-        return false;
-    };
-    default.regenerate_ids();
-    let metadata = registry.get(&module.module_type);
-    let display_name = metadata
-        .and_then(|metadata| metadata.inputs.get(input_index as usize))
-        .map_or_else(
-            || input_name.to_owned(),
-            |input| localized_properties_input(localizer, input.name, input.display_name, false),
-        );
-    let parameter = EffectParameter {
-        id: ParameterId::new(),
-        name: unique_effect_parameter_name_from_base(&session.effect, &display_name),
-        default,
-        exposed: true,
-    };
-    let parameter_id = parameter.id;
-    let parameter_index = session.effect.parameters.len();
-    session.execute_transaction(
-        EffectTransaction::new(
-            localizer.text("properties-expose-module-input-command"),
-            vec![
-                EffectCommand::AddParameter {
-                    parameter,
-                    index: parameter_index,
-                },
-                EffectCommand::BindModuleParameter {
-                    emitter,
-                    module: module_id,
-                    parameter: input_name.to_owned(),
-                    source: parameter_id,
-                },
-            ],
-        ),
-        true,
-    )
-}
-
-fn properties_module_input_target<'a>(
-    session: &EditorSession,
-    registry: &'a ModuleRegistry,
-    module: ModuleId,
-    input: u8,
-) -> Option<(EmitterId, &'a str)> {
-    let (emitter, module) = session.effect.emitters.iter().find_map(|emitter| {
-        emitter
-            .modules
-            .iter()
-            .find(|candidate| candidate.id == module)
-            .map(|module| (emitter.id, module))
-    })?;
-    let metadata = registry.get(&module.module_type)?;
-    metadata
-        .inputs
-        .get(input as usize)
-        .map(|input| (emitter, input.name))
-}
-
-fn set_module_input_source(
-    session: &mut EditorSession,
-    registry: &ModuleRegistry,
-    module: ModuleId,
-    input_index: u8,
-    source: PropertySourceKind,
-    localizer: &Localizer,
-) -> bool {
-    let Some((emitter, parameter)) =
-        properties_module_input_target(session, registry, module, input_index)
-    else {
-        return false;
-    };
-    let Some((module_instance, input)) = session
-        .effect
-        .emitters
-        .iter()
-        .flat_map(|emitter| emitter.modules.iter())
-        .find(|candidate| candidate.id == module)
-        .and_then(|module| {
-            registry
-                .get(&module.module_type)
-                .and_then(|metadata| metadata.inputs.get(input_index as usize))
-                .map(|input| (module, input))
-        })
-    else {
-        return false;
-    };
-    if !input.sources.contains(&source) {
-        return false;
-    }
-    if module_instance.property_source(parameter) == Some(source) {
-        return false;
-    }
-    let Some(current) = properties_module_parameter(session, module, parameter) else {
-        return false;
-    };
-    let mut commands = Vec::with_capacity(4);
-    let Some(active_source) = module_instance.property_source(parameter) else {
-        return false;
-    };
-    let active_has_stored_value = module_instance
-        .property_source_values
-        .get(parameter)
-        .is_some_and(|values| {
-            values
-                .iter()
-                .any(|candidate| candidate.source == active_source)
-        });
-    if active_source != PropertySourceKind::Constant
-        && (module_instance.bindings.contains_key(parameter) || !active_has_stored_value)
-    {
-        commands.push(EffectCommand::SetModulePropertySourceValue {
-            emitter,
-            module,
-            parameter: parameter.to_owned(),
-            source: active_source,
-            value: current.clone(),
-        });
-    }
-    let target_value = if source == PropertySourceKind::Constant {
-        module_instance.parameter_value(parameter)
-    } else {
-        module_instance
-            .property_value_for_source(parameter, source)
-            .or_else(|| initial_property_source_value(input, &current, source))
-    };
-    if source != PropertySourceKind::Constant
-        && module_instance
-            .property_value_for_source(parameter, source)
-            .is_none()
-    {
-        let Some(value) = target_value.clone() else {
-            return false;
-        };
-        commands.push(EffectCommand::SetModulePropertySourceValue {
-            emitter,
-            module,
-            parameter: parameter.to_owned(),
-            source,
-            value,
-        });
-    }
-    if let Some(parameter_id) = module_instance.bindings.get(parameter) {
-        let Some(mut effect_parameter) = session
-            .effect
-            .parameters
-            .iter()
-            .find(|candidate| candidate.id == *parameter_id)
-            .cloned()
-        else {
-            return false;
-        };
-        let Some(value) = target_value else {
-            return false;
-        };
-        effect_parameter.default = detached_property_value(value);
-        commands.push(EffectCommand::SetParameter {
-            id: *parameter_id,
-            parameter: effect_parameter,
-        });
-    } else if source == PropertySourceKind::Constant
-        && active_source != PropertySourceKind::Constant
-        && !active_has_stored_value
-    {
-        let Some(value) = target_value else {
-            return false;
-        };
-        commands.push(EffectCommand::SetModuleParameter {
-            emitter,
-            module,
-            parameter: parameter.to_owned(),
-            value: detached_property_value(value),
-        });
-    }
-    commands.push(EffectCommand::SetModulePropertySource {
-        emitter,
-        module,
-        parameter: parameter.to_owned(),
-        source,
-    });
-    session.execute_transaction(
-        EffectTransaction::new(localizer.text("properties-change-source-command"), commands),
-        true,
-    )
-}
-
-fn detached_property_value(mut value: Value) -> Value {
-    value.regenerate_ids();
-    value
-}
-
-fn initial_property_source_value(
-    input: &InputMetadata,
-    current: &Value,
-    source: PropertySourceKind,
-) -> Option<Value> {
-    let scalar = match current {
-        Value::Scalar(value) => Some(*value),
-        Value::Range(range) => Some((range.min + range.max) * 0.5),
-        Value::Curve(curve) => Some(curve.sample(0.0)),
-        _ => None,
-    };
-    let vector = match current {
-        Value::Vec3(value) => Some(*value),
-        Value::Vec3Range(range) => Some(std::array::from_fn(|axis| {
-            (range.min[axis] + range.max[axis]) * 0.5
-        })),
-        Value::Vec3Curve(curves) => Some(curves.sample(0.0)),
-        _ => None,
-    };
-    match source {
-        PropertySourceKind::RandomRange => {
-            let (step, min, max) = numeric_source_limits(&input.control)?;
-            if let Some(value) = vector {
-                let low = value
-                    .map(|value| min.map_or(value - step, |minimum| (value - step).max(minimum)));
-                let high = value
-                    .map(|value| max.map_or(value + step, |maximum| (value + step).min(maximum)));
-                return Some(Value::Vec3Range(Vec3Range::new(low, high)));
-            }
-            let value = scalar?;
-            let low = min.map_or(value - step, |minimum| (value - step).max(minimum));
-            let high = max.map_or(value + step, |maximum| (value + step).min(maximum));
-            Some(Value::Range(ScalarRange::new(low.min(high), high.max(low))))
-        }
-        PropertySourceKind::Curve(_) => {
-            if let Some(value) = vector {
-                return Some(Value::Vec3Curve(Vec3Curve::constant(value)));
-            }
-            let value = scalar?;
-            Some(Value::Curve(Curve::normalized(
-                vec![CurveKey::new(0.0, 0.0), CurveKey::new(1.0, 0.0)],
-                ScalarRange::new(value, value),
-            )))
-        }
-        PropertySourceKind::Gradient(_) => {
-            let Value::Gradient(gradient) = current else {
-                return None;
-            };
-            let color = gradient.sample(0.0);
-            Some(Value::Gradient(Gradient::new(vec![
-                ColorKey::new(0.0, color),
-                ColorKey::new(1.0, color),
-            ])))
-        }
-        PropertySourceKind::Constant => None,
-    }
-}
-
-fn numeric_source_limits(control: &InputControl) -> Option<(f32, Option<f32>, Option<f32>)> {
-    match control {
-        InputControl::Number { step, min, max }
-        | InputControl::Range { step, min, max }
-        | InputControl::Vector { step, min, max } => Some((*step, *min, *max)),
-        InputControl::Curve { step, min, max } => Some((*step, Some(*min), Some(*max))),
-        _ => None,
-    }
-}
-
-fn properties_curve_limits(
-    input: &InputMetadata,
-    _curve: &Curve,
-) -> Option<(f32, Option<f32>, Option<f32>)> {
-    numeric_source_limits(&input.control)
 }
 
 // Properties domain implementation.
@@ -7800,10 +7409,6 @@ fn localized_event_trigger(localizer: &Localizer, trigger: EventTrigger) -> Stri
     })
 }
 
-fn properties_module_collapsed(settings: &EditorSettings, module: &ModuleInstance) -> bool {
-    properties_module_card_memory(module).collapsed(&settings.properties.section_expansion)
-}
-
 fn properties_renderer_collapsed(
     settings: &EditorSettings,
     renderer: &aestra_bevy::RendererInstance,
@@ -7811,21 +7416,10 @@ fn properties_renderer_collapsed(
     properties_renderer_card_memory(renderer).collapsed(&settings.properties.section_expansion)
 }
 
-fn properties_module_card_memory(module: &ModuleInstance) -> RememberedPanelCard {
-    RememberedPanelCard::new(
-        properties_module_key(module),
-        !matches!(module.stage, StageKind::ParticleUpdate),
-    )
-}
-
 fn properties_renderer_card_memory(
     renderer: &aestra_bevy::RendererInstance,
 ) -> RememberedPanelCard {
     RememberedPanelCard::new(properties_renderer_key(renderer), false)
-}
-
-fn properties_module_key(module: &ModuleInstance) -> String {
-    format!("module/{}", module.module_type.0)
 }
 
 fn properties_renderer_key(renderer: &aestra_bevy::RendererInstance) -> String {
@@ -8211,350 +7805,6 @@ fn spawn_stage_header(parent: &mut ChildSpawnerCommands, stage: StackStage) {
             });
             mini_button(row, "+", PropertiesAction::OpenModulePalette(stage));
         });
-}
-
-fn spawn_module_card(
-    parent: &mut ChildSpawnerCommands,
-    module: &ModuleInstance,
-    metadata: Option<&ModuleMetadata>,
-    diagnostic_path: &str,
-    session: &EditorSession,
-    localizer: &Localizer,
-    collapsed: bool,
-    asset_server: &AssetServer,
-) {
-    let display_name = metadata.map_or(module.module_type.0.as_str(), |item| item.display_name);
-    let help = metadata.map_or(
-        "This module is not available in the current registry.",
-        |item| item.description,
-    );
-    let base_border = if session
-        .diagnostics
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.path.starts_with(diagnostic_path))
-    {
-        Color::srgb(0.82, 0.28, 0.24)
-    } else if session.selection.primary == SemanticTarget::Module(module.id) {
-        theme::ACCENT_DIM
-    } else {
-        theme::BORDER
-    };
-    spawn_remembered_panel_card(
-        parent,
-        PanelCardProps::new(display_name, collapsed)
-            .with_memory_key(properties_module_key(module))
-            .with_help(help)
-            .with_enabled(module.enabled)
-            .with_background(if module.enabled {
-                theme::PANEL_LIGHT
-            } else {
-                theme::PANEL_DARK
-            })
-            .with_border(base_border),
-        PropertiesSemanticTarget {
-            target: SemanticTarget::Module(module.id),
-            base_border,
-        },
-        PropertiesSelectionTarget(SemanticTarget::Module(module.id)),
-        PropertiesAction::ToggleSection(PropertiesSection::Module(module.id)),
-        |header| {
-            let mut enabled = header.spawn_empty();
-            enabled.apply_scene(ui_shell::feathers_checkbox()).insert((
-                ModuleEnabledControl(module.id),
-                AccessibleLabel(format!("Enable {display_name}")),
-            ));
-            if module.enabled {
-                enabled.insert(Checked);
-            }
-            spawn_action_menu(
-                header,
-                &format!("{display_name} actions"),
-                &[
-                    ComboOption {
-                        label: "Move up".into(),
-                        selected: false,
-                        action: PropertiesAction::MoveModule(module.id, -1),
-                    },
-                    ComboOption {
-                        label: "Move down".into(),
-                        selected: false,
-                        action: PropertiesAction::MoveModule(module.id, 1),
-                    },
-                    ComboOption {
-                        label: "Duplicate".into(),
-                        selected: false,
-                        action: PropertiesAction::DuplicateModule(module.id),
-                    },
-                    ComboOption {
-                        label: "Delete…".into(),
-                        selected: false,
-                        action: PropertiesAction::DeleteModule(module.id),
-                    },
-                ],
-            );
-        },
-        |card| {
-            if let Some(metadata) = metadata {
-                for (input_index, input) in metadata.inputs.iter().enumerate() {
-                    spawn_input_control(
-                        card,
-                        module,
-                        input,
-                        input_index as u8,
-                        session,
-                        localizer,
-                        asset_server,
-                    );
-                }
-            }
-            spawn_inline_diagnostics(card, diagnostic_path, session);
-        },
-    );
-}
-
-fn spawn_input_control(
-    parent: &mut ChildSpawnerCommands,
-    module: &ModuleInstance,
-    input: &InputMetadata,
-    input_index: u8,
-    session: &EditorSession,
-    localizer: &Localizer,
-    asset_server: &AssetServer,
-) {
-    let display_name = localized_properties_input(localizer, input.name, input.display_name, false);
-    let description = localized_properties_input(localizer, input.name, input.description, true);
-    let Some(value) = properties_module_parameter(session, module.id, input.name) else {
-        spawn_properties_read_only_control(parent, &display_name, "Missing authored value");
-        return;
-    };
-    let public =
-        public_module_input_control(session, module, input, input_index, &value, localizer);
-    let source = property_source_for_input(module, input, &value);
-    if input.sources.len() > 1
-        && matches!(&input.control, InputControl::Vector { .. })
-        && matches!(
-            &value,
-            Value::Vec3(_) | Value::Vec3Range(_) | Value::Vec3Curve(_)
-        )
-    {
-        spawn_properties_vector_source_control(
-            parent,
-            module.id,
-            input,
-            input_index,
-            &display_name,
-            property_tooltip(&description, input.unit, localizer),
-            public,
-            source,
-            asset_server,
-            localizer,
-        );
-        return;
-    }
-    if input.sources.len() > 1
-        && matches!(&input.control, InputControl::Number { .. })
-        && matches!(&value, Value::Scalar(_))
-    {
-        spawn_properties_scalar_source_control(
-            parent,
-            module.id,
-            input,
-            input_index,
-            &display_name,
-            property_tooltip(&description, input.unit, localizer),
-            public,
-            source,
-            asset_server,
-            localizer,
-        );
-        return;
-    }
-    if source == PropertySourceKind::RandomRange && matches!(&value, Value::Range(_)) {
-        spawn_properties_range_source_control(
-            parent,
-            module.id,
-            input,
-            input_index,
-            &display_name,
-            property_tooltip(&description, input.unit, localizer),
-            public,
-            source,
-            asset_server,
-            localizer,
-        );
-        return;
-    }
-    if matches!(source, PropertySourceKind::Curve(_))
-        && let Value::Curve(curve) = &value
-    {
-        spawn_properties_curve_source_control(
-            parent,
-            module.id,
-            input,
-            input_index,
-            &display_name,
-            property_tooltip(&description, input.unit, localizer),
-            curve,
-            source,
-            asset_server,
-            localizer,
-        );
-        return;
-    }
-    match (&input.control, value) {
-        (InputControl::Curve { .. }, Value::Curve(curve)) => {
-            spawn_properties_curve_source_control(
-                parent,
-                module.id,
-                input,
-                input_index,
-                &display_name,
-                property_tooltip(&description, input.unit, localizer),
-                &curve,
-                source,
-                asset_server,
-                localizer,
-            );
-        }
-        (InputControl::Gradient, Value::Gradient(gradient)) => {
-            spawn_properties_gradient_source_control(
-                parent,
-                module.id,
-                input,
-                input_index,
-                &display_name,
-                &description,
-                &gradient,
-                source,
-                asset_server,
-                localizer,
-            );
-        }
-        (InputControl::Toggle, Value::Bool(value)) => {
-            spawn_properties_toggle_control(
-                parent,
-                module.id,
-                input,
-                &display_name,
-                &description,
-                value,
-                public,
-            );
-        }
-        (InputControl::Number { .. }, Value::U32(_)) => {
-            spawn_properties_integer_control(
-                parent,
-                module.id,
-                input,
-                &display_name,
-                property_tooltip(&description, input.unit, localizer),
-                public,
-            );
-        }
-        (InputControl::Number { step, min, max }, Value::Scalar(value)) => {
-            spawn_properties_number_controls(
-                parent,
-                &display_name,
-                property_tooltip(&description, input.unit, localizer),
-                PropertiesNumberControl {
-                    module: module.id,
-                    parameter: input.name,
-                    component: 0,
-                    kind: PropertiesNumberKind::Scalar,
-                    step: *step,
-                    min: *min,
-                    max: *max,
-                },
-                &[("", value, 0)],
-                public,
-            );
-        }
-        (InputControl::Vector { step, min, max }, Value::Vec2(value)) => {
-            spawn_properties_number_controls(
-                parent,
-                &display_name,
-                property_tooltip(&description, input.unit, localizer),
-                PropertiesNumberControl {
-                    module: module.id,
-                    parameter: input.name,
-                    component: 0,
-                    kind: PropertiesNumberKind::Vector,
-                    step: *step,
-                    min: *min,
-                    max: *max,
-                },
-                &[("X", value[0], 0), ("Y", value[1], 1)],
-                public,
-            );
-        }
-        (InputControl::Vector { step, min, max }, Value::Vec3(value)) => {
-            spawn_properties_number_controls(
-                parent,
-                &display_name,
-                property_tooltip(&description, input.unit, localizer),
-                PropertiesNumberControl {
-                    module: module.id,
-                    parameter: input.name,
-                    component: 0,
-                    kind: PropertiesNumberKind::Vector,
-                    step: *step,
-                    min: *min,
-                    max: *max,
-                },
-                &[("X", value[0], 0), ("Y", value[1], 1), ("Z", value[2], 2)],
-                public,
-            );
-        }
-        (InputControl::Vector { step, min, max }, Value::Vec4(value)) => {
-            spawn_properties_number_controls(
-                parent,
-                &display_name,
-                property_tooltip(&description, input.unit, localizer),
-                PropertiesNumberControl {
-                    module: module.id,
-                    parameter: input.name,
-                    component: 0,
-                    kind: PropertiesNumberKind::Vector,
-                    step: *step,
-                    min: *min,
-                    max: *max,
-                },
-                &[
-                    ("X", value[0], 0),
-                    ("Y", value[1], 1),
-                    ("Z", value[2], 2),
-                    ("W", value[3], 3),
-                ],
-                public,
-            );
-        }
-        (InputControl::Range { .. }, Value::Range(_)) => {
-            spawn_properties_range_source_control(
-                parent,
-                module.id,
-                input,
-                input_index,
-                &display_name,
-                property_tooltip(&description, input.unit, localizer),
-                public,
-                source,
-                asset_server,
-                localizer,
-            );
-        }
-        (InputControl::Choice, value) => spawn_properties_choice_control(
-            parent,
-            module.id,
-            input_index,
-            &display_name,
-            &description,
-            &value,
-        ),
-        (_, value) => {
-            spawn_properties_read_only_control(parent, &display_name, &format_value(value));
-        }
-    }
 }
 
 pub(crate) fn localized_properties_input(
