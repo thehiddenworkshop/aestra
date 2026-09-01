@@ -338,6 +338,8 @@ outdated or future format.
 - [x] module stack for spawn, initialize, update, and renderer stages
 - [x] typed event-link authoring between emitter layers
 - [x] typed, marker-relative choreography events with timeline and Bevy dispatch
+- [x] emitter regions with split, merge, trim, multi-selection, and source-time preservation
+- [x] Timeline automation lanes sharing curve/gradient keys with the Curves workspace
 - optional node-graph projection for dataflow-heavy authoring
 - [x] atomic debounced autosave and startup crash recovery
 - [x] typed, confirmed, backup-preserving asset migrations
@@ -350,31 +352,37 @@ outdated or future format.
 - [x] persistent recursive pane resizing and dockable authoring-panel tab stacks
 - [x] persisted native floating panel windows with redocking
 
-### Phase 3 — production renderer
+### Phase 3 — production renderer (in progress)
 
-- GPU compute simulation and particle buffers
-- indirect draw, frustum culling, depth sorting, and bounds
+- [x] GPU compute simulation, bounded particle buffers, compaction, and deterministic readback
+- [x] indirect dispatch/draw, per-view visibility, depth sorting, and conservative bounds
 - [x] textured billboards with stable texture assets and UV regions
 - [x] reusable sprite materials with blend state and typed parameter/color bindings
-- flipbooks, ribbons, meshes, and trails
-- effect parameters, exposed inputs, and gameplay bindings
-- deterministic seeds plus scalable quality tiers and budgets
+- [x] imported flipbooks with explicit frames and deterministic playback modes
+- [ ] ribbons, meshes, and trails
+- [x] runtime effect parameters, public inputs, child-effect overrides, and gameplay event dispatch
+- [x] deterministic seeds, backend capability selection, and per-effect particle budgets
+- [ ] quality tiers and aggregate global VFX budgets
 
 ### Pre-material authoring hardening gate (in progress)
 
 - [x] replace showcase-dependent behavioral tests with deterministic semantic fixtures
 - [x] split Timeline and Properties implementation details into focused internal modules
-- [ ] reconcile roadmap status with the implemented renderer, composition, and automation slices
+- [x] reconcile roadmap status with the implemented renderer, composition, and automation slices
+- [x] audit the current material contract and define compatibility fixtures/test expectations
 - [ ] approve current showcase changes through format/compiler and native-GPU visual gates
 - [ ] deliver the animated additive-flame material vertical slice before a material node graph
 
-### Phase 4 — professional workflow
+### Phase 4 — professional workflow (in progress)
 
-- sub-effects, collision, decals, lights, audio/event tracks, and camera cues
-- live game preview and remote parameter inspection
+- [x] reusable child effects with timing, transforms, public overrides, source navigation, and explode
+- [x] typed gameplay, sound, camera, and child-effect choreography event tracks and Bevy dispatch
+- [ ] collision, decals, lights, audio playback, and camera-cue runtime adapters
+- [ ] live game preview and remote parameter inspection
 - [x] dockable profiling workspace, runtime snapshots, and per-emitter particle costs
-- thumbnails, content browser search/tags, templates, and presets
-- bake/compile pipeline with validation in CI
+- [ ] thumbnails, content browser search/tags, templates, and presets
+- [x] versioned compiled-artifact prototype and portability CI
+- [ ] permanent release packaging, baking, and artifact cache policy
 
 ## Quality constraints
 

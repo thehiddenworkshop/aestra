@@ -1,6 +1,6 @@
 # Aestra implementation plan
 
-Status: initial execution plan
+Status: active delivery plan; M0–M5 complete, M6 in progress
 
 This plan turns `aestra_ai_native_vfx_editor_plan.md` into a build sequence for the
 current repository. The source document remains the long-term product and
@@ -79,7 +79,9 @@ architecture vision; this file is the shorter delivery plan.
   reusable material definitions instead of owning presentation state. The first sprite
   material domain compiles blend state, typed softness/tint inputs, explicit particle-color
   consumption, stable texture assets, and UV regions into backend-independent material
-  plans consumed by native GPU, readback, and CPU presentation. The Assets and Properties
+  plans. Native GPU presentation consumes the full blend/softness/color/texture contract;
+  CPU/readback presentation preserves color, texture/UV, flipbook frame, transform, and
+  visibility but is not a pixel reference for blend or analytic softness. The Assets and Properties
   workspaces expose material creation, assignment, and undoable editing. Imported
   flipbooks now add explicit atlas frames, particle-age/effect-time animation,
   forward/reverse/ping-pong playback, looping, deterministic random starts, native WESL,
@@ -129,7 +131,7 @@ architecture vision; this file is the shorter delivery plan.
   clip identity. The Library presents those relations through a navigable Uses / Used By inspector,
   selects exact owner clips, and guards source deletion with refreshed dependency warnings.
   Recursive reusable extraction, preview-cache identity,
-  procedural recipes, mesh/ribbon production paths, renderer sorting, and richer material domains
+  procedural recipes, mesh/ribbon production paths, authored renderer sorting controls, and richer material domains
   remain.
 
 ## M6 composition release gate
@@ -163,20 +165,27 @@ surface to mutable examples and monolithic panel modules.
    module actions, source authoring, card composition, referenced-effect navigation, repair,
    instance overrides, and nested read-only presentation are extracted. Renderer actions, card
    composition, input synchronization, and numeric scrub semantics now have focused ownership too.
-3. **Reconcile roadmap status.** Update architecture and implementation documentation so completed
-   GPU, flipbook, composition, exposed-parameter, automation, and event work is distinguishable from
-   the remaining renderer and material breadth.
+3. **Reconcile roadmap status — complete.** Architecture and implementation documentation now
+   distinguish the shipped GPU simulation/presentation, flipbook, reusable composition,
+   exposed-parameter/instance-override, automation, choreography-event, artifact, and portability
+   slices from the remaining mesh/ribbon/trail, authored sorting, quality-budget, release packaging,
+   and semantic material-program work.
 4. **Approve showcase content independently.** Keep editable examples outside semantic unit-test
    assumptions. Validate their format and compilation locally, then approve intentional visual
    changes through the self-hosted native-GPU workflow.
-5. **Begin the material vertical slice.** Implement the animated additive-flame path from typed
+5. **Audit the current material contract — complete.**
+   [`material-system/current-state.md`](material-system/current-state.md) inventories semantic and
+   compiled types, renderer relationships, WESL entry points, render state, commands, editor
+   surfaces, compatibility fixtures, migration classification, and the first-slice test contract.
+6. **Begin the material vertical slice.** Implement the animated additive-flame path from typed
    material program and instance data through validation, IR, WESL generation, runtime binding, and
    preview before adding a node-graph projection.
 
 Exit gate: deterministic behavioral tests remain stable when showcase timing or playback changes;
 Timeline and Properties have focused internal ownership; roadmap status matches the shipped code;
 the three showcase effects pass format/compiler checks plus native-GPU approval; and the first
-material slice has an agreed semantic contract and test plan.
+material slice has an agreed semantic contract and test plan. The roadmap and material-audit parts
+of this gate are complete; showcase approval and the vertical slice remain.
 
 ## Stability-hardening milestone
 
