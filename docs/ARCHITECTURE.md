@@ -322,7 +322,8 @@ outdated or future format.
 ### Pre-material authoring hardening gate (in progress)
 
 - [x] replace showcase-dependent behavioral tests with deterministic semantic fixtures
-- [ ] split Timeline and Properties implementation details into focused internal modules
+- [ ] split Timeline and Properties implementation details into focused internal modules (Timeline
+  actions and state/view/navigation extracted)
 - [ ] reconcile roadmap status with the implemented renderer, composition, and automation slices
 - [ ] approve current showcase changes through format/compiler and native-GPU visual gates
 - [ ] deliver the animated additive-flame material vertical slice before a material node graph

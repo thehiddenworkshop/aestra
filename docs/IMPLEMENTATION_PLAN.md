@@ -158,6 +158,9 @@ surface to mutable examples and monolithic panel modules.
    `PropertiesPlugin` public boundaries while splitting state/actions, region and automation
    interaction, referenced-effect presentation, module controls, renderer controls, and tests into
    focused internal modules. This is a behavior-preserving refactor guarded by the existing tests.
+   Timeline semantic actions and state/view/navigation ownership are now extracted with their
+   focused tests; region interaction, automation, referenced-effect presentation, and Properties
+   decomposition remain.
 3. **Reconcile roadmap status.** Update architecture and implementation documentation so completed
    GPU, flipbook, composition, exposed-parameter, automation, and event work is distinguishable from
    the remaining renderer and material breadth.
