@@ -3,7 +3,6 @@
 use crate::{
     EditorNativeControl, FeathersActionButton, MenuState, PendingFeathersActivation,
     ProjectEffectCatalog,
-    bevy_preview::{ActiveBackend, AestraSet, EffectPlayer, EffectRenderMode, EffectRuntimeStatus},
     feathers::icon::load_svg_icon,
     feathers::tooltip::EditorTooltip,
     localization::Localizer,
@@ -17,8 +16,13 @@ use crate::{
     ui_shell,
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
+use aestra_bevy_render::{
+    ActiveBackend, AestraRenderSet, EffectRenderMode, EffectRuntimeStatus, PresentedEffect,
+};
 use aestra_core::{EffectClipId, EmitterId, EmitterShape, EmitterTransform, ModuleId, Value};
-use aestra_runtime::{CompiledEffect, CompiledEffectProject, CompiledParameterOverride};
+use aestra_runtime::{
+    CompiledEffect, CompiledEffectProject, CompiledParameterOverride, DEFAULT_PLAYBACK_TICK_RATE,
+};
 use bevy::{
     app::TransformGizmoRenderStep,
     camera::{Viewport, visibility::RenderLayers},
@@ -135,7 +139,10 @@ impl Plugin for ViewportPlugin {
                     update_transform_gizmo_value_label.after(update_emitter_transform_gizmo),
                 ),
             )
-            .configure_sets(Update, AestraSet::Playback.after(sync_rendered_preview));
+            .configure_sets(
+                Update,
+                AestraRenderSet::Prepare.after(sync_rendered_preview),
+            );
     }
 }
 
@@ -456,7 +463,7 @@ struct PreviewDisplayModeIcon(PreviewDisplayMode);
 struct TransformGizmoModeIcon(TransformGizmoMode);
 
 #[derive(Component)]
-struct PreviewEffectPlayer;
+struct PreviewPresentedEffect;
 
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
 struct PreviewEffectInstancePath(Vec<EffectClipId>);
@@ -758,7 +765,7 @@ fn preview_grid_uniform(distance: f32, focus: Vec3, angle_fade: f32) -> PreviewG
 
 fn sync_preview_display_mode(
     display: Res<PreviewDisplayState>,
-    mut players: Query<(&mut EffectPlayer, &mut Visibility), With<PreviewEffectPlayer>>,
+    mut players: Query<(&mut PresentedEffect, &mut Visibility), With<PreviewPresentedEffect>>,
 ) {
     let render_mode = match display.mode {
         PreviewDisplayMode::Wireframe => EffectRenderMode::Wireframe,
@@ -1962,13 +1969,12 @@ fn configure_preview_scene_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     config.line.width = 1.5;
 }
 
-fn configured_preview_player(session: &EditorSession) -> Option<EffectPlayer> {
+fn configured_preview_player(session: &EditorSession) -> Option<PresentedEffect> {
     let preview = session.preview.as_ref()?;
     Some(configured_preview_instance(
         preview.effect().clone(),
         session.simulation_time(),
         session.preview_seed,
-        session.speed,
         &[],
     ))
 }
@@ -1977,17 +1983,14 @@ fn configured_preview_instance(
     effect: Arc<CompiledEffect>,
     time: f32,
     seed: u64,
-    speed: f32,
     parameter_overrides: &[CompiledParameterOverride],
-) -> EffectPlayer {
-    let mut player = EffectPlayer::from_compiled(effect);
+) -> PresentedEffect {
+    let mut player = PresentedEffect::new(effect);
     player
         .instance
         .apply_compiled_parameter_overrides(parameter_overrides);
-    player.playing = false;
-    player.speed = speed;
-    player.set_seed(seed);
-    player.seek_simulation_time(time);
+    player.instance.set_seed(seed);
+    player.instance.seek(time);
     player
 }
 
@@ -1998,7 +2001,7 @@ fn spawn_preview_effect_player(
 ) {
     if let Some(player) = configured_preview_player(session) {
         commands.spawn((
-            PreviewEffectPlayer,
+            PreviewPresentedEffect,
             PreviewEffectInstancePath::default(),
             player,
             transform,
@@ -2209,7 +2212,7 @@ pub(crate) fn spawn_preview(
 fn update_viewport_status_label(
     session: Res<EditorSession>,
     preview: Res<EditorPreviewProject>,
-    preview_runtime: Query<Ref<EffectRuntimeStatus>, With<PreviewEffectPlayer>>,
+    preview_runtime: Query<Ref<EffectRuntimeStatus>, With<PreviewPresentedEffect>>,
     mut labels: Query<&mut Text, With<ParticleCountLabel>>,
 ) {
     let runtime_changed = preview_runtime
@@ -2550,16 +2553,15 @@ fn map_effect_clip_time(
     )
 }
 
-fn spawn_preview_instance(commands: &mut Commands, desired: DesiredPreviewInstance, speed: f32) {
+fn spawn_preview_instance(commands: &mut Commands, desired: DesiredPreviewInstance) {
     let player = configured_preview_instance(
         desired.effect,
         desired.time,
         desired.seed,
-        speed,
         &desired.parameter_overrides,
     );
     commands.spawn((
-        PreviewEffectPlayer,
+        PreviewPresentedEffect,
         PreviewEffectInstancePath(desired.path),
         player,
         desired.transform,
@@ -2576,10 +2578,10 @@ fn sync_rendered_preview(
         (
             Entity,
             &PreviewEffectInstancePath,
-            &mut EffectPlayer,
+            &mut PresentedEffect,
             &mut Transform,
         ),
-        With<PreviewEffectPlayer>,
+        With<PreviewPresentedEffect>,
     >,
 ) {
     let mut desired = desired_preview_instances(
@@ -2604,27 +2606,38 @@ fn sync_rendered_preview(
                     instance.effect,
                     instance.time,
                     instance.seed,
-                    session.speed,
                     &instance.parameter_overrides,
                 );
             } else {
                 commands.entity(entity).despawn();
-                spawn_preview_instance(&mut commands, instance, session.speed);
+                spawn_preview_instance(&mut commands, instance);
                 continue;
             }
         }
 
-        player.playing = false;
-        player.speed = session.speed;
         if player.instance.seed() != instance.seed {
-            player.set_seed(instance.seed);
+            player.instance.set_seed(instance.seed);
         }
-        if (player.simulation_time() - instance.time).abs() > 0.5 / player.tick_rate() as f32 {
-            player.seek_simulation_time(instance.time);
+        if (player.simulation_time() - instance.time).abs()
+            > 0.5 / DEFAULT_PLAYBACK_TICK_RATE as f32
+        {
+            player.instance.seek(instance.time);
         }
     }
     for instance in desired {
-        spawn_preview_instance(&mut commands, instance, session.speed);
+        spawn_preview_instance(&mut commands, instance);
+    }
+}
+
+#[cfg(test)]
+fn presented_playhead_time(player: &PresentedEffect) -> f32 {
+    let effect = player.effect();
+    if effect.playback_mode.is_looping() && effect.duration > 0.0 {
+        player.simulation_time().rem_euclid(effect.duration)
+    } else {
+        player
+            .simulation_time()
+            .clamp(0.0, effect.duration.max(0.0))
     }
 }
 
@@ -3243,9 +3256,8 @@ mod tests {
             player.effect(),
             session.preview.as_ref().unwrap().effect()
         ));
-        assert_eq!(player.frame(), session.frame());
+        assert_eq!(player.simulation_time(), session.simulation_time());
         assert_eq!(player.instance.seed(), 42);
-        assert!(!player.playing);
     }
 
     #[test]
@@ -3277,7 +3289,7 @@ mod tests {
         let player_entity = app
             .world_mut()
             .spawn((
-                PreviewEffectPlayer,
+                PreviewPresentedEffect,
                 PreviewEffectInstancePath::default(),
                 player,
             ))
@@ -3286,7 +3298,7 @@ mod tests {
         app.update();
 
         let world = app.world();
-        let player = world.get::<EffectPlayer>(player_entity).unwrap();
+        let player = world.get::<PresentedEffect>(player_entity).unwrap();
         assert_eq!(player.effect().emitters[0].transform, transform);
         assert!(std::sync::Arc::ptr_eq(
             player.effect(),
@@ -3377,7 +3389,6 @@ mod tests {
             active[1].effect.clone(),
             active[1].time,
             active[1].seed,
-            1.0,
             &active[1].parameter_overrides,
         );
         assert_eq!(
@@ -3511,14 +3522,14 @@ mod tests {
 
         let child_state = {
             let world = app.world_mut();
-            let mut players = world.query::<(&PreviewEffectInstancePath, &EffectPlayer)>();
+            let mut players = world.query::<(&PreviewEffectInstancePath, &PresentedEffect)>();
             let instances = players.iter(world).collect::<Vec<_>>();
             assert_eq!(instances.len(), 2);
             let (_, player) = instances
                 .into_iter()
                 .find(|(path, _)| path.0.as_slice() == [clip_id])
                 .expect("active clip must have a player");
-            (player.elapsed(), player.instance.seed())
+            (presented_playhead_time(player), player.instance.seed())
         };
         assert!((child_state.0 - 0.35).abs() <= 1.0 / 60.0);
         assert_eq!(child_state.1, 77);
@@ -3544,11 +3555,11 @@ mod tests {
         app.update();
         let replayed = {
             let world = app.world_mut();
-            let mut players = world.query::<(&PreviewEffectInstancePath, &EffectPlayer)>();
+            let mut players = world.query::<(&PreviewEffectInstancePath, &PresentedEffect)>();
             players
                 .iter(world)
                 .find(|(path, _)| path.0.as_slice() == [clip_id])
-                .map(|(_, player)| (player.elapsed(), player.instance.seed()))
+                .map(|(_, player)| (presented_playhead_time(player), player.instance.seed()))
                 .expect("restarted clip must be active after seeking back into it")
         };
         assert_eq!(replayed, child_state);
@@ -3580,12 +3591,12 @@ mod tests {
         app.update();
 
         let world = app.world_mut();
-        let mut players = world.query::<(&PreviewEffectInstancePath, &EffectPlayer)>();
+        let mut players = world.query::<(&PreviewEffectInstancePath, &PresentedEffect)>();
         let (_, player) = players
             .iter(world)
             .find(|(path, _)| path.0.is_empty())
             .expect("the root preview player must exist");
         assert!((player.simulation_time() - expected_simulation_time).abs() < 0.000_1);
-        assert!((player.elapsed() - expected_playhead).abs() < 0.000_1);
+        assert!((presented_playhead_time(player) - expected_playhead).abs() < 0.000_1);
     }
 }

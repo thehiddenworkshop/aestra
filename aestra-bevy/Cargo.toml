@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+aestra-bevy-render = { path = "../crates/aestra-bevy-render" }
 aestra-compiler = { path = "../crates/aestra-compiler" }
 aestra-core = { path = "../crates/aestra-core" }
 aestra-runtime = { path = "../crates/aestra-runtime" }

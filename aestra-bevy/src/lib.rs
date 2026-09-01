@@ -1,8 +1,10 @@
 //! Bevy integration for compiled Aestra effects.
 
-mod capabilities;
-pub mod gpu;
-
+pub use aestra_bevy_render::{
+    ActiveBackend, AestraRenderPlugin, AestraRenderSet, AestraRenderSettings as AestraSettings,
+    AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRenderMode, EffectRuntimeStatus,
+    GpuCapabilities, PresentationMode, PresentedEffect, gpu,
+};
 pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
 pub use aestra_core::*;
 pub use aestra_runtime::{
@@ -12,62 +14,17 @@ pub use aestra_runtime::{
     PlaybackClock, ProfileValue, ProfileValueSource, RuntimeValue, SeekOrigin, SeekPlan,
     SimulationSeekMode,
 };
-pub use capabilities::{
-    ActiveBackend, AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRuntimeStatus,
-    GpuCapabilities,
-};
 
 use bevy::asset::LoadState;
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{
-    App, AssetServer, Assets, Children, Color, Commands, Component, Entity, Event, Image, Plugin,
-    Quat, Query, Res, Resource, Sprite, Time, Transform, Update, Vec2, Vec3, Visibility, Without,
+    App, AssetServer, Assets, Commands, Component, Entity, Event, Image, Plugin, Query, Res,
+    Resource, Time, Transform, Update, Visibility, Without,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
-    time::Instant,
 };
-
-/// Selects the presentation path used by [`AestraPlugin`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum PresentationMode {
-    /// Select the best supported backend and fall back without panicking.
-    #[default]
-    Auto,
-    /// Simulate and render particles entirely on the GPU.
-    Gpu,
-    /// Use the deterministic CPU interpreter and pooled Bevy sprites.
-    CpuReference,
-    /// Simulate on the GPU, read particles back, and present them as Bevy sprites.
-    GpuReadback,
-}
-
-/// Selects how an effect's presentation geometry is shaded.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum EffectRenderMode {
-    /// Use authored materials, textures, and blending.
-    #[default]
-    Rendered,
-    /// Draw the particle sprite quads as unfilled outlines for editor inspection.
-    Wireframe,
-}
-
-#[derive(Resource, Debug, Clone, Copy)]
-pub struct AestraSettings {
-    pub presentation: PresentationMode,
-    /// Application budget applied in addition to physical device limits.
-    pub max_gpu_particles: u32,
-}
-
-impl Default for AestraSettings {
-    fn default() -> Self {
-        Self {
-            presentation: PresentationMode::Auto,
-            max_gpu_particles: DEFAULT_GPU_PARTICLE_BUDGET,
-        }
-    }
-}
 
 /// Installs Aestra's compiled effect playback into a Bevy application.
 #[derive(Default)]
@@ -92,25 +49,40 @@ pub struct AestraChoreographyEvent {
 
 impl Plugin for AestraPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AestraSettings>()
-            .init_resource::<GpuCapabilities>()
-            .init_resource::<AestraRuntimeStatus>()
+        app.add_plugins(AestraRenderPlugin)
             .init_resource::<TextureAssetCache>()
-            .add_observer(gpu::receive_readback);
-        gpu::install(app);
+            .configure_sets(Update, AestraRenderSet::Prepare.after(AestraSet::Playback));
         app.add_systems(
             Update,
             (
-                assign_effect_backends,
+                prepare_player_presentations,
                 prepare_effect_profiles,
-                prepare_effect_players,
-                gpu::prepare_gpu_players,
                 update_asset_diagnostics,
                 play_effects,
+                sync_player_presentations,
             )
                 .chain()
                 .in_set(AestraSet::Playback),
         );
+    }
+}
+
+fn prepare_player_presentations(
+    mut commands: Commands,
+    players: Query<(Entity, &EffectPlayer), Without<PresentedEffect>>,
+) {
+    for (entity, player) in &players {
+        let mut presented = PresentedEffect::new(player.effect().clone());
+        presented.instance = player.instance.clone();
+        presented.set_render_mode(player.render_mode());
+        commands.entity(entity).insert(presented);
+    }
+}
+
+fn sync_player_presentations(mut players: Query<(&EffectPlayer, &mut PresentedEffect)>) {
+    for (player, mut presented) in &mut players {
+        presented.instance = player.instance.clone();
+        presented.set_render_mode(player.render_mode());
     }
 }
 
@@ -139,8 +111,6 @@ pub struct EffectPlayer {
     pub playing: bool,
     render_mode: EffectRenderMode,
     clock: PlaybackClock,
-    samples: Vec<ParticleSample>,
-    gpu_samples: Vec<ParticleSample>,
     choreography_events: Vec<DispatchedChoreographyEvent>,
 }
 
@@ -161,8 +131,6 @@ impl EffectPlayer {
             playing: true,
             render_mode: EffectRenderMode::Rendered,
             clock: PlaybackClock::default(),
-            samples: Vec::new(),
-            gpu_samples: Vec::new(),
             choreography_events: Vec::new(),
         }
     }
@@ -336,90 +304,9 @@ impl EffectPlayer {
     }
 }
 
-#[derive(Component)]
-struct RuntimeParticle {
-    sample_index: usize,
-    renderer_index: usize,
-}
-
-#[derive(Component)]
-struct CpuPresentationPrepared;
-
-#[derive(Component)]
-pub(crate) struct GpuPresentationPrepared;
-
 /// Live machine-readable profile for an [`EffectPlayer`].
 #[derive(Component, Debug, Clone)]
 pub struct EffectProfiler(pub EffectProfile);
-
-fn assign_effect_backends(
-    mut commands: Commands,
-    settings: Res<AestraSettings>,
-    runtime: Res<AestraRuntimeStatus>,
-    capabilities: Res<GpuCapabilities>,
-    players: Query<(Entity, &EffectPlayer), Without<EffectRuntimeStatus>>,
-) {
-    if runtime.active == ActiveBackend::Pending {
-        return;
-    }
-    let particle_budget = capabilities.max_particles.min(settings.max_gpu_particles) as usize;
-    for (entity, player) in &players {
-        commands
-            .entity(entity)
-            .insert(capabilities::select_effect_backend(
-                &runtime,
-                player.effect().max_particles,
-                particle_budget,
-            ));
-    }
-}
-
-fn prepare_effect_players(
-    mut commands: Commands,
-    players: Query<
-        (Entity, &EffectPlayer, &EffectRuntimeStatus),
-        (Without<CpuPresentationPrepared>,),
-    >,
-) {
-    for (entity, player, runtime) in &players {
-        if !matches!(
-            runtime.active,
-            ActiveBackend::CpuReference | ActiveBackend::GpuReadback
-        ) {
-            continue;
-        }
-        let capacity = player.effect().max_particles.min(4096);
-        let renderer_capacity = cpu_renderer_capacity(player.effect());
-        commands
-            .entity(entity)
-            .insert(CpuPresentationPrepared)
-            .with_children(|parent| {
-                for sample_index in 0..capacity {
-                    for renderer_index in 0..renderer_capacity {
-                        parent.spawn((
-                            RuntimeParticle {
-                                sample_index,
-                                renderer_index,
-                            },
-                            Sprite::from_color(Color::WHITE, Vec2::ONE),
-                            Transform::default(),
-                            Visibility::Hidden,
-                        ));
-                    }
-                }
-            });
-    }
-}
-
-fn cpu_renderer_capacity(effect: &CompiledEffect) -> usize {
-    effect
-        .emitters
-        .iter()
-        .filter(|emitter| emitter.enabled)
-        .map(|emitter| emitter.renderers.len())
-        .max()
-        .unwrap_or(0)
-}
 
 fn prepare_effect_profiles(
     mut commands: Commands,
@@ -519,34 +406,19 @@ fn bevy_profile(
     profile
 }
 
-#[derive(bevy::ecs::system::SystemParam)]
-struct TexturePresentationAssets<'w> {
-    asset_server: Res<'w, AssetServer>,
-    images: Res<'w, Assets<Image>>,
-    texture_cache: bevy::prelude::ResMut<'w, TextureAssetCache>,
-    fallback_textures: Res<'w, gpu::GpuFallbackTextures>,
-}
-
 fn play_effects(
     mut commands: Commands,
     time: Res<Time>,
     capabilities: Res<GpuCapabilities>,
-    mut textures: TexturePresentationAssets,
     mut players: Query<(
         Entity,
         &mut EffectPlayer,
+        &PresentedEffect,
         &mut EffectProfiler,
-        Option<&Children>,
         &EffectRuntimeStatus,
     )>,
-    mut particles: Query<(
-        &RuntimeParticle,
-        &mut Sprite,
-        &mut Transform,
-        &mut Visibility,
-    )>,
 ) {
-    for (player_entity, mut player, mut profiler, children, runtime) in &mut players {
+    for (player_entity, mut player, presented, mut profiler, runtime) in &mut players {
         if !profiler.0.matches_compiled(player.effect()) {
             profiler.0 = bevy_profile(player.effect(), &capabilities, runtime);
         }
@@ -562,120 +434,14 @@ fn play_effects(
                 event,
             });
         }
-
-        if runtime.active == ActiveBackend::Gpu {
-            continue;
-        }
-
-        let uses_gpu_readback =
-            runtime.active == ActiveBackend::GpuReadback && !player.gpu_samples.is_empty();
-        let samples = if uses_gpu_readback {
-            std::mem::take(&mut player.gpu_samples)
+        if let Some(elapsed) = presented.cpu_evaluation_time() {
+            profiler.0.record_cpu_frame(elapsed, presented.samples());
         } else {
-            let mut samples = std::mem::take(&mut player.samples);
-            let started = Instant::now();
-            player.instance.evaluate(&mut samples);
-            profiler.0.record_cpu_frame(started.elapsed(), &samples);
-            profiler.0.record_submitted_frame(player.effect(), &samples);
-            samples
-        };
-        if uses_gpu_readback {
-            profiler.0.record_particle_frame(&samples);
-            profiler.0.record_submitted_frame(player.effect(), &samples);
+            profiler.0.record_particle_frame(presented.samples());
         }
-
-        let Some(children) = children else {
-            continue;
-        };
-        for child in children.iter() {
-            let Ok((slot, mut sprite, mut transform, mut visibility)) = particles.get_mut(*child)
-            else {
-                continue;
-            };
-            let Some(sample) = samples.get(slot.sample_index) else {
-                *visibility = Visibility::Hidden;
-                continue;
-            };
-            let Some(emitter) = player.effect().emitters.get(sample.emitter_index) else {
-                *visibility = Visibility::Hidden;
-                continue;
-            };
-            let Some(renderer) = emitter.renderers.get(slot.renderer_index) else {
-                *visibility = Visibility::Hidden;
-                continue;
-            };
-            let Some(material) = player.effect().material(renderer.material) else {
-                *visibility = Visibility::Hidden;
-                continue;
-            };
-            let (texture, uv) = match &renderer.kind {
-                aestra_runtime::RendererPlanKind::Sprite => (material.texture, material.uv),
-                aestra_runtime::RendererPlanKind::Flipbook {
-                    flipbook,
-                    time_source,
-                    playback,
-                    random_start,
-                } => {
-                    let Some(flipbook) = player.effect().flipbook(*flipbook) else {
-                        *visibility = Visibility::Hidden;
-                        continue;
-                    };
-                    let frame = aestra_runtime::flipbook_frame_index(
-                        flipbook,
-                        aestra_runtime::FlipbookFrameContext {
-                            time_source: *time_source,
-                            playback: *playback,
-                            random_start: *random_start,
-                            effect_time: player.elapsed(),
-                            normalized_age: sample.normalized_age,
-                            particle_index: sample.particle_index,
-                            seed: player.instance.seed(),
-                        },
-                    );
-                    (Some(flipbook.texture), flipbook.frames[frame])
-                }
-            };
-            sprite.rect = None;
-            sprite.image = textures.fallback_textures.white.clone();
-            if let Some(texture) = texture
-                && let Some(asset) = player
-                    .effect()
-                    .assets
-                    .iter()
-                    .find(|asset| asset.source == texture)
-            {
-                let handle = textures
-                    .texture_cache
-                    .load(&textures.asset_server, &asset.path);
-                if let Some(image) = textures.images.get(&handle) {
-                    let image_size = image.size_f32();
-                    sprite.rect = Some(bevy::math::Rect::from_corners(
-                        Vec2::from_array(uv.min) * image_size,
-                        Vec2::from_array(uv.max) * image_size,
-                    ));
-                    sprite.image = handle;
-                } else {
-                    sprite.image = textures.fallback_textures.missing.clone();
-                }
-            }
-            let size = sample.size.max(0.01);
-            let color = match &material.color {
-                aestra_runtime::MaterialColorPlan::ParticleColor => sample.color,
-                aestra_runtime::MaterialColorPlan::Value(value) => {
-                    *value.resolve(player.instance.parameter_values())
-                }
-            };
-            sprite.color = Color::srgba(color[0], color[1], color[2], color[3]);
-            sprite.custom_size = Some(Vec2::splat(size));
-            transform.translation = Vec3::from_array(sample.position);
-            transform.rotation = Quat::from_rotation_z(sample.rotation);
-            *visibility = Visibility::Visible;
-        }
-        if uses_gpu_readback {
-            player.gpu_samples = samples;
-        } else {
-            player.samples = samples;
-        }
+        profiler
+            .0
+            .record_submitted_frame(player.effect(), presented.samples());
     }
 }
 
@@ -748,11 +514,6 @@ mod tests {
         ));
         assert_eq!(profile.draw_calls, ProfileValue::Estimated(2));
         assert!(profile.platform_warnings.is_empty());
-        assert_eq!(cpu_renderer_capacity(player_effect(&app, entity)), 2);
-    }
-
-    fn player_effect(app: &App, entity: Entity) -> &CompiledEffect {
-        app.world().get::<EffectPlayer>(entity).unwrap().effect()
     }
 
     #[test]

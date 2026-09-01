@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 aestra-authoring = { path = "../crates/aestra-authoring" }
-aestra-bevy = { path = "../aestra-bevy" }
+aestra-bevy-render = { path = "../crates/aestra-bevy-render" }
 aestra-compiler = { path = "../crates/aestra-compiler" }
 aestra-core = { path = "../crates/aestra-core" }
 aestra-project = { path = "../crates/aestra-project" }

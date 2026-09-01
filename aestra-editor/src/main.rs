@@ -2,7 +2,6 @@
 // dependencies explicit is clearer than hiding them behind editor-specific parameter bundles.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
-mod bevy_preview;
 mod changes;
 mod compiler_inspector;
 mod curves;
@@ -30,6 +29,7 @@ mod transport;
 mod viewport;
 
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
+use aestra_bevy_render::AestraRenderPlugin;
 use aestra_compiler::ModuleMetadata;
 use aestra_core::{
     AssetKind, BlendMode, DiagnosticCode, DiagnosticSeverity, EffectAsset, EffectPlaybackMode,
@@ -66,7 +66,6 @@ use bevy::{
         WindowMoved, WindowRef, WindowResizeConstraints, WindowResized, WindowResolution,
     },
 };
-use bevy_preview::AestraPlugin;
 use bevy_resvg::prelude::SvgPlugin;
 use bevy_winit::WINIT_WINDOWS;
 pub(crate) use changes::spawn_changes_workspace;
@@ -220,7 +219,7 @@ fn main() {
         .add_plugins(EditorSettingsUiPlugin)
         .add_plugins(EditorShellPlugin)
         .add_plugins(EditorPersistencePlugin)
-        .add_plugins(AestraPlugin)
+        .add_plugins(AestraRenderPlugin)
         .add_plugins(DockingPlugin)
         .add_plugins(PropertiesPlugin)
         .add_plugins(TimelinePlugin)

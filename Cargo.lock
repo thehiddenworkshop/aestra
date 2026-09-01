@@ -107,6 +107,19 @@ dependencies = [
 name = "aestra-bevy"
 version = "0.1.0"
 dependencies = [
+ "aestra-bevy-render",
+ "aestra-compiler",
+ "aestra-core",
+ "aestra-runtime",
+ "bevy",
+ "thiserror 2.0.20",
+ "wesl",
+]
+
+[[package]]
+name = "aestra-bevy-render"
+version = "0.1.0"
+dependencies = [
  "aestra-compiler",
  "aestra-core",
  "aestra-runtime",
@@ -142,7 +155,7 @@ name = "aestra-editor"
 version = "0.1.0"
 dependencies = [
  "aestra-authoring",
- "aestra-bevy",
+ "aestra-bevy-render",
  "aestra-compiler",
  "aestra-core",
  "aestra-project",

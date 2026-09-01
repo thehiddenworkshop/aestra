@@ -1,0 +1,18 @@
+[package]
+name = "aestra-bevy-render"
+description = "Shared Bevy rendering backend for Aestra runtime and editor preview"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+aestra-core = { path = "../aestra-core" }
+aestra-runtime = { path = "../aestra-runtime" }
+bevy.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+aestra-compiler = { path = "../aestra-compiler" }
+wesl = "0.3.2"

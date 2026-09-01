@@ -38,14 +38,14 @@ use bevy::{
 use thiserror::Error;
 
 use crate::{
-    ActiveBackend, AestraRuntimeStatus, AestraSettings, EffectPlayer, EffectRenderMode,
-    EffectRuntimeStatus, GpuCapabilities, GpuPresentationPrepared, TextureAssetCache,
-    capabilities::select_backend,
+    ActiveBackend, AestraRenderSettings, AestraRuntimeStatus, EffectRenderMode,
+    EffectRuntimeStatus, GpuCapabilities, GpuPresentationPrepared, PresentedEffect,
+    TextureAssetCache, capabilities::select_backend,
 };
 
-pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy/shaders/aestra_simulation.wesl";
+pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy_render/shaders/aestra_simulation.wesl";
 pub const WESL_RENDER_SHADER_PATH: &str =
-    "embedded://aestra_bevy/shaders/aestra_sprite_render.wesl";
+    "embedded://aestra_bevy_render/shaders/aestra_sprite_render.wesl";
 pub const MAX_CURVE_KEYS: usize = 8;
 pub const MAX_FLIPBOOK_FRAMES: usize = 64;
 const WORKGROUP_SIZE: u32 = 64;
@@ -510,9 +510,9 @@ pub(crate) struct GpuReadbackOwner(Entity);
 struct GpuBindGroup(BindGroup);
 
 #[derive(Resource)]
-pub(crate) struct GpuFallbackTextures {
-    pub(crate) white: Handle<Image>,
-    pub(crate) missing: Handle<Image>,
+pub struct GpuFallbackTextures {
+    pub white: Handle<Image>,
+    pub missing: Handle<Image>,
 }
 
 type UnpreparedPlayers<'w, 's> = Query<
@@ -520,7 +520,7 @@ type UnpreparedPlayers<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static EffectPlayer,
+        &'static PresentedEffect,
         &'static EffectRuntimeStatus,
         Option<&'static RenderLayers>,
     ),
@@ -531,7 +531,7 @@ type PreparedGpuPlayers<'w, 's> = Query<
     'w,
     's,
     (
-        &'static EffectPlayer,
+        &'static PresentedEffect,
         &'static GlobalTransform,
         &'static GpuEffectBuffers,
         Option<&'static RenderLayers>,
@@ -555,10 +555,10 @@ pub(crate) fn install(app: &mut App) {
         ExtractComponentPlugin::<GpuDrawInstance>::default(),
     ))
     .add_systems(Startup, init_fallback_textures)
-    .add_systems(Update, update_gpu_inputs.after(crate::play_effects));
+    .add_systems(Update, update_gpu_inputs.after(prepare_gpu_effects));
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
         let capabilities = GpuCapabilities::unavailable("Bevy has no render sub-application");
-        let requested = app.world().resource::<AestraSettings>().presentation;
+        let requested = app.world().resource::<AestraRenderSettings>().presentation;
         let status = select_backend(requested, &capabilities);
         app.insert_resource(capabilities).insert_resource(status);
         return;
@@ -602,7 +602,7 @@ fn init_fallback_textures(mut commands: Commands, mut images: ResMut<Assets<Imag
     commands.insert_resource(GpuFallbackTextures { white, missing });
 }
 
-pub(crate) fn prepare_gpu_players(
+pub(crate) fn prepare_gpu_effects(
     mut commands: Commands,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     asset_server: Res<AssetServer>,
@@ -806,7 +806,7 @@ fn publish_gpu_capabilities(
     mut main_world: ResMut<MainWorld>,
 ) {
     let capabilities = detect_gpu_capabilities(&render_device, &adapter, &adapter_info);
-    let requested = main_world.resource::<AestraSettings>().presentation;
+    let requested = main_world.resource::<AestraRenderSettings>().presentation;
     let status = select_backend(requested, &capabilities);
     let changed = main_world.resource::<AestraRuntimeStatus>() != &status
         || main_world.resource::<GpuCapabilities>() != &capabilities;
@@ -918,7 +918,7 @@ fn detect_gpu_capabilities(
 fn update_gpu_inputs(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     players: PreparedGpuPlayers,
-    mut draw_instances: Query<(&mut GpuDrawInstance, &mut RenderLayers), Without<EffectPlayer>>,
+    mut draw_instances: Query<(&mut GpuDrawInstance, &mut RenderLayers), Without<PresentedEffect>>,
 ) {
     for (player, transform, gpu, render_layers, children) in &players {
         if let Ok(artifact) = GpuEffectArtifact::from_instance(&player.instance) {
@@ -963,7 +963,7 @@ fn update_gpu_inputs(
 pub(crate) fn receive_readback(
     event: On<ReadbackComplete>,
     owners: Query<&GpuReadbackOwner>,
-    mut players: Query<&mut EffectPlayer>,
+    mut players: Query<&mut PresentedEffect>,
 ) {
     let Ok(owner) = owners.get(event.event_target()) else {
         return;
@@ -1693,9 +1693,10 @@ mod tests {
 
     #[test]
     fn artifact_packs_explicit_flipbook_frames_for_wesl() {
-        let effect =
-            EffectAsset::from_ron(include_str!("../../assets/effects/plasma_burst.aestra.ron"))
-                .unwrap();
+        let effect = EffectAsset::from_ron(include_str!(
+            "../../../assets/effects/plasma_burst.aestra.ron"
+        ))
+        .unwrap();
         let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
         let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
         let renderer = &artifact.renderers[0];

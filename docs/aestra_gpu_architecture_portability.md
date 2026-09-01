@@ -24,9 +24,9 @@ The current high-level status is:
 | Engine-neutral semantic model and stable IDs | Existing | Core, project, authoring, compiler, and runtime contain no Bevy dependency. |
 | Compiled execution model and CPU reference runtime | Existing | Compiled effects, emitters, execution plans, resources, events, and parameter data already exist. |
 | Engine-neutral renderer plan | Partial | Sprite and flipbook plans exist; the portable renderer contract is not yet broad enough for every planned renderer. |
-| Backend/device capability detection | Partial | The Bevy adapter detects GPU/device capabilities, but portable effect requirements are not yet a separate compiler-derived contract. |
-| Editor/runtime-adapter isolation | Partial | The target architecture keeps `aestra-editor` and `aestra-bevy` independent; the current direct Cargo dependency must be removed. |
-| Engine-neutral GPU lowering | Target | Current WESL shaders and GPU ABI packing live in `aestra-bevy`. |
+| Backend/device capability detection | Partial | The shared Bevy render integration detects GPU/device capabilities, but portable effect requirements are not yet a separate compiler-derived contract. |
+| Editor/runtime-adapter isolation | Existing | `aestra-editor` and `aestra-bevy` are sibling consumers of `aestra-bevy-render`; an architecture test forbids editor imports or a Cargo dependency on the runtime adapter. |
+| Engine-neutral GPU lowering | Target | Current WESL shaders and GPU ABI packing live in `aestra-bevy-render`. |
 | Generated WESL/WGSL and explicit Naga validation | Target | Authored WESL is validated in backend tests; it is not generated from compiled effects yet. |
 | CPU/GPU semantic conformance suite | Target | CPU and GPU paths exist, but do not yet share a systematic conformance suite. |
 | Serialized compiled artifact | Deferred | The in-memory compiled representation comes first. |
@@ -57,7 +57,7 @@ However, the architecture should ensure that:
 - engine-specific resource management and rendering remain behind adapters.
 - coordinate-system conventions are explicitly defined by Aestra rather than inherited accidentally from Bevy.
 
-The desired long-term structure has two independent Bevy consumers. The editor is an authoring application; `aestra-bevy` is the isolated game-runtime adapter. Neither depends on the other.
+The repository has two independent Bevy consumers. The editor is an authoring application; `aestra-bevy` is the isolated game-runtime adapter. Neither depends on the other. Their shared Bevy-specific presentation code lives in the lower-level `aestra-bevy-render` integration crate.
 
 ```text
 ┌──────────────────────┐      ┌──────────────────────┐
@@ -68,9 +68,13 @@ The desired long-term structure has two independent Bevy consumers. The editor i
            └─────────────┬───────────────┘
                          ▼
              ┌──────────────────────┐
+             │ aestra-bevy-render   │
+             │ shared presentation  │
+             └──────────┬───────────┘
+                        ▼
+             ┌──────────────────────┐
              │ Portable Aestra APIs │
-             │ project / compiler   │
-             │ runtime / GPU plans  │
+             │ compiler / runtime   │
              └──────────────────────┘
 ```
 
@@ -155,13 +159,16 @@ The exact crate names may evolve, but compile-time dependencies should point fro
 
 ```text
 aestra-editor ───────────────► { aestra-authoring, aestra-compiler,
-                                 aestra-project,
-                                 aestra-runtime, bevy }
+                                 aestra-project, aestra-runtime,
+                                 aestra-bevy-render, bevy }
 
-aestra-bevy ─┬───────────────► bevy
+aestra-bevy ─┬───────────────► aestra-bevy-render
+             ├───────────────► bevy
              ├───────────────► aestra-compiler
              ├───────────────► aestra-runtime
              └───────────────► aestra-core
+
+aestra-bevy-render ──────────► { aestra-core, aestra-runtime, bevy }
 
 aestra-compiler ─────────────► aestra-project
        │
@@ -173,9 +180,9 @@ aestra-authoring ────────────► aestra-core
 aestra-runtime ──────────────► aestra-core
 ```
 
-This diagram expresses the required architectural dependency direction, not effect-data flow. The editor is an authoring application and `aestra-bevy` is a game-runtime adapter. They may both use Bevy independently, but `aestra-editor` must not depend on `aestra-bevy` and `aestra-bevy` must not depend on `aestra-editor`.
+This diagram expresses the required architectural dependency direction, not effect-data flow. The editor is an authoring application and `aestra-bevy` is a game-runtime adapter. They share Bevy presentation infrastructure below both consumers, but `aestra-editor` does not depend on `aestra-bevy` and `aestra-bevy` does not depend on `aestra-editor`.
 
-The current repository still has a direct `aestra-editor` → `aestra-bevy` Cargo dependency. Removing that coupling is part of the boundary audit. The current repository also keeps compiled contract types in `aestra-runtime`, so `aestra-compiler` depends on `aestra-runtime`.
+The direct `aestra-editor` → `aestra-bevy` Cargo dependency has been removed. `aestra-bevy-render` owns Bevy/WGPU capability selection plus CPU and GPU presentation, while `aestra-bevy` retains game-runtime playback and lifecycle. A dedicated architecture test guards this boundary. The repository still keeps compiled contract types in `aestra-runtime`, so `aestra-compiler` depends on `aestra-runtime`.
 
 If shared compiled contracts eventually need independent ownership, the target may become:
 
@@ -201,8 +208,7 @@ crates/
     aestra-compiler
     aestra-runtime
 
-    aestra-render
-    aestra-gpu
+    aestra-bevy-render
 
     aestra-bevy
 
@@ -210,7 +216,7 @@ apps/
     aestra-editor
 ```
 
-It is not necessary to split `aestra-render` and `aestra-gpu` immediately. They can begin as modules and become crates once their boundaries are clear.
+`aestra-bevy-render` is now the shared Bevy-specific presentation crate. A future engine-neutral `aestra-render` or `aestra-gpu` should only be split out when portable lowering contracts are concrete enough to justify it.
 
 ## Dependency rule
 
@@ -226,14 +232,15 @@ aestra-editor    ─X─► aestra-bevy
 aestra-bevy      ─X─► aestra-editor
 ```
 
-Bevy dependencies may terminate independently at the two boundary consumers:
+Bevy dependencies may terminate in the two consumers and their shared lower-level integration crate:
 
 ```text
 aestra-bevy ───► bevy
 aestra-editor ─► bevy
+aestra-bevy-render ─► bevy
 ```
 
-Sharing Bevy as an implementation dependency does not make either boundary consumer an API dependency of the other. Shared preview/runtime functionality must live behind portable Aestra contracts or a separate lower-level integration crate rather than being reached through `aestra-bevy`.
+Sharing Bevy as an implementation dependency does not make either boundary consumer an API dependency of the other. Shared preview/runtime presentation is reached through `aestra-bevy-render`, never through the game-runtime adapter.
 
 ---
 
@@ -369,7 +376,7 @@ The crucial design constraint is that the upper half does not understand:
 
 Those concepts belong below the GPU/backend boundary.
 
-**Current state:** Aestra uses authored, embedded WESL shaders inside `aestra-bevy`. The compiler does not yet lower an arbitrary compiled effect into generated WESL. Extracting that lowering boundary is future work, not a prerequisite for continuing Bevy renderer development.
+**Current state:** Aestra uses authored, embedded WESL shaders inside `aestra-bevy-render`. The compiler does not yet lower an arbitrary compiled effect into generated WESL. Extracting an engine-neutral lowering boundary remains future work, not a prerequisite for continuing Bevy renderer development.
 
 ---
 
@@ -491,7 +498,7 @@ For the current implementation:
 Aestra GPU/render plan
          │
          ▼
-    aestra-bevy
+ aestra-bevy-render
          │
          ▼
     Bevy + WGPU
@@ -690,13 +697,13 @@ BackendCapabilities
 
 The compiler may validate against an explicitly supplied target profile. It must also retain requirements in compiled data so the runtime adapter can validate the actual device and produce a `CompatibilityReport`.
 
-For now the only concrete capability provider is the Bevy adapter:
+For now the only concrete capability provider is the shared Bevy render integration:
 
 ```text
 Bevy/WGPU device → BackendCapabilities
 ```
 
-**Current state:** `aestra-bevy` already detects compute, storage-buffer, indirect-execution, and device-limit capabilities. Compiler-derived `EffectRequirements` and the compatibility report are the missing portable pieces.
+**Current state:** `aestra-bevy-render` already detects compute, storage-buffer, indirect-execution, and device-limit capabilities. Compiler-derived `EffectRequirements` and the compatibility report are the missing portable pieces.
 
 This still has immediate value because it:
 
@@ -1142,16 +1149,21 @@ rather than forcing the entire Aestra model to depend on Bevy.
            └──────────────┬─────────────┘
                           │ dependencies
              ┌────────────┴────────────┐
+             │  aestra-bevy-render     │
+             │ shared Bevy presentation│
+             └────────────┬────────────┘
+                          │
+             ┌────────────┴────────────┐
              │                         │
 ┌────────────┴────────────┐  ┌─────────┴───────────────┐
 │     Aestra Editor       │  │      aestra-bevy       │
 │ authoring application   │  │ game-runtime adapter   │
-│ Bevy UI/preview host    │  │ Bevy ECS/render host   │
+│ Bevy UI/preview host    │  │ playback/lifecycle     │
 └─────────────────────────┘  └─────────────────────────┘
           no dependency in either direction
 ```
 
-The two lower boxes are sibling boundary consumers. They share portable Aestra contracts, never code through each other.
+The two lower boxes are sibling boundary consumers. They share portable Aestra contracts and the lower-level Bevy presentation integration, never code through each other.
 
 ---
 
@@ -1406,7 +1418,7 @@ Aestra RenderPlan
 Bevy Render Pipeline
 ```
 
-inside `aestra-bevy`.
+inside `aestra-bevy-render`.
 
 ### Exit criteria
 
@@ -1513,17 +1525,27 @@ Aestra CI verifies that representative generated shaders are valid Naga modules.
 
 ---
 
-### Work item 9 — Refactor `aestra-bevy` into a True Adapter *(partial)*
+### Work item 9 — Separate Bevy Runtime Playback from Shared Presentation *(partial)*
 
 ### Goal
 
-Make Bevy consume portable runtime/render data rather than own core VFX behavior.
+Keep game-runtime playback in `aestra-bevy`, keep editor preview independent from that runtime adapter, and make both hosts consume the same lower-level Bevy presentation integration.
 
 ### Responsibilities that belong in `aestra-bevy`
 
 ```text
 Bevy ECS components
-Bevy systems
+playback clocks and lifecycle
+runtime parameter overrides
+choreography event dispatch
+profiling integration
+syncing runtime instances to presentation
+```
+
+### Responsibilities that belong in `aestra-bevy-render`
+
+```text
+Bevy presentation components and systems
 AssetServer integration
 Bevy texture/mesh handle resolution
 render-world extraction
@@ -1551,7 +1573,7 @@ portable GPU shader generation
 
 ### Exit criteria
 
-Deleting `aestra-bevy` would remove the Bevy integration but leave a functioning compiler/runtime library.
+Deleting `aestra-bevy` would remove game playback integration while leaving the editor preview, shared Bevy presentation, and portable compiler/runtime libraries functional. Moving WESL lowering and GPU ABI ownership behind an engine-neutral contract remains a later gate.
 
 ---
 
