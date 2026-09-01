@@ -640,6 +640,13 @@ diagnostics-code-unsupported-renderer = Moteur de rendu non pris en charge
 diagnostics-code-missing-attribute = Attribut manquant
 diagnostics-code-unknown-parameter = Paramètre inconnu
 diagnostics-code-parameter-type-mismatch = Type de paramètre incompatible
+diagnostics-code-material-type-mismatch = Type de matériau incompatible
+diagnostics-code-unsupported-material-domain = Domaine de matériau non pris en charge
+diagnostics-code-unsupported-material-input = Entrée de matériau non prise en charge
+diagnostics-code-evaluation-domain-mismatch = Domaine d'évaluation incompatible
+diagnostics-code-missing-resource-declaration = Déclaration de ressource manquante
+diagnostics-code-invalid-render-state = État de rendu non valide
+diagnostics-code-unreachable-expression = Expression inaccessible
 
 profiler-effect-profile = PROFIL DE L’EFFET
 profiler-status-last-valid = RÉFÉRENCE CPU  ·  DERNIER EFFET VALIDE

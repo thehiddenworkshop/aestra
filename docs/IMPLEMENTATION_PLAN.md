@@ -132,7 +132,10 @@ architecture vision; this file is the shorter delivery plan.
   selects exact owner clips, and guards source deletion with refreshed dependency warnings.
   Recursive reusable extraction, preview-cache identity,
   procedural recipes, mesh/ribbon production paths, authored renderer sorting controls, and richer material domains
-  remain.
+  remain. The semantic material-program foundation now includes backend-independent expression
+  type and evaluation-domain inference, deterministic socket/output/resource/domain/render-state
+  diagnostics, and one transactional authoring boundary for project programs, effect-local
+  instances, renderer assignments, semantic diffs, and bounded undo/redo.
 
 ## M6 composition release gate
 
@@ -177,10 +180,10 @@ surface to mutable examples and monolithic panel modules.
    [`material-system/current-state.md`](material-system/current-state.md) inventories semantic and
    compiled types, renderer relationships, WESL entry points, render state, commands, editor
    surfaces, compatibility fixtures, migration classification, and the first-slice test contract.
-6. **Begin the material vertical slice — in progress.** Follow the material-program delivery
-   milestone below, beginning with the repository-aligned semantic core. Implement the animated
-   additive-flame path from typed material program and instance data through validation, IR, WESL
-   generation, runtime binding, and preview before adding a node-graph projection.
+6. **Begin the material vertical slice — in progress.** The repository-aligned semantic core,
+   complete semantic validation, and baseline transactional command layer are implemented.
+   Continue the animated additive-flame path through typed IR, WESL generation, runtime binding,
+   and preview before adding a node-graph projection.
 
 Exit gate: deterministic behavioral tests remain stable when showcase timing or playback changes;
 Timeline and Properties have focused internal ownership; roadmap status matches the shipped code;
@@ -204,8 +207,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   and project indexing are implemented. Material-program sources retain identity across create,
   rename, and move operations; duplicate, replaced, missing, and invalid program dependencies
   produce typed diagnostics while the legacy sprite-material path remains compatible.
-- [ ] **Material 2 — validation and baseline commands.** Complete type/domain validation and make
-  transactional `aestra-authoring` commands the only migration and editor mutation path.
+- [x] **Material 2 — validation and baseline commands.** Deterministic type inference validates
+  expression sockets, outputs, evaluation domains, material-domain capabilities, declared texture
+  resources, and render-state policy. `aestra-authoring` now provides atomic add/remove/replace,
+  output, expression rewiring, instance-parameter/render-state, and renderer-assignment commands
+  with semantic diffs, stable identity checks, and bounded undo/redo.
 - [ ] **Material 3 — typed material IR.** Lower valid semantic programs into backend-neutral IR
   with source mapping and the first deterministic optimizations.
 - [ ] **Material 4 — WESL and resource ABI.** Generate WESL, deterministic multi-texture/sampler

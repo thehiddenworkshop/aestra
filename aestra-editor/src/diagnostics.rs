@@ -545,6 +545,15 @@ fn diagnostic_code_message(code: DiagnosticCode) -> &'static str {
         DiagnosticCode::MissingAttribute => "diagnostics-code-missing-attribute",
         DiagnosticCode::UnknownParameter => "diagnostics-code-unknown-parameter",
         DiagnosticCode::ParameterTypeMismatch => "diagnostics-code-parameter-type-mismatch",
+        DiagnosticCode::MaterialTypeMismatch => "diagnostics-code-material-type-mismatch",
+        DiagnosticCode::UnsupportedMaterialDomain => "diagnostics-code-unsupported-material-domain",
+        DiagnosticCode::UnsupportedMaterialInput => "diagnostics-code-unsupported-material-input",
+        DiagnosticCode::EvaluationDomainMismatch => "diagnostics-code-evaluation-domain-mismatch",
+        DiagnosticCode::MissingResourceDeclaration => {
+            "diagnostics-code-missing-resource-declaration"
+        }
+        DiagnosticCode::InvalidRenderState => "diagnostics-code-invalid-render-state",
+        DiagnosticCode::UnreachableExpression => "diagnostics-code-unreachable-expression",
     }
 }
 

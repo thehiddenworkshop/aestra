@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DiagnosticSeverity {
     Error,
     Warning,
     Info,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DiagnosticCode {
     UnsupportedFormat,
     NilId,
@@ -28,9 +28,16 @@ pub enum DiagnosticCode {
     MissingAttribute,
     UnknownParameter,
     ParameterTypeMismatch,
+    MaterialTypeMismatch,
+    UnsupportedMaterialDomain,
+    UnsupportedMaterialInput,
+    EvaluationDomainMismatch,
+    MissingResourceDeclaration,
+    InvalidRenderState,
+    UnreachableExpression,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Diagnostic {
     pub severity: DiagnosticSeverity,
     pub code: DiagnosticCode,

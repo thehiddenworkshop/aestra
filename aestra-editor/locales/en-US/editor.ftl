@@ -640,6 +640,13 @@ diagnostics-code-unsupported-renderer = Unsupported renderer
 diagnostics-code-missing-attribute = Missing attribute
 diagnostics-code-unknown-parameter = Unknown parameter
 diagnostics-code-parameter-type-mismatch = Parameter type mismatch
+diagnostics-code-material-type-mismatch = Material type mismatch
+diagnostics-code-unsupported-material-domain = Unsupported material domain
+diagnostics-code-unsupported-material-input = Unsupported material input
+diagnostics-code-evaluation-domain-mismatch = Evaluation domain mismatch
+diagnostics-code-missing-resource-declaration = Missing resource declaration
+diagnostics-code-invalid-render-state = Invalid render state
+diagnostics-code-unreachable-expression = Unreachable expression
 
 profiler-effect-profile = EFFECT PROFILE
 profiler-status-last-valid = CPU REFERENCE  ·  LAST VALID EFFECT

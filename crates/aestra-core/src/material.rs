@@ -195,6 +195,13 @@ impl MaterialValueType {
                 | (Self::Bool, MaterialValue::Bool(_))
         )
     }
+
+    pub const fn is_numeric(self) -> bool {
+        matches!(
+            self,
+            Self::Float | Self::Vec2 | Self::Vec3 | Self::Vec4 | Self::Color
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -241,6 +248,43 @@ pub enum MaterialEvaluationDomain {
     Instance,
     Effect,
     Emitter,
+}
+
+/// The stage at which a material expression first requires evaluation.
+///
+/// Values may be promoted to a later domain, but a resource or other early-domain
+/// socket cannot consume a value that is only available later.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MaterialExpressionDomain {
+    ShaderStatic,
+    Instance,
+    Effect,
+    Emitter,
+    Particle,
+    Vertex,
+    Fragment,
+}
+
+impl From<MaterialEvaluationDomain> for MaterialExpressionDomain {
+    fn from(value: MaterialEvaluationDomain) -> Self {
+        match value {
+            MaterialEvaluationDomain::ShaderStatic => Self::ShaderStatic,
+            MaterialEvaluationDomain::Instance => Self::Instance,
+            MaterialEvaluationDomain::Effect => Self::Effect,
+            MaterialEvaluationDomain::Emitter => Self::Emitter,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MaterialExpressionInfo {
+    pub value_type: MaterialValueType,
+    pub evaluation_domain: MaterialExpressionDomain,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MaterialProgramAnalysis {
+    pub expressions: BTreeMap<MaterialExpressionId, MaterialExpressionInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -585,11 +629,29 @@ impl MaterialProgram {
     }
 
     pub fn validate(&self) -> Result<(), ValidationReport> {
-        self.validate_structure().into_result()
+        self.validation_report().into_result()
     }
 
-    /// Performs GPU-independent structural checks. Full expression type and
-    /// backend-capability validation belongs to later material milestones.
+    /// Returns deterministic structural and semantic diagnostics without
+    /// requiring a renderer backend.
+    pub fn validation_report(&self) -> ValidationReport {
+        let mut report = self.validate_structure();
+        self.analyze_semantics(&mut report);
+        report
+    }
+
+    /// Infers the type and evaluation domain of every valid expression.
+    pub fn analyze(&self) -> Result<MaterialProgramAnalysis, ValidationReport> {
+        let mut report = self.validate_structure();
+        let analysis = self.analyze_semantics(&mut report);
+        if report.is_valid() {
+            Ok(analysis)
+        } else {
+            Err(report)
+        }
+    }
+
+    /// Performs GPU-independent identity and graph-structure checks.
     pub fn validate_structure(&self) -> ValidationReport {
         let mut report = ValidationReport::default();
         if self.id.is_nil() {
@@ -754,7 +816,7 @@ impl MaterialProgram {
             if !reachable.contains(&expression.id) {
                 report.push(Diagnostic {
                     severity: DiagnosticSeverity::Warning,
-                    code: DiagnosticCode::InvalidReference,
+                    code: DiagnosticCode::UnreachableExpression,
                     path: format!("material_program.expressions[{index}]"),
                     message: "material expression is unreachable from the outputs".into(),
                 });
@@ -763,6 +825,526 @@ impl MaterialProgram {
 
         report
     }
+
+    fn analyze_semantics(&self, report: &mut ValidationReport) -> MaterialProgramAnalysis {
+        validate_material_domain(self, report);
+        validate_render_state_policy(self, report);
+        validate_parameter_domains(self, report);
+
+        let parameters = self
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.id, parameter))
+            .collect::<BTreeMap<_, _>>();
+        let expressions = self
+            .expressions
+            .iter()
+            .map(|expression| (expression.id, expression))
+            .collect::<BTreeMap<_, _>>();
+        let expression_indices = self
+            .expressions
+            .iter()
+            .enumerate()
+            .map(|(index, expression)| (expression.id, index))
+            .collect::<BTreeMap<_, _>>();
+        let mut analysis = MaterialProgramAnalysis::default();
+        let mut visiting = BTreeSet::new();
+
+        for expression in &self.expressions {
+            infer_expression(
+                self,
+                expression.id,
+                &parameters,
+                &expressions,
+                &expression_indices,
+                &mut visiting,
+                &mut analysis.expressions,
+                report,
+            );
+        }
+
+        validate_material_output_type(
+            report,
+            &analysis,
+            self.outputs.color,
+            "material_program.outputs.color",
+            "Color",
+            "Color, Vec3, or Vec4",
+            |value_type| {
+                matches!(
+                    value_type,
+                    MaterialValueType::Color | MaterialValueType::Vec3 | MaterialValueType::Vec4
+                )
+            },
+        );
+        validate_material_output_type(
+            report,
+            &analysis,
+            self.outputs.alpha,
+            "material_program.outputs.alpha",
+            "Alpha",
+            "Float",
+            |value_type| value_type == MaterialValueType::Float,
+        );
+
+        analysis
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn infer_expression(
+    program: &MaterialProgram,
+    id: MaterialExpressionId,
+    parameters: &BTreeMap<MaterialParameterId, &MaterialParameter>,
+    expressions: &BTreeMap<MaterialExpressionId, &MaterialExpression>,
+    expression_indices: &BTreeMap<MaterialExpressionId, usize>,
+    visiting: &mut BTreeSet<MaterialExpressionId>,
+    inferred: &mut BTreeMap<MaterialExpressionId, MaterialExpressionInfo>,
+    report: &mut ValidationReport,
+) -> Option<MaterialExpressionInfo> {
+    if let Some(info) = inferred.get(&id) {
+        return Some(*info);
+    }
+    let expression = expressions.get(&id)?;
+    if !visiting.insert(id) {
+        return None;
+    }
+    let index = expression_indices.get(&id).copied().unwrap_or_default();
+    let path = format!("material_program.expressions[{index}].kind");
+    let mut dependency = |dependency: MaterialExpressionId| {
+        infer_expression(
+            program,
+            dependency,
+            parameters,
+            expressions,
+            expression_indices,
+            visiting,
+            inferred,
+            report,
+        )
+    };
+
+    let info = match &expression.kind {
+        MaterialExpressionKind::Constant(value) => Some(MaterialExpressionInfo {
+            value_type: material_value_type(value),
+            evaluation_domain: MaterialExpressionDomain::ShaderStatic,
+        }),
+        MaterialExpressionKind::Input(input) => {
+            if program.domain == MaterialDomain::Sprite && !sprite_domain_supports_input(*input) {
+                error(
+                    report,
+                    DiagnosticCode::UnsupportedMaterialInput,
+                    &path,
+                    format!("material input {input:?} is not available in the Sprite domain"),
+                );
+            }
+            Some(material_input_info(*input))
+        }
+        MaterialExpressionKind::Parameter(parameter) => {
+            parameters
+                .get(parameter)
+                .map(|parameter| MaterialExpressionInfo {
+                    value_type: parameter.value_type,
+                    evaluation_domain: parameter.evaluation_domain.into(),
+                })
+        }
+        MaterialExpressionKind::Add(left, right)
+        | MaterialExpressionKind::Subtract(left, right) => {
+            let left = dependency(*left);
+            let right = dependency(*right);
+            infer_matching_numeric_binary(report, &path, left, right)
+        }
+        MaterialExpressionKind::Multiply(left, right)
+        | MaterialExpressionKind::Divide(left, right) => {
+            let left = dependency(*left);
+            let right = dependency(*right);
+            infer_scaled_numeric_binary(report, &path, left, right)
+        }
+        MaterialExpressionKind::Lerp { start, end, factor } => {
+            let start = dependency(*start);
+            let end = dependency(*end);
+            let factor = dependency(*factor);
+            match (start, end, factor) {
+                (Some(start), Some(end), Some(factor)) => {
+                    let mut valid = true;
+                    if start.value_type != end.value_type || !start.value_type.is_numeric() {
+                        material_type_error(
+                            report,
+                            format!("{path}.start"),
+                            format!(
+                                "Lerp endpoints must have the same numeric type, received {:?} and {:?}",
+                                start.value_type, end.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if factor.value_type != MaterialValueType::Float {
+                        material_type_error(
+                            report,
+                            format!("{path}.factor"),
+                            format!(
+                                "Lerp factor expects Float but received {:?}",
+                                factor.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: start.value_type,
+                        evaluation_domain: start
+                            .evaluation_domain
+                            .max(end.evaluation_domain)
+                            .max(factor.evaluation_domain),
+                    })
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::Clamp { value, min, max } => {
+            let value = dependency(*value);
+            let min = dependency(*min);
+            let max = dependency(*max);
+            match (value, min, max) {
+                (Some(value), Some(min), Some(max)) => {
+                    if !value.value_type.is_numeric()
+                        || value.value_type != min.value_type
+                        || value.value_type != max.value_type
+                    {
+                        material_type_error(
+                            report,
+                            &path,
+                            format!(
+                                "Clamp value, minimum, and maximum must share one numeric type; received {:?}, {:?}, and {:?}",
+                                value.value_type, min.value_type, max.value_type
+                            ),
+                        );
+                        None
+                    } else {
+                        Some(MaterialExpressionInfo {
+                            value_type: value.value_type,
+                            evaluation_domain: value
+                                .evaluation_domain
+                                .max(min.evaluation_domain)
+                                .max(max.evaluation_domain),
+                        })
+                    }
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::SampleTexture { texture, uv } => {
+            let texture_id = *texture;
+            let texture = dependency(texture_id);
+            let uv = dependency(*uv);
+            match (texture, uv) {
+                (Some(texture), Some(uv)) => {
+                    let mut valid = true;
+                    if !matches!(texture.value_type, MaterialValueType::Texture2D(_)) {
+                        material_type_error(
+                            report,
+                            format!("{path}.texture"),
+                            format!(
+                                "SampleTexture texture expects Texture2D but received {:?}",
+                                texture.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if texture.evaluation_domain > MaterialExpressionDomain::Instance {
+                        error(
+                            report,
+                            DiagnosticCode::EvaluationDomainMismatch,
+                            format!("{path}.texture"),
+                            "sampled texture resources must be available by the Instance domain",
+                        );
+                        valid = false;
+                    }
+                    if uv.value_type != MaterialValueType::Vec2 {
+                        material_type_error(
+                            report,
+                            format!("{path}.uv"),
+                            format!(
+                                "SampleTexture UV expects Vec2 but received {:?}",
+                                uv.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if !matches!(
+                        expressions.get(&texture_id).map(|expression| &expression.kind),
+                        Some(MaterialExpressionKind::Parameter(parameter))
+                            if matches!(
+                                parameters.get(parameter).map(|parameter| parameter.value_type),
+                                Some(MaterialValueType::Texture2D(_))
+                            )
+                    ) {
+                        error(
+                            report,
+                            DiagnosticCode::MissingResourceDeclaration,
+                            format!("{path}.texture"),
+                            "sampled textures must come from a declared Texture2D material parameter",
+                        );
+                        valid = false;
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Color,
+                        evaluation_domain: MaterialExpressionDomain::Fragment
+                            .max(texture.evaluation_domain)
+                            .max(uv.evaluation_domain),
+                    })
+                }
+                _ => None,
+            }
+        }
+    };
+    visiting.remove(&id);
+    if let Some(info) = info {
+        inferred.insert(id, info);
+    }
+    info
+}
+
+fn infer_matching_numeric_binary(
+    report: &mut ValidationReport,
+    path: &str,
+    left: Option<MaterialExpressionInfo>,
+    right: Option<MaterialExpressionInfo>,
+) -> Option<MaterialExpressionInfo> {
+    let (Some(left), Some(right)) = (left, right) else {
+        return None;
+    };
+    if left.value_type != right.value_type || !left.value_type.is_numeric() {
+        material_type_error(
+            report,
+            path,
+            format!(
+                "arithmetic inputs must have the same numeric type, received {:?} and {:?}",
+                left.value_type, right.value_type
+            ),
+        );
+        return None;
+    }
+    Some(MaterialExpressionInfo {
+        value_type: left.value_type,
+        evaluation_domain: left.evaluation_domain.max(right.evaluation_domain),
+    })
+}
+
+fn infer_scaled_numeric_binary(
+    report: &mut ValidationReport,
+    path: &str,
+    left: Option<MaterialExpressionInfo>,
+    right: Option<MaterialExpressionInfo>,
+) -> Option<MaterialExpressionInfo> {
+    let (Some(left), Some(right)) = (left, right) else {
+        return None;
+    };
+    let value_type = if left.value_type == right.value_type && left.value_type.is_numeric() {
+        Some(left.value_type)
+    } else if left.value_type == MaterialValueType::Float && right.value_type.is_numeric() {
+        Some(right.value_type)
+    } else if right.value_type == MaterialValueType::Float && left.value_type.is_numeric() {
+        Some(left.value_type)
+    } else {
+        None
+    };
+    let Some(value_type) = value_type else {
+        material_type_error(
+            report,
+            path,
+            format!(
+                "multiply/divide inputs must be matching numeric values or one Float scale, received {:?} and {:?}",
+                left.value_type, right.value_type
+            ),
+        );
+        return None;
+    };
+    Some(MaterialExpressionInfo {
+        value_type,
+        evaluation_domain: left.evaluation_domain.max(right.evaluation_domain),
+    })
+}
+
+fn validate_material_output_type(
+    report: &mut ValidationReport,
+    analysis: &MaterialProgramAnalysis,
+    expression: MaterialExpressionId,
+    path: &str,
+    output: &str,
+    expected: &str,
+    accepts: impl FnOnce(MaterialValueType) -> bool,
+) {
+    let Some(info) = analysis.expressions.get(&expression) else {
+        return;
+    };
+    if !accepts(info.value_type) {
+        material_type_error(
+            report,
+            path,
+            format!(
+                "material output {output} expects {expected} but received {:?}",
+                info.value_type
+            ),
+        );
+    }
+}
+
+fn validate_material_domain(program: &MaterialProgram, report: &mut ValidationReport) {
+    if program.domain != MaterialDomain::Sprite {
+        error(
+            report,
+            DiagnosticCode::UnsupportedMaterialDomain,
+            "material_program.domain",
+            format!(
+                "material domain {:?} is declared but not supported by the current material compiler",
+                program.domain
+            ),
+        );
+    }
+}
+
+fn validate_parameter_domains(program: &MaterialProgram, report: &mut ValidationReport) {
+    for (index, parameter) in program.parameters.iter().enumerate() {
+        let path = format!("material_program.parameters[{index}]");
+        if parameter.evaluation_domain == MaterialEvaluationDomain::ShaderStatic
+            && parameter.default.is_none()
+        {
+            error(
+                report,
+                DiagnosticCode::EvaluationDomainMismatch,
+                format!("{path}.default"),
+                "shader-static parameters require a program default",
+            );
+        }
+        if matches!(parameter.value_type, MaterialValueType::Texture2D(_))
+            && parameter.evaluation_domain != MaterialEvaluationDomain::Instance
+        {
+            error(
+                report,
+                DiagnosticCode::EvaluationDomainMismatch,
+                format!("{path}.evaluation_domain"),
+                "Texture2D resources must use the Instance evaluation domain",
+            );
+        }
+    }
+}
+
+fn validate_render_state_policy(program: &MaterialProgram, report: &mut ValidationReport) {
+    let mut states = BTreeSet::new();
+    for (index, state) in program.render_state_policy.allowed.iter().enumerate() {
+        let path = format!("material_program.render_state_policy.allowed[{index}]");
+        if !states.insert(render_state_key(*state)) {
+            error(
+                report,
+                DiagnosticCode::InvalidRenderState,
+                &path,
+                "allowed render states must not contain duplicates",
+            );
+        }
+        if state.depth_test == MaterialDepthTest::Disabled && state.depth_write {
+            error(
+                report,
+                DiagnosticCode::InvalidRenderState,
+                &path,
+                "depth writes require an enabled depth test",
+            );
+        }
+        if state.blend == BlendMode::Additive && state.depth_write {
+            error(
+                report,
+                DiagnosticCode::InvalidRenderState,
+                &path,
+                "additive material states cannot write depth",
+            );
+        }
+        if program.domain == MaterialDomain::Sprite && state.cull_mode != MaterialCullMode::None {
+            error(
+                report,
+                DiagnosticCode::InvalidRenderState,
+                &path,
+                "Sprite material states must disable face culling",
+            );
+        }
+    }
+}
+
+fn material_value_type(value: &MaterialValue) -> MaterialValueType {
+    match value {
+        MaterialValue::Float(_) => MaterialValueType::Float,
+        MaterialValue::Vec2(_) => MaterialValueType::Vec2,
+        MaterialValue::Vec3(_) => MaterialValueType::Vec3,
+        MaterialValue::Vec4(_) => MaterialValueType::Vec4,
+        MaterialValue::ColorSrgb(_) => MaterialValueType::Color,
+        MaterialValue::Texture2D(_) => MaterialValueType::Texture2D(MaterialTextureDescriptor {
+            color_space: MaterialTextureColorSpace::SrgbColor,
+            sampler: MaterialSamplerDescriptor::default(),
+        }),
+        MaterialValue::Bool(_) => MaterialValueType::Bool,
+    }
+}
+
+fn material_input_info(input: MaterialInput) -> MaterialExpressionInfo {
+    let (value_type, evaluation_domain) = match input {
+        MaterialInput::Uv0 | MaterialInput::Uv1 | MaterialInput::ScreenUv => {
+            (MaterialValueType::Vec2, MaterialExpressionDomain::Fragment)
+        }
+        MaterialInput::LocalPosition
+        | MaterialInput::WorldPosition
+        | MaterialInput::Normal
+        | MaterialInput::Tangent
+        | MaterialInput::ViewDirection
+        | MaterialInput::CameraPosition
+        | MaterialInput::CameraDirection => {
+            (MaterialValueType::Vec3, MaterialExpressionDomain::Fragment)
+        }
+        MaterialInput::ParticleColor => {
+            (MaterialValueType::Color, MaterialExpressionDomain::Particle)
+        }
+        MaterialInput::ParticleVelocity => {
+            (MaterialValueType::Vec3, MaterialExpressionDomain::Particle)
+        }
+        MaterialInput::ParticleSize => {
+            (MaterialValueType::Vec2, MaterialExpressionDomain::Particle)
+        }
+        MaterialInput::EffectTime | MaterialInput::EffectNormalizedTime => {
+            (MaterialValueType::Float, MaterialExpressionDomain::Effect)
+        }
+        MaterialInput::EmitterTime | MaterialInput::EmitterNormalizedTime => {
+            (MaterialValueType::Float, MaterialExpressionDomain::Emitter)
+        }
+        MaterialInput::ParticleOpacity
+        | MaterialInput::ParticleAge
+        | MaterialInput::ParticleNormalizedAge
+        | MaterialInput::ParticleLifetime
+        | MaterialInput::ParticleSpeed
+        | MaterialInput::ParticleRandom
+        | MaterialInput::ParticleId
+        | MaterialInput::ParticleRotation => {
+            (MaterialValueType::Float, MaterialExpressionDomain::Particle)
+        }
+        MaterialInput::SceneDepth | MaterialInput::PixelDepth => {
+            (MaterialValueType::Float, MaterialExpressionDomain::Fragment)
+        }
+    };
+    MaterialExpressionInfo {
+        value_type,
+        evaluation_domain,
+    }
+}
+
+fn sprite_domain_supports_input(input: MaterialInput) -> bool {
+    !matches!(
+        input,
+        MaterialInput::Uv1 | MaterialInput::Normal | MaterialInput::Tangent
+    )
+}
+
+fn material_type_error(
+    report: &mut ValidationReport,
+    path: impl Into<String>,
+    message: impl Into<String>,
+) {
+    error(report, DiagnosticCode::MaterialTypeMismatch, path, message);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

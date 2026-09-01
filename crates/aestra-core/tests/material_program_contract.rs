@@ -1,10 +1,13 @@
 use aestra_core::{
-    DiagnosticCode, DiagnosticSeverity, EffectAsset, Emitter, MaterialExpressionId, MaterialId,
-    MaterialParameterId, MaterialProgramId, ParameterId,
+    AssetId, DiagnosticCode, DiagnosticSeverity, EffectAsset, Emitter, MaterialExpressionId,
+    MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
     material::{
-        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInstance,
-        MaterialParameter, MaterialParameterValue, MaterialProgram, MaterialProgramRef,
-        MaterialRenderState, MaterialSchemaVersion, MaterialValue, MaterialValueType,
+        MaterialAddressMode, MaterialCullMode, MaterialDepthTest, MaterialDomain,
+        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionDomain,
+        MaterialExpressionKind, MaterialFilterMode, MaterialInput, MaterialInstance,
+        MaterialMipFilterMode, MaterialParameter, MaterialParameterValue, MaterialProgram,
+        MaterialProgramRef, MaterialRenderState, MaterialSamplerDescriptor, MaterialSchemaVersion,
+        MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
     },
 };
 use std::collections::BTreeMap;
@@ -240,4 +243,202 @@ fn effect_local_material_bindings_must_reference_owned_effect_parameters() {
         diagnostic.code == DiagnosticCode::InvalidReference
             && diagnostic.message.contains(&missing.to_string())
     }));
+}
+
+fn texture_descriptor() -> MaterialTextureDescriptor {
+    MaterialTextureDescriptor {
+        color_space: MaterialTextureColorSpace::SrgbColor,
+        sampler: MaterialSamplerDescriptor {
+            filter: MaterialFilterMode::Linear,
+            mip_filter: MaterialMipFilterMode::Linear,
+            address_u: MaterialAddressMode::ClampToEdge,
+            address_v: MaterialAddressMode::ClampToEdge,
+        },
+    }
+}
+
+#[test]
+fn material_analysis_infers_typed_sockets_and_evaluation_domains() {
+    let texture_parameter = MaterialParameterId::from_u128(0xA01);
+    let intensity_parameter = MaterialParameterId::from_u128(0xA02);
+    let texture = MaterialExpressionId::from_u128(0xA03);
+    let uv = MaterialExpressionId::from_u128(0xA04);
+    let sample = MaterialExpressionId::from_u128(0xA05);
+    let intensity = MaterialExpressionId::from_u128(0xA06);
+    let color = MaterialExpressionId::from_u128(0xA07);
+    let alpha = MaterialExpressionId::from_u128(0xA08);
+    let mut program = MaterialProgram::additive_sprite("Typed flame");
+    program.parameters = vec![
+        MaterialParameter {
+            id: texture_parameter,
+            name: "flame_texture".into(),
+            value_type: MaterialValueType::Texture2D(texture_descriptor()),
+            evaluation_domain: MaterialEvaluationDomain::Instance,
+            default: Some(MaterialValue::Texture2D(AssetId::from_u128(0xA09))),
+        },
+        MaterialParameter {
+            id: intensity_parameter,
+            name: "intensity".into(),
+            value_type: MaterialValueType::Float,
+            evaluation_domain: MaterialEvaluationDomain::Effect,
+            default: Some(MaterialValue::Float(1.0)),
+        },
+    ];
+    program.expressions = vec![
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: sample,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv },
+        },
+        MaterialExpression {
+            id: intensity,
+            kind: MaterialExpressionKind::Parameter(intensity_parameter),
+        },
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Multiply(sample, intensity),
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+    ];
+    program.outputs.color = color;
+    program.outputs.alpha = alpha;
+
+    let analysis = program.analyze().unwrap();
+
+    assert_eq!(
+        analysis.expressions[&sample].value_type,
+        MaterialValueType::Color
+    );
+    assert_eq!(
+        analysis.expressions[&intensity].evaluation_domain,
+        MaterialExpressionDomain::Effect
+    );
+    assert_eq!(
+        analysis.expressions[&color].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
+}
+
+#[test]
+fn material_validation_rejects_output_and_socket_type_mismatches() {
+    let mut program = MaterialProgram::additive_sprite("Bad types");
+    let vector = MaterialExpressionId::from_u128(0xB01);
+    let boolean = MaterialExpressionId::from_u128(0xB02);
+    let add = MaterialExpressionId::from_u128(0xB03);
+    program.expressions.extend([
+        MaterialExpression {
+            id: vector,
+            kind: MaterialExpressionKind::Input(MaterialInput::WorldPosition),
+        },
+        MaterialExpression {
+            id: boolean,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(true)),
+        },
+        MaterialExpression {
+            id: add,
+            kind: MaterialExpressionKind::Add(vector, boolean),
+        },
+    ]);
+    program.outputs.alpha = vector;
+
+    let first = program.validation_report();
+    let second = program.validation_report();
+
+    assert_eq!(first, second);
+    assert!(!first.is_valid());
+    assert!(first.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path == "material_program.outputs.alpha"
+    }));
+    assert!(first.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".kind")
+    }));
+}
+
+#[test]
+fn sampled_textures_require_instance_resource_declarations() {
+    let mut program = MaterialProgram::additive_sprite("Undeclared texture");
+    let texture = MaterialExpressionId::from_u128(0xC01);
+    let uv = MaterialExpressionId::from_u128(0xC02);
+    let sample = MaterialExpressionId::from_u128(0xC03);
+    program.expressions.extend([
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Texture2D(AssetId::from_u128(
+                0xC04,
+            ))),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: sample,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv },
+        },
+    ]);
+    program.outputs.color = sample;
+
+    let report = program.validation_report();
+
+    assert!(!report.is_valid());
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == DiagnosticCode::MissingResourceDeclaration })
+    );
+}
+
+#[test]
+fn unsupported_domains_inputs_and_render_states_are_diagnosed() {
+    let mut program = MaterialProgram::additive_sprite("Unsupported policy");
+    program.domain = MaterialDomain::Mesh;
+    program.parameters.push(MaterialParameter {
+        id: MaterialParameterId::from_u128(0xD01),
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(texture_descriptor()),
+        evaluation_domain: MaterialEvaluationDomain::Effect,
+        default: None,
+    });
+    program.render_state_policy.allowed[0] = MaterialRenderState {
+        blend: aestra_core::BlendMode::Additive,
+        depth_test: MaterialDepthTest::Disabled,
+        depth_write: true,
+        cull_mode: MaterialCullMode::Back,
+    };
+    program.render_state_policy.default = program.render_state_policy.allowed[0];
+
+    let report = program.validation_report();
+
+    assert!(!report.is_valid());
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == DiagnosticCode::UnsupportedMaterialDomain })
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == DiagnosticCode::EvaluationDomainMismatch })
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == DiagnosticCode::InvalidRenderState })
+    );
 }
