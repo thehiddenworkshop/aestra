@@ -172,10 +172,10 @@ fn audit_history_controls(controls: Query<Entity, UnclassifiedHistoryControl>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EFFECT_PATH, EFFECT_SOURCE};
+    use crate::test_support;
 
     fn edited_session() -> EditorSession {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.adjust_effect_duration(0.25);
         assert!(session.can_undo());
         session
@@ -228,11 +228,8 @@ mod tests {
     #[test]
     fn availability_sync_does_not_disable_unrelated_ui() {
         let mut app = App::new();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ))
-        .add_systems(Update, update_history_availability);
+        app.insert_resource(test_support::session_with_timing_slack())
+            .add_systems(Update, update_history_availability);
         let particle_color = Color::srgba(0.8, 0.4, 1.0, 0.75);
         let particle = app.world_mut().spawn(BackgroundColor(particle_color)).id();
         let undo = app

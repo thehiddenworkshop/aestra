@@ -1875,6 +1875,7 @@ fn bounded_key_time(times: &[f32], index: usize, value: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
 
     fn first_curve_selection(
         session: &EditorSession,
@@ -1898,7 +1899,7 @@ mod tests {
                 }
             }
         }
-        panic!("embedded effect should expose a curve input");
+        panic!("test fixture should expose a curve input");
     }
 
     fn curve_key_count(
@@ -1921,7 +1922,7 @@ mod tests {
 
     #[test]
     fn curves_plugin_owns_feathers_activation_and_selection() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let selection = first_curve_selection(&session, &registry);
         let mut app = App::new();
@@ -1953,7 +1954,7 @@ mod tests {
 
     #[test]
     fn adding_a_curve_key_is_one_undoable_semantic_edit() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let selection = first_curve_selection(&session, &registry);
         let initial = curve_key_count(&session, &registry, selection);
@@ -1985,7 +1986,7 @@ mod tests {
 
     #[test]
     fn insert_and_delete_shortcuts_edit_the_curve_under_the_pointer() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let selection = first_curve_selection(&session, &registry);
         let initial = curve_key_count(&session, &registry, selection);
@@ -2045,7 +2046,7 @@ mod tests {
 
     #[test]
     fn curves_workspace_projects_keys_into_shared_feather_data() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let selection = first_curve_selection(&session, &registry);
         let (_, _, Value::Curve(curve)) =
@@ -2064,7 +2065,7 @@ mod tests {
 
     #[test]
     fn vector_curve_edits_only_the_selected_gravity_channel_and_is_undoable() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let module = session
             .selected_layer()
@@ -2151,7 +2152,7 @@ mod tests {
 
     #[test]
     fn curves_workspace_visibility_uses_the_explicit_source_not_key_count() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let selection = first_curve_selection(&session, &registry);
         let (_, input, Value::Curve(mut curve)) =
@@ -2193,7 +2194,7 @@ mod tests {
 
     #[test]
     fn curve_drag_preview_updates_the_shared_raster_data() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let selection = first_curve_selection(&session, &registry);
         let (_, input, Value::Curve(curve)) =

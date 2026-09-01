@@ -413,16 +413,14 @@ fn change_kind_style(kind: ChangeKind, localizer: &Localizer) -> (String, Color)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
 
     fn app_with_changes_action(action: ChangesAction) -> App {
         let mut app = App::new();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ))
-        .insert_resource(Localizer::new("en-US").unwrap())
-        .init_resource::<WorkspaceLayout>()
-        .add_systems(Update, handle_changes_actions);
+        app.insert_resource(test_support::session_with_timing_slack())
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .init_resource::<WorkspaceLayout>()
+            .add_systems(Update, handle_changes_actions);
         app.world_mut().spawn((
             Button,
             Interaction::Pressed,
@@ -479,10 +477,7 @@ mod tests {
 
     #[test]
     fn navigate_action_selects_a_live_semantic_target_and_opens_properties() {
-        let emitter = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH)
-            .effect
-            .emitters[1]
-            .id;
+        let emitter = test_support::session_with_timing_slack().effect.emitters[1].id;
         let mut app =
             app_with_changes_action(ChangesAction::Navigate(SemanticTarget::Emitter(emitter)));
 

@@ -152,8 +152,11 @@ surface to mutable examples and monolithic panel modules.
    session builders whose semantic IDs, timing, playback mode, modules, and renderers do not depend
    on Prism Bloom, Ember Sigil, or Plasma Burst. Migrate behavioral tests to those fixtures while
    retaining the showcase effects only for bundle validation, end-to-end compilation, and native-GPU
-   visual approval. Timeline and Properties behavioral tests now use the deterministic fixture;
-   remaining editor domains should follow the same boundary as they are hardened.
+   visual approval. Timeline, Properties, Curves, Viewport, Diagnostics, Profiler, Changes, Menus,
+   Shell, Dock UI, Compiler Inspector, and History behavioral tests now use the deterministic
+   fixture. Persistence, Library, and Session tests retain explicit bundled-content coverage where
+   they validate serialization or file workflows and should be separated from remaining behavioral
+   cases as those domains are hardened.
 2. **Decompose Timeline and Properties internals.** Preserve the existing `TimelinePlugin` and
    `PropertiesPlugin` public boundaries while splitting state/actions, region and automation
    interaction, referenced-effect presentation, module controls, renderer controls, and tests into

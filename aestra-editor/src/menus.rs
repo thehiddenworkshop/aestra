@@ -972,16 +972,14 @@ fn update_panel_visibility_labels(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
 
     #[test]
     fn menu_plugin_owns_initial_state_and_runs_without_spawned_chrome() {
         let mut app = App::new();
         app.init_resource::<Time>()
             .init_resource::<ButtonInput<MouseButton>>()
-            .insert_resource(EditorSession::from_embedded_sample(
-                EFFECT_SOURCE,
-                EFFECT_PATH,
-            ))
+            .insert_resource(test_support::session_with_timing_slack())
             .insert_resource(WorkspaceLayout::default())
             .insert_resource(Localizer::new("en-US").unwrap())
             .add_plugins(EditorMenusPlugin::new(false));
@@ -1010,10 +1008,7 @@ mod tests {
             ..default()
         });
         app.init_resource::<MenuActivationGuard>();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ));
+        app.insert_resource(test_support::session_with_timing_slack());
         app.world_mut()
             .spawn((MenuButton, Interaction::None, Pressed));
         app.add_systems(Update, dismiss_open_menus);
@@ -1037,10 +1032,7 @@ mod tests {
             ..default()
         });
         app.init_resource::<MenuActivationGuard>();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ));
+        app.insert_resource(test_support::session_with_timing_slack());
         app.world_mut().spawn((
             bevy::feathers::controls::FeathersMenuItem,
             Interaction::Pressed,
@@ -1159,10 +1151,7 @@ mod tests {
         mouse.press(MouseButton::Left);
         app.insert_resource(mouse);
         app.init_resource::<MenuActivationGuard>();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ));
+        app.insert_resource(test_support::session_with_timing_slack());
         let control = app
             .world_mut()
             .spawn((

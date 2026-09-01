@@ -2701,7 +2701,7 @@ fn update_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EFFECT_PATH, EFFECT_SOURCE, test_support};
+    use crate::test_support;
     use aestra_bevy::EffectPlaybackMode;
 
     #[test]
@@ -2821,20 +2821,17 @@ mod tests {
     fn viewport_action_app() -> (App, tempfile::TempDir) {
         let temporary = tempfile::tempdir().expect("temporary settings directory should exist");
         let mut app = App::new();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ))
-        .init_resource::<MenuState>()
-        .init_resource::<EditorSettings>()
-        .insert_resource(SettingsPersistence::for_test(
-            temporary.path().join("settings.ron"),
-        ))
-        .insert_resource(Localizer::new("en-US").expect("test locale should load"))
-        .init_resource::<PreviewCameraController>()
-        .init_resource::<PreviewDisplayState>()
-        .init_resource::<TransformGizmoSettings>()
-        .add_observer(execute_viewport_action);
+        app.insert_resource(test_support::session_with_timing_slack())
+            .init_resource::<MenuState>()
+            .init_resource::<EditorSettings>()
+            .insert_resource(SettingsPersistence::for_test(
+                temporary.path().join("settings.ron"),
+            ))
+            .insert_resource(Localizer::new("en-US").expect("test locale should load"))
+            .init_resource::<PreviewCameraController>()
+            .init_resource::<PreviewDisplayState>()
+            .init_resource::<TransformGizmoSettings>()
+            .add_observer(execute_viewport_action);
         (app, temporary)
     }
 
@@ -3167,7 +3164,7 @@ mod tests {
 
     #[test]
     fn selecting_shape_module_keeps_root_transform_gizmo_available() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let shape_module = session
             .selected_layer()
             .module_by_type(aestra_bevy::MODULE_SHAPE)
@@ -3187,7 +3184,7 @@ mod tests {
 
     #[test]
     fn emitter_gizmo_previews_then_commits_one_undoable_transform() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let gizmo = TransformGizmoState {
             active: true,
             ..default()
@@ -3238,7 +3235,7 @@ mod tests {
 
     #[test]
     fn editor_preview_player_uses_the_compiled_effect_timeline_and_seed() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.preview_seed = 42;
         session.clock.seek_frame(37, session.playback_duration());
 
@@ -3255,7 +3252,7 @@ mod tests {
 
     #[test]
     fn transform_only_preview_updates_the_existing_player_in_place() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let player = configured_preview_player(&session).unwrap();
         let emitter = session.selected_layer().id;
         let transform = EmitterTransform {
@@ -3306,7 +3303,7 @@ mod tests {
 
     #[test]
     fn live_player_replacement_rejects_structural_compiler_changes() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let current = session.preview.as_ref().unwrap().effect();
         let mut transformed = current.as_ref().clone();
         transformed.emitters[0].transform.translation[0] = 4.0;
@@ -3398,7 +3395,7 @@ mod tests {
 
     #[test]
     fn project_preview_error_identifies_a_missing_effect_reference() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let missing = aestra_bevy::EffectId::from_u128(0xfeed_cafe);
         session
             .effect
@@ -3431,7 +3428,7 @@ mod tests {
             .push(aestra_bevy::Emitter::basic_sprite("Child emitter", 1.0));
         child.save_ron(&path).unwrap();
         let child_id = child.id;
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         session
             .effect
@@ -3487,7 +3484,7 @@ mod tests {
             .save_ron(temporary.path().join("child.aestra.ron"))
             .unwrap();
 
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         let mut clip = aestra_bevy::EffectClip::new(child.id, 0.5, 1.0);
         clip.source_offset = 0.1;

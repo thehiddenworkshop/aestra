@@ -1276,10 +1276,11 @@ pub(crate) fn update_dock_zone_style(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
 
     #[test]
     fn floating_panel_swap_keeps_only_the_initialized_current_revision() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.ui_revision = 4;
         let mut app = App::new();
         app.insert_resource(session);

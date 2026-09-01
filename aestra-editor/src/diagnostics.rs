@@ -783,11 +783,12 @@ fn diagnostic_collection_index(path: &str, collection: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
 
     #[test]
     fn filter_action_updates_plugin_state_and_requests_a_rebuild() {
         let mut app = App::new();
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let revision = session.ui_revision;
         app.insert_resource(session)
             .init_resource::<DiagnosticsPanelState>()
@@ -824,7 +825,7 @@ mod tests {
 
     #[test]
     fn diagnostic_paths_resolve_to_semantic_targets() {
-        let mut effect = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut effect = test_support::effect_with_timing_slack();
         effect.effect_clips.clear();
         let clip = aestra_bevy::EffectClip::new(aestra_bevy::EffectId::from_u128(0x5155), 0.0, 1.0);
         let clip_id = clip.id;
@@ -860,7 +861,7 @@ mod tests {
 
     #[test]
     fn diagnostic_navigation_selects_the_owning_module() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let expected = session.effect.emitters[2].modules[1].id;
         session.diagnostics.push(Diagnostic::error(
             DiagnosticCode::InvalidValue,
@@ -880,7 +881,7 @@ mod tests {
 
     #[test]
     fn compile_footer_reports_success_and_failure() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let localizer = Localizer::new("en-US").unwrap();
         assert_eq!(localizer.text(compile_status(&session).0), "COMPILED");
         assert_eq!(

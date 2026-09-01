@@ -712,10 +712,11 @@ fn instruction_summary(instruction: &Instruction) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
 
     #[test]
     fn compiler_inspector_uses_the_live_compiler_artifact() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let compiled = session.preview.as_ref().unwrap().effect();
         let instruction_count = compiled
             .emitters
@@ -746,7 +747,7 @@ mod tests {
     #[test]
     fn selecting_a_compiled_target_focuses_the_properties() {
         let mut app = App::new();
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let target = SemanticTarget::Module(session.effect.emitters[0].modules[0].id);
         app.insert_resource(session)
             .insert_resource(Localizer::new("en-US").unwrap())

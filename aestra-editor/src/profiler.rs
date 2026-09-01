@@ -755,11 +755,11 @@ fn update_profiler_labels(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EFFECT_PATH, EFFECT_SOURCE};
+    use crate::test_support;
 
     #[test]
     fn frame_ingestion_preserves_preview_state_and_provenance() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let mut baseline = session.preview.as_ref().unwrap().clone();
         let mut profiled = baseline.clone();
         baseline.seek(1.25);
@@ -818,7 +818,7 @@ mod tests {
 
     #[test]
     fn history_is_bounded_and_resettable() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let compiled = session.preview.as_ref().unwrap().effect();
         let mut profiler = ProfilerState::default();
         for frame in 0..(PROFILER_HISTORY_SAMPLES + 12) {
@@ -843,7 +843,7 @@ mod tests {
 
     #[test]
     fn subsequent_frames_update_the_existing_profile() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let compiled = session.preview.as_ref().unwrap().effect();
         let mut profiler = ProfilerState::default();
         profiler.ingest(ProfilerFrameSample::new(

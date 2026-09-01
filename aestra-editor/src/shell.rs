@@ -940,12 +940,13 @@ fn update_editor_labels(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin};
 
     #[test]
     fn source_breadcrumb_ends_with_the_inspected_emitter() {
         let temporary = tempfile::tempdir().unwrap();
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let expected = session.selected_layer().name.clone();
         let timeline = TimelineState::framed(session.playback_duration());
         let navigation = SourceNavigationState::default();
@@ -990,7 +991,7 @@ mod tests {
 
     #[test]
     fn editor_rebuild_keeps_rendered_content_until_hidden_replacement_is_ready() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.ui_revision = 1;
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, AssetPlugin::default(), ScenePlugin));
