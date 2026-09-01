@@ -321,8 +321,7 @@ outdated or future format.
 
 ### Pre-material authoring hardening gate (in progress)
 
-- [ ] replace showcase-dependent behavioral tests with deterministic semantic fixtures (panel-level
-  domains migrated; Persistence, Library, and Session separation remains)
+- [x] replace showcase-dependent behavioral tests with deterministic semantic fixtures
 - [ ] split Timeline and Properties implementation details into focused internal modules
 - [ ] reconcile roadmap status with the implemented renderer, composition, and automation slices
 - [ ] approve current showcase changes through format/compiler and native-GPU visual gates

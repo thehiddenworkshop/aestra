@@ -3496,6 +3496,7 @@ mod tests {
     use super::*;
     use crate::feathers::list_row::CompactListRow;
     use crate::session::blank_effect;
+    use crate::test_support;
     use crate::timeline::{TimelineState, spawn_timeline};
     use aestra_bevy::EventTrigger;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
@@ -3618,7 +3619,7 @@ mod tests {
     }
 
     fn write_effect(path: &Path, name: &str) {
-        let mut effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("sample effect is valid");
+        let mut effect = test_support::effect_with_timing_slack();
         effect.name = name.into();
         effect.save_ron(path).expect("effect fixture should save");
     }
@@ -3698,11 +3699,11 @@ mod tests {
         let unsupported_path = temporary.path().join("future.aestra.ron");
         write_effect(&valid_path, "Valid");
         fs::write(&invalid_path, "this is not RON").unwrap();
-        fs::write(
-            &unsupported_path,
-            EFFECT_SOURCE.replacen("format_version: 3", "format_version: 99", 1),
-        )
-        .unwrap();
+        let future_source = test_support::effect_with_timing_slack()
+            .to_pretty_ron()
+            .unwrap()
+            .replacen("format_version: 3", "format_version: 99", 1);
+        fs::write(&unsupported_path, future_source).unwrap();
 
         let catalog = ProjectEffectCatalog::scan(temporary.path());
 
@@ -3799,7 +3800,7 @@ mod tests {
 
     #[test]
     fn library_composition_separates_project_resources_and_choreography() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let effect_id = session.effect.id.to_string();
         let valid_id = test_source_id(1);
         let invalid_id = test_source_id(2);
@@ -3965,7 +3966,7 @@ mod tests {
     #[test]
     fn blank_and_current_document_surfaces_compose_at_compact_width() {
         for blank in [true, false] {
-            let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+            let mut session = test_support::session_with_timing_slack();
             if blank {
                 session.new_effect();
             }
@@ -4048,7 +4049,7 @@ mod tests {
     fn current_resource_projection_tracks_new_open_undo_and_redo() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("library-projection.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect.save_ron(&path).unwrap();
         let original = current_resource_counts(&session.effect);
 
@@ -4092,7 +4093,7 @@ mod tests {
 
     #[test]
     fn live_search_updates_library_state_without_rebuilding_editor_ui() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let revision = session.ui_revision;
         let mut app = App::new();
         app.insert_resource(session)
@@ -4251,11 +4252,11 @@ mod tests {
     #[test]
     fn project_catalog_rejects_self_and_transitive_effect_cycles() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut owner = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut owner = test_support::effect_with_timing_slack();
         owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
         owner.name = "Owner".into();
         owner.effect_clips.clear();
-        let mut child = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut child = test_support::effect_with_timing_slack();
         child.id = aestra_bevy::EffectId::from_u128(0xc41d);
         child.name = "Child".into();
         child.effect_clips = vec![aestra_bevy::EffectClip::new(
@@ -4284,7 +4285,7 @@ mod tests {
     #[test]
     fn missing_project_references_are_projected_into_editor_diagnostics() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut owner = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut owner = test_support::effect_with_timing_slack();
         owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
         owner.effect_clips = vec![aestra_bevy::EffectClip::new(
             EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xdead)),
@@ -4303,7 +4304,7 @@ mod tests {
 
     #[test]
     fn library_plugin_owns_catalog_and_panel_actions() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let initial_materials = session.effect.materials.len();
         let mut app = app_with_session(session);
         let control = app
@@ -4340,16 +4341,13 @@ mod tests {
     fn context_menu_library_actions_dispatch_without_a_background_component() {
         let clip = EffectClipId::new();
         let mut app = App::new();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            "assets/effects/prism_bloom.aestra.ron",
-        ))
-        .init_resource::<MenuState>()
-        .init_resource::<LibraryState>()
-        .init_resource::<CapturedLibraryAction>()
-        .add_observer(queue_library_action_activation)
-        .add_observer(capture_library_action)
-        .add_systems(Update, handle_library_action_buttons);
+        app.insert_resource(test_support::session_with_timing_slack())
+            .init_resource::<MenuState>()
+            .init_resource::<LibraryState>()
+            .init_resource::<CapturedLibraryAction>()
+            .add_observer(queue_library_action_activation)
+            .add_observer(capture_library_action)
+            .add_systems(Update, handle_library_action_buttons);
         let item = app
             .world_mut()
             .spawn((
@@ -4372,7 +4370,7 @@ mod tests {
     fn library_rename_keeps_the_open_document_clean_and_updates_its_source_path() {
         let temporary = tempfile::tempdir().unwrap();
         let original = temporary.path().join("original.aestra.ron");
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &original);
+        let session = test_support::session_with_source_path(&original);
         session.effect.save_ron(&original).unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
         let source = catalog.entries()[0].id;
@@ -4426,7 +4424,7 @@ mod tests {
     fn library_rename_requires_saving_when_the_source_is_open_and_dirty() {
         let temporary = tempfile::tempdir().unwrap();
         let original = temporary.path().join("original.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &original);
+        let mut session = test_support::session_with_source_path(&original);
         session.effect.save_ron(&original).unwrap();
         session.dirty = true;
         let catalog = ProjectEffectCatalog::scan(temporary.path());
@@ -4485,8 +4483,8 @@ mod tests {
             ChoreographyTrackId::Emitter(second_id),
             ChoreographyTrackId::Emitter(untouched_id),
         ];
-        let mut session = EditorSession::from_embedded_sample(
-            &owner.to_pretty_ron().unwrap(),
+        let mut session = test_support::session_from_effect_with_source_path(
+            owner,
             temporary.path().join("owner.aestra.ron"),
         );
         let mut catalog = ProjectEffectCatalog::scan(temporary.path());
@@ -4633,7 +4631,7 @@ mod tests {
             }),
             ..default()
         };
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let initial_revision = session.ui_revision;
         let mut app = App::new();
         app.insert_resource(state)
@@ -4690,8 +4688,8 @@ mod tests {
         let child_reference = EffectAssetRef::new(child.id);
 
         let owner = blank_effect();
-        let mut session = EditorSession::from_embedded_sample(
-            &owner.to_pretty_ron().unwrap(),
+        let mut session = test_support::session_from_effect_with_source_path(
+            owner,
             temporary.path().join("owner.aestra.ron"),
         );
         let mut clip = aestra_bevy::EffectClip::new(child_reference, 0.25, 1.0);
@@ -4888,7 +4886,7 @@ mod tests {
     fn catalog_refresh_reloads_a_clean_open_source() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("open.aestra.ron");
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &path);
+        let session = test_support::session_with_source_path(&path);
         session.effect.save_ron(&path).unwrap();
         let mut catalog = ProjectEffectCatalog::scan(temporary.path());
         let previous = ProjectEffectTreeSnapshot::scan(temporary.path());
@@ -4922,7 +4920,7 @@ mod tests {
     fn catalog_refresh_preserves_dirty_edits_when_the_source_changes() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("open.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &path);
+        let mut session = test_support::session_with_source_path(&path);
         session.effect.save_ron(&path).unwrap();
         session.effect.name = "Unsaved Editor Name".into();
         session.dirty = true;
@@ -4961,7 +4959,7 @@ mod tests {
     fn catalog_refresh_does_not_treat_an_editor_save_as_an_external_reload() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("open.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &path);
+        let mut session = test_support::session_with_source_path(&path);
         session.effect.save_ron(&path).unwrap();
         let mut catalog = ProjectEffectCatalog::scan(temporary.path());
         let previous = ProjectEffectTreeSnapshot::scan(temporary.path());
@@ -4991,7 +4989,7 @@ mod tests {
         fs::create_dir(&nested).unwrap();
         let original = temporary.path().join("open.aestra.ron");
         let moved = nested.join("open.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, &original);
+        let mut session = test_support::session_with_source_path(&original);
         session.effect.save_ron(&original).unwrap();
         session.dirty = true;
         let mut catalog = ProjectEffectCatalog::scan(temporary.path());
@@ -5034,7 +5032,7 @@ mod tests {
             .find(|entry| entry.reference == Some(child.id.into()))
             .unwrap()
             .id;
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let mut app = library_action_test_app(session, catalog);
 
         app.world_mut()
@@ -5053,7 +5051,7 @@ mod tests {
 
     #[test]
     fn dependency_navigation_opens_and_selects_the_exact_owner_clip() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let catalog = ProjectEffectCatalog::from_entries(Vec::new());
         let owner = EffectAssetRef::new(EffectId::from_u128(0xD11));
         let clip = EffectClipId::new();
@@ -5097,7 +5095,7 @@ mod tests {
             .find(|entry| entry.reference == Some(child.id.into()))
             .unwrap()
             .id;
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let mut app = library_action_test_app(session, catalog);
 
         app.world_mut()
@@ -5135,7 +5133,7 @@ mod tests {
 
     #[test]
     fn library_plugin_preserves_an_injected_project_catalog() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let expected_id = test_source_id(42);
         let mut app = App::new();
         app.insert_resource(session)

@@ -5,9 +5,11 @@
 
 use crate::session::EditorSession;
 use aestra_bevy::{
-    ChoreographyTrackId, CurveId, EffectAsset, EffectId, EffectPlaybackMode, Emitter, EmitterId,
-    GradientId, ModuleId, ModuleParameters, RendererId,
+    AssetDefinition, AssetId, ChoreographyTrackId, CurveId, EffectAsset, EffectId,
+    EffectPlaybackMode, Emitter, EmitterId, GradientId, MaterialProperties, ModuleId,
+    ModuleParameters, RendererId,
 };
+use std::path::PathBuf;
 
 const TEST_EFFECT_ID: EffectId = EffectId::from_u128(0xa357_4a10_0000_4000_8000_0000_0000_0001);
 const TEST_EMITTER_ID: EmitterId = EmitterId::from_u128(0xa357_4a10_0000_4000_8000_0000_0000_0010);
@@ -17,6 +19,7 @@ const TEST_THIRD_EMITTER_ID: EmitterId =
     EmitterId::from_u128(0xa357_4a10_0000_4000_8000_0000_0000_0012);
 const TEST_FOURTH_EMITTER_ID: EmitterId =
     EmitterId::from_u128(0xa357_4a10_0000_4000_8000_0000_0000_0013);
+const TEST_TEXTURE_ID: AssetId = AssetId::from_u128(0xa357_4a10_0000_4000_8000_0000_0000_0040);
 
 fn assign_stable_emitter_ids(emitter: &mut Emitter, id: EmitterId, base: u128) {
     emitter.id = id;
@@ -91,6 +94,29 @@ pub(crate) fn session_with_timing_slack() -> EditorSession {
     EditorSession::from_test_effect(effect_with_timing_slack())
 }
 
+pub(crate) fn session_with_source_path(path: impl Into<PathBuf>) -> EditorSession {
+    session_from_effect_with_source_path(effect_with_timing_slack(), path)
+}
+
+pub(crate) fn session_from_effect_with_source_path(
+    effect: EffectAsset,
+    path: impl Into<PathBuf>,
+) -> EditorSession {
+    let mut session = EditorSession::from_test_effect(effect);
+    session.source_path = Some(path.into());
+    session
+}
+
+pub(crate) fn session_with_texture() -> EditorSession {
+    let mut effect = effect_with_timing_slack();
+    let mut texture = AssetDefinition::texture("Test Texture", "textures/test.png");
+    texture.id = TEST_TEXTURE_ID;
+    effect.assets.push(texture);
+    let MaterialProperties::Sprite { texture, .. } = &mut effect.materials[0].properties;
+    *texture = Some(TEST_TEXTURE_ID);
+    EditorSession::from_test_effect(effect)
+}
+
 pub(crate) fn session_with_playback_mode(mode: EffectPlaybackMode) -> EditorSession {
     let mut effect = effect_with_timing_slack();
     effect.playback_mode = mode;
@@ -114,5 +140,13 @@ mod tests {
     #[test]
     fn fixture_semantic_ids_are_stable() {
         assert_eq!(effect_with_timing_slack(), effect_with_timing_slack());
+    }
+
+    #[test]
+    fn textured_fixture_is_valid_and_uses_a_stable_asset() {
+        let session = session_with_texture();
+        assert_eq!(session.effect.assets[0].id, TEST_TEXTURE_ID);
+        let MaterialProperties::Sprite { texture, .. } = &session.effect.materials[0].properties;
+        assert_eq!(*texture, Some(TEST_TEXTURE_ID));
     }
 }

@@ -1324,6 +1324,7 @@ fn handle_window_close_requests(
 mod tests {
     use super::*;
     use crate::menus::MenuKind;
+    use crate::test_support;
 
     #[test]
     fn document_protection_overlay_visibility_syncs_without_rebuilding_the_editor() {
@@ -1358,12 +1359,12 @@ mod tests {
     fn catalog_open_action_uses_stable_id_and_document_protection_path() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("catalog-effect.aestra.ron");
-        let mut effect = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut effect = test_support::effect_with_timing_slack();
         effect.name = "Catalog Effect".into();
         effect.save_ron(&path).unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
         let reference = catalog.entries()[0].reference.unwrap();
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let autosave = AutosaveState::new(&session, true);
         let mut app = App::new();
         app.insert_resource(session)
@@ -1404,7 +1405,7 @@ mod tests {
         owner.save_ron(&owner_path).unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
         let owner_reference = EffectAssetRef::new(owner.id);
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let autosave = AutosaveState::new(&session, true);
         let mut app = App::new();
         app.insert_resource(session)
@@ -1436,20 +1437,20 @@ mod tests {
     fn source_emitter_navigation_opens_the_effect_with_the_requested_selection() {
         let temporary = tempfile::tempdir().unwrap();
         let source_path = temporary.path().join("source.aestra.ron");
-        let mut source = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut source = test_support::effect_with_timing_slack();
         source.id = aestra_bevy::EffectId::from_u128(0x50A1CE);
         source.name = "Source".into();
         let target_id = source.emitters[1].id;
         source.save_ron(&source_path).unwrap();
 
         let parent_path = temporary.path().join("parent.aestra.ron");
-        let mut parent = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut parent = test_support::effect_with_timing_slack();
         parent.id = aestra_bevy::EffectId::from_u128(0xA11CE);
         parent.name = "Parent".into();
         parent.save_ron(&parent_path).unwrap();
 
         let catalog = ProjectEffectCatalog::scan(temporary.path());
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.open(&parent_path).unwrap();
         let autosave = AutosaveState::new(&session, true);
         let duration = session.playback_duration();
@@ -1492,13 +1493,13 @@ mod tests {
     fn source_navigation_round_trip_restores_playhead_selection_and_parent_context() {
         let temporary = tempfile::tempdir().unwrap();
         let grandchild_path = temporary.path().join("grandchild.aestra.ron");
-        let mut grandchild = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut grandchild = test_support::effect_with_timing_slack();
         grandchild.id = aestra_bevy::EffectId::from_u128(0x6A11D);
         grandchild.name = "Grandchild".into();
         grandchild.save_ron(&grandchild_path).unwrap();
 
         let child_path = temporary.path().join("child.aestra.ron");
-        let mut child = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut child = test_support::effect_with_timing_slack();
         child.id = aestra_bevy::EffectId::from_u128(0xC111D);
         child.name = "Child".into();
         child.effect_clips.clear();
@@ -1510,7 +1511,7 @@ mod tests {
         child.save_ron(&child_path).unwrap();
 
         let parent_path = temporary.path().join("parent.aestra.ron");
-        let mut parent = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut parent = test_support::effect_with_timing_slack();
         parent.id = aestra_bevy::EffectId::from_u128(0xA11CE);
         parent.name = "Parent".into();
         parent.effect_clips.clear();
@@ -1520,7 +1521,7 @@ mod tests {
         parent.save_ron(&parent_path).unwrap();
 
         let catalog = ProjectEffectCatalog::scan(temporary.path());
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.open(&parent_path).unwrap();
         session.select_effect_clip(clip_id);
         session.seek_time(1.25);
@@ -1648,7 +1649,7 @@ mod tests {
         fs::write(temporary.path().join("broken.aestra.ron"), "not RON").unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
         let missing_reference = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xBAD));
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let original_id = session.effect.id;
         let autosave = AutosaveState::new(&session, true);
         let mut app = App::new();
@@ -1720,7 +1721,7 @@ mod tests {
     fn document_domain_operations_leave_status_presentation_to_the_plugin() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("effect.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.status = "sentinel".into();
 
         session.new_effect();
@@ -1735,7 +1736,7 @@ mod tests {
     fn saving_an_effect_with_a_referenced_clip_clears_document_protection() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("effect-with-clip.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let clip = aestra_bevy::EffectClip::new(
             EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xc11d)),
             0.25,
@@ -1762,13 +1763,13 @@ mod tests {
     fn dirty_catalog_switch_opens_editor_protection_without_replacing_document() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("catalog-effect.aestra.ron");
-        let mut catalog_effect = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut catalog_effect = test_support::effect_with_timing_slack();
         catalog_effect.id = aestra_bevy::EffectId::from_u128(0xca7a10);
         catalog_effect.name = "Catalog target".into();
         catalog_effect.save_ron(&path).unwrap();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
         let reference = catalog.entries()[0].reference.unwrap();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let original = session.effect.id;
         session.adjust_effect_duration(0.1);
         let autosave = AutosaveState::new(&session, true);
@@ -1801,7 +1802,7 @@ mod tests {
     fn saved_effect_clip_document_switches_without_an_unsaved_prompt() {
         let temporary = tempfile::tempdir().unwrap();
         let target_path = temporary.path().join("catalog-target.aestra.ron");
-        let mut target = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut target = test_support::effect_with_timing_slack();
         target.id = aestra_bevy::EffectId::from_u128(0xca7a10);
         target.name = "Catalog target".into();
         target.save_ron(&target_path).unwrap();
@@ -1809,7 +1810,7 @@ mod tests {
         let reference = catalog.entries()[0].reference.unwrap();
 
         let source_path = temporary.path().join("source.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect.id = aestra_bevy::EffectId::from_u128(0x50a7ce);
         session.save_as(&source_path).unwrap();
         let clip = aestra_bevy::EffectClip::new(reference, 0.25, 1.0);
@@ -1851,7 +1852,7 @@ mod tests {
     fn saving_a_document_clears_its_tracked_recovery_snapshot() {
         let temporary = tempfile::tempdir().unwrap();
         let source_path = temporary.path().join("saved-effect.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.save_as(&source_path).unwrap();
         session.adjust_effect_duration(0.25);
         let mut persistence = RecoveryPersistence::for_test(temporary.path().into(), None);
@@ -1878,7 +1879,7 @@ mod tests {
     #[test]
     fn disabling_autosave_clears_a_snapshot_even_without_a_written_revision_marker() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let mut persistence = RecoveryPersistence::for_test(temporary.path().into(), None);
         let recovery_path = persistence
             .persist(&session.effect, session.source_path.as_deref())
@@ -1912,7 +1913,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let blocked_path = temporary.path().join("blocked.recovery.ron");
         fs::create_dir(&blocked_path).unwrap();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let mut state = AutosaveState::new(&session, true);
         let previous_document_key = state.document_key.clone();
         let mut persistence =
@@ -1958,10 +1959,7 @@ mod tests {
             ..default()
         };
         app.insert_resource(menu)
-            .insert_resource(EditorSession::from_embedded_sample(
-                EFFECT_SOURCE,
-                EFFECT_PATH,
-            ))
+            .insert_resource(test_support::session_with_timing_slack())
             .add_observer(queue_document_action_activation);
         let action = app
             .world_mut()
@@ -1987,7 +1985,7 @@ mod tests {
     fn file_menu_save_activation_persists_the_current_effect() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("menu-save.aestra.ron");
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.save_as(&path).unwrap();
         session.adjust_effect_duration(0.25);
         let expected_duration = session.effect.duration;
@@ -2037,7 +2035,7 @@ mod tests {
         let path = temporary.path().join("legacy.aestra.ron");
         let original = "legacy format source";
         fs::write(&path, original).unwrap();
-        let asset = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let asset = test_support::effect_with_timing_slack();
         let migration = EffectAssetMigration {
             source_version: 2,
             target_version: 3,
@@ -2060,7 +2058,7 @@ mod tests {
         let path = temporary.path().join("legacy.aestra.ron");
         let original = "legacy format source";
         fs::write(&path, original).unwrap();
-        let mut asset = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut asset = test_support::effect_with_timing_slack();
         asset.duration = 0.0;
         let migration = EffectAssetMigration {
             source_version: 2,
@@ -2092,7 +2090,7 @@ mod tests {
         let migration = EffectAssetMigration {
             source_version: 2,
             target_version: 3,
-            asset: EffectAsset::from_ron(EFFECT_SOURCE).unwrap(),
+            asset: test_support::effect_with_timing_slack(),
         };
 
         let backup = persist_asset_migration(&path, &migration).unwrap();

@@ -2028,10 +2028,7 @@ mod tests {
 
     #[test]
     fn interaction_preview_does_not_mutate_document_or_history() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         let original = session.effect.clone();
         let emitter = session.selected_layer().id;
         let module = session
@@ -2063,10 +2060,7 @@ mod tests {
 
     #[test]
     fn edits_support_command_undo_and_redo() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         let original = session.effect.emitters[0].spawn_rate();
         let module = session.effect.emitters[0]
             .module_by_type(aestra_bevy::MODULE_EMISSION)
@@ -2085,10 +2079,7 @@ mod tests {
 
     #[test]
     fn dirty_state_tracks_the_saved_document_across_undo_and_redo() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         let module = session.effect.emitters[0]
             .module_by_type(aestra_bevy::MODULE_EMISSION)
             .unwrap()
@@ -2119,10 +2110,7 @@ mod tests {
 
     #[test]
     fn recovered_document_preserves_source_identity_and_dirty_state() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         let path = std::env::temp_dir().join(format!(
             "aestra-recovery-source-{}.aestra.ron",
             std::process::id()
@@ -2142,10 +2130,7 @@ mod tests {
 
     #[test]
     fn editor_save_is_loadable_by_shared_runtime() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         session.new_effect();
         session.add_layer();
         let path = std::env::temp_dir().join(format!(
@@ -2161,10 +2146,7 @@ mod tests {
 
     #[test]
     fn blank_effect_can_be_authored_reopened_and_compiled_without_ron_edits() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         session.new_effect();
         let blank = session.effect.clone();
         let primary = session.selected_layer().id;
@@ -2221,10 +2203,7 @@ mod tests {
 
     #[test]
     fn event_links_reject_self_targets_and_duplicates() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         session.new_effect();
         let first = session.selected_layer().id;
         assert_eq!(
@@ -2243,10 +2222,7 @@ mod tests {
 
     #[test]
     fn structural_layer_commands_are_reversible_and_keep_ids() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         session.new_effect();
         session.add_layer();
         let added = session.selected_layer().id;
@@ -2269,10 +2245,7 @@ mod tests {
 
     #[test]
     fn renderer_texture_assignment_is_compiled_and_undoable() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/ember_sigil.aestra.ron"),
-            "ember_sigil.aestra.ron",
-        );
+        let mut session = test_support::session_with_texture();
         let renderer = session.effect.emitters[0].renderers[0].id;
         let material = session.effect.emitters[0].renderers[0].material;
         let MaterialProperties::Sprite { texture, .. } = &session
@@ -2282,7 +2255,7 @@ mod tests {
             .find(|candidate| candidate.id == material)
             .unwrap()
             .properties;
-        let texture_asset = texture.expect("ember material should use a texture");
+        let texture_asset = texture.expect("textured fixture should use a texture");
 
         session.set_renderer_texture(renderer, None);
         let MaterialProperties::Sprite { texture, .. } = &session
@@ -2339,10 +2312,7 @@ mod tests {
 
     #[test]
     fn material_creation_and_assignment_are_undoable() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         let renderer = session.effect.emitters[0].renderers[0].id;
         let original_material = session.effect.emitters[0].renderers[0].material;
         let original_count = session.effect.materials.len();
@@ -2367,10 +2337,7 @@ mod tests {
 
     #[test]
     fn module_stack_edits_recompile_and_are_reversible() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         let original = session.selected_layer().modules[0].id;
         session.duplicate_module(original);
         assert_eq!(session.selected_layer().modules.len(), 6);
@@ -2397,10 +2364,7 @@ mod tests {
 
     #[test]
     fn curve_key_edits_recompile_and_undo() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         let module = session.effect.emitters[0]
             .module_by_type(aestra_bevy::MODULE_APPEARANCE)
             .unwrap()
@@ -2466,10 +2430,7 @@ mod tests {
 
     #[test]
     fn discarded_and_invalid_previews_never_change_the_effect() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         let before = session.effect.clone();
         assert!(session.preview_transaction(EffectTransaction::single(
             "Rename effect",
@@ -2501,10 +2462,7 @@ mod tests {
 
     #[test]
     fn editor_frame_controls_are_reproducible() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         session.restart();
         for _ in 0..120 {
             session.advance_playback(1.0 / 120.0);
@@ -2525,10 +2483,7 @@ mod tests {
 
     #[test]
     fn stateful_scrubbing_restores_checkpoint_and_replays() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         set_seek_mode(&mut session, SimulationSeekMode::CheckpointRestore);
         session.seek_time(1.0);
         assert_eq!(session.frame(), 60);
@@ -2549,10 +2504,7 @@ mod tests {
 
     #[test]
     fn effect_changes_invalidate_editor_checkpoints() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         set_seek_mode(&mut session, SimulationSeekMode::CheckpointRestore);
         session.seek_time(1.0);
         assert!(!session.checkpoints.is_empty());
@@ -2566,10 +2518,7 @@ mod tests {
 
     #[test]
     fn snapshotless_stateful_seek_uses_restart_replay_fallback() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         set_seek_mode(&mut session, SimulationSeekMode::RestartReplay);
         session.seek_time(1.0);
         session.seek_time(0.5);
@@ -2579,10 +2528,7 @@ mod tests {
 
     #[test]
     fn selection_uses_semantic_emitter_id() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
+        let mut session = test_support::session_with_timing_slack();
         let id = session.effect.emitters[2].id;
         assert!(session.select_emitter(id));
         assert_eq!(session.selection.emitter(&session.effect), Some(id));
@@ -2590,10 +2536,7 @@ mod tests {
 
     #[test]
     fn flipbook_authoring_is_compiled_and_undoable() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/ember_sigil.aestra.ron"),
-            "ember.ron",
-        );
+        let mut session = test_support::session_with_texture();
         session.add_grid_flipbook();
         assert_eq!(session.effect.flipbooks.len(), 1);
         session.add_flipbook_renderer();

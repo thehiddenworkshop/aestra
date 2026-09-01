@@ -1087,7 +1087,7 @@ pub(crate) fn focus_compiled_target(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EFFECT_SOURCE, test_support};
+    use crate::test_support;
     use aestra_bevy::{EffectClipSeed, EffectMarker};
 
     fn test_localizer() -> Localizer {
@@ -1108,7 +1108,7 @@ mod tests {
         let exposed = ParameterId::new();
         let hidden = ParameterId::new();
         let missing = ParameterId::new();
-        let mut source = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut source = test_support::effect_with_timing_slack();
         source.parameters = vec![
             aestra_bevy::EffectParameter {
                 id: exposed,
@@ -2344,7 +2344,7 @@ mod tests {
     #[test]
     fn repairing_a_clip_source_preserves_instance_state_and_is_undoable() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut replacement = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut replacement = test_support::effect_with_timing_slack();
         replacement.id = aestra_bevy::EffectId::from_u128(0xc41d);
         replacement.name = "Replacement".into();
         replacement.duration = 4.0;
@@ -2356,7 +2356,7 @@ mod tests {
 
         let missing = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xdead));
         let replacement_ref = EffectAssetRef::new(replacement.id);
-        let mut owner = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut owner = test_support::effect_with_timing_slack();
         owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
         owner.effect_clips.clear();
         let mut clip = EffectClip::new(missing, 0.75, 1.5);
@@ -2411,15 +2411,15 @@ mod tests {
     #[test]
     fn repair_candidates_reject_invalid_windows_and_reference_cycles() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut owner = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut owner = test_support::effect_with_timing_slack();
         owner.id = aestra_bevy::EffectId::from_u128(0xa11ce);
         owner.effect_clips.clear();
         let missing = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xdead));
-        let mut clip = EffectClip::new(missing, 0.0, 2.5);
+        let mut clip = EffectClip::new(missing, 0.0, 3.5);
         clip.source_offset = 0.75;
         owner.effect_clips.push(clip.clone());
 
-        let mut short = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut short = test_support::effect_with_timing_slack();
         short.id = aestra_bevy::EffectId::from_u128(0x5107);
         short.name = "Short".into();
         short.playback_mode = EffectPlaybackMode::Once;
@@ -2428,7 +2428,7 @@ mod tests {
             .save_ron(temporary.path().join("short.aestra.ron"))
             .unwrap();
 
-        let mut cycle = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut cycle = test_support::effect_with_timing_slack();
         cycle.id = aestra_bevy::EffectId::from_u128(0xc1c1e);
         cycle.name = "Cycle".into();
         cycle.effect_clips = vec![EffectClip::new(EffectAssetRef::new(owner.id), 0.0, 0.5)];
@@ -3206,14 +3206,14 @@ mod tests {
     #[test]
     fn nested_reference_breadcrumbs_include_every_effect_level() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut leaf = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut leaf = test_support::effect_with_timing_slack();
         leaf.id = aestra_bevy::EffectId::from_u128(0x1EAF);
         leaf.name = "Leaf".into();
         leaf.effect_clips.clear();
         leaf.save_ron(temporary.path().join("leaf.aestra.ron"))
             .unwrap();
 
-        let mut child = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut child = test_support::effect_with_timing_slack();
         child.id = aestra_bevy::EffectId::from_u128(0xC111D);
         child.name = "Child".into();
         child.effect_clips.clear();
@@ -3224,7 +3224,7 @@ mod tests {
             .save_ron(temporary.path().join("child.aestra.ron"))
             .unwrap();
 
-        let mut root = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
+        let mut root = test_support::effect_with_timing_slack();
         root.id = aestra_bevy::EffectId::from_u128(0xA007);
         root.name = "Root".into();
         root.effect_clips.clear();
