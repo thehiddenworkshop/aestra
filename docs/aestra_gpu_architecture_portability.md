@@ -28,7 +28,7 @@ The current high-level status is:
 | Editor/runtime-adapter isolation | Existing | `aestra-editor` and `aestra-bevy` are sibling consumers of `aestra-bevy-render`; an architecture test forbids editor imports or a Cargo dependency on the runtime adapter. |
 | Engine-neutral GPU lowering | Existing | `aestra-gpu` owns the packed GPU ABI, artifact lowering, reference WESL sources, WESL composition, and explicit Naga validation without Bevy or WGPU. |
 | Generated WESL/WGSL and explicit Naga validation | Partial | Representative artifacts produce inspectable, snapshotted, Naga-validated WGSL. The current runtime-sized shaders are shared rather than specialized per effect. |
-| CPU/GPU semantic conformance suite | Partial | Deterministic particle fixtures compare CPU-reference and native-compute readback for alive count, identity, position, lifetime progress, rotation, size, and color across once, restart-loop, and continuous-loop playback. Coverage includes emitter regions, surviving earlier-cycle particles, emitter-time spawn curves, particle-life motion curves, deterministic scalar/vector random ranges, and live scalar/range/vector/curve/gradient parameter overrides without source recompilation. Event timing remains outside the GPU comparison. |
+| CPU/GPU semantic conformance suite | Existing | Deterministic particle fixtures compare CPU-reference and native-compute readback for alive count, identity, position, lifetime progress, rotation, size, and color across once, restart-loop, and continuous-loop playback. Coverage includes emitter regions, surviving earlier-cycle particles, emitter-time spawn curves, particle-life motion curves, deterministic scalar/vector random ranges, and live scalar/range/vector/curve/gradient parameter overrides without source recompilation. Event-aware advancement proves deterministic choreography dispatch shares the playback clock used for CPU evaluation and native GPU dispatch; pure runtime coverage exercises exact boundaries, multi-loop steps, seek, pause, restart, and equal-time ordering. |
 | Serialized compiled artifact | Deferred | The in-memory compiled representation comes first. |
 
 ---
@@ -1595,7 +1595,7 @@ Deleting `aestra-bevy` would remove game playback integration while leaving the 
 
 ---
 
-### Work item 10 — CPU/GPU Semantic Conformance Tests *(partial)*
+### Work item 10 — CPU/GPU Semantic Conformance Tests *(complete)*
 
 ### Goal
 
@@ -1632,7 +1632,11 @@ particle-life drag, turbulence, and vector-gravity curves, plus scalar/vector ra
 spawn rates are derived independently for every continuous cycle on both backends. Parameter fixtures
 prove that scalar, range, vector, curve, and gradient instance parameters are resolved from the same
 immutable compiled effect into CPU execution and GPU artifacts. The same path accepts compiler-
-validated reusable-effect clip overrides. Event timing remains the final uncovered semantic slice.
+validated reusable-effect clip overrides. Choreography events remain host-dispatched by design; an
+event-aware conformance path verifies that dispatch and native GPU simulation consume the same clock
+for once, restart-loop, and continuous-loop playback. Backend-independent timing fixtures cover time
+zero, exact end/wrap boundaries, large steps crossing multiple loops, seek, zero-delta pause,
+restart, and deterministic ordering for events sharing a timestamp.
 
 ---
 

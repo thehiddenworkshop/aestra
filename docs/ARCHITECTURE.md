@@ -112,7 +112,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   particles. The same harness covers emitter-time and particle-life curves plus deterministic
   scalar and vector random-range sources. Live scalar, range, vector, curve, and gradient instance
   parameters—and compiler-validated reusable-clip overrides—are compared without recompiling the
-  source effect.
+  source effect. Event-aware advancement verifies that deterministic choreography dispatch and
+  native GPU simulation consume the same playback clock across once, restart-loop, and continuous
+  playback, while backend-independent tests cover exact boundaries, multi-loop steps, seek, pause,
+  restart, and equal-time event ordering.
 - Is shared by the editor preview and `aestra-bevy`; neither consumer depends on the other.
 
 ### `aestra-authoring`

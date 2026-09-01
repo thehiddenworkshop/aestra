@@ -1,9 +1,9 @@
 use aestra_compiler::EffectCompiler;
 use aestra_core::{
-    ColorKey, Curve, CurveKey, EffectAsset, EffectParameter, EffectPlaybackMode, Emitter,
-    EmitterRegion, EmitterShape, Gradient, ModuleInstance, ModuleParameters, ParameterId,
-    PropertyEvaluationDomain, PropertySource, PropertySourceValue, ScalarRange, Value, Vec3Curve,
-    Vec3Range,
+    ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload, ColorKey, Curve, CurveKey,
+    EffectAsset, EffectParameter, EffectPlaybackMode, Emitter, EmitterRegion, EmitterShape,
+    Gradient, ModuleInstance, ModuleParameters, ParameterId, PropertyEvaluationDomain,
+    PropertySource, PropertySourceValue, ScalarRange, Value, Vec3Curve, Vec3Range,
 };
 use aestra_gpu::{
     GpuEffectArtifact, GpuGlobals, GpuParticle, WORKGROUP_SIZE, fold_seed, indirect_draw_commands,
@@ -26,6 +26,63 @@ const CONTINUOUS_SAMPLE_TIMES: [f32; 6] = [1.9, 2.1, 2.55, 4.15, 4.55, 131_072.5
 const SOURCE_SAMPLE_TIMES: [f32; 4] = [0.35, 0.9, 1.4, 1.85];
 const CONTINUOUS_SOURCE_SAMPLE_TIMES: [f32; 5] = [2.4, 2.9, 4.4, 4.9, 131_072.9];
 const PARAMETER_SAMPLE_TIMES: [f32; 3] = [0.4, 1.0, 1.7];
+
+const EVENT_STEPS: [EventStep; 5] = [
+    EventStep::new(0.25, 0.25, &["Begin"]),
+    EventStep::new(0.25, 0.5, &["Half A", "Half B"]),
+    EventStep::new(0.75, 1.25, &["Accent"]),
+    EventStep::new(0.75, 2.0, &["End", "Begin"]),
+    EventStep::new(0.5, 2.5, &["Half A", "Half B"]),
+];
+
+#[derive(Clone, Copy)]
+struct EventStep {
+    delta: f32,
+    continuous_time: f32,
+    expected: &'static [&'static str],
+}
+
+impl EventStep {
+    const fn new(delta: f32, continuous_time: f32, expected: &'static [&'static str]) -> Self {
+        Self {
+            delta,
+            continuous_time,
+            expected,
+        }
+    }
+}
+
+#[test]
+fn choreography_event_timing_is_deterministic_across_playback_modes_and_boundaries() {
+    let once = event_conformance_effect(EffectPlaybackMode::Once);
+    assert_eq!(
+        once.choreography_events
+            .iter()
+            .map(|event| event.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Begin", "Half A", "Half B", "Accent", "End"]
+    );
+    assert_event_steps(
+        once,
+        &[
+            EventStep::new(0.25, 0.25, &["Begin"]),
+            EventStep::new(0.25, 0.5, &["Half A", "Half B"]),
+            EventStep::new(0.75, 1.25, &["Accent"]),
+            EventStep::new(0.75, 2.0, &["End"]),
+            EventStep::new(1.0, 2.0, &[]),
+        ],
+    );
+
+    for playback_mode in [
+        EffectPlaybackMode::LoopRestart,
+        EffectPlaybackMode::LoopContinuous,
+    ] {
+        assert_event_steps(event_conformance_effect(playback_mode), &EVENT_STEPS);
+        assert_multi_loop_event_step(playback_mode);
+    }
+
+    assert_seek_pause_and_restart_event_semantics();
+}
 
 #[test]
 fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_sources_and_parameters() {
@@ -76,6 +133,135 @@ fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_sources_a
         &CONTINUOUS_SOURCE_SAMPLE_TIMES,
     );
     assert_parameter_overrides_match_without_recompiling(&harness);
+    assert_event_aware_playback_matches(&harness, EffectPlaybackMode::Once);
+    assert_event_aware_playback_matches(&harness, EffectPlaybackMode::LoopRestart);
+    assert_event_aware_playback_matches(&harness, EffectPlaybackMode::LoopContinuous);
+}
+
+fn assert_event_steps(effect: Arc<aestra_runtime::CompiledEffect>, steps: &[EventStep]) {
+    let playback_mode = effect.playback_mode;
+    let mut instance = EffectInstance::with_seed(effect, TEST_SEED);
+    let mut dispatched = Vec::new();
+    for step in steps {
+        instance.advance_with_choreography_events(step.delta, &mut dispatched);
+        assert_eq!(
+            event_names(&dispatched),
+            step.expected,
+            "event order diverged for {playback_mode:?} after advancing by {:.3}s",
+            step.delta
+        );
+        let expected_time = match playback_mode {
+            EffectPlaybackMode::LoopRestart => {
+                step.continuous_time.rem_euclid(instance.effect().duration)
+            }
+            EffectPlaybackMode::Once => step.continuous_time.min(instance.effect().duration),
+            EffectPlaybackMode::LoopContinuous => step.continuous_time,
+        };
+        assert_time_close(playback_mode, expected_time, instance.time());
+    }
+}
+
+fn assert_multi_loop_event_step(playback_mode: EffectPlaybackMode) {
+    let effect = event_conformance_effect(playback_mode);
+    let mut instance = EffectInstance::with_seed(effect, TEST_SEED);
+    let mut dispatched = Vec::new();
+    instance.advance_with_choreography_events(4.5, &mut dispatched);
+    assert_eq!(
+        event_names(&dispatched),
+        [
+            "Begin", "Half A", "Half B", "Accent", "End", "Begin", "Half A", "Half B", "Accent",
+            "End", "Begin", "Half A", "Half B",
+        ],
+        "a large step must dispatch every crossed event for {playback_mode:?}"
+    );
+    let expected_time = if playback_mode.is_continuous() {
+        4.5
+    } else {
+        0.5
+    };
+    assert_time_close(playback_mode, expected_time, instance.time());
+}
+
+fn assert_seek_pause_and_restart_event_semantics() {
+    let effect = event_conformance_effect(EffectPlaybackMode::Once);
+    let mut instance = EffectInstance::with_seed(effect, TEST_SEED);
+    let mut dispatched = Vec::new();
+
+    instance.advance_with_choreography_events(0.0, &mut dispatched);
+    assert!(dispatched.is_empty());
+    assert_time_close(EffectPlaybackMode::Once, 0.0, instance.time());
+
+    instance.seek(0.5);
+    instance.advance_with_choreography_events(0.75, &mut dispatched);
+    assert_eq!(event_names(&dispatched), ["Accent"]);
+    assert_time_close(EffectPlaybackMode::Once, 1.25, instance.time());
+
+    instance.advance_with_choreography_events(0.0, &mut dispatched);
+    assert!(dispatched.is_empty());
+    assert_time_close(EffectPlaybackMode::Once, 1.25, instance.time());
+
+    instance.restart();
+    instance.advance_with_choreography_events(0.01, &mut dispatched);
+    assert_eq!(event_names(&dispatched), ["Begin"]);
+    assert_time_close(EffectPlaybackMode::Once, 0.01, instance.time());
+}
+
+fn event_names(events: &[aestra_runtime::DispatchedChoreographyEvent]) -> Vec<&str> {
+    events.iter().map(|event| event.name.as_str()).collect()
+}
+
+fn assert_time_close(playback_mode: EffectPlaybackMode, expected: f32, actual: f32) {
+    assert!(
+        (expected - actual).abs() <= f32::EPSILON * 8.0,
+        "playback time diverged for {playback_mode:?}: expected {expected:.7}, got {actual:.7}"
+    );
+}
+
+fn assert_event_aware_playback_matches(harness: &GpuHarness, playback_mode: EffectPlaybackMode) {
+    let effect = event_conformance_effect(playback_mode);
+    let mut instance = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+    let artifact = GpuEffectArtifact::from_instance(&instance).unwrap();
+    let steps: &[EventStep] = if playback_mode == EffectPlaybackMode::Once {
+        &[
+            EventStep::new(0.25, 0.25, &["Begin"]),
+            EventStep::new(0.25, 0.5, &["Half A", "Half B"]),
+            EventStep::new(0.75, 1.25, &["Accent"]),
+            EventStep::new(0.75, 2.0, &["End"]),
+        ]
+    } else {
+        &EVENT_STEPS
+    };
+    let mut dispatched = Vec::new();
+    let mut elapsed = 0.0;
+    for step in steps {
+        elapsed += step.delta;
+        instance.advance_with_choreography_events(step.delta, &mut dispatched);
+        assert_eq!(event_names(&dispatched), step.expected);
+
+        let mut cpu = Vec::new();
+        instance.evaluate(&mut cpu);
+        let simulation_time = instance.time();
+        let gpu = harness
+            .simulate(
+                &artifact,
+                GpuGlobals {
+                    time: simulation_time,
+                    total_slots: artifact.total_slots,
+                    seed: fold_seed(TEST_SEED),
+                    emitter_count: artifact.emitters.len() as u32,
+                    duration: effect.duration,
+                    continuous: u32::from(playback_mode.is_continuous()),
+                    ..Default::default()
+                },
+            )
+            .unwrap_or_else(|error| {
+                panic!(
+                    "GPU simulation failed for event-aware {playback_mode:?} playback at elapsed \
+                     {elapsed:.3}s (simulation {simulation_time:.3}s): {error}"
+                )
+            });
+        assert_particle_samples_match(playback_mode, elapsed, simulation_time, &cpu, &gpu);
+    }
 }
 
 fn assert_effect_matches_at_times(
@@ -207,6 +393,35 @@ fn conformance_effect(
     use_emitter_region: bool,
 ) -> Arc<aestra_runtime::CompiledEffect> {
     compile_effect(conformance_asset(playback_mode, use_emitter_region))
+}
+
+fn event_conformance_effect(
+    playback_mode: EffectPlaybackMode,
+) -> Arc<aestra_runtime::CompiledEffect> {
+    let mut effect = conformance_asset(playback_mode, false);
+    effect.name = "CPU GPU event timing".into();
+    effect.choreography_events = vec![
+        conformance_event(1, "Begin", 0.0),
+        // Deliberately author equal-time events in reverse semantic-ID order. Compilation must
+        // produce a stable order independent of source-vector insertion order.
+        conformance_event(3, "Half B", 0.5),
+        conformance_event(2, "Half A", 0.5),
+        conformance_event(4, "Accent", 1.25),
+        conformance_event(5, "End", effect.duration),
+    ];
+    compile_effect(effect)
+}
+
+fn conformance_event(id: u128, name: &str, time: f32) -> ChoreographyEvent {
+    let mut event = ChoreographyEvent::new(
+        name,
+        time,
+        ChoreographyEventPayload::GameplayNotify {
+            topic: format!("conformance.{name}"),
+        },
+    );
+    event.id = ChoreographyEventId::from_u128(id);
+    event
 }
 
 fn conformance_asset(playback_mode: EffectPlaybackMode, use_emitter_region: bool) -> EffectAsset {
