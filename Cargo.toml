@@ -28,7 +28,7 @@ fluent-bundle = "0.16"
 encase = "0.12.1"
 glam = { version = "0.32.1", features = ["encase"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
-naga = { version = "29.0.4", features = ["wgsl-in"] }
+naga = { version = "29.0.4", features = ["wgsl-in", "spv-out", "hlsl-out"] }
 pollster = "0.4"
 ron = "0.12"
 serde = { version = "1", features = ["derive"] }

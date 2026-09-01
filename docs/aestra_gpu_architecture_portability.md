@@ -27,9 +27,10 @@ The current high-level status is:
 | Backend/device compatibility contract | Existing | The compiler retains portable effect requirements; `aestra-bevy-render` converts Bevy/WGPU discovery into `BackendCapabilities` and produces structured compatibility reports before selecting a presentation path. |
 | Editor/runtime-adapter isolation | Existing | `aestra-editor` and `aestra-bevy` are sibling consumers of `aestra-bevy-render`; an architecture test forbids editor imports or a Cargo dependency on the runtime adapter. |
 | Engine-neutral GPU lowering | Existing | `aestra-gpu` owns the packed GPU ABI, artifact lowering, reference WESL sources, WESL composition, and explicit Naga validation without Bevy or WGPU. |
-| Generated WESL/WGSL and explicit Naga validation | Partial | Representative artifacts produce inspectable, snapshotted, Naga-validated WGSL. The current runtime-sized shaders are shared rather than specialized per effect. |
+| Generated WESL/WGSL and explicit Naga validation | Partial | Representative artifacts produce inspectable, snapshotted, Naga-validated WGSL, with CI proving translation to SPIR-V and HLSL. The current runtime-sized shaders are shared rather than specialized per effect. |
 | CPU/GPU semantic conformance suite | Existing | Deterministic particle fixtures compare CPU-reference and native-compute readback for alive count, identity, position, lifetime progress, rotation, size, and color across once, restart-loop, and continuous-loop playback. Coverage includes emitter regions, surviving earlier-cycle particles, emitter-time spawn curves, particle-life motion curves, deterministic scalar/vector random ranges, and live scalar/range/vector/curve/gradient parameter overrides without source recompilation. Event-aware advancement proves deterministic choreography dispatch shares the playback clock used for CPU evaluation and native GPU dispatch; pure runtime coverage exercises exact boundaries, multi-loop steps, seek, pause, restart, and equal-time ordering. |
 | Serialized compiled artifact | Partial | `aestra-artifact` provides a versioned engine-neutral prototype DTO and RON-byte codec distinct from `CompiledEffect`. Round-trip tests preserve CPU evaluation, GPU artifact lowering, parameters, resources, reusable clips, events, requirements, source maps, and Bevy `EffectPlayer` ingestion. A permanent `.aestrac` package format remains deferred. |
+| Portability CI | Existing | A dedicated Linux job builds only the engine-neutral crates, enforces forbidden dependency guards, validates representative WGSL, and translates the selected simulation and sprite shaders to SPIR-V and HLSL through Naga. |
 
 ---
 
@@ -1750,7 +1751,7 @@ final `.aestrac` package representation.
 
 ---
 
-### Work item 14 — Portability CI Without Supporting Another Engine *(target)*
+### Work item 14 — Portability CI Without Supporting Another Engine *(complete)*
 
 ### Goal
 
@@ -1773,6 +1774,13 @@ Optional compile-time architecture tests can guard forbidden dependencies.
 ### Exit criteria
 
 A change that introduces forbidden Bevy coupling, invalid generated shaders, or regressions in the selected Naga translation targets is detected in CI.
+
+The `Portable contracts and shaders` CI job builds the semantic, authoring, project, compiler,
+runtime, GPU, and artifact crates without compiling a Bevy consumer. The `aestra-gpu`
+architecture test guards their manifests and production sources against Bevy/WGPU coupling, while
+the shader contract composes and validates the representative simulation and sprite programs and
+requires both SPIR-V and HLSL translation to succeed. This verifies backend portability without
+adding or claiming support for another engine.
 
 ---
 

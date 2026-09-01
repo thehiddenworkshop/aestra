@@ -7,6 +7,11 @@ use aestra_gpu::{
     shader::{GpuShaderPackage, SIMULATION_WESL, SPRITE_RENDER_WESL},
 };
 use aestra_runtime::EffectInstance;
+use naga::{
+    Module,
+    back::{hlsl, spv},
+    valid::{Capabilities, ModuleInfo, ValidationFlags, Validator},
+};
 
 fn representative_artifact() -> GpuEffectArtifact {
     let mut effect = EffectAsset::new("Shader contract", 2.0);
@@ -19,6 +24,41 @@ fn representative_artifact() -> GpuEffectArtifact {
 
 fn normalized(source: &str) -> String {
     source.replace("\r\n", "\n").trim_end().to_owned()
+}
+
+fn validated_module(wgsl: &str) -> (Module, ModuleInfo) {
+    let module = naga::front::wgsl::parse_str(wgsl).expect("generated WGSL must parse");
+    let info = Validator::new(ValidationFlags::all(), Capabilities::all())
+        .validate(&module)
+        .expect("generated WGSL must validate");
+    (module, info)
+}
+
+fn assert_translates_to_spirv(wgsl: &str) {
+    const SPIRV_MAGIC: u32 = 0x0723_0203;
+
+    let (module, info) = validated_module(wgsl);
+    let words = spv::write_vec(&module, &info, &spv::Options::default(), None)
+        .expect("validated WGSL must translate to SPIR-V");
+
+    assert_eq!(words.first(), Some(&SPIRV_MAGIC));
+    assert!(words.len() > 5, "SPIR-V output must contain a module");
+}
+
+fn assert_translates_to_hlsl(wgsl: &str) {
+    let (module, info) = validated_module(wgsl);
+    let options = hlsl::Options::default();
+    let pipeline_options = hlsl::PipelineOptions::default();
+    let mut output = String::new();
+    let reflection = hlsl::Writer::new(&mut output, &options, &pipeline_options)
+        .write(&module, &info, None)
+        .expect("validated WGSL must translate to HLSL");
+
+    assert!(!output.trim().is_empty(), "HLSL output must not be empty");
+    assert!(
+        reflection.entry_point_names.iter().all(Result::is_ok),
+        "every portable shader entry point must translate to HLSL"
+    );
 }
 
 #[test]
@@ -53,5 +93,15 @@ fn portable_wesl_has_no_engine_shader_imports() {
         assert!(!source.contains("#import bevy"));
         assert!(!source.contains("bevy::"));
         assert!(!source.contains("wgpu::"));
+    }
+}
+
+#[test]
+fn generated_shaders_translate_to_portable_backend_targets() {
+    let package = GpuShaderPackage::for_artifact(&representative_artifact()).unwrap();
+
+    for shader in [&package.simulation, &package.sprite_render] {
+        assert_translates_to_spirv(&shader.wgsl);
+        assert_translates_to_hlsl(&shader.wgsl);
     }
 }
