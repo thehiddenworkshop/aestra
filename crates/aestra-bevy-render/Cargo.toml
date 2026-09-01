@@ -15,4 +15,3 @@ bevy.workspace = true
 [dev-dependencies]
 aestra-compiler = { path = "../aestra-compiler" }
 aestra-core = { path = "../aestra-core" }
-wesl = "0.3.2"

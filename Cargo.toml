@@ -27,12 +27,14 @@ fluent-bundle = "0.16"
 encase = "0.12.1"
 glam = { version = "0.32.1", features = ["encase"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
+naga = { version = "29.0.4", features = ["wgsl-in"] }
 ron = "0.12"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 tempfile = "3.27"
 unic-langid = "0.9"
 uuid = { version = "1", features = ["serde", "v4"] }
+wesl = "0.3.2"
 
 [profile.dev]
 opt-level = 1

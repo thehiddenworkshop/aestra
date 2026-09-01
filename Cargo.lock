@@ -125,7 +125,6 @@ dependencies = [
  "aestra-gpu",
  "aestra-runtime",
  "bevy",
- "wesl",
 ]
 
 [[package]]
@@ -183,7 +182,9 @@ dependencies = [
  "aestra-runtime",
  "encase",
  "glam",
+ "naga",
  "thiserror 2.0.20",
+ "wesl",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
-// Aestra's authored GPU source is WESL. Bevy resolves it to the shader module
-// consumed by wgpu; no generated WGSL source is stored by the project.
+// Aestra's authored GPU source is WESL. Engine adapters consume the validated
+// WGSL contract or register this portable source with their shader pipeline.
 
 const MAX_CURVE_KEYS: u32 = 8u;
 const TAU: f32 = 6.283185307179586;

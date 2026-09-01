@@ -96,14 +96,16 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 
 - Owns the packed curves, gradients, emitter, renderer, particle, global, and indirect-draw ABI.
 - Lowers compiled effect instances and parameter values into GPU artifacts without Bevy or WGPU.
+- Owns the reference WESL modules, composes inspectable WGSL, and validates it explicitly with Naga.
+- Keeps generated WGSL snapshots tied to representative compiled artifacts.
 - Derives conservative effect bounds and stable GPU seed/index contracts.
 - Depends only on portable Aestra contracts plus engine-neutral data-layout and math libraries.
 
 ### `aestra-bevy-render`
 
 - Uploads `aestra-gpu` artifacts into Bevy shader buffers.
-- Owns WESL shader assets, Bevy render-world extraction, WGPU pipeline setup, compute dispatch,
-  readback, texture resolution, and draw submission.
+- Registers the portable WESL sources with Bevy and owns render-world extraction, WGPU pipeline
+  setup, compute dispatch, readback, texture resolution, and draw submission.
 - Is shared by the editor preview and `aestra-bevy`; neither consumer depends on the other.
 
 ### `aestra-authoring`

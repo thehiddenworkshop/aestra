@@ -26,8 +26,8 @@ The current high-level status is:
 | Engine-neutral renderer plan | Partial | Sprite and flipbook plans exist; the portable renderer contract is not yet broad enough for every planned renderer. |
 | Backend/device compatibility contract | Existing | The compiler retains portable effect requirements; `aestra-bevy-render` converts Bevy/WGPU discovery into `BackendCapabilities` and produces structured compatibility reports before selecting a presentation path. |
 | Editor/runtime-adapter isolation | Existing | `aestra-editor` and `aestra-bevy` are sibling consumers of `aestra-bevy-render`; an architecture test forbids editor imports or a Cargo dependency on the runtime adapter. |
-| Engine-neutral GPU lowering | Partial | `aestra-gpu` owns the packed GPU ABI and lowers compiled effect instances without Bevy or WGPU. Authored WESL composition and validation still live in `aestra-bevy-render`. |
-| Generated WESL/WGSL and explicit Naga validation | Target | Authored WESL is validated in backend tests; it is not generated from compiled effects yet. |
+| Engine-neutral GPU lowering | Existing | `aestra-gpu` owns the packed GPU ABI, artifact lowering, reference WESL sources, WESL composition, and explicit Naga validation without Bevy or WGPU. |
+| Generated WESL/WGSL and explicit Naga validation | Partial | Representative artifacts produce inspectable, snapshotted, Naga-validated WGSL. The current runtime-sized shaders are shared rather than specialized per effect. |
 | CPU/GPU semantic conformance suite | Target | CPU and GPU paths exist, but do not yet share a systematic conformance suite. |
 | Serialized compiled artifact | Deferred | The in-memory compiled representation comes first. |
 
@@ -384,7 +384,7 @@ The crucial design constraint is that the upper half does not understand:
 
 Those concepts belong below the GPU/backend boundary.
 
-**Current state:** `aestra-gpu` lowers compiled effect instances into an engine-neutral packed ABI and can be tested without Bevy. Aestra still uses authored, embedded WESL shaders inside `aestra-bevy-render`; the compiler does not yet lower an arbitrary compiled effect into generated WESL. Shader composition and generation remain future work.
+**Current state:** `aestra-gpu` lowers compiled effect instances into an engine-neutral packed ABI, owns the reference WESL, composes WGSL with `wesl-rs`, and parses and validates that output explicitly with Naga. Representative artifact tests retain reviewable WGSL snapshots without launching Bevy. The current shaders use runtime-sized buffers and are therefore shared across effects rather than specialized from each execution plan. `aestra-bevy-render` only registers the portable source and owns backend resource and pipeline integration.
 
 ---
 
@@ -1439,7 +1439,7 @@ The compiler can construct a complete render plan without depending on Bevy.
 
 ---
 
-### Work item 6 — Isolate GPU Shader Generation *(partial)*
+### Work item 6 — Isolate GPU Shader Generation *(existing)*
 
 ### Goal
 
@@ -1453,7 +1453,7 @@ Move or define GPU lowering behind something conceptually equivalent to:
 aestra-gpu
 ```
 
-The `aestra-gpu` crate now owns packed curves, gradients, emitters, renderers, particles, globals, indirect-draw layout, bounds derivation, seed folding, and artifact lowering. It has an architecture test forbidding Bevy and WGPU dependencies.
+The `aestra-gpu` crate owns packed curves, gradients, emitters, renderers, particles, globals, indirect-draw layout, bounds derivation, seed folding, artifact lowering, reference WESL source, and validated WGSL output. It has an architecture test forbidding Bevy and WGPU dependencies.
 
 Pipeline:
 
@@ -1467,15 +1467,15 @@ GPU lowering
 Generated WESL
 ```
 
-The remaining work is to move shader composition behind this boundary and generate inspectable WESL/WGSL from the compiled plan. Generated shader code must use Aestra-owned bindings/semantic names rather than Bevy-specific shader imports where possible.
+The current runtime-sized shader package is generated for an artifact without effect-specific source specialization. Future generated code must continue to use Aestra-owned bindings and semantic names rather than engine-specific shader imports.
 
 ### Exit criteria
 
-Artifact lowering already runs in tests without Bevy. This work item is complete when shader generation can also run in such a test.
+Artifact lowering and shader generation run together in tests without Bevy.
 
 ---
 
-### Work item 7 — Standardize WESL → WGSL Compilation *(target)*
+### Work item 7 — Standardize WESL → WGSL Compilation *(partial)*
 
 ### Goal
 
@@ -1493,13 +1493,15 @@ Establish WESL as the compositional shader layer.
 - Add shader source snapshots to tests.
 - Preserve generated WESL/WGSL on compilation errors for diagnostics.
 
+`aestra-gpu` now owns the WESL sources, compiles them with `wesl-rs`, returns structured composition errors, and retains generated WGSL snapshots. Separating shared ABI helpers and backend glue into finer WESL modules remains future hardening.
+
 ### Exit criteria
 
 Given an Aestra compiled effect, tests can generate and validate WGSL without running the renderer.
 
 ---
 
-### Work item 8 — Make Naga Validation an Explicit Compiler Stage *(target)*
+### Work item 8 — Make Naga Validation an Explicit Compiler Stage *(existing)*
 
 ### Goal
 
@@ -1520,6 +1522,8 @@ Naga validation
 ```
 
 Report Naga errors through Aestra diagnostics.
+
+`aestra-gpu` explicitly parses every composed WGSL module with Naga, validates it, verifies required entry points, and returns structured errors before an engine adapter consumes it.
 
 Optionally test selected backend translations:
 

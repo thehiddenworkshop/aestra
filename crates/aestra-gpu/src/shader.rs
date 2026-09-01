@@ -1,0 +1,177 @@
+//! Portable shader sources, WESL composition, and WGSL validation.
+
+use naga::valid::{Capabilities, ValidationFlags, Validator};
+use thiserror::Error;
+use wesl::{ModulePath, VirtualResolver, Wesl};
+
+use crate::GpuEffectArtifact;
+
+pub const SIMULATION_MODULE: &str = "package::aestra_simulation";
+pub const SPRITE_RENDER_MODULE: &str = "package::aestra_sprite_render";
+pub const SIMULATION_WESL: &str = include_str!("shaders/aestra_simulation.wesl");
+pub const SPRITE_RENDER_WESL: &str = include_str!("shaders/aestra_sprite_render.wesl");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuShaderKind {
+    Simulation,
+    SpriteRender,
+}
+
+impl GpuShaderKind {
+    pub const fn module_name(self) -> &'static str {
+        match self {
+            Self::Simulation => SIMULATION_MODULE,
+            Self::SpriteRender => SPRITE_RENDER_MODULE,
+        }
+    }
+
+    pub const fn wesl(self) -> &'static str {
+        match self {
+            Self::Simulation => SIMULATION_WESL,
+            Self::SpriteRender => SPRITE_RENDER_WESL,
+        }
+    }
+
+    const fn required_entry_points(self) -> &'static [&'static str] {
+        match self {
+            Self::Simulation => &["reset", "simulate"],
+            Self::SpriteRender => &[
+                "vertex",
+                "fragment_alpha",
+                "fragment_additive",
+                "fragment_multiply",
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompiledGpuShader {
+    pub kind: GpuShaderKind,
+    pub module_name: &'static str,
+    pub wesl: &'static str,
+    pub wgsl: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GpuShaderArtifactLayout {
+    pub emitter_count: u32,
+    pub renderer_count: u32,
+    pub total_particle_slots: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuShaderPackage {
+    pub layout: GpuShaderArtifactLayout,
+    pub simulation: CompiledGpuShader,
+    pub sprite_render: CompiledGpuShader,
+}
+
+impl GpuShaderPackage {
+    /// Compose and validate the reference shaders for one lowered artifact.
+    ///
+    /// The current shaders consume the packed artifact through runtime-sized
+    /// buffers, so their WGSL is shared across effect instances. The layout
+    /// summary keeps the compiled output tied to the artifact it was produced
+    /// for and provides a stable seam for future specialization.
+    pub fn for_artifact(artifact: &GpuEffectArtifact) -> Result<Self, GpuShaderError> {
+        Ok(Self {
+            layout: GpuShaderArtifactLayout {
+                emitter_count: artifact.emitters.len() as u32,
+                renderer_count: artifact.renderers.len() as u32,
+                total_particle_slots: artifact.total_slots,
+            },
+            simulation: compile(GpuShaderKind::Simulation)?,
+            sprite_render: compile(GpuShaderKind::SpriteRender)?,
+        })
+    }
+}
+
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum GpuShaderError {
+    #[error("failed to parse WESL module path '{module}': {message}")]
+    ModulePath {
+        module: &'static str,
+        message: String,
+    },
+    #[error("failed to compose WESL module '{module}': {message}")]
+    Wesl {
+        module: &'static str,
+        message: String,
+    },
+    #[error("generated WGSL for '{module}' could not be parsed: {message}")]
+    Wgsl {
+        module: &'static str,
+        message: String,
+        wgsl: String,
+    },
+    #[error("generated WGSL for '{module}' failed Naga validation: {message}")]
+    Validation {
+        module: &'static str,
+        message: String,
+        wgsl: String,
+    },
+    #[error("generated WGSL for '{module}' is missing entry point '{entry_point}'")]
+    MissingEntryPoint {
+        module: &'static str,
+        entry_point: &'static str,
+    },
+}
+
+pub fn compile(kind: GpuShaderKind) -> Result<CompiledGpuShader, GpuShaderError> {
+    let module_name = kind.module_name();
+    let module: ModulePath = module_name
+        .parse()
+        .map_err(|error| GpuShaderError::ModulePath {
+            module: module_name,
+            message: format!("{error:?}"),
+        })?;
+    let mut resolver = VirtualResolver::new();
+    resolver.add_module(module.clone(), kind.wesl().into());
+    let wgsl = Wesl::new("")
+        .set_custom_resolver(resolver)
+        .compile(&module)
+        .map_err(|error| GpuShaderError::Wesl {
+            module: module_name,
+            message: error.to_string(),
+        })?
+        .to_string();
+
+    let naga_module = match naga::front::wgsl::parse_str(&wgsl) {
+        Ok(module) => module,
+        Err(error) => {
+            return Err(GpuShaderError::Wgsl {
+                module: module_name,
+                message: error.emit_to_string(&wgsl),
+                wgsl,
+            });
+        }
+    };
+    Validator::new(ValidationFlags::all(), Capabilities::all())
+        .validate(&naga_module)
+        .map_err(|error| GpuShaderError::Validation {
+            module: module_name,
+            message: error.to_string(),
+            wgsl: wgsl.clone(),
+        })?;
+
+    for &entry_point in kind.required_entry_points() {
+        if !naga_module
+            .entry_points
+            .iter()
+            .any(|entry| entry.name == entry_point)
+        {
+            return Err(GpuShaderError::MissingEntryPoint {
+                module: module_name,
+                entry_point,
+            });
+        }
+    }
+
+    Ok(CompiledGpuShader {
+        kind,
+        module_name,
+        wesl: kind.wesl(),
+        wgsl,
+    })
+}

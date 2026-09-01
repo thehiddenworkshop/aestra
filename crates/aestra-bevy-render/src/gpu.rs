@@ -8,6 +8,7 @@ use crate::{
     GpuCapabilities, GpuPresentationPrepared, PresentedEffect, TextureAssetCache,
     capabilities::select_backend,
 };
+use aestra_gpu::shader::{SIMULATION_WESL, SPRITE_RENDER_WESL};
 pub use aestra_gpu::{
     GpuArtifactError, GpuCurve, GpuEffectArtifact, GpuEmitter, GpuGlobals, GpuGradient,
     GpuGradientKey, GpuParticle, GpuRenderGlobals, GpuRenderParams, GpuRenderer, MAX_CURVE_KEYS,
@@ -18,7 +19,7 @@ use aestra_gpu::{
 };
 use aestra_runtime::RendererPlanKind;
 use bevy::{
-    asset::{RenderAssetUsages, embedded_asset},
+    asset::{RenderAssetUsages, io::embedded::EmbeddedAssetRegistry},
     camera::{
         primitives::Aabb,
         visibility::{self, RenderLayers, VisibilityClass},
@@ -42,6 +43,7 @@ use bevy::{
         sync_component::SyncComponent,
     },
 };
+use std::path::{Path, PathBuf};
 
 pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy_render/shaders/aestra_simulation.wesl";
 pub const WESL_RENDER_SHADER_PATH: &str =
@@ -166,8 +168,7 @@ struct SimulationPipeline {
 }
 
 pub(crate) fn install(app: &mut App) {
-    embedded_asset!(app, "shaders/aestra_simulation.wesl");
-    embedded_asset!(app, "shaders/aestra_sprite_render.wesl");
+    install_shader_assets(app);
     app.add_plugins((
         ExtractComponentPlugin::<GpuEffectBuffers>::default(),
         ExtractComponentPlugin::<GpuDrawInstance>::default(),
@@ -190,6 +191,21 @@ pub(crate) fn install(app: &mut App) {
         )
         .add_systems(RenderGraph, run_simulation);
     render::install(render_app);
+}
+
+fn install_shader_assets(app: &App) {
+    let registry = app.world().resource::<EmbeddedAssetRegistry>();
+    let shader_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../aestra-gpu/src/shaders");
+    registry.insert_asset(
+        shader_root.join("aestra_simulation.wesl"),
+        Path::new("aestra_bevy_render/shaders/aestra_simulation.wesl"),
+        SIMULATION_WESL.as_bytes(),
+    );
+    registry.insert_asset(
+        shader_root.join("aestra_sprite_render.wesl"),
+        Path::new("aestra_bevy_render/shaders/aestra_sprite_render.wesl"),
+        SPRITE_RENDER_WESL.as_bytes(),
+    );
 }
 
 fn init_fallback_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
@@ -969,17 +985,6 @@ mod tests {
     }
 
     #[test]
-    fn authored_wesl_compiles_and_validates() {
-        let compiler = wesl::Wesl::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/shaders"));
-        let module = "package::aestra_simulation".parse().unwrap();
-        let output = compiler.compile(&module).unwrap().to_string();
-        assert!(output.contains("fn simulate"));
-        assert!(output.contains("fn reset"));
-        assert!(output.contains("emitter_index * 4u"));
-        assert!(output.contains("emitter.slot_offset + compact_index"));
-    }
-
-    #[test]
     fn artifact_packs_spawn_rate_curve_sources_for_wesl() {
         let mut effect = EffectAsset::new("GPU curve rate", 2.0);
         effect
@@ -1126,20 +1131,5 @@ mod tests {
         assert_eq!(random.gravity_source, 1);
         assert_eq!(random.gravity, Vec3::new(-3.0, -6.0, 1.0));
         assert_eq!(random.gravity_max, Vec3::new(4.0, 2.0, 9.0));
-    }
-
-    #[test]
-    fn sprite_render_wesl_compiles_and_validates() {
-        let source = include_str!("shaders/aestra_sprite_render.wesl").to_owned();
-        let module: wesl::ModulePath = "package::aestra_sprite_render".parse().unwrap();
-        let mut resolver = wesl::VirtualResolver::new();
-        resolver.add_module(module.clone(), source.into());
-        let compiler = wesl::Wesl::new("").set_custom_resolver(resolver);
-        let output = compiler.compile(&module).unwrap().to_string();
-        assert!(output.contains("fn fragment_alpha"));
-        assert!(output.contains("fn fragment_additive"));
-        assert!(output.contains("fn fragment_multiply"));
-        assert!(output.contains("renderer_index"));
-        assert!(output.contains("alive_offset"));
     }
 }
