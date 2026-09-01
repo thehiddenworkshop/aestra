@@ -323,7 +323,7 @@ outdated or future format.
 
 - [x] replace showcase-dependent behavioral tests with deterministic semantic fixtures
 - [ ] split Timeline and Properties implementation details into focused internal modules (Timeline
-  actions, state/view/navigation, emitter-region interaction, and automation interaction extracted)
+  decomposition complete; Properties decomposition remains)
 - [ ] reconcile roadmap status with the implemented renderer, composition, and automation slices
 - [ ] approve current showcase changes through format/compiler and native-GPU visual gates
 - [ ] deliver the animated additive-flame material vertical slice before a material node graph
