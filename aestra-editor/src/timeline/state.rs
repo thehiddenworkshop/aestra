@@ -145,13 +145,6 @@ impl TimelineState {
         }
     }
 
-    pub(super) fn automation_lane_height(&self, lane: &AutomationLaneId) -> f32 {
-        self.automation_lane_heights
-            .get(lane)
-            .copied()
-            .unwrap_or(automation_curve::DEFAULT_HEIGHT)
-    }
-
     pub(crate) fn restore_navigation(
         &mut self,
         snapshot: TimelineNavigationSnapshot,
