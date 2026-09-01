@@ -436,6 +436,7 @@ fn spawn_transport_icon<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
     fn spawn_test_transport(
@@ -450,9 +451,7 @@ mod tests {
     }
 
     fn sample_session_with_playback_mode(mode: EffectPlaybackMode) -> EditorSession {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        session.effect.playback_mode = mode;
-        session
+        test_support::session_with_playback_mode(mode)
     }
 
     #[test]
@@ -623,15 +622,12 @@ mod tests {
     #[test]
     fn keyboard_input_routes_through_the_transport_action_contract() {
         let mut app = App::new();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ))
-        .insert_resource(ButtonInput::<KeyCode>::default())
-        .init_resource::<ModulePaletteState>()
-        .add_message::<KeyboardInput>()
-        .add_observer(execute_transport_action)
-        .add_systems(Update, transport_keyboard_input);
+        app.insert_resource(test_support::session_with_timing_slack())
+            .insert_resource(ButtonInput::<KeyCode>::default())
+            .init_resource::<ModulePaletteState>()
+            .add_message::<KeyboardInput>()
+            .add_observer(execute_transport_action)
+            .add_systems(Update, transport_keyboard_input);
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::Space);
@@ -643,7 +639,7 @@ mod tests {
 
     #[test]
     fn focused_menu_item_reserves_transport_shortcuts_for_menu_navigation() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let initially_playing = session.playing;
         let mut app = App::new();
         app.insert_resource(session)

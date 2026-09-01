@@ -2701,7 +2701,7 @@ fn update_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EFFECT_PATH, EFFECT_SOURCE};
+    use crate::{EFFECT_PATH, EFFECT_SOURCE, test_support};
     use aestra_bevy::EffectPlaybackMode;
 
     #[test]
@@ -3562,9 +3562,8 @@ mod tests {
     #[test]
     fn continuous_project_preview_uses_unwrapped_simulation_time() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_playback_mode(EffectPlaybackMode::LoopRestart);
         session.effect.effect_clips.clear();
-        session.effect.playback_mode = EffectPlaybackMode::LoopRestart;
         assert!(session.set_effect_playback_mode(EffectPlaybackMode::LoopContinuous));
         session.restart();
         let duration = session.effect.duration;

@@ -74,15 +74,22 @@ impl EditorSession {
     pub fn from_embedded_sample(source: &str, path: impl Into<PathBuf>) -> Self {
         let effect = EffectAsset::from_ron(source)
             .expect("the bundled Prism Bloom sample must always be valid");
+        Self::from_effect(
+            effect,
+            Some(path.into()),
+            "Previewing embedded Prism Bloom".into(),
+        )
+    }
+
+    fn from_effect(effect: EffectAsset, source_path: Option<PathBuf>, status: String) -> Self {
         let selection = Selection::for_effect(&effect);
         let diagnostics = effect.validation_report();
         let preview_seed = 0;
-        let preview = compile_preview(&effect, preview_seed)
-            .expect("the bundled Prism Bloom sample must always compile");
+        let preview = compile_preview(&effect, preview_seed).expect("the effect must compile");
         let saved_effect = effect.clone();
         Self {
             effect,
-            source_path: Some(path.into()),
+            source_path,
             selection,
             selected_emitter_region: None,
             locks: LockState::default(),
@@ -95,7 +102,7 @@ impl EditorSession {
             playing: true,
             speed: 1.0,
             dirty: false,
-            status: "Previewing embedded Prism Bloom".into(),
+            status,
             samples: Vec::with_capacity(384),
             preview: Some(preview),
             ui_revision: 0,
@@ -105,6 +112,18 @@ impl EditorSession {
             effect_revision: 0,
             last_seek: direct_seek_plan(0),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_effect(effect: EffectAsset) -> Self {
+        effect
+            .validate()
+            .expect("deterministic editor test effect must be valid");
+        Self::from_effect(
+            effect,
+            Some(PathBuf::from("fixtures/editor-test-effect.aestra.ron")),
+            "Previewing deterministic editor test effect".into(),
+        )
     }
 
     pub fn restart(&mut self) {
@@ -2000,6 +2019,7 @@ fn default_layer(index: usize) -> Emitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
 
     #[test]
     fn blank_effect_is_valid() {
@@ -2396,11 +2416,7 @@ mod tests {
 
     #[test]
     fn transaction_preview_applies_as_one_undoable_edit() {
-        let mut session = EditorSession::from_embedded_sample(
-            include_str!("../../assets/effects/prism_bloom.aestra.ron"),
-            "sample.ron",
-        );
-        session.effect.playback_mode = EffectPlaybackMode::LoopRestart;
+        let mut session = test_support::session_with_playback_mode(EffectPlaybackMode::LoopRestart);
         let emitter = session.effect.emitters[0].id;
         let module = session.effect.emitters[0]
             .module_by_type(aestra_bevy::MODULE_EMISSION)

@@ -1469,7 +1469,7 @@ mod tests {
         assert!(!should_dismiss_timeline_popover(false, false, true));
     }
 
-    use crate::{EFFECT_PATH, EFFECT_SOURCE, LibraryState};
+    use crate::{EFFECT_PATH, EFFECT_SOURCE, LibraryState, test_support};
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
     fn spawn_test_timeline(
@@ -1552,16 +1552,7 @@ mod tests {
     }
 
     fn session_with_first_emitter_timing_slack() -> EditorSession {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let effect_duration = session.effect.duration;
-        let emitter = &mut session.effect.emitters[0];
-        emitter.start_time = effect_duration * 0.1;
-        emitter.duration = effect_duration * 0.5;
-        emitter.regions.clear();
-        emitter.start_reference = None;
-        let emitter = emitter.id;
-        session.select_emitter(emitter);
-        session
+        test_support::session_with_timing_slack()
     }
 
     fn session_with_three_regions() -> (EditorSession, EmitterId, [EmitterRegionId; 3]) {
@@ -1686,7 +1677,7 @@ mod tests {
 
     #[test]
     fn split_toolbar_action_cuts_the_selected_emitter_region_at_the_playhead() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let emitter = session.effect.emitters[0].clone();
         let region = emitter.timeline_regions()[0];
         let split_time = region.start_time + region.duration * 0.5;

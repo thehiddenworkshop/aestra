@@ -141,6 +141,37 @@ Intentional changes to Prism Bloom, Ember Sigil, or Plasma Burst are approved th
 native-GPU visual workflow rather than by rewriting semantic golden contracts. GPU reference
 approval remains a manual or scheduled self-hosted-runner gate.
 
+## Pre-material authoring hardening milestone
+
+Complete this gate before implementing the semantic material-program vertical slice described in
+`aestra_material_authoring_architecture.md`. The purpose is to keep the next compiler and editor
+expansion built on stable, understandable foundations rather than adding another large feature
+surface to mutable examples and monolithic panel modules.
+
+1. **Isolate deterministic test fixtures — in progress.** Add compact, stable effect and editor
+   session builders whose semantic IDs, timing, playback mode, modules, and renderers do not depend
+   on Prism Bloom, Ember Sigil, or Plasma Burst. Migrate behavioral tests to those fixtures while
+   retaining the showcase effects only for bundle validation, end-to-end compilation, and native-GPU
+   visual approval.
+2. **Decompose Timeline and Properties internals.** Preserve the existing `TimelinePlugin` and
+   `PropertiesPlugin` public boundaries while splitting state/actions, region and automation
+   interaction, referenced-effect presentation, module controls, renderer controls, and tests into
+   focused internal modules. This is a behavior-preserving refactor guarded by the existing tests.
+3. **Reconcile roadmap status.** Update architecture and implementation documentation so completed
+   GPU, flipbook, composition, exposed-parameter, automation, and event work is distinguishable from
+   the remaining renderer and material breadth.
+4. **Approve showcase content independently.** Keep editable examples outside semantic unit-test
+   assumptions. Validate their format and compilation locally, then approve intentional visual
+   changes through the self-hosted native-GPU workflow.
+5. **Begin the material vertical slice.** Implement the animated additive-flame path from typed
+   material program and instance data through validation, IR, WESL generation, runtime binding, and
+   preview before adding a node-graph projection.
+
+Exit gate: deterministic behavioral tests remain stable when showcase timing or playback changes;
+Timeline and Properties have focused internal ownership; roadmap status matches the shipped code;
+the three showcase effects pass format/compiler checks plus native-GPU approval; and the first
+material slice has an agreed semantic contract and test plan.
+
 ## Stability-hardening milestone
 
 Complete this milestone before expanding the editor or renderer feature surface further.

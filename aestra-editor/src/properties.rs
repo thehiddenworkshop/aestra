@@ -1087,7 +1087,7 @@ pub(crate) fn focus_compiled_target(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EFFECT_PATH, EFFECT_SOURCE};
+    use crate::{EFFECT_PATH, EFFECT_SOURCE, test_support};
     use aestra_bevy::{EffectClipSeed, EffectMarker};
 
     fn test_localizer() -> Localizer {
@@ -2849,19 +2849,7 @@ mod tests {
 
     #[test]
     fn emitter_duration_editor_can_grow_the_source_within_the_effect() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
-        let effect_duration = session.effect.duration;
-        let selected = session.selected_layer().id;
-        let emitter = session
-            .effect
-            .emitters
-            .iter_mut()
-            .find(|emitter| emitter.id == selected)
-            .unwrap();
-        emitter.start_time = effect_duration * 0.1;
-        emitter.duration = effect_duration * 0.5;
-        emitter.regions.clear();
-        emitter.start_reference = None;
+        let mut session = test_support::session_with_timing_slack();
         let original = session.selected_layer().clone();
         let available = session.effect.duration - original.start_time;
         assert!(available > original.duration);

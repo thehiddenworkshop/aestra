@@ -319,6 +319,14 @@ outdated or future format.
 - effect parameters, exposed inputs, and gameplay bindings
 - deterministic seeds plus scalable quality tiers and budgets
 
+### Pre-material authoring hardening gate (in progress)
+
+- [ ] replace showcase-dependent behavioral tests with deterministic semantic fixtures
+- [ ] split Timeline and Properties implementation details into focused internal modules
+- [ ] reconcile roadmap status with the implemented renderer, composition, and automation slices
+- [ ] approve current showcase changes through format/compiler and native-GPU visual gates
+- [ ] deliver the animated additive-flame material vertical slice before a material node graph
+
 ### Phase 4 — professional workflow
 
 - sub-effects, collision, decals, lights, audio/event tracks, and camera cues
