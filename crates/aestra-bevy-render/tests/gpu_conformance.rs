@@ -1,7 +1,7 @@
 use aestra_compiler::EffectCompiler;
 use aestra_core::{
-    ColorKey, Curve, CurveKey, EffectAsset, Emitter, EmitterShape, Gradient, ModuleParameters,
-    ScalarRange,
+    ColorKey, Curve, CurveKey, EffectAsset, EffectPlaybackMode, Emitter, EmitterRegion,
+    EmitterShape, Gradient, ModuleParameters, ScalarRange,
 };
 use aestra_gpu::{
     GpuEffectArtifact, GpuGlobals, GpuParticle, WORKGROUP_SIZE, fold_seed, indirect_draw_commands,
@@ -18,13 +18,14 @@ use wgpu::util::DeviceExt;
 
 const REQUIRED_GPU_ENV: &str = "AESTRA_REQUIRE_GPU_CONFORMANCE";
 const TEST_SEED: u64 = 0x1234_5678_9abc_def0;
-const SAMPLE_TIMES: [f32; 4] = [0.05, 0.55, 1.1, 1.65];
+const ONCE_SAMPLE_TIMES: [f32; 4] = [0.05, 0.55, 1.1, 1.65];
+const RESTART_SAMPLE_TIMES: [f32; 4] = [1.95, 2.05, 2.55, 4.1];
+const CONTINUOUS_SAMPLE_TIMES: [f32; 6] = [1.9, 2.1, 2.55, 4.15, 4.55, 131_072.55];
 
 #[test]
-fn deterministic_gpu_particles_match_the_cpu_reference() {
-    let effect = conformance_effect();
-    let mut instance = EffectInstance::with_seed(effect.clone(), TEST_SEED);
-    let artifact = GpuEffectArtifact::from_instance(&instance).unwrap();
+fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_modes() {
+    let once = conformance_effect(EffectPlaybackMode::Once, false);
+    let artifact = GpuEffectArtifact::from_instance(&EffectInstance::new(once.clone())).unwrap();
     let shaders = GpuShaderPackage::for_artifact(&artifact).unwrap();
     let require_gpu = std::env::var_os(REQUIRED_GPU_ENV).is_some();
     let harness = match GpuHarness::new(&shaders.simulation.wgsl) {
@@ -40,30 +41,62 @@ fn deterministic_gpu_particles_match_the_cpu_reference() {
         Err(error) => panic!("failed to create GPU conformance harness: {error}"),
     };
 
-    for time in SAMPLE_TIMES {
-        instance.seek(time);
+    assert_effect_matches_at_times(&harness, once, &ONCE_SAMPLE_TIMES);
+    assert_effect_matches_at_times(
+        &harness,
+        conformance_effect(EffectPlaybackMode::LoopRestart, false),
+        &RESTART_SAMPLE_TIMES,
+    );
+    assert_effect_matches_at_times(
+        &harness,
+        conformance_effect(EffectPlaybackMode::LoopContinuous, true),
+        &CONTINUOUS_SAMPLE_TIMES,
+    );
+}
+
+fn assert_effect_matches_at_times(
+    harness: &GpuHarness,
+    effect: Arc<aestra_runtime::CompiledEffect>,
+    times: &[f32],
+) {
+    let template = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+    let artifact = GpuEffectArtifact::from_instance(&template).unwrap();
+    for &elapsed in times {
+        let mut instance = template.clone();
+        instance.advance(elapsed);
         let mut cpu = Vec::new();
         instance.evaluate(&mut cpu);
+        let simulation_time = instance.time();
         let gpu = harness
             .simulate(
                 &artifact,
                 GpuGlobals {
-                    time,
+                    time: simulation_time,
                     total_slots: artifact.total_slots,
                     seed: fold_seed(TEST_SEED),
                     emitter_count: artifact.emitters.len() as u32,
                     duration: effect.duration,
-                    continuous: 0,
+                    continuous: u32::from(effect.playback_mode.is_continuous()),
                     ..Default::default()
                 },
             )
-            .unwrap_or_else(|error| panic!("GPU simulation failed at {time:.3}s: {error}"));
-        assert_particle_samples_match(time, &cpu, &gpu);
+            .unwrap_or_else(|error| {
+                panic!(
+                    "GPU simulation failed for {:?} at elapsed {elapsed:.3}s (simulation \
+                     {simulation_time:.3}s): {error}",
+                    effect.playback_mode
+                )
+            });
+        assert_particle_samples_match(effect.playback_mode, elapsed, simulation_time, &cpu, &gpu);
     }
 }
 
-fn conformance_effect() -> Arc<aestra_runtime::CompiledEffect> {
+fn conformance_effect(
+    playback_mode: EffectPlaybackMode,
+    use_emitter_region: bool,
+) -> Arc<aestra_runtime::CompiledEffect> {
     let mut effect = EffectAsset::new("CPU GPU conformance", 2.0);
+    effect.playback_mode = playback_mode;
     let mut emitter = Emitter::basic_sprite("Deterministic fixture", effect.duration);
     emitter.max_particles = 32;
     emitter.transform.translation = [1.25, -0.75, 2.5];
@@ -74,6 +107,9 @@ fn conformance_effect() -> Arc<aestra_runtime::CompiledEffect> {
         std::f32::consts::FRAC_1_SQRT_2,
     ];
     emitter.transform.scale = [1.25, 0.8, 1.5];
+    if use_emitter_region {
+        emitter.regions = vec![EmitterRegion::new(0.35, 0.15, 1.25)];
+    }
 
     for module in &mut emitter.modules {
         match &mut module.parameters {
@@ -139,7 +175,13 @@ fn conformance_effect() -> Arc<aestra_runtime::CompiledEffect> {
     Arc::new(EffectCompiler::default().compile(&effect).unwrap())
 }
 
-fn assert_particle_samples_match(time: f32, cpu: &[ParticleSample], gpu: &[ParticleSample]) {
+fn assert_particle_samples_match(
+    playback_mode: EffectPlaybackMode,
+    elapsed: f32,
+    simulation_time: f32,
+    cpu: &[ParticleSample],
+    gpu: &[ParticleSample],
+) {
     let mut cpu = cpu.to_vec();
     let mut gpu = gpu.to_vec();
     let order = |sample: &ParticleSample| (sample.emitter_index, sample.particle_index);
@@ -149,18 +191,22 @@ fn assert_particle_samples_match(time: f32, cpu: &[ParticleSample], gpu: &[Parti
     assert_eq!(
         cpu.len(),
         gpu.len(),
-        "alive particle count diverged at {time:.3}s\nCPU: {cpu:#?}\nGPU: {gpu:#?}"
+        "alive particle count diverged for {playback_mode:?} at elapsed {elapsed:.3}s \
+         (simulation {simulation_time:.3}s)\nCPU: {cpu:#?}\nGPU: {gpu:#?}"
     );
     for (expected, actual) in cpu.iter().zip(&gpu) {
         let identity = order(expected);
         assert_eq!(
             identity,
             order(actual),
-            "particle identity diverged at {time:.3}s"
+            "particle identity diverged for {playback_mode:?} at elapsed {elapsed:.3}s \
+             (simulation {simulation_time:.3}s)"
         );
         for axis in 0..3 {
             assert_close(
-                time,
+                playback_mode,
+                elapsed,
+                simulation_time,
                 identity,
                 &format!("position[{axis}]"),
                 expected.position[axis],
@@ -170,7 +216,9 @@ fn assert_particle_samples_match(time: f32, cpu: &[ParticleSample], gpu: &[Parti
             );
         }
         assert_close(
-            time,
+            playback_mode,
+            elapsed,
+            simulation_time,
             identity,
             "size",
             expected.size,
@@ -179,7 +227,9 @@ fn assert_particle_samples_match(time: f32, cpu: &[ParticleSample], gpu: &[Parti
             0.0005,
         );
         assert_close(
-            time,
+            playback_mode,
+            elapsed,
+            simulation_time,
             identity,
             "rotation",
             expected.rotation,
@@ -188,7 +238,9 @@ fn assert_particle_samples_match(time: f32, cpu: &[ParticleSample], gpu: &[Parti
             0.0005,
         );
         assert_close(
-            time,
+            playback_mode,
+            elapsed,
+            simulation_time,
             identity,
             "normalized_age",
             expected.normalized_age,
@@ -198,7 +250,9 @@ fn assert_particle_samples_match(time: f32, cpu: &[ParticleSample], gpu: &[Parti
         );
         for channel in 0..4 {
             assert_close(
-                time,
+                playback_mode,
+                elapsed,
+                simulation_time,
                 identity,
                 &format!("color[{channel}]"),
                 expected.color[channel],
@@ -212,7 +266,9 @@ fn assert_particle_samples_match(time: f32, cpu: &[ParticleSample], gpu: &[Parti
 
 #[allow(clippy::too_many_arguments)]
 fn assert_close(
-    time: f32,
+    playback_mode: EffectPlaybackMode,
+    elapsed: f32,
+    simulation_time: f32,
     particle: (usize, u32),
     field: &str,
     expected: f32,
@@ -223,8 +279,9 @@ fn assert_close(
     let tolerance = absolute + relative * expected.abs().max(actual.abs());
     assert!(
         (expected - actual).abs() <= tolerance,
-        "{field} diverged at {time:.3}s for particle {particle:?}: CPU={expected:.7}, \
-         GPU={actual:.7}, tolerance={tolerance:.7}"
+        "{field} diverged for {playback_mode:?} at elapsed {elapsed:.3}s (simulation \
+         {simulation_time:.3}s) for particle {particle:?}: CPU={expected:.7}, GPU={actual:.7}, \
+         tolerance={tolerance:.7}"
     );
 }
 

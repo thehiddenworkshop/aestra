@@ -100,14 +100,37 @@ struct Globals {
 @group(0) @binding(5) var<storage, read_write> indirect: array<atomic<u32>>;
 @group(0) @binding(6) var<storage, read> globals: Globals;
 
-fn hash01(index: u32, channel: u32) -> f32 {
-    var value = (index * 0x9e3779b9u) ^ (channel * 0x85ebca6bu) ^ globals.seed;
+fn hash01_seeded(index: u32, channel: u32, seed: u32) -> f32 {
+    var value = (index * 0x9e3779b9u) ^ (channel * 0x85ebca6bu) ^ seed;
     value = value ^ (value >> 16u);
     value = value * 0x7feb352du;
     value = value ^ (value >> 15u);
     value = value * 0x846ca68bu;
     value = value ^ (value >> 16u);
     return f32(value) / 4294967295.0;
+}
+
+fn hash01(index: u32, channel: u32) -> f32 {
+    return hash01_seeded(index, channel, globals.seed);
+}
+
+fn multiply_high(left: u32, right: u32) -> u32 {
+    let left_low = left & 0xffffu;
+    let left_high = left >> 16u;
+    let right_low = right & 0xffffu;
+    let right_high = right >> 16u;
+    let low = left_low * right_low;
+    let middle = left_high * right_low + (low >> 16u);
+    let carry = (middle & 0xffffu) + left_low * right_high;
+    return left_high * right_high + (middle >> 16u) + (carry >> 16u);
+}
+
+fn seed_for_cycle(cycle: u32) -> u32 {
+    let multiplier_low = 0x7f4a7c15u;
+    let multiplier_high = 0x9e3779b9u;
+    let product_low = cycle * multiplier_low;
+    let product_high = cycle * multiplier_high + multiply_high(cycle, multiplier_low);
+    return globals.seed ^ product_low ^ product_high;
 }
 
 fn sample_range(range: vec2<f32>, random: f32) -> f32 {
@@ -193,9 +216,10 @@ fn resolved_particle_scalar(
     normalized_particle_life: f32,
     normalized_emitter_time: f32,
     random_channel: u32,
+    seed: u32,
 ) -> f32 {
     if source == 1u {
-        return sample_range(value, hash01(particle_index, random_channel));
+        return sample_range(value, hash01_seeded(particle_index, random_channel, seed));
     }
     if source == 2u {
         return sample_curve(curve, normalized_emitter_time);
@@ -215,12 +239,13 @@ fn resolved_particle_vector(
     normalized_particle_life: f32,
     normalized_emitter_time: f32,
     random_channel: u32,
+    seed: u32,
 ) -> vec3<f32> {
     if source == 1u {
         return vec3<f32>(
-            mix(value.x, maximum.x, hash01(particle_index, random_channel)),
-            mix(value.y, maximum.y, hash01(particle_index, random_channel + 1u)),
-            mix(value.z, maximum.z, hash01(particle_index, random_channel + 2u)),
+            mix(value.x, maximum.x, hash01_seeded(particle_index, random_channel, seed)),
+            mix(value.y, maximum.y, hash01_seeded(particle_index, random_channel + 1u, seed)),
+            mix(value.z, maximum.z, hash01_seeded(particle_index, random_channel + 2u, seed)),
         );
     }
     if source == 2u {
@@ -358,7 +383,8 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let emitter = emitters[emitter_index];
     var particle_index = slot - emitter.slot_offset;
-    var random_index = particle_index;
+    var particle_cycle = 0u;
+    var particle_seed = globals.seed;
     var cycle_start = 0.0;
     if globals.continuous != 0u && globals.duration > 0.0 {
         let current_cycle = u32(floor(globals.time / globals.duration));
@@ -379,16 +405,20 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
             emitted_this_cycle = emitter.burst_count
                 + u32(max(floor(emitted_until(emitter, emitter_index, phase_emission_time)), 0.0));
         }
-        let total_emitted = current_cycle * emitted_per_cycle + emitted_this_cycle;
-        if particle_index >= min(total_emitted, emitter.max_particles) {
-            particles[slot] = dead_particle(emitter_index);
-            append_dead(slot);
-            return;
+        if particle_index < emitted_this_cycle {
+            particle_cycle = current_cycle;
+        } else {
+            let previous_cycle_index = particle_index - emitted_this_cycle;
+            let cycles_back = 1u + previous_cycle_index / emitted_per_cycle;
+            if cycles_back > current_cycle {
+                particles[slot] = dead_particle(emitter_index);
+                append_dead(slot);
+                return;
+            }
+            particle_cycle = current_cycle - cycles_back;
+            particle_index = previous_cycle_index % emitted_per_cycle;
         }
-        let global_ordinal = total_emitted - 1u - particle_index;
-        let particle_cycle = global_ordinal / emitted_per_cycle;
-        particle_index = global_ordinal % emitted_per_cycle;
-        random_index = global_ordinal;
+        particle_seed = seed_for_cycle(particle_cycle);
         cycle_start = f32(particle_cycle) * globals.duration;
     }
     let region_time = globals.time - cycle_start - emitter.start_time;
@@ -435,7 +465,7 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
     let age = local_time - spawn_time;
-    let lifetime = sample_range(emitter.lifetime, hash01(random_index, 0u));
+    let lifetime = sample_range(emitter.lifetime, hash01_seeded(particle_index, 0u, particle_seed));
     if age < 0.0 || age >= lifetime || lifetime <= 0.0 {
         particles[slot] = dead_particle(emitter_index);
         append_dead(slot);
@@ -445,9 +475,9 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let normalized_age = age / lifetime;
     let forward = normalize(emitter.direction);
     let half_angle = min(abs(emitter.spread_radians) * 0.5, 3.141592653589793);
-    let cos_theta = 1.0 - hash01(random_index, 1u) * (1.0 - cos(half_angle));
+    let cos_theta = 1.0 - hash01_seeded(particle_index, 1u, particle_seed) * (1.0 - cos(half_angle));
     let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
-    let direction_angle = hash01(random_index, 11u) * TAU;
+    let direction_angle = hash01_seeded(particle_index, 11u, particle_seed) * TAU;
     var helper = vec3<f32>(0.0, 1.0, 0.0);
     if abs(forward.y) >= 0.999 {
         helper = vec3<f32>(1.0, 0.0, 0.0);
@@ -457,11 +487,11 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let direction = forward * cos_theta
         + tangent * (sin_theta * cos(direction_angle))
         + bitangent * (sin_theta * sin(direction_angle));
-    let speed = sample_range(emitter.speed, hash01(random_index, 2u));
-    let shape_angle = hash01(random_index, 5u) * TAU;
+    let speed = sample_range(emitter.speed, hash01_seeded(particle_index, 2u, particle_seed));
+    let shape_angle = hash01_seeded(particle_index, 5u, particle_seed) * TAU;
     var origin = vec3<f32>(0.0);
     if emitter.shape_kind == 1u {
-        let radius = emitter.shape_radius * sqrt(hash01(random_index, 6u));
+        let radius = emitter.shape_radius * sqrt(hash01_seeded(particle_index, 6u, particle_seed));
         origin = vec3<f32>(cos(shape_angle) * radius, sin(shape_angle) * radius, 0.0);
     } else if emitter.shape_kind == 2u {
         origin = vec3<f32>(
@@ -470,32 +500,32 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
             0.0,
         );
     } else if emitter.shape_kind == 3u {
-        let y = hash01(random_index, 6u) * 2.0 - 1.0;
+        let y = hash01_seeded(particle_index, 6u, particle_seed) * 2.0 - 1.0;
         let radial = sqrt(max(1.0 - y * y, 0.0));
-        let radius = emitter.shape_radius * pow(hash01(random_index, 8u), 0.3333333333333333);
+        let radius = emitter.shape_radius * pow(hash01_seeded(particle_index, 8u, particle_seed), 0.3333333333333333);
         origin = vec3<f32>(cos(shape_angle) * radial, y, sin(shape_angle) * radial) * radius;
     } else if emitter.shape_kind == 4u {
-        let y = hash01(random_index, 6u);
+        let y = hash01_seeded(particle_index, 6u, particle_seed);
         let radial = sqrt(max(1.0 - y * y, 0.0));
-        let radius = emitter.shape_radius * pow(hash01(random_index, 8u), 0.3333333333333333);
+        let radius = emitter.shape_radius * pow(hash01_seeded(particle_index, 8u, particle_seed), 0.3333333333333333);
         origin = vec3<f32>(cos(shape_angle) * radial, y, sin(shape_angle) * radial) * radius;
     } else if emitter.shape_kind == 5u {
         origin = vec3<f32>(
-            (hash01(random_index, 5u) * 2.0 - 1.0) * emitter.shape_radius,
-            (hash01(random_index, 6u) * 2.0 - 1.0) * emitter.shape_depth,
-            (hash01(random_index, 7u) * 2.0 - 1.0) * emitter.shape_extent_z,
+            (hash01_seeded(particle_index, 5u, particle_seed) * 2.0 - 1.0) * emitter.shape_radius,
+            (hash01_seeded(particle_index, 6u, particle_seed) * 2.0 - 1.0) * emitter.shape_depth,
+            (hash01_seeded(particle_index, 7u, particle_seed) * 2.0 - 1.0) * emitter.shape_extent_z,
         );
     } else if emitter.shape_kind == 6u {
-        let radius = emitter.shape_radius * sqrt(hash01(random_index, 6u));
+        let radius = emitter.shape_radius * sqrt(hash01_seeded(particle_index, 6u, particle_seed));
         origin = vec3<f32>(
             cos(shape_angle) * radius,
-            (hash01(random_index, 7u) - 0.5) * emitter.shape_depth,
+            (hash01_seeded(particle_index, 7u, particle_seed) - 0.5) * emitter.shape_depth,
             sin(shape_angle) * radius,
         );
     } else if emitter.shape_kind == 7u {
-        let y = hash01(random_index, 6u) * emitter.shape_depth;
+        let y = hash01_seeded(particle_index, 6u, particle_seed) * emitter.shape_depth;
         let radius = emitter.shape_radius * (y / max(emitter.shape_depth, 0.001))
-            * sqrt(hash01(random_index, 7u));
+            * sqrt(hash01_seeded(particle_index, 7u, particle_seed));
         origin = vec3<f32>(cos(shape_angle) * radius, y, sin(shape_angle) * radius);
     }
 
@@ -504,10 +534,11 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         emitter.drag,
         emitter.drag_source,
         emitter.drag_curve,
-        random_index,
+        particle_index,
         normalized_age,
         normalized_emitter_time,
         12u,
+        particle_seed,
     );
     let damping = exp(-max(drag, 0.0) * age);
     var travel = speed * age;
@@ -518,32 +549,37 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         emitter.turbulence,
         emitter.turbulence_source,
         emitter.turbulence_curve,
-        random_index,
+        particle_index,
         normalized_age,
         normalized_emitter_time,
         13u,
+        particle_seed,
     );
     let gravity = resolved_particle_vector(
         emitter.gravity,
         emitter.gravity_source,
         emitter.gravity_max,
         emitter.gravity_curves,
-        random_index,
+        particle_index,
         normalized_age,
         normalized_emitter_time,
         14u,
+        particle_seed,
     );
     let turbulence = turbulence_strength * vec3<f32>(
-        sin(age * 7.0 + hash01(random_index, 3u) * TAU),
-        sin(age * 6.3 + hash01(random_index, 8u) * TAU),
-        sin(age * 7.7 + hash01(random_index, 10u) * TAU),
+        sin(age * 7.0 + hash01_seeded(particle_index, 3u, particle_seed) * TAU),
+        sin(age * 6.3 + hash01_seeded(particle_index, 8u, particle_seed) * TAU),
+        sin(age * 7.7 + hash01_seeded(particle_index, 10u, particle_seed) * TAU),
     );
     let local_position = origin + direction * travel + gravity * age * age * 0.5 + turbulence;
     let position = emitter.translation
         + rotate_by_quaternion(local_position * emitter.scale, emitter.rotation);
     var color = sample_gradient(emitter.color, normalized_age);
     color.a *= sample_curve(emitter.opacity, normalized_age);
-    let rotation = sample_range(emitter.angular_velocity, hash01(random_index, 4u)) * age;
+    let rotation = sample_range(
+        emitter.angular_velocity,
+        hash01_seeded(particle_index, 4u, particle_seed),
+    ) * age;
 
     particles[slot] = Particle(
         color,
@@ -553,7 +589,7 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         normalized_age,
         emitter_index,
         1u,
-        random_index,
+        particle_index + particle_cycle * max(emitter.max_particles, 1u),
         0u,
         0u,
         0u,
