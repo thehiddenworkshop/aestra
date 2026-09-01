@@ -15,10 +15,11 @@ use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectP
 use aestra_runtime::{
     CompiledAsset, CompiledChoreographyEvent, CompiledCurve, CompiledEffect, CompiledEffectClip,
     CompiledEffectProject, CompiledEmitter, CompiledFlipbook, CompiledGradient, CompiledMaterial,
-    CompiledParameter, CompiledParameterOverride, CompiledVec3Curve, ExecutionPlan, Expression,
-    Instruction, IrLocation, MaterialColorPlan, OptimizationStats, ParameterSlot,
-    ParticleAttribute, ParticleLayout, RendererPlan, RendererPlanKind, RuntimeParameterValue,
-    RuntimeStage, RuntimeValue, ScalarSource, SimulationSeekMode, VectorSource,
+    CompiledParameter, CompiledParameterOverride, CompiledVec3Curve, EffectRequirements,
+    ExecutionPlan, Expression, Instruction, IrLocation, MaterialColorPlan, OptimizationStats,
+    ParameterSlot, ParticleAttribute, ParticleLayout, RendererCapability, RendererPlan,
+    RendererPlanKind, RuntimeParameterValue, RuntimeStage, RuntimeValue, ScalarSource,
+    SimulationSeekMode, VectorSource,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -414,6 +415,7 @@ impl EffectCompiler {
 
         optimizations.eliminated_attributes =
             discovered_attributes.difference(&stored_attributes).count();
+        let requirements = derive_effect_requirements(&emitters);
 
         Ok(CompiledEffect {
             source: asset.id,
@@ -488,6 +490,7 @@ impl EffectCompiler {
                 });
                 events
             },
+            requirements,
             source_map,
             optimizations,
         })
@@ -851,6 +854,26 @@ impl EffectCompiler {
             transient,
             discovered,
         }
+    }
+}
+
+fn derive_effect_requirements(emitters: &[CompiledEmitter]) -> EffectRequirements {
+    let enabled = emitters.iter().filter(|emitter| emitter.enabled);
+    let max_particles = enabled.clone().fold(0_usize, |total, emitter| {
+        total.saturating_add(emitter.max_particles as usize)
+    });
+    let mut renderers = BTreeSet::new();
+    for renderer in enabled.flat_map(|emitter| &emitter.renderers) {
+        renderers.insert(match renderer.kind {
+            RendererPlanKind::Sprite => RendererCapability::SpriteParticles,
+            RendererPlanKind::Flipbook { .. } => RendererCapability::FlipbookParticles,
+        });
+    }
+    EffectRequirements {
+        max_particles,
+        gpu_simulation: max_particles > 0,
+        native_gpu_presentation: !renderers.is_empty(),
+        renderers,
     }
 }
 

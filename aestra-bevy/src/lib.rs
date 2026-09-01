@@ -2,8 +2,10 @@
 
 pub use aestra_bevy_render::{
     ActiveBackend, AestraRenderPlugin, AestraRenderSet, AestraRenderSettings as AestraSettings,
-    AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRenderMode, EffectRuntimeStatus,
-    GpuCapabilities, PresentationMode, PresentedEffect, gpu,
+    AestraRuntimeStatus, BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode,
+    CompatibilityReport, CompatibilityTarget, DEFAULT_GPU_PARTICLE_BUDGET, EffectRenderMode,
+    EffectRequirements, EffectRuntimeStatus, GpuCapabilities, PresentationMode, PresentedEffect,
+    RendererCapability, gpu,
 };
 pub use aestra_compiler::{CompileError, EffectCompiler, ModuleRegistry};
 pub use aestra_core::*;
@@ -498,6 +500,9 @@ mod tests {
                 EffectRuntimeStatus {
                     active: ActiveBackend::CpuReference,
                     reason: "CPU reference requested".into(),
+                    compatibility: CompatibilityReport::compatible(
+                        CompatibilityTarget::CpuReference,
+                    ),
                 },
             ))
             .id();

@@ -8,6 +8,10 @@ mod capabilities;
 mod cpu;
 pub mod gpu;
 
+pub use aestra_runtime::{
+    BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
+    CompatibilityTarget, EffectRequirements, RendererCapability,
+};
 pub use capabilities::{
     ActiveBackend, AestraRuntimeStatus, DEFAULT_GPU_PARTICLE_BUDGET, EffectRuntimeStatus,
     GpuCapabilities,
@@ -185,14 +189,14 @@ fn assign_effect_backends(
     if runtime.active == ActiveBackend::Pending {
         return;
     }
-    let particle_budget = capabilities.max_particles.min(settings.max_gpu_particles) as usize;
+    let backend = capabilities.backend_capabilities(settings.max_gpu_particles);
     for (entity, effect) in &effects {
         commands
             .entity(entity)
             .insert(capabilities::select_effect_backend(
                 &runtime,
-                effect.effect().max_particles,
-                particle_budget,
+                &effect.effect().requirements,
+                &backend,
             ));
     }
 }

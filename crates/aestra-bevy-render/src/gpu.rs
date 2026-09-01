@@ -38,9 +38,10 @@ use bevy::{
 use thiserror::Error;
 
 use crate::{
-    ActiveBackend, AestraRenderSettings, AestraRuntimeStatus, EffectRenderMode,
-    EffectRuntimeStatus, GpuCapabilities, GpuPresentationPrepared, PresentedEffect,
-    TextureAssetCache, capabilities::select_backend,
+    ActiveBackend, AestraRenderSettings, AestraRuntimeStatus, CompatibilityIssue,
+    CompatibilityIssueCode, CompatibilityReport, EffectRenderMode, EffectRuntimeStatus,
+    GpuCapabilities, GpuPresentationPrepared, PresentedEffect, TextureAssetCache,
+    capabilities::select_backend,
 };
 
 pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy_render/shaders/aestra_simulation.wesl";
@@ -620,10 +621,17 @@ pub(crate) fn prepare_gpu_effects(
         let artifact = match GpuEffectArtifact::from_instance(&player.instance) {
             Ok(artifact) => artifact,
             Err(error) => {
+                let message =
+                    format!("GPU artifact is unsupported ({error}); using the CPU reference");
                 commands.entity(entity).insert(EffectRuntimeStatus {
                     active: ActiveBackend::CpuReference,
-                    reason: format!(
-                        "GPU artifact is unsupported ({error}); using the CPU reference"
+                    reason: message.clone(),
+                    compatibility: CompatibilityReport::from_issues(
+                        runtime.compatibility.target,
+                        [CompatibilityIssue::new(
+                            CompatibilityIssueCode::BackendRejected,
+                            message,
+                        )],
                     ),
                 });
                 continue;
@@ -910,6 +918,8 @@ fn detect_gpu_capabilities(
         max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
         max_buffer_size: limits.max_buffer_size,
         max_compute_workgroups_per_dimension: limits.max_compute_workgroups_per_dimension,
+        max_compute_invocations_per_workgroup: limits.max_compute_invocations_per_workgroup,
+        max_compute_workgroup_size_x: limits.max_compute_workgroup_size_x,
         max_particles,
         limitations,
     }

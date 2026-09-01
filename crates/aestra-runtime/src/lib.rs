@@ -1,11 +1,16 @@
 //! Engine-independent compiled effect contracts and deterministic CPU execution.
 
 mod checkpoint;
+mod compatibility;
 mod profile;
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
     SeekPlan, SimulationSeekMode, StoredCheckpoint,
+};
+pub use compatibility::{
+    BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
+    CompatibilityTarget, EffectRequirements, RendererCapability,
 };
 pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource};
 
@@ -562,6 +567,7 @@ pub struct CompiledEffect {
     pub emitters: Vec<CompiledEmitter>,
     pub effect_clips: Vec<CompiledEffectClip>,
     pub choreography_events: Vec<CompiledChoreographyEvent>,
+    pub requirements: EffectRequirements,
     pub max_particles: usize,
     pub source_map: BTreeMap<ModuleId, IrLocation>,
     pub optimizations: OptimizationStats,

@@ -1,7 +1,10 @@
 use bevy::prelude::{Component, Resource};
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
-use crate::PresentationMode;
+use crate::{
+    BackendCapabilities, CompatibilityReport, CompatibilityTarget, EffectRequirements,
+    PresentationMode, RendererCapability,
+};
 
 pub const DEFAULT_GPU_PARTICLE_BUDGET: u32 = 262_144;
 
@@ -24,6 +27,8 @@ pub struct GpuCapabilities {
     pub max_storage_buffer_binding_size: u64,
     pub max_buffer_size: u64,
     pub max_compute_workgroups_per_dimension: u32,
+    pub max_compute_invocations_per_workgroup: u32,
+    pub max_compute_workgroup_size_x: u32,
     pub max_particles: u32,
     pub limitations: Vec<String>,
 }
@@ -47,6 +52,8 @@ impl Default for GpuCapabilities {
             max_storage_buffer_binding_size: 0,
             max_buffer_size: 0,
             max_compute_workgroups_per_dimension: 0,
+            max_compute_invocations_per_workgroup: 0,
+            max_compute_workgroup_size_x: 0,
             max_particles: 0,
             limitations: Vec::new(),
         }
@@ -60,6 +67,29 @@ impl GpuCapabilities {
             adapter_name: "unavailable".into(),
             limitations: vec![reason.into()],
             ..Self::default()
+        }
+    }
+
+    /// Converts Bevy/WGPU device discovery into the portable Aestra capability contract.
+    pub fn backend_capabilities(&self, application_particle_budget: u32) -> BackendCapabilities {
+        const REQUIRED_WORKGROUP_SIZE: u32 = 64;
+        const REQUIRED_STORAGE_BINDINGS: u32 = 7;
+        BackendCapabilities {
+            compute_shaders: self.compute_shaders,
+            compute_workgroups: self.max_compute_invocations_per_workgroup
+                >= REQUIRED_WORKGROUP_SIZE
+                && self.max_compute_workgroup_size_x >= REQUIRED_WORKGROUP_SIZE,
+            storage_buffers: self.max_storage_buffers_per_shader_stage >= REQUIRED_STORAGE_BINDINGS
+                && self.max_bindings_per_bind_group >= REQUIRED_STORAGE_BINDINGS
+                && self.max_particles > 0,
+            gpu_readback: self.compute_pipeline_supported,
+            indirect_draw: self.indirect_execution,
+            vertex_storage: self.vertex_storage && self.max_bind_groups >= 2,
+            max_particles: self.max_particles.min(application_particle_budget) as usize,
+            renderers: BTreeSet::from([
+                RendererCapability::SpriteParticles,
+                RendererCapability::FlipbookParticles,
+            ]),
         }
     }
 }
@@ -108,6 +138,7 @@ impl Default for AestraRuntimeStatus {
 pub struct EffectRuntimeStatus {
     pub active: ActiveBackend,
     pub reason: String,
+    pub compatibility: CompatibilityReport,
 }
 
 pub(crate) fn select_backend(
@@ -121,17 +152,22 @@ pub(crate) fn select_backend(
         };
     }
 
+    let backend = capabilities.backend_capabilities(capabilities.max_particles);
+    let native_report =
+        baseline_requirements(true).compatibility_report(&backend, CompatibilityTarget::NativeGpu);
+    let readback_report = baseline_requirements(false)
+        .compatibility_report(&backend, CompatibilityTarget::GpuReadback);
     let (active, reason) = match requested {
         PresentationMode::CpuReference => (
             ActiveBackend::CpuReference,
             "CPU reference presentation was explicitly requested".into(),
         ),
-        PresentationMode::Auto | PresentationMode::Gpu if capabilities.native_render_supported => (
+        PresentationMode::Auto | PresentationMode::Gpu if native_report.is_compatible() => (
             ActiveBackend::Gpu,
             "compute, vertex storage, and indirect drawing are supported".into(),
         ),
         PresentationMode::Auto | PresentationMode::Gpu | PresentationMode::GpuReadback
-            if capabilities.compute_pipeline_supported =>
+            if readback_report.is_compatible() =>
         {
             let prefix = if requested == PresentationMode::GpuReadback {
                 "GPU readback presentation was explicitly requested"
@@ -145,8 +181,9 @@ pub(crate) fn select_backend(
         }
         _ => (
             ActiveBackend::CpuReference,
-            with_limitations(
+            incompatible_reason(
                 "GPU compute requirements are unavailable; using the CPU reference",
+                &readback_report,
                 capabilities,
             ),
         ),
@@ -160,25 +197,40 @@ pub(crate) fn select_backend(
 
 pub(crate) fn select_effect_backend(
     runtime: &AestraRuntimeStatus,
-    requested_particles: usize,
-    particle_budget: usize,
+    requirements: &EffectRequirements,
+    capabilities: &BackendCapabilities,
 ) -> EffectRuntimeStatus {
-    if matches!(
-        runtime.active,
-        ActiveBackend::Gpu | ActiveBackend::GpuReadback
-    ) && requested_particles > particle_budget
-    {
+    let target = compatibility_target(runtime.active);
+    let compatibility = requirements.compatibility_report(capabilities, target);
+    if !compatibility.is_compatible() {
         EffectRuntimeStatus {
             active: ActiveBackend::CpuReference,
-            reason: format!(
-                "effect requests {requested_particles} particles but the GPU budget is {particle_budget}; using the CPU reference"
-            ),
+            reason: format!("{}; using the CPU reference", compatibility.summary()),
+            compatibility,
         }
     } else {
         EffectRuntimeStatus {
             active: runtime.active,
             reason: runtime.reason.clone(),
+            compatibility,
         }
+    }
+}
+
+fn baseline_requirements(native_gpu_presentation: bool) -> EffectRequirements {
+    EffectRequirements {
+        max_particles: 1,
+        gpu_simulation: true,
+        native_gpu_presentation,
+        ..EffectRequirements::default()
+    }
+}
+
+fn compatibility_target(backend: ActiveBackend) -> CompatibilityTarget {
+    match backend {
+        ActiveBackend::Gpu => CompatibilityTarget::NativeGpu,
+        ActiveBackend::GpuReadback => CompatibilityTarget::GpuReadback,
+        ActiveBackend::Pending | ActiveBackend::CpuReference => CompatibilityTarget::CpuReference,
     }
 }
 
@@ -190,6 +242,14 @@ fn with_limitations(prefix: &str, capabilities: &GpuCapabilities) -> String {
     }
 }
 
+fn incompatible_reason(
+    prefix: &str,
+    report: &CompatibilityReport,
+    capabilities: &GpuCapabilities,
+) -> String {
+    with_limitations(&format!("{prefix}: {}", report.summary()), capabilities)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,8 +257,16 @@ mod tests {
     fn capabilities(compute: bool, native: bool) -> GpuCapabilities {
         GpuCapabilities {
             detected: true,
+            compute_shaders: compute,
+            indirect_execution: native,
+            vertex_storage: native,
             compute_pipeline_supported: compute,
             native_render_supported: native,
+            max_bind_groups: if native { 2 } else { 1 },
+            max_bindings_per_bind_group: if compute { 7 } else { 0 },
+            max_storage_buffers_per_shader_stage: if compute { 7 } else { 0 },
+            max_compute_invocations_per_workgroup: if compute { 64 } else { 0 },
+            max_compute_workgroup_size_x: if compute { 64 } else { 0 },
             max_particles: 1000,
             limitations: if native {
                 Vec::new()
@@ -258,11 +326,50 @@ mod tests {
     }
 
     #[test]
+    fn portable_conversion_applies_the_application_budget() {
+        let backend = capabilities(true, true).backend_capabilities(128);
+        assert_eq!(backend.max_particles, 128);
+        assert!(
+            backend
+                .renderers
+                .contains(&RendererCapability::SpriteParticles)
+        );
+        assert!(
+            backend
+                .renderers
+                .contains(&RendererCapability::FlipbookParticles)
+        );
+    }
+
+    #[test]
+    fn backend_selection_uses_the_structured_storage_contract() {
+        let mut capabilities = capabilities(true, true);
+        capabilities.max_storage_buffers_per_shader_stage = 6;
+        let status = select_backend(PresentationMode::Auto, &capabilities);
+        assert_eq!(status.active, ActiveBackend::CpuReference);
+        assert!(status.reason.contains("storage-buffer bindings"));
+    }
+
+    #[test]
     fn oversized_effect_falls_back_without_changing_the_device_backend() {
-        let runtime = select_backend(PresentationMode::Auto, &capabilities(true, true));
-        let effect = select_effect_backend(&runtime, 1001, 1000);
+        let capabilities = capabilities(true, true);
+        let runtime = select_backend(PresentationMode::Auto, &capabilities);
+        let effect = select_effect_backend(
+            &runtime,
+            &EffectRequirements {
+                max_particles: 1001,
+                gpu_simulation: true,
+                native_gpu_presentation: true,
+                ..EffectRequirements::default()
+            },
+            &capabilities.backend_capabilities(1000),
+        );
         assert_eq!(runtime.active, ActiveBackend::Gpu);
         assert_eq!(effect.active, ActiveBackend::CpuReference);
         assert!(effect.reason.contains("1001 particles"));
+        assert_eq!(
+            effect.compatibility.issues[0].code,
+            crate::CompatibilityIssueCode::ParticleCapacityExceeded
+        );
     }
 }

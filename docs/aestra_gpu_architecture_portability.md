@@ -24,7 +24,7 @@ The current high-level status is:
 | Engine-neutral semantic model and stable IDs | Existing | Core, project, authoring, compiler, and runtime contain no Bevy dependency. |
 | Compiled execution model and CPU reference runtime | Existing | Compiled effects, emitters, execution plans, resources, events, and parameter data already exist. |
 | Engine-neutral renderer plan | Partial | Sprite and flipbook plans exist; the portable renderer contract is not yet broad enough for every planned renderer. |
-| Backend/device capability detection | Partial | The shared Bevy render integration detects GPU/device capabilities, but portable effect requirements are not yet a separate compiler-derived contract. |
+| Backend/device compatibility contract | Existing | The compiler retains portable effect requirements; `aestra-bevy-render` converts Bevy/WGPU discovery into `BackendCapabilities` and produces structured compatibility reports before selecting a presentation path. |
 | Editor/runtime-adapter isolation | Existing | `aestra-editor` and `aestra-bevy` are sibling consumers of `aestra-bevy-render`; an architecture test forbids editor imports or a Cargo dependency on the runtime adapter. |
 | Engine-neutral GPU lowering | Target | Current WESL shaders and GPU ABI packing live in `aestra-bevy-render`. |
 | Generated WESL/WGSL and explicit Naga validation | Target | Authored WESL is validated in backend tests; it is not generated from compiled effects yet. |
@@ -703,7 +703,7 @@ For now the only concrete capability provider is the shared Bevy render integrat
 Bevy/WGPU device → BackendCapabilities
 ```
 
-**Current state:** `aestra-bevy-render` already detects compute, storage-buffer, indirect-execution, and device-limit capabilities. Compiler-derived `EffectRequirements` and the compatibility report are the missing portable pieces.
+**Current state:** the compiler derives particle-capacity and renderer requirements into every `CompiledEffect`. `aestra-bevy-render` converts compute, workgroup, storage-buffer, readback, indirect-draw, vertex-storage, and application-budget discovery into the portable `BackendCapabilities` contract. Backend selection retains a structured `CompatibilityReport` with stable issue codes when it falls back.
 
 This still has immediate value because it:
 
@@ -1345,7 +1345,7 @@ The runtime can operate on compiled Aestra data without referencing the editor o
 
 ---
 
-### Work item 4 — Separate Effect Requirements from Backend Capabilities *(partial)*
+### Work item 4 — Separate Effect Requirements from Backend Capabilities *(existing)*
 
 ### Goal
 
@@ -1355,17 +1355,18 @@ Make rendering feature requirements explicit.
 
 Define portable effect requirements independently from backend/device capability discovery.
 
-Initial Bevy capabilities may include:
+Current Bevy capabilities include:
 
 ```text
 sprite particles
 GPU compute
 indirect draw
-mesh particles
-ribbons
-scene depth
-soft particles
-storage textures
+flipbook particles
+compute workgroup limits
+storage-buffer bindings
+vertex-stage storage
+GPU readback
+particle capacity
 ```
 
 Have the compiler derive effect requirements.
@@ -1376,7 +1377,7 @@ Validate:
 EffectRequirements ⊆ BackendCapabilities
 ```
 
-Initially there is only one capability provider:
+There is currently one capability provider:
 
 ```text
 Bevy/WGPU device capability provider

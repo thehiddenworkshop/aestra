@@ -10,14 +10,48 @@ use aestra_core::{
 };
 use aestra_project::ProjectAssetIndex;
 use aestra_runtime::{
-    EffectInstance, Expression, Instruction, ParameterError, ParticleAttribute, RendererPlanKind,
-    RuntimeStage, ScalarSource, SimulationSeekMode, VectorSource,
+    EffectInstance, Expression, Instruction, ParameterError, ParticleAttribute, RendererCapability,
+    RendererPlanKind, RuntimeStage, ScalarSource, SimulationSeekMode, VectorSource,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
 const SAMPLE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
 const TEXTURED_SAMPLE: &str = include_str!("../../../assets/effects/ember_sigil.aestra.ron");
 const FLIPBOOK_SAMPLE: &str = include_str!("../../../assets/effects/plasma_burst.aestra.ron");
+
+#[test]
+fn compiler_derives_portable_effect_requirements() {
+    let sprite = EffectCompiler::default()
+        .compile(&EffectAsset::from_ron(SAMPLE).unwrap())
+        .unwrap();
+    assert!(sprite.requirements.gpu_simulation);
+    assert!(sprite.requirements.native_gpu_presentation);
+    assert!(
+        sprite
+            .requirements
+            .renderers
+            .contains(&RendererCapability::SpriteParticles)
+    );
+    assert_eq!(
+        sprite.requirements.max_particles,
+        sprite
+            .emitters
+            .iter()
+            .filter(|emitter| emitter.enabled)
+            .map(|emitter| emitter.max_particles as usize)
+            .sum()
+    );
+
+    let flipbook = EffectCompiler::default()
+        .compile(&EffectAsset::from_ron(FLIPBOOK_SAMPLE).unwrap())
+        .unwrap();
+    assert!(
+        flipbook
+            .requirements
+            .renderers
+            .contains(&RendererCapability::FlipbookParticles)
+    );
+}
 
 #[test]
 fn emitter_regions_lower_to_source_time_preserving_runtime_ranges() {
