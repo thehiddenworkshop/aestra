@@ -4,9 +4,14 @@ use aestra_compiler::{
 use aestra_core::{
     ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode, EffectAsset,
     EffectClip, EffectClipSeed, EffectParameter, EffectPlaybackMode, Emitter, EmitterRegionId,
-    EmitterShape, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialInput,
-    MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
-    PropertySourceValue, ScalarRange, StageKind, Value, Vec3Curve, Vec3Range,
+    EmitterShape, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialId,
+    MaterialInput, MaterialParameterId, MaterialProgramId, MaterialProperties, ModuleInstance,
+    ModuleParameters, ModuleTypeId, ParameterId, PropertySourceValue, ScalarRange, StageKind,
+    Value, Vec3Curve, Vec3Range,
+    material::{
+        MaterialEvaluationDomain, MaterialInstance, MaterialParameter, MaterialParameterValue,
+        MaterialProgram, MaterialProgramRef, MaterialRenderState, MaterialValue, MaterialValueType,
+    },
 };
 use aestra_project::ProjectAssetIndex;
 use aestra_runtime::{
@@ -1268,6 +1273,58 @@ fn project_compilation_resolves_and_executes_timed_child_effects() {
     assert!(first.iter().all(|sample| {
         sample.effect == child.id && sample.instance_path.as_slice() == [clip_id]
     }));
+}
+
+#[test]
+fn project_compilation_carries_semantic_materials_and_their_parameter_bindings() {
+    let temporary = tempfile::tempdir().unwrap();
+    let effect_parameter = EffectParameter {
+        id: ParameterId::from_u128(0xD001),
+        name: "Material intensity".into(),
+        default: Value::Scalar(2.0),
+        exposed: true,
+    };
+    let material_parameter = MaterialParameterId::from_u128(0xD002);
+    let mut program = MaterialProgram::additive_sprite("Compiled semantic material");
+    program.id = MaterialProgramId::from_u128(0xD003);
+    program.parameters.push(MaterialParameter {
+        id: material_parameter,
+        name: "Intensity".into(),
+        value_type: MaterialValueType::Float,
+        evaluation_domain: MaterialEvaluationDomain::Effect,
+        default: Some(MaterialValue::Float(1.0)),
+    });
+    program
+        .save_ron(temporary.path().join("semantic.aestra.material.ron"))
+        .unwrap();
+
+    let material = MaterialId::from_u128(0xD004);
+    let mut root = EffectAsset::new("Semantic owner", 2.0);
+    root.parameters.push(effect_parameter.clone());
+    root.material_instances.push(MaterialInstance {
+        id: material,
+        program: MaterialProgramRef::Project(program.id),
+        values: BTreeMap::from([(
+            material_parameter,
+            MaterialParameterValue::EffectParameter(effect_parameter.id),
+        )]),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let mut emitter = Emitter::basic_sprite("Semantic emitter", root.duration);
+    emitter.renderers[0].material = material;
+    root.emitters.push(emitter);
+
+    let project = EffectCompiler::default()
+        .compile_project(&root, &ProjectAssetIndex::scan(temporary.path()))
+        .unwrap();
+
+    assert_eq!(project.root.material_programs, [program.normalized()]);
+    assert_eq!(project.root.material_instances, root.material_instances);
+    assert_eq!(
+        project.root.parameter_slots.get(&effect_parameter.id),
+        Some(&aestra_runtime::ParameterSlot(0))
+    );
+    assert_eq!(project.root.emitters[0].renderers[0].material, material);
 }
 
 #[test]

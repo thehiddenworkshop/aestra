@@ -22,6 +22,7 @@ use aestra_core::{
     EmitterShape, EmitterTransform, FlipbookPlaybackMode, FlipbookTimeSource, Gradient, MaterialId,
     ModuleId, ParameterId, PropertyEvaluationDomain, RendererId, ScalarRange, UvRect, Value,
     ValueType, Vec3Curve, Vec3Range,
+    material::{MaterialInstance, MaterialProgram},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -561,6 +562,10 @@ pub struct CompiledEffect {
     pub assets: Vec<CompiledAsset>,
     pub flipbooks: Vec<CompiledFlipbook>,
     pub materials: Vec<CompiledMaterial>,
+    /// Engine-neutral semantic programs required by this effect's material instances.
+    pub material_programs: Vec<MaterialProgram>,
+    /// Effect-local semantic instances referenced directly by renderer plans.
+    pub material_instances: Vec<MaterialInstance>,
     pub parameters: Vec<CompiledParameter>,
     pub parameter_slots: BTreeMap<ParameterId, ParameterSlot>,
     pub particle_layout: ParticleLayout,
@@ -728,6 +733,18 @@ fn evaluate_project_effect(
 impl CompiledEffect {
     pub fn material(&self, id: MaterialId) -> Option<&CompiledMaterial> {
         self.materials.iter().find(|material| material.source == id)
+    }
+
+    pub fn material_instance(&self, id: MaterialId) -> Option<&MaterialInstance> {
+        self.material_instances
+            .iter()
+            .find(|instance| instance.id == id)
+    }
+
+    pub fn material_program(&self, id: aestra_core::MaterialProgramId) -> Option<&MaterialProgram> {
+        self.material_programs
+            .iter()
+            .find(|program| program.id == id)
     }
 
     pub fn flipbook(&self, id: AssetId) -> Option<&CompiledFlipbook> {

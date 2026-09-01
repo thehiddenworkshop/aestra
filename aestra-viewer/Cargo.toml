@@ -10,7 +10,5 @@ repository.workspace = true
 [dependencies]
 aestra-authoring = { path = "../crates/aestra-authoring" }
 aestra-bevy = { path = "../aestra-bevy" }
-aestra-compiler = { path = "../crates/aestra-compiler" }
-aestra-gpu = { path = "../crates/aestra-gpu" }
 bevy.workspace = true
 image.workspace = true

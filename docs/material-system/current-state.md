@@ -154,13 +154,15 @@ typed material IR program. The same portable compilation produces deterministic 
 multi-texture, and descriptor-shared sampler bindings; parameter and required-input reflection;
 backend-limit diagnostics; stable program fingerprints; and render-state/target pipeline keys.
 `aestra-bevy-render` translates the emitted resource layout into the corresponding WGPU descriptor.
-The live 2D and 3D sprite pipelines can now opt into a compiled semantic material binding per
-renderer. They load the generated fragment shader, append its deterministic bind group, pack
-instance uniforms, resolve texture IDs through the compiled effect asset table, create explicit
-samplers, and specialize through the portable material pipeline key. Renderers without a semantic
-binding continue to use the compatibility material path until Material Milestone 5 migrates and
-visually approves existing effects. Changing ordinary instance bytes or texture IDs does not select
-a new shader or pipeline.
+Project compilation retains every referenced semantic program and instance in the engine-neutral
+compiled effect. Artifact format 2 round-trips those descriptors. The live 2D and 3D sprite
+pipelines automatically compile each retained program and create an emitter-specific runtime
+binding for every renderer that references its instance. Each frame they refresh scoped effect and
+emitter parameters plus deterministic random values, append the generated bind group, pack instance
+uniforms, resolve texture IDs through the compiled effect asset table, create explicit samplers, and
+specialize through the portable material pipeline key. Renderers without a semantic instance keep
+using the compatibility path. Changing ordinary instance bytes or texture IDs does not select a new
+shader or pipeline; the explicit manual binding API remains available as a presentation override.
 
 The current sprite surface function:
 
@@ -266,13 +268,9 @@ adapter. A destructive format migration is not required to prove the first verti
 
 ## Known gaps
 
-- semantic bindings are attached at presentation time; the viewer can build them automatically for
-  the Material 5 validation path, but project compilation and versioned artifacts do not yet carry
-  them automatically;
-- effect/emitter parameter sources and deterministic instance/effect/emitter random ranges now
-  resolve through an explicit typed runtime context and can refresh uniform/resource values without
-  replacing the compiled program; compiler artifacts and presentation setup do not yet construct
-  those contexts automatically;
+- compiled effects now carry semantic programs, instances, and their dynamic source descriptors;
+  presentation creates and refreshes emitter-specific contexts automatically, but Properties does
+  not yet project the reflected catalog into generated authoring controls;
 - the initial generated backend supports UV0, particle color/opacity, effect time, arithmetic,
   interpolation, clamping, and sampled Texture2D parameters; richer inputs remain explicit errors;
 - no validated custom WESL functions;
@@ -301,6 +299,6 @@ model, compiler path, runtime binding, and preview are stable.
 
 Items 1–7 of this entrance contract are complete. The deterministic legacy migration covers the
 current sprite and flipbook showcase paths, and native-GPU approval closes the Material 5 release
-gate. Material 6 now has its scoped dynamic-value resolver; it continues by carrying semantic
-binding descriptors through compiled/versioned artifacts and automatically projecting runtime
-effect/emitter state into presentation contexts.
+gate. Material 6 now has its scoped dynamic-value resolver, compiled/versioned descriptor
+persistence, and automatic emitter-specific presentation contexts. It continues by exposing the
+same reflection as reusable editor control metadata for generated Properties controls.

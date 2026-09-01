@@ -5,8 +5,12 @@ use aestra_compiler::EffectCompiler;
 use aestra_core::{
     AssetId, AssetKind, ChoreographyEvent, ChoreographyEventId, ChoreographyEventPayload, Curve,
     CurveKey, EffectAsset, EffectClip, EffectClipSeed, EffectId, EffectParameter,
-    EffectPlaybackMode, Emitter, MaterialId, ModuleParameters, ParameterId, RendererId, UvRect,
-    Value,
+    EffectPlaybackMode, Emitter, MaterialId, MaterialParameterId, MaterialProgramId,
+    ModuleParameters, ParameterId, RendererId, UvRect, Value,
+    material::{
+        MaterialEvaluationDomain, MaterialInstance, MaterialParameter, MaterialParameterValue,
+        MaterialProgram, MaterialProgramRef, MaterialRenderState, MaterialValue, MaterialValueType,
+    },
 };
 use aestra_gpu::GpuEffectArtifact;
 use aestra_runtime::{
@@ -22,6 +26,8 @@ fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
     let text = std::str::from_utf8(&bytes).unwrap();
     assert!(text.contains(ARTIFACT_MAGIC));
     assert!(text.contains(&format!("format_version:{CURRENT_ARTIFACT_VERSION}")));
+    assert!(text.contains("material_programs"));
+    assert!(text.contains("material_instances"));
 
     let reloaded = decode_effect(&bytes).unwrap();
     assert_eq!(reloaded, compiled);
@@ -90,6 +96,16 @@ fn artifact_rejects_wrong_magic_and_future_versions_structurally() {
         Err(ArtifactError::UnsupportedVersion { found: 999 })
     ));
 
+    let legacy = text.replacen(
+        &format!("format_version:{CURRENT_ARTIFACT_VERSION}"),
+        "format_version:1",
+        1,
+    );
+    assert!(matches!(
+        decode_effect(legacy.as_bytes()),
+        Err(ArtifactError::UnsupportedVersion { found: 1 })
+    ));
+
     let invalid_slot = text.replacen("Parameter(0)", "Parameter(99)", 1);
     assert_ne!(invalid_slot, text);
     assert!(matches!(
@@ -134,6 +150,27 @@ fn compiled_fixture() -> aestra_runtime::CompiledEffect {
             _ => {}
         }
     }
+    let semantic_material = MaterialId::from_u128(0x110);
+    let semantic_parameter = MaterialParameterId::from_u128(0x111);
+    let mut semantic_program = MaterialProgram::additive_sprite("Artifact semantic material");
+    semantic_program.id = MaterialProgramId::from_u128(0x112);
+    semantic_program.parameters.push(MaterialParameter {
+        id: semantic_parameter,
+        name: "Intensity".into(),
+        value_type: MaterialValueType::Float,
+        evaluation_domain: MaterialEvaluationDomain::Effect,
+        default: Some(MaterialValue::Float(1.0)),
+    });
+    emitter.renderers[0].material = semantic_material;
+    effect.material_instances.push(MaterialInstance {
+        id: semantic_material,
+        program: MaterialProgramRef::Project(semantic_program.id),
+        values: std::collections::BTreeMap::from([(
+            semantic_parameter,
+            MaterialParameterValue::EffectParameter(parameter.id),
+        )]),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
     effect.emitters.push(emitter);
 
     let mut event = ChoreographyEvent::new(
@@ -153,7 +190,12 @@ fn compiled_fixture() -> aestra_runtime::CompiledEffect {
     clip.seed = EffectClipSeed::Fixed(42);
     effect.effect_clips.push(clip);
 
-    let mut compiled = EffectCompiler::default().compile(&effect).unwrap();
+    let mut compiled = EffectCompiler::default()
+        .compile_with_material_programs(
+            &effect,
+            &std::collections::BTreeMap::from([(semantic_program.id, semantic_program)]),
+        )
+        .unwrap();
     compiled.effect_clips[0].parameter_overrides = vec![CompiledParameterOverride {
         source: parameter.id,
         slot: ParameterSlot(0),

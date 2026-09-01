@@ -91,6 +91,7 @@ struct GpuDrawInstance {
     texture: Handle<Image>,
     fallback_texture: Handle<Image>,
     renderer_order: u32,
+    emitter_index: u32,
     indirect_offset: u64,
     blend: GpuBlend,
     material: MaterialId,
@@ -162,7 +163,7 @@ type UnpreparedPlayers<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static PresentedEffect,
+        &'static mut PresentedEffect,
         &'static EffectRuntimeStatus,
         Option<&'static RenderLayers>,
     ),
@@ -173,7 +174,7 @@ type PreparedGpuPlayers<'w, 's> = Query<
     'w,
     's,
     (
-        &'static PresentedEffect,
+        &'static mut PresentedEffect,
         &'static GlobalTransform,
         &'static GpuEffectBuffers,
         Option<&'static RenderLayers>,
@@ -290,15 +291,16 @@ pub(crate) fn prepare_gpu_effects(
     mut commands: Commands,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
-    players: UnpreparedPlayers,
+    mut players: UnpreparedPlayers,
 ) {
-    for (entity, player, runtime, render_layers) in &players {
+    for (entity, mut player, runtime, render_layers) in &mut players {
         if !matches!(
             runtime.active,
             ActiveBackend::Gpu | ActiveBackend::GpuReadback
         ) {
             continue;
         }
+        player.refresh_automatic_material_bindings();
         let mut artifact = match GpuEffectArtifact::from_instance(&player.instance) {
             Ok(artifact) => artifact,
             Err(error) => {
@@ -322,7 +324,7 @@ pub(crate) fn prepare_gpu_effects(
             commands.entity(entity).insert(GpuPresentationPrepared);
             continue;
         }
-        apply_semantic_sprite_compatibility_to_artifact(&mut artifact, player);
+        apply_semantic_sprite_compatibility_to_artifact(&mut artifact, &player);
         let renderer_draws = artifact
             .renderers
             .iter_mut()
@@ -333,11 +335,17 @@ pub(crate) fn prepare_gpu_effects(
                     .emitters
                     .iter()
                     .filter(|emitter| emitter.enabled)
-                    .flat_map(|emitter| emitter.renderers.iter()),
+                    .flat_map(|emitter| {
+                        emitter
+                            .renderers
+                            .iter()
+                            .map(move |renderer| (emitter, renderer))
+                    }),
             )
-            .map(|((index, renderer), plan)| {
+            .map(|((index, renderer), (emitter, plan))| {
                 let material = player.effect().material(plan.material);
-                let runtime_binding = player.material_binding(plan.material);
+                let runtime_binding =
+                    player.material_binding_for_emitter(plan.material, emitter.source);
                 let semantic_material = runtime_binding
                     .map(|binding| material_resources.prepare(binding, player.effect()))
                     .transpose()
@@ -483,6 +491,7 @@ pub(crate) fn prepare_gpu_effects(
                                 texture,
                                 fallback_texture,
                                 renderer_order: renderer_index,
+                                emitter_index,
                                 indirect_offset: indirect_draw_offset(emitter_index),
                                 blend,
                                 material,
@@ -532,9 +541,15 @@ fn apply_semantic_sprite_compatibility_to_artifact(
             .emitters
             .iter()
             .filter(|emitter| emitter.enabled)
-            .flat_map(|emitter| emitter.renderers.iter()),
+            .flat_map(|emitter| {
+                emitter
+                    .renderers
+                    .iter()
+                    .map(move |renderer| (emitter, renderer))
+            }),
     ) {
-        if let Some(binding) = player.material_binding(plan.material) {
+        let (emitter, plan) = plan;
+        if let Some(binding) = player.material_binding_for_emitter(plan.material, emitter.source) {
             apply_semantic_sprite_compatibility(renderer, binding);
         }
     }
@@ -664,12 +679,13 @@ fn detect_gpu_capabilities(
 fn update_gpu_inputs(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
-    players: PreparedGpuPlayers,
+    mut players: PreparedGpuPlayers,
     mut draw_instances: Query<(&mut GpuDrawInstance, &mut RenderLayers), Without<PresentedEffect>>,
 ) {
-    for (player, transform, gpu, render_layers, children) in &players {
+    for (mut player, transform, gpu, render_layers, children) in &mut players {
+        player.refresh_automatic_material_bindings();
         if let Ok(mut artifact) = GpuEffectArtifact::from_instance(&player.instance) {
-            apply_semantic_sprite_compatibility_to_artifact(&mut artifact, player);
+            apply_semantic_sprite_compatibility_to_artifact(&mut artifact, &player);
             if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
                 buffer.set_data(artifact.emitters);
             }
@@ -701,7 +717,14 @@ fn update_gpu_inputs(
             for child in children.iter() {
                 if let Ok((mut draw, mut draw_layers)) = draw_instances.get_mut(child) {
                     draw.render_mode = render_mode;
-                    if let Some(binding) = player.material_binding(draw.material) {
+                    let emitter = player
+                        .effect()
+                        .emitters
+                        .get(draw.emitter_index as usize)
+                        .map(|emitter| emitter.source);
+                    if let Some(binding) = emitter.and_then(|emitter| {
+                        player.material_binding_for_emitter(draw.material, emitter)
+                    }) {
                         match material_resources.prepare(binding, player.effect()) {
                             Ok(prepared) => {
                                 draw.blend = gpu_blend(binding.render_state().blend);
@@ -932,7 +955,7 @@ fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aestra_compiler::{EffectCompiler, MaterialCompiler};
+    use aestra_compiler::EffectCompiler;
     use aestra_core::material::{
         LEGACY_SPRITE_SOFTNESS_PARAMETER, MaterialEvaluationDomain, MaterialExpression,
         MaterialExpressionKind, MaterialInstance, MaterialParameter, MaterialParameterValue,
@@ -944,10 +967,7 @@ mod tests {
         MaterialParameterId, MaterialProperties, PropertyEvaluationDomain, PropertySource,
         PropertySourceValue, RendererInstance, ScalarRange, UvRect, Value, Vec3Curve, Vec3Range,
     };
-    use aestra_gpu::{
-        INDIRECT_DRAW_BYTES,
-        material::{MaterialBackendCapabilities, MaterialShaderCompiler},
-    };
+    use aestra_gpu::INDIRECT_DRAW_BYTES;
     use aestra_runtime::EffectInstance;
     use std::sync::Arc;
 
@@ -978,29 +998,30 @@ mod tests {
         };
         let mut effect = EffectAsset::new("Semantic flame fixture", 2.0);
         let mut emitter = Emitter::basic_sprite("Flame", effect.duration);
+        let emitter_id = emitter.id;
         emitter.renderers[0].material = material;
         effect.material_instances.push(instance.clone());
         effect.emitters.push(emitter);
-        let compiled_effect = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
-        assert!(compiled_effect.material(material).is_none());
-
-        let ir = MaterialCompiler.compile(&program).unwrap();
-        let compiled_program = Arc::new(
-            MaterialShaderCompiler
-                .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        let programs = BTreeMap::from([(program.id, program)]);
+        let compiled_effect = Arc::new(
+            EffectCompiler::default()
+                .compile_with_material_programs(&effect, &programs)
                 .unwrap(),
         );
-        let mut presented = PresentedEffect::new(compiled_effect);
-        presented.bind_material(
-            material,
-            MaterialRuntimeBinding::from_instance(compiled_program, &instance).unwrap(),
-        );
+        assert!(compiled_effect.material(material).is_none());
+
+        let presented = PresentedEffect::new(compiled_effect);
 
         let mut artifact = GpuEffectArtifact::from_instance(&presented.instance).unwrap();
         assert_eq!(artifact.renderers.len(), 1);
         assert_eq!(artifact.renderers[0].blend_mode, GpuBlend::Additive as u32);
         assert_eq!(artifact.renderers[0].softness, 1.0);
         assert!(presented.material_binding(material).is_some());
+        assert!(
+            presented
+                .material_binding_for_emitter(material, emitter_id)
+                .is_some()
+        );
         apply_semantic_sprite_compatibility_to_artifact(&mut artifact, &presented);
         assert_eq!(artifact.renderers[0].softness, 0.08);
     }

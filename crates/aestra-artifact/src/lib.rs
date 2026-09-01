@@ -10,6 +10,7 @@ use aestra_core::{
     EmitterId, EmitterRegionId, EmitterShape, EmitterTransform, FlipbookPlaybackMode,
     FlipbookTimeSource, Gradient, MaterialId, ModuleId, ParameterId, PropertyEvaluationDomain,
     RendererId, ScalarRange, UvRect, ValueType, Vec3Range,
+    material::{MaterialInstance, MaterialProgram},
 };
 use aestra_runtime::{
     CompiledAsset, CompiledChoreographyEvent, CompiledCurve, CompiledEffect, CompiledEffectClip,
@@ -24,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 pub const ARTIFACT_MAGIC: &str = "AESTRA-COMPILED";
-pub const CURRENT_ARTIFACT_VERSION: u32 = 1;
+pub const CURRENT_ARTIFACT_VERSION: u32 = 2;
 
 #[derive(Debug, Error)]
 pub enum ArtifactError {
@@ -89,6 +90,8 @@ struct EffectV1 {
     assets: Vec<AssetV1>,
     flipbooks: Vec<FlipbookV1>,
     materials: Vec<MaterialV1>,
+    material_programs: Vec<SemanticMaterialProgramV2>,
+    material_instances: Vec<SemanticMaterialInstanceV2>,
     parameters: Vec<ParameterV1>,
     particle_layout: ParticleLayoutV1,
     emitters: Vec<EmitterV1>,
@@ -134,6 +137,19 @@ struct MaterialV1 {
     color: MaterialColorV1,
     texture: Option<AssetId>,
     uv: UvRect,
+}
+
+/// Semantic programs keep their own versioned RON schema inside the compiled artifact envelope.
+/// This avoids duplicating the complete typed expression DAG in the artifact codec while keeping
+/// it engine-neutral and independently migratable.
+#[derive(Debug, Serialize, Deserialize)]
+struct SemanticMaterialProgramV2 {
+    ron: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SemanticMaterialInstanceV2 {
+    ron: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -385,6 +401,18 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
                 .enumerate()
                 .map(|(index, material)| MaterialV1::encode(material, index))
                 .collect::<Result<_, _>>()?,
+            material_programs: effect
+                .material_programs
+                .iter()
+                .enumerate()
+                .map(|(index, program)| SemanticMaterialProgramV2::encode(program, index))
+                .collect::<Result<_, _>>()?,
+            material_instances: effect
+                .material_instances
+                .iter()
+                .enumerate()
+                .map(|(index, instance)| SemanticMaterialInstanceV2::encode(instance, index))
+                .collect::<Result<_, _>>()?,
             parameters: effect.parameters.iter().map(ParameterV1::from).collect(),
             particle_layout: ParticleLayoutV1::from(&effect.particle_layout),
             emitters: effect
@@ -446,6 +474,53 @@ impl TryFrom<EffectV1> for CompiledEffect {
             .enumerate()
             .map(|(index, material)| material.decode(index, &parameters))
             .collect::<Result<_, _>>()?;
+        let material_programs = effect
+            .material_programs
+            .into_iter()
+            .enumerate()
+            .map(|(index, program)| program.decode(index))
+            .collect::<Result<Vec<_>, _>>()?;
+        let material_instances = effect
+            .material_instances
+            .into_iter()
+            .enumerate()
+            .map(|(index, instance)| instance.decode(index))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut program_ids = BTreeSet::new();
+        for (index, program) in material_programs.iter().enumerate() {
+            if !program_ids.insert(program.id) {
+                return invalid(
+                    format!("effect.material_programs[{index}].id"),
+                    "duplicate semantic material program identity",
+                );
+            }
+        }
+        let mut instance_ids = BTreeSet::new();
+        for (index, instance) in material_instances.iter().enumerate() {
+            if !instance_ids.insert(instance.id) {
+                return invalid(
+                    format!("effect.material_instances[{index}].id"),
+                    "duplicate semantic material instance identity",
+                );
+            }
+            if !program_ids.contains(&instance.program.id()) {
+                return invalid(
+                    format!("effect.material_instances[{index}].program"),
+                    "semantic material instance references a program absent from the artifact",
+                );
+            }
+            let program = material_programs
+                .iter()
+                .find(|program| program.id == instance.program.id())
+                .expect("program identity was checked above");
+            let report = instance.validate_against(program);
+            if !report.is_valid() {
+                return invalid(
+                    format!("effect.material_instances[{index}]"),
+                    report.to_string(),
+                );
+            }
+        }
         let emitters = effect
             .emitters
             .into_iter()
@@ -483,6 +558,8 @@ impl TryFrom<EffectV1> for CompiledEffect {
                 .map(|(index, flipbook)| flipbook.decode(index))
                 .collect::<Result<_, _>>()?,
             materials,
+            material_programs,
+            material_instances,
             parameters,
             parameter_slots,
             particle_layout: effect.particle_layout.into(),
@@ -627,6 +704,51 @@ impl MaterialV1 {
             texture: self.texture,
             uv: self.uv,
         })
+    }
+}
+
+impl SemanticMaterialProgramV2 {
+    fn encode(program: &MaterialProgram, index: usize) -> Result<Self, ArtifactError> {
+        let ron = program
+            .to_pretty_ron()
+            .map_err(|error| ArtifactError::InvalidData {
+                path: format!("effect.material_programs[{index}]"),
+                message: error.to_string(),
+            })?;
+        Ok(Self { ron })
+    }
+
+    fn decode(self, index: usize) -> Result<MaterialProgram, ArtifactError> {
+        MaterialProgram::from_ron(&self.ron).map_err(|error| ArtifactError::InvalidData {
+            path: format!("effect.material_programs[{index}]"),
+            message: error.to_string(),
+        })
+    }
+}
+
+impl SemanticMaterialInstanceV2 {
+    fn encode(instance: &MaterialInstance, index: usize) -> Result<Self, ArtifactError> {
+        let report = instance.validate_structure();
+        if !report.is_valid() {
+            return invalid(
+                format!("effect.material_instances[{index}]"),
+                report.to_string(),
+            );
+        }
+        let ron = ron::ser::to_string(instance)?;
+        Ok(Self { ron })
+    }
+
+    fn decode(self, index: usize) -> Result<MaterialInstance, ArtifactError> {
+        let instance = ron::de::from_str::<MaterialInstance>(&self.ron)?;
+        let report = instance.validate_structure();
+        if !report.is_valid() {
+            return invalid(
+                format!("effect.material_instances[{index}]"),
+                report.to_string(),
+            );
+        }
+        Ok(instance)
     }
 }
 

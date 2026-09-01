@@ -1,13 +1,12 @@
 mod visual_regression;
 
 use aestra_authoring::{MaterialAuthoringDocument, migrate_legacy_sprite_materials};
+use aestra_bevy::material::MaterialProgram;
 use aestra_bevy::{
     ActiveBackend, AestraPlugin, AestraRuntimeStatus, AestraSettings, DEFAULT_GPU_PARTICLE_BUDGET,
-    DEFAULT_PLAYBACK_TICK_RATE, EffectAsset, EffectPlayer, EffectRuntimeStatus, GpuCapabilities,
-    MaterialRuntimeBinding, PlaybackClock, PresentationMode, PresentedEffect,
+    DEFAULT_PLAYBACK_TICK_RATE, EffectAsset, EffectCompiler, EffectPlayer, EffectRuntimeStatus,
+    GpuCapabilities, PlaybackClock, PresentationMode, PresentedEffect,
 };
-use aestra_compiler::MaterialCompiler;
-use aestra_gpu::material::{MaterialBackendCapabilities, MaterialShaderCompiler};
 use bevy::{
     app::AppExit,
     asset::AssetPlugin,
@@ -17,7 +16,7 @@ use bevy::{
     window::WindowResolution,
 };
 use image::{Rgba, RgbaImage, imageops};
-use std::{env, fs, path::PathBuf};
+use std::{collections::BTreeMap, env, fs, path::PathBuf, sync::Arc};
 
 use visual_regression::compare_capture;
 
@@ -316,7 +315,7 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
             EffectAsset::load_ron,
         )
         .unwrap_or_else(|error| panic!("could not load viewer effect: {error}"));
-    let material_bindings = if config.semantic_materials {
+    let material_programs = if config.semantic_materials {
         migrate_viewer_materials(&mut effect)
             .unwrap_or_else(|error| panic!("could not migrate viewer materials: {error}"))
     } else {
@@ -332,12 +331,16 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
         .as_ref()
         .is_some_and(CaptureMode::is_editor_viewport_smoke);
 
-    let mut player = EffectPlayer::new(&effect);
+    let material_programs = material_programs
+        .into_iter()
+        .map(|program| (program.id, program))
+        .collect::<BTreeMap<_, _>>();
+    let compiled = EffectCompiler::default()
+        .compile_with_material_programs(&effect, &material_programs)
+        .unwrap_or_else(|error| panic!("could not compile viewer effect: {error}"));
+    let mut player = EffectPlayer::from_compiled(Arc::new(compiled));
     player.set_seed(config.resolved_seed());
-    let mut presentation = PresentedEffect::new(player.effect().clone());
-    for (material, binding) in material_bindings {
-        presentation.bind_material(material, binding);
-    }
+    let presentation = PresentedEffect::new(player.effect().clone());
     if editor_viewport_smoke {
         spawn_editor_viewport_smoke_scene(&mut commands);
         commands.spawn((player, presentation, RenderLayers::layer(0)));
@@ -396,45 +399,11 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
     ));
 }
 
-fn migrate_viewer_materials(
-    effect: &mut EffectAsset,
-) -> Result<Vec<(aestra_bevy::MaterialId, MaterialRuntimeBinding)>, String> {
+fn migrate_viewer_materials(effect: &mut EffectAsset) -> Result<Vec<MaterialProgram>, String> {
     let mut document = MaterialAuthoringDocument::new(effect.clone(), Vec::new());
-    let (plan, _) =
-        migrate_legacy_sprite_materials(&mut document).map_err(|error| error.to_string())?;
-    let capabilities = MaterialBackendCapabilities::portable_minimum();
-    let mut bindings = Vec::with_capacity(plan.mappings.len());
-    for mapping in &plan.mappings {
-        let instance = document
-            .effect
-            .material_instances
-            .iter()
-            .find(|instance| instance.id == mapping.semantic_instance)
-            .ok_or_else(|| {
-                format!(
-                    "missing migrated material instance {}",
-                    mapping.semantic_instance
-                )
-            })?;
-        let program = document
-            .programs
-            .iter()
-            .find(|program| program.id == mapping.program)
-            .ok_or_else(|| format!("missing migrated material program {}", mapping.program))?;
-        let ir = MaterialCompiler
-            .compile(program)
-            .map_err(|error| error.to_string())?;
-        let compiled = std::sync::Arc::new(
-            MaterialShaderCompiler
-                .compile(&ir, &capabilities)
-                .map_err(|error| error.to_string())?,
-        );
-        let binding = MaterialRuntimeBinding::from_instance(compiled, instance)
-            .map_err(|error| error.to_string())?;
-        bindings.push((instance.id, binding));
-    }
+    migrate_legacy_sprite_materials(&mut document).map_err(|error| error.to_string())?;
     *effect = document.effect;
-    Ok(bindings)
+    Ok(document.programs)
 }
 
 fn spawn_editor_viewport_smoke_scene(commands: &mut Commands) {
@@ -820,18 +789,26 @@ mod tests {
     fn semantic_viewer_mode_builds_live_bindings_without_rewriting_the_source() {
         let original = EffectAsset::from_ron(SAMPLE_SOURCE).unwrap();
         let mut migrated = original.clone();
-        let bindings = migrate_viewer_materials(&mut migrated).unwrap();
+        let programs = migrate_viewer_materials(&mut migrated).unwrap();
+        let programs = programs
+            .into_iter()
+            .map(|program| (program.id, program))
+            .collect::<BTreeMap<_, _>>();
+        let compiled = Arc::new(
+            EffectCompiler::default()
+                .compile_with_material_programs(&migrated, &programs)
+                .unwrap(),
+        );
+        let presented = PresentedEffect::new(compiled);
 
-        assert!(!bindings.is_empty());
+        assert!(!programs.is_empty());
         assert_eq!(migrated.materials, original.materials);
         assert!(
             migrated
                 .emitters
                 .iter()
                 .flat_map(|emitter| &emitter.renderers)
-                .all(|renderer| bindings
-                    .iter()
-                    .any(|(material, _)| *material == renderer.material))
+                .all(|renderer| presented.material_binding(renderer.material).is_some())
         );
     }
 }

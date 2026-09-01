@@ -18,8 +18,11 @@ pub use capabilities::{
     GpuCapabilities,
 };
 
-use crate::material::{MaterialBindingContext, MaterialBindingError, MaterialRuntimeBinding};
-use aestra_core::MaterialId;
+use crate::material::{
+    MaterialBindingContext, MaterialBindingError, MaterialRuntimeBinding, compile_material_program,
+};
+use aestra_core::{EmitterId, MaterialId, MaterialProgramId};
+use aestra_gpu::material::CompiledMaterialProgram;
 use aestra_runtime::{CompiledEffect, EffectInstance, ParticleSample};
 use bevy::{
     ecs::schedule::IntoScheduleConfigs,
@@ -75,6 +78,8 @@ pub struct PresentedEffect {
     pub instance: EffectInstance,
     render_mode: EffectRenderMode,
     material_bindings: BTreeMap<MaterialId, MaterialRuntimeBinding>,
+    compiled_material_programs: BTreeMap<MaterialProgramId, Arc<CompiledMaterialProgram>>,
+    automatic_material_bindings: BTreeMap<(EmitterId, MaterialId), MaterialRuntimeBinding>,
     cpu_samples: Vec<ParticleSample>,
     gpu_samples: Vec<ParticleSample>,
     cpu_evaluation_time: Option<Duration>,
@@ -82,14 +87,18 @@ pub struct PresentedEffect {
 
 impl PresentedEffect {
     pub fn new(effect: Arc<CompiledEffect>) -> Self {
-        Self {
+        let mut presented = Self {
             instance: EffectInstance::new(effect),
             render_mode: EffectRenderMode::Rendered,
             material_bindings: BTreeMap::new(),
+            compiled_material_programs: BTreeMap::new(),
+            automatic_material_bindings: BTreeMap::new(),
             cpu_samples: Vec::new(),
             gpu_samples: Vec::new(),
             cpu_evaluation_time: None,
-        }
+        };
+        presented.rebuild_automatic_material_bindings();
+        presented
     }
 
     pub fn effect(&self) -> &Arc<CompiledEffect> {
@@ -120,7 +129,32 @@ impl PresentedEffect {
     }
 
     pub fn material_binding(&self, material: MaterialId) -> Option<&MaterialRuntimeBinding> {
-        self.material_bindings.get(&material)
+        self.material_bindings.get(&material).or_else(|| {
+            self.automatic_material_bindings
+                .iter()
+                .find_map(|((_, candidate), binding)| (*candidate == material).then_some(binding))
+        })
+    }
+
+    pub fn material_binding_for_emitter(
+        &self,
+        material: MaterialId,
+        emitter: EmitterId,
+    ) -> Option<&MaterialRuntimeBinding> {
+        self.material_bindings
+            .get(&material)
+            .or_else(|| self.automatic_material_bindings.get(&(emitter, material)))
+    }
+
+    /// Re-resolves automatic bindings against the current effect/emitter parameter state.
+    pub fn refresh_automatic_material_bindings(&mut self) {
+        let instance = &self.instance;
+        for ((emitter, _), binding) in &mut self.automatic_material_bindings {
+            let context = MaterialBindingContext::for_emitter(instance, *emitter);
+            if let Err(error) = binding.refresh_dynamic_values(&context) {
+                bevy::log::warn!("semantic material binding could not be refreshed: {error}");
+            }
+        }
     }
 
     /// Refreshes one bound material after effect/emitter automation or parameter edits.
@@ -137,6 +171,50 @@ impl PresentedEffect {
             .get_mut(&material)
             .ok_or(MaterialBindingError::UnknownMaterial(material))?;
         binding.refresh_dynamic_values(context)
+    }
+
+    fn rebuild_automatic_material_bindings(&mut self) {
+        self.compiled_material_programs.clear();
+        self.automatic_material_bindings.clear();
+        let effect = Arc::clone(self.effect());
+        for program in &effect.material_programs {
+            match compile_material_program(program) {
+                Ok(compiled) => {
+                    self.compiled_material_programs.insert(program.id, compiled);
+                }
+                Err(error) => bevy::log::warn!(
+                    "semantic material program {} could not be compiled: {error}",
+                    program.id
+                ),
+            }
+        }
+        for emitter in &effect.emitters {
+            let context = MaterialBindingContext::for_emitter(&self.instance, emitter.source);
+            for renderer in &emitter.renderers {
+                let Some(instance) = effect.material_instance(renderer.material) else {
+                    continue;
+                };
+                let Some(program) = self.compiled_material_programs.get(&instance.program.id())
+                else {
+                    continue;
+                };
+                match MaterialRuntimeBinding::from_instance_with_context(
+                    Arc::clone(program),
+                    instance,
+                    &context,
+                ) {
+                    Ok(binding) => {
+                        self.automatic_material_bindings
+                            .insert((emitter.source, renderer.material), binding);
+                    }
+                    Err(error) => bevy::log::warn!(
+                        "semantic material {} could not be resolved for emitter {}: {error}",
+                        renderer.material,
+                        emitter.source
+                    ),
+                }
+            }
+        }
     }
 
     pub fn gpu_samples(&self) -> &[ParticleSample] {

@@ -11,9 +11,11 @@ pub use aestra_core::{
 use aestra_core::{
     ColorKey, Curve, CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
     EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
-    MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProperties, ModuleInstance,
-    ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_SPRITE,
-    RendererProperties, ScalarRange, SpriteColorSource, StageKind, ValidationReport, Value,
+    MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProgramId, MaterialProperties,
+    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK,
+    RENDERER_SPRITE, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
+    ValidationReport, Value,
+    material::{MaterialParameterValue, MaterialProgram},
 };
 use aestra_project::{ProjectAssetIndex, ProjectDependencyReport, ResolvedEffectProject};
 use aestra_runtime::{
@@ -218,16 +220,17 @@ impl EffectCompiler {
     ) -> Result<CompiledEffectProject, ProjectCompileError> {
         let resolved = index.resolve_effect_project(root)?;
         self.validate_project_parameter_overrides(&resolved)?;
-        let compiled_root = Arc::new(self.compile(&resolved.root).map_err(|source| {
-            ProjectCompileError::Effect {
-                effect: resolved.root.id,
-                source,
-            }
-        })?);
+        let compiled_root = Arc::new(
+            self.compile_with_material_programs(&resolved.root, &resolved.material_programs)
+                .map_err(|source| ProjectCompileError::Effect {
+                    effect: resolved.root.id,
+                    source,
+                })?,
+        );
         let mut dependencies = BTreeMap::new();
         for (&id, effect) in &resolved.dependencies {
             let compiled = self
-                .compile(effect)
+                .compile_with_material_programs(effect, &resolved.material_programs)
                 .map_err(|source| ProjectCompileError::Effect { effect: id, source })?;
             dependencies.insert(id, Arc::new(compiled));
         }
@@ -240,8 +243,44 @@ impl EffectCompiler {
     }
 
     pub fn compile(&self, asset: &EffectAsset) -> Result<CompiledEffect, CompileError> {
+        self.compile_with_material_programs(asset, &BTreeMap::new())
+    }
+
+    /// Compiles one effect with the project material programs resolved for its semantic instances.
+    pub fn compile_with_material_programs(
+        &self,
+        asset: &EffectAsset,
+        material_programs: &BTreeMap<MaterialProgramId, MaterialProgram>,
+    ) -> Result<CompiledEffect, CompileError> {
         let mut report = asset.validation_report();
         self.validate_compiler_contracts(asset, &mut report);
+        for (index, instance) in asset.material_instances.iter().enumerate() {
+            let Some(program) = material_programs.get(&instance.program.id()) else {
+                push_unique(
+                    &mut report,
+                    Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        format!("effect.material_instances[{index}].program"),
+                        format!(
+                            "semantic material program {} is not available to the compiler",
+                            instance.program.id()
+                        ),
+                    ),
+                );
+                continue;
+            };
+            for mut diagnostic in program.validation_report().diagnostics {
+                diagnostic.path = format!(
+                    "effect.material_instances[{index}].program.{}",
+                    diagnostic.path
+                );
+                push_unique(&mut report, diagnostic);
+            }
+            for mut diagnostic in instance.validate_against(program).diagnostics {
+                diagnostic.path = format!("effect.material_instances[{index}].{}", diagnostic.path);
+                push_unique(&mut report, diagnostic);
+            }
+        }
         if !report.is_valid() {
             return Err(CompileError::Validation(report));
         }
@@ -267,6 +306,14 @@ impl EffectCompiler {
                 collect_material_parameter(input, &mut referenced_parameters);
             }
         }
+        referenced_parameters.extend(asset.material_instances.iter().flat_map(|instance| {
+            instance.values.values().filter_map(|value| match value {
+                MaterialParameterValue::EffectParameter(parameter)
+                | MaterialParameterValue::EmitterParameter(parameter) => Some(*parameter),
+                MaterialParameterValue::Constant(_)
+                | MaterialParameterValue::RandomRange { .. } => None,
+            })
+        }));
         let mut parameters = Vec::new();
         let mut parameter_slots = BTreeMap::new();
         for parameter in asset
@@ -450,6 +497,15 @@ impl EffectCompiler {
                 })
                 .collect(),
             materials,
+            material_programs: asset
+                .material_instances
+                .iter()
+                .map(|instance| instance.program.id())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .filter_map(|id| material_programs.get(&id).map(MaterialProgram::normalized))
+                .collect(),
+            material_instances: asset.material_instances.clone(),
             parameters,
             parameter_slots,
             particle_layout: ParticleLayout {

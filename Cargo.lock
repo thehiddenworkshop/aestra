@@ -232,8 +232,6 @@ version = "0.1.0"
 dependencies = [
  "aestra-authoring",
  "aestra-bevy",
- "aestra-compiler",
- "aestra-gpu",
  "bevy",
  "image",
 ]

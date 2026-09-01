@@ -1,5 +1,6 @@
 //! Bevy/WGPU translation and runtime values for the portable semantic-material ABI.
 
+use aestra_compiler::MaterialCompiler;
 use aestra_core::{
     AssetId, EmitterId, MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
     material::{
@@ -9,7 +10,8 @@ use aestra_core::{
     },
 };
 use aestra_gpu::material::{
-    CompiledMaterialProgram, MaterialIrConstant, MaterialParameterBinding, MaterialResourceLayout,
+    CompiledMaterialProgram, MaterialBackendCapabilities, MaterialIrConstant,
+    MaterialParameterBinding, MaterialResourceLayout, MaterialShaderCompiler,
 };
 use aestra_runtime::{EffectInstance, RuntimeValue};
 use bevy::render::render_resource::{
@@ -138,6 +140,19 @@ impl MaterialBindingContext {
 pub enum MaterialParameterSource {
     Effect,
     Emitter,
+}
+
+/// Compiles one engine-neutral program for the portable runtime material backend.
+pub fn compile_material_program(
+    program: &aestra_core::material::MaterialProgram,
+) -> Result<Arc<CompiledMaterialProgram>, MaterialBindingError> {
+    let ir = MaterialCompiler
+        .compile(program)
+        .map_err(|error| MaterialBindingError::ProgramCompilation(error.to_string()))?;
+    MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .map(Arc::new)
+        .map_err(|error| MaterialBindingError::ProgramCompilation(error.to_string()))
 }
 
 /// Runtime values for one effect-local instance of a compiled semantic material program.
@@ -405,6 +420,7 @@ pub enum MaterialBindingError {
     MissingEvaluationContext(MaterialEvaluationDomain),
     UnsupportedRandomRange(MaterialParameterId),
     UnknownMaterial(MaterialId),
+    ProgramCompilation(String),
 }
 
 impl fmt::Display for MaterialBindingError {
@@ -460,6 +476,12 @@ impl fmt::Display for MaterialBindingError {
                 write!(
                     formatter,
                     "presented effect has no material binding {material}"
+                )
+            }
+            Self::ProgramCompilation(error) => {
+                write!(
+                    formatter,
+                    "semantic material program could not compile: {error}"
                 )
             }
         }

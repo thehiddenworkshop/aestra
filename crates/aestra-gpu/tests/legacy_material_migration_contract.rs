@@ -2,6 +2,7 @@ use aestra_authoring::{MaterialAuthoringDocument, migrate_legacy_sprite_material
 use aestra_compiler::{EffectCompiler, MaterialCompiler};
 use aestra_core::EffectAsset;
 use aestra_gpu::material::{MaterialBackendCapabilities, MaterialShaderCompiler};
+use std::collections::BTreeMap;
 
 const SHOWCASES: [(&str, &str); 3] = [
     (
@@ -46,8 +47,14 @@ fn showcase_materials_migrate_through_commands_and_compile_for_portable_gpu() {
             legacy_renderer_count
         );
         assert!(document.validate().is_ok());
+        let programs = document
+            .programs
+            .iter()
+            .cloned()
+            .map(|program| (program.id, program))
+            .collect::<BTreeMap<_, _>>();
         EffectCompiler::default()
-            .compile(&document.effect)
+            .compile_with_material_programs(&document.effect, &programs)
             .unwrap_or_else(|error| panic!("{name} migrated effect failed compilation: {error}"));
 
         for program in &document.programs {

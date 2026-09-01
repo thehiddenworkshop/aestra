@@ -8,13 +8,13 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+aestra-compiler = { path = "../aestra-compiler" }
 aestra-core = { path = "../aestra-core" }
 aestra-gpu = { path = "../aestra-gpu" }
 aestra-runtime = { path = "../aestra-runtime" }
 bevy.workspace = true
 
 [dev-dependencies]
-aestra-compiler = { path = "../aestra-compiler" }
 aestra-core = { path = "../aestra-core" }
 encase.workspace = true
 pollster.workspace = true
