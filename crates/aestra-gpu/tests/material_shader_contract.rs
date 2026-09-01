@@ -202,6 +202,14 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     assert_eq!(MISSING_TEXTURE_FALLBACK_RGBA, [255, 0, 255, 255]);
     assert!(compiled.shader.wesl.contains("@group(2) @binding(1)"));
     assert!(compiled.shader.wesl.contains("textureSample"));
+    assert!(compiled.shader.wesl.contains("@location(6) uv0"));
+    assert!(
+        compiled
+            .shader
+            .wesl
+            .contains("@location(13) @interpolate(flat) visible")
+    );
+    assert!(compiled.shader.wesl.contains("output.a, 0.0, 1.0"));
     assert!(compiled.shader.wgsl.contains("fn fragment_material"));
     assert_portable_shader_targets(&compiled.shader.wgsl);
     let texture_line = compiled

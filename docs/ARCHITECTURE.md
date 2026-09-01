@@ -121,8 +121,10 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Uploads `aestra-gpu` artifacts into Bevy shader buffers.
 - Registers the portable WESL sources with Bevy and owns render-world extraction, WGPU pipeline
   setup, compute dispatch, readback, texture resolution, and draw submission.
-- Converts WGPU device limits and semantic-material resource layouts at the adapter boundary;
-  portable compiler crates never import Bevy or WGPU types.
+- Converts WGPU device limits and semantic-material resource layouts at the adapter boundary,
+  packs constant/default instance values, resolves portable texture IDs, and selects generated
+  fragment shaders through portable pipeline keys; portable compiler crates never import Bevy or
+  WGPU types. The legacy sprite shader remains an explicit compatibility fallback during migration.
 - Exercises generated simulation WGSL through a deterministic native-compute conformance harness;
   fixed-time particle readback is compared with the CPU semantic reference across once,
   restart-loop, and continuous-loop playback, including emitter regions and surviving prior-cycle

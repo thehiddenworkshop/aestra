@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+aestra-core = { path = "../aestra-core" }
 aestra-gpu = { path = "../aestra-gpu" }
 aestra-runtime = { path = "../aestra-runtime" }
 bevy.workspace = true

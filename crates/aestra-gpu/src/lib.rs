@@ -236,14 +236,37 @@ impl GpuEffectArtifact {
             };
             if emitter.enabled {
                 renderers.extend(emitter.renderers.iter().map(|renderer| {
-                    let material = instance
-                        .effect()
-                        .material(renderer.material)
-                        .expect("compiler guarantees renderer material references");
-                    let (tint, particle_color) = match &material.color {
-                        MaterialColorPlan::ParticleColor => ([1.0; 4], 1),
-                        MaterialColorPlan::Value(value) => (*value.resolve(parameters), 0),
-                    };
+                    // Semantic material instances are bound by the concrete render adapter. The
+                    // portable simulation artifact still supplies their sprite geometry and
+                    // particle inputs, while legacy materials retain their existing packed data.
+                    let material = instance.effect().material(renderer.material);
+                    let (tint, particle_color, blend, softness, material_texture, uv) = material
+                        .map_or(
+                            (
+                                [1.0; 4],
+                                1,
+                                BlendMode::Additive,
+                                1.0,
+                                None,
+                                aestra_core::UvRect::FULL,
+                            ),
+                            |material| {
+                                let (tint, particle_color) = match &material.color {
+                                    MaterialColorPlan::ParticleColor => ([1.0; 4], 1),
+                                    MaterialColorPlan::Value(value) => {
+                                        (*value.resolve(parameters), 0)
+                                    }
+                                };
+                                (
+                                    tint,
+                                    particle_color,
+                                    material.blend,
+                                    *material.softness.resolve(parameters),
+                                    material.texture,
+                                    material.uv,
+                                )
+                            },
+                        );
                     let mut frames = [Vec4::new(0.0, 0.0, 1.0, 1.0); MAX_FLIPBOOK_FRAMES];
                     let (
                         renderer_kind,
@@ -253,7 +276,7 @@ impl GpuEffectArtifact {
                         frame_rate,
                         texture,
                     ) = match &renderer.kind {
-                        RendererPlanKind::Sprite => (0, 1, 0, 0, 0.0, material.texture),
+                        RendererPlanKind::Sprite => (0, 1, 0, 0, 0.0, material_texture),
                         RendererPlanKind::Flipbook {
                             flipbook,
                             time_source,
@@ -298,15 +321,15 @@ impl GpuEffectArtifact {
                     };
                     GpuRenderer {
                         emitter_index: emitter_index as u32,
-                        blend_mode: match material.blend {
+                        blend_mode: match blend {
                             BlendMode::Alpha => GpuBlend::Alpha as u32,
                             BlendMode::Additive => GpuBlend::Additive as u32,
                             BlendMode::Multiply => GpuBlend::Multiply as u32,
                         },
-                        softness: *material.softness.resolve(parameters),
+                        softness,
                         textured: u32::from(texture.is_some()),
-                        uv_min: Vec2::from_array(material.uv.min),
-                        uv_max: Vec2::from_array(material.uv.max),
+                        uv_min: Vec2::from_array(uv.min),
+                        uv_max: Vec2::from_array(uv.max),
                         tint: Vec4::from_array(tint),
                         particle_color,
                         renderer_kind,

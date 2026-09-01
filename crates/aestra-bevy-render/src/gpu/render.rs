@@ -1,6 +1,11 @@
 use super::{
     GpuBlend, GpuDrawInstance, GpuParticle, GpuRenderGlobals, GpuRenderMode, GpuRenderParams,
-    GpuRenderer, WESL_RENDER_SHADER_PATH,
+    GpuRenderer, GpuSemanticMaterialBinding, WESL_RENDER_SHADER_PATH,
+};
+use crate::material::{bevy_sampler_descriptor, material_bind_group_layout};
+use aestra_core::material::{MaterialCullMode, MaterialDepthTest};
+use aestra_gpu::material::{
+    MaterialColorTargetFormat, MaterialPipelineKey, MaterialPipelineVariant, MaterialResourceLayout,
 };
 use bevy::{
     app::SubApp,
@@ -23,13 +28,14 @@ use bevy::{
             RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
         },
         render_resource::{
-            BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
-            BlendComponent, BlendFactor, BlendOperation, BlendState, ColorTargetState, ColorWrites,
+            BindGroup, BindGroupEntries, BindGroupEntry, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntries, BindingResource, BlendComponent, BlendFactor, BlendOperation,
+            BlendState, BufferInitDescriptor, BufferUsages, ColorTargetState, ColorWrites,
             CompareFunction, DepthBiasState, DepthStencilState, Face, FragmentState,
             MultisampleState, PipelineCache, PrimitiveState, PrimitiveTopology,
-            RenderPipelineDescriptor, SamplerBindingType, ShaderStages, SpecializedRenderPipeline,
-            SpecializedRenderPipelines, StencilFaceState, StencilState, TextureSampleType,
-            VertexState,
+            RenderPipelineDescriptor, Sampler, SamplerBindingType, ShaderStages,
+            SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState,
+            TextureFormat, TextureSampleType, VertexState,
             binding_types::{sampler, storage_buffer_read_only, texture_2d},
         },
         renderer::RenderDevice,
@@ -46,7 +52,9 @@ use bevy::{
 pub(super) fn install(render_app: &mut SubApp) {
     render_app
         .add_render_command::<Transparent2d, DrawGpuSprites>()
+        .add_render_command::<Transparent2d, DrawSemanticGpuSprites>()
         .add_render_command::<Transparent3d, DrawGpuSprites3d>()
+        .add_render_command::<Transparent3d, DrawSemanticGpuSprites3d>()
         .init_resource::<SpecializedRenderPipelines<GpuSpritePipeline>>()
         .add_systems(
             RenderStartup,
@@ -64,17 +72,40 @@ pub(super) fn install(render_app: &mut SubApp) {
         );
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct GpuSpritePipelineKey {
     view: GpuSpriteViewKey,
     blend: GpuBlend,
     render_mode: GpuRenderMode,
+    material: Option<GpuSemanticPipelineKey>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum GpuSpriteViewKey {
     TwoD(Mesh2dPipelineKey),
     ThreeD(MeshPipelineKey),
+}
+
+#[derive(Clone, Debug)]
+struct GpuSemanticPipelineKey {
+    key: MaterialPipelineKey,
+    shader: Handle<Shader>,
+    layout: std::sync::Arc<MaterialResourceLayout>,
+}
+
+impl PartialEq for GpuSemanticPipelineKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key && self.shader == other.shader
+    }
+}
+
+impl Eq for GpuSemanticPipelineKey {}
+
+impl std::hash::Hash for GpuSemanticPipelineKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.key, state);
+        std::hash::Hash::hash(&self.shader, state);
+    }
 }
 
 #[derive(Resource)]
@@ -132,9 +163,18 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 mesh.msaa_samples(),
             ),
         };
+        let render_state = key
+            .material
+            .as_ref()
+            .map(|material| material.key.render_state);
+        let blend_mode = render_state.map_or(key.blend, |state| match state.blend {
+            aestra_core::BlendMode::Alpha => GpuBlend::Alpha,
+            aestra_core::BlendMode::Additive => GpuBlend::Additive,
+            aestra_core::BlendMode::Multiply => GpuBlend::Multiply,
+        });
         let blend = match key.render_mode {
             GpuRenderMode::Wireframe => BlendState::ALPHA_BLENDING,
-            GpuRenderMode::Rendered => match key.blend {
+            GpuRenderMode::Rendered => match blend_mode {
                 GpuBlend::Alpha => BlendState::ALPHA_BLENDING,
                 GpuBlend::Additive => BlendState {
                     color: BlendComponent {
@@ -158,9 +198,30 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 },
             },
         };
+        let mut layout = vec![view_layout, self.effect_layout.clone()];
+        if let Some(material) = &key.material {
+            layout.push(material_bind_group_layout(&material.layout));
+        }
+        let fragment_shader = key
+            .material
+            .as_ref()
+            .map_or_else(|| self.shader.clone(), |material| material.shader.clone());
+        let fragment_entry = if key.material.is_some() && key.render_mode == GpuRenderMode::Rendered
+        {
+            aestra_gpu::material::MATERIAL_FRAGMENT_ENTRY_POINT
+        } else {
+            match key.render_mode {
+                GpuRenderMode::Wireframe => "fragment_wireframe",
+                GpuRenderMode::Rendered => match blend_mode {
+                    GpuBlend::Alpha => "fragment_alpha",
+                    GpuBlend::Additive => "fragment_additive",
+                    GpuBlend::Multiply => "fragment_multiply",
+                },
+            }
+        };
         RenderPipelineDescriptor {
             label: Some("aestra gpu sprite".into()),
-            layout: vec![view_layout, self.effect_layout.clone()],
+            layout,
             vertex: VertexState {
                 shader: self.shader.clone(),
                 entry_point: Some("vertex".into()),
@@ -168,18 +229,8 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 ..default()
             },
             fragment: Some(FragmentState {
-                shader: self.shader.clone(),
-                entry_point: Some(
-                    match key.render_mode {
-                        GpuRenderMode::Wireframe => "fragment_wireframe",
-                        GpuRenderMode::Rendered => match key.blend {
-                            GpuBlend::Alpha => "fragment_alpha",
-                            GpuBlend::Additive => "fragment_additive",
-                            GpuBlend::Multiply => "fragment_multiply",
-                        },
-                    }
-                    .into(),
-                ),
+                shader: fragment_shader,
+                entry_point: Some(fragment_entry.into()),
                 targets: vec![Some(ColorTargetState {
                     format: target_format,
                     blend: Some(blend),
@@ -189,13 +240,26 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             }),
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleList,
-                cull_mode: Some(Face::Back),
+                cull_mode: render_state.map_or(Some(Face::Back), |state| match state.cull_mode {
+                    MaterialCullMode::None => None,
+                    MaterialCullMode::Front => Some(Face::Front),
+                    MaterialCullMode::Back => Some(Face::Back),
+                }),
                 ..default()
             },
             depth_stencil: Some(DepthStencilState {
                 format: depth_format,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(CompareFunction::GreaterEqual),
+                depth_write_enabled: Some(render_state.is_some_and(|state| state.depth_write)),
+                depth_compare: Some(render_state.map_or(CompareFunction::GreaterEqual, |state| {
+                    match state.depth_test {
+                        MaterialDepthTest::Disabled | MaterialDepthTest::Always => {
+                            CompareFunction::Always
+                        }
+                        // Bevy's main view uses reverse-Z depth.
+                        MaterialDepthTest::Less => CompareFunction::Greater,
+                        MaterialDepthTest::LessEqual => CompareFunction::GreaterEqual,
+                    }
+                })),
                 stencil: StencilState {
                     front: StencilFaceState::IGNORE,
                     back: StencilFaceState::IGNORE,
@@ -216,6 +280,9 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
 
 #[derive(Component)]
 struct GpuRenderBindGroup(BindGroup);
+
+#[derive(Component)]
+struct GpuMaterialBindGroup(BindGroup);
 
 fn prepare_render_bind_groups(
     mut commands: Commands,
@@ -264,6 +331,80 @@ fn prepare_render_bind_groups(
         commands
             .entity(entity)
             .insert(GpuRenderBindGroup(bind_group));
+        let Some(material) = &effect.semantic_material else {
+            commands.entity(entity).remove::<GpuMaterialBindGroup>();
+            continue;
+        };
+        let descriptor = material_bind_group_layout(&material.program.resource_layout);
+        let uniform_buffer = (!material.uniforms.is_empty()).then(|| {
+            render_device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("aestra semantic material uniforms"),
+                contents: &material.uniforms,
+                usage: BufferUsages::UNIFORM,
+            })
+        });
+        let resolved_images = material
+            .textures
+            .iter()
+            .map(|texture| {
+                images
+                    .get(texture)
+                    .or_else(|| images.get(&material.fallback_texture))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(resolved_images) = resolved_images else {
+            continue;
+        };
+        let samplers = material
+            .program
+            .resource_layout
+            .samplers
+            .iter()
+            .map(|slot| render_device.create_sampler(&bevy_sampler_descriptor(slot.descriptor)))
+            .collect::<Vec<Sampler>>();
+        let mut entries = Vec::with_capacity(descriptor.entries.len());
+        if let (Some(binding), Some(buffer)) = (
+            material.program.resource_layout.uniforms.binding,
+            uniform_buffer.as_ref(),
+        ) {
+            entries.push(BindGroupEntry {
+                binding,
+                resource: BindingResource::Buffer(buffer.as_entire_buffer_binding()),
+            });
+        }
+        for (slot, image) in material
+            .program
+            .resource_layout
+            .textures
+            .iter()
+            .zip(&resolved_images)
+        {
+            entries.push(BindGroupEntry {
+                binding: slot.binding,
+                resource: BindingResource::TextureView(&image.texture_view),
+            });
+        }
+        for (slot, sampler) in material
+            .program
+            .resource_layout
+            .samplers
+            .iter()
+            .zip(&samplers)
+        {
+            entries.push(BindGroupEntry {
+                binding: slot.binding,
+                resource: BindingResource::Sampler(sampler),
+            });
+        }
+        entries.sort_by_key(|entry| entry.binding);
+        let bind_group = render_device.create_bind_group(
+            Some("aestra semantic material"),
+            &pipeline_cache.get_bind_group_layout(&descriptor),
+            &entries,
+        );
+        commands
+            .entity(entity)
+            .insert(GpuMaterialBindGroup(bind_group));
     }
 }
 
@@ -276,7 +417,9 @@ fn queue_gpu_sprites(
     mut phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
     views: Query<(&RenderVisibleEntities, &ExtractedView, &Msaa)>,
 ) {
-    let draw_function = draw_functions.read().id::<DrawGpuSprites>();
+    let draw_functions = draw_functions.read();
+    let legacy_draw_function = draw_functions.id::<DrawGpuSprites>();
+    let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites>();
     for (visible_entities, view, msaa) in &views {
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
@@ -297,13 +440,25 @@ fn queue_gpu_sprites(
                     view: GpuSpriteViewKey::TwoD(mesh_key),
                     blend: effect.blend,
                     render_mode: effect.render_mode,
+                    material: semantic_pipeline_key(
+                        effect.semantic_material.as_ref(),
+                        view.target_format,
+                        msaa.samples(),
+                        0,
+                    ),
                 },
             );
             phase.add_retained(Transparent2d {
                 sort_key: FloatOrd(effect.renderer_order as f32),
                 entity: (*render_entity, *main_entity),
                 pipeline: pipeline_id,
-                draw_function,
+                draw_function: if effect.semantic_material.is_some()
+                    && effect.render_mode == GpuRenderMode::Rendered
+                {
+                    semantic_draw_function
+                } else {
+                    legacy_draw_function
+                },
                 batch_range: 0..1,
                 extracted_index: usize::MAX,
                 extra_index: PhaseItemExtraIndex::None,
@@ -326,7 +481,9 @@ fn queue_gpu_sprites_3d(
     views: Query<(&RenderVisibleEntities, &ExtractedView)>,
 ) {
     let (pipeline, mut pipelines, pipeline_cache, view_key_cache) = pipeline_resources;
-    let draw_function = draw_functions.read().id::<DrawGpuSprites3d>();
+    let draw_functions = draw_functions.read();
+    let legacy_draw_function = draw_functions.id::<DrawGpuSprites3d>();
+    let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites3d>();
     for (visible_entities, view) in &views {
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
@@ -345,19 +502,63 @@ fn queue_gpu_sprites_3d(
                     view: GpuSpriteViewKey::ThreeD(mesh_key),
                     blend: effect.blend,
                     render_mode: effect.render_mode,
+                    material: semantic_pipeline_key(
+                        effect.semantic_material.as_ref(),
+                        view.target_format,
+                        mesh_key.msaa_samples(),
+                        1,
+                    ),
                 },
             );
             phase.add_retained(Transparent3d {
                 sorting_info: gpu_draw_sorting_info(effect.mesh_center, effect.renderer_order),
                 entity: (render_entity, main_entity),
                 pipeline: pipeline_id,
-                draw_function,
+                draw_function: if effect.semantic_material.is_some()
+                    && effect.render_mode == GpuRenderMode::Rendered
+                {
+                    semantic_draw_function
+                } else {
+                    legacy_draw_function
+                },
                 distance: 0.0,
                 batch_range: 0..1,
                 extra_index: PhaseItemExtraIndex::None,
                 indexed: false,
             });
         }
+    }
+}
+
+fn semantic_pipeline_key(
+    binding: Option<&GpuSemanticMaterialBinding>,
+    target_format: TextureFormat,
+    sample_count: u32,
+    feature_bits: u64,
+) -> Option<GpuSemanticPipelineKey> {
+    let binding = binding?;
+    let variant = MaterialPipelineVariant {
+        target_format: portable_target_format(target_format),
+        sample_count,
+        feature_bits,
+    };
+    let key = binding
+        .program
+        .pipeline_key(binding.render_state, variant)
+        .expect("runtime bindings validate their material render state");
+    Some(GpuSemanticPipelineKey {
+        key,
+        shader: binding.shader.clone(),
+        layout: std::sync::Arc::new(binding.program.resource_layout.clone()),
+    })
+}
+
+const fn portable_target_format(format: TextureFormat) -> MaterialColorTargetFormat {
+    match format {
+        TextureFormat::Rgba8UnormSrgb => MaterialColorTargetFormat::Rgba8UnormSrgb,
+        TextureFormat::Bgra8UnormSrgb => MaterialColorTargetFormat::Bgra8UnormSrgb,
+        TextureFormat::Rgba16Float => MaterialColorTargetFormat::Rgba16Float,
+        _ => MaterialColorTargetFormat::Other(0),
     }
 }
 
@@ -387,10 +588,26 @@ type DrawGpuSprites = (
     DrawGpuSpritesIndirect,
 );
 
+type DrawSemanticGpuSprites = (
+    SetItemPipeline,
+    SetMesh2dViewBindGroup<0>,
+    SetGpuRenderBindGroup<1>,
+    SetGpuMaterialBindGroup<2>,
+    DrawGpuSpritesIndirect,
+);
+
 type DrawGpuSprites3d = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
     SetGpuRenderBindGroup<1>,
+    DrawGpuSpritesIndirect,
+);
+
+type DrawSemanticGpuSprites3d = (
+    SetItemPipeline,
+    SetMeshViewBindGroup<0>,
+    SetGpuRenderBindGroup<1>,
+    SetGpuMaterialBindGroup<2>,
     DrawGpuSpritesIndirect,
 );
 
@@ -400,6 +617,28 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGpuRenderBindGroup<I>
     type Param = ();
     type ViewQuery = ();
     type ItemQuery = Read<GpuRenderBindGroup>;
+
+    fn render<'w>(
+        _item: &P,
+        _view: ROQueryItem<'w, '_, Self::ViewQuery>,
+        bind_group: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
+        _param: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        let Some(bind_group) = bind_group else {
+            return RenderCommandResult::Skip;
+        };
+        pass.set_bind_group(I, &bind_group.0, &[]);
+        RenderCommandResult::Success
+    }
+}
+
+struct SetGpuMaterialBindGroup<const I: usize>;
+
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGpuMaterialBindGroup<I> {
+    type Param = ();
+    type ViewQuery = ();
+    type ItemQuery = Read<GpuMaterialBindGroup>;
 
     fn render<'w>(
         _item: &P,
@@ -444,11 +683,40 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aestra_compiler::MaterialCompiler;
+    use aestra_core::material::{MaterialProgram, MaterialRenderState};
+    use aestra_gpu::material::{MaterialBackendCapabilities, MaterialShaderCompiler};
     use bevy::{
         math::Affine3A,
         render::{render_phase::ViewRangefinder3d, view::RenderVisibleEntitiesClass},
     };
     use std::any::TypeId;
+
+    #[test]
+    fn semantic_pipeline_identity_ignores_instance_uniform_bytes() {
+        let program = MaterialProgram::additive_sprite("Pipeline identity");
+        let ir = MaterialCompiler.compile(&program).unwrap();
+        let program = std::sync::Arc::new(
+            MaterialShaderCompiler
+                .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+                .unwrap(),
+        );
+        let binding = |uniforms: &[u8]| GpuSemanticMaterialBinding {
+            program: program.clone(),
+            render_state: MaterialRenderState::additive_sprite(),
+            shader: Handle::default(),
+            uniforms: std::sync::Arc::from(uniforms),
+            textures: Vec::new(),
+            fallback_texture: Handle::default(),
+        };
+        let first = binding(&[0; 16]);
+        let second = binding(&[255; 16]);
+
+        assert_eq!(
+            semantic_pipeline_key(Some(&first), TextureFormat::Bgra8UnormSrgb, 4, 0),
+            semantic_pipeline_key(Some(&second), TextureFormat::Bgra8UnormSrgb, 4, 0),
+        );
+    }
 
     #[test]
     fn three_dimensional_draw_selection_is_specific_to_each_view() {

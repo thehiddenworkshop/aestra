@@ -18,6 +18,8 @@ pub use capabilities::{
     GpuCapabilities,
 };
 
+use crate::material::MaterialRuntimeBinding;
+use aestra_core::MaterialId;
 use aestra_runtime::{CompiledEffect, EffectInstance, ParticleSample};
 use bevy::{
     ecs::schedule::IntoScheduleConfigs,
@@ -72,6 +74,7 @@ impl Default for AestraRenderSettings {
 pub struct PresentedEffect {
     pub instance: EffectInstance,
     render_mode: EffectRenderMode,
+    material_bindings: BTreeMap<MaterialId, MaterialRuntimeBinding>,
     cpu_samples: Vec<ParticleSample>,
     gpu_samples: Vec<ParticleSample>,
     cpu_evaluation_time: Option<Duration>,
@@ -82,6 +85,7 @@ impl PresentedEffect {
         Self {
             instance: EffectInstance::new(effect),
             render_mode: EffectRenderMode::Rendered,
+            material_bindings: BTreeMap::new(),
             cpu_samples: Vec::new(),
             gpu_samples: Vec::new(),
             cpu_evaluation_time: None,
@@ -102,6 +106,21 @@ impl PresentedEffect {
 
     pub fn set_render_mode(&mut self, mode: EffectRenderMode) {
         self.render_mode = mode;
+    }
+
+    /// Selects the semantic material program and instance values used by one renderer material.
+    ///
+    /// Renderers without a binding continue through the legacy compatibility shader.
+    pub fn bind_material(&mut self, material: MaterialId, binding: MaterialRuntimeBinding) {
+        self.material_bindings.insert(material, binding);
+    }
+
+    pub fn unbind_material(&mut self, material: MaterialId) -> Option<MaterialRuntimeBinding> {
+        self.material_bindings.remove(&material)
+    }
+
+    pub fn material_binding(&self, material: MaterialId) -> Option<&MaterialRuntimeBinding> {
+        self.material_bindings.get(&material)
     }
 
     pub fn gpu_samples(&self) -> &[ParticleSample] {

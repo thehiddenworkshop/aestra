@@ -7,7 +7,10 @@ use crate::{
     CompatibilityIssueCode, CompatibilityReport, EffectRenderMode, EffectRuntimeStatus,
     GpuCapabilities, GpuPresentationPrepared, PresentedEffect, TextureAssetCache,
     capabilities::select_backend,
+    material::{MaterialBindingError, MaterialRuntimeBinding},
 };
+use aestra_core::MaterialId;
+use aestra_gpu::material::{CompiledMaterialProgram, MaterialProgramFingerprint};
 use aestra_gpu::shader::{SIMULATION_WESL, SPRITE_RENDER_WESL};
 pub use aestra_gpu::{
     GpuArtifactError, GpuCurve, GpuEffectArtifact, GpuEmitter, GpuGlobals, GpuGradient,
@@ -43,7 +46,11 @@ use bevy::{
         sync_component::SyncComponent,
     },
 };
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy_render/shaders/aestra_simulation.wesl";
 pub const WESL_RENDER_SHADER_PATH: &str =
@@ -86,9 +93,24 @@ struct GpuDrawInstance {
     renderer_order: u32,
     indirect_offset: u64,
     blend: GpuBlend,
+    material: MaterialId,
+    semantic_material: Option<GpuSemanticMaterialBinding>,
     render_mode: GpuRenderMode,
     mesh_center: Vec3,
 }
+
+#[derive(Clone)]
+struct GpuSemanticMaterialBinding {
+    program: Arc<CompiledMaterialProgram>,
+    render_state: aestra_core::material::MaterialRenderState,
+    shader: Handle<Shader>,
+    uniforms: Arc<[u8]>,
+    textures: Vec<Handle<Image>>,
+    fallback_texture: Handle<Image>,
+}
+
+#[derive(Resource, Default)]
+pub(crate) struct MaterialShaderCache(BTreeMap<MaterialProgramFingerprint, Handle<Shader>>);
 
 impl SyncComponent for GpuDrawInstance {
     type Target = Self;
@@ -160,6 +182,33 @@ type PreparedGpuPlayers<'w, 's> = Query<
     Without<GpuDrawInstance>,
 >;
 
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct MaterialPreparationParams<'w> {
+    shaders: ResMut<'w, Assets<Shader>>,
+    asset_server: Res<'w, AssetServer>,
+    texture_cache: ResMut<'w, TextureAssetCache>,
+    fallback_textures: Res<'w, GpuFallbackTextures>,
+    shader_cache: ResMut<'w, MaterialShaderCache>,
+}
+
+impl MaterialPreparationParams<'_> {
+    fn prepare(
+        &mut self,
+        binding: &MaterialRuntimeBinding,
+        effect: &aestra_runtime::CompiledEffect,
+    ) -> Result<GpuSemanticMaterialBinding, MaterialBindingError> {
+        prepare_semantic_material(
+            binding,
+            effect,
+            &self.asset_server,
+            &mut self.texture_cache,
+            &self.fallback_textures,
+            &mut self.shaders,
+            &mut self.shader_cache,
+        )
+    }
+}
+
 #[derive(Resource)]
 struct SimulationPipeline {
     layout: BindGroupLayoutDescriptor,
@@ -173,6 +222,7 @@ pub(crate) fn install(app: &mut App) {
         ExtractComponentPlugin::<GpuEffectBuffers>::default(),
         ExtractComponentPlugin::<GpuDrawInstance>::default(),
     ))
+    .init_resource::<MaterialShaderCache>()
     .add_systems(Startup, init_fallback_textures)
     .add_systems(Update, update_gpu_inputs.after(prepare_gpu_effects));
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
@@ -239,9 +289,7 @@ fn init_fallback_textures(mut commands: Commands, mut images: ResMut<Assets<Imag
 pub(crate) fn prepare_gpu_effects(
     mut commands: Commands,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    asset_server: Res<AssetServer>,
-    mut texture_cache: ResMut<TextureAssetCache>,
-    fallback_textures: Res<GpuFallbackTextures>,
+    mut material_resources: MaterialPreparationParams,
     players: UnpreparedPlayers,
 ) {
     for (entity, player, runtime, render_layers) in &players {
@@ -287,12 +335,22 @@ pub(crate) fn prepare_gpu_effects(
                     .flat_map(|emitter| emitter.renderers.iter()),
             )
             .map(|((index, renderer), plan)| {
-                let material = player
-                    .effect()
-                    .material(plan.material)
-                    .expect("compiler guarantees renderer material references");
+                let material = player.effect().material(plan.material);
+                let semantic_material = player
+                    .material_binding(plan.material)
+                    .map(|binding| material_resources.prepare(binding, player.effect()))
+                    .transpose()
+                    .map_err(|error| {
+                        warn!(
+                            "semantic material {} could not be bound: {error}",
+                            plan.material
+                        );
+                        error
+                    })
+                    .ok()
+                    .flatten();
                 let texture = match &plan.kind {
-                    RendererPlanKind::Sprite => material.texture,
+                    RendererPlanKind::Sprite => material.and_then(|material| material.texture),
                     RendererPlanKind::Flipbook { flipbook, .. } => player
                         .effect()
                         .flipbook(*flipbook)
@@ -309,14 +367,16 @@ pub(crate) fn prepare_gpu_effects(
                 let (texture, fallback_texture) = texture_path.map_or_else(
                     || {
                         (
-                            fallback_textures.white.clone(),
-                            fallback_textures.white.clone(),
+                            material_resources.fallback_textures.white.clone(),
+                            material_resources.fallback_textures.white.clone(),
                         )
                     },
                     |path| {
                         (
-                            texture_cache.load(&asset_server, &path),
-                            fallback_textures.missing.clone(),
+                            material_resources
+                                .texture_cache
+                                .load(&material_resources.asset_server, &path),
+                            material_resources.fallback_textures.missing.clone(),
                         )
                     },
                 );
@@ -324,13 +384,18 @@ pub(crate) fn prepare_gpu_effects(
                     index as u32,
                     renderer.emitter_index,
                     artifact.emitters[renderer.emitter_index as usize].slot_offset,
-                    match renderer.blend_mode {
-                        mode if mode == GpuBlend::Additive as u32 => GpuBlend::Additive,
-                        mode if mode == GpuBlend::Multiply as u32 => GpuBlend::Multiply,
-                        _ => GpuBlend::Alpha,
-                    },
+                    semantic_material.as_ref().map_or_else(
+                        || match renderer.blend_mode {
+                            mode if mode == GpuBlend::Additive as u32 => GpuBlend::Additive,
+                            mode if mode == GpuBlend::Multiply as u32 => GpuBlend::Multiply,
+                            _ => GpuBlend::Alpha,
+                        },
+                        |binding| gpu_blend(binding.render_state.blend),
+                    ),
                     texture,
                     fallback_texture,
+                    plan.material,
+                    semantic_material,
                 )
             })
             .collect::<Vec<_>>();
@@ -397,6 +462,8 @@ pub(crate) fn prepare_gpu_effects(
                         blend,
                         texture,
                         fallback_texture,
+                        material,
+                        semantic_material,
                     ) in renderer_draws
                     {
                         let render_params = buffers.add(ShaderBuffer::from(GpuRenderParams {
@@ -417,6 +484,8 @@ pub(crate) fn prepare_gpu_effects(
                                 renderer_order: renderer_index,
                                 indirect_offset: indirect_draw_offset(emitter_index),
                                 blend,
+                                material,
+                                semantic_material,
                                 render_mode,
                                 mesh_center: Vec3::ZERO,
                             },
@@ -563,6 +632,7 @@ fn detect_gpu_capabilities(
 
 fn update_gpu_inputs(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
+    mut material_resources: MaterialPreparationParams,
     players: PreparedGpuPlayers,
     mut draw_instances: Query<(&mut GpuDrawInstance, &mut RenderLayers), Without<PresentedEffect>>,
 ) {
@@ -599,10 +669,78 @@ fn update_gpu_inputs(
             for child in children.iter() {
                 if let Ok((mut draw, mut draw_layers)) = draw_instances.get_mut(child) {
                     draw.render_mode = render_mode;
+                    if let Some(binding) = player.material_binding(draw.material) {
+                        match material_resources.prepare(binding, player.effect()) {
+                            Ok(prepared) => {
+                                draw.blend = gpu_blend(binding.render_state().blend);
+                                draw.semantic_material = Some(prepared);
+                            }
+                            Err(error) => warn!(
+                                "semantic material {} could not be updated: {error}",
+                                draw.material
+                            ),
+                        }
+                    } else {
+                        draw.semantic_material = None;
+                    }
                     *draw_layers = render_layers.cloned().unwrap_or_default();
                 }
             }
         }
+    }
+}
+
+fn prepare_semantic_material(
+    binding: &MaterialRuntimeBinding,
+    effect: &aestra_runtime::CompiledEffect,
+    asset_server: &AssetServer,
+    texture_cache: &mut TextureAssetCache,
+    fallback_textures: &GpuFallbackTextures,
+    shaders: &mut Assets<Shader>,
+    shader_cache: &mut MaterialShaderCache,
+) -> Result<GpuSemanticMaterialBinding, MaterialBindingError> {
+    let prepared = binding.prepare()?;
+    let program = binding.program().clone();
+    let shader = shader_cache
+        .0
+        .entry(program.program_fingerprint)
+        .or_insert_with(|| {
+            shaders.add(Shader::from_wgsl(
+                program.shader.wgsl.clone(),
+                format!(
+                    "generated://aestra/material/{}.wgsl",
+                    program.program_fingerprint
+                ),
+            ))
+        })
+        .clone();
+    let textures = prepared
+        .textures
+        .into_iter()
+        .map(|(_, asset)| {
+            effect
+                .assets
+                .iter()
+                .find(|candidate| candidate.source == asset)
+                .map(|asset| texture_cache.load(asset_server, &asset.path))
+                .unwrap_or_else(|| fallback_textures.missing.clone())
+        })
+        .collect();
+    Ok(GpuSemanticMaterialBinding {
+        program,
+        render_state: binding.render_state(),
+        shader,
+        uniforms: prepared.uniforms.into(),
+        textures,
+        fallback_texture: fallback_textures.missing.clone(),
+    })
+}
+
+const fn gpu_blend(blend: aestra_core::BlendMode) -> GpuBlend {
+    match blend {
+        aestra_core::BlendMode::Alpha => GpuBlend::Alpha,
+        aestra_core::BlendMode::Additive => GpuBlend::Additive,
+        aestra_core::BlendMode::Multiply => GpuBlend::Multiply,
     }
 }
 
@@ -762,16 +900,58 @@ fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aestra_compiler::EffectCompiler;
+    use aestra_compiler::{EffectCompiler, MaterialCompiler};
+    use aestra_core::material::{
+        MaterialInstance, MaterialProgram, MaterialProgramRef, MaterialRenderState,
+    };
     use aestra_core::{
         AssetDefinition, BlendMode, Curve, CurveKey, EffectAsset, Emitter, EmitterShape,
         MODULE_EMISSION, MODULE_MOTION, MaterialDefinition, MaterialInput, MaterialProperties,
         PropertyEvaluationDomain, PropertySource, PropertySourceValue, RendererInstance,
         ScalarRange, UvRect, Value, Vec3Curve, Vec3Range,
     };
-    use aestra_gpu::INDIRECT_DRAW_BYTES;
+    use aestra_gpu::{
+        INDIRECT_DRAW_BYTES,
+        material::{MaterialBackendCapabilities, MaterialShaderCompiler},
+    };
     use aestra_runtime::EffectInstance;
     use std::sync::Arc;
+
+    #[test]
+    fn semantic_material_instance_reaches_the_gpu_draw_artifact_without_legacy_material_data() {
+        let program = MaterialProgram::additive_sprite("Deterministic additive flame");
+        let material = MaterialId::from_u128(0xA500);
+        let instance = MaterialInstance {
+            id: material,
+            program: MaterialProgramRef::Project(program.id),
+            values: BTreeMap::new(),
+            render_state: MaterialRenderState::additive_sprite(),
+        };
+        let mut effect = EffectAsset::new("Semantic flame fixture", 2.0);
+        let mut emitter = Emitter::basic_sprite("Flame", effect.duration);
+        emitter.renderers[0].material = material;
+        effect.material_instances.push(instance.clone());
+        effect.emitters.push(emitter);
+        let compiled_effect = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        assert!(compiled_effect.material(material).is_none());
+
+        let ir = MaterialCompiler.compile(&program).unwrap();
+        let compiled_program = Arc::new(
+            MaterialShaderCompiler
+                .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+                .unwrap(),
+        );
+        let mut presented = PresentedEffect::new(compiled_effect);
+        presented.bind_material(
+            material,
+            MaterialRuntimeBinding::from_instance(compiled_program, &instance).unwrap(),
+        );
+
+        let artifact = GpuEffectArtifact::from_instance(&presented.instance).unwrap();
+        assert_eq!(artifact.renderers.len(), 1);
+        assert_eq!(artifact.renderers[0].blend_mode, GpuBlend::Additive as u32);
+        assert!(presented.material_binding(material).is_some());
+    }
 
     #[test]
     fn extracted_draw_center_uses_the_world_space_bounds_center() {

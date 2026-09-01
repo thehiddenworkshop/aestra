@@ -231,8 +231,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   program fingerprints from render-state/target/sample/feature pipeline keys. Ordinary instance
   values and texture asset IDs affect neither key. `aestra-bevy-render` maps physical device limits
   and the portable layout into Bevy/WGPU descriptors without introducing backend types upstream.
-- [ ] **Material 5 — legacy migration and visual approval.** Migrate existing sprite materials
-  through semantic commands and approve native-GPU references without claiming CPU pixel parity.
+- [ ] **Material 5 — legacy migration and visual approval (runtime bridge complete).** The live 2D
+  and 3D sprite pipelines accept compiled semantic fragment shaders, deterministic group-2 resource
+  layouts, constant/default instance values, explicit samplers, missing-texture fallbacks, and
+  portable pipeline keys while preserving the legacy compatibility draw. Next migrate existing
+  sprite materials through semantic commands and approve native-GPU references without claiming
+  CPU pixel parity.
 
 ### Phase B — useful artist workflow
 

@@ -154,8 +154,13 @@ typed material IR program. The same portable compilation produces deterministic 
 multi-texture, and descriptor-shared sampler bindings; parameter and required-input reflection;
 backend-limit diagnostics; stable program fingerprints; and render-state/target pipeline keys.
 `aestra-bevy-render` translates the emitted resource layout into the corresponding WGPU descriptor.
-The live sprite pipeline continues to use the compatibility material path until Material Milestone
-5 migrates and visually approves existing effects.
+The live 2D and 3D sprite pipelines can now opt into a compiled semantic material binding per
+renderer. They load the generated fragment shader, append its deterministic bind group, pack
+instance uniforms, resolve texture IDs through the compiled effect asset table, create explicit
+samplers, and specialize through the portable material pipeline key. Renderers without a semantic
+binding continue to use the compatibility material path until Material Milestone 5 migrates and
+visually approves existing effects. Changing ordinary instance bytes or texture IDs does not select
+a new shader or pipeline.
 
 The current sprite surface function:
 
@@ -165,7 +170,8 @@ The current sprite surface function:
 4. computes radial coverage for procedural sprites or edge coverage for textured sprites;
 5. returns RGB and alpha for the selected blend pipeline.
 
-Native GPU render state is fixed except for blend mode:
+Legacy native GPU render state is fixed except for blend mode. Semantic material draws apply their
+validated blend, depth-test, depth-write, and cull state:
 
 - triangle-list camera-facing quads;
 - back-face culling;
@@ -249,7 +255,10 @@ adapter. A destructive format migration is not required to prove the first verti
 
 ## Known gaps
 
-- semantic material WESL/resource layouts are not yet bound by the live sprite pipeline;
+- semantic bindings are attached at presentation time; project compilation and versioned artifacts
+  do not yet carry them automatically;
+- effect/emitter/random parameter sources remain deferred to Material 6; the initial runtime bridge
+  accepts constant instance overrides and reflected defaults;
 - the initial generated backend supports UV0, particle color/opacity, effect time, arithmetic,
   interpolation, clamping, and sampled Texture2D parameters; richer inputs remain explicit errors;
 - no validated custom WESL functions;
@@ -276,5 +285,5 @@ Material Milestone 1 may begin with an additive unlit sprite domain and only `Fl
 The node graph remains deferred. It will be a projection of the semantic program after the typed
 model, compiler path, runtime binding, and preview are stable.
 
-Items 1–4 of this entrance contract are complete. Runtime binding, compatibility migration, and
+Items 1–5 of this entrance contract are complete. Compatibility migration, full path coverage, and
 native-GPU approval remain the next release gate.

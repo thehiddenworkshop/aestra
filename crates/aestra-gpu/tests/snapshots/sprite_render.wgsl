@@ -64,7 +64,23 @@ struct VertexOutput {
     @location(4)
     uv: vec2<f32>,
     @location(5) @interpolate(flat)
-    textured: u32
+    textured: u32,
+    @location(6)
+    material_uv0: vec2<f32>,
+    @location(7)
+    material_particle_color: vec4<f32>,
+    @location(8)
+    material_particle_opacity: f32,
+    @location(9)
+    material_effect_time: f32,
+    @location(10)
+    material_quad_position: vec2<f32>,
+    @location(11)
+    material_softness: f32,
+    @location(12) @interpolate(flat)
+    material_textured: u32,
+    @location(13) @interpolate(flat)
+    material_visible: u32
 }
 
 @group(0) @binding(0)
@@ -163,6 +179,14 @@ fn vertex(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) ins
     }
     output.uv = mix(uv_bounds.xy, uv_bounds.zw, corner * 0.5 + vec2<f32>(0.5));
     output.textured = renderer.textured;
+    output.material_uv0 = output.uv;
+    output.material_particle_color = output.color;
+    output.material_particle_opacity = output.color.a;
+    output.material_effect_time = globals.time;
+    output.material_quad_position = corner;
+    output.material_softness = renderer.softness;
+    output.material_textured = renderer.textured;
+    output.material_visible = output.visible;
     return output;
 }
 
@@ -217,4 +241,3 @@ fn fragment_wireframe(input: VertexOutput) -> @location(0) vec4<f32> {
     let wire_color = mix(input.color.rgb, vec3<f32>(0.72, 0.56, 1.0), 0.65);
     return vec4<f32>(wire_color, coverage * 0.92);
 }
-
