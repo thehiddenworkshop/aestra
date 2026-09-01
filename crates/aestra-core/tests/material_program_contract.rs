@@ -180,6 +180,31 @@ fn material_instance_rejects_invalid_dynamic_sources() {
 }
 
 #[test]
+fn material_instance_rejects_non_numeric_random_ranges() {
+    let parameter = MaterialParameterId::from_u128(0x710);
+    let instance = MaterialInstance {
+        id: MaterialId::from_u128(0x711),
+        program: MaterialProgramRef::Project(MaterialProgramId::from_u128(0x712)),
+        values: BTreeMap::from([(
+            parameter,
+            MaterialParameterValue::RandomRange {
+                min: MaterialValue::Bool(false),
+                max: MaterialValue::Bool(true),
+                domain: MaterialEvaluationDomain::Effect,
+            },
+        )]),
+        render_state: MaterialRenderState::additive_sprite(),
+    };
+
+    let report = instance.validate_structure();
+
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::InvalidValue
+            && diagnostic.message.contains("numeric endpoints")
+    }));
+}
+
+#[test]
 fn effect_local_material_instances_round_trip_and_can_back_renderer_references() {
     let material = MaterialId::from_u128(0x800);
     let mut effect = EffectAsset::new("Semantic material owner", 1.0);

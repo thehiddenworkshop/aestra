@@ -247,6 +247,13 @@ impl MaterialValue {
                 | (Self::Bool(_), Self::Bool(_))
         )
     }
+
+    pub const fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            Self::Float(_) | Self::Vec2(_) | Self::Vec3(_) | Self::Vec4(_) | Self::ColorSrgb(_)
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -383,6 +390,14 @@ impl MaterialInstance {
                             DiagnosticCode::ParameterTypeMismatch,
                             &path,
                             "random material range endpoints must have the same type",
+                        );
+                    }
+                    if !min.is_numeric() || !max.is_numeric() {
+                        error(
+                            &mut report,
+                            DiagnosticCode::InvalidValue,
+                            &path,
+                            "random material ranges require numeric endpoints",
                         );
                     }
                     validate_instance_value(&mut report, &path, min);
@@ -1552,6 +1567,17 @@ fn validate_parameter_override(
                     path,
                     format!(
                         "material parameter '{}' random range does not match its declared type",
+                        parameter.name
+                    ),
+                );
+            }
+            if !parameter.value_type.is_numeric() {
+                error(
+                    report,
+                    DiagnosticCode::InvalidValue,
+                    path,
+                    format!(
+                        "material parameter '{}' does not support random ranges",
                         parameter.name
                     ),
                 );

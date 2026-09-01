@@ -247,7 +247,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
 ### Phase B — useful artist workflow
 
 - [ ] **Material 6 — reflection and parameter binding.** Expose typed parameters, resources,
-  evaluation domains, particle inputs, and scene requirements.
+  evaluation domains, particle inputs, and scene requirements. The first runtime slice is complete:
+  semantic instances can resolve and refresh separately scoped effect/emitter parameters plus
+  deterministic instance/effect/emitter random ranges without replacing their compiled program.
+  Next, carry those binding descriptors through compilation/versioned artifacts and project them
+  automatically into presentation contexts.
 - [ ] **Material 7 — Properties material editor.** Generate material controls from reflection and
   submit every edit through baseline semantic commands.
 - [ ] **Material 8 — VFX semantic primitives.** Add the initial UV, mask, dissolve, depth-fade,

@@ -18,7 +18,7 @@ pub use capabilities::{
     GpuCapabilities,
 };
 
-use crate::material::MaterialRuntimeBinding;
+use crate::material::{MaterialBindingContext, MaterialBindingError, MaterialRuntimeBinding};
 use aestra_core::MaterialId;
 use aestra_runtime::{CompiledEffect, EffectInstance, ParticleSample};
 use bevy::{
@@ -121,6 +121,22 @@ impl PresentedEffect {
 
     pub fn material_binding(&self, material: MaterialId) -> Option<&MaterialRuntimeBinding> {
         self.material_bindings.get(&material)
+    }
+
+    /// Refreshes one bound material after effect/emitter automation or parameter edits.
+    ///
+    /// This updates only dynamic uniform/resource values. It retains the compiled shader and
+    /// pipeline-compatible program already held by the binding.
+    pub fn refresh_material_binding(
+        &mut self,
+        material: MaterialId,
+        context: &MaterialBindingContext,
+    ) -> Result<(), MaterialBindingError> {
+        let binding = self
+            .material_bindings
+            .get_mut(&material)
+            .ok_or(MaterialBindingError::UnknownMaterial(material))?;
+        binding.refresh_dynamic_values(context)
     }
 
     pub fn gpu_samples(&self) -> &[ParticleSample] {

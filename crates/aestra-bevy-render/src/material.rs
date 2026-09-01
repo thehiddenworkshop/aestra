@@ -1,22 +1,144 @@
 //! Bevy/WGPU translation and runtime values for the portable semantic-material ABI.
 
 use aestra_core::{
-    AssetId, MaterialParameterId, MaterialProgramId,
+    AssetId, EmitterId, MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
     material::{
-        LEGACY_SPRITE_SOFTNESS_PARAMETER, MaterialAddressMode, MaterialFilterMode,
-        MaterialInstance, MaterialMipFilterMode, MaterialParameterValue, MaterialRenderState,
-        MaterialSamplerDescriptor, MaterialValue, MaterialValueType,
+        LEGACY_SPRITE_SOFTNESS_PARAMETER, MaterialAddressMode, MaterialEvaluationDomain,
+        MaterialFilterMode, MaterialInstance, MaterialMipFilterMode, MaterialParameterValue,
+        MaterialRenderState, MaterialSamplerDescriptor, MaterialValue, MaterialValueType,
     },
 };
 use aestra_gpu::material::{
     CompiledMaterialProgram, MaterialIrConstant, MaterialParameterBinding, MaterialResourceLayout,
 };
+use aestra_runtime::{EffectInstance, RuntimeValue};
 use bevy::render::render_resource::{
     AddressMode, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
     FilterMode, MipmapFilterMode, SamplerBindingType, SamplerDescriptor, ShaderStages,
     TextureSampleType, TextureViewDimension,
 };
 use std::{collections::BTreeMap, error::Error, fmt, num::NonZeroU64, sync::Arc};
+
+/// Typed values and deterministic seeds available while resolving one material instance.
+///
+/// Effect and emitter values are deliberately separate even though both currently reference
+/// Aestra [`ParameterId`] values. This preserves evaluation scope and prevents an emitter-rate
+/// binding from silently reading an effect-rate value. The context is reusable across every
+/// material bound to the same effect/emitter instance.
+#[derive(Debug, Clone, Default)]
+pub struct MaterialBindingContext {
+    effect_parameters: BTreeMap<ParameterId, MaterialValue>,
+    emitter_parameters: BTreeMap<ParameterId, MaterialValue>,
+    instance_seed: u64,
+    effect_seed: u64,
+    emitter_seed: Option<u64>,
+}
+
+impl MaterialBindingContext {
+    pub fn new(instance_seed: u64, effect_seed: u64) -> Self {
+        Self {
+            instance_seed,
+            effect_seed,
+            ..Self::default()
+        }
+    }
+
+    /// Captures the current packed values of one effect instance for effect-rate resolution.
+    pub fn from_effect_instance(instance: &EffectInstance) -> Self {
+        let mut context = Self::new(instance.seed(), instance.seed());
+        for (parameter, value) in instance
+            .effect()
+            .parameters
+            .iter()
+            .zip(instance.parameter_values())
+        {
+            if let Some(value) = runtime_material_value(value) {
+                context.set_effect_parameter(parameter.source, value);
+            }
+        }
+        context
+    }
+
+    /// Captures an emitter-scoped view of the current effect parameters and derives its seed.
+    ///
+    /// Aestra's current runtime parameter table is effect-owned. The explicit emitter projection
+    /// preserves scope today and leaves room for independently stored emitter parameters later.
+    pub fn for_emitter(instance: &EffectInstance, emitter: EmitterId) -> Self {
+        let mut context = Self::from_effect_instance(instance);
+        context.emitter_parameters = context.effect_parameters.clone();
+        let id = emitter.as_uuid().as_u128();
+        context.emitter_seed = Some(mix_material_seed(
+            instance.seed() ^ id as u64 ^ (id >> 64) as u64,
+        ));
+        context
+    }
+
+    pub fn set_effect_parameter(&mut self, parameter: ParameterId, value: MaterialValue) {
+        self.effect_parameters.insert(parameter, value);
+    }
+
+    pub fn set_effect_runtime_parameter(
+        &mut self,
+        parameter: ParameterId,
+        value: &RuntimeValue,
+    ) -> bool {
+        let Some(value) = runtime_material_value(value) else {
+            return false;
+        };
+        self.set_effect_parameter(parameter, value);
+        true
+    }
+
+    pub fn set_emitter_parameter(&mut self, parameter: ParameterId, value: MaterialValue) {
+        self.emitter_parameters.insert(parameter, value);
+    }
+
+    pub fn set_emitter_runtime_parameter(
+        &mut self,
+        parameter: ParameterId,
+        value: &RuntimeValue,
+    ) -> bool {
+        let Some(value) = runtime_material_value(value) else {
+            return false;
+        };
+        self.set_emitter_parameter(parameter, value);
+        true
+    }
+
+    pub fn set_emitter_seed(&mut self, seed: u64) {
+        self.emitter_seed = Some(seed);
+    }
+
+    pub fn clear_emitter_seed(&mut self) {
+        self.emitter_seed = None;
+    }
+
+    fn parameter(
+        &self,
+        source: MaterialParameterSource,
+        parameter: ParameterId,
+    ) -> Option<&MaterialValue> {
+        match source {
+            MaterialParameterSource::Effect => self.effect_parameters.get(&parameter),
+            MaterialParameterSource::Emitter => self.emitter_parameters.get(&parameter),
+        }
+    }
+
+    fn seed(&self, domain: MaterialEvaluationDomain) -> Option<u64> {
+        match domain {
+            MaterialEvaluationDomain::Instance => Some(self.instance_seed),
+            MaterialEvaluationDomain::Effect => Some(self.effect_seed),
+            MaterialEvaluationDomain::Emitter => self.emitter_seed,
+            MaterialEvaluationDomain::ShaderStatic => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaterialParameterSource {
+    Effect,
+    Emitter,
+}
 
 /// Runtime values for one effect-local instance of a compiled semantic material program.
 ///
@@ -28,6 +150,8 @@ pub struct MaterialRuntimeBinding {
     program: Arc<CompiledMaterialProgram>,
     render_state: MaterialRenderState,
     values: BTreeMap<MaterialParameterId, MaterialValue>,
+    source_instance: Option<MaterialId>,
+    dynamic_sources: BTreeMap<MaterialParameterId, MaterialParameterValue>,
 }
 
 impl MaterialRuntimeBinding {
@@ -42,6 +166,8 @@ impl MaterialRuntimeBinding {
             program,
             render_state,
             values: BTreeMap::new(),
+            source_instance: None,
+            dynamic_sources: BTreeMap::new(),
         })
     }
 
@@ -60,6 +186,7 @@ impl MaterialRuntimeBinding {
             });
         }
         let mut binding = Self::new(program, instance.render_state)?;
+        binding.source_instance = Some(instance.id);
         for (&parameter, value) in &instance.values {
             match value {
                 MaterialParameterValue::Constant(value) => {
@@ -73,6 +200,70 @@ impl MaterialRuntimeBinding {
             }
         }
         Ok(binding)
+    }
+
+    /// Builds and immediately resolves a material instance with dynamic parameter sources.
+    pub fn from_instance_with_context(
+        program: Arc<CompiledMaterialProgram>,
+        instance: &MaterialInstance,
+        context: &MaterialBindingContext,
+    ) -> Result<Self, MaterialBindingError> {
+        if program.source != instance.program.id() {
+            return Err(MaterialBindingError::ProgramMismatch {
+                expected: program.source,
+                actual: instance.program.id(),
+            });
+        }
+        let mut binding = Self::new(program, instance.render_state)?;
+        binding.source_instance = Some(instance.id);
+        for (&parameter, source) in &instance.values {
+            match source {
+                MaterialParameterValue::Constant(value) => {
+                    binding.set_value(parameter, value.clone())?;
+                }
+                dynamic => {
+                    binding.dynamic_sources.insert(parameter, dynamic.clone());
+                }
+            }
+        }
+        binding.refresh_dynamic_values(context)?;
+        Ok(binding)
+    }
+
+    /// Re-evaluates effect/emitter/random sources without replacing the compiled program.
+    ///
+    /// Applications call this after automation or parameter state changes. The shader and pipeline
+    /// stay shared; only the packed values/resources produced by [`Self::prepare`] change.
+    pub fn refresh_dynamic_values(
+        &mut self,
+        context: &MaterialBindingContext,
+    ) -> Result<(), MaterialBindingError> {
+        let instance = self
+            .source_instance
+            .ok_or(MaterialBindingError::MissingSourceInstance)?;
+        let resolved = self
+            .dynamic_sources
+            .iter()
+            .map(|(&parameter, source)| {
+                let expected = self
+                    .program
+                    .reflection
+                    .parameters
+                    .iter()
+                    .find(|candidate| candidate.id == parameter)
+                    .ok_or(MaterialBindingError::UnknownParameter(parameter))?
+                    .value_type;
+                resolve_dynamic_source(instance, parameter, source, expected, context)
+                    .map(|value| (parameter, value))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for (parameter, value) in &resolved {
+            self.validate_value(*parameter, value)?;
+        }
+        for (parameter, value) in resolved {
+            self.values.insert(parameter, value);
+        }
+        Ok(())
     }
 
     pub fn program(&self) -> &Arc<CompiledMaterialProgram> {
@@ -113,6 +304,16 @@ impl MaterialRuntimeBinding {
         parameter: MaterialParameterId,
         value: MaterialValue,
     ) -> Result<(), MaterialBindingError> {
+        self.validate_value(parameter, &value)?;
+        self.values.insert(parameter, value);
+        Ok(())
+    }
+
+    fn validate_value(
+        &self,
+        parameter: MaterialParameterId,
+        value: &MaterialValue,
+    ) -> Result<(), MaterialBindingError> {
         let reflection = self
             .program
             .reflection
@@ -120,7 +321,7 @@ impl MaterialRuntimeBinding {
             .iter()
             .find(|candidate| candidate.id == parameter)
             .ok_or(MaterialBindingError::UnknownParameter(parameter))?;
-        if !reflection.value_type.accepts(&value) {
+        if !reflection.value_type.accepts(value) {
             return Err(MaterialBindingError::TypeMismatch {
                 parameter,
                 expected: reflection.value_type,
@@ -129,7 +330,6 @@ impl MaterialRuntimeBinding {
         if reflection.binding == MaterialParameterBinding::ShaderStatic {
             return Err(MaterialBindingError::ShaderStaticOverride(parameter));
         }
-        self.values.insert(parameter, value);
         Ok(())
     }
 
@@ -197,6 +397,14 @@ pub enum MaterialBindingError {
     },
     ShaderStaticOverride(MaterialParameterId),
     UnsupportedDynamicSource(MaterialParameterId),
+    MissingSourceInstance,
+    MissingParameter {
+        source: MaterialParameterSource,
+        parameter: ParameterId,
+    },
+    MissingEvaluationContext(MaterialEvaluationDomain),
+    UnsupportedRandomRange(MaterialParameterId),
+    UnknownMaterial(MaterialId),
 }
 
 impl fmt::Display for MaterialBindingError {
@@ -231,13 +439,157 @@ impl fmt::Display for MaterialBindingError {
             ),
             Self::UnsupportedDynamicSource(parameter) => write!(
                 formatter,
-                "material parameter {parameter} uses a dynamic source deferred to Material 6"
+                "material parameter {parameter} requires an explicit runtime binding context"
             ),
+            Self::MissingSourceInstance => {
+                write!(formatter, "dynamic material binding has no source instance")
+            }
+            Self::MissingParameter { source, parameter } => write!(
+                formatter,
+                "material {source:?} parameter {parameter} has no runtime value"
+            ),
+            Self::MissingEvaluationContext(domain) => write!(
+                formatter,
+                "material random source requires a {domain:?} evaluation seed"
+            ),
+            Self::UnsupportedRandomRange(parameter) => write!(
+                formatter,
+                "material parameter {parameter} uses a random range with a non-numeric value type"
+            ),
+            Self::UnknownMaterial(material) => {
+                write!(
+                    formatter,
+                    "presented effect has no material binding {material}"
+                )
+            }
         }
     }
 }
 
 impl Error for MaterialBindingError {}
+
+fn resolve_dynamic_source(
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    source: &MaterialParameterValue,
+    expected: MaterialValueType,
+    context: &MaterialBindingContext,
+) -> Result<MaterialValue, MaterialBindingError> {
+    match source {
+        MaterialParameterValue::Constant(value) => Ok(value.clone()),
+        MaterialParameterValue::EffectParameter(binding) => context
+            .parameter(MaterialParameterSource::Effect, *binding)
+            .map(|value| material_value_for_type(value, expected))
+            .ok_or(MaterialBindingError::MissingParameter {
+                source: MaterialParameterSource::Effect,
+                parameter: *binding,
+            }),
+        MaterialParameterValue::EmitterParameter(binding) => context
+            .parameter(MaterialParameterSource::Emitter, *binding)
+            .map(|value| material_value_for_type(value, expected))
+            .ok_or(MaterialBindingError::MissingParameter {
+                source: MaterialParameterSource::Emitter,
+                parameter: *binding,
+            }),
+        MaterialParameterValue::RandomRange { min, max, domain } => {
+            let base_seed = context
+                .seed(*domain)
+                .ok_or(MaterialBindingError::MissingEvaluationContext(*domain))?;
+            sample_material_range(instance, parameter, min, max, base_seed)
+        }
+    }
+}
+
+fn material_value_for_type(value: &MaterialValue, expected: MaterialValueType) -> MaterialValue {
+    match (value, expected) {
+        (MaterialValue::Vec4(value), MaterialValueType::Color) => MaterialValue::ColorSrgb(*value),
+        (MaterialValue::ColorSrgb(value), MaterialValueType::Vec4) => MaterialValue::Vec4(*value),
+        _ => value.clone(),
+    }
+}
+
+fn runtime_material_value(value: &RuntimeValue) -> Option<MaterialValue> {
+    match value {
+        RuntimeValue::Bool(value) => Some(MaterialValue::Bool(*value)),
+        RuntimeValue::Scalar(value) => Some(MaterialValue::Float(*value)),
+        RuntimeValue::Vec2(value) => Some(MaterialValue::Vec2(*value)),
+        RuntimeValue::Vec3(value) => Some(MaterialValue::Vec3(*value)),
+        RuntimeValue::Vec4(value) => Some(MaterialValue::Vec4(*value)),
+        RuntimeValue::Asset(value) => Some(MaterialValue::Texture2D(*value)),
+        RuntimeValue::U32(_)
+        | RuntimeValue::Vec3Range(_)
+        | RuntimeValue::Vec3Curve(_)
+        | RuntimeValue::Text(_)
+        | RuntimeValue::Range(_)
+        | RuntimeValue::Curve(_)
+        | RuntimeValue::Gradient(_)
+        | RuntimeValue::Shape(_)
+        | RuntimeValue::Material(_) => None,
+    }
+}
+
+fn sample_material_range(
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    min: &MaterialValue,
+    max: &MaterialValue,
+    seed: u64,
+) -> Result<MaterialValue, MaterialBindingError> {
+    let sample = |channel| material_random01(seed, instance, parameter, channel);
+    let lerp = |min: f32, max: f32, channel| min + (max - min) * sample(channel);
+    match (min, max) {
+        (MaterialValue::Float(min), MaterialValue::Float(max)) => {
+            Ok(MaterialValue::Float(lerp(*min, *max, 0)))
+        }
+        (MaterialValue::Vec2(min), MaterialValue::Vec2(max)) => {
+            Ok(MaterialValue::Vec2(std::array::from_fn(|channel| {
+                lerp(min[channel], max[channel], channel as u64)
+            })))
+        }
+        (MaterialValue::Vec3(min), MaterialValue::Vec3(max)) => {
+            Ok(MaterialValue::Vec3(std::array::from_fn(|channel| {
+                lerp(min[channel], max[channel], channel as u64)
+            })))
+        }
+        (MaterialValue::Vec4(min), MaterialValue::Vec4(max)) => {
+            Ok(MaterialValue::Vec4(std::array::from_fn(|channel| {
+                lerp(min[channel], max[channel], channel as u64)
+            })))
+        }
+        (MaterialValue::ColorSrgb(min), MaterialValue::ColorSrgb(max)) => {
+            Ok(MaterialValue::ColorSrgb(std::array::from_fn(|channel| {
+                lerp(min[channel], max[channel], channel as u64)
+            })))
+        }
+        _ => Err(MaterialBindingError::UnsupportedRandomRange(parameter)),
+    }
+}
+
+fn material_random01(
+    seed: u64,
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    channel: u64,
+) -> f32 {
+    let instance = instance.as_uuid().as_u128();
+    let parameter = parameter.as_uuid().as_u128();
+    let mixed = mix_material_seed(
+        seed ^ instance as u64
+            ^ (instance >> 64) as u64
+            ^ parameter as u64
+            ^ (parameter >> 64) as u64
+            ^ channel.wrapping_mul(0x9e37_79b9_7f4a_7c15),
+    );
+    ((mixed >> 40) as f32) / ((1_u64 << 24) - 1) as f32
+}
+
+fn mix_material_seed(mut value: u64) -> u64 {
+    value ^= value >> 30;
+    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 27;
+    value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PreparedMaterialBinding {
@@ -393,10 +745,13 @@ pub fn material_bind_group_layout(layout: &MaterialResourceLayout) -> BindGroupL
 mod tests {
     use super::*;
     use aestra_core::{
-        MaterialParameterId,
+        MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
         material::{
-            MaterialAddressMode, MaterialFilterMode, MaterialMipFilterMode,
+            MaterialAddressMode, MaterialEvaluationDomain, MaterialExpression,
+            MaterialExpressionKind, MaterialFilterMode, MaterialInstance, MaterialMipFilterMode,
+            MaterialParameter, MaterialParameterValue, MaterialProgram, MaterialProgramRef,
             MaterialSamplerDescriptor, MaterialTextureColorSpace, MaterialTextureDescriptor,
+            MaterialValue,
         },
     };
     use aestra_gpu::material::{
@@ -404,7 +759,52 @@ mod tests {
         MaterialUniformLayout, MaterialUniformSlot,
     };
     use bevy::render::render_resource::BindingType;
-    use std::sync::Arc;
+    use std::{collections::BTreeMap, sync::Arc};
+
+    fn scalar_material_fixture(
+        program_id: u128,
+        parameter_id: u128,
+        domain: MaterialEvaluationDomain,
+        source: MaterialParameterValue,
+        instance_id: u128,
+    ) -> (
+        Arc<CompiledMaterialProgram>,
+        MaterialInstance,
+        MaterialParameterId,
+    ) {
+        use aestra_compiler::MaterialCompiler;
+        use aestra_gpu::material::{MaterialBackendCapabilities, MaterialShaderCompiler};
+
+        let parameter = MaterialParameterId::from_u128(parameter_id);
+        let expression = MaterialExpressionId::from_u128(parameter_id + 1);
+        let mut program = MaterialProgram::additive_sprite("Dynamic scalar");
+        program.id = MaterialProgramId::from_u128(program_id);
+        program.parameters.push(MaterialParameter {
+            id: parameter,
+            name: "dynamic".into(),
+            value_type: MaterialValueType::Float,
+            evaluation_domain: domain,
+            default: Some(MaterialValue::Float(1.0)),
+        });
+        program.expressions.push(MaterialExpression {
+            id: expression,
+            kind: MaterialExpressionKind::Parameter(parameter),
+        });
+        program.outputs.alpha = expression;
+        let ir = MaterialCompiler.compile(&program).unwrap();
+        let compiled = Arc::new(
+            MaterialShaderCompiler
+                .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+                .unwrap(),
+        );
+        let instance = MaterialInstance {
+            id: MaterialId::from_u128(instance_id),
+            program: MaterialProgramRef::Project(program.id),
+            values: BTreeMap::from([(parameter, source)]),
+            render_state: MaterialRenderState::additive_sprite(),
+        };
+        (compiled, instance, parameter)
+    }
 
     #[test]
     fn portable_layout_translates_without_reassigning_bindings() {
@@ -602,5 +1002,154 @@ mod tests {
             .set_value(softness, MaterialValue::Float(0.18))
             .unwrap();
         assert_eq!(binding.legacy_sprite_softness(), Some(0.18));
+    }
+
+    #[test]
+    fn effect_parameter_binding_refreshes_without_recompiling_the_program() {
+        let source = ParameterId::from_u128(0x610);
+        let (program, instance, parameter) = scalar_material_fixture(
+            0x611,
+            0x612,
+            MaterialEvaluationDomain::Effect,
+            MaterialParameterValue::EffectParameter(source),
+            0x613,
+        );
+        let shared_program = Arc::clone(&program);
+        let mut context = MaterialBindingContext::new(7, 11);
+        context.set_effect_parameter(source, MaterialValue::Float(2.5));
+        context.set_emitter_parameter(source, MaterialValue::Float(99.0));
+
+        let mut binding =
+            MaterialRuntimeBinding::from_instance_with_context(program, &instance, &context)
+                .unwrap();
+        assert_eq!(
+            binding.values().get(&parameter),
+            Some(&MaterialValue::Float(2.5))
+        );
+        assert!(Arc::ptr_eq(binding.program(), &shared_program));
+
+        context.set_effect_parameter(source, MaterialValue::Float(4.25));
+        binding.refresh_dynamic_values(&context).unwrap();
+        assert_eq!(
+            binding.values().get(&parameter),
+            Some(&MaterialValue::Float(4.25))
+        );
+        assert!(Arc::ptr_eq(binding.program(), &shared_program));
+    }
+
+    #[test]
+    fn emitter_parameter_does_not_fall_back_to_effect_scope() {
+        let source = ParameterId::from_u128(0x620);
+        let (program, instance, parameter) = scalar_material_fixture(
+            0x621,
+            0x622,
+            MaterialEvaluationDomain::Emitter,
+            MaterialParameterValue::EmitterParameter(source),
+            0x623,
+        );
+        let mut context = MaterialBindingContext::new(1, 2);
+        context.set_effect_parameter(source, MaterialValue::Float(5.0));
+
+        assert_eq!(
+            MaterialRuntimeBinding::from_instance_with_context(
+                Arc::clone(&program),
+                &instance,
+                &context,
+            )
+            .unwrap_err(),
+            MaterialBindingError::MissingParameter {
+                source: MaterialParameterSource::Emitter,
+                parameter: source,
+            }
+        );
+
+        context.set_emitter_parameter(source, MaterialValue::Float(8.0));
+        let binding =
+            MaterialRuntimeBinding::from_instance_with_context(program, &instance, &context)
+                .unwrap();
+        assert_eq!(
+            binding.values().get(&parameter),
+            Some(&MaterialValue::Float(8.0))
+        );
+    }
+
+    #[test]
+    fn random_ranges_are_deterministic_and_keyed_by_emitter_context() {
+        let (program, instance, parameter) = scalar_material_fixture(
+            0x631,
+            0x632,
+            MaterialEvaluationDomain::Emitter,
+            MaterialParameterValue::RandomRange {
+                min: MaterialValue::Float(10.0),
+                max: MaterialValue::Float(20.0),
+                domain: MaterialEvaluationDomain::Emitter,
+            },
+            0x633,
+        );
+        let context_without_emitter = MaterialBindingContext::new(3, 5);
+        assert_eq!(
+            MaterialRuntimeBinding::from_instance_with_context(
+                Arc::clone(&program),
+                &instance,
+                &context_without_emitter,
+            )
+            .unwrap_err(),
+            MaterialBindingError::MissingEvaluationContext(MaterialEvaluationDomain::Emitter)
+        );
+
+        let mut first_context = MaterialBindingContext::new(3, 5);
+        first_context.set_emitter_seed(7);
+        let first = MaterialRuntimeBinding::from_instance_with_context(
+            Arc::clone(&program),
+            &instance,
+            &first_context,
+        )
+        .unwrap();
+        let repeated = MaterialRuntimeBinding::from_instance_with_context(
+            Arc::clone(&program),
+            &instance,
+            &first_context,
+        )
+        .unwrap();
+        assert_eq!(
+            first.values().get(&parameter),
+            repeated.values().get(&parameter)
+        );
+        let MaterialValue::Float(first_value) = first.values()[&parameter] else {
+            panic!("expected scalar random value");
+        };
+        assert!((10.0..=20.0).contains(&first_value));
+
+        let mut second_context = MaterialBindingContext::new(3, 5);
+        second_context.set_emitter_seed(8);
+        let second =
+            MaterialRuntimeBinding::from_instance_with_context(program, &instance, &second_context)
+                .unwrap();
+        assert_ne!(
+            first.values().get(&parameter),
+            second.values().get(&parameter)
+        );
+    }
+
+    #[test]
+    fn dynamic_parameter_values_still_use_reflected_type_validation() {
+        let source = ParameterId::from_u128(0x640);
+        let (program, instance, _) = scalar_material_fixture(
+            0x641,
+            0x642,
+            MaterialEvaluationDomain::Effect,
+            MaterialParameterValue::EffectParameter(source),
+            0x643,
+        );
+        let mut context = MaterialBindingContext::new(1, 1);
+        context.set_effect_parameter(source, MaterialValue::Vec2([1.0, 2.0]));
+
+        assert!(matches!(
+            MaterialRuntimeBinding::from_instance_with_context(program, &instance, &context),
+            Err(MaterialBindingError::TypeMismatch {
+                expected: MaterialValueType::Float,
+                ..
+            })
+        ));
     }
 }

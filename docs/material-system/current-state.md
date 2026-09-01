@@ -1,7 +1,7 @@
 # Current Material System Audit
 
-Status: Material authoring Milestone 5 complete; Material 6 next
-Audited: 2026-09-01
+Status: Material authoring Milestone 5 complete; Material 6 in progress
+Audited: 2026-09-02
 
 This document records the material and renderer contract that exists before Aestra introduces a
 typed material program. It is the compatibility baseline for the first material vertical slice;
@@ -269,8 +269,10 @@ adapter. A destructive format migration is not required to prove the first verti
 - semantic bindings are attached at presentation time; the viewer can build them automatically for
   the Material 5 validation path, but project compilation and versioned artifacts do not yet carry
   them automatically;
-- effect/emitter/random parameter sources remain deferred to Material 6; the initial runtime bridge
-  accepts constant instance overrides and reflected defaults;
+- effect/emitter parameter sources and deterministic instance/effect/emitter random ranges now
+  resolve through an explicit typed runtime context and can refresh uniform/resource values without
+  replacing the compiled program; compiler artifacts and presentation setup do not yet construct
+  those contexts automatically;
 - the initial generated backend supports UV0, particle color/opacity, effect time, arithmetic,
   interpolation, clamping, and sampled Texture2D parameters; richer inputs remain explicit errors;
 - no validated custom WESL functions;
@@ -299,4 +301,6 @@ model, compiler path, runtime binding, and preview are stable.
 
 Items 1–7 of this entrance contract are complete. The deterministic legacy migration covers the
 current sprite and flipbook showcase paths, and native-GPU approval closes the Material 5 release
-gate. Material 6 continues with reflected dynamic parameter and resource binding.
+gate. Material 6 now has its scoped dynamic-value resolver; it continues by carrying semantic
+binding descriptors through compiled/versioned artifacts and automatically projecting runtime
+effect/emitter state into presentation contexts.
