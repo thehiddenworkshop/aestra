@@ -44,6 +44,7 @@ jobs:
         run: >-
           cargo run --locked -p aestra-viewer --
           --backend gpu
+          --semantic-materials
           --effect assets/effects/prism_bloom.aestra.ron
           --visual-test aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom
           --frames 8
@@ -52,6 +53,7 @@ jobs:
         run: >-
           cargo run --locked -p aestra-viewer --
           --backend gpu
+          --semantic-materials
           --effect assets/effects/ember_sigil.aestra.ron
           --visual-test aestra-viewer/tests/references/ember_sigil target/visual-regression/ember-sigil
           --frames 8
@@ -60,6 +62,7 @@ jobs:
         run: >-
           cargo run --locked -p aestra-viewer --
           --backend gpu
+          --semantic-materials
           --effect assets/effects/plasma_burst.aestra.ron
           --visual-test aestra-viewer/tests/references/plasma_burst target/visual-regression/plasma-burst
           --frames 8

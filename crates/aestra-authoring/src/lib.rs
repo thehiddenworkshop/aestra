@@ -5,6 +5,7 @@ mod diff;
 mod executor;
 mod history;
 mod material_authoring;
+mod material_migration;
 mod selection;
 
 pub use command::{EffectCommand, EffectTransaction};
@@ -16,5 +17,9 @@ pub use material_authoring::{
     MaterialCommandExecutor, MaterialCommandHistory, MaterialDiff, MaterialExpressionInput,
     MaterialHistoryResult, MaterialOutputSocket, MaterialSemanticChange, MaterialSemanticTarget,
     MaterialTransaction, MaterialTransactionOutcome,
+};
+pub use material_migration::{
+    LegacyMaterialMigrationError, LegacyMaterialMigrationMapping, LegacyMaterialMigrationPlan,
+    migrate_legacy_sprite_materials, plan_legacy_sprite_material_migration,
 };
 pub use selection::{LockState, Selection, SemanticTarget};

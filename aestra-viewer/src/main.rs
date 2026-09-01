@@ -1,10 +1,13 @@
 mod visual_regression;
 
+use aestra_authoring::{MaterialAuthoringDocument, migrate_legacy_sprite_materials};
 use aestra_bevy::{
     ActiveBackend, AestraPlugin, AestraRuntimeStatus, AestraSettings, DEFAULT_GPU_PARTICLE_BUDGET,
     DEFAULT_PLAYBACK_TICK_RATE, EffectAsset, EffectPlayer, EffectRuntimeStatus, GpuCapabilities,
-    PlaybackClock, PresentationMode,
+    MaterialRuntimeBinding, PlaybackClock, PresentationMode, PresentedEffect,
 };
+use aestra_compiler::MaterialCompiler;
+use aestra_gpu::material::{MaterialBackendCapabilities, MaterialShaderCompiler};
 use bevy::{
     app::AppExit,
     asset::AssetPlugin,
@@ -33,7 +36,7 @@ const OVERLAY_PROBE_SIZE: u32 = 144;
 fn main() {
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     let preview_seed = config.resolved_seed();
@@ -82,6 +85,7 @@ fn main() {
 #[derive(Resource)]
 struct ViewerConfig {
     effect_path: Option<PathBuf>,
+    semantic_materials: bool,
     capture_mode: Option<CaptureMode>,
     capture_frames: usize,
     presentation: PresentationMode,
@@ -119,6 +123,7 @@ impl CaptureMode {
 impl ViewerConfig {
     fn from_args() -> Result<Self, String> {
         let mut effect_path = None;
+        let mut semantic_materials = false;
         let mut capture_mode = None;
         let mut capture_frames = 8usize;
         let mut presentation = PresentationMode::Auto;
@@ -132,6 +137,7 @@ impl ViewerConfig {
                         args.next().ok_or("--effect requires a file path")?,
                     ));
                 }
+                "--semantic-materials" => semantic_materials = true,
                 "--capture" => {
                     set_capture_mode(
                         &mut capture_mode,
@@ -225,6 +231,7 @@ impl ViewerConfig {
         }
         Ok(Self {
             effect_path,
+            semantic_materials,
             capture_mode,
             capture_frames,
             presentation,
@@ -301,7 +308,7 @@ impl CapturePlan {
 struct ViewerHud;
 
 fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
-    let effect = config
+    let mut effect = config
         .effect_path
         .as_ref()
         .map_or_else(
@@ -309,6 +316,12 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
             EffectAsset::load_ron,
         )
         .unwrap_or_else(|error| panic!("could not load viewer effect: {error}"));
+    let material_bindings = if config.semantic_materials {
+        migrate_viewer_materials(&mut effect)
+            .unwrap_or_else(|error| panic!("could not migrate viewer materials: {error}"))
+    } else {
+        Vec::new()
+    };
     let effect_name = effect.name.clone();
     let regression_scene = config
         .capture_mode
@@ -321,14 +334,18 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
 
     let mut player = EffectPlayer::new(&effect);
     player.set_seed(config.resolved_seed());
+    let mut presentation = PresentedEffect::new(player.effect().clone());
+    for (material, binding) in material_bindings {
+        presentation.bind_material(material, binding);
+    }
     if editor_viewport_smoke {
         spawn_editor_viewport_smoke_scene(&mut commands);
-        commands.spawn((player, RenderLayers::layer(0)));
+        commands.spawn((player, presentation, RenderLayers::layer(0)));
         return;
     }
 
     commands.spawn(Camera2d);
-    commands.spawn(player);
+    commands.spawn((player, presentation));
 
     if regression_scene {
         return;
@@ -377,6 +394,47 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
             ..default()
         },
     ));
+}
+
+fn migrate_viewer_materials(
+    effect: &mut EffectAsset,
+) -> Result<Vec<(aestra_bevy::MaterialId, MaterialRuntimeBinding)>, String> {
+    let mut document = MaterialAuthoringDocument::new(effect.clone(), Vec::new());
+    let (plan, _) =
+        migrate_legacy_sprite_materials(&mut document).map_err(|error| error.to_string())?;
+    let capabilities = MaterialBackendCapabilities::portable_minimum();
+    let mut bindings = Vec::with_capacity(plan.mappings.len());
+    for mapping in &plan.mappings {
+        let instance = document
+            .effect
+            .material_instances
+            .iter()
+            .find(|instance| instance.id == mapping.semantic_instance)
+            .ok_or_else(|| {
+                format!(
+                    "missing migrated material instance {}",
+                    mapping.semantic_instance
+                )
+            })?;
+        let program = document
+            .programs
+            .iter()
+            .find(|program| program.id == mapping.program)
+            .ok_or_else(|| format!("missing migrated material program {}", mapping.program))?;
+        let ir = MaterialCompiler
+            .compile(program)
+            .map_err(|error| error.to_string())?;
+        let compiled = std::sync::Arc::new(
+            MaterialShaderCompiler
+                .compile(&ir, &capabilities)
+                .map_err(|error| error.to_string())?,
+        );
+        let binding = MaterialRuntimeBinding::from_instance(compiled, instance)
+            .map_err(|error| error.to_string())?;
+        bindings.push((instance.id, binding));
+    }
+    *effect = document.effect;
+    Ok(bindings)
 }
 
 fn spawn_editor_viewport_smoke_scene(commands: &mut Commands) {
@@ -756,5 +814,24 @@ mod tests {
         assert_eq!(parse_seed("42").unwrap(), 42);
         assert_eq!(parse_seed("0x2a").unwrap(), 42);
         assert!(parse_seed("seed").is_err());
+    }
+
+    #[test]
+    fn semantic_viewer_mode_builds_live_bindings_without_rewriting_the_source() {
+        let original = EffectAsset::from_ron(SAMPLE_SOURCE).unwrap();
+        let mut migrated = original.clone();
+        let bindings = migrate_viewer_materials(&mut migrated).unwrap();
+
+        assert!(!bindings.is_empty());
+        assert_eq!(migrated.materials, original.materials);
+        assert!(
+            migrated
+                .emitters
+                .iter()
+                .flat_map(|emitter| &emitter.renderers)
+                .all(|renderer| bindings
+                    .iter()
+                    .any(|(material, _)| *material == renderer.material))
+        );
     }
 }

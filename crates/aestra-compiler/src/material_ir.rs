@@ -3,7 +3,7 @@ use aestra_core::{
     material::{
         MaterialDomain, MaterialEvaluationDomain, MaterialExpressionDomain, MaterialExpressionInfo,
         MaterialExpressionKind, MaterialInput, MaterialProgram, MaterialRenderStatePolicy,
-        MaterialValue, MaterialValueType,
+        MaterialValue, MaterialValueType, MaterialVectorComponent,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -63,6 +63,10 @@ pub enum MaterialIrInstruction {
         texture: MaterialIrValueId,
         uv: MaterialIrValueId,
     },
+    ExtractComponent {
+        value: MaterialIrValueId,
+        component: MaterialVectorComponent,
+    },
 }
 
 impl MaterialIrInstruction {
@@ -76,6 +80,7 @@ impl MaterialIrInstruction {
             Self::Lerp { start, end, factor } => vec![*start, *end, *factor],
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
             Self::SampleTexture { texture, uv } => vec![*texture, *uv],
+            Self::ExtractComponent { value, .. } => vec![*value],
         }
     }
 
@@ -106,6 +111,7 @@ impl MaterialIrInstruction {
                 remap(texture);
                 remap(uv);
             }
+            Self::ExtractComponent { value, .. } => remap(value),
         }
     }
 }
@@ -349,6 +355,18 @@ impl MaterialIrBuilder<'_> {
                 let uv = self.lower(uv);
                 MaterialIrInstruction::SampleTexture { texture, uv }
             }
+            MaterialExpressionKind::ExtractComponent { value, component } => {
+                let value = self.lower(value);
+                if let Some(constant) = self
+                    .constant(value)
+                    .and_then(|constant| extract_component(constant, component))
+                {
+                    self.optimizations.constant_folds += 1;
+                    MaterialIrInstruction::Constant(constant)
+                } else {
+                    MaterialIrInstruction::ExtractComponent { value, component }
+                }
+            }
         };
         let id = MaterialIrValueId(self.values.len() as u32);
         self.values.push(MaterialIrValue {
@@ -515,6 +533,27 @@ fn lower_constant(value: &MaterialValue) -> MaterialIrConstant {
         MaterialValue::Texture2D(asset) => MaterialIrConstant::Texture2D(*asset),
         MaterialValue::Bool(value) => MaterialIrConstant::Bool(*value),
     }
+}
+
+fn extract_component(
+    value: &MaterialIrConstant,
+    component: MaterialVectorComponent,
+) -> Option<MaterialIrConstant> {
+    let index = match component {
+        MaterialVectorComponent::X => 0,
+        MaterialVectorComponent::Y => 1,
+        MaterialVectorComponent::Z => 2,
+        MaterialVectorComponent::W => 3,
+    };
+    let value = match value {
+        MaterialIrConstant::Vec2(value) => value.get(index).copied(),
+        MaterialIrConstant::Vec3(value) => value.get(index).copied(),
+        MaterialIrConstant::Vec4(value) | MaterialIrConstant::ColorLinear(value) => {
+            value.get(index).copied()
+        }
+        _ => None,
+    }?;
+    Some(MaterialIrConstant::Float(value))
 }
 
 fn srgb_to_linear(value: f32) -> f32 {

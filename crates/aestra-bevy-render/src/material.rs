@@ -3,9 +3,9 @@
 use aestra_core::{
     AssetId, MaterialParameterId, MaterialProgramId,
     material::{
-        MaterialAddressMode, MaterialFilterMode, MaterialInstance, MaterialMipFilterMode,
-        MaterialParameterValue, MaterialRenderState, MaterialSamplerDescriptor, MaterialValue,
-        MaterialValueType,
+        LEGACY_SPRITE_SOFTNESS_PARAMETER, MaterialAddressMode, MaterialFilterMode,
+        MaterialInstance, MaterialMipFilterMode, MaterialParameterValue, MaterialRenderState,
+        MaterialSamplerDescriptor, MaterialValue, MaterialValueType,
     },
 };
 use aestra_gpu::material::{
@@ -81,6 +81,27 @@ impl MaterialRuntimeBinding {
 
     pub const fn render_state(&self) -> MaterialRenderState {
         self.render_state
+    }
+
+    pub(crate) fn uses_sampled_textures(&self) -> bool {
+        !self.program.resource_layout.textures.is_empty()
+    }
+
+    pub(crate) fn legacy_sprite_softness(&self) -> Option<f32> {
+        let parameter = self
+            .program
+            .reflection
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == LEGACY_SPRITE_SOFTNESS_PARAMETER)?;
+        match self.values.get(&parameter.id) {
+            Some(MaterialValue::Float(value)) => Some(*value),
+            Some(_) => None,
+            None => match parameter.default.as_ref() {
+                Some(MaterialIrConstant::Float(value)) => Some(*value),
+                _ => None,
+            },
+        }
     }
 
     pub fn values(&self) -> &BTreeMap<MaterialParameterId, MaterialValue> {
@@ -542,5 +563,44 @@ mod tests {
             (f32::from_le_bytes(prepared.uniforms[12..16].try_into().unwrap()) - 0.75).abs()
                 < f32::EPSILON
         );
+        assert!(binding.uses_sampled_textures());
+    }
+
+    #[test]
+    fn legacy_softness_reflection_drives_the_coverage_compatibility_value() {
+        use aestra_compiler::MaterialCompiler;
+        use aestra_core::MaterialExpressionId;
+        use aestra_core::material::{
+            LEGACY_SPRITE_SOFTNESS_PARAMETER, MaterialEvaluationDomain, MaterialExpression,
+            MaterialExpressionKind, MaterialParameter, MaterialProgram, MaterialValue,
+        };
+        use aestra_gpu::material::{MaterialBackendCapabilities, MaterialShaderCompiler};
+
+        let softness = MaterialParameterId::from_u128(0x501);
+        let mut program = MaterialProgram::additive_sprite("Migrated softness");
+        program.parameters.push(MaterialParameter {
+            id: softness,
+            name: LEGACY_SPRITE_SOFTNESS_PARAMETER.into(),
+            value_type: MaterialValueType::Float,
+            evaluation_domain: MaterialEvaluationDomain::Instance,
+            default: Some(MaterialValue::Float(1.0)),
+        });
+        program.expressions.push(MaterialExpression {
+            id: MaterialExpressionId::from_u128(0x502),
+            kind: MaterialExpressionKind::Parameter(softness),
+        });
+        let ir = MaterialCompiler.compile(&program).unwrap();
+        let compiled = Arc::new(
+            MaterialShaderCompiler
+                .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+                .unwrap(),
+        );
+        let mut binding =
+            MaterialRuntimeBinding::new(compiled, MaterialRenderState::additive_sprite()).unwrap();
+        assert_eq!(binding.legacy_sprite_softness(), Some(1.0));
+        binding
+            .set_value(softness, MaterialValue::Float(0.18))
+            .unwrap();
+        assert_eq!(binding.legacy_sprite_softness(), Some(0.18));
     }
 }

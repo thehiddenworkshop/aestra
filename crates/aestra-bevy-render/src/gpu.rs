@@ -299,7 +299,7 @@ pub(crate) fn prepare_gpu_effects(
         ) {
             continue;
         }
-        let artifact = match GpuEffectArtifact::from_instance(&player.instance) {
+        let mut artifact = match GpuEffectArtifact::from_instance(&player.instance) {
             Ok(artifact) => artifact,
             Err(error) => {
                 let message =
@@ -324,7 +324,7 @@ pub(crate) fn prepare_gpu_effects(
         }
         let renderer_draws = artifact
             .renderers
-            .iter()
+            .iter_mut()
             .enumerate()
             .zip(
                 player
@@ -336,8 +336,11 @@ pub(crate) fn prepare_gpu_effects(
             )
             .map(|((index, renderer), plan)| {
                 let material = player.effect().material(plan.material);
-                let semantic_material = player
-                    .material_binding(plan.material)
+                let runtime_binding = player.material_binding(plan.material);
+                if let Some(binding) = runtime_binding {
+                    apply_semantic_sprite_compatibility(renderer, binding);
+                }
+                let semantic_material = runtime_binding
                     .map(|binding| material_resources.prepare(binding, player.effect()))
                     .transpose()
                     .map_err(|error| {
@@ -506,6 +509,18 @@ pub(crate) fn prepare_gpu_effects(
                     unreachable!("non-GPU players do not allocate GPU buffers")
                 }
             });
+    }
+}
+
+fn apply_semantic_sprite_compatibility(
+    renderer: &mut aestra_gpu::GpuRenderer,
+    binding: &MaterialRuntimeBinding,
+) {
+    if binding.uses_sampled_textures() {
+        renderer.textured = 1;
+    }
+    if let Some(softness) = binding.legacy_sprite_softness() {
+        renderer.softness = softness;
     }
 }
 

@@ -18,6 +18,13 @@ use thiserror::Error;
 
 pub const CURRENT_MATERIAL_SCHEMA_VERSION: u32 = 1;
 
+/// Reflected parameter name used by the temporary legacy-sprite compatibility adapter.
+///
+/// Material 5 keeps feathered sprite coverage outside the semantic color/alpha graph while the
+/// old sprite path is migrated. Backends may use this reflected value to populate their existing
+/// sprite-coverage input without coupling migration code to a renderer implementation.
+pub const LEGACY_SPRITE_SOFTNESS_PARAMETER: &str = "aestra.legacy.sprite_softness";
+
 #[derive(Debug, Error)]
 pub enum MaterialProgramError {
     #[error("could not read or write the material program: {0}")]
@@ -502,6 +509,18 @@ pub enum MaterialExpressionKind {
         texture: MaterialExpressionId,
         uv: MaterialExpressionId,
     },
+    ExtractComponent {
+        value: MaterialExpressionId,
+        component: MaterialVectorComponent,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum MaterialVectorComponent {
+    X,
+    Y,
+    Z,
+    W,
 }
 
 impl MaterialExpressionKind {
@@ -515,6 +534,7 @@ impl MaterialExpressionKind {
             Self::Lerp { start, end, factor } => vec![*start, *end, *factor],
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
             Self::SampleTexture { texture, uv } => vec![*texture, *uv],
+            Self::ExtractComponent { value, .. } => vec![*value],
         }
     }
 }
@@ -1095,6 +1115,39 @@ fn infer_expression(
                 }
                 _ => None,
             }
+        }
+        MaterialExpressionKind::ExtractComponent { value, component } => {
+            let value = dependency(*value);
+            value.and_then(|value| {
+                let component_count = match value.value_type {
+                    MaterialValueType::Vec2 => 2,
+                    MaterialValueType::Vec3 => 3,
+                    MaterialValueType::Vec4 | MaterialValueType::Color => 4,
+                    _ => 0,
+                };
+                let component_index = match component {
+                    MaterialVectorComponent::X => 0,
+                    MaterialVectorComponent::Y => 1,
+                    MaterialVectorComponent::Z => 2,
+                    MaterialVectorComponent::W => 3,
+                };
+                if component_index >= component_count {
+                    material_type_error(
+                        report,
+                        &path,
+                        format!(
+                            "ExtractComponent {component:?} is unavailable on {:?}",
+                            value.value_type
+                        ),
+                    );
+                    None
+                } else {
+                    Some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Float,
+                        evaluation_domain: value.evaluation_domain,
+                    })
+                }
+            })
         }
     };
     visiting.remove(&id);

@@ -377,7 +377,8 @@ outdated or future format.
 - [x] split Timeline and Properties implementation details into focused internal modules
 - [x] reconcile roadmap status with the implemented renderer, composition, and automation slices
 - [x] audit the current material contract and define compatibility fixtures/test expectations
-- [ ] approve current showcase changes through format/compiler and native-GPU visual gates
+- [ ] approve the semantic-material showcase path through the native-GPU visual gate (format,
+  migration-command, effect-compiler, and portable shader gates are complete)
 - [ ] deliver the animated additive-flame material vertical slice before a material node graph
 
 ### Phase 4 — professional workflow (in progress)

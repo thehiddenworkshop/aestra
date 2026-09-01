@@ -12,3 +12,6 @@ aestra-core = { path = "../aestra-core" }
 serde.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+aestra-compiler = { path = "../aestra-compiler" }
+aestra-gpu = { path = "../aestra-gpu" }

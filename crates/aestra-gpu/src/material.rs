@@ -12,7 +12,7 @@ use aestra_core::{
         MaterialAddressMode, MaterialDomain, MaterialEvaluationDomain, MaterialFilterMode,
         MaterialInput, MaterialMipFilterMode, MaterialRenderState, MaterialRenderStatePolicy,
         MaterialSamplerDescriptor, MaterialTextureColorSpace, MaterialTextureDescriptor,
-        MaterialValueType,
+        MaterialValueType, MaterialVectorComponent,
     },
 };
 use std::{
@@ -687,6 +687,9 @@ fn instruction_expression(
                 value_name(*uv)
             )
         }
+        MaterialIrInstruction::ExtractComponent { value, component } => {
+            format!("{}.{}", value_name(*value), component_name(*component))
+        }
     };
     Ok(expression)
 }
@@ -895,6 +898,25 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(texture.0);
             fingerprint.u32(uv.0);
         }
+        MaterialIrInstruction::ExtractComponent { value, component } => {
+            fingerprint.byte(10);
+            fingerprint.u32(value.0);
+            fingerprint.byte(match component {
+                MaterialVectorComponent::X => 0,
+                MaterialVectorComponent::Y => 1,
+                MaterialVectorComponent::Z => 2,
+                MaterialVectorComponent::W => 3,
+            });
+        }
+    }
+}
+
+fn component_name(component: MaterialVectorComponent) -> &'static str {
+    match component {
+        MaterialVectorComponent::X => "x",
+        MaterialVectorComponent::Y => "y",
+        MaterialVectorComponent::Z => "z",
+        MaterialVectorComponent::W => "w",
     }
 }
 

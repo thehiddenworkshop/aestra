@@ -111,7 +111,9 @@ dependencies = [
 name = "aestra-authoring"
 version = "0.1.0"
 dependencies = [
+ "aestra-compiler",
  "aestra-core",
+ "aestra-gpu",
  "serde",
  "thiserror 2.0.20",
 ]
@@ -195,6 +197,7 @@ dependencies = [
 name = "aestra-gpu"
 version = "0.1.0"
 dependencies = [
+ "aestra-authoring",
  "aestra-compiler",
  "aestra-core",
  "aestra-runtime",
@@ -227,7 +230,10 @@ dependencies = [
 name = "aestra-viewer"
 version = "0.1.0"
 dependencies = [
+ "aestra-authoring",
  "aestra-bevy",
+ "aestra-compiler",
+ "aestra-gpu",
  "bevy",
  "image",
 ]

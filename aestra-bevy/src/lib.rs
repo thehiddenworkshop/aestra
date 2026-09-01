@@ -1,5 +1,6 @@
 //! Bevy integration for compiled Aestra effects.
 
+pub use aestra_bevy_render::material::MaterialRuntimeBinding;
 pub use aestra_bevy_render::{
     ActiveBackend, AestraRenderPlugin, AestraRenderSet, AestraRenderSettings as AestraSettings,
     AestraRuntimeStatus, BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode,

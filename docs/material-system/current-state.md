@@ -233,6 +233,15 @@ The checked-in images define the last approved visual baseline. Local showcase e
 of semantic unit-test truth and require an explicit native-GPU reapproval before their output
 becomes the new baseline.
 
+Material 5 now provides `plan_legacy_sprite_material_migration` and
+`migrate_legacy_sprite_materials`. The deterministic transaction keeps each legacy definition as a
+recovery/compatibility source, creates project programs and effect-local instances, and reassigns
+renderers only through baseline semantic commands. Sprite textures, flipbook atlas textures,
+particle/constant/parameter tint, sampled alpha, UV rectangles, blend state, and softness are
+covered. Softness uses a named reflected compatibility value until coverage becomes a first-class
+semantic primitive. The viewer's opt-in `--semantic-materials` path performs this migration in
+memory and binds the resulting shaders without rewriting the source effect.
+
 ## Migration classification
 
 The next material model should move current fields as follows:
@@ -255,8 +264,9 @@ adapter. A destructive format migration is not required to prove the first verti
 
 ## Known gaps
 
-- semantic bindings are attached at presentation time; project compilation and versioned artifacts
-  do not yet carry them automatically;
+- semantic bindings are attached at presentation time; the viewer can build them automatically for
+  the Material 5 validation path, but project compilation and versioned artifacts do not yet carry
+  them automatically;
 - effect/emitter/random parameter sources remain deferred to Material 6; the initial runtime bridge
   accepts constant instance overrides and reflected defaults;
 - the initial generated backend supports UV0, particle color/opacity, effect time, arithmetic,
@@ -285,5 +295,6 @@ Material Milestone 1 may begin with an additive unlit sprite domain and only `Fl
 The node graph remains deferred. It will be a projection of the semantic program after the typed
 model, compiler path, runtime binding, and preview are stable.
 
-Items 1–5 of this entrance contract are complete. Compatibility migration, full path coverage, and
-native-GPU approval remain the next release gate.
+Items 1–6 of this entrance contract are complete. The deterministic legacy migration covers the
+current sprite and flipbook showcase paths. Native-GPU approval remains the final Material 5 release
+gate.

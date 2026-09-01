@@ -105,6 +105,7 @@ pub enum MaterialExpressionInput {
     Maximum,
     Texture,
     Uv,
+    Source,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -605,6 +606,10 @@ fn rewire_expression(
             MaterialExpressionInput::Texture,
         ) => texture,
         (MaterialExpressionKind::SampleTexture { uv, .. }, MaterialExpressionInput::Uv) => uv,
+        (
+            MaterialExpressionKind::ExtractComponent { value, .. },
+            MaterialExpressionInput::Source,
+        ) => value,
         (_, input) => return Err(MaterialCommandError::InvalidExpressionInput { input }),
     };
     Ok(std::mem::replace(target, source))

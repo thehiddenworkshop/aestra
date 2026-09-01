@@ -16,3 +16,6 @@ glam.workspace = true
 naga.workspace = true
 thiserror.workspace = true
 wesl.workspace = true
+
+[dev-dependencies]
+aestra-authoring = { path = "../aestra-authoring" }
