@@ -177,15 +177,81 @@ surface to mutable examples and monolithic panel modules.
    [`material-system/current-state.md`](material-system/current-state.md) inventories semantic and
    compiled types, renderer relationships, WESL entry points, render state, commands, editor
    surfaces, compatibility fixtures, migration classification, and the first-slice test contract.
-6. **Begin the material vertical slice.** Implement the animated additive-flame path from typed
-   material program and instance data through validation, IR, WESL generation, runtime binding, and
-   preview before adding a node-graph projection.
+6. **Begin the material vertical slice — in progress.** Follow the material-program delivery
+   milestone below, beginning with the repository-aligned semantic core. Implement the animated
+   additive-flame path from typed material program and instance data through validation, IR, WESL
+   generation, runtime binding, and preview before adding a node-graph projection.
 
 Exit gate: deterministic behavioral tests remain stable when showcase timing or playback changes;
 Timeline and Properties have focused internal ownership; roadmap status matches the shipped code;
 the three showcase effects pass format/compiler checks plus native-GPU approval; and the first
 material slice has an agreed semantic contract and test plan. The roadmap and material-audit parts
 of this gate are complete; showcase approval and the vertical slice remain.
+
+## Semantic material-program delivery milestone
+
+This milestone tracks the implementation sequence defined in
+[`aestra_material_authoring_architecture.md`](aestra_material_authoring_architecture.md). Preserve
+the current sprite-material path until the native-GPU compatibility gate approves its replacement.
+
+### Phase A — semantic foundation
+
+- [x] **Material 0 — current-system audit.** The compatibility contract, fixtures, and migration
+  classification are recorded in [`material-system/current-state.md`](material-system/current-state.md).
+- [ ] **Material 1 — semantic core types (in progress).** Add stable program, parameter, and
+  expression IDs; project/built-in program references; effect-local instances; typed values;
+  render-state policy; the semantic expression DAG; resource metadata; structural validation; and
+  normalized RON round-trip tests in `aestra-core`.
+- [ ] **Material 2 — validation and baseline commands.** Complete type/domain validation and make
+  transactional `aestra-authoring` commands the only migration and editor mutation path.
+- [ ] **Material 3 — typed material IR.** Lower valid semantic programs into backend-neutral IR
+  with source mapping and the first deterministic optimizations.
+- [ ] **Material 4 — WESL and resource ABI.** Generate WESL, deterministic multi-texture/sampler
+  layouts, reflection, program fingerprints, and pipeline cache keys through `aestra-gpu` and the
+  isolated `aestra-bevy-render` adapter.
+- [ ] **Material 5 — legacy migration and visual approval.** Migrate existing sprite materials
+  through semantic commands and approve native-GPU references without claiming CPU pixel parity.
+
+### Phase B — useful artist workflow
+
+- [ ] **Material 6 — reflection and parameter binding.** Expose typed parameters, resources,
+  evaluation domains, particle inputs, and scene requirements.
+- [ ] **Material 7 — Properties material editor.** Generate material controls from reflection and
+  submit every edit through baseline semantic commands.
+- [ ] **Material 8 — VFX semantic primitives.** Add the initial UV, mask, dissolve, depth-fade,
+  soft-particle, and flipbook operations.
+- [ ] **Material 9 — material stack.** Provide the ordered high-level modifier projection before a
+  node graph.
+
+### Phase C — AI-first authoring
+
+- [ ] **Material 10 — advanced semantic commands/tool API.** Compose validated wrap, connect,
+  preset, insertion, and extraction transformations from baseline commands.
+- [ ] **Material 11 — AI material API.** Expose machine-readable inspection, editing, compilation,
+  and diagnostics.
+
+### Phase D — advanced human authoring
+
+- [ ] **Material 12 — read-only graph projection.** Visualize any supported semantic program.
+- [ ] **Material 13 — editable graph.** Translate graph interaction into semantic commands.
+- [ ] **Material 14 — graph layout metadata.** Persist optional layout separately from semantics.
+
+### Phase E — reuse and extensibility
+
+- [ ] **Material 15 — typed material functions.**
+- [ ] **Material 16 — semantic preset library.**
+- [ ] **Material 17 — validated custom WESL escape hatch.**
+
+### Phase F — next-generation tooling
+
+- [ ] **Material 18 — AI visual feedback loop.**
+- [ ] **Material 19 — advanced compiler optimization.**
+- [ ] **Material 20 — mesh and ribbon domains.**
+
+The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
+RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual
+approval, and ordinary instance updates without shader recompilation. A node graph is explicitly
+outside this gate.
 
 ## Stability-hardening milestone
 

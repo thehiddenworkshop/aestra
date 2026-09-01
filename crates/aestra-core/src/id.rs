@@ -64,3 +64,6 @@ semantic_id!(ParameterId);
 semantic_id!(EventId);
 semantic_id!(AssetId);
 semantic_id!(MaterialId);
+semantic_id!(MaterialProgramId);
+semantic_id!(MaterialParameterId);
+semantic_id!(MaterialExpressionId);

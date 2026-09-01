@@ -2,6 +2,7 @@
 
 mod diagnostic;
 mod id;
+pub mod material;
 mod migration;
 mod model;
 
