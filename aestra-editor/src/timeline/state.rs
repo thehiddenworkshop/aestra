@@ -203,117 +203,11 @@ impl TimelineState {
         self.clear_emitter_region_selection();
     }
 
-    pub(super) fn clear_emitter_region_selection(&mut self) {
-        self.selected_emitter_region = None;
-        self.selected_emitter_regions.clear();
-        self.emitter_region_selection_anchor = None;
-    }
-
     pub(super) fn select_only_emitter(&mut self, emitter: EmitterId) {
         self.selected_emitters.clear();
         self.selected_emitters.insert(emitter);
         self.emitter_selection_anchor = Some(emitter);
         self.clear_emitter_region_selection();
-    }
-
-    pub(super) fn select_only_emitter_region(
-        &mut self,
-        emitter: EmitterId,
-        region: EmitterRegionId,
-    ) {
-        self.select_only_emitter(emitter);
-        self.selected_emitter_region = Some((emitter, region));
-        self.selected_emitter_regions.insert((emitter, region));
-        self.emitter_region_selection_anchor = Some((emitter, region));
-    }
-
-    pub(super) fn select_only_emitter_regions(
-        &mut self,
-        emitter: EmitterId,
-        regions: &[EmitterRegionId],
-    ) {
-        self.select_only_emitter(emitter);
-        self.selected_emitter_regions
-            .extend(regions.iter().map(|region| (emitter, *region)));
-        self.selected_emitter_region = regions.first().map(|region| (emitter, *region));
-        self.emitter_region_selection_anchor = self.selected_emitter_region;
-    }
-
-    pub(super) fn select_emitter_region(
-        &mut self,
-        emitter: &Emitter,
-        region: EmitterRegionId,
-        control: bool,
-        shift: bool,
-    ) -> Option<EmitterRegionId> {
-        let emitter_id = emitter.id;
-        let mut order = emitter.timeline_regions();
-        order.sort_by(|left, right| left.start_time.total_cmp(&right.start_time));
-        if !order.iter().any(|candidate| candidate.id == region) {
-            return self
-                .selected_emitter_region
-                .filter(|(selected, _)| *selected == emitter_id)
-                .map(|(_, region)| region);
-        }
-
-        self.selected_emitters.clear();
-        self.selected_emitters.insert(emitter_id);
-        self.emitter_selection_anchor = Some(emitter_id);
-        self.selected_emitter_regions
-            .retain(|(selected, _)| *selected == emitter_id);
-
-        if shift {
-            let anchor = self
-                .emitter_region_selection_anchor
-                .filter(|(selected, anchor)| {
-                    *selected == emitter_id && order.iter().any(|candidate| candidate.id == *anchor)
-                })
-                .map_or(region, |(_, anchor)| anchor);
-            let anchor_index = order
-                .iter()
-                .position(|candidate| candidate.id == anchor)
-                .unwrap_or_default();
-            let region_index = order
-                .iter()
-                .position(|candidate| candidate.id == region)
-                .unwrap_or(anchor_index);
-            let (start, end) = if anchor_index <= region_index {
-                (anchor_index, region_index)
-            } else {
-                (region_index, anchor_index)
-            };
-            self.selected_emitter_regions.clear();
-            self.selected_emitter_regions.extend(
-                order[start..=end]
-                    .iter()
-                    .map(|candidate| (emitter_id, candidate.id)),
-            );
-            self.selected_emitter_region = Some((emitter_id, region));
-            self.emitter_region_selection_anchor = Some((emitter_id, anchor));
-            return Some(region);
-        }
-
-        if control {
-            let selection = (emitter_id, region);
-            if !self.selected_emitter_regions.remove(&selection) {
-                self.selected_emitter_regions.insert(selection);
-                self.selected_emitter_region = Some(selection);
-            } else if self.selected_emitter_region == Some(selection) {
-                self.selected_emitter_region = order
-                    .iter()
-                    .rev()
-                    .find(|candidate| {
-                        self.selected_emitter_regions
-                            .contains(&(emitter_id, candidate.id))
-                    })
-                    .map(|candidate| (emitter_id, candidate.id));
-            }
-            self.emitter_region_selection_anchor = Some(selection);
-            return self.selected_emitter_region.map(|(_, region)| region);
-        }
-
-        self.select_only_emitter_region(emitter_id, region);
-        Some(region)
     }
 
     pub(super) fn select_emitter(
@@ -453,41 +347,6 @@ impl TimelineState {
 mod tests {
     use super::*;
     use crate::test_support;
-
-    #[test]
-    fn emitter_region_selection_supports_single_toggle_and_range_selection() {
-        let mut emitter = Emitter::basic_sprite("Emitter", 3.0);
-        let first = emitter.implicit_region_id();
-        let second = EmitterRegionId::from_u128(0x71);
-        emitter.regions = emitter.split_timeline_region(first, 1.0, second).unwrap();
-        let third = EmitterRegionId::from_u128(0x72);
-        emitter.regions = emitter.split_timeline_region(second, 2.0, third).unwrap();
-        let mut state = TimelineState::framed(3.0);
-
-        assert_eq!(
-            state.select_emitter_region(&emitter, first, false, false),
-            Some(first)
-        );
-        assert_eq!(state.selected_emitter_regions.len(), 1);
-
-        assert_eq!(
-            state.select_emitter_region(&emitter, third, false, true),
-            Some(third)
-        );
-        assert_eq!(state.selected_emitter_regions.len(), 3);
-
-        state.select_emitter_region(&emitter, second, true, false);
-        assert_eq!(state.selected_emitter_regions.len(), 2);
-        assert!(
-            !state
-                .selected_emitter_regions
-                .contains(&(emitter.id, second))
-        );
-
-        state.clear_emitter_region_selection();
-        assert!(state.selected_emitter_regions.is_empty());
-        assert_eq!(state.selected_emitters, BTreeSet::from([emitter.id]));
-    }
 
     #[test]
     fn zoom_keeps_the_time_under_the_pointer() {
