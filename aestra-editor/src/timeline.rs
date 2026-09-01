@@ -1469,7 +1469,7 @@ mod tests {
         assert!(!should_dismiss_timeline_popover(false, false, true));
     }
 
-    use crate::{EFFECT_PATH, EFFECT_SOURCE, LibraryState, test_support};
+    use crate::{LibraryState, test_support};
     use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
 
     fn spawn_test_timeline(
@@ -1732,7 +1732,7 @@ mod tests {
 
     #[test]
     fn automation_lanes_project_existing_curve_and_gradient_parameters() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let emitter = &session.effect.emitters[0];
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
@@ -1781,7 +1781,7 @@ mod tests {
 
     #[test]
     fn emitter_time_spawn_rate_curve_projects_as_an_automation_lane() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let emitter = &mut session.effect.emitters[0];
         let emission = emitter
             .modules
@@ -1822,7 +1822,7 @@ mod tests {
 
     #[test]
     fn vector_gravity_curve_projects_and_edits_as_three_automation_lanes() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let emitter = &mut session.effect.emitters[0];
         let motion = emitter
             .modules
@@ -1915,7 +1915,7 @@ mod tests {
 
     #[test]
     fn timeline_curve_edits_update_the_bound_public_value() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let emitter = &mut session.effect.emitters[0];
         let emission = emitter
             .modules
@@ -1997,7 +1997,7 @@ mod tests {
 
     #[test]
     fn expanded_automation_lanes_shift_following_tracks_and_content_height() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let catalog = ProjectEffectCatalog::from_entries(Vec::new());
         let first = &session.effect.emitters[0];
         let second = &session.effect.emitters[1];
@@ -2044,7 +2044,7 @@ mod tests {
 
     #[test]
     fn automation_visibility_defaults_to_hidden_and_updates_layout_per_lane() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let catalog = ProjectEffectCatalog::from_entries(Vec::new());
         let first = &session.effect.emitters[0];
         let second = &session.effect.emitters[1];
@@ -2080,7 +2080,7 @@ mod tests {
 
     #[test]
     fn automation_lane_actions_keep_the_chooser_open_and_bulk_actions_close_it() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
         let emitter = session.effect.emitters[0].clone();
@@ -2140,7 +2140,7 @@ mod tests {
 
     #[test]
     fn automation_key_add_and_delete_are_transactional_and_share_curves_selection() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
         let emitter = session.effect.emitters[0].clone();
@@ -2197,7 +2197,7 @@ mod tests {
 
     #[test]
     fn graph_key_add_uses_the_pointer_time_and_value() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
         let emitter = session.effect.emitters[0].clone();
@@ -2282,7 +2282,7 @@ mod tests {
 
     #[test]
     fn library_drop_ghost_uses_the_selected_insertion_row() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let state = TimelineState::framed(session.playback_duration());
         let catalog = ProjectEffectCatalog::from_entries(Vec::new());
         let order = normalized_choreography_order(&session.effect);
@@ -2319,7 +2319,7 @@ mod tests {
 
     #[test]
     fn library_drop_ghost_reserves_a_synchronized_track_gap() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let order = normalized_choreography_order(&session.effect);
         let mut state = TimelineState::framed(session.playback_duration());
         state.effect_drop_preview = Some(EffectDropPreview {
@@ -2506,7 +2506,7 @@ mod tests {
 
     #[test]
     fn effect_clip_creation_selection_and_undo_preserve_semantic_identity() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let original_clips = session.effect.effect_clips.clone();
         let fallback_emitter = session.effect.emitters[0].id;
         let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
@@ -2644,7 +2644,7 @@ mod tests {
 
     #[test]
     fn effect_clip_track_state_toggles_and_delete_are_coherent() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xfeed));
         let clip = EffectClip::new(source, 0.2, 0.7);
         let id = clip.id;
@@ -2703,7 +2703,7 @@ mod tests {
 
     #[test]
     fn effect_clip_drag_maps_parent_and_source_windows_with_bounds() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let clip = EffectClipId::new();
         let view = TimelineView {
             start: 0.0,
@@ -2817,7 +2817,7 @@ mod tests {
 
     #[test]
     fn effect_clip_drag_commit_is_one_undoable_timing_command() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xbeef));
         let mut clip = EffectClip::new(source, 0.4, 0.8);
         clip.source_offset = 0.2;
@@ -2890,7 +2890,7 @@ mod tests {
 
     #[test]
     fn emitter_reorder_is_one_undoable_stable_id_edit() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let original = session
             .effect
             .emitters
@@ -2938,7 +2938,7 @@ mod tests {
 
     #[test]
     fn effect_clip_reorder_is_one_undoable_stable_id_edit() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let first = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 0.8);
         let first_id = first.id;
         let second = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11E), 0.8, 0.8);
@@ -2968,7 +2968,7 @@ mod tests {
 
     #[test]
     fn effect_clip_can_reorder_across_local_emitter_tracks() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         session.effect.choreography_order.clear();
         let clip = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 0.8);
@@ -3040,7 +3040,7 @@ mod tests {
 
     #[test]
     fn timeline_navigation_snapshot_restores_nested_context_and_view() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let clip = EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 1.0);
         let path = EffectClipPath::root_path(clip.id);
         session.effect.effect_clips.push(clip);
@@ -3333,7 +3333,7 @@ mod tests {
 
     #[test]
     fn timeline_trim_creates_a_lossless_emitter_region_and_undo_restores_legacy_timing() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let emitter = session.effect.emitters[0].clone();
         let trim = 0.2_f32.min(emitter.duration * 0.25);
         let drag = TimelineDrag {
@@ -3369,7 +3369,7 @@ mod tests {
 
     #[test]
     fn timeline_visual_queries_initialize_without_aliasing() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let timeline = TimelineState::framed(session.playback_duration());
         let mut app = App::new();
         app.insert_resource(session);
@@ -3420,7 +3420,7 @@ mod tests {
 
     #[test]
     fn vertical_scroll_panes_measure_an_explicit_grid_content_extent() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let duration = session.playback_duration();
         let mut app = App::new();
         app.add_plugins((
@@ -3482,7 +3482,7 @@ mod tests {
             .unwrap();
 
         let catalog = ProjectEffectCatalog::scan(temporary.path());
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         session.effect.choreography_order.clear();
         let root_clip = EffectClip::new(child.id, 0.0, 1.5);
@@ -3571,7 +3571,7 @@ mod tests {
 
     #[test]
     fn rejected_project_effect_drop_is_feedback_only() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let original = session.effect.clone();
         let original_revision = session.ui_revision;
         let mut app = App::new();
@@ -3609,7 +3609,7 @@ mod tests {
 
     #[test]
     fn timeline_actions_own_duration_snap_and_framing() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let initial_duration = session.effect.duration;
         let mut app = App::new();
         app.insert_resource(session)
@@ -3646,7 +3646,7 @@ mod tests {
 
     #[test]
     fn add_marker_action_creates_and_selects_one_undoable_marker() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let initial_count = session.effect.markers.len();
         session.seek_time(0.75);
         let mut app = App::new();
@@ -3669,7 +3669,7 @@ mod tests {
 
     #[test]
     fn add_choreography_event_action_creates_and_selects_one_undoable_event() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let initial_count = session.effect.choreography_events.len();
         session.seek_time(0.75);
         let mut app = App::new();
@@ -3700,7 +3700,7 @@ mod tests {
 
     #[test]
     fn timeline_toolbar_uses_icons_for_framing_marker_and_event_tools() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.new_effect();
         let duration = session.playback_duration();
         let mut app = App::new();
@@ -3748,7 +3748,7 @@ mod tests {
     #[test]
     fn delete_key_removes_the_selected_marker_or_choreography_event() {
         for delete_marker in [true, false] {
-            let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+            let mut session = test_support::session_with_timing_slack();
             session.new_effect();
             let marker = EffectMarker::new("Delete me", 0.5);
             let marker_id = marker.id;
@@ -3791,7 +3791,7 @@ mod tests {
 
     #[test]
     fn authored_names_and_display_color_are_projected_into_the_timeline() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         assert!(session.set_effect_name("Renamed Effect"));
         assert!(session.set_selected_emitter_name("Renamed Emitter"));
         session
@@ -3866,7 +3866,7 @@ mod tests {
 
     #[test]
     fn track_context_menus_anchor_to_rows_without_consuming_header_space() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let emitter = session.effect.emitters[0].id;
         let mut state = TimelineState::framed(session.playback_duration());
         state.context_emitter = Some(emitter);
@@ -3943,7 +3943,7 @@ mod tests {
 
     #[test]
     fn timeline_color_picker_targets_the_track_and_commits_one_semantic_edit() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let emitter = session.effect.emitters[2].id;
         let mut app = choreography_app(session);
         app.add_observer(handle_timeline_track_color_change);
@@ -4028,7 +4028,7 @@ mod tests {
 
     #[test]
     fn automation_graph_preserves_source_time_during_region_trim_preview() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let emitter = session.effect.emitters[0].id;
         let region = session.effect.emitters[0].implicit_region_id();
         let mut timeline = TimelineState::framed(session.playback_duration());
@@ -4071,7 +4071,7 @@ mod tests {
 
     #[test]
     fn emitter_automation_disclosure_is_an_active_a_button() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let target = session
             .effect
             .emitters
@@ -4176,7 +4176,7 @@ mod tests {
 
     #[test]
     fn track_headers_and_clips_expose_the_same_stable_selection_actions() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         session
             .effect
@@ -4658,7 +4658,7 @@ mod tests {
 
     #[test]
     fn choreography_selection_is_stable_and_clears_incompatible_curve_state() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let target = session.effect.emitters[2].id;
         let mut app = choreography_app(session);
         app.insert_resource(LibraryState {
@@ -4691,7 +4691,7 @@ mod tests {
 
     #[test]
     fn control_and_shift_select_multiple_local_emitter_tracks_in_timeline_order() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let effect = &session.effect;
         let [first, second, third, ..] = effect.emitters.as_slice() else {
             panic!("sample needs at least three emitters");
@@ -4756,7 +4756,7 @@ mod tests {
 
     #[test]
     fn track_list_value_change_selects_the_emitter_through_its_semantic_action() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let target = session.effect.emitters[2].id;
         let mut app = choreography_app(session);
         app.add_observer(activate_timeline_track_entry);
@@ -4782,7 +4782,7 @@ mod tests {
 
     #[test]
     fn choreography_add_duplicate_and_enabled_actions_remain_undoable() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let original_count = session.effect.emitters.len();
         let original = session.effect.emitters[0].clone();
         let mut app = choreography_app(session);
@@ -4857,7 +4857,7 @@ mod tests {
 
     #[test]
     fn emitter_solo_is_preview_only_and_isolates_runtime_output() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         session.effect.effect_clips.push(EffectClip::new(
             EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0x5010)),
@@ -4905,7 +4905,7 @@ mod tests {
 
     #[test]
     fn emitter_and_effect_clip_solo_are_mutually_exclusive() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect.effect_clips.clear();
         let clip = EffectClip::new(
             EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0x5010)),
@@ -4949,7 +4949,7 @@ mod tests {
 
     #[test]
     fn choreography_delete_retains_review_and_minimum_emitter_guard() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let target = session.effect.emitters[1].id;
         let mut app = choreography_app(session);
         app.world_mut()
@@ -4967,7 +4967,7 @@ mod tests {
                 .is_visible(DockPanel::Changes)
         );
 
-        let mut single = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut single = test_support::session_with_timing_slack();
         single.effect.emitters.truncate(1);
         single
             .selection
@@ -4988,7 +4988,7 @@ mod tests {
         for (timeline_visible, text_focused, expected_delta) in
             [(false, false, 0), (true, true, 0), (true, false, 1)]
         {
-            let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+            let session = test_support::session_with_timing_slack();
             let initial = session.effect.emitters.len();
             let mut app = choreography_app(session);
             app.init_resource::<ModulePaletteState>()
@@ -5022,7 +5022,7 @@ mod tests {
 
     #[test]
     fn insert_and_delete_shortcuts_edit_the_selected_automation_lane() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
         let localizer = Localizer::new("en-US").unwrap();
         let emitter = session.effect.emitters[0].clone();

@@ -13,6 +13,10 @@ const TEST_EFFECT_ID: EffectId = EffectId::from_u128(0xa357_4a10_0000_4000_8000_
 const TEST_EMITTER_ID: EmitterId = EmitterId::from_u128(0xa357_4a10_0000_4000_8000_0000_0000_0010);
 const TEST_SECOND_EMITTER_ID: EmitterId =
     EmitterId::from_u128(0xa357_4a10_0000_4000_8000_0000_0000_0011);
+const TEST_THIRD_EMITTER_ID: EmitterId =
+    EmitterId::from_u128(0xa357_4a10_0000_4000_8000_0000_0000_0012);
+const TEST_FOURTH_EMITTER_ID: EmitterId =
+    EmitterId::from_u128(0xa357_4a10_0000_4000_8000_0000_0000_0013);
 
 fn assign_stable_emitter_ids(emitter: &mut Emitter, id: EmitterId, base: u128) {
     emitter.id = id;
@@ -54,12 +58,32 @@ pub(crate) fn effect_with_timing_slack() -> EffectAsset {
         0xa357_4a10_0000_4000_8000_0000_0000_1100,
     );
 
+    let mut third = Emitter::basic_sprite("Third Test Emitter", 3.0);
+    third.start_time = 0.25;
+    assign_stable_emitter_ids(
+        &mut third,
+        TEST_THIRD_EMITTER_ID,
+        0xa357_4a10_0000_4000_8000_0000_0000_2100,
+    );
+
+    let mut fourth = Emitter::basic_sprite("Fourth Test Emitter", 1.75);
+    fourth.start_time = 1.0;
+    assign_stable_emitter_ids(
+        &mut fourth,
+        TEST_FOURTH_EMITTER_ID,
+        0xa357_4a10_0000_4000_8000_0000_0000_3100,
+    );
+
     effect.choreography_order = vec![
         ChoreographyTrackId::Emitter(emitter.id),
         ChoreographyTrackId::Emitter(second.id),
+        ChoreographyTrackId::Emitter(third.id),
+        ChoreographyTrackId::Emitter(fourth.id),
     ];
     effect.emitters.push(emitter);
     effect.emitters.push(second);
+    effect.emitters.push(third);
+    effect.emitters.push(fourth);
     effect
 }
 

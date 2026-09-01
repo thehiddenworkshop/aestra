@@ -1087,7 +1087,7 @@ pub(crate) fn focus_compiled_target(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EFFECT_PATH, EFFECT_SOURCE, test_support};
+    use crate::{EFFECT_SOURCE, test_support};
     use aestra_bevy::{EffectClipSeed, EffectMarker};
 
     fn test_localizer() -> Localizer {
@@ -1153,7 +1153,7 @@ mod tests {
     #[test]
     fn effect_clip_parameter_edit_creates_an_undoable_override() {
         let parameter = ParameterId::new();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xe11ec7));
         let clip = EffectClip::new(source, 0.0, 1.0);
         let clip_id = clip.id;
@@ -1188,7 +1188,7 @@ mod tests {
     #[test]
     fn effect_clip_parameter_scrub_previews_and_commits_one_ordered_override() {
         let parameter = ParameterId::new();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let source = EffectAssetRef::new(aestra_bevy::EffectId::from_u128(0xe11ec7));
         let clip = EffectClip::new(source, 0.0, 1.0);
         let clip_id = clip.id;
@@ -1247,7 +1247,7 @@ mod tests {
 
     #[test]
     fn effect_parameter_editor_updates_definition_and_undoes_as_one_edit() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let parameter = EffectParameter {
             id: ParameterId::new(),
             name: "Intensity".into(),
@@ -1349,7 +1349,7 @@ mod tests {
 
     #[test]
     fn public_toggle_preserves_the_default_binding_and_parameter_identity() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session.selected_layer().modules[0].id;
@@ -1395,7 +1395,7 @@ mod tests {
 
     #[test]
     fn curve_property_source_switches_are_undoable_and_keep_a_valid_value() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
@@ -1495,7 +1495,7 @@ mod tests {
 
     #[test]
     fn constant_curve_source_uses_the_standard_numeric_editor() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
@@ -1573,7 +1573,7 @@ mod tests {
 
     #[test]
     fn exposing_a_curve_property_copies_it_with_a_distinct_semantic_identity() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session
@@ -1627,7 +1627,7 @@ mod tests {
 
     #[test]
     fn random_range_source_switches_to_a_constant_and_back() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
@@ -1691,7 +1691,7 @@ mod tests {
 
     #[test]
     fn spawn_rate_sources_preserve_constant_random_and_emitter_curve_values() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session
@@ -1788,7 +1788,7 @@ mod tests {
 
     #[test]
     fn drag_sources_preserve_constant_random_and_particle_curve_values() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session
@@ -1879,7 +1879,7 @@ mod tests {
 
     #[test]
     fn turbulence_sources_preserve_constant_random_and_particle_curve_values() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session
@@ -1969,7 +1969,7 @@ mod tests {
 
     #[test]
     fn curve_output_range_is_editable_without_changing_its_normalized_shape() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session
@@ -2064,7 +2064,7 @@ mod tests {
 
     #[test]
     fn gravity_source_switching_preserves_per_axis_random_and_curve_values() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session
@@ -2187,7 +2187,7 @@ mod tests {
 
     #[test]
     fn public_spawn_rate_tracks_the_active_source_without_losing_alternates() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session
@@ -2255,7 +2255,7 @@ mod tests {
 
     #[test]
     fn editing_an_exposed_property_updates_its_source_default_in_place() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session.selected_layer().modules[0].id;
@@ -2307,7 +2307,7 @@ mod tests {
 
     #[test]
     fn exposing_module_input_creates_public_parameter_and_binding_atomically() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
         let module = session.selected_layer().modules[0].id;
@@ -2366,7 +2366,7 @@ mod tests {
         let clip_id = clip.id;
         owner.effect_clips.push(clip.clone());
 
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect = owner;
         let original = session.effect.effect_clips[0].clone();
         let catalog = ProjectEffectCatalog::scan(temporary.path());
@@ -2452,7 +2452,7 @@ mod tests {
 
     #[test]
     fn effect_and_emitter_names_are_editable_semantic_fields() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let original_effect_name = session.effect.name.clone();
         let original_emitter_name = session.selected_layer().name.clone();
         let mut app = App::new();
@@ -2510,21 +2510,18 @@ mod tests {
     fn properties_actions_are_executed_by_the_properties_plugin_path() {
         let temporary = tempfile::tempdir().unwrap();
         let mut app = App::new();
-        app.insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
-        ))
-        .insert_resource(MenuState::default())
-        .insert_resource(EditorModuleRegistry::default())
-        .insert_resource(ModulePaletteState::default())
-        .insert_resource(CurvesState::default())
-        .insert_resource(WorkspaceLayout::default())
-        .insert_resource(EditorSettings::default())
-        .insert_resource(SettingsPersistence::for_test(
-            temporary.path().join("settings.ron"),
-        ))
-        .insert_resource(test_localizer())
-        .add_systems(Update, handle_properties_actions);
+        app.insert_resource(test_support::session_with_timing_slack())
+            .insert_resource(MenuState::default())
+            .insert_resource(EditorModuleRegistry::default())
+            .insert_resource(ModulePaletteState::default())
+            .insert_resource(CurvesState::default())
+            .insert_resource(WorkspaceLayout::default())
+            .insert_resource(EditorSettings::default())
+            .insert_resource(SettingsPersistence::for_test(
+                temporary.path().join("settings.ron"),
+            ))
+            .insert_resource(test_localizer())
+            .add_systems(Update, handle_properties_actions);
         app.world_mut().spawn((
             Button,
             Interaction::Pressed,
@@ -2542,7 +2539,7 @@ mod tests {
     #[test]
     fn properties_disclosure_persists_without_requesting_a_ui_rebuild() {
         let temporary = tempfile::tempdir().unwrap();
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let module = session.selected_layer().modules[0].id;
         let revision = session.ui_revision;
         let mut app = App::new();
@@ -2577,7 +2574,7 @@ mod tests {
     #[test]
     fn properties_event_action_creates_an_undoable_semantic_link() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.new_effect();
         let target = session.selected_layer().id;
         session.add_layer();
@@ -2640,7 +2637,7 @@ mod tests {
 
     #[test]
     fn module_deletion_preview_remains_one_undoable_transaction() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let source = session.selected_layer().modules[0].id;
         session.duplicate_module(source);
         let SemanticTarget::Module(module) = session.selection.primary else {
@@ -2660,7 +2657,7 @@ mod tests {
     // Properties domain tests.
     #[test]
     fn compiled_navigation_focuses_the_exact_properties_target() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let target = SemanticTarget::Module(session.effect.emitters[3].modules[2].id);
         let mut focus = PropertiesFocus::default();
 
@@ -2732,7 +2729,7 @@ mod tests {
 
     #[test]
     fn properties_typing_does_not_rebuild_or_commit_until_final() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
             .modules
@@ -2776,7 +2773,7 @@ mod tests {
 
     #[test]
     fn properties_range_edit_preserves_ordering() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
             .modules
@@ -2810,7 +2807,7 @@ mod tests {
 
     #[test]
     fn properties_scrub_previews_live_and_commits_one_undoable_edit() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
             .modules
@@ -2869,7 +2866,7 @@ mod tests {
 
     #[test]
     fn marker_offset_scrub_preserves_binding_and_commits_one_undoable_edit() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let emitter = session.selected_layer().id;
         assert!(session.execute(
             "Shorten emitter",
@@ -2915,7 +2912,7 @@ mod tests {
 
     #[test]
     fn bounded_slider_commit_preserves_the_properties_tree_and_is_undoable() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
             .modules
@@ -2952,7 +2949,7 @@ mod tests {
 
     #[test]
     fn properties_scrub_uses_metadata_steps_and_modifier_precision() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
             .modules
@@ -3004,7 +3001,7 @@ mod tests {
 
     #[test]
     fn properties_sections_use_compact_defaults_and_persist_type_preferences() {
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = test_support::session_with_timing_slack();
         let mut settings = EditorSettings::default();
         let emission = session
             .selected_layer()
@@ -3055,7 +3052,7 @@ mod tests {
 
     #[test]
     fn properties_number_edit_is_clamped_semantic_and_undoable() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
             .modules
@@ -3095,7 +3092,7 @@ mod tests {
 
     #[test]
     fn properties_edits_volumetric_shape_dimensions_semantically() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
             .modules
@@ -3131,7 +3128,7 @@ mod tests {
 
     #[test]
     fn properties_choice_selects_the_requested_shape_directly() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
             .modules
@@ -3154,7 +3151,7 @@ mod tests {
 
     #[test]
     fn properties_emitter_transform_components_are_semantic_and_undoable() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         assert!(set_emitter_transform_component(
             &mut session,
             EmitterNumberControl::Translation(2),
@@ -3171,7 +3168,7 @@ mod tests {
 
     #[test]
     fn properties_effect_clip_transform_is_semantic_and_undoable() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         let clip = aestra_bevy::EffectClip::new(aestra_bevy::EffectId::from_u128(0xC11D), 0.0, 1.0);
         let clip_id = clip.id;
         session.effect.effect_clips.push(clip);
@@ -3234,7 +3231,7 @@ mod tests {
         let parent = EffectClip::new(EffectAssetRef::new(child.id), 0.0, 1.0);
         let path = EffectClipPath::root_path(parent.id).child(nested_id);
         root.effect_clips.push(parent);
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = test_support::session_with_timing_slack();
         session.effect = root;
         let catalog = ProjectEffectCatalog::scan(temporary.path());
         let breadcrumbs = effect_clip_breadcrumbs(&session, &catalog, &path);
