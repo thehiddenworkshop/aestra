@@ -1,0 +1,19 @@
+[package]
+name = "aestra-artifact"
+description = "Versioned engine-neutral compiled effect artifacts for Aestra"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+aestra-core = { path = "../aestra-core" }
+aestra-runtime = { path = "../aestra-runtime" }
+ron.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+aestra-compiler = { path = "../aestra-compiler" }
+aestra-gpu = { path = "../aestra-gpu" }

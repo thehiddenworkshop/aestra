@@ -461,6 +461,22 @@ mod tests {
     }
 
     #[test]
+    fn player_accepts_a_reloaded_compiled_artifact() {
+        let mut effect = EffectAsset::new("Artifact playback", 2.0);
+        effect.emitters.push(Emitter::basic_sprite("Sparks", 2.0));
+        let compiled = EffectCompiler::default().compile(&effect).unwrap();
+        let bytes = aestra_artifact::encode_effect(&compiled).unwrap();
+        let reloaded = aestra_artifact::decode_effect(&bytes).unwrap();
+        let mut player = EffectPlayer::from_compiled(Arc::new(reloaded));
+
+        player.seek(0.75);
+        let mut samples = Vec::new();
+        player.instance.evaluate(&mut samples);
+        assert_eq!(player.effect().source, effect.id);
+        assert!(!samples.is_empty());
+    }
+
+    #[test]
     fn player_render_mode_can_switch_to_wireframe() {
         let mut effect = EffectAsset::new("Wireframe", 2.0);
         effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));

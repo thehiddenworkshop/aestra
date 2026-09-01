@@ -16,4 +16,5 @@ bevy.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+aestra-artifact = { path = "../crates/aestra-artifact" }
 wesl = "0.3.2"

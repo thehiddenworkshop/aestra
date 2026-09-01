@@ -34,13 +34,14 @@ aestra/
     ├── aestra-core/         Engine-independent semantic effect model
     ├── aestra-authoring/    Commands, transactions, history, locks, and diffs
     ├── aestra-compiler/     Module registry, validation, and typed lowering
+    ├── aestra-artifact/     Versioned engine-neutral compiled effect prototype
     ├── aestra-project/      Project indexing and dependency resolution
-    ├── aestra-runtime/      Compiled artifacts and deterministic CPU execution
+    ├── aestra-runtime/      Runtime plans and deterministic CPU execution
     ├── aestra-gpu/          GPU ABI, artifact lowering, WESL, and validation
     └── aestra-bevy-render/  Shared Bevy/WGPU presentation adapter
 ```
 
-The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v3 and its 3D particle model, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, `aestra-runtime` owns immutable execution plans and instance state, and `aestra-gpu` lowers those plans into a packed engine-neutral GPU ABI and produces Naga-validated WGSL from Aestra-owned WESL. `aestra-bevy-render` registers and adapts those portable artifacts to Bevy/WGPU presentation, while `aestra-bevy` owns game playback integration. Both binaries use the same compile/runtime path.
+The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v3 and its 3D particle model, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, `aestra-artifact` owns the versioned compiled-effect prototype, `aestra-runtime` owns immutable execution plans and instance state, and `aestra-gpu` lowers those plans into a packed engine-neutral GPU ABI and produces Naga-validated WGSL from Aestra-owned WESL. `aestra-bevy-render` registers and adapts those portable artifacts to Bevy/WGPU presentation, while `aestra-bevy` owns game playback integration. Both binaries use the same compile/runtime path.
 
 ## Viewer and visual analysis
 

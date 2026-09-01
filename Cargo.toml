@@ -4,6 +4,7 @@ members = [
     "aestra-editor",
     "aestra-bevy",
     "aestra-viewer",
+    "crates/aestra-artifact",
     "crates/aestra-bevy-render",
     "crates/aestra-core",
     "crates/aestra-authoring",

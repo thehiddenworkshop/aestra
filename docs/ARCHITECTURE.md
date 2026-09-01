@@ -35,6 +35,8 @@ EffectAsset + validation (aestra-core)
               │ compiles
               ▼
 Typed execution plan (aestra-compiler)
+              ├──► versioned compiled DTO (aestra-artifact) ──► reload
+              │
               │ instantiates
               ▼
 EffectInstance (aestra-runtime) ──► CPU reference interpreter
@@ -91,6 +93,16 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   stateful backends cannot silently use stateless seeking.
 - Resolves indexed, type-checked parameter overrides without recompiling an effect.
 - Defines the engine-independent contract that future CPU and GPU backends must preserve.
+
+### `aestra-artifact`
+
+- Owns the versioned, engine-neutral prototype format for compiled effects.
+- Maps through explicit DTOs rather than serializing `CompiledEffect` or Rust memory layouts.
+- Reconstructs parameter-slot maps, validates typed expression references and portable numeric
+  ranges, and rejects invalid magic or unsupported versions with structured errors.
+- Round-trips runtime execution plans, resources, renderers, parameters, reusable clips, events,
+  requirements, source maps, and optimization metadata without Bevy or WGPU.
+- Proves reloaded plans retain CPU evaluation, GPU artifact lowering, and `EffectPlayer` playback.
 
 ### `aestra-gpu`
 

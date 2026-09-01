@@ -29,7 +29,7 @@ The current high-level status is:
 | Engine-neutral GPU lowering | Existing | `aestra-gpu` owns the packed GPU ABI, artifact lowering, reference WESL sources, WESL composition, and explicit Naga validation without Bevy or WGPU. |
 | Generated WESL/WGSL and explicit Naga validation | Partial | Representative artifacts produce inspectable, snapshotted, Naga-validated WGSL. The current runtime-sized shaders are shared rather than specialized per effect. |
 | CPU/GPU semantic conformance suite | Existing | Deterministic particle fixtures compare CPU-reference and native-compute readback for alive count, identity, position, lifetime progress, rotation, size, and color across once, restart-loop, and continuous-loop playback. Coverage includes emitter regions, surviving earlier-cycle particles, emitter-time spawn curves, particle-life motion curves, deterministic scalar/vector random ranges, and live scalar/range/vector/curve/gradient parameter overrides without source recompilation. Event-aware advancement proves deterministic choreography dispatch shares the playback clock used for CPU evaluation and native GPU dispatch; pure runtime coverage exercises exact boundaries, multi-loop steps, seek, pause, restart, and equal-time ordering. |
-| Serialized compiled artifact | Deferred | The in-memory compiled representation comes first. |
+| Serialized compiled artifact | Partial | `aestra-artifact` provides a versioned engine-neutral prototype DTO and RON-byte codec distinct from `CompiledEffect`. Round-trip tests preserve CPU evaluation, GPU artifact lowering, parameters, resources, reusable clips, events, requirements, source maps, and Bevy `EffectPlayer` ingestion. A permanent `.aestrac` package format remains deferred. |
 
 ---
 
@@ -1209,6 +1209,10 @@ Make `aestra-bevy` consume the portable GPU/render contract, add CPU/GPU semanti
 
 **Exit criteria:** Bevy remains the production adapter, CPU/GPU behavior is tested at the semantic boundary, and a prototype compiled artifact can round-trip without engine state.
 
+**Status:** complete. The production adapter consumes the portable contracts, semantic conformance
+is covered through native compute, and `aestra-artifact` round-trips versioned compiled DTOs back
+into runtime-ready effects without engine state.
+
 ## Detailed work-item catalog
 
 ---
@@ -1703,7 +1707,7 @@ No FFI implementation is required.
 
 ---
 
-### Work item 13 — Compiled Artifact Prototype *(deferred until portable contracts stabilize)*
+### Work item 13 — Compiled Artifact Prototype *(complete)*
 
 ### Goal
 
@@ -1734,6 +1738,15 @@ aestra-bevy
 ### Exit criteria
 
 A compiled effect can be saved and loaded without carrying Bevy-specific state.
+
+`aestra-artifact` now writes a versioned envelope containing explicit DTOs rather than serializing
+the in-memory `CompiledEffect` representation. Decoding checks magic and version compatibility,
+rebuilds derived parameter-slot indexes, validates typed expression references and portable numeric
+data, and produces a runtime-ready effect. Contract tests verify exact compiled-plan round trips,
+equivalent deterministic CPU samples, equivalent `aestra-gpu` lowering, rejection of incompatible
+headers, and direct ingestion by `aestra-bevy::EffectPlayer`. An architecture test forbids Bevy and
+WGPU dependencies in the artifact crate. This remains a prototype codec, not a commitment to the
+final `.aestrac` package representation.
 
 ---
 
