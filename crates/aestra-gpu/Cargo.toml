@@ -1,6 +1,6 @@
 [package]
-name = "aestra-bevy-render"
-description = "Shared Bevy rendering backend for Aestra runtime and editor preview"
+name = "aestra-gpu"
+description = "Engine-neutral GPU artifact ABI and lowering for Aestra effects"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,11 +8,11 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-aestra-gpu = { path = "../aestra-gpu" }
+aestra-core = { path = "../aestra-core" }
 aestra-runtime = { path = "../aestra-runtime" }
-bevy.workspace = true
+encase.workspace = true
+glam.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 aestra-compiler = { path = "../aestra-compiler" }
-aestra-core = { path = "../aestra-core" }
-wesl = "0.3.2"

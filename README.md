@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License: MIT OR Apache-2.0"></a>
-  <a href="#workspace"><img src="https://img.shields.io/badge/crates-8%20workspace-8a5cf6.svg" alt="8 workspace crates"></a>
+  <a href="#workspace"><img src="https://img.shields.io/badge/crates-10%20workspace-8a5cf6.svg" alt="10 workspace crates"></a>
   <a href="https://github.com/TheHiddenWorkshop/aestra/actions/workflows/ci.yml"><img src="https://github.com/TheHiddenWorkshop/aestra/actions/workflows/ci.yml/badge.svg" alt="Build status"></a>
 </p>
 
@@ -34,10 +34,13 @@ aestra/
     ├── aestra-core/         Engine-independent semantic effect model
     ├── aestra-authoring/    Commands, transactions, history, locks, and diffs
     ├── aestra-compiler/     Module registry, validation, and typed lowering
-    └── aestra-runtime/      Compiled artifacts and deterministic CPU execution
+    ├── aestra-project/      Project indexing and dependency resolution
+    ├── aestra-runtime/      Compiled artifacts and deterministic CPU execution
+    ├── aestra-gpu/          Engine-neutral GPU ABI and artifact lowering
+    └── aestra-bevy-render/  Shared Bevy/WGPU presentation adapter
 ```
 
-The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v3 and its 3D particle model, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, and `aestra-runtime` owns immutable execution plans and instance state. `aestra-bevy` adapts compiled instances to Bevy playback, and both binaries use the same compile/runtime path.
+The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v3 and its 3D particle model, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, `aestra-runtime` owns immutable execution plans and instance state, and `aestra-gpu` lowers those plans into a packed engine-neutral GPU ABI. `aestra-bevy-render` adapts that ABI to Bevy/WGPU presentation, while `aestra-bevy` owns game playback integration. Both binaries use the same compile/runtime path.
 
 ## Viewer and visual analysis
 

@@ -122,9 +122,9 @@ version = "0.1.0"
 dependencies = [
  "aestra-compiler",
  "aestra-core",
+ "aestra-gpu",
  "aestra-runtime",
  "bevy",
- "thiserror 2.0.20",
  "wesl",
 ]
 
@@ -172,6 +172,18 @@ dependencies = [
  "thiserror 2.0.20",
  "unic-langid",
  "winit",
+]
+
+[[package]]
+name = "aestra-gpu"
+version = "0.1.0"
+dependencies = [
+ "aestra-compiler",
+ "aestra-core",
+ "aestra-runtime",
+ "encase",
+ "glam",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

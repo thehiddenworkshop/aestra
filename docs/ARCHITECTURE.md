@@ -38,7 +38,10 @@ Typed execution plan (aestra-compiler)
               │ instantiates
               ▼
 EffectInstance (aestra-runtime) ──► CPU reference interpreter
-                            └─────► WESL GPU compute runtime + Bevy renderer
+                            └─────► packed GPU artifact (aestra-gpu)
+                                          │
+                                          ▼
+                                  Bevy/WGPU presentation
 ```
 
 ### `aestra-core`
@@ -88,6 +91,20 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   stateful backends cannot silently use stateless seeking.
 - Resolves indexed, type-checked parameter overrides without recompiling an effect.
 - Defines the engine-independent contract that future CPU and GPU backends must preserve.
+
+### `aestra-gpu`
+
+- Owns the packed curves, gradients, emitter, renderer, particle, global, and indirect-draw ABI.
+- Lowers compiled effect instances and parameter values into GPU artifacts without Bevy or WGPU.
+- Derives conservative effect bounds and stable GPU seed/index contracts.
+- Depends only on portable Aestra contracts plus engine-neutral data-layout and math libraries.
+
+### `aestra-bevy-render`
+
+- Uploads `aestra-gpu` artifacts into Bevy shader buffers.
+- Owns WESL shader assets, Bevy render-world extraction, WGPU pipeline setup, compute dispatch,
+  readback, texture resolution, and draw submission.
+- Is shared by the editor preview and `aestra-bevy`; neither consumer depends on the other.
 
 ### `aestra-authoring`
 

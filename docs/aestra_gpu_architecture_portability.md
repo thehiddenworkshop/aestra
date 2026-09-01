@@ -26,7 +26,7 @@ The current high-level status is:
 | Engine-neutral renderer plan | Partial | Sprite and flipbook plans exist; the portable renderer contract is not yet broad enough for every planned renderer. |
 | Backend/device compatibility contract | Existing | The compiler retains portable effect requirements; `aestra-bevy-render` converts Bevy/WGPU discovery into `BackendCapabilities` and produces structured compatibility reports before selecting a presentation path. |
 | Editor/runtime-adapter isolation | Existing | `aestra-editor` and `aestra-bevy` are sibling consumers of `aestra-bevy-render`; an architecture test forbids editor imports or a Cargo dependency on the runtime adapter. |
-| Engine-neutral GPU lowering | Target | Current WESL shaders and GPU ABI packing live in `aestra-bevy-render`. |
+| Engine-neutral GPU lowering | Partial | `aestra-gpu` owns the packed GPU ABI and lowers compiled effect instances without Bevy or WGPU. Authored WESL composition and validation still live in `aestra-bevy-render`. |
 | Generated WESL/WGSL and explicit Naga validation | Target | Authored WESL is validated in backend tests; it is not generated from compiled effects yet. |
 | CPU/GPU semantic conformance suite | Target | CPU and GPU paths exist, but do not yet share a systematic conformance suite. |
 | Serialized compiled artifact | Deferred | The in-memory compiled representation comes first. |
@@ -70,6 +70,11 @@ The repository has two independent Bevy consumers. The editor is an authoring ap
              ┌──────────────────────┐
              │ aestra-bevy-render   │
              │ shared presentation  │
+             └──────────┬───────────┘
+                        ▼
+             ┌──────────────────────┐
+             │     aestra-gpu       │
+             │ ABI / data lowering  │
              └──────────┬───────────┘
                         ▼
              ┌──────────────────────┐
@@ -168,7 +173,8 @@ aestra-bevy ─┬───────────────► aestra-bevy-r
              ├───────────────► aestra-runtime
              └───────────────► aestra-core
 
-aestra-bevy-render ──────────► { aestra-core, aestra-runtime, bevy }
+aestra-bevy-render ──────────► { aestra-gpu, aestra-runtime, bevy }
+aestra-gpu ──────────────────► { aestra-core, aestra-runtime }
 
 aestra-compiler ─────────────► aestra-project
        │
@@ -206,6 +212,7 @@ crates/
     aestra-project
     aestra-authoring
     aestra-compiler
+    aestra-gpu
     aestra-runtime
 
     aestra-bevy-render
@@ -216,7 +223,7 @@ apps/
     aestra-editor
 ```
 
-`aestra-bevy-render` is now the shared Bevy-specific presentation crate. A future engine-neutral `aestra-render` or `aestra-gpu` should only be split out when portable lowering contracts are concrete enough to justify it.
+`aestra-gpu` is the engine-neutral GPU ABI and artifact-lowering crate. `aestra-bevy-render` is the shared Bevy-specific presentation crate that uploads those artifacts, owns shaders and pipelines, dispatches compute work, and submits draws.
 
 ## Dependency rule
 
@@ -228,6 +235,7 @@ aestra-project   ─X─► bevy
 aestra-authoring ─X─► bevy
 aestra-compiler  ─X─► bevy
 aestra-runtime   ─X─► bevy
+aestra-gpu       ─X─► bevy / wgpu
 aestra-editor    ─X─► aestra-bevy
 aestra-bevy      ─X─► aestra-editor
 ```
@@ -376,7 +384,7 @@ The crucial design constraint is that the upper half does not understand:
 
 Those concepts belong below the GPU/backend boundary.
 
-**Current state:** Aestra uses authored, embedded WESL shaders inside `aestra-bevy-render`. The compiler does not yet lower an arbitrary compiled effect into generated WESL. Extracting an engine-neutral lowering boundary remains future work, not a prerequisite for continuing Bevy renderer development.
+**Current state:** `aestra-gpu` lowers compiled effect instances into an engine-neutral packed ABI and can be tested without Bevy. Aestra still uses authored, embedded WESL shaders inside `aestra-bevy-render`; the compiler does not yet lower an arbitrary compiled effect into generated WESL. Shader composition and generation remain future work.
 
 ---
 
@@ -495,7 +503,11 @@ These responsibilities should live in the engine/backend integration.
 For the current implementation:
 
 ```text
-Aestra GPU/render plan
+Compiled Aestra plan
+         │
+         ▼
+    aestra-gpu
+ packed GPU artifact
          │
          ▼
  aestra-bevy-render
@@ -1142,8 +1154,8 @@ rather than forcing the entire Aestra model to depend on Bevy.
 └──────────────────────────┬───────────────────────────┘
                            ▼
 ┌──────────────────────┐  ┌────────────────────────────┐
-│ Runtime contracts    │  │ GPU / render contracts     │
-│ execution / events   │  │ lowering / WESL / Naga    │
+│ Runtime contracts    │  │ aestra-gpu contracts       │
+│ execution / events   │  │ ABI / artifact lowering    │
 └──────────▲───────────┘  └─────────────▲──────────────┘
            │                            │
            └──────────────┬─────────────┘
@@ -1427,7 +1439,7 @@ The compiler can construct a complete render plan without depending on Bevy.
 
 ---
 
-### Work item 6 — Isolate GPU Shader Generation *(target)*
+### Work item 6 — Isolate GPU Shader Generation *(partial)*
 
 ### Goal
 
@@ -1441,7 +1453,7 @@ Move or define GPU lowering behind something conceptually equivalent to:
 aestra-gpu
 ```
 
-It may initially be a module rather than a crate.
+The `aestra-gpu` crate now owns packed curves, gradients, emitters, renderers, particles, globals, indirect-draw layout, bounds derivation, seed folding, and artifact lowering. It has an architecture test forbidding Bevy and WGPU dependencies.
 
 Pipeline:
 
@@ -1455,11 +1467,11 @@ GPU lowering
 Generated WESL
 ```
 
-Generated shader code must use Aestra-owned bindings/semantic names rather than Bevy-specific shader imports where possible.
+The remaining work is to move shader composition behind this boundary and generate inspectable WESL/WGSL from the compiled plan. Generated shader code must use Aestra-owned bindings/semantic names rather than Bevy-specific shader imports where possible.
 
 ### Exit criteria
 
-Shader generation can run in a test without launching a Bevy application.
+Artifact lowering already runs in tests without Bevy. This work item is complete when shader generation can also run in such a test.
 
 ---
 
@@ -1570,11 +1582,12 @@ effect validation
 compiler optimization
 portable renderer description
 portable GPU shader generation
+GPU ABI and artifact packing
 ```
 
 ### Exit criteria
 
-Deleting `aestra-bevy` would remove game playback integration while leaving the editor preview, shared Bevy presentation, and portable compiler/runtime libraries functional. Moving WESL lowering and GPU ABI ownership behind an engine-neutral contract remains a later gate.
+Deleting `aestra-bevy` would remove game playback integration while leaving the editor preview, shared Bevy presentation, and portable compiler/runtime libraries functional. GPU ABI ownership and artifact packing already live in `aestra-gpu`; moving WESL composition and generation behind that boundary remains a later gate.
 
 ---
 
