@@ -106,6 +106,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Uploads `aestra-gpu` artifacts into Bevy shader buffers.
 - Registers the portable WESL sources with Bevy and owns render-world extraction, WGPU pipeline
   setup, compute dispatch, readback, texture resolution, and draw submission.
+- Exercises generated simulation WGSL through a deterministic native-compute conformance harness;
+  fixed-time particle readback is compared with the CPU semantic reference on the GPU workflow.
 - Is shared by the editor preview and `aestra-bevy`; neither consumer depends on the other.
 
 ### `aestra-authoring`

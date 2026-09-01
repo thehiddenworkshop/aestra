@@ -15,3 +15,6 @@ bevy.workspace = true
 [dev-dependencies]
 aestra-compiler = { path = "../aestra-compiler" }
 aestra-core = { path = "../aestra-core" }
+encase.workspace = true
+pollster.workspace = true
+wgpu.workspace = true

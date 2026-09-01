@@ -28,6 +28,11 @@ jobs:
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Compare CPU and GPU particle semantics
+        env:
+          AESTRA_REQUIRE_GPU_CONFORMANCE: "1"
+        run: cargo test --locked -p aestra-bevy-render --test gpu_conformance -- --nocapture
+
       - name: Validate editor viewport composition
         run: >-
           cargo run --locked -p aestra-viewer --

@@ -28,7 +28,7 @@ The current high-level status is:
 | Editor/runtime-adapter isolation | Existing | `aestra-editor` and `aestra-bevy` are sibling consumers of `aestra-bevy-render`; an architecture test forbids editor imports or a Cargo dependency on the runtime adapter. |
 | Engine-neutral GPU lowering | Existing | `aestra-gpu` owns the packed GPU ABI, artifact lowering, reference WESL sources, WESL composition, and explicit Naga validation without Bevy or WGPU. |
 | Generated WESL/WGSL and explicit Naga validation | Partial | Representative artifacts produce inspectable, snapshotted, Naga-validated WGSL. The current runtime-sized shaders are shared rather than specialized per effect. |
-| CPU/GPU semantic conformance suite | Target | CPU and GPU paths exist, but do not yet share a systematic conformance suite. |
+| CPU/GPU semantic conformance suite | Partial | A deterministic particle fixture now compares CPU-reference and native-compute readback for alive count, identity, position, lifetime progress, rotation, size, and color at fixed times. The suite still needs broader module, looping, event, and parameter coverage. |
 | Serialized compiled artifact | Deferred | The in-memory compiled representation comes first. |
 
 ---
@@ -1595,7 +1595,7 @@ Deleting `aestra-bevy` would remove game playback integration while leaving the 
 
 ---
 
-### Work item 10 — CPU/GPU Semantic Conformance Tests *(target)*
+### Work item 10 — CPU/GPU Semantic Conformance Tests *(partial)*
 
 ### Goal
 
@@ -1620,6 +1620,13 @@ Compare CPU results against GPU results with appropriate tolerances.
 ### Exit criteria
 
 Core simulation features have automated CPU/GPU conformance tests.
+
+The first native-compute conformance slice compiles one deterministic authored fixture through the
+normal compiler and `aestra-gpu`, executes the generated WGSL through WGPU, reads the packed
+particles back, and compares them with the CPU reference at fixed timestamps. Ordinary test runners
+skip only when no compatible compute adapter exists; the self-hosted GPU workflow requires the
+adapter and fails on semantic divergence. Further fixtures remain necessary for continuous loops,
+property-source variants, parameters, emitter regions, and events.
 
 ---
 

@@ -1,0 +1,451 @@
+use aestra_compiler::EffectCompiler;
+use aestra_core::{
+    ColorKey, Curve, CurveKey, EffectAsset, Emitter, EmitterShape, Gradient, ModuleParameters,
+    ScalarRange,
+};
+use aestra_gpu::{
+    GpuEffectArtifact, GpuGlobals, GpuParticle, WORKGROUP_SIZE, fold_seed, indirect_draw_commands,
+    shader::GpuShaderPackage,
+};
+use aestra_runtime::{EffectInstance, ParticleSample};
+use encase::{ShaderType, StorageBuffer, internal::WriteInto};
+use std::{
+    borrow::Cow,
+    sync::{Arc, mpsc},
+    time::Duration,
+};
+use wgpu::util::DeviceExt;
+
+const REQUIRED_GPU_ENV: &str = "AESTRA_REQUIRE_GPU_CONFORMANCE";
+const TEST_SEED: u64 = 0x1234_5678_9abc_def0;
+const SAMPLE_TIMES: [f32; 4] = [0.05, 0.55, 1.1, 1.65];
+
+#[test]
+fn deterministic_gpu_particles_match_the_cpu_reference() {
+    let effect = conformance_effect();
+    let mut instance = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+    let artifact = GpuEffectArtifact::from_instance(&instance).unwrap();
+    let shaders = GpuShaderPackage::for_artifact(&artifact).unwrap();
+    let require_gpu = std::env::var_os(REQUIRED_GPU_ENV).is_some();
+    let harness = match GpuHarness::new(&shaders.simulation.wgsl) {
+        Ok(Some(harness)) => harness,
+        Ok(None) if !require_gpu => {
+            eprintln!(
+                "skipping CPU/GPU conformance: no compatible compute adapter; set \
+                 {REQUIRED_GPU_ENV}=1 to require one"
+            );
+            return;
+        }
+        Ok(None) => panic!("{REQUIRED_GPU_ENV}=1 but no compatible compute adapter was found"),
+        Err(error) => panic!("failed to create GPU conformance harness: {error}"),
+    };
+
+    for time in SAMPLE_TIMES {
+        instance.seek(time);
+        let mut cpu = Vec::new();
+        instance.evaluate(&mut cpu);
+        let gpu = harness
+            .simulate(
+                &artifact,
+                GpuGlobals {
+                    time,
+                    total_slots: artifact.total_slots,
+                    seed: fold_seed(TEST_SEED),
+                    emitter_count: artifact.emitters.len() as u32,
+                    duration: effect.duration,
+                    continuous: 0,
+                    ..Default::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("GPU simulation failed at {time:.3}s: {error}"));
+        assert_particle_samples_match(time, &cpu, &gpu);
+    }
+}
+
+fn conformance_effect() -> Arc<aestra_runtime::CompiledEffect> {
+    let mut effect = EffectAsset::new("CPU GPU conformance", 2.0);
+    let mut emitter = Emitter::basic_sprite("Deterministic fixture", effect.duration);
+    emitter.max_particles = 32;
+    emitter.transform.translation = [1.25, -0.75, 2.5];
+    emitter.transform.rotation = [
+        0.0,
+        0.0,
+        std::f32::consts::FRAC_1_SQRT_2,
+        std::f32::consts::FRAC_1_SQRT_2,
+    ];
+    emitter.transform.scale = [1.25, 0.8, 1.5];
+
+    for module in &mut emitter.modules {
+        match &mut module.parameters {
+            ModuleParameters::Emission {
+                spawn_rate,
+                burst_count,
+            } => {
+                *spawn_rate = 6.0;
+                *burst_count = 4;
+            }
+            ModuleParameters::Shape { shape } => {
+                *shape = EmitterShape::Box {
+                    half_extents: [0.5, 0.75, 0.25],
+                };
+            }
+            ModuleParameters::Initialize {
+                lifetime,
+                speed,
+                direction,
+                spread_degrees,
+                angular_velocity,
+            } => {
+                *lifetime = ScalarRange::new(0.8, 1.6);
+                *speed = ScalarRange::new(2.0, 5.0);
+                *direction = [0.25, 1.0, -0.2];
+                *spread_degrees = 35.0;
+                *angular_velocity = ScalarRange::new(-1.5, 1.25);
+            }
+            ModuleParameters::Motion {
+                gravity,
+                drag,
+                turbulence,
+            } => {
+                *gravity = [0.5, -3.25, 1.0];
+                *drag = 0.45;
+                *turbulence = 0.3;
+            }
+            ModuleParameters::Appearance {
+                size,
+                opacity,
+                color,
+            } => {
+                *size = Curve::new(vec![
+                    CurveKey::new(0.0, 0.5),
+                    CurveKey::new(0.4, 2.0),
+                    CurveKey::new(1.0, 0.25),
+                ]);
+                *opacity = Curve::new(vec![
+                    CurveKey::new(0.0, 0.2),
+                    CurveKey::new(0.25, 1.0),
+                    CurveKey::new(1.0, 0.0),
+                ]);
+                *color = Gradient::new(vec![
+                    ColorKey::new(0.0, [0.2, 0.4, 1.0, 1.0]),
+                    ColorKey::new(0.55, [1.0, 0.35, 0.1, 0.8]),
+                    ColorKey::new(1.0, [0.1, 0.05, 0.2, 0.0]),
+                ]);
+            }
+            ModuleParameters::Custom(_) => {}
+        }
+    }
+    effect.emitters.push(emitter);
+    Arc::new(EffectCompiler::default().compile(&effect).unwrap())
+}
+
+fn assert_particle_samples_match(time: f32, cpu: &[ParticleSample], gpu: &[ParticleSample]) {
+    let mut cpu = cpu.to_vec();
+    let mut gpu = gpu.to_vec();
+    let order = |sample: &ParticleSample| (sample.emitter_index, sample.particle_index);
+    cpu.sort_by_key(order);
+    gpu.sort_by_key(order);
+
+    assert_eq!(
+        cpu.len(),
+        gpu.len(),
+        "alive particle count diverged at {time:.3}s\nCPU: {cpu:#?}\nGPU: {gpu:#?}"
+    );
+    for (expected, actual) in cpu.iter().zip(&gpu) {
+        let identity = order(expected);
+        assert_eq!(
+            identity,
+            order(actual),
+            "particle identity diverged at {time:.3}s"
+        );
+        for axis in 0..3 {
+            assert_close(
+                time,
+                identity,
+                &format!("position[{axis}]"),
+                expected.position[axis],
+                actual.position[axis],
+                0.003,
+                0.0005,
+            );
+        }
+        assert_close(
+            time,
+            identity,
+            "size",
+            expected.size,
+            actual.size,
+            0.002,
+            0.0005,
+        );
+        assert_close(
+            time,
+            identity,
+            "rotation",
+            expected.rotation,
+            actual.rotation,
+            0.001,
+            0.0005,
+        );
+        assert_close(
+            time,
+            identity,
+            "normalized_age",
+            expected.normalized_age,
+            actual.normalized_age,
+            0.0002,
+            0.0002,
+        );
+        for channel in 0..4 {
+            assert_close(
+                time,
+                identity,
+                &format!("color[{channel}]"),
+                expected.color[channel],
+                actual.color[channel],
+                0.001,
+                0.0005,
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assert_close(
+    time: f32,
+    particle: (usize, u32),
+    field: &str,
+    expected: f32,
+    actual: f32,
+    absolute: f32,
+    relative: f32,
+) {
+    let tolerance = absolute + relative * expected.abs().max(actual.abs());
+    assert!(
+        (expected - actual).abs() <= tolerance,
+        "{field} diverged at {time:.3}s for particle {particle:?}: CPU={expected:.7}, \
+         GPU={actual:.7}, tolerance={tolerance:.7}"
+    );
+}
+
+struct GpuHarness {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    bind_group_layout: wgpu::BindGroupLayout,
+    reset_pipeline: wgpu::ComputePipeline,
+    simulate_pipeline: wgpu::ComputePipeline,
+}
+
+impl GpuHarness {
+    fn new(wgsl: &str) -> Result<Option<Self>, String> {
+        let mut instance_descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        instance_descriptor.backends = wgpu::Backends::PRIMARY;
+        let instance = wgpu::Instance::new(instance_descriptor);
+        let adapter =
+            match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                force_fallback_adapter: false,
+                compatible_surface: None,
+            })) {
+                Ok(adapter) => adapter,
+                Err(_) => return Ok(None),
+            };
+        if !adapter_supports_conformance(&adapter) {
+            return Ok(None);
+        }
+        let limits = adapter.limits();
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("Aestra CPU GPU conformance device"),
+            required_limits: limits,
+            ..Default::default()
+        }))
+        .map_err(|error| error.to_string())?;
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Aestra CPU GPU conformance bindings"),
+            entries: &(0..7)
+                .map(|binding| wgpu::BindGroupLayoutEntry {
+                    binding,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage {
+                            read_only: matches!(binding, 0 | 6),
+                        },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                })
+                .collect::<Vec<_>>(),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Aestra CPU GPU conformance pipeline layout"),
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Aestra validated simulation WGSL"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(wgsl)),
+        });
+        let pipeline = |entry_point| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(entry_point),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        };
+        let reset_pipeline = pipeline("reset");
+        let simulate_pipeline = pipeline("simulate");
+        Ok(Some(Self {
+            device,
+            queue,
+            bind_group_layout,
+            reset_pipeline,
+            simulate_pipeline,
+        }))
+    }
+
+    fn simulate(
+        &self,
+        artifact: &GpuEffectArtifact,
+        globals: GpuGlobals,
+    ) -> Result<Vec<ParticleSample>, String> {
+        let emitters = self.read_only_buffer("emitters", &encode(&artifact.emitters)?);
+        let particles_bytes = encode(&artifact.particles)?;
+        let particles = self.read_write_buffer("particles", &particles_bytes, true);
+        let indices = vec![0_u32; artifact.total_slots as usize];
+        let alive = self.read_write_buffer("alive", &encode(&indices)?, false);
+        let dead = self.read_write_buffer("dead", &encode(&indices)?, false);
+        let counters = self.read_write_buffer("counters", &encode(&vec![0_u32; 2])?, false);
+        let indirect = self.read_write_buffer(
+            "indirect",
+            &encode(&indirect_draw_commands(&artifact.emitters))?,
+            false,
+        );
+        let globals = self.read_only_buffer("globals", &encode(&globals)?);
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Aestra CPU GPU conformance bind group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                binding(0, &emitters),
+                binding(1, &particles),
+                binding(2, &alive),
+                binding(3, &dead),
+                binding(4, &counters),
+                binding(5, &indirect),
+                binding(6, &globals),
+            ],
+        });
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Aestra CPU GPU conformance readback"),
+            size: particles_bytes.len() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Aestra CPU GPU conformance commands"),
+            });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Aestra CPU GPU conformance simulation"),
+                ..Default::default()
+            });
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_pipeline(&self.reset_pipeline);
+            pass.dispatch_workgroups(1, 1, 1);
+            pass.set_pipeline(&self.simulate_pipeline);
+            pass.dispatch_workgroups(artifact.total_slots.div_ceil(WORKGROUP_SIZE), 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&particles, 0, &staging, 0, particles_bytes.len() as u64);
+        let submission = self.queue.submit([encoder.finish()]);
+        let slice = staging.slice(..);
+        let (sender, receiver) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(30)),
+            })
+            .map_err(|error| error.to_string())?;
+        receiver
+            .recv_timeout(Duration::from_secs(1))
+            .map_err(|error| error.to_string())?
+            .map_err(|error| error.to_string())?;
+        let bytes = slice.get_mapped_range().to_vec();
+        staging.unmap();
+        let particles: Vec<GpuParticle> = StorageBuffer::new(bytes)
+            .create()
+            .map_err(|error| error.to_string())?;
+        Ok(particles
+            .into_iter()
+            .filter(|particle| particle.alive != 0)
+            .map(|particle| ParticleSample {
+                emitter_index: particle.emitter_index as usize,
+                particle_index: particle.particle_index,
+                position: particle.position.to_array(),
+                size: particle.size,
+                rotation: particle.rotation,
+                color: particle.color.to_array(),
+                normalized_age: particle.normalized_age,
+            })
+            .collect())
+    }
+
+    fn read_only_buffer(&self, label: &str, contents: &[u8]) -> wgpu::Buffer {
+        self.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents,
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+    }
+
+    fn read_write_buffer(&self, label: &str, contents: &[u8], copy_src: bool) -> wgpu::Buffer {
+        let mut usage = wgpu::BufferUsages::STORAGE;
+        if copy_src {
+            usage |= wgpu::BufferUsages::COPY_SRC;
+        }
+        self.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents,
+                usage,
+            })
+    }
+}
+
+fn adapter_supports_conformance(adapter: &wgpu::Adapter) -> bool {
+    let limits = adapter.limits();
+    adapter
+        .get_downlevel_capabilities()
+        .flags
+        .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS)
+        && limits.max_compute_invocations_per_workgroup >= WORKGROUP_SIZE
+        && limits.max_compute_workgroup_size_x >= WORKGROUP_SIZE
+        && limits.max_storage_buffers_per_shader_stage >= 7
+        && limits.max_bindings_per_bind_group >= 7
+}
+
+fn binding(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
+    wgpu::BindGroupEntry {
+        binding,
+        resource: buffer.as_entire_binding(),
+    }
+}
+
+fn encode<T>(value: &T) -> Result<Vec<u8>, String>
+where
+    T: ShaderType + WriteInto,
+{
+    let mut bytes = Vec::new();
+    StorageBuffer::new(&mut bytes)
+        .write(value)
+        .map_err(|error| error.to_string())?;
+    Ok(bytes)
+}
