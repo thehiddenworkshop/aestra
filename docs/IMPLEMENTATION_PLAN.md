@@ -154,14 +154,15 @@ surface to mutable examples and monolithic panel modules.
    Session contracts use deterministic path-aware, textured, and purpose-built assets for
    serialization and filesystem workflows. Showcase effects remain only at the application bundle
    boundary for startup, bundled-content compilation, and native-GPU visual approval.
-2. **Decompose Timeline and Properties internals.** Preserve the existing `TimelinePlugin` and
+2. **Decompose Timeline and Properties internals — complete.** Preserve the existing `TimelinePlugin` and
    `PropertiesPlugin` public boundaries while splitting state/actions, region and automation
    interaction, referenced-effect presentation, module controls, renderer controls, and tests into
    focused internal modules. This is a behavior-preserving refactor guarded by the existing tests.
    Timeline semantic actions, state/view/navigation, emitter-region interaction, automation
    interaction, and referenced-effect presentation are now extracted with focused tests. Properties
    module actions, source authoring, card composition, referenced-effect navigation, repair,
-   instance overrides, and nested read-only presentation are extracted; renderer controls remain.
+   instance overrides, and nested read-only presentation are extracted. Renderer actions, card
+   composition, input synchronization, and numeric scrub semantics now have focused ownership too.
 3. **Reconcile roadmap status.** Update architecture and implementation documentation so completed
    GPU, flipbook, composition, exposed-parameter, automation, and event work is distinguishable from
    the remaining renderer and material breadth.
