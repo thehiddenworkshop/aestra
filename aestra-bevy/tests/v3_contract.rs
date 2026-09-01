@@ -1,7 +1,8 @@
 use aestra_bevy::{
     AssetDefinition, AssetError, AssetId, CurveId, EffectAsset, EffectCompiler, EffectId,
-    EffectInstance, EffectProfile, Emitter, EmitterId, GradientId, MaterialProperties, ModuleId,
-    ModuleParameters, ParticleSample, ProfileValue, RendererId,
+    EffectInstance, EffectPlaybackMode, EffectPlayer, EffectProfile, Emitter, EmitterId,
+    GradientId, MaterialProperties, ModuleId, ModuleParameters, ParticleSample, ProfileValue,
+    RendererId, ScalarRange,
 };
 use std::sync::Arc;
 
@@ -60,12 +61,12 @@ fn immutable_v3_contract_has_stable_pretty_serialization() {
 
     assert_eq!(
         serialized.len(),
-        6_001,
+        6_014,
         "update only for an intentional format change"
     );
     assert_eq!(
         fnv1a64(serialized.as_bytes()),
-        0x0ac7_aa40_6902_089c,
+        0x3f30_7f7b_45c0_9ffc,
         "update only for an intentional format change"
     );
     assert_eq!(
@@ -94,6 +95,40 @@ fn immutable_v3_contract_evaluation_matches_golden_moments() {
     // about evaluated particle data, not the checkout's line-ending policy.
     let expected = include_str!("fixtures/v3_contract.moments").replace("\r\n", "\n");
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn continuous_loop_keeps_particles_from_the_previous_cycle_alive() {
+    let mut effect = EffectAsset::new("Continuous", 1.0);
+    effect.playback_mode = EffectPlaybackMode::LoopContinuous;
+    let mut emitter = Emitter::basic_sprite("Emitter", 1.0);
+    *emitter.spawn_rate_mut() = 0.0;
+    *emitter.burst_count_mut() = 1;
+    *emitter.lifetime_mut() = ScalarRange::new(2.0, 2.0);
+    effect.emitters.push(emitter);
+
+    let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+    let mut continuous = EffectInstance::new(compiled.clone());
+    continuous.seek(1.1);
+    let mut samples = Vec::new();
+    continuous.evaluate(&mut samples);
+    assert_eq!(samples.len(), 2);
+
+    let mut player = EffectPlayer::from_compiled(compiled);
+    player.seek_simulation_time(1.1);
+    assert!((player.elapsed() - 0.1).abs() < 0.0001);
+    assert!((player.simulation_time() - 1.1).abs() < 0.0001);
+    player.instance.evaluate(&mut samples);
+    assert_eq!(samples.len(), 2);
+
+    let mut restart_effect = effect;
+    restart_effect.playback_mode = EffectPlaybackMode::LoopRestart;
+    let mut restart = EffectInstance::new(Arc::new(
+        EffectCompiler::default().compile(&restart_effect).unwrap(),
+    ));
+    restart.seek(1.1);
+    restart.evaluate(&mut samples);
+    assert_eq!(samples.len(), 1);
 }
 
 fn contract_effect() -> EffectAsset {

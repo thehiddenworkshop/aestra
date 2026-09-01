@@ -2,6 +2,7 @@
 
 use crate::feathers::icon::load_svg_icon;
 use crate::*;
+use bevy::ecs::query::QueryFilter;
 use bevy::ui_widgets::Activate;
 use bevy::{
     feathers::controls::ButtonVariant,
@@ -43,7 +44,7 @@ impl Plugin for EditorTransportPlugin {
 pub(crate) enum TransportAction {
     TogglePlayback,
     Stop,
-    ToggleLooping,
+    TogglePlaybackMode(EffectPlaybackMode),
     Restart,
     StepFrame(i8),
 }
@@ -55,7 +56,10 @@ struct PlaybackPlayIcon;
 struct PlaybackPauseIcon;
 
 #[derive(Component)]
-struct PlaybackLoopButton;
+struct PlaybackRestartLoopButton;
+
+#[derive(Component)]
+struct PlaybackContinuousLoopButton;
 
 fn queue_transport_action_activation(
     activate: On<Activate>,
@@ -129,16 +133,20 @@ fn execute_transport_action(action: On<TransportAction>, mut session: ResMut<Edi
         TransportAction::TogglePlayback => {
             if session.playing {
                 session.playing = false;
-            } else if session.effect.looping {
+            } else if session.effect.playback_mode.is_looping() {
                 session.playing = true;
             } else {
                 session.restart();
             }
         }
         TransportAction::Stop => session.stop(),
-        TransportAction::ToggleLooping => {
-            let looping = !session.effect.looping;
-            session.set_effect_looping(looping);
+        TransportAction::TogglePlaybackMode(mode) => {
+            let mode = if session.effect.playback_mode == mode {
+                EffectPlaybackMode::Once
+            } else {
+                mode
+            };
+            session.set_effect_playback_mode(mode);
         }
         TransportAction::Restart => session.restart(),
         TransportAction::StepFrame(direction) => session.step_frame(direction),
@@ -203,7 +211,20 @@ fn update_transport_icons(
     localizer: Res<Localizer>,
     mut play_icons: Query<&mut Node, (With<PlaybackPlayIcon>, Without<PlaybackPauseIcon>)>,
     mut pause_icons: Query<&mut Node, (With<PlaybackPauseIcon>, Without<PlaybackPlayIcon>)>,
-    mut loop_buttons: Query<(Entity, &mut ButtonVariant, Has<Selected>), With<PlaybackLoopButton>>,
+    mut restart_buttons: Query<
+        (Entity, &mut ButtonVariant, Has<Selected>),
+        (
+            With<PlaybackRestartLoopButton>,
+            Without<PlaybackContinuousLoopButton>,
+        ),
+    >,
+    mut continuous_buttons: Query<
+        (Entity, &mut ButtonVariant, Has<Selected>),
+        (
+            With<PlaybackContinuousLoopButton>,
+            Without<PlaybackRestartLoopButton>,
+        ),
+    >,
 ) {
     if !session.is_changed() {
         return;
@@ -222,28 +243,46 @@ fn update_transport_icons(
             Display::None
         };
     }
-    let looping = session.effect.looping;
-    let loop_label = localizer.text(if looping {
-        "toolbar-loop-disable"
-    } else {
-        "toolbar-loop-enable"
-    });
-    for (entity, mut variant, selected) in &mut loop_buttons {
-        *variant = if looping {
+    sync_playback_mode_button(
+        &mut commands,
+        &localizer,
+        &mut restart_buttons,
+        session.effect.playback_mode == EffectPlaybackMode::LoopRestart,
+        "toolbar-loop-restart",
+    );
+    sync_playback_mode_button(
+        &mut commands,
+        &localizer,
+        &mut continuous_buttons,
+        session.effect.playback_mode == EffectPlaybackMode::LoopContinuous,
+        "toolbar-loop-continuous",
+    );
+}
+
+fn sync_playback_mode_button<F: QueryFilter>(
+    commands: &mut Commands,
+    localizer: &Localizer,
+    buttons: &mut Query<(Entity, &mut ButtonVariant, Has<Selected>), F>,
+    active: bool,
+    message_id: &'static str,
+) {
+    let label = localizer.text(message_id);
+    for (entity, mut variant, selected) in buttons {
+        *variant = if active {
             ButtonVariant::Primary
         } else {
             ButtonVariant::Normal
         };
-        if looping != selected {
-            if looping {
+        if active != selected {
+            if active {
                 commands.entity(entity).insert(Selected);
             } else {
                 commands.entity(entity).remove::<Selected>();
             }
         }
         commands.entity(entity).insert((
-            AccessibleLabel(loop_label.clone()),
-            EditorTooltip::description(loop_label.clone()),
+            AccessibleLabel(label.clone()),
+            EditorTooltip::description(label.clone()),
         ));
     }
 }
@@ -314,23 +353,31 @@ pub(crate) fn spawn_transport_controls(
                 .with_children(|button| {
                     spawn_transport_icon(button, asset_server, "icons/stop.svg", 13.0, true);
                 });
-            let loop_message = if session.effect.looping {
-                "toolbar-loop-disable"
-            } else {
-                "toolbar-loop-enable"
-            };
             let mut loop_button = transport_button(
                 transport,
-                loop_message,
-                TransportAction::ToggleLooping,
+                "toolbar-loop-restart",
+                TransportAction::TogglePlaybackMode(EffectPlaybackMode::LoopRestart),
                 localizer,
             );
-            loop_button.insert(PlaybackLoopButton);
-            if session.effect.looping {
+            loop_button.insert(PlaybackRestartLoopButton);
+            if session.effect.playback_mode == EffectPlaybackMode::LoopRestart {
                 loop_button.insert((Selected, ButtonVariant::Primary));
             }
             loop_button.with_children(|button| {
                 spawn_transport_icon(button, asset_server, "icons/loop.svg", 19.0, true);
+            });
+            let mut continuous_button = transport_button(
+                transport,
+                "toolbar-loop-continuous",
+                TransportAction::TogglePlaybackMode(EffectPlaybackMode::LoopContinuous),
+                localizer,
+            );
+            continuous_button.insert(PlaybackContinuousLoopButton);
+            if session.effect.playback_mode == EffectPlaybackMode::LoopContinuous {
+                continuous_button.insert((Selected, ButtonVariant::Primary));
+            }
+            continuous_button.with_children(|button| {
+                spawn_transport_icon(button, asset_server, "icons/infinite.svg", 19.0, true);
             });
         });
 }
@@ -420,21 +467,26 @@ mod tests {
         assert!(session.playing);
         assert_eq!(session.frame(), 0);
 
-        let original_looping = session.effect.looping;
-        app.world_mut().trigger(TransportAction::ToggleLooping);
+        let original_mode = session.effect.playback_mode;
+        app.world_mut().trigger(TransportAction::TogglePlaybackMode(
+            EffectPlaybackMode::LoopContinuous,
+        ));
         app.update();
         let session = app.world().resource::<EditorSession>();
-        assert_eq!(session.effect.looping, !original_looping);
+        assert_eq!(
+            session.effect.playback_mode,
+            EffectPlaybackMode::LoopContinuous
+        );
         assert!(session.can_undo());
         app.world_mut().resource_mut::<EditorSession>().undo();
         assert_eq!(
-            app.world().resource::<EditorSession>().effect.looping,
-            original_looping
+            app.world().resource::<EditorSession>().effect.playback_mode,
+            original_mode
         );
 
         {
             let mut session = app.world_mut().resource_mut::<EditorSession>();
-            assert!(session.set_effect_looping(false));
+            assert!(session.set_effect_playback_mode(EffectPlaybackMode::Once));
             session.step_frame(1);
             assert_eq!(session.frame(), 1);
             assert!(!session.playing);
@@ -447,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn changing_looping_preserves_playback_position_and_running_state() {
+    fn changing_playback_mode_preserves_playback_position_and_running_state() {
         let mut app = App::new();
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         session.advance_playback(0.1);
@@ -457,17 +509,19 @@ mod tests {
         app.insert_resource(session)
             .add_observer(execute_transport_action);
 
-        app.world_mut().trigger(TransportAction::ToggleLooping);
+        app.world_mut().trigger(TransportAction::TogglePlaybackMode(
+            EffectPlaybackMode::LoopRestart,
+        ));
         app.update();
 
         let session = app.world().resource::<EditorSession>();
-        assert!(!session.effect.looping);
+        assert_eq!(session.effect.playback_mode, EffectPlaybackMode::Once);
         assert!(session.playing);
         assert_eq!(session.frame(), frame);
     }
 
     #[test]
-    fn enabled_loop_control_has_persistent_active_styling_and_metadata() {
+    fn playback_mode_controls_are_exclusive_and_toggle_back_to_once() {
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
@@ -498,14 +552,18 @@ mod tests {
         )>();
         let (_, variant, selected, label, tooltip) = query
             .iter(world)
-            .find(|(action, _, _, _, _)| **action == TransportAction::ToggleLooping)
+            .find(|(action, _, _, _, _)| {
+                **action == TransportAction::TogglePlaybackMode(EffectPlaybackMode::LoopRestart)
+            })
             .unwrap();
         assert_eq!(*variant, ButtonVariant::Primary);
         assert!(selected);
-        assert_eq!(label.0, "Disable loop playback");
+        assert_eq!(label.0, "Restart the effect at the end");
         assert!(tooltip);
 
-        app.world_mut().trigger(TransportAction::ToggleLooping);
+        app.world_mut().trigger(TransportAction::TogglePlaybackMode(
+            EffectPlaybackMode::LoopContinuous,
+        ));
         app.update();
 
         let world = app.world_mut();
@@ -517,11 +575,23 @@ mod tests {
         )>();
         let (_, variant, selected, label) = query
             .iter(world)
-            .find(|(action, _, _, _)| **action == TransportAction::ToggleLooping)
+            .find(|(action, _, _, _)| {
+                **action == TransportAction::TogglePlaybackMode(EffectPlaybackMode::LoopRestart)
+            })
             .unwrap();
         assert_eq!(*variant, ButtonVariant::Normal);
         assert!(!selected);
-        assert_eq!(label.0, "Enable loop playback");
+        assert_eq!(label.0, "Restart the effect at the end");
+
+        let (_, variant, selected, label) = query
+            .iter(world)
+            .find(|(action, _, _, _)| {
+                **action == TransportAction::TogglePlaybackMode(EffectPlaybackMode::LoopContinuous)
+            })
+            .unwrap();
+        assert_eq!(*variant, ButtonVariant::Primary);
+        assert!(selected);
+        assert_eq!(label.0, "Loop continuously without clearing particles");
     }
 
     #[test]

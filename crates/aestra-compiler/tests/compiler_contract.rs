@@ -3,8 +3,8 @@ use aestra_compiler::{
 };
 use aestra_core::{
     ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode, EffectAsset,
-    EffectClip, EffectClipSeed, EffectParameter, Emitter, EmitterRegionId, EmitterShape,
-    MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialInput,
+    EffectClip, EffectClipSeed, EffectParameter, EffectPlaybackMode, Emitter, EmitterRegionId,
+    EmitterShape, MODULE_EMISSION, MODULE_INITIALIZE, MODULE_MOTION, MODULE_SHAPE, MaterialInput,
     MaterialProperties, ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId,
     PropertySourceValue, ScalarRange, StageKind, Value, Vec3Curve, Vec3Range,
 };
@@ -278,7 +278,7 @@ fn spawn_rate_emitter_curve_is_preserved_and_lowered_as_a_scalar_source() {
 #[test]
 fn spawn_rate_emitter_curve_controls_accumulated_particle_count() {
     let mut asset = EffectAsset::new("Emitter-time rate", 2.0);
-    asset.looping = false;
+    asset.playback_mode = EffectPlaybackMode::Once;
     asset
         .emitters
         .push(Emitter::basic_sprite("Emitter", asset.duration));
@@ -328,7 +328,7 @@ fn spawn_rate_emitter_curve_controls_accumulated_particle_count() {
 #[test]
 fn spawn_rate_random_range_is_deterministic_for_an_effect_seed() {
     let mut asset = EffectAsset::new("Random rate", 2.0);
-    asset.looping = false;
+    asset.playback_mode = EffectPlaybackMode::Once;
     asset
         .emitters
         .push(Emitter::basic_sprite("Emitter", asset.duration));
@@ -615,7 +615,7 @@ fn turbulence_sources_lower_without_losing_their_authored_values() {
 
 fn configured_motion_effect() -> EffectAsset {
     let mut asset = EffectAsset::new("Variable motion", 2.0);
-    asset.looping = false;
+    asset.playback_mode = EffectPlaybackMode::Once;
     asset
         .emitters
         .push(Emitter::basic_sprite("Emitter", asset.duration));
@@ -1019,7 +1019,7 @@ fn runtime_instances_are_deterministic_per_seed() {
 #[test]
 fn choreography_events_compile_and_dispatch_deterministically_across_loop_boundaries() {
     let mut asset = EffectAsset::new("Event dispatch", 2.0);
-    asset.looping = true;
+    asset.playback_mode = EffectPlaybackMode::LoopRestart;
     asset.choreography_events = vec![
         ChoreographyEvent::new(
             "Begin",

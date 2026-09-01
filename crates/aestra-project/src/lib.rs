@@ -888,7 +888,9 @@ impl DependencyResolver<'_> {
                     continue;
                 }
             };
-            if !child.looping && clip.source_offset + clip.duration > child.duration {
+            if !child.playback_mode.is_looping()
+                && clip.source_offset + clip.duration > child.duration
+            {
                 self.diagnostics.push(ProjectDependencyDiagnostic {
                     code: ProjectDependencyDiagnosticCode::InvalidTiming,
                     owner: effect.id,

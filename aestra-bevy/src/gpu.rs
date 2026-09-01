@@ -172,6 +172,9 @@ pub struct GpuGlobals {
     pub total_slots: u32,
     pub seed: u32,
     pub emitter_count: u32,
+    pub duration: f32,
+    pub continuous: u32,
+    pub _padding: UVec2,
 }
 
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
@@ -711,14 +714,17 @@ pub(crate) fn prepare_gpu_players(
         indirect_buffer.buffer_description.usage |= BufferUsages::INDIRECT;
         let indirect = buffers.add(indirect_buffer);
         let globals = buffers.add(ShaderBuffer::from(GpuGlobals {
-            time: player.elapsed(),
+            time: player.simulation_time(),
             total_slots: artifact.total_slots,
             seed: fold_seed(player.instance.seed()),
             emitter_count: player.effect().emitters.len() as u32,
+            duration: player.effect().duration,
+            continuous: u32::from(player.effect().playback_mode.is_continuous()),
+            _padding: UVec2::ZERO,
         }));
         let render_globals = buffers.add(ShaderBuffer::from(GpuRenderGlobals {
             world_from_effect: Mat4::IDENTITY,
-            time: player.elapsed(),
+            time: player.simulation_time(),
             seed: fold_seed(player.instance.seed()),
             _padding: Vec2::ZERO,
         }));
@@ -925,16 +931,19 @@ fn update_gpu_inputs(
         }
         if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
             buffer.set_data(GpuGlobals {
-                time: player.elapsed(),
+                time: player.simulation_time(),
                 total_slots: gpu.total_slots,
                 seed: fold_seed(player.instance.seed()),
                 emitter_count: player.effect().emitters.len() as u32,
+                duration: player.effect().duration,
+                continuous: u32::from(player.effect().playback_mode.is_continuous()),
+                _padding: UVec2::ZERO,
             });
         }
         if let Some(mut buffer) = buffers.get_mut(&gpu.render_globals) {
             buffer.set_data(GpuRenderGlobals {
                 world_from_effect: Mat4::from(transform.affine()),
-                time: player.elapsed(),
+                time: player.simulation_time(),
                 seed: fold_seed(player.instance.seed()),
                 _padding: Vec2::ZERO,
             });

@@ -183,6 +183,15 @@ impl EffectPlayer {
         self.clock.time(self.effect().duration)
     }
 
+    /// Simulation time, which remains unwrapped for seamless continuous looping.
+    pub fn simulation_time(&self) -> f32 {
+        if self.effect().playback_mode.is_continuous() {
+            self.clock.elapsed_time()
+        } else {
+            self.elapsed()
+        }
+    }
+
     pub fn frame(&self) -> u64 {
         self.clock.frame()
     }
@@ -206,6 +215,18 @@ impl EffectPlayer {
         let mut target = self.clock;
         target.seek_seconds(time, duration);
         self.seek_frame(target.frame());
+    }
+
+    /// Seeks continuous playback using absolute simulation time while leaving the playhead
+    /// wrapped to the authored effect duration.
+    pub fn seek_simulation_time(&mut self, time: f32) {
+        let duration = self.effect().duration;
+        if self.effect().playback_mode.is_continuous() {
+            self.clock.seek_elapsed_seconds(time, duration);
+            self.sync_instance_time();
+        } else {
+            self.seek(time);
+        }
     }
 
     pub fn seek_frame(&mut self, frame: u64) {
@@ -272,7 +293,8 @@ impl EffectPlayer {
 
     fn advance_clock(&mut self, delta_seconds: f32) -> ClockAdvance {
         let duration = self.effect().duration;
-        let looping = self.effect().looping;
+        let playback_mode = self.effect().playback_mode;
+        let looping = playback_mode.is_looping();
         let previous_frame = self.clock.frame();
         let result = self
             .clock
@@ -305,8 +327,12 @@ impl EffectPlayer {
     }
 
     fn sync_instance_time(&mut self) {
-        let duration = self.instance.effect().duration;
-        self.instance.seek(self.clock.time(duration));
+        let time = if self.instance.effect().playback_mode.is_continuous() {
+            self.clock.elapsed_time()
+        } else {
+            self.clock.time(self.instance.effect().duration)
+        };
+        self.instance.seek(time);
     }
 }
 

@@ -327,7 +327,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
     match command {
         EffectCommand::SetEffectName { .. }
         | EffectCommand::SetEffectDuration { .. }
-        | EffectCommand::SetEffectLooping { .. }
+        | EffectCommand::SetEffectPlaybackMode { .. }
         | EffectCommand::SetChoreographyOrder { .. }
         | EffectCommand::AddMarker { .. }
         | EffectCommand::AddChoreographyEvent { .. }

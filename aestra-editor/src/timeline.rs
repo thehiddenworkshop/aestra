@@ -12613,7 +12613,9 @@ fn begin_effect_clip_timeline_drag(
         source_duration: source
             .as_ref()
             .map_or(clip.source_offset + clip.duration, |effect| effect.duration),
-        source_looping: source.as_ref().is_some_and(|effect| effect.looping),
+        source_looping: source
+            .as_ref()
+            .is_some_and(|effect| effect.playback_mode.is_looping()),
     });
     override_cursor.0 = Some(EntityCursor::System(timeline_system_cursor(
         target.kind,

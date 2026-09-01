@@ -31,7 +31,12 @@ pub struct EffectAsset {
     pub id: EffectId,
     pub name: String,
     pub duration: f32,
-    pub looping: bool,
+    #[serde(
+        default = "EffectPlaybackMode::default",
+        alias = "looping",
+        deserialize_with = "deserialize_playback_mode"
+    )]
+    pub playback_mode: EffectPlaybackMode,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<AssetDefinition>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -67,7 +72,7 @@ impl EffectAsset {
             id: EffectId::new(),
             name: name.into(),
             duration,
-            looping: true,
+            playback_mode: EffectPlaybackMode::LoopRestart,
             assets: Vec::new(),
             flipbooks: Vec::new(),
             materials: vec![MaterialDefinition::default_sprite()],
@@ -468,6 +473,53 @@ impl EffectAsset {
         atomic_write(path.as_ref(), self.to_pretty_ron()?.as_bytes())?;
         Ok(())
     }
+}
+
+/// How an effect behaves when playback reaches its duration.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EffectPlaybackMode {
+    Once,
+    #[default]
+    LoopRestart,
+    LoopContinuous,
+}
+
+impl EffectPlaybackMode {
+    pub const fn is_looping(self) -> bool {
+        !matches!(self, Self::Once)
+    }
+
+    pub const fn is_continuous(self) -> bool {
+        matches!(self, Self::LoopContinuous)
+    }
+}
+
+impl std::fmt::Display for EffectPlaybackMode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Once => "Once",
+            Self::LoopRestart => "Loop restart",
+            Self::LoopContinuous => "Loop continuous",
+        })
+    }
+}
+
+fn deserialize_playback_mode<'de, D>(deserializer: D) -> Result<EffectPlaybackMode, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum CompatiblePlaybackMode {
+        Legacy(bool),
+        Current(EffectPlaybackMode),
+    }
+
+    Ok(match CompatiblePlaybackMode::deserialize(deserializer)? {
+        CompatiblePlaybackMode::Legacy(false) => EffectPlaybackMode::Once,
+        CompatiblePlaybackMode::Legacy(true) => EffectPlaybackMode::LoopRestart,
+        CompatiblePlaybackMode::Current(mode) => mode,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

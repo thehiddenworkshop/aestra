@@ -1,10 +1,10 @@
 use aestra_core::{
     AssetDefinition, ChoreographyEvent, ChoreographyEventPayload, Curve, CurveKey, DiagnosticCode,
-    EffectAsset, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter,
-    EmitterId, EmitterRegionId, EmitterShape, EmitterTransform, FlipbookDefinition,
-    MODULE_EMISSION, MODULE_MOTION, MODULE_SHAPE, MarkerTimeReference, MaterialProperties,
-    ModuleParameters, ParameterId, PropertyEvaluationDomain, PropertySource, PropertySourceValue,
-    RendererInstance, ScalarRange, Value, Vec3Curve, Vec3Range,
+    EffectAsset, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter,
+    EffectPlaybackMode, Emitter, EmitterId, EmitterRegionId, EmitterShape, EmitterTransform,
+    FlipbookDefinition, MODULE_EMISSION, MODULE_MOTION, MODULE_SHAPE, MarkerTimeReference,
+    MaterialProperties, ModuleParameters, ParameterId, PropertyEvaluationDomain, PropertySource,
+    PropertySourceValue, RendererInstance, ScalarRange, Value, Vec3Curve, Vec3Range,
 };
 
 #[test]
@@ -48,6 +48,21 @@ fn semantic_ids_survive_round_trip() {
 
     assert_eq!(decoded.id, effect_id);
     assert_eq!(decoded.emitters[0].id, emitter_id);
+}
+
+#[test]
+fn playback_modes_round_trip_and_legacy_looping_boole_still_load() {
+    let mut effect = EffectAsset::new("Continuous", 1.0);
+    effect.playback_mode = EffectPlaybackMode::LoopContinuous;
+    let encoded = effect.to_pretty_ron().unwrap();
+    assert!(encoded.contains("playback_mode: LoopContinuous"));
+    assert_eq!(EffectAsset::from_ron(&encoded).unwrap(), effect);
+
+    let legacy = encoded.replace("playback_mode: LoopContinuous", "looping: false");
+    assert_eq!(
+        EffectAsset::from_ron(&legacy).unwrap().playback_mode,
+        EffectPlaybackMode::Once
+    );
 }
 
 #[test]

@@ -49,13 +49,13 @@ impl EffectDiff {
                 after.duration,
             );
         }
-        if before.looping != after.looping {
+        if before.playback_mode != after.playback_mode {
             modified(
                 &mut changes,
                 SemanticTarget::Effect(after.id),
-                "effect.looping",
-                before.looping,
-                after.looping,
+                "effect.playback_mode",
+                before.playback_mode,
+                after.playback_mode,
             );
         }
         if before.choreography_order != after.choreography_order {

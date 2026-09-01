@@ -1,10 +1,10 @@
 //! Typed, explicit migrations from legacy effect formats into the current semantic model.
 
 use crate::{
-    AssetDefinition, AssetError, AssetId, EffectAsset, EffectId, EffectParameter, Emitter,
-    EmitterId, EmitterShape, EmitterTransform, EventLink, FlipbookDefinition, Gradient,
-    MaterialDefinition, ModuleId, ModuleParameters, ModuleTypeId, ParameterId, RendererInstance,
-    ScalarRange, SimulationDomain, StageKind, Value,
+    AssetDefinition, AssetError, AssetId, EffectAsset, EffectId, EffectParameter,
+    EffectPlaybackMode, Emitter, EmitterId, EmitterShape, EmitterTransform, EventLink,
+    FlipbookDefinition, Gradient, MaterialDefinition, ModuleId, ModuleParameters, ModuleTypeId,
+    ParameterId, RendererInstance, ScalarRange, SimulationDomain, StageKind, Value,
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -146,7 +146,11 @@ fn migrate_v2_to_v3(source: &str) -> Result<EffectAsset, AssetError> {
         id: legacy.id,
         name: legacy.name,
         duration: legacy.duration,
-        looping: legacy.looping,
+        playback_mode: if legacy.looping {
+            EffectPlaybackMode::LoopRestart
+        } else {
+            EffectPlaybackMode::Once
+        },
         assets: legacy.assets,
         flipbooks: legacy.flipbooks,
         materials: legacy.materials,

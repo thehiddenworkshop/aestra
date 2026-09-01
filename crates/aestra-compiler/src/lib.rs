@@ -419,7 +419,7 @@ impl EffectCompiler {
             source: asset.id,
             name: asset.name.clone(),
             duration: asset.duration,
-            looping: asset.looping,
+            playback_mode: asset.playback_mode,
             seek_mode: SimulationSeekMode::StatelessDirect,
             assets: asset
                 .assets

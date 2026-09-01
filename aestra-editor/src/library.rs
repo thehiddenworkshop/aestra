@@ -2885,7 +2885,7 @@ fn reusable_effect_plan(
     let clip_duration = (clip_end - clip_start).max(0.05);
 
     let mut effect = EffectAsset::new(name, clip_duration);
-    effect.looping = false;
+    effect.playback_mode = EffectPlaybackMode::Once;
     effect.assets.clone_from(&owner.assets);
     effect.flipbooks.clone_from(&owner.flipbooks);
     effect.materials.clone_from(&owner.materials);
@@ -3235,7 +3235,7 @@ fn effect_occurrences(
     window_start: f32,
     window_end: f32,
 ) -> Result<Vec<i64>, String> {
-    if !source.looping {
+    if !source.playback_mode.is_looping() {
         return Ok(vec![0]);
     }
     if !source.duration.is_finite() || source.duration <= 0.0 {
@@ -4463,7 +4463,7 @@ mod tests {
     fn reusable_effect_extraction_replaces_selected_emitters_and_is_undoable() {
         let temporary = tempfile::tempdir().unwrap();
         let mut owner = EffectAsset::new("Owner", 4.0);
-        owner.looping = false;
+        owner.playback_mode = EffectPlaybackMode::Once;
         let mut first = Emitter::basic_sprite("First", 1.0);
         first.start_time = 0.5;
         let first_id = first.id;
@@ -4505,7 +4505,7 @@ mod tests {
         let created = EffectAsset::load_ron(&created_path).unwrap();
         assert_eq!(created.name, "Prismatic Burst");
         assert_eq!(created.duration, 1.5);
-        assert!(!created.looping);
+        assert_eq!(created.playback_mode, EffectPlaybackMode::Once);
         assert_eq!(created.emitters.len(), 2);
         assert_eq!(created.emitters[0].start_time, 0.0);
         assert_eq!(created.emitters[1].start_time, 0.75);

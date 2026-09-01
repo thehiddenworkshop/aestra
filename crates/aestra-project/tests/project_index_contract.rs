@@ -415,7 +415,7 @@ fn indirect_effect_reference_cycles_are_rejected_with_the_cycle_path() {
 fn clips_cannot_overrun_a_non_looping_source_window() {
     let temporary = tempfile::tempdir().unwrap();
     let mut child = EffectAsset::new("Finite", 1.0);
-    child.looping = false;
+    child.playback_mode = aestra_core::EffectPlaybackMode::Once;
     child
         .save_ron(temporary.path().join("finite.aestra.ron"))
         .unwrap();

@@ -2348,7 +2348,7 @@ mod tests {
         replacement.id = aestra_bevy::EffectId::from_u128(0xc41d);
         replacement.name = "Replacement".into();
         replacement.duration = 4.0;
-        replacement.looping = false;
+        replacement.playback_mode = EffectPlaybackMode::Once;
         replacement.effect_clips.clear();
         replacement
             .save_ron(temporary.path().join("replacement.aestra.ron"))
@@ -2422,7 +2422,7 @@ mod tests {
         let mut short = EffectAsset::from_ron(EFFECT_SOURCE).unwrap();
         short.id = aestra_bevy::EffectId::from_u128(0x5107);
         short.name = "Short".into();
-        short.looping = false;
+        short.playback_mode = EffectPlaybackMode::Once;
         short.effect_clips.clear();
         short
             .save_ron(temporary.path().join("short.aestra.ron"))
@@ -6217,7 +6217,9 @@ fn effect_clip_repair_source(
     }
     let source_effect = catalog.effect_for_placement(owner, source)?;
     let source_end = clip.source_offset + clip.duration;
-    if !source_effect.looping && source_end > source_effect.duration + f32::EPSILON {
+    if !source_effect.playback_mode.is_looping()
+        && source_end > source_effect.duration + f32::EPSILON
+    {
         return Err(format!(
             "the clip window ends at {source_end:.3} s, beyond the source duration of {:.3} s",
             source_effect.duration
@@ -6785,7 +6787,7 @@ fn spawn_effect_clip_properties(
                 spawn_read_only_row(
                     card,
                     localizer.text("properties-looping"),
-                    source.looping.to_string(),
+                    source.playback_mode.is_looping().to_string(),
                 );
             } else {
                 spawn_read_only_row(
@@ -7042,7 +7044,7 @@ fn spawn_referenced_effect_clip_properties(
             spawn_read_only_row(
                 card,
                 localizer.text("properties-looping"),
-                source.looping.to_string(),
+                source.playback_mode.is_looping().to_string(),
             );
         });
         stack.spawn((

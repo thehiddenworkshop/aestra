@@ -13,10 +13,10 @@ pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSourc
 use aestra_core::CurveKey;
 use aestra_core::{
     AssetId, AssetKind, BlendMode, ChoreographyEventId, ChoreographyEventPayload, Curve,
-    EffectAssetRef, EffectClipId, EffectClipSeed, EffectId, EmitterId, EmitterShape,
-    EmitterTransform, FlipbookPlaybackMode, FlipbookTimeSource, Gradient, MaterialId, ModuleId,
-    ParameterId, PropertyEvaluationDomain, RendererId, ScalarRange, UvRect, Value, ValueType,
-    Vec3Curve, Vec3Range,
+    EffectAssetRef, EffectClipId, EffectClipSeed, EffectId, EffectPlaybackMode, EmitterId,
+    EmitterShape, EmitterTransform, FlipbookPlaybackMode, FlipbookTimeSource, Gradient, MaterialId,
+    ModuleId, ParameterId, PropertyEvaluationDomain, RendererId, ScalarRange, UvRect, Value,
+    ValueType, Vec3Curve, Vec3Range,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -551,7 +551,7 @@ pub struct CompiledEffect {
     pub source: EffectId,
     pub name: String,
     pub duration: f32,
-    pub looping: bool,
+    pub playback_mode: EffectPlaybackMode,
     pub seek_mode: SimulationSeekMode,
     pub assets: Vec<CompiledAsset>,
     pub flipbooks: Vec<CompiledFlipbook>,
@@ -622,11 +622,13 @@ impl CompiledEffectClip {
             return None;
         }
         let local = self.source_offset + elapsed;
-        Some(if child.looping && child.duration > 0.0 {
-            local.rem_euclid(child.duration)
-        } else {
-            local.clamp(0.0, child.duration.max(0.0))
-        })
+        Some(
+            if child.playback_mode.is_looping() && child.duration > 0.0 {
+                local.rem_euclid(child.duration)
+            } else {
+                local.clamp(0.0, child.duration.max(0.0))
+            },
+        )
     }
 }
 
@@ -677,10 +679,10 @@ fn evaluate_project_effect(
     if path.len() >= 64 {
         return;
     }
-    let effect_time = if effect.looping {
-        time.rem_euclid(effect.duration)
-    } else {
-        time.clamp(0.0, effect.duration)
+    let effect_time = match effect.playback_mode {
+        EffectPlaybackMode::Once => time.clamp(0.0, effect.duration),
+        EffectPlaybackMode::LoopRestart => time.rem_euclid(effect.duration),
+        EffectPlaybackMode::LoopContinuous => time.max(0.0),
     };
     let mut local_samples = Vec::new();
     evaluate_with_parameters(effect, effect_time, seed, parameters, &mut local_samples);
@@ -746,6 +748,7 @@ pub const DEFAULT_PLAYBACK_TICK_RATE: u32 = 60;
 pub struct PlaybackClock {
     tick_rate: u32,
     frame: u64,
+    elapsed_frame: u64,
     accumulator: f64,
 }
 
@@ -772,6 +775,7 @@ impl PlaybackClock {
         Self {
             tick_rate: tick_rate.max(1),
             frame: 0,
+            elapsed_frame: 0,
             accumulator: 0.0,
         }
     }
@@ -792,17 +796,24 @@ impl PlaybackClock {
         self.time_for_frame(self.frame, duration)
     }
 
+    /// Unwrapped playback time. Unlike [`Self::time`], this keeps increasing across loops.
+    pub fn elapsed_time(&self) -> f32 {
+        (self.elapsed_frame as f64 / f64::from(self.tick_rate)) as f32
+    }
+
     pub fn time_for_frame(&self, frame: u64, duration: f32) -> f32 {
         (frame as f64 / f64::from(self.tick_rate)).min(f64::from(duration.max(0.0))) as f32
     }
 
     pub fn restart(&mut self) {
         self.frame = 0;
+        self.elapsed_frame = 0;
         self.accumulator = 0.0;
     }
 
     pub fn seek_frame(&mut self, frame: u64, duration: f32) {
         self.frame = frame.min(self.maximum_frame(duration));
+        self.elapsed_frame = self.frame;
         self.accumulator = 0.0;
     }
 
@@ -810,6 +821,20 @@ impl PlaybackClock {
         let time = time.clamp(0.0, duration.max(0.0));
         let frame = (f64::from(time) * f64::from(self.tick_rate)).round() as u64;
         self.seek_frame(frame, duration);
+    }
+
+    /// Seeks an unwrapped simulation clock while keeping the visible playhead within one cycle.
+    pub fn seek_elapsed_seconds(&mut self, time: f32, duration: f32) {
+        let time = time.max(0.0);
+        let elapsed_frame = (f64::from(time) * f64::from(self.tick_rate)).round() as u64;
+        let maximum = self.maximum_frame(duration);
+        self.elapsed_frame = elapsed_frame;
+        self.frame = if maximum == 0 {
+            0
+        } else {
+            elapsed_frame % maximum
+        };
+        self.accumulator = 0.0;
     }
 
     pub fn step_forward(&mut self, duration: f32) {
@@ -840,6 +865,7 @@ impl PlaybackClock {
         self.accumulator = (self.accumulator - ticks as f64 * tick_duration).max(0.0);
         let maximum = self.maximum_frame(duration);
         if looping {
+            self.elapsed_frame = self.elapsed_frame.wrapping_add(ticks);
             self.frame = if maximum == 0 {
                 0
             } else {
@@ -852,6 +878,7 @@ impl PlaybackClock {
         } else {
             let next = self.frame.saturating_add(ticks);
             self.frame = next.min(maximum);
+            self.elapsed_frame = self.frame;
             let reached_end = next >= maximum;
             if reached_end {
                 self.accumulator = 0.0;
@@ -996,7 +1023,11 @@ impl EffectInstance {
     }
 
     pub fn seek(&mut self, time: f32) {
-        self.time = time.clamp(0.0, self.effect.duration);
+        self.time = if self.effect.playback_mode.is_continuous() {
+            time.max(0.0)
+        } else {
+            time.clamp(0.0, self.effect.duration)
+        };
         self.choreography_started = true;
     }
 
@@ -1007,10 +1038,10 @@ impl EffectInstance {
 
     pub fn advance(&mut self, delta_seconds: f32) {
         let next = self.time + delta_seconds;
-        self.time = if self.effect.looping {
-            next.rem_euclid(self.effect.duration)
-        } else {
-            next.clamp(0.0, self.effect.duration)
+        self.time = match self.effect.playback_mode {
+            EffectPlaybackMode::Once => next.clamp(0.0, self.effect.duration),
+            EffectPlaybackMode::LoopRestart => next.rem_euclid(self.effect.duration),
+            EffectPlaybackMode::LoopContinuous => next.max(0.0),
         };
     }
 
@@ -1026,25 +1057,26 @@ impl EffectInstance {
             return;
         }
         let previous = self.time;
-        if self.effect.looping {
+        if self.effect.playback_mode.is_looping() {
             let duration = self.effect.duration;
-            let total = previous + delta_seconds;
+            let previous_phase = previous.rem_euclid(duration);
+            let total = previous_phase + delta_seconds;
             let wraps = (total / duration).floor() as u64;
             let next = total.rem_euclid(duration);
             if wraps == 0 {
                 append_choreography_window(
                     &self.effect.choreography_events,
-                    previous,
+                    previous_phase,
                     next,
-                    !self.choreography_started && previous == 0.0,
+                    !self.choreography_started && previous_phase == 0.0,
                     output,
                 );
             } else {
                 append_choreography_window(
                     &self.effect.choreography_events,
-                    previous,
+                    previous_phase,
                     duration,
-                    !self.choreography_started && previous == 0.0,
+                    !self.choreography_started && previous_phase == 0.0,
                     output,
                 );
                 for _ in 1..wraps {
@@ -1064,7 +1096,11 @@ impl EffectInstance {
                     output,
                 );
             }
-            self.time = next;
+            self.time = if self.effect.playback_mode.is_continuous() {
+                previous + delta_seconds
+            } else {
+                next
+            };
         } else {
             let next = (previous + delta_seconds).clamp(0.0, self.effect.duration);
             append_choreography_window(
@@ -1134,11 +1170,64 @@ fn evaluate_with_parameters(
     output: &mut Vec<ParticleSample>,
 ) {
     output.clear();
-    let effect_time = if effect.looping {
-        time.rem_euclid(effect.duration)
+    let mut emitted_per_emitter = vec![0_u32; effect.emitters.len()];
+    if effect.playback_mode.is_continuous() && effect.duration > 0.0 {
+        let absolute_time = time.max(0.0);
+        let maximum_lifetime = effect
+            .emitters
+            .iter()
+            .filter_map(|emitter| initializer(&emitter.execution, parameters))
+            .map(|initializer| {
+                initializer
+                    .lifetime
+                    .max
+                    .max(initializer.lifetime.min)
+                    .max(0.0)
+            })
+            .fold(0.0_f32, f32::max);
+        let current_cycle = (absolute_time / effect.duration).floor() as u64;
+        let oldest_time = (absolute_time - effect.duration - maximum_lifetime).max(0.0);
+        let oldest_cycle = (oldest_time / effect.duration).floor() as u64;
+        for cycle in (oldest_cycle..=current_cycle).rev() {
+            evaluate_cycle(
+                effect,
+                absolute_time - cycle as f32 * effect.duration,
+                cycle,
+                seed,
+                parameters,
+                &mut emitted_per_emitter,
+                output,
+            );
+        }
     } else {
-        time.clamp(0.0, effect.duration)
-    };
+        let effect_time = match effect.playback_mode {
+            EffectPlaybackMode::Once => time.clamp(0.0, effect.duration),
+            EffectPlaybackMode::LoopRestart => time.rem_euclid(effect.duration),
+            EffectPlaybackMode::LoopContinuous => time.max(0.0),
+        };
+        evaluate_cycle(
+            effect,
+            effect_time,
+            0,
+            seed,
+            parameters,
+            &mut emitted_per_emitter,
+            output,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn evaluate_cycle(
+    effect: &CompiledEffect,
+    effect_time: f32,
+    cycle: u64,
+    seed: u64,
+    parameters: &[RuntimeValue],
+    emitted_per_emitter: &mut [u32],
+    output: &mut Vec<ParticleSample>,
+) {
+    let cycle_seed = seed ^ cycle.wrapping_mul(0x9e37_79b9_7f4a_7c15);
 
     for (emitter_index, emitter) in effect.emitters.iter().enumerate() {
         if !emitter.enabled {
@@ -1170,7 +1259,7 @@ fn evaluate_with_parameters(
             continue;
         };
 
-        let random = hash01(emitter.seed_index, 0x5350_4157, seed);
+        let random = hash01(emitter.seed_index, 0x5350_4157, cycle_seed);
         let emission_count = burst_count.saturating_add(
             spawn_rate
                 .emitted_until(emission_time, emitter.source_duration, random)
@@ -1179,6 +1268,9 @@ fn evaluate_with_parameters(
         );
         let count = emission_count.min(emitter.max_particles);
         for index in 0..count {
+            if emitted_per_emitter[emitter_index] >= emitter.max_particles {
+                break;
+            }
             let spawn_time = if index < burst_count {
                 0.0
             } else if let Some(spawn_time) = spawn_rate.spawn_time(
@@ -1194,7 +1286,7 @@ fn evaluate_with_parameters(
                 continue;
             }
             let age = local_time - spawn_time;
-            let life = initializer.lifetime.sample(hash01(index, 0, seed));
+            let life = initializer.lifetime.sample(hash01(index, 0, cycle_seed));
             if age < 0.0 || age >= life || life <= 0.0 {
                 continue;
             }
@@ -1203,30 +1295,30 @@ fn evaluate_with_parameters(
             let drag = motion.drag.sample(
                 normalized_age,
                 local_time / emitter.source_duration.max(f32::EPSILON),
-                hash01(index, 12, seed),
+                hash01(index, 12, cycle_seed),
             );
             let turbulence_strength = motion.turbulence.sample(
                 normalized_age,
                 local_time / emitter.source_duration.max(f32::EPSILON),
-                hash01(index, 13, seed),
+                hash01(index, 13, cycle_seed),
             );
             let gravity = motion.gravity.sample(
                 normalized_age,
                 local_time / emitter.source_duration.max(f32::EPSILON),
                 [
-                    hash01(index, 14, seed),
-                    hash01(index, 15, seed),
-                    hash01(index, 16, seed),
+                    hash01(index, 14, cycle_seed),
+                    hash01(index, 15, cycle_seed),
+                    hash01(index, 16, cycle_seed),
                 ],
             );
             let direction = sample_direction(
                 initializer.direction,
                 initializer.spread_degrees,
                 index,
-                seed,
+                cycle_seed,
             );
-            let speed = initializer.speed.sample(hash01(index, 2, seed));
-            let origin = sample_shape(shape, index, seed);
+            let speed = initializer.speed.sample(hash01(index, 2, cycle_seed));
+            let origin = sample_shape(shape, index, cycle_seed);
             let damping = (-drag.max(0.0) * age).exp();
             let travel = if drag.abs() < 0.0001 {
                 speed * age
@@ -1235,11 +1327,11 @@ fn evaluate_with_parameters(
             };
             let turbulence = [
                 turbulence_strength
-                    * (age * 7.0 + hash01(index, 3, seed) * std::f32::consts::TAU).sin(),
+                    * (age * 7.0 + hash01(index, 3, cycle_seed) * std::f32::consts::TAU).sin(),
                 turbulence_strength
-                    * (age * 6.3 + hash01(index, 8, seed) * std::f32::consts::TAU).sin(),
+                    * (age * 6.3 + hash01(index, 8, cycle_seed) * std::f32::consts::TAU).sin(),
                 turbulence_strength
-                    * (age * 7.7 + hash01(index, 10, seed) * std::f32::consts::TAU).sin(),
+                    * (age * 7.7 + hash01(index, 10, cycle_seed) * std::f32::consts::TAU).sin(),
             ];
             let local_position = [
                 origin[0] + direction[0] * travel + gravity[0] * age * age * 0.5 + turbulence[0],
@@ -1251,14 +1343,19 @@ fn evaluate_with_parameters(
             color[3] *= appearance.opacity.sample(normalized_age);
             output.push(ParticleSample {
                 emitter_index,
-                particle_index: index,
+                particle_index: index
+                    .wrapping_add((cycle as u32).wrapping_mul(emitter.max_particles.max(1))),
                 position,
                 size: appearance.size.sample(normalized_age)
                     * emitter.transform.scale.into_iter().fold(0.0_f32, f32::max),
-                rotation: initializer.angular_velocity.sample(hash01(index, 4, seed)) * age,
+                rotation: initializer
+                    .angular_velocity
+                    .sample(hash01(index, 4, cycle_seed))
+                    * age,
                 color,
                 normalized_age,
             });
+            emitted_per_emitter[emitter_index] += 1;
         }
     }
 }
@@ -1787,6 +1884,7 @@ mod tests {
         let mut looping = PlaybackClock::default();
         let result = looping.advance(1.25, 1.0, 1.0, true);
         assert_eq!(looping.frame(), 15);
+        assert_eq!(looping.elapsed_time(), 1.25);
         assert!(!result.reached_end);
     }
 

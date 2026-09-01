@@ -4,10 +4,11 @@ use aestra_authoring::{
 };
 use aestra_bevy::{
     AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, EffectClipId,
-    EffectParameter, Emitter, EmitterId, EmitterRegion, EmitterRegionId, EmitterTransform, EventId,
-    EventLink, EventTrigger, FlipbookDefinition, FlipbookPlaybackMode, FlipbookTimeSource,
-    MaterialDefinition, MaterialId, MaterialInput, MaterialProperties, ModuleId, ModuleInstance,
-    RendererId, RendererInstance, RendererProperties, ValidationReport, Value,
+    EffectParameter, EffectPlaybackMode, Emitter, EmitterId, EmitterRegion, EmitterRegionId,
+    EmitterTransform, EventId, EventLink, EventTrigger, FlipbookDefinition, FlipbookPlaybackMode,
+    FlipbookTimeSource, MaterialDefinition, MaterialId, MaterialInput, MaterialProperties,
+    ModuleId, ModuleInstance, RendererId, RendererInstance, RendererProperties, ValidationReport,
+    Value,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
 use aestra_runtime::{
@@ -140,6 +141,14 @@ impl EditorSession {
         self.clock.time(self.playback_duration())
     }
 
+    pub fn simulation_time(&self) -> f32 {
+        if self.playback_mode().is_continuous() {
+            self.clock.elapsed_time()
+        } else {
+            self.time()
+        }
+    }
+
     pub fn frame(&self) -> u64 {
         self.clock.frame()
     }
@@ -153,12 +162,12 @@ impl EditorSession {
             })
     }
 
-    fn playback_looping(&self) -> bool {
+    fn playback_mode(&self) -> EffectPlaybackMode {
         self.pending_change
             .as_ref()
             .filter(|pending| pending.can_apply)
-            .map_or(self.effect.looping, |pending| {
-                pending.preview.candidate().looping
+            .map_or(self.effect.playback_mode, |pending| {
+                pending.preview.candidate().playback_mode
             })
     }
 
@@ -224,10 +233,13 @@ impl EditorSession {
             return;
         }
         let duration = self.playback_duration();
-        let looping = self.playback_looping();
-        let result = self
-            .clock
-            .advance(delta_seconds, self.speed, duration, looping);
+        let playback_mode = self.playback_mode();
+        let result = self.clock.advance(
+            delta_seconds,
+            self.speed,
+            duration,
+            playback_mode.is_looping(),
+        );
         if self.seek_mode() != SimulationSeekMode::StatelessDirect
             && let Some(preview) = &mut self.preview
         {
@@ -242,7 +254,7 @@ impl EditorSession {
     }
 
     pub fn evaluate_preview(&mut self, output: &mut Vec<aestra_bevy::ParticleSample>) {
-        let time = self.time();
+        let time = self.simulation_time();
         let mode = self.seek_mode();
         let Some(preview) = &mut self.preview else {
             output.clear();
@@ -881,21 +893,21 @@ impl EditorSession {
         )
     }
 
-    pub fn set_effect_looping(&mut self, looping: bool) -> bool {
-        if self.effect.looping == looping {
+    pub fn set_effect_playback_mode(&mut self, mode: EffectPlaybackMode) -> bool {
+        if self.effect.playback_mode == mode {
             return false;
         }
         let frame = self.frame();
         let playing = self.playing;
         let changed = self.execute(
-            "Changed effect looping",
-            EffectCommand::SetEffectLooping { looping },
+            "Changed effect playback mode",
+            EffectCommand::SetEffectPlaybackMode { mode },
             true,
         );
         if changed {
             self.restore_preview_frame(frame);
             self.playing = playing;
-            self.status = "Changed effect looping".into();
+            self.status = "Changed effect playback mode".into();
         }
         changed
     }
@@ -2138,7 +2150,7 @@ mod tests {
         let primary = session.selected_layer().id;
 
         assert!(session.set_effect_name("Impact Burst"));
-        assert!(session.set_effect_looping(false));
+        assert!(session.set_effect_playback_mode(EffectPlaybackMode::Once));
         assert!(session.set_selected_emitter_name("Core"));
         assert!(session.set_selected_emitter_capacity(256));
         session.add_layer();
@@ -2180,7 +2192,7 @@ mod tests {
         let loaded = EffectAsset::load_ron(&path).unwrap();
         let compiled = EffectCompiler::default().compile(&loaded).unwrap();
         assert_eq!(loaded.name, "Impact Burst");
-        assert!(!loaded.looping);
+        assert_eq!(loaded.playback_mode, EffectPlaybackMode::Once);
         assert_eq!(loaded.events[0].source, secondary);
         assert_eq!(loaded.events[0].target, primary);
         assert_eq!(compiled.emitters.len(), 2);
@@ -2403,7 +2415,9 @@ mod tests {
                     parameter: "spawn_rate".into(),
                     value: Value::Scalar(91.0),
                 },
-                EffectCommand::SetEffectLooping { looping: false },
+                EffectCommand::SetEffectPlaybackMode {
+                    mode: EffectPlaybackMode::Once,
+                },
             ],
         );
 
@@ -2427,7 +2441,10 @@ mod tests {
         assert_eq!(session.effect.emitters[0].spawn_rate(), 91.0);
         session.undo();
         assert_eq!(session.effect.emitters[0].spawn_rate(), original);
-        assert!(session.effect.looping);
+        assert_eq!(
+            session.effect.playback_mode,
+            EffectPlaybackMode::LoopRestart
+        );
     }
 
     #[test]

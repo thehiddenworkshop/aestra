@@ -17,8 +17,8 @@ use crate::{
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    ActiveBackend, AestraSet, EffectClipId, EffectPlayer, EffectRenderMode, EffectRuntimeStatus,
-    EmitterId, EmitterShape, EmitterTransform, ModuleId, Value,
+    ActiveBackend, AestraSet, EffectClipId, EffectPlaybackMode, EffectPlayer, EffectRenderMode,
+    EffectRuntimeStatus, EmitterId, EmitterShape, EmitterTransform, ModuleId, Value,
 };
 use aestra_runtime::{CompiledEffect, CompiledEffectProject, CompiledParameterOverride};
 use bevy::{
@@ -1968,7 +1968,7 @@ fn configured_preview_player(session: &EditorSession) -> Option<EffectPlayer> {
     let preview = session.preview.as_ref()?;
     Some(configured_preview_instance(
         preview.effect().clone(),
-        session.time(),
+        session.simulation_time(),
         session.preview_seed,
         session.speed,
         &[],
@@ -1989,7 +1989,7 @@ fn configured_preview_instance(
     player.playing = false;
     player.speed = speed;
     player.set_seed(seed);
-    player.seek(time);
+    player.seek_simulation_time(time);
     player
 }
 
@@ -2455,17 +2455,26 @@ fn desired_preview_instances(
             parameter_overrides: Vec::new(),
         });
     }
+    let hierarchy_time = playback_phase(&project.root, time);
     collect_effect_clip_instances(
         project,
         &project.root,
         timeline,
-        time,
+        hierarchy_time,
         seed,
         Transform::IDENTITY,
         &mut path,
         &mut desired,
     );
     desired
+}
+
+fn playback_phase(effect: &CompiledEffect, time: f32) -> f32 {
+    if effect.playback_mode.is_looping() && effect.duration > 0.0 {
+        time.rem_euclid(effect.duration)
+    } else {
+        time.clamp(0.0, effect.duration.max(0.0))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2534,11 +2543,13 @@ fn map_effect_clip_time(
         return None;
     }
     let local = source_offset + elapsed;
-    Some(if child.looping && child.duration > 0.0 {
-        local.rem_euclid(child.duration)
-    } else {
-        local.clamp(0.0, child.duration.max(0.0))
-    })
+    Some(
+        if child.playback_mode.is_looping() && child.duration > 0.0 {
+            local.rem_euclid(child.duration)
+        } else {
+            local.clamp(0.0, child.duration.max(0.0))
+        },
+    )
 }
 
 fn spawn_preview_instance(commands: &mut Commands, desired: DesiredPreviewInstance, speed: f32) {
@@ -2573,8 +2584,12 @@ fn sync_rendered_preview(
         With<PreviewEffectPlayer>,
     >,
 ) {
-    let mut desired =
-        desired_preview_instances(&preview, &timeline, session.time(), session.preview_seed);
+    let mut desired = desired_preview_instances(
+        &preview,
+        &timeline,
+        session.simulation_time(),
+        session.preview_seed,
+    );
     for (entity, path, mut player, mut transform) in &mut players {
         let Some(index) = desired.iter().position(|item| item.path == path.0) else {
             commands.entity(entity).despawn();
@@ -2606,8 +2621,8 @@ fn sync_rendered_preview(
         if player.instance.seed() != instance.seed {
             player.set_seed(instance.seed);
         }
-        if (player.elapsed() - instance.time).abs() > 0.5 / player.tick_rate() as f32 {
-            player.seek(instance.time);
+        if (player.simulation_time() - instance.time).abs() > 0.5 / player.tick_rate() as f32 {
+            player.seek_simulation_time(instance.time);
         }
     }
     for instance in desired {
@@ -2651,8 +2666,12 @@ fn update_preview(
     session.evaluate_preview(&mut samples);
     let elapsed = started.elapsed();
     session.samples = samples;
-    let desired =
-        desired_preview_instances(&preview, &timeline, session.time(), session.preview_seed);
+    let desired = desired_preview_instances(
+        &preview,
+        &timeline,
+        session.simulation_time(),
+        session.preview_seed,
+    );
     let mut instance_samples = Vec::new();
     preview.live_particle_count = desired
         .iter()
@@ -3328,6 +3347,7 @@ mod tests {
             .unwrap();
 
         let mut root = aestra_bevy::EffectAsset::new("Root", 2.0);
+        root.playback_mode = EffectPlaybackMode::LoopContinuous;
         let mut clip = aestra_bevy::EffectClip::new(child.id, 0.5, 1.0);
         clip.source_offset = 0.1;
         clip.seed = aestra_bevy::EffectClipSeed::Fixed(77);
@@ -3368,6 +3388,11 @@ mod tests {
             player.instance.parameter(parameter_id),
             Some(&aestra_runtime::RuntimeValue::Scalar(20.0))
         );
+
+        let repeated = desired_preview_instances(&preview, &timeline, 2.75, 9);
+        assert_eq!(repeated.len(), 2);
+        assert_eq!(repeated[0].time, 2.75);
+        assert!((repeated[1].time - 0.35).abs() < 0.000_1);
     }
 
     #[test]
@@ -3531,5 +3556,40 @@ mod tests {
                 .expect("restarted clip must be active after seeking back into it")
         };
         assert_eq!(replayed, child_state);
+    }
+
+    #[test]
+    fn continuous_project_preview_uses_unwrapped_simulation_time() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.effect_clips.clear();
+        assert!(session.set_effect_playback_mode(EffectPlaybackMode::LoopContinuous));
+        session.restart();
+        let duration = session.effect.duration;
+        session.advance_playback(duration + 0.25);
+        let expected_simulation_time = session.simulation_time();
+        let expected_playhead = session.time();
+        assert!(expected_simulation_time > duration);
+        assert!(expected_playhead < duration);
+
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(ProjectEffectCatalog::scan(temporary.path()))
+            .init_resource::<EditorPreviewProject>()
+            .init_resource::<TimelineState>()
+            .add_systems(
+                Update,
+                (sync_project_preview, sync_rendered_preview).chain(),
+            );
+        app.update();
+
+        let world = app.world_mut();
+        let mut players = world.query::<(&PreviewEffectInstancePath, &EffectPlayer)>();
+        let (_, player) = players
+            .iter(world)
+            .find(|(path, _)| path.0.is_empty())
+            .expect("the root preview player must exist");
+        assert!((player.simulation_time() - expected_simulation_time).abs() < 0.000_1);
+        assert!((player.elapsed() - expected_playhead).abs() < 0.000_1);
     }
 }

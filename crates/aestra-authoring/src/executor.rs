@@ -142,9 +142,9 @@ fn apply_command(
             let previous = std::mem::replace(&mut effect.duration, *duration);
             vec![EffectCommand::SetEffectDuration { duration: previous }]
         }
-        EffectCommand::SetEffectLooping { looping } => {
-            let previous = std::mem::replace(&mut effect.looping, *looping);
-            vec![EffectCommand::SetEffectLooping { looping: previous }]
+        EffectCommand::SetEffectPlaybackMode { mode } => {
+            let previous = std::mem::replace(&mut effect.playback_mode, *mode);
+            vec![EffectCommand::SetEffectPlaybackMode { mode: previous }]
         }
         EffectCommand::SetChoreographyOrder { order } => {
             let previous = std::mem::replace(&mut effect.choreography_order, order.clone());
