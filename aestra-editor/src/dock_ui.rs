@@ -5,7 +5,7 @@ use crate::docking::{
     DockDropZone, DockDropZoneLabel, DockFirstPane, DockNode, DockNodeId, DockPane, DockPanel,
     DockResizeQueries, DockSplitter, DockStack, DockTab, DockTabAppendIndicator, DockTabAppendZone,
     DockTreeHost, DockingAction, NativeFloatingCamera, NativeFloatingUi, NativeFloatingWindow,
-    ResizeState, SplitterGrip, WorkspaceLayout,
+    ResizeState, SplitterGrip, StagedNativeFloatingUi, WorkspaceLayout,
 };
 use crate::timeline::TimelineState;
 use crate::*;
@@ -140,13 +140,35 @@ pub(crate) fn persist_native_window_geometry(
     }
 }
 
+/// Atomically swaps initialized floating-panel trees before normal editor systems query them.
+pub(crate) fn activate_staged_native_floating_ui(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    roots: Query<(Entity, &NativeFloatingUi, Option<&StagedNativeFloatingUi>)>,
+) {
+    for (staged_entity, staged_root, staged) in &roots {
+        if staged.is_none() || staged_root.revision != session.ui_revision {
+            continue;
+        }
+        for (entity, root, _) in &roots {
+            if entity != staged_entity && root.panel == staged_root.panel {
+                commands.entity(entity).despawn();
+            }
+        }
+        commands
+            .entity(staged_entity)
+            .remove::<StagedNativeFloatingUi>()
+            .insert(Visibility::Inherited);
+    }
+}
+
 pub(crate) fn sync_native_floating_windows(
     mut commands: Commands,
     session: Res<EditorSession>,
     resources: DockUiResources,
     windows: Query<(Entity, &NativeFloatingWindow)>,
     cameras: Query<(Entity, &NativeFloatingCamera)>,
-    roots: Query<(Entity, &NativeFloatingUi)>,
+    roots: Query<(Entity, &NativeFloatingUi, Option<&StagedNativeFloatingUi>)>,
 ) {
     for (entity, native) in &windows {
         if resources
@@ -161,7 +183,7 @@ pub(crate) fn sync_native_floating_windows(
                     commands.entity(camera_entity).despawn();
                 }
             }
-            for (root_entity, root) in &roots {
+            for (root_entity, root, _) in &roots {
                 if root.panel == native.0 {
                     commands.entity(root_entity).despawn();
                 }
@@ -218,18 +240,18 @@ pub(crate) fn sync_native_floating_windows(
                 ))
                 .id()
         });
-        let existing_root = roots
-            .iter()
-            .find(|(_, root)| root.panel == floating.panel)
-            .map(|(entity, root)| (entity, root.revision));
-        if floating_root_is_current(
-            existing_root.map(|(_, revision)| revision),
-            session.ui_revision,
-        ) {
+        if roots.iter().any(|(_, root, _)| {
+            root.panel == floating.panel && root.revision == session.ui_revision
+        }) {
             continue;
         }
-        if let Some((root, _)) = existing_root {
-            commands.entity(root).despawn();
+        let has_visible_root = roots
+            .iter()
+            .any(|(_, root, staged)| root.panel == floating.panel && staged.is_none());
+        for (entity, root, staged) in &roots {
+            if root.panel == floating.panel && staged.is_some() {
+                commands.entity(entity).despawn();
+            }
         }
         spawn_native_floating_ui(
             &mut commands,
@@ -238,10 +260,12 @@ pub(crate) fn sync_native_floating_windows(
             session.ui_revision,
             &resources.workspace,
             sources,
+            has_visible_root,
         );
     }
 }
 
+#[cfg(test)]
 pub(crate) fn floating_root_is_current(
     existing_revision: Option<u64>,
     session_revision: u64,
@@ -438,22 +462,25 @@ fn spawn_native_floating_ui(
     revision: u64,
     workspace: &CurvesState,
     sources: PanelSources<'_>,
+    staged: bool,
 ) {
-    commands
-        .spawn((
-            NativeFloatingUi { panel, revision },
-            UiTargetCamera(camera),
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-            BackgroundColor(theme::PANEL_DARK),
-        ))
-        .with_children(|root| {
-            spawn_panel_content(root, panel, workspace, sources);
-        });
+    let mut root = commands.spawn((
+        NativeFloatingUi { panel, revision },
+        UiTargetCamera(camera),
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        },
+        BackgroundColor(theme::PANEL_DARK),
+    ));
+    if staged {
+        root.insert((StagedNativeFloatingUi, Visibility::Hidden));
+    }
+    root.with_children(|root| {
+        spawn_panel_content(root, panel, workspace, sources);
+    });
 }
 
 fn spawn_dock_drop_overlay(parent: &mut ChildSpawnerCommands, node: DockNodeId) {
@@ -1245,6 +1272,40 @@ pub(crate) fn update_dock_zone_style(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn floating_panel_swap_keeps_only_the_initialized_current_revision() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.ui_revision = 4;
+        let mut app = App::new();
+        app.insert_resource(session);
+        app.add_systems(First, activate_staged_native_floating_ui);
+        let old = app
+            .world_mut()
+            .spawn(NativeFloatingUi {
+                panel: DockPanel::Properties,
+                revision: 3,
+            })
+            .id();
+        let staged = app
+            .world_mut()
+            .spawn((
+                NativeFloatingUi {
+                    panel: DockPanel::Properties,
+                    revision: 4,
+                },
+                StagedNativeFloatingUi,
+                Visibility::Hidden,
+            ))
+            .id();
+
+        app.update();
+
+        assert!(app.world().get_entity(old).is_err());
+        let staged = app.world().entity(staged);
+        assert!(!staged.contains::<StagedNativeFloatingUi>());
+        assert_eq!(staged.get::<Visibility>(), Some(&Visibility::Inherited));
+    }
 
     #[test]
     fn splitter_resize_cursor_remains_overridden_for_the_active_drag() {

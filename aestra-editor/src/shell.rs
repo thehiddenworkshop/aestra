@@ -25,6 +25,7 @@ impl Plugin for EditorShellPlugin {
         app.init_resource::<ScrollMemoryState>()
             .init_resource::<RenderedUiRevision>()
             .init_resource::<RenderedGlobalSourceNavigation>()
+            .add_systems(First, activate_staged_editor_ui)
             .add_systems(
                 Startup,
                 (setup_window_cursor, setup_editor_fonts, setup_editor)
@@ -39,7 +40,7 @@ impl Plugin for EditorShellPlugin {
                         .in_set(EditorSet::PreViewport),
                     (update_editor_labels, sync_global_source_navigation)
                         .in_set(EditorSet::MainUpdate),
-                    (remember_scroll_positions, rebuild_editor_ui)
+                    (remember_scroll_positions, stage_editor_ui_rebuild)
                         .chain()
                         .in_set(EditorSet::UiRebuild),
                     restore_scroll_positions.in_set(EditorSet::UiSync),
@@ -80,6 +81,16 @@ struct EditorRoot;
 
 #[derive(Component)]
 struct EditorContent;
+
+/// A replacement workspace that is built off-screen for one frame before it becomes active.
+///
+/// Editor panels contain text whose final font is applied by [`apply_editor_fonts`] and SVGs that
+/// are rasterized by `bevy_resvg` after they are spawned. Replacing the visible workspace in the
+/// same frame therefore exposes those transient, incomplete controls and makes unrelated labels
+/// and icons blink. Keeping the previous workspace visible while this tree initializes makes a
+/// rebuild an atomic visual swap.
+#[derive(Component)]
+struct StagedEditorContent(u64);
 
 #[derive(Resource)]
 struct EditorFonts {
@@ -203,7 +214,7 @@ fn spawn_editor_ui(
                 localizer,
                 asset_server,
             );
-            spawn_editor_content(root, menu, localizer);
+            spawn_editor_content(root, menu, localizer, None);
             spawn_status_bar(root, session, localizer);
             spawn_about_overlay(root, menu.show_about, localizer);
             spawn_document_protection_overlay(root, protection, localizer);
@@ -220,9 +231,13 @@ fn spawn_editor_content(
     parent: &mut ChildSpawnerCommands,
     menu: &MenuState,
     localizer: &Localizer,
+    staged_revision: Option<u64>,
 ) {
-    parent
-        .spawn((EditorContent, RelativeCursorPosition::default()))
+    let mut content = parent.spawn((EditorContent, RelativeCursorPosition::default()));
+    if let Some(revision) = staged_revision {
+        content.insert((StagedEditorContent(revision), Visibility::Hidden));
+    }
+    content
         .apply_scene(ui_shell::editor_content())
         .with_children(|content| {
             content.spawn(DockTreeHost);
@@ -831,25 +846,56 @@ pub(crate) fn reveal_dock_panel(
     }
 }
 
-fn rebuild_editor_ui(
+fn activate_staged_editor_ui(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    mut rendered: ResMut<RenderedUiRevision>,
+    contents: Query<(Entity, Option<&StagedEditorContent>), With<EditorContent>>,
+) {
+    let Some(staged) = contents.iter().find_map(|(entity, staged)| {
+        (staged.is_some_and(|staged| staged.0 == session.ui_revision)).then_some(entity)
+    }) else {
+        return;
+    };
+    for (content, _) in &contents {
+        if content != staged {
+            commands.entity(content).despawn();
+        }
+    }
+    commands
+        .entity(staged)
+        .remove::<StagedEditorContent>()
+        .insert(Visibility::Inherited);
+    rendered.0 = session.ui_revision;
+}
+
+fn stage_editor_ui_rebuild(
     mut commands: Commands,
     session: Res<EditorSession>,
     menu: Res<MenuState>,
     localizer: Res<Localizer>,
-    mut rendered: ResMut<RenderedUiRevision>,
+    rendered: Res<RenderedUiRevision>,
     root: Single<Entity, With<EditorRoot>>,
-    contents: Query<Entity, With<EditorContent>>,
+    contents: Query<(Entity, Option<&StagedEditorContent>), With<EditorContent>>,
 ) {
-    if rendered.0 == session.ui_revision {
+    if rendered.0 == session.ui_revision
+        || contents
+            .iter()
+            .any(|(_, staged)| staged.is_some_and(|staged| staged.0 == session.ui_revision))
+    {
         return;
     }
-    for content in &contents {
-        commands.entity(content).despawn();
+
+    // A newer edit may arrive while a replacement is initializing. Discard only the obsolete
+    // hidden trees; the last fully-rendered workspace stays visible until the newest one is ready.
+    for (content, staged) in &contents {
+        if staged.is_some() {
+            commands.entity(content).despawn();
+        }
     }
     commands.entity(*root).with_children(|root| {
-        spawn_editor_content(root, &menu, &localizer);
+        spawn_editor_content(root, &menu, &localizer, Some(session.ui_revision));
     });
-    rendered.0 = session.ui_revision;
 }
 
 #[allow(clippy::type_complexity)]
@@ -888,6 +934,7 @@ fn update_editor_labels(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::{asset::AssetPlugin, scene::ScenePlugin};
 
     #[test]
     fn source_breadcrumb_ends_with_the_inspected_emitter() {
@@ -933,6 +980,46 @@ mod tests {
                 .get(&ScrollMemoryKey::Properties),
             Some(&saved)
         );
+    }
+
+    #[test]
+    fn editor_rebuild_keeps_rendered_content_until_hidden_replacement_is_ready() {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.ui_revision = 1;
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), ScenePlugin));
+        app.insert_resource(session);
+        app.insert_resource(MenuState::default());
+        app.insert_resource(Localizer::new("en-US").unwrap());
+        app.insert_resource(RenderedUiRevision::default());
+        app.add_systems(First, activate_staged_editor_ui);
+        app.add_systems(Update, stage_editor_ui_rebuild);
+        app.world_mut().spawn(EditorRoot);
+        let rendered_content = app.world_mut().spawn(EditorContent).id();
+
+        app.update();
+
+        assert!(app.world().get_entity(rendered_content).is_ok());
+        let staged = app
+            .world_mut()
+            .query_filtered::<(Entity, &StagedEditorContent, &Visibility), With<EditorContent>>()
+            .single(app.world())
+            .unwrap();
+        assert_eq!(staged.1.0, 1);
+        assert_eq!(*staged.2, Visibility::Hidden);
+        assert_eq!(app.world().resource::<RenderedUiRevision>().0, 0);
+
+        app.update();
+
+        assert!(app.world().get_entity(rendered_content).is_err());
+        let contents = app
+            .world_mut()
+            .query_filtered::<(Option<&StagedEditorContent>, &Visibility), With<EditorContent>>()
+            .single(app.world())
+            .unwrap();
+        assert!(contents.0.is_none());
+        assert_eq!(*contents.1, Visibility::Inherited);
+        assert_eq!(app.world().resource::<RenderedUiRevision>().0, 1);
     }
 
     #[test]

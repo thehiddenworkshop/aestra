@@ -39,6 +39,7 @@ impl Plugin for DockingPlugin {
             .init_resource::<ResizeState>()
             .insert_resource(WorkspaceLayout::load())
             .add_observer(queue_docking_action_activation)
+            .add_systems(First, crate::dock_ui::activate_staged_native_floating_ui)
             .add_systems(Update, handle_docking_actions.in_set(DockingSet::Actions))
             .add_systems(
                 Update,
@@ -324,6 +325,9 @@ pub(crate) struct NativeFloatingUi {
     pub(crate) panel: DockPanel,
     pub(crate) revision: u64,
 }
+
+#[derive(Component)]
+pub(crate) struct StagedNativeFloatingUi;
 
 #[derive(Component)]
 pub(crate) struct SplitterGrip;
