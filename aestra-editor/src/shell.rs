@@ -82,7 +82,11 @@ struct EditorRoot;
 #[derive(Component)]
 struct EditorContent;
 
-/// A replacement workspace that is built off-screen for one frame before it becomes active.
+/// Stable grid slot shared by the visible workspace and its hidden replacement.
+#[derive(Component)]
+struct EditorContentHost;
+
+/// A replacement workspace built in an invisible overlay for one frame before it becomes active.
 ///
 /// Editor panels contain text whose final font is applied by [`apply_editor_fonts`] and SVGs that
 /// are rasterized by `bevy_resvg` after they are spawned. Replacing the visible workspace in the
@@ -214,7 +218,9 @@ fn spawn_editor_ui(
                 localizer,
                 asset_server,
             );
-            spawn_editor_content(root, menu, localizer, None);
+            root.spawn(EditorContentHost)
+                .apply_scene(ui_shell::editor_content_host())
+                .with_children(|host| spawn_editor_content(host, menu, localizer, None));
             spawn_status_bar(root, session, localizer);
             spawn_about_overlay(root, menu.show_about, localizer);
             spawn_document_protection_overlay(root, protection, localizer);
@@ -875,7 +881,7 @@ fn stage_editor_ui_rebuild(
     menu: Res<MenuState>,
     localizer: Res<Localizer>,
     rendered: Res<RenderedUiRevision>,
-    root: Single<Entity, With<EditorRoot>>,
+    host: Single<Entity, With<EditorContentHost>>,
     contents: Query<(Entity, Option<&StagedEditorContent>), With<EditorContent>>,
 ) {
     if rendered.0 == session.ui_revision
@@ -893,8 +899,8 @@ fn stage_editor_ui_rebuild(
             commands.entity(content).despawn();
         }
     }
-    commands.entity(*root).with_children(|root| {
-        spawn_editor_content(root, &menu, &localizer, Some(session.ui_revision));
+    commands.entity(*host).with_children(|host| {
+        spawn_editor_content(host, &menu, &localizer, Some(session.ui_revision));
     });
 }
 
@@ -994,19 +1000,33 @@ mod tests {
         app.insert_resource(RenderedUiRevision::default());
         app.add_systems(First, activate_staged_editor_ui);
         app.add_systems(Update, stage_editor_ui_rebuild);
-        app.world_mut().spawn(EditorRoot);
-        let rendered_content = app.world_mut().spawn(EditorContent).id();
+        app.world_mut().spawn(EditorContentHost);
+        let rendered_content = app
+            .world_mut()
+            .spawn((
+                EditorContent,
+                Node {
+                    position_type: PositionType::Absolute,
+                    ..default()
+                },
+            ))
+            .id();
 
         app.update();
 
         assert!(app.world().get_entity(rendered_content).is_ok());
         let staged = app
             .world_mut()
-            .query_filtered::<(Entity, &StagedEditorContent, &Visibility), With<EditorContent>>()
+            .query_filtered::<
+                (Entity, &StagedEditorContent, &Visibility, &Node),
+                With<EditorContent>,
+            >()
             .single(app.world())
             .unwrap();
         assert_eq!(staged.1.0, 1);
         assert_eq!(*staged.2, Visibility::Hidden);
+        assert_eq!(staged.3.display, Display::Flex);
+        assert_eq!(staged.3.position_type, PositionType::Absolute);
         assert_eq!(app.world().resource::<RenderedUiRevision>().0, 0);
 
         app.update();
@@ -1014,11 +1034,16 @@ mod tests {
         assert!(app.world().get_entity(rendered_content).is_err());
         let contents = app
             .world_mut()
-            .query_filtered::<(Option<&StagedEditorContent>, &Visibility), With<EditorContent>>()
+            .query_filtered::<
+                (Option<&StagedEditorContent>, &Visibility, &Node),
+                With<EditorContent>,
+            >()
             .single(app.world())
             .unwrap();
         assert!(contents.0.is_none());
         assert_eq!(*contents.1, Visibility::Inherited);
+        assert_eq!(contents.2.display, Display::Flex);
+        assert_eq!(contents.2.position_type, PositionType::Absolute);
         assert_eq!(app.world().resource::<RenderedUiRevision>().0, 1);
     }
 

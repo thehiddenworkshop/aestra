@@ -32,10 +32,27 @@ pub(crate) fn editor_root() -> impl Scene {
     }
 }
 
-pub(crate) fn editor_content() -> impl Scene {
+pub(crate) fn editor_content_host() -> impl Scene {
     bsn! {
         Node {
             grid_row: GridPlacement::start(3),
+            min_height: px(0),
+            min_width: px(0),
+            position_type: PositionType::Relative,
+            flex_direction: FlexDirection::Column,
+        }
+        BackgroundColor(Color::NONE)
+    }
+}
+
+pub(crate) fn editor_content() -> impl Scene {
+    bsn! {
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(0),
+            right: px(0),
+            top: px(0),
+            bottom: px(0),
             min_height: px(0),
             min_width: px(0),
             flex_direction: FlexDirection::Column,

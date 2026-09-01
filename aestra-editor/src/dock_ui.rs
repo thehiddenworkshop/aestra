@@ -146,12 +146,16 @@ pub(crate) fn activate_staged_native_floating_ui(
     session: Res<EditorSession>,
     roots: Query<(Entity, &NativeFloatingUi, Option<&StagedNativeFloatingUi>)>,
 ) {
-    for (staged_entity, staged_root, staged) in &roots {
-        if staged.is_none() || staged_root.revision != session.ui_revision {
-            continue;
-        }
+    let staged_panels = roots
+        .iter()
+        .filter_map(|(entity, root, staged)| {
+            (staged.is_some() && root.revision == session.ui_revision)
+                .then_some((entity, root.panel))
+        })
+        .collect::<Vec<_>>();
+    for (staged_entity, staged_panel) in staged_panels {
         for (entity, root, _) in &roots {
-            if entity != staged_entity && root.panel == staged_root.panel {
+            if entity != staged_entity && root.panel == staged_panel {
                 commands.entity(entity).despawn();
             }
         }
@@ -1286,6 +1290,7 @@ mod tests {
                 panel: DockPanel::Properties,
                 revision: 3,
             })
+            .insert(Node::default())
             .id();
         let staged = app
             .world_mut()
@@ -1296,6 +1301,10 @@ mod tests {
                 },
                 StagedNativeFloatingUi,
                 Visibility::Hidden,
+                Node {
+                    display: Display::Flex,
+                    ..default()
+                },
             ))
             .id();
 
@@ -1305,6 +1314,7 @@ mod tests {
         let staged = app.world().entity(staged);
         assert!(!staged.contains::<StagedNativeFloatingUi>());
         assert_eq!(staged.get::<Visibility>(), Some(&Visibility::Inherited));
+        assert_eq!(staged.get::<Node>().unwrap().display, Display::Flex);
     }
 
     #[test]
