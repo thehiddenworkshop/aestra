@@ -449,10 +449,16 @@ mod tests {
         });
     }
 
+    fn sample_session_with_playback_mode(mode: EffectPlaybackMode) -> EditorSession {
+        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        session.effect.playback_mode = mode;
+        session
+    }
+
     #[test]
     fn transport_actions_own_playback_mutations() {
         let mut app = App::new();
-        let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let session = sample_session_with_playback_mode(EffectPlaybackMode::LoopRestart);
         assert!(session.playing);
         app.insert_resource(session)
             .add_observer(execute_transport_action);
@@ -501,7 +507,7 @@ mod tests {
     #[test]
     fn changing_playback_mode_preserves_playback_position_and_running_state() {
         let mut app = App::new();
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = sample_session_with_playback_mode(EffectPlaybackMode::LoopRestart);
         session.advance_playback(0.1);
         let frame = session.frame();
         assert!(frame > 0);
@@ -531,9 +537,8 @@ mod tests {
             SvgPlugin,
         ))
         .init_asset::<Image>()
-        .insert_resource(EditorSession::from_embedded_sample(
-            EFFECT_SOURCE,
-            EFFECT_PATH,
+        .insert_resource(sample_session_with_playback_mode(
+            EffectPlaybackMode::LoopRestart,
         ))
         .insert_resource(Localizer::new("en-US").unwrap())
         .add_observer(execute_transport_action)

@@ -17,8 +17,8 @@ use crate::{
 };
 use aestra_authoring::{EffectCommand, EffectTransaction, SemanticTarget};
 use aestra_bevy::{
-    ActiveBackend, AestraSet, EffectClipId, EffectPlaybackMode, EffectPlayer, EffectRenderMode,
-    EffectRuntimeStatus, EmitterId, EmitterShape, EmitterTransform, ModuleId, Value,
+    ActiveBackend, AestraSet, EffectClipId, EffectPlayer, EffectRenderMode, EffectRuntimeStatus,
+    EmitterId, EmitterShape, EmitterTransform, ModuleId, Value,
 };
 use aestra_runtime::{CompiledEffect, CompiledEffectProject, CompiledParameterOverride};
 use bevy::{
@@ -2702,6 +2702,7 @@ fn update_preview(
 mod tests {
     use super::*;
     use crate::{EFFECT_PATH, EFFECT_SOURCE};
+    use aestra_bevy::EffectPlaybackMode;
 
     #[test]
     fn preview_transform_gizmo_is_larger_and_easier_to_hit_than_the_bevy_default() {
@@ -3563,6 +3564,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
         session.effect.effect_clips.clear();
+        session.effect.playback_mode = EffectPlaybackMode::LoopRestart;
         assert!(session.set_effect_playback_mode(EffectPlaybackMode::LoopContinuous));
         session.restart();
         let duration = session.effect.duration;

@@ -2400,6 +2400,7 @@ mod tests {
             include_str!("../../assets/effects/prism_bloom.aestra.ron"),
             "sample.ron",
         );
+        session.effect.playback_mode = EffectPlaybackMode::LoopRestart;
         let emitter = session.effect.emitters[0].id;
         let module = session.effect.emitters[0]
             .module_by_type(aestra_bevy::MODULE_EMISSION)

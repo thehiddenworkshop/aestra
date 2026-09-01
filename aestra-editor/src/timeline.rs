@@ -1551,8 +1551,21 @@ mod tests {
         assert_eq!(state.selected_emitters, BTreeSet::from([emitter.id]));
     }
 
-    fn session_with_three_regions() -> (EditorSession, EmitterId, [EmitterRegionId; 3]) {
+    fn session_with_first_emitter_timing_slack() -> EditorSession {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let effect_duration = session.effect.duration;
+        let emitter = &mut session.effect.emitters[0];
+        emitter.start_time = effect_duration * 0.1;
+        emitter.duration = effect_duration * 0.5;
+        emitter.regions.clear();
+        emitter.start_reference = None;
+        let emitter = emitter.id;
+        session.select_emitter(emitter);
+        session
+    }
+
+    fn session_with_three_regions() -> (EditorSession, EmitterId, [EmitterRegionId; 3]) {
+        let mut session = session_with_first_emitter_timing_slack();
         let emitter = session.effect.emitters[0].clone();
         let first = emitter.implicit_region_id();
         let second = EmitterRegionId::from_u128(0x7a);
@@ -3104,7 +3117,7 @@ mod tests {
 
     #[test]
     fn timeline_timing_commit_is_one_undoable_command() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = session_with_first_emitter_timing_slack();
         let emitter = session.effect.emitters[0].clone();
         let ui_revision = session.ui_revision;
 
@@ -3227,7 +3240,7 @@ mod tests {
 
     #[test]
     fn trimming_an_emitter_region_can_grow_its_source_to_the_effect_end() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = session_with_first_emitter_timing_slack();
         let emitter = session.effect.emitters[0].clone();
         let region = emitter.timeline_regions()[0];
         let available = session.effect.duration - region.start_time;
@@ -3276,7 +3289,7 @@ mod tests {
 
     #[test]
     fn trimming_an_emitter_region_left_can_grow_before_source_zero() {
-        let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let mut session = session_with_first_emitter_timing_slack();
         let emitter = session.effect.emitters[0].clone();
         let region = emitter.timeline_regions()[0];
         assert!(region.start_time > 0.0);

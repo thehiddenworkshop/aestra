@@ -2850,6 +2850,18 @@ mod tests {
     #[test]
     fn emitter_duration_editor_can_grow_the_source_within_the_effect() {
         let mut session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+        let effect_duration = session.effect.duration;
+        let selected = session.selected_layer().id;
+        let emitter = session
+            .effect
+            .emitters
+            .iter_mut()
+            .find(|emitter| emitter.id == selected)
+            .unwrap();
+        emitter.start_time = effect_duration * 0.1;
+        emitter.duration = effect_duration * 0.5;
+        emitter.regions.clear();
+        emitter.start_reference = None;
         let original = session.selected_layer().clone();
         let available = session.effect.duration - original.start_time;
         assert!(available > original.duration);
