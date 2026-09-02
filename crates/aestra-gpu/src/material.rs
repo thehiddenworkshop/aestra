@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 1;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 8;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 9;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 pub const MATERIAL_FRAGMENT_ENTRY_POINT: &str = "fragment_material";
 pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
@@ -704,6 +704,12 @@ fn instruction_expression(
             edge_width,
             invert,
         } => dissolve_expression(*source, *threshold, *edge_width, *invert),
+        MaterialIrInstruction::DissolveEdge {
+            source,
+            threshold,
+            edge_width,
+            invert,
+        } => dissolve_edge_expression(*source, *threshold, *edge_width, *invert),
         MaterialIrInstruction::PanUv { uv, speed, time } => format!(
             "({} + ({} * {}))",
             value_name(*uv),
@@ -853,6 +859,26 @@ fn dissolve_expression(
     let hard_mask = format!("select(0.0, 1.0, ({source} >= {threshold}))");
     let mask = format!("select({hard_mask}, {soft_mask}, {safe})");
     format!("select({mask}, (1.0 - {mask}), {invert})")
+}
+
+fn dissolve_edge_expression(
+    source: MaterialIrValueId,
+    threshold: MaterialIrValueId,
+    edge_width: MaterialIrValueId,
+    invert: MaterialIrValueId,
+) -> String {
+    let source = value_name(source);
+    let threshold = value_name(threshold);
+    let edge_width = format!("max({}, 0.0)", value_name(edge_width));
+    let invert = value_name(invert);
+    let safe = format!("({edge_width} >= 0.000001)");
+    let directed_distance =
+        format!("select(({source} - {threshold}), ({threshold} - {source}), {invert})");
+    let denominator = format!("select(1.0, {edge_width}, {safe})");
+    let factor = format!("clamp(({directed_distance} / {denominator}), 0.0, 1.0)");
+    let smooth = format!("(({factor} * {factor}) * (3.0 - (2.0 * {factor})))");
+    let inside = format!("(({directed_distance} >= 0.0) && {safe})");
+    format!("select(0.0, (1.0 - {smooth}), {inside})")
 }
 
 fn promote_operand(
@@ -1094,6 +1120,18 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             invert,
         } => {
             fingerprint.byte(17);
+            fingerprint.u32(source.0);
+            fingerprint.u32(threshold.0);
+            fingerprint.u32(edge_width.0);
+            fingerprint.u32(invert.0);
+        }
+        MaterialIrInstruction::DissolveEdge {
+            source,
+            threshold,
+            edge_width,
+            invert,
+        } => {
+            fingerprint.byte(18);
             fingerprint.u32(source.0);
             fingerprint.u32(threshold.0);
             fingerprint.u32(edge_width.0);

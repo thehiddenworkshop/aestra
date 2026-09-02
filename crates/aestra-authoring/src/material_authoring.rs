@@ -671,6 +671,20 @@ fn rewire_expression(
         (MaterialExpressionKind::Dissolve { invert, .. }, MaterialExpressionInput::Invert) => {
             invert
         }
+        (MaterialExpressionKind::DissolveEdge { source, .. }, MaterialExpressionInput::Source) => {
+            source
+        }
+        (
+            MaterialExpressionKind::DissolveEdge { threshold, .. },
+            MaterialExpressionInput::Threshold,
+        ) => threshold,
+        (
+            MaterialExpressionKind::DissolveEdge { edge_width, .. },
+            MaterialExpressionInput::EdgeWidth,
+        ) => edge_width,
+        (MaterialExpressionKind::DissolveEdge { invert, .. }, MaterialExpressionInput::Invert) => {
+            invert
+        }
         (MaterialExpressionKind::PanUv { uv, .. }, MaterialExpressionInput::Uv) => uv,
         (MaterialExpressionKind::PanUv { speed, .. }, MaterialExpressionInput::Speed) => speed,
         (MaterialExpressionKind::PanUv { time, .. }, MaterialExpressionInput::Time) => time,

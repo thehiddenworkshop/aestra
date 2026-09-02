@@ -546,6 +546,64 @@ fn dissolve_lowers_with_typed_sockets_and_source_mapping() {
 }
 
 #[test]
+fn dissolve_edge_lowers_with_typed_sockets_and_source_mapping() {
+    let source = MaterialExpressionId::from_u128(0x3601);
+    let threshold = MaterialExpressionId::from_u128(0x3602);
+    let edge_width = MaterialExpressionId::from_u128(0x3603);
+    let invert = MaterialExpressionId::from_u128(0x3604);
+    let dissolve_edge = MaterialExpressionId::from_u128(0x3605);
+    let mut program = MaterialProgram::additive_sprite("Dissolve edge IR");
+    program.expressions.extend([
+        MaterialExpression {
+            id: source,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleRandom),
+        },
+        MaterialExpression {
+            id: threshold,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleNormalizedAge),
+        },
+        MaterialExpression {
+            id: edge_width,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.08)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: dissolve_edge,
+            kind: MaterialExpressionKind::DissolveEdge {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = dissolve_edge;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let dissolve_edge_value = ir.source_map.values[&dissolve_edge];
+    let MaterialIrInstruction::DissolveEdge {
+        source: ir_source,
+        threshold: ir_threshold,
+        edge_width: ir_edge_width,
+        invert: ir_invert,
+    } = ir.value(dissolve_edge_value).unwrap().instruction
+    else {
+        panic!("DissolveEdge must survive lowering as a semantic IR instruction");
+    };
+    assert_eq!(
+        ir.value(dissolve_edge_value).unwrap().value_type,
+        MaterialValueType::Float
+    );
+    assert_eq!(ir_source, ir.source_map.values[&source]);
+    assert_eq!(ir_threshold, ir.source_map.values[&threshold]);
+    assert_eq!(ir_edge_width, ir.source_map.values[&edge_width]);
+    assert_eq!(ir_invert, ir.source_map.values[&invert]);
+}
+
+#[test]
 fn lowering_is_deterministic_independent_of_authored_vector_order() {
     let program = two_texture_flame_program();
     let mut reordered = program.clone();

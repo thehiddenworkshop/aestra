@@ -247,8 +247,8 @@ memory and binds the resulting shaders without rewriting the source effect. Nati
 now verifies pixel-identical legacy and semantic output for all three showcase sources, and the
 approved images are the scheduled workflow baseline.
 
-Material 8 has begun with `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`, `RadialMask`, and
-`Dissolve` as
+Material 8 has begun with `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`, `RadialMask`,
+`Dissolve`, and `DissolveEdge` as
 end-to-end semantic primitives rather than pre-expanded arithmetic graphs. Pan retains explicit `Vec2` UV, `Vec2`
 speed, and `Float` time sockets; rotation retains `Vec2` UV, `Vec2` center, and radians-valued
 `Float` angle sockets; scale retains `Vec2` UV, center, and scale sockets. Remap retains value,
@@ -259,7 +259,9 @@ shape; supports reversed edges; and maps equal-edge components to a deterministi
 retains explicit UV, center, radius, softness, and invert sockets, clamps negative radius and
 softness to zero, and uses a deterministic hard boundary when softness is zero. Dissolve retains
 explicit source, threshold, edge-width, and invert sockets, clamps negative edge width to zero, and
-uses a deterministic hard cut when edge width is zero. All seven
+uses a deterministic hard cut when edge width is zero. DissolveEdge reuses those sockets to produce
+a one-sided band that peaks at the threshold and fades across the edge width; inversion changes
+sides, and zero edge width produces no band. All eight
 survive stable RON, validation, undoable rewiring, backend-neutral IR, source mapping, and portable shader
 generation. Generated WGSL is validated and translated to SPIR-V and HLSL by the contract suite.
 Remaining Material 8 operations are not yet implemented.

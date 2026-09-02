@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "d2da57480b02915b5d1cdf606ddd5222ef2b1554748ef36590d6b2d4e3f1cd87"
+        "f2a5229fa6271cac3c57a2877162c48689830f7c25ed764ca043212e5f1a88d6"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -435,6 +435,8 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     let dissolve_edge_width = MaterialExpressionId::from_u128(0x2025);
     let dissolve_invert = MaterialExpressionId::from_u128(0x2026);
     let dissolve = MaterialExpressionId::from_u128(0x2027);
+    let dissolve_edge = MaterialExpressionId::from_u128(0x2028);
+    let combined_mask = MaterialExpressionId::from_u128(0x2029);
     program.expressions.extend([
         MaterialExpression {
             id: speed,
@@ -565,13 +567,26 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
                 invert: dissolve_invert,
             },
         },
+        MaterialExpression {
+            id: dissolve_edge,
+            kind: MaterialExpressionKind::DissolveEdge {
+                source: radial_mask,
+                threshold: dissolve_threshold,
+                edge_width: dissolve_edge_width,
+                invert: dissolve_invert,
+            },
+        },
+        MaterialExpression {
+            id: combined_mask,
+            kind: MaterialExpressionKind::Add(dissolve, dissolve_edge),
+        },
     ]);
     for expression in &mut program.expressions {
         if let MaterialExpressionKind::SampleTexture { uv, .. } = &mut expression.kind {
             *uv = smoothstep;
         }
     }
-    program.outputs.alpha = dissolve;
+    program.outputs.alpha = combined_mask;
 
     let compiled = compile(&program);
 
@@ -749,6 +764,32 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     assert!(dissolve_expression.contains("select"));
     assert!(dissolve_expression.contains(">="));
     assert!(dissolve_expression.contains("0.000001"));
+    let dissolve_edge_line = compiled
+        .source_map
+        .wesl_lines
+        .iter()
+        .find_map(|(line, value)| {
+            compiled
+                .source_map
+                .ir
+                .expressions
+                .get(value)
+                .is_some_and(|expressions| expressions.contains(&dissolve_edge))
+                .then_some(*line)
+        })
+        .expect("DissolveEdge must map to a generated shader line");
+    let dissolve_edge_expression = compiled
+        .shader
+        .wesl
+        .lines()
+        .nth(dissolve_edge_line as usize - 1)
+        .unwrap();
+    assert!(dissolve_edge_expression.contains("max"));
+    assert!(dissolve_edge_expression.contains("clamp"));
+    assert!(dissolve_edge_expression.contains("select"));
+    assert!(dissolve_edge_expression.contains("&&"));
+    assert!(dissolve_edge_expression.contains(">="));
+    assert!(dissolve_edge_expression.contains("0.000001"));
     assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 

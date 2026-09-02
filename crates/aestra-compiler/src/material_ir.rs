@@ -84,6 +84,12 @@ pub enum MaterialIrInstruction {
         edge_width: MaterialIrValueId,
         invert: MaterialIrValueId,
     },
+    DissolveEdge {
+        source: MaterialIrValueId,
+        threshold: MaterialIrValueId,
+        edge_width: MaterialIrValueId,
+        invert: MaterialIrValueId,
+    },
     PanUv {
         uv: MaterialIrValueId,
         speed: MaterialIrValueId,
@@ -139,6 +145,12 @@ impl MaterialIrInstruction {
                 invert,
             } => vec![*uv, *center, *radius, *softness, *invert],
             Self::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => vec![*source, *threshold, *edge_width, *invert],
+            Self::DissolveEdge {
                 source,
                 threshold,
                 edge_width,
@@ -211,6 +223,17 @@ impl MaterialIrInstruction {
                 remap(invert);
             }
             Self::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => {
+                remap(source);
+                remap(threshold);
+                remap(edge_width);
+                remap(invert);
+            }
+            Self::DissolveEdge {
                 source,
                 threshold,
                 edge_width,
@@ -527,6 +550,17 @@ impl MaterialIrBuilder<'_> {
                 edge_width,
                 invert,
             } => MaterialIrInstruction::Dissolve {
+                source: self.lower(source),
+                threshold: self.lower(threshold),
+                edge_width: self.lower(edge_width),
+                invert: self.lower(invert),
+            },
+            MaterialExpressionKind::DissolveEdge {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => MaterialIrInstruction::DissolveEdge {
                 source: self.lower(source),
                 threshold: self.lower(threshold),
                 edge_width: self.lower(edge_width),

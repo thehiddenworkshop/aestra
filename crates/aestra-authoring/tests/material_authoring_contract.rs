@@ -986,6 +986,141 @@ fn dissolve_semantic_sockets_are_rewireable_and_undoable() {
 }
 
 #[test]
+fn dissolve_edge_semantic_sockets_are_rewireable_and_undoable() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x1700);
+    let source = MaterialExpressionId::from_u128(0x1701);
+    let threshold = MaterialExpressionId::from_u128(0x1702);
+    let edge_width = MaterialExpressionId::from_u128(0x1703);
+    let invert = MaterialExpressionId::from_u128(0x1704);
+    let alternate_source = MaterialExpressionId::from_u128(0x1705);
+    let alternate_threshold = MaterialExpressionId::from_u128(0x1706);
+    let alternate_edge_width = MaterialExpressionId::from_u128(0x1707);
+    let alternate_invert = MaterialExpressionId::from_u128(0x1708);
+    let dissolve_edge = MaterialExpressionId::from_u128(0x1709);
+    let mut program = MaterialProgram::additive_sprite("Authorable dissolve edge");
+    program.id = program_id;
+    program.expressions.extend([
+        MaterialExpression {
+            id: source,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.25)),
+        },
+        MaterialExpression {
+            id: threshold,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: edge_width,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.08)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: alternate_source,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: alternate_threshold,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.6)),
+        },
+        MaterialExpression {
+            id: alternate_edge_width,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.12)),
+        },
+        MaterialExpression {
+            id: alternate_invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(true)),
+        },
+        MaterialExpression {
+            id: dissolve_edge,
+            kind: MaterialExpressionKind::DissolveEdge {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = dissolve_edge;
+    document.programs.push(program);
+    let mut history = MaterialCommandHistory::default();
+
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::new(
+                "Rewire dissolve edge",
+                vec![
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: dissolve_edge,
+                        input: MaterialExpressionInput::Source,
+                        source: alternate_source,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: dissolve_edge,
+                        input: MaterialExpressionInput::Threshold,
+                        source: alternate_threshold,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: dissolve_edge,
+                        input: MaterialExpressionInput::EdgeWidth,
+                        source: alternate_edge_width,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: dissolve_edge,
+                        input: MaterialExpressionInput::Invert,
+                        source: alternate_invert,
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == dissolve_edge)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::DissolveEdge {
+            source: rewired_source,
+            threshold: rewired_threshold,
+            edge_width: rewired_edge_width,
+            invert: rewired_invert,
+        } if rewired_source == alternate_source
+            && rewired_threshold == alternate_threshold
+            && rewired_edge_width == alternate_edge_width
+            && rewired_invert == alternate_invert
+    ));
+
+    history.undo(&mut document).unwrap().unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == dissolve_edge)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::DissolveEdge {
+            source: original_source,
+            threshold: original_threshold,
+            edge_width: original_edge_width,
+            invert: original_invert,
+        } if original_source == source
+            && original_threshold == threshold
+            && original_edge_width == edge_width
+            && original_invert == invert
+    ));
+}
+
+#[test]
 fn instance_parameter_render_state_and_assignment_commands_are_undoable() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x2000);

@@ -1976,7 +1976,7 @@ Flipbook
 ```
 
 Implementation status (2026-09-02): `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`,
-`RadialMask`, and `Dissolve` are completed
+`RadialMask`, `Dissolve`, and `DissolveEdge` are completed
 vertical slices. They retain semantic UV/speed/time, UV/center/radians, UV/center/scale, and
 value/input-range/output-range, and edge-minimum/edge-maximum/value inputs through the authored
 model, validation, command history, backend-neutral IR, source mapping, and portable shader
@@ -1987,6 +1987,9 @@ RadialMask preserves UV, center, radius, softness, and invert sockets, clamps ne
 softness to zero, and resolves zero softness as a deterministic hard boundary.
 Dissolve preserves source, threshold, edge-width, and invert sockets, clamps negative edge width to
 zero, and resolves zero edge width as a deterministic hard cut.
+DissolveEdge reuses those sockets to emit a one-sided band that peaks at the threshold and fades
+across the edge width. Inversion moves the band to the opposite side, negative edge width clamps to
+zero, and zero edge width produces no edge.
 The remaining primitives in this milestone are still planned.
 
 Then:
