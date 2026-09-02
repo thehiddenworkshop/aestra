@@ -6,7 +6,7 @@
 
 use crate::{
     AssetId, BlendMode, Diagnostic, DiagnosticCode, DiagnosticSeverity, MaterialExpressionId,
-    MaterialId, MaterialParameterId, MaterialProgramId, ParameterId, ValidationReport,
+    MaterialId, MaterialParameterId, MaterialProgramId, ParameterId, ValidationReport, Value,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -207,6 +207,18 @@ impl MaterialValueType {
         matches!(
             self,
             Self::Float | Self::Vec2 | Self::Vec3 | Self::Vec4 | Self::Color
+        )
+    }
+
+    pub const fn accepts_effect_value(self, value: &Value) -> bool {
+        matches!(
+            (self, value),
+            (Self::Float, Value::Scalar(_))
+                | (Self::Vec2, Value::Vec2(_))
+                | (Self::Vec3, Value::Vec3(_))
+                | (Self::Vec4 | Self::Color, Value::Vec4(_))
+                | (Self::Texture2D(_), Value::Asset(_))
+                | (Self::Bool, Value::Bool(_))
         )
     }
 }

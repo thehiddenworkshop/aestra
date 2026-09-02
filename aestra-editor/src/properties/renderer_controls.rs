@@ -249,6 +249,196 @@ fn commit_semantic_material_value(
     }
 }
 
+pub(super) fn set_semantic_material_source(
+    session: &mut EditorSession,
+    catalog: &ProjectEffectCatalog,
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    source: SemanticMaterialSourceChoice,
+) -> bool {
+    let programs = match catalog.material_programs_for_effect(&session.effect) {
+        Ok(programs) => programs,
+        Err(error) => {
+            session.status = format!("Material program unavailable: {error}");
+            return false;
+        }
+    };
+    let Some(material_instance) = session
+        .effect
+        .material_instances
+        .iter()
+        .find(|candidate| candidate.id == instance)
+    else {
+        session.status = "Material instance is no longer available".into();
+        return false;
+    };
+    let Some(program) = programs
+        .iter()
+        .find(|program| program.id == material_instance.program.id())
+    else {
+        session.status = format!(
+            "Material program {} is unavailable",
+            material_instance.program.id()
+        );
+        return false;
+    };
+    let controls = match MaterialCompiler.reflect_controls(program, Some(material_instance)) {
+        Ok(controls) => controls,
+        Err(error) => {
+            session.status = format!("Material controls unavailable: {error}");
+            return false;
+        }
+    };
+    let Some(descriptor) = controls
+        .parameters
+        .iter()
+        .find(|descriptor| descriptor.id == parameter)
+    else {
+        session.status = "Material parameter is no longer available".into();
+        return false;
+    };
+    if !semantic_material_source_is_supported(descriptor, source, session) {
+        session.status = "That material source is incompatible with this parameter".into();
+        return false;
+    }
+    let value = match source {
+        SemanticMaterialSourceChoice::Constant => {
+            let Some(value) = semantic_material_constant_value(descriptor, session) else {
+                session.status = "No compatible constant value is available".into();
+                return false;
+            };
+            MaterialParameterValue::Constant(value)
+        }
+        SemanticMaterialSourceChoice::RandomRange => {
+            if let Some(MaterialParameterValue::RandomRange { .. }) = &descriptor.current_value {
+                descriptor
+                    .current_value
+                    .clone()
+                    .expect("matched material range must exist")
+            } else {
+                let Some(value) = semantic_material_constant_value(descriptor, session) else {
+                    session.status = "No compatible random-range value is available".into();
+                    return false;
+                };
+                MaterialParameterValue::RandomRange {
+                    min: value.clone(),
+                    max: value,
+                    domain: descriptor.evaluation_domain,
+                }
+            }
+        }
+        SemanticMaterialSourceChoice::EffectParameter(parameter) => {
+            MaterialParameterValue::EffectParameter(parameter)
+        }
+        SemanticMaterialSourceChoice::EmitterParameter(parameter) => {
+            MaterialParameterValue::EmitterParameter(parameter)
+        }
+    };
+    session.set_material_instance_parameter(&programs, instance, parameter, Some(value))
+}
+
+fn semantic_material_source_is_supported(
+    descriptor: &MaterialControlDescriptor,
+    source: SemanticMaterialSourceChoice,
+    session: &EditorSession,
+) -> bool {
+    let (kind, binding) = match source {
+        SemanticMaterialSourceChoice::Constant => (MaterialControlSource::Constant, None),
+        SemanticMaterialSourceChoice::RandomRange => (MaterialControlSource::RandomRange, None),
+        SemanticMaterialSourceChoice::EffectParameter(parameter) => {
+            (MaterialControlSource::EffectParameter, Some(parameter))
+        }
+        SemanticMaterialSourceChoice::EmitterParameter(parameter) => {
+            (MaterialControlSource::EmitterParameter, Some(parameter))
+        }
+    };
+    descriptor.supported_sources.contains(&kind)
+        && binding.is_none_or(|binding| {
+            session.effect.parameters.iter().any(|parameter| {
+                parameter.id == binding
+                    && parameter.exposed
+                    && descriptor
+                        .value_type
+                        .accepts_effect_value(&parameter.default)
+            })
+        })
+}
+
+fn semantic_material_constant_value(
+    descriptor: &MaterialControlDescriptor,
+    session: &EditorSession,
+) -> Option<MaterialValue> {
+    match descriptor.current_value.as_ref() {
+        Some(MaterialParameterValue::Constant(value)) => Some(value.clone()),
+        Some(MaterialParameterValue::RandomRange { min, max, .. }) => {
+            midpoint_material_value(min, max)
+        }
+        Some(
+            MaterialParameterValue::EffectParameter(_)
+            | MaterialParameterValue::EmitterParameter(_),
+        )
+        | None => descriptor
+            .default_value
+            .clone()
+            .or_else(|| fallback_material_value(descriptor.value_type, session)),
+    }
+}
+
+fn midpoint_material_value(min: &MaterialValue, max: &MaterialValue) -> Option<MaterialValue> {
+    fn midpoint(min: f32, max: f32) -> f32 {
+        min + (max - min) * 0.5
+    }
+    match (min, max) {
+        (MaterialValue::Float(min), MaterialValue::Float(max)) => {
+            Some(MaterialValue::Float(midpoint(*min, *max)))
+        }
+        (MaterialValue::Vec2(min), MaterialValue::Vec2(max)) => Some(MaterialValue::Vec2([
+            midpoint(min[0], max[0]),
+            midpoint(min[1], max[1]),
+        ])),
+        (MaterialValue::Vec3(min), MaterialValue::Vec3(max)) => Some(MaterialValue::Vec3([
+            midpoint(min[0], max[0]),
+            midpoint(min[1], max[1]),
+            midpoint(min[2], max[2]),
+        ])),
+        (MaterialValue::Vec4(min), MaterialValue::Vec4(max)) => Some(MaterialValue::Vec4([
+            midpoint(min[0], max[0]),
+            midpoint(min[1], max[1]),
+            midpoint(min[2], max[2]),
+            midpoint(min[3], max[3]),
+        ])),
+        (MaterialValue::ColorSrgb(min), MaterialValue::ColorSrgb(max)) => {
+            Some(MaterialValue::ColorSrgb([
+                midpoint(min[0], max[0]),
+                midpoint(min[1], max[1]),
+                midpoint(min[2], max[2]),
+                midpoint(min[3], max[3]),
+            ]))
+        }
+        _ => None,
+    }
+}
+
+fn fallback_material_value(
+    value_type: MaterialValueType,
+    session: &EditorSession,
+) -> Option<MaterialValue> {
+    match value_type {
+        MaterialValueType::Float => Some(MaterialValue::Float(0.0)),
+        MaterialValueType::Vec2 => Some(MaterialValue::Vec2([0.0; 2])),
+        MaterialValueType::Vec3 => Some(MaterialValue::Vec3([0.0; 3])),
+        MaterialValueType::Vec4 => Some(MaterialValue::Vec4([0.0; 4])),
+        MaterialValueType::Color => Some(MaterialValue::ColorSrgb([1.0; 4])),
+        MaterialValueType::Texture2D(_) => session
+            .effect
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Texture)
+            .map(|asset| MaterialValue::Texture2D(asset.id)),
+        MaterialValueType::Bool => Some(MaterialValue::Bool(false)),
+    }
+}
+
 fn semantic_material_number_value(
     session: &EditorSession,
     control: &SemanticMaterialNumberControl,
@@ -737,6 +927,7 @@ fn spawn_semantic_material_controls(
     renderer: &aestra_core::RendererInstance,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
+    asset_server: &AssetServer,
 ) -> Result<bool, String> {
     let Some(instance) = session
         .effect
@@ -757,7 +948,7 @@ fn spawn_semantic_material_controls(
 
     spawn_properties_read_only_control(parent, "Material", &controls.name);
     for descriptor in &controls.parameters {
-        spawn_semantic_material_parameter(parent, descriptor, instance.id, session);
+        spawn_semantic_material_parameter(parent, descriptor, instance.id, session, asset_server);
     }
     Ok(true)
 }
@@ -767,9 +958,17 @@ fn spawn_semantic_material_parameter(
     descriptor: &MaterialControlDescriptor,
     instance: MaterialId,
     session: &EditorSession,
+    asset_server: &AssetServer,
 ) {
     let source = semantic_material_source_label(descriptor, session);
-    spawn_properties_read_only_control(parent, &descriptor.name, &source);
+    spawn_semantic_material_source_row(
+        parent,
+        descriptor,
+        instance,
+        session,
+        asset_server,
+        &source,
+    );
     match descriptor.current_value.as_ref() {
         Some(MaterialParameterValue::Constant(value)) => match descriptor.control {
             MaterialControlKind::Number
@@ -846,6 +1045,141 @@ fn semantic_material_source_label(
         }
         Some(MaterialParameterValue::RandomRange { .. }) => "Random range".into(),
         None => "Required · no value".into(),
+    }
+}
+
+fn spawn_semantic_material_source_row(
+    parent: &mut ChildSpawnerCommands,
+    descriptor: &MaterialControlDescriptor,
+    instance: MaterialId,
+    session: &EditorSession,
+    asset_server: &AssetServer,
+    source_label: &str,
+) {
+    let current = semantic_material_source_choice(descriptor.current_value.as_ref());
+    let mut options = Vec::new();
+    if descriptor
+        .supported_sources
+        .contains(&MaterialControlSource::Constant)
+        && semantic_material_constant_value(descriptor, session).is_some()
+    {
+        options.push(ComboOption {
+            label: "Constant".into(),
+            selected: current == Some(SemanticMaterialSourceChoice::Constant),
+            action: PropertiesAction::SetSemanticMaterialSource {
+                instance,
+                parameter: descriptor.id,
+                source: SemanticMaterialSourceChoice::Constant,
+            },
+        });
+    }
+    if descriptor
+        .supported_sources
+        .contains(&MaterialControlSource::RandomRange)
+        && semantic_material_constant_value(descriptor, session).is_some()
+    {
+        options.push(ComboOption {
+            label: "Random range".into(),
+            selected: current == Some(SemanticMaterialSourceChoice::RandomRange),
+            action: PropertiesAction::SetSemanticMaterialSource {
+                instance,
+                parameter: descriptor.id,
+                source: SemanticMaterialSourceChoice::RandomRange,
+            },
+        });
+    }
+    for parameter in session.effect.parameters.iter().filter(|parameter| {
+        parameter.exposed
+            && descriptor
+                .value_type
+                .accepts_effect_value(&parameter.default)
+    }) {
+        if descriptor
+            .supported_sources
+            .contains(&MaterialControlSource::EffectParameter)
+        {
+            let choice = SemanticMaterialSourceChoice::EffectParameter(parameter.id);
+            options.push(ComboOption {
+                label: format!("Effect · {}", parameter.name),
+                selected: current == Some(choice),
+                action: PropertiesAction::SetSemanticMaterialSource {
+                    instance,
+                    parameter: descriptor.id,
+                    source: choice,
+                },
+            });
+        }
+        if descriptor
+            .supported_sources
+            .contains(&MaterialControlSource::EmitterParameter)
+        {
+            let choice = SemanticMaterialSourceChoice::EmitterParameter(parameter.id);
+            options.push(ComboOption {
+                label: format!("Emitter · {}", parameter.name),
+                selected: current == Some(choice),
+                action: PropertiesAction::SetSemanticMaterialSource {
+                    instance,
+                    parameter: descriptor.id,
+                    source: choice,
+                },
+            });
+        }
+    }
+    let icon = if current == Some(SemanticMaterialSourceChoice::RandomRange) {
+        "icons/random.svg"
+    } else {
+        "icons/source-constant.svg"
+    };
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(28.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(6.0),
+            ..default()
+        })
+        .with_children(|row| {
+            spawn_property_label(row, &descriptor.name);
+            row.spawn((
+                Text::new(source_label.to_owned()),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+                Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            spawn_icon_action_menu(
+                row,
+                asset_server,
+                icon,
+                &format!("Choose source for {}", descriptor.name),
+                &format!("Current source: {source_label}"),
+                &options,
+            );
+        });
+}
+
+fn semantic_material_source_choice(
+    value: Option<&MaterialParameterValue>,
+) -> Option<SemanticMaterialSourceChoice> {
+    match value {
+        Some(MaterialParameterValue::Constant(_)) => Some(SemanticMaterialSourceChoice::Constant),
+        Some(MaterialParameterValue::RandomRange { .. }) => {
+            Some(SemanticMaterialSourceChoice::RandomRange)
+        }
+        Some(MaterialParameterValue::EffectParameter(parameter)) => {
+            Some(SemanticMaterialSourceChoice::EffectParameter(*parameter))
+        }
+        Some(MaterialParameterValue::EmitterParameter(parameter)) => {
+            Some(SemanticMaterialSourceChoice::EmitterParameter(*parameter))
+        }
+        None => None,
     }
 }
 
@@ -1000,6 +1334,7 @@ pub(super) fn spawn_renderer_card(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
     collapsed: bool,
+    asset_server: &AssetServer,
 ) {
     let display_name = match renderer.properties {
         RendererProperties::Sprite => "Sprite Renderer",
@@ -1051,7 +1386,7 @@ pub(super) fn spawn_renderer_card(
             );
         },
         |card| {
-            match spawn_semantic_material_controls(card, renderer, session, catalog) {
+            match spawn_semantic_material_controls(card, renderer, session, catalog, asset_server) {
                 Ok(true) => {
                     spawn_inline_diagnostics(card, diagnostic_path, session);
                     return;
@@ -1365,6 +1700,110 @@ mod tests {
                 max: MaterialValue::Vec2([9.0, 4.0]),
                 domain: aestra_core::material::MaterialEvaluationDomain::Emitter,
             })
+        );
+    }
+
+    #[test]
+    fn semantic_material_sources_filter_bindings_by_scope_exposure_and_type() {
+        let mut session = test_support::session_with_timing_slack();
+        let exposed_scalar = ParameterId::from_u128(0x7300);
+        let hidden_scalar = ParameterId::from_u128(0x7301);
+        let exposed_vector = ParameterId::from_u128(0x7302);
+        session.effect.parameters.extend([
+            EffectParameter {
+                id: exposed_scalar,
+                name: "Intensity".into(),
+                default: Value::Scalar(1.0),
+                exposed: true,
+            },
+            EffectParameter {
+                id: hidden_scalar,
+                name: "Internal intensity".into(),
+                default: Value::Scalar(2.0),
+                exposed: false,
+            },
+            EffectParameter {
+                id: exposed_vector,
+                name: "Direction".into(),
+                default: Value::Vec3([0.0, 1.0, 0.0]),
+                exposed: true,
+            },
+        ]);
+        let descriptor = MaterialControlDescriptor {
+            id: MaterialParameterId::from_u128(0x7303),
+            name: "Intensity".into(),
+            value_type: MaterialValueType::Float,
+            evaluation_domain: aestra_core::material::MaterialEvaluationDomain::Effect,
+            control: MaterialControlKind::Number,
+            default_value: Some(MaterialValue::Float(1.0)),
+            current_value: Some(MaterialParameterValue::Constant(MaterialValue::Float(1.0))),
+            value_origin: aestra_compiler::MaterialControlValueOrigin::ProgramDefault,
+            supported_sources: vec![
+                MaterialControlSource::Constant,
+                MaterialControlSource::EffectParameter,
+                MaterialControlSource::RandomRange,
+            ],
+            resource_constraint: None,
+        };
+
+        assert!(semantic_material_source_is_supported(
+            &descriptor,
+            SemanticMaterialSourceChoice::Constant,
+            &session,
+        ));
+        assert!(semantic_material_source_is_supported(
+            &descriptor,
+            SemanticMaterialSourceChoice::RandomRange,
+            &session,
+        ));
+        assert!(semantic_material_source_is_supported(
+            &descriptor,
+            SemanticMaterialSourceChoice::EffectParameter(exposed_scalar),
+            &session,
+        ));
+        assert!(!semantic_material_source_is_supported(
+            &descriptor,
+            SemanticMaterialSourceChoice::EffectParameter(hidden_scalar),
+            &session,
+        ));
+        assert!(!semantic_material_source_is_supported(
+            &descriptor,
+            SemanticMaterialSourceChoice::EffectParameter(exposed_vector),
+            &session,
+        ));
+        assert!(!semantic_material_source_is_supported(
+            &descriptor,
+            SemanticMaterialSourceChoice::EmitterParameter(exposed_scalar),
+            &session,
+        ));
+    }
+
+    #[test]
+    fn switching_a_random_material_source_to_constant_uses_its_midpoint() {
+        let session = test_support::session_with_timing_slack();
+        let descriptor = MaterialControlDescriptor {
+            id: MaterialParameterId::from_u128(0x7400),
+            name: "Tint".into(),
+            value_type: MaterialValueType::Color,
+            evaluation_domain: aestra_core::material::MaterialEvaluationDomain::Instance,
+            control: MaterialControlKind::Color,
+            default_value: Some(MaterialValue::ColorSrgb([1.0; 4])),
+            current_value: Some(MaterialParameterValue::RandomRange {
+                min: MaterialValue::ColorSrgb([0.0, 0.2, 0.4, 0.6]),
+                max: MaterialValue::ColorSrgb([1.0, 0.8, 0.6, 1.0]),
+                domain: aestra_core::material::MaterialEvaluationDomain::Instance,
+            }),
+            value_origin: aestra_compiler::MaterialControlValueOrigin::InstanceOverride,
+            supported_sources: vec![
+                MaterialControlSource::Constant,
+                MaterialControlSource::RandomRange,
+            ],
+            resource_constraint: None,
+        };
+
+        assert_eq!(
+            semantic_material_constant_value(&descriptor, &session),
+            Some(MaterialValue::ColorSrgb([0.5, 0.5, 0.5, 0.8]))
         );
     }
 }

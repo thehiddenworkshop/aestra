@@ -257,8 +257,10 @@ the current sprite-material path until the native-GPU compatibility gate approve
 - [ ] **Material 7 — Properties material editor.** The first vertical slice now resolves a selected
   renderer's semantic instance/program, generates typed constant and random-range controls from
   compiler reflection, identifies effect/emitter bindings, offers texture assets, and submits edits
-  through `SetMaterialInstanceParameter` into the editor's shared undo/redo history. Source/binding
-  pickers and authored render-state controls remain before the milestone is complete.
+  through `SetMaterialInstanceParameter` into the editor's shared undo/redo history. Reflected
+  source pickers now switch compatible controls between constants, random ranges, and exposed typed
+  effect/emitter bindings while preserving useful values. Authored render-state controls remain
+  before the milestone is complete.
 - [ ] **Material 8 — VFX semantic primitives.** Add the initial UV, mask, dissolve, depth-fade,
   soft-particle, and flipbook operations.
 - [ ] **Material 9 — material stack.** Provide the ordered high-level modifier projection before a

@@ -871,18 +871,7 @@ fn validate_effect_parameter_bindings(
 }
 
 fn effect_value_matches_material_type(value: &Value, value_type: MaterialValueType) -> bool {
-    matches!(
-        (value, value_type),
-        (Value::Scalar(_), MaterialValueType::Float)
-            | (Value::Vec2(_), MaterialValueType::Vec2)
-            | (Value::Vec3(_), MaterialValueType::Vec3)
-            | (
-                Value::Vec4(_),
-                MaterialValueType::Vec4 | MaterialValueType::Color
-            )
-            | (Value::Bool(_), MaterialValueType::Bool)
-            | (Value::Asset(_), MaterialValueType::Texture2D(_))
-    )
+    value_type.accepts_effect_value(value)
 }
 
 fn checked_insert<T>(

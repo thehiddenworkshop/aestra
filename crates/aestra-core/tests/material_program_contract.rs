@@ -467,3 +467,29 @@ fn unsupported_domains_inputs_and_render_states_are_diagnosed() {
             .any(|diagnostic| { diagnostic.code == DiagnosticCode::InvalidRenderState })
     );
 }
+
+#[test]
+fn material_value_types_accept_only_compatible_effect_parameter_values() {
+    assert!(MaterialValueType::Float.accepts_effect_value(&aestra_core::Value::Scalar(1.0)));
+    assert!(MaterialValueType::Vec2.accepts_effect_value(&aestra_core::Value::Vec2([1.0, 2.0])));
+    assert!(
+        MaterialValueType::Vec3.accepts_effect_value(&aestra_core::Value::Vec3([1.0, 2.0, 3.0]))
+    );
+    assert!(
+        MaterialValueType::Vec4
+            .accepts_effect_value(&aestra_core::Value::Vec4([1.0, 2.0, 3.0, 4.0]))
+    );
+    assert!(
+        MaterialValueType::Color
+            .accepts_effect_value(&aestra_core::Value::Vec4([1.0, 0.5, 0.25, 1.0]))
+    );
+    assert!(
+        MaterialValueType::Texture2D(texture_descriptor())
+            .accepts_effect_value(&aestra_core::Value::Asset(AssetId::from_u128(0xE01)))
+    );
+    assert!(MaterialValueType::Bool.accepts_effect_value(&aestra_core::Value::Bool(true)));
+
+    assert!(!MaterialValueType::Float.accepts_effect_value(&aestra_core::Value::Bool(true)));
+    assert!(!MaterialValueType::Vec3.accepts_effect_value(&aestra_core::Value::Vec4([0.0; 4])));
+    assert!(!MaterialValueType::Color.accepts_effect_value(&aestra_core::Value::Vec3([0.0; 3])));
+}

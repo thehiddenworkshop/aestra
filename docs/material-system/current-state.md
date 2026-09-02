@@ -272,8 +272,9 @@ adapter. A destructive format migration is not required to prove the first verti
 - compiled effects carry semantic programs, instances, and their dynamic source descriptors;
   presentation creates and refreshes emitter-specific contexts automatically, and Properties now
   renders the first reflection-driven material controls for selected renderers. Constant, random
-  range, texture, and boolean edits share semantic validation and the editor undo/redo history;
-  source/binding pickers and authored render-state controls remain;
+  range, texture, and boolean edits share semantic validation and the editor undo/redo history.
+  Reflected source menus expose only compatible constant, random-range, and typed public
+  effect/emitter bindings; authored render-state controls remain;
 - the initial generated backend supports UV0, particle color/opacity, effect time, arithmetic,
   interpolation, clamping, and sampled Texture2D parameters; richer inputs remain explicit errors;
 - no validated custom WESL functions;
@@ -305,4 +306,6 @@ current sprite and flipbook showcase paths, and native-GPU approval closes the M
 gate. Material 6 is complete with its scoped dynamic-value resolver, compiled/versioned descriptor
 persistence, automatic emitter-specific presentation contexts, and reusable engine-neutral control
 reflection. Material 7 can now generate Properties controls from that catalog and route edits
-through semantic authoring commands.
+through semantic authoring commands. Its reflected source menus can bind compatible public effect
+or emitter parameters and can switch back to editable constants or random ranges without replacing
+the compiled material program.

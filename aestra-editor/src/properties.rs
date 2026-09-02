@@ -10,9 +10,9 @@ use crate::timeline::{EffectClipChildSelection, EffectClipPath, TimelineState};
 use crate::*;
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
-    MaterialControlDescriptor, MaterialControlKind, ModuleRegistry,
+    MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, ModuleRegistry,
 };
-use aestra_core::material::{MaterialParameterValue, MaterialValue};
+use aestra_core::material::{MaterialParameterValue, MaterialValue, MaterialValueType};
 use aestra_core::{
     ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, ColorKey, Curve,
     CurveKey, EffectAsset, EffectClip, EffectClipId, EffectParameter, Gradient, MarkerId,
@@ -60,8 +60,8 @@ use renderer_controls::{
     handle_semantic_material_scalar_change, handle_semantic_material_toggle_change,
     normalize_renderer_uv_scrub_value, properties_renderer_card_memory,
     properties_renderer_collapsed, renderer_number_input_value, renderer_number_step,
-    renderer_numeric_scrub_command, spawn_renderer_card, sync_renderer_number_inputs,
-    sync_renderer_slider_inputs, sync_semantic_material_number_inputs,
+    renderer_numeric_scrub_command, set_semantic_material_source, spawn_renderer_card,
+    sync_renderer_number_inputs, sync_renderer_slider_inputs, sync_semantic_material_number_inputs,
 };
 
 pub(crate) const PROPERTIES_HIGHLIGHT_DURATION: f32 = 1.6;
@@ -155,6 +155,14 @@ pub(crate) enum StartReferenceTarget {
     ChoreographyEvent(ChoreographyEventId),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SemanticMaterialSourceChoice {
+    Constant,
+    RandomRange,
+    EffectParameter(ParameterId),
+    EmitterParameter(ParameterId),
+}
+
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub(crate) enum PropertiesAction {
     OpenModulePalette(StackStage),
@@ -183,6 +191,11 @@ pub(crate) enum PropertiesAction {
         instance: MaterialId,
         parameter: MaterialParameterId,
         asset: usize,
+    },
+    SetSemanticMaterialSource {
+        instance: MaterialId,
+        parameter: MaterialParameterId,
+        source: SemanticMaterialSourceChoice,
     },
     AddEventLink {
         trigger: EventTrigger,
@@ -562,6 +575,23 @@ fn handle_properties_actions(
                                 session.status = format!("Material program unavailable: {error}");
                             }
                         }
+                    }
+                    PropertiesAction::SetSemanticMaterialSource {
+                        instance,
+                        parameter,
+                        source,
+                    } => {
+                        let Some(catalog) = catalog.as_deref() else {
+                            session.status = "Material program catalog is unavailable".into();
+                            continue;
+                        };
+                        set_semantic_material_source(
+                            &mut session,
+                            catalog,
+                            instance,
+                            parameter,
+                            source,
+                        );
                     }
                     PropertiesAction::OpenModulePalette(_)
                     | PropertiesAction::CloseModulePalette
@@ -5472,6 +5502,7 @@ pub(crate) fn spawn_properties(
                                     session,
                                     catalog,
                                     properties_renderer_collapsed(settings, renderer),
+                                    asset_server,
                                 );
                             }
                             spawn_stage_diagnostics(
