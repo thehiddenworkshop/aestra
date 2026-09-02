@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "a6689fd2ff94d5c1541b335abd522cf096750cd99513d642eec37abb8aab8d92"
+        "d2da57480b02915b5d1cdf606ddd5222ef2b1554748ef36590d6b2d4e3f1cd87"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -431,6 +431,10 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     let mask_softness = MaterialExpressionId::from_u128(0x2021);
     let mask_invert = MaterialExpressionId::from_u128(0x2022);
     let radial_mask = MaterialExpressionId::from_u128(0x2023);
+    let dissolve_threshold = MaterialExpressionId::from_u128(0x2024);
+    let dissolve_edge_width = MaterialExpressionId::from_u128(0x2025);
+    let dissolve_invert = MaterialExpressionId::from_u128(0x2026);
+    let dissolve = MaterialExpressionId::from_u128(0x2027);
     program.expressions.extend([
         MaterialExpression {
             id: speed,
@@ -540,13 +544,34 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
                 invert: mask_invert,
             },
         },
+        MaterialExpression {
+            id: dissolve_threshold,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: dissolve_edge_width,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: dissolve_invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: dissolve,
+            kind: MaterialExpressionKind::Dissolve {
+                source: radial_mask,
+                threshold: dissolve_threshold,
+                edge_width: dissolve_edge_width,
+                invert: dissolve_invert,
+            },
+        },
     ]);
     for expression in &mut program.expressions {
         if let MaterialExpressionKind::SampleTexture { uv, .. } = &mut expression.kind {
             *uv = smoothstep;
         }
     }
-    program.outputs.alpha = radial_mask;
+    program.outputs.alpha = dissolve;
 
     let compiled = compile(&program);
 
@@ -699,6 +724,31 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     assert!(radial_mask_expression.contains("select"));
     assert!(radial_mask_expression.contains("<="));
     assert!(radial_mask_expression.contains("0.000001"));
+    let dissolve_line = compiled
+        .source_map
+        .wesl_lines
+        .iter()
+        .find_map(|(line, value)| {
+            compiled
+                .source_map
+                .ir
+                .expressions
+                .get(value)
+                .is_some_and(|expressions| expressions.contains(&dissolve))
+                .then_some(*line)
+        })
+        .expect("Dissolve must map to a generated shader line");
+    let dissolve_expression = compiled
+        .shader
+        .wesl
+        .lines()
+        .nth(dissolve_line as usize - 1)
+        .unwrap();
+    assert!(dissolve_expression.contains("max"));
+    assert!(dissolve_expression.contains("clamp"));
+    assert!(dissolve_expression.contains("select"));
+    assert!(dissolve_expression.contains(">="));
+    assert!(dissolve_expression.contains("0.000001"));
     assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 

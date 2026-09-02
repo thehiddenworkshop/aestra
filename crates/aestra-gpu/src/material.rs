@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 1;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 7;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 8;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 pub const MATERIAL_FRAGMENT_ENTRY_POINT: &str = "fragment_material";
 pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
@@ -698,6 +698,12 @@ fn instruction_expression(
             softness,
             invert,
         } => radial_mask_expression(*uv, *center, *radius, *softness, *invert),
+        MaterialIrInstruction::Dissolve {
+            source,
+            threshold,
+            edge_width,
+            invert,
+        } => dissolve_expression(*source, *threshold, *edge_width, *invert),
         MaterialIrInstruction::PanUv { uv, speed, time } => format!(
             "({} + ({} * {}))",
             value_name(*uv),
@@ -825,6 +831,26 @@ fn radial_mask_expression(
     let smooth = format!("(({factor} * {factor}) * (3.0 - (2.0 * {factor})))");
     let soft_mask = format!("(1.0 - {smooth})");
     let hard_mask = format!("select(0.0, 1.0, ({distance} <= {radius}))");
+    let mask = format!("select({hard_mask}, {soft_mask}, {safe})");
+    format!("select({mask}, (1.0 - {mask}), {invert})")
+}
+
+fn dissolve_expression(
+    source: MaterialIrValueId,
+    threshold: MaterialIrValueId,
+    edge_width: MaterialIrValueId,
+    invert: MaterialIrValueId,
+) -> String {
+    let source = value_name(source);
+    let threshold = value_name(threshold);
+    let edge_width = format!("max({}, 0.0)", value_name(edge_width));
+    let invert = value_name(invert);
+    let safe = format!("({edge_width} >= 0.000001)");
+    let denominator = format!("select(1.0, {edge_width}, {safe})");
+    let factor =
+        format!("clamp((({source} - ({threshold} - {edge_width})) / {denominator}), 0.0, 1.0)");
+    let soft_mask = format!("(({factor} * {factor}) * (3.0 - (2.0 * {factor})))");
+    let hard_mask = format!("select(0.0, 1.0, ({source} >= {threshold}))");
     let mask = format!("select({hard_mask}, {soft_mask}, {safe})");
     format!("select({mask}, (1.0 - {mask}), {invert})")
 }
@@ -1059,6 +1085,18 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(center.0);
             fingerprint.u32(radius.0);
             fingerprint.u32(softness.0);
+            fingerprint.u32(invert.0);
+        }
+        MaterialIrInstruction::Dissolve {
+            source,
+            threshold,
+            edge_width,
+            invert,
+        } => {
+            fingerprint.byte(17);
+            fingerprint.u32(source.0);
+            fingerprint.u32(threshold.0);
+            fingerprint.u32(edge_width.0);
             fingerprint.u32(invert.0);
         }
         MaterialIrInstruction::SampleTexture { texture, uv } => {

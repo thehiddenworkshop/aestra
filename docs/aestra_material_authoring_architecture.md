@@ -1975,8 +1975,8 @@ SoftParticle
 Flipbook
 ```
 
-Implementation status (2026-09-02): `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`, and
-`RadialMask` are completed
+Implementation status (2026-09-02): `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`,
+`RadialMask`, and `Dissolve` are completed
 vertical slices. They retain semantic UV/speed/time, UV/center/radians, UV/center/scale, and
 value/input-range/output-range, and edge-minimum/edge-maximum/value inputs through the authored
 model, validation, command history, backend-neutral IR, source mapping, and portable shader
@@ -1985,6 +1985,8 @@ range components to the output minimum. Smoothstep promotes scalar edges, suppor
 and maps equal-edge components to a deterministic step instead of backend-undefined behavior.
 RadialMask preserves UV, center, radius, softness, and invert sockets, clamps negative radius and
 softness to zero, and resolves zero softness as a deterministic hard boundary.
+Dissolve preserves source, threshold, edge-width, and invert sockets, clamps negative edge width to
+zero, and resolves zero edge width as a deterministic hard cut.
 The remaining primitives in this milestone are still planned.
 
 Then:

@@ -263,7 +263,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   controls project only transitions allowed by the reflected render-state policy and commit through
   the same semantic history.
 - [ ] **Material 8 — VFX semantic primitives.** `PanUV`, `RotateUV`, `ScaleUV`, `Remap`,
-  `Smoothstep`, and `RadialMask` are complete vertical slices: authored programs retain their explicit typed sockets; validation
+  `Smoothstep`, `RadialMask`, and `Dissolve` are complete vertical slices: authored programs retain their explicit typed sockets; validation
   reports socket-specific type errors; semantic commands rewire every socket with undo/redo;
   backend-neutral IR preserves each operation and source map; and generated portable shaders
   retain the semantic operation. Rotation uses radians around an explicit center; scale uses
@@ -273,8 +273,9 @@ the current sprite-material path until the native-GPU compatibility gate approve
   edges, and resolves equal-edge components as a deterministic step rather than relying on
   backend-undefined behavior. Radial masks retain explicit UV, center, radius, softness, and invert
   sockets; clamp negative radius and softness to zero; and produce a deterministic hard boundary
-  when softness is zero. Continue with dissolve, dissolve-edge, depth-fade/soft-particle, and
-  flipbook operations.
+  when softness is zero. Dissolve retains explicit source, threshold, edge-width, and invert
+  sockets; clamps negative edge width to zero; and produces a deterministic hard cut when its edge
+  width is zero. Continue with dissolve-edge, depth-fade/soft-particle, and flipbook operations.
 - [ ] **Material 9 — material stack.** Provide the ordered high-level modifier projection before a
   node graph.
 

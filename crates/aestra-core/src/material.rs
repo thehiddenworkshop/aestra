@@ -551,6 +551,12 @@ pub enum MaterialExpressionKind {
         softness: MaterialExpressionId,
         invert: MaterialExpressionId,
     },
+    Dissolve {
+        source: MaterialExpressionId,
+        threshold: MaterialExpressionId,
+        edge_width: MaterialExpressionId,
+        invert: MaterialExpressionId,
+    },
     PanUv {
         uv: MaterialExpressionId,
         speed: MaterialExpressionId,
@@ -613,6 +619,12 @@ impl MaterialExpressionKind {
                 softness,
                 invert,
             } => vec![*uv, *center, *radius, *softness, *invert],
+            Self::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => vec![*source, *threshold, *edge_width, *invert],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -1232,6 +1244,49 @@ fn infer_expression(
                             .max(center.evaluation_domain)
                             .max(radius.evaluation_domain)
                             .max(softness.evaluation_domain)
+                            .max(invert.evaluation_domain),
+                    })
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::Dissolve {
+            source,
+            threshold,
+            edge_width,
+            invert,
+        } => {
+            let source = dependency(*source);
+            let threshold = dependency(*threshold);
+            let edge_width = dependency(*edge_width);
+            let invert = dependency(*invert);
+            match (source, threshold, edge_width, invert) {
+                (Some(source), Some(threshold), Some(edge_width), Some(invert)) => {
+                    let mut valid = true;
+                    for (socket, info, expected) in [
+                        ("source", source, MaterialValueType::Float),
+                        ("threshold", threshold, MaterialValueType::Float),
+                        ("edge_width", edge_width, MaterialValueType::Float),
+                        ("invert", invert, MaterialValueType::Bool),
+                    ] {
+                        if info.value_type != expected {
+                            material_type_error(
+                                report,
+                                format!("{path}.{socket}"),
+                                format!(
+                                    "Dissolve {socket} expects {expected:?} but received {:?}",
+                                    info.value_type
+                                ),
+                            );
+                            valid = false;
+                        }
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Float,
+                        evaluation_domain: source
+                            .evaluation_domain
+                            .max(threshold.evaluation_domain)
+                            .max(edge_width.evaluation_domain)
                             .max(invert.evaluation_domain),
                     })
                 }

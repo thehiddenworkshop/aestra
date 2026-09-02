@@ -78,6 +78,12 @@ pub enum MaterialIrInstruction {
         softness: MaterialIrValueId,
         invert: MaterialIrValueId,
     },
+    Dissolve {
+        source: MaterialIrValueId,
+        threshold: MaterialIrValueId,
+        edge_width: MaterialIrValueId,
+        invert: MaterialIrValueId,
+    },
     PanUv {
         uv: MaterialIrValueId,
         speed: MaterialIrValueId,
@@ -132,6 +138,12 @@ impl MaterialIrInstruction {
                 softness,
                 invert,
             } => vec![*uv, *center, *radius, *softness, *invert],
+            Self::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => vec![*source, *threshold, *edge_width, *invert],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -196,6 +208,17 @@ impl MaterialIrInstruction {
                 remap(center);
                 remap(radius);
                 remap(softness);
+                remap(invert);
+            }
+            Self::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => {
+                remap(source);
+                remap(threshold);
+                remap(edge_width);
                 remap(invert);
             }
             Self::PanUv { uv, speed, time } => {
@@ -496,6 +519,17 @@ impl MaterialIrBuilder<'_> {
                 center: self.lower(center),
                 radius: self.lower(radius),
                 softness: self.lower(softness),
+                invert: self.lower(invert),
+            },
+            MaterialExpressionKind::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => MaterialIrInstruction::Dissolve {
+                source: self.lower(source),
+                threshold: self.lower(threshold),
+                edge_width: self.lower(edge_width),
                 invert: self.lower(invert),
             },
             MaterialExpressionKind::PanUv { uv, speed, time } => {

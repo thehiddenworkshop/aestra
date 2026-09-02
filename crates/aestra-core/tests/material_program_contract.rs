@@ -964,6 +964,107 @@ fn radial_mask_reports_each_mistyped_socket() {
 }
 
 #[test]
+fn dissolve_round_trips_typed_semantic_sockets_and_outputs_a_particle_mask() {
+    let source = MaterialExpressionId::from_u128(0xB501);
+    let threshold = MaterialExpressionId::from_u128(0xB502);
+    let edge_width = MaterialExpressionId::from_u128(0xB503);
+    let invert = MaterialExpressionId::from_u128(0xB504);
+    let dissolve = MaterialExpressionId::from_u128(0xB505);
+    let mut program = MaterialProgram::additive_sprite("Dissolve");
+    program.expressions.extend([
+        MaterialExpression {
+            id: source,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleRandom),
+        },
+        MaterialExpression {
+            id: threshold,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleNormalizedAge),
+        },
+        MaterialExpression {
+            id: edge_width,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.08)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: dissolve,
+            kind: MaterialExpressionKind::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = dissolve;
+
+    let analysis = program.analyze().unwrap();
+    assert_eq!(
+        analysis.expressions[&dissolve].value_type,
+        MaterialValueType::Float
+    );
+    assert_eq!(
+        analysis.expressions[&dissolve].evaluation_domain,
+        MaterialExpressionDomain::Particle
+    );
+    let encoded = program.to_pretty_ron().unwrap();
+    assert!(encoded.contains("Dissolve"));
+    assert_eq!(
+        MaterialProgram::from_ron(&encoded).unwrap(),
+        program.normalized()
+    );
+}
+
+#[test]
+fn dissolve_reports_each_mistyped_socket() {
+    let source = MaterialExpressionId::from_u128(0xB601);
+    let threshold = MaterialExpressionId::from_u128(0xB602);
+    let edge_width = MaterialExpressionId::from_u128(0xB603);
+    let invert = MaterialExpressionId::from_u128(0xB604);
+    let dissolve = MaterialExpressionId::from_u128(0xB605);
+    let mut program = MaterialProgram::additive_sprite("Invalid dissolve");
+    program.expressions.extend([
+        MaterialExpression {
+            id: source,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.0; 2])),
+        },
+        MaterialExpression {
+            id: threshold,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: edge_width,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec3([0.0; 3])),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: dissolve,
+            kind: MaterialExpressionKind::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = dissolve;
+
+    let report = program.validation_report();
+    for socket in [".source", ".threshold", ".edge_width", ".invert"] {
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+                && diagnostic.path.ends_with(socket)
+                && diagnostic.message.contains("Dissolve")
+        }));
+    }
+}
+
+#[test]
 fn material_validation_rejects_output_and_socket_type_mismatches() {
     let mut program = MaterialProgram::additive_sprite("Bad types");
     let vector = MaterialExpressionId::from_u128(0xB01);
