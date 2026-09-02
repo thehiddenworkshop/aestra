@@ -1111,6 +1111,20 @@ fn spawn_semantic_material_stack(
         }
         MaterialStackProjection::Stack { entries } => {
             spawn_properties_read_only_control(parent, "Material Stack", "Semantic modifiers");
+            let preset_targets = MaterialCompiler
+                .stack_preset_targets(program)
+                .unwrap_or_default();
+            let preset_options =
+                material_stack_preset_options(program.id, entries, &preset_targets);
+            if !preset_options.is_empty() {
+                spawn_properties_combo_row(
+                    parent,
+                    "Preset",
+                    "Choose",
+                    &preset_options,
+                    Some("Insert a configured modifier chain as one undoable material edit."),
+                );
+            }
             let insert_targets = MaterialCompiler
                 .stack_insert_targets(program)
                 .unwrap_or_default();
@@ -1155,6 +1169,31 @@ fn spawn_semantic_material_stack(
             spawn_properties_read_only_control(parent, "Material Stack", reason.display_name());
         }
     }
+}
+
+fn material_stack_preset_options(
+    program: MaterialProgramId,
+    entries: &[MaterialStackEntry],
+    targets: &[MaterialStackPresetTarget],
+) -> Vec<ComboOption<PropertiesAction>> {
+    targets
+        .iter()
+        .map(|target| {
+            let position = target.index.checked_sub(1).map_or_else(
+                || "First".to_owned(),
+                |index| format!("After {}", entries[index].kind.display_name()),
+            );
+            ComboOption {
+                label: format!("{} · {position}", target.preset.display_name()),
+                selected: false,
+                action: PropertiesAction::InsertSemanticMaterialPreset {
+                    program,
+                    preset: target.preset,
+                    target_index: target.index,
+                },
+            }
+        })
+        .collect()
 }
 
 fn material_stack_insert_options(
@@ -2309,6 +2348,36 @@ mod tests {
                 .map(|option| option.label)
                 .collect::<Vec<_>>(),
             vec!["UV Rotate · First", "UV Scale · After UV Pan"]
+        );
+    }
+
+    #[test]
+    fn material_stack_preset_options_name_the_chain_and_edge() {
+        let entries = [MaterialStackEntry {
+            expression: aestra_core::MaterialExpressionId::from_u128(0x7120),
+            kind: aestra_compiler::MaterialStackModifierKind::BaseTexture,
+            enabled: true,
+        }];
+        let options = material_stack_preset_options(
+            MaterialProgramId::from_u128(0x7121),
+            &entries,
+            &[
+                MaterialStackPresetTarget {
+                    index: 0,
+                    preset: MaterialStackPresetKind::UvDrift,
+                },
+                MaterialStackPresetTarget {
+                    index: 1,
+                    preset: MaterialStackPresetKind::SoftDissolve,
+                },
+            ],
+        );
+        assert_eq!(
+            options
+                .into_iter()
+                .map(|option| option.label)
+                .collect::<Vec<_>>(),
+            vec!["UV Drift · First", "Soft Dissolve · After Base Texture"]
         );
     }
 

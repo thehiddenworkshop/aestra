@@ -288,7 +288,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   coordinates cross the material ABI as `Uv0`. Semantic materials therefore sample sprite and
   flipbook renderers through the same typed texture operation without duplicating animation state
   in the expression graph.
-- [ ] **Material 9 — material stack.** The first read-only vertical slice is complete. The compiler
+- [x] **Material 9 — material stack.** The compiler
   deterministically projects reachable semantic operations into a source-to-output stack with
   stable expression IDs. Linear chains appear in Properties; branched or independent modifier
   chains explicitly fall back to an Advanced representation instead of implying an unsafe order.
@@ -304,7 +304,10 @@ the current sprite-material path until the native-GPU compatibility gate approve
   catalog, and participate chronologically in the editor's shared undo/redo stream. Selecting a
   modifier now opens a compiler-reflected inspector for its owned literal settings; numeric,
   vector, and boolean edits preserve expression identity and use that same validated transaction
-  path. Continue with preset insertion before a node graph.
+  path. Compiler-owned UV Drift, Soft Dissolve, and Contrast Shape presets expose only compatible
+  insertion edges, configure useful defaults, and commit their complete modifier chains as one
+  validated undoable replacement. The stack therefore covers common flame, mask/shield, and
+  dissolve authoring without requiring a node graph.
 
 ### Phase C — AI-first authoring
 

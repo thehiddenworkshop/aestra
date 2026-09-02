@@ -11,8 +11,8 @@ use crate::*;
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
     MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, MaterialStackEntry,
-    MaterialStackInsertTarget, MaterialStackMoveTarget, MaterialStackProjection,
-    MaterialStackProperty, ModuleRegistry,
+    MaterialStackInsertTarget, MaterialStackMoveTarget, MaterialStackPresetKind,
+    MaterialStackPresetTarget, MaterialStackProjection, MaterialStackProperty, ModuleRegistry,
 };
 use aestra_core::material::{
     MaterialCullMode, MaterialDepthTest, MaterialParameterValue, MaterialRenderState,
@@ -227,6 +227,11 @@ pub(crate) enum PropertiesAction {
     InsertSemanticMaterialModifier {
         program: MaterialProgramId,
         kind: aestra_compiler::MaterialStackModifierKind,
+        target_index: usize,
+    },
+    InsertSemanticMaterialPreset {
+        program: MaterialProgramId,
+        preset: MaterialStackPresetKind,
         target_index: usize,
     },
     RemoveSemanticMaterialModifier {
@@ -691,6 +696,26 @@ fn handle_properties_actions(
                             |current| {
                                 MaterialCompiler
                                     .plan_stack_insert(current, kind, target_index)
+                                    .map(|plan| plan.replacement)
+                                    .map_err(|error| error.to_string())
+                            },
+                        );
+                    }
+                    PropertiesAction::InsertSemanticMaterialPreset {
+                        program,
+                        preset,
+                        target_index,
+                    } => {
+                        apply_material_program_edit(
+                            &mut session,
+                            catalog.as_deref_mut(),
+                            material_history.as_deref_mut(),
+                            history_ledger.as_deref_mut(),
+                            program,
+                            "Applied material preset",
+                            |current| {
+                                MaterialCompiler
+                                    .plan_stack_insert_preset(current, preset, target_index)
                                     .map(|plan| plan.replacement)
                                     .map_err(|error| error.to_string())
                             },

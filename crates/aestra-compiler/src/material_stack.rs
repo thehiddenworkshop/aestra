@@ -121,6 +121,56 @@ pub struct MaterialStackInsertPlan {
     pub replacement: MaterialProgram,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MaterialStackPresetKind {
+    UvDrift,
+    SoftDissolve,
+    ContrastShape,
+}
+
+impl MaterialStackPresetKind {
+    pub const ALL: [Self; 3] = [Self::UvDrift, Self::SoftDissolve, Self::ContrastShape];
+
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::UvDrift => "UV Drift",
+            Self::SoftDissolve => "Soft Dissolve",
+            Self::ContrastShape => "Contrast Shape",
+        }
+    }
+
+    pub const fn modifiers(self) -> &'static [MaterialStackModifierKind] {
+        match self {
+            Self::UvDrift => &[
+                MaterialStackModifierKind::PanUv,
+                MaterialStackModifierKind::ScaleUv,
+            ],
+            Self::SoftDissolve => &[
+                MaterialStackModifierKind::Dissolve,
+                MaterialStackModifierKind::SoftParticle,
+            ],
+            Self::ContrastShape => &[
+                MaterialStackModifierKind::Remap,
+                MaterialStackModifierKind::Smoothstep,
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterialStackPresetTarget {
+    pub index: usize,
+    pub preset: MaterialStackPresetKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialStackPresetPlan {
+    pub preset: MaterialStackPresetKind,
+    pub index: usize,
+    pub expressions: Vec<MaterialExpressionId>,
+    pub replacement: MaterialProgram,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MaterialStackRemovePlan {
     pub expression: MaterialExpressionId,
@@ -222,6 +272,13 @@ pub enum MaterialStackEditError {
     #[error("{kind:?} cannot be inserted at stack index {index} without changing graph meaning")]
     IncompatibleInsertion {
         kind: MaterialStackModifierKind,
+        index: usize,
+    },
+    #[error(
+        "preset {preset:?} cannot be inserted at stack index {index} without changing graph meaning"
+    )]
+    IncompatiblePreset {
+        preset: MaterialStackPresetKind,
         index: usize,
     },
     #[error("material modifier {expression} cannot be removed without changing graph meaning")]
@@ -431,6 +488,44 @@ impl MaterialCompiler {
             expression,
             index,
             kind,
+            replacement,
+        })
+    }
+
+    /// Reports preset/edge pairs whose complete modifier chain remains a valid linear stack.
+    pub fn stack_preset_targets(
+        &self,
+        program: &MaterialProgram,
+    ) -> Result<Vec<MaterialStackPresetTarget>, MaterialStackEditError> {
+        let entries = editable_stack_entries(self.project_stack(program)?)?;
+        let mut targets = Vec::new();
+        for index in 0..=entries.len() {
+            for preset in MaterialStackPresetKind::ALL {
+                if plan_stack_preset_inner(program, &entries, preset, index).is_some() {
+                    targets.push(MaterialStackPresetTarget { index, preset });
+                }
+            }
+        }
+        Ok(targets)
+    }
+
+    /// Inserts and configures a complete preset as one validated program replacement.
+    pub fn plan_stack_insert_preset(
+        &self,
+        program: &MaterialProgram,
+        preset: MaterialStackPresetKind,
+        index: usize,
+    ) -> Result<MaterialStackPresetPlan, MaterialStackEditError> {
+        let entries = editable_stack_entries(self.project_stack(program)?)?;
+        if index > entries.len() {
+            return Err(MaterialStackEditError::TargetOutOfBounds { index });
+        }
+        let (expressions, replacement) = plan_stack_preset_inner(program, &entries, preset, index)
+            .ok_or(MaterialStackEditError::IncompatiblePreset { preset, index })?;
+        Ok(MaterialStackPresetPlan {
+            preset,
+            index,
+            expressions,
             replacement,
         })
     }
@@ -701,6 +796,143 @@ fn editable_stack_entries(
         MaterialStackProjection::Stack { entries } => Ok(entries),
         MaterialStackProjection::Advanced { .. } => Err(MaterialStackEditError::Advanced),
     }
+}
+
+fn plan_stack_preset_inner(
+    program: &MaterialProgram,
+    entries: &[MaterialStackEntry],
+    preset: MaterialStackPresetKind,
+    index: usize,
+) -> Option<(Vec<MaterialExpressionId>, MaterialProgram)> {
+    let mut replacement = program.clone();
+    let mut projected = entries.to_vec();
+    let mut expressions = Vec::with_capacity(preset.modifiers().len());
+    for (offset, kind) in preset.modifiers().iter().copied().enumerate() {
+        let insertion_index = index + offset;
+        let (expression, next) =
+            plan_stack_insert_inner(&replacement, &projected, kind, insertion_index)?;
+        replacement = next;
+        expressions.push(expression);
+        projected =
+            editable_stack_entries(MaterialCompiler.project_stack(&replacement).ok()?).ok()?;
+    }
+    apply_preset_defaults(&mut replacement, preset, &expressions)?;
+    replacement.analyze().ok()?;
+    let projected =
+        editable_stack_entries(MaterialCompiler.project_stack(&replacement).ok()?).ok()?;
+    let mut expected = entries
+        .iter()
+        .map(|entry| entry.expression)
+        .collect::<Vec<_>>();
+    expected.splice(index..index, expressions.iter().copied());
+    projected
+        .iter()
+        .map(|entry| entry.expression)
+        .eq(expected)
+        .then_some((expressions, replacement))
+}
+
+fn apply_preset_defaults(
+    program: &mut MaterialProgram,
+    preset: MaterialStackPresetKind,
+    expressions: &[MaterialExpressionId],
+) -> Option<()> {
+    let set = |program: &mut MaterialProgram,
+               expression: MaterialExpressionId,
+               property: MaterialStackProperty,
+               value: MaterialValue| {
+        set_modifier_constant(program, expression, property, value)
+    };
+    match preset {
+        MaterialStackPresetKind::UvDrift => {
+            set(
+                program,
+                expressions[0],
+                MaterialStackProperty::Speed,
+                MaterialValue::Vec2([0.15, 0.05]),
+            )?;
+            set(
+                program,
+                expressions[1],
+                MaterialStackProperty::Scale,
+                MaterialValue::Vec2([1.1, 1.1]),
+            )?;
+        }
+        MaterialStackPresetKind::SoftDissolve => {
+            set(
+                program,
+                expressions[0],
+                MaterialStackProperty::Threshold,
+                MaterialValue::Float(0.45),
+            )?;
+            set(
+                program,
+                expressions[0],
+                MaterialStackProperty::EdgeWidth,
+                MaterialValue::Float(0.08),
+            )?;
+            set(
+                program,
+                expressions[1],
+                MaterialStackProperty::FadeDistance,
+                MaterialValue::Float(0.35),
+            )?;
+        }
+        MaterialStackPresetKind::ContrastShape => {
+            set(
+                program,
+                expressions[0],
+                MaterialStackProperty::InputMinimum,
+                MaterialValue::Float(0.1),
+            )?;
+            set(
+                program,
+                expressions[0],
+                MaterialStackProperty::InputMaximum,
+                MaterialValue::Float(0.9),
+            )?;
+            set(
+                program,
+                expressions[1],
+                MaterialStackProperty::EdgeMinimum,
+                MaterialValue::Float(0.2),
+            )?;
+            set(
+                program,
+                expressions[1],
+                MaterialStackProperty::EdgeMaximum,
+                MaterialValue::Float(0.8),
+            )?;
+        }
+    }
+    Some(())
+}
+
+fn set_modifier_constant(
+    program: &mut MaterialProgram,
+    expression: MaterialExpressionId,
+    property: MaterialStackProperty,
+    value: MaterialValue,
+) -> Option<()> {
+    let operation = program
+        .expressions
+        .iter()
+        .find(|candidate| candidate.id == expression)?;
+    let target = modifier_property_targets(&operation.kind)
+        .into_iter()
+        .find_map(|(candidate, target)| (candidate == property).then_some(target))?;
+    let target = program
+        .expressions
+        .iter_mut()
+        .find(|candidate| candidate.id == target)?;
+    let MaterialExpressionKind::Constant(current) = &mut target.kind else {
+        return None;
+    };
+    if !current.has_same_type(&value) || !value.is_valid() {
+        return None;
+    }
+    *current = value;
+    Some(())
 }
 
 fn plan_stack_insert_inner(

@@ -2047,8 +2047,10 @@ Implement:
   settings, with validated atomic project persistence and shared undo/redo);
 - enable/disable (implemented as a persisted, lossless typed bypass that retains operation IDs and
   settings);
-- preset insertion;
-- automatic lowering to AST.
+- preset insertion (implemented with compiler-owned UV Drift, Soft Dissolve, and Contrast Shape
+  chains, compatible-edge discovery, useful defaults, and one atomic replacement);
+- automatic lowering to AST (implemented by the stack and preset planners, which emit validated
+  `MaterialProgram` replacements rather than persisting a second stack model).
 
 Example:
 

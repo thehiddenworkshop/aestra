@@ -1,7 +1,8 @@
 use aestra_compiler::{
     MaterialCompiler, MaterialStackEditError, MaterialStackFallbackReason,
     MaterialStackInsertTarget, MaterialStackModifierKind, MaterialStackMoveError,
-    MaterialStackMoveTarget, MaterialStackProjection, MaterialStackProperty,
+    MaterialStackMoveTarget, MaterialStackPresetKind, MaterialStackPresetTarget,
+    MaterialStackProjection, MaterialStackProperty,
 };
 use aestra_core::material::{
     MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
@@ -459,6 +460,82 @@ fn compatible_modifier_insertion_uses_defaults_and_preserves_the_linear_stack() 
     assert_eq!(entries[1].expression, plan.expression);
     assert_eq!(entries[2].expression, rotate);
     assert!(entries[1].enabled);
+}
+
+#[test]
+fn compatible_preset_insertion_is_one_configured_stack_replacement() {
+    let program = reorderable_uv_stack_program();
+    let original_entries = match MaterialCompiler.project_stack(&program).unwrap() {
+        MaterialStackProjection::Stack { entries } => entries,
+        MaterialStackProjection::Advanced { .. } => panic!("fixture must be a stack"),
+    };
+    let targets = MaterialCompiler.stack_preset_targets(&program).unwrap();
+    assert!(targets.contains(&MaterialStackPresetTarget {
+        index: 0,
+        preset: MaterialStackPresetKind::UvDrift,
+    }));
+
+    let plan = MaterialCompiler
+        .plan_stack_insert_preset(&program, MaterialStackPresetKind::UvDrift, 0)
+        .unwrap();
+    assert_eq!(plan.expressions.len(), 2);
+    let MaterialStackProjection::Stack { entries } =
+        MaterialCompiler.project_stack(&plan.replacement).unwrap()
+    else {
+        panic!("preset replacement must remain a stack");
+    };
+    assert_eq!(entries[0].expression, plan.expressions[0]);
+    assert_eq!(entries[0].kind, MaterialStackModifierKind::PanUv);
+    assert_eq!(entries[1].expression, plan.expressions[1]);
+    assert_eq!(entries[1].kind, MaterialStackModifierKind::ScaleUv);
+    assert_eq!(
+        entries[2..]
+            .iter()
+            .map(|entry| entry.expression)
+            .collect::<Vec<_>>(),
+        original_entries
+            .iter()
+            .map(|entry| entry.expression)
+            .collect::<Vec<_>>()
+    );
+    let pan_settings = MaterialCompiler
+        .stack_modifier_properties(&plan.replacement, plan.expressions[0])
+        .unwrap();
+    assert_eq!(
+        pan_settings
+            .iter()
+            .find(|property| property.property == MaterialStackProperty::Speed)
+            .unwrap()
+            .value,
+        MaterialValue::Vec2([0.15, 0.05])
+    );
+    let scale_settings = MaterialCompiler
+        .stack_modifier_properties(&plan.replacement, plan.expressions[1])
+        .unwrap();
+    assert_eq!(
+        scale_settings
+            .iter()
+            .find(|property| property.property == MaterialStackProperty::Scale)
+            .unwrap()
+            .value,
+        MaterialValue::Vec2([1.1, 1.1])
+    );
+}
+
+#[test]
+fn incompatible_preset_is_rejected_without_a_partial_replacement() {
+    let program = reorderable_uv_stack_program();
+    assert!(matches!(
+        MaterialCompiler.plan_stack_insert_preset(
+            &program,
+            MaterialStackPresetKind::SoftDissolve,
+            0,
+        ),
+        Err(MaterialStackEditError::IncompatiblePreset {
+            preset: MaterialStackPresetKind::SoftDissolve,
+            index: 0,
+        })
+    ));
 }
 
 #[test]
