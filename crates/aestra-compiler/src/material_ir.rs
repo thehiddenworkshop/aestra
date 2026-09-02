@@ -96,6 +96,13 @@ pub enum MaterialIrInstruction {
         fade_distance: MaterialIrValueId,
         invert: MaterialIrValueId,
     },
+    SoftParticle {
+        alpha: MaterialIrValueId,
+        scene_depth: MaterialIrValueId,
+        pixel_depth: MaterialIrValueId,
+        fade_distance: MaterialIrValueId,
+        invert: MaterialIrValueId,
+    },
     PanUv {
         uv: MaterialIrValueId,
         speed: MaterialIrValueId,
@@ -168,6 +175,13 @@ impl MaterialIrInstruction {
                 fade_distance,
                 invert,
             } => vec![*scene_depth, *pixel_depth, *fade_distance, *invert],
+            Self::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => vec![*alpha, *scene_depth, *pixel_depth, *fade_distance, *invert],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -262,6 +276,19 @@ impl MaterialIrInstruction {
                 fade_distance,
                 invert,
             } => {
+                remap(scene_depth);
+                remap(pixel_depth);
+                remap(fade_distance);
+                remap(invert);
+            }
+            Self::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => {
+                remap(alpha);
                 remap(scene_depth);
                 remap(pixel_depth);
                 remap(fade_distance);
@@ -595,6 +622,19 @@ impl MaterialIrBuilder<'_> {
                 fade_distance,
                 invert,
             } => MaterialIrInstruction::DepthFade {
+                scene_depth: self.lower(scene_depth),
+                pixel_depth: self.lower(pixel_depth),
+                fade_distance: self.lower(fade_distance),
+                invert: self.lower(invert),
+            },
+            MaterialExpressionKind::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => MaterialIrInstruction::SoftParticle {
+                alpha: self.lower(alpha),
                 scene_depth: self.lower(scene_depth),
                 pixel_depth: self.lower(pixel_depth),
                 fade_distance: self.lower(fade_distance),

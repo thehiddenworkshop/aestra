@@ -263,7 +263,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   controls project only transitions allowed by the reflected render-state policy and commit through
   the same semantic history.
 - [ ] **Material 8 — VFX semantic primitives.** `PanUV`, `RotateUV`, `ScaleUV`, `Remap`,
-  `Smoothstep`, `RadialMask`, `Dissolve`, `DissolveEdge`, and `DepthFade` are complete vertical slices: authored programs retain their explicit typed sockets; validation
+  `Smoothstep`, `RadialMask`, `Dissolve`, `DissolveEdge`, `DepthFade`, and `SoftParticle` are complete vertical slices: authored programs retain their explicit typed sockets; validation
   reports socket-specific type errors; semantic commands rewire every socket with undo/redo;
   backend-neutral IR preserves each operation and source map; and generated portable shaders
   retain the semantic operation. Rotation uses radians around an explicit center; scale uses
@@ -281,8 +281,9 @@ the current sprite-material path until the native-GPU compatibility gate approve
   depth against an explicit fade distance, supports inversion, and uses a deterministic hard
   intersection test for non-positive distances. The Bevy adapter supplies a separate 3D depth
   prepass through a portable group-3 ABI and specializes single-sample/MSAA shaders; depth inputs
-  are intentionally unavailable on the 2D presentation path. Continue with soft-particle and
-  flipbook operations.
+  are intentionally unavailable on the 2D presentation path. SoftParticle is the artist-facing
+  alpha operation: it multiplies a typed source alpha by the same deterministic depth fade and
+  reuses the existing prepass contract. Continue with the flipbook operation.
 - [ ] **Material 9 — material stack.** Provide the ordered high-level modifier projection before a
   node graph.
 

@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "918d43602516c816009c4618455397ba0f890cfa548851b7b9359c05cac4a4cf"
+        "dd1b055ee8e8f793d1ffa72a1053e26ee607fe782d2b4d52ed9109a370a2c87e"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -881,6 +881,95 @@ fn depth_fade_compiles_single_and_multisampled_scene_depth_variants() {
             .multisampled_shader
             .wesl
             .contains("@builtin(sample_index)")
+    );
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+    assert_portable_shader_targets(&compiled.multisampled_shader.wgsl);
+}
+
+#[test]
+fn soft_particle_multiplies_alpha_by_depth_fade_for_both_scene_depth_variants() {
+    let alpha = MaterialExpressionId::from_u128(0xd201);
+    let scene_depth = MaterialExpressionId::from_u128(0xd202);
+    let pixel_depth = MaterialExpressionId::from_u128(0xd203);
+    let fade_distance = MaterialExpressionId::from_u128(0xd204);
+    let invert = MaterialExpressionId::from_u128(0xd205);
+    let soft_particle = MaterialExpressionId::from_u128(0xd206);
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Soft particle");
+    program.expressions.extend([
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+        },
+        MaterialExpression {
+            id: pixel_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+        },
+        MaterialExpression {
+            id: fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: soft_particle,
+            kind: MaterialExpressionKind::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = soft_particle;
+
+    let compiled = compile(&program);
+
+    assert_eq!(
+        compiled.reflection.required_scene_inputs,
+        vec![MaterialInput::SceneDepth, MaterialInput::PixelDepth]
+    );
+    assert!(
+        compiled
+            .reflection
+            .required_particle_inputs
+            .contains(&MaterialInput::ParticleOpacity)
+    );
+    let expression_line = compiled
+        .source_map
+        .wesl_lines
+        .iter()
+        .find_map(|(line, value)| {
+            compiled
+                .source_map
+                .ir
+                .expressions
+                .get(value)
+                .is_some_and(|expressions| expressions.contains(&soft_particle))
+                .then_some(*line)
+        })
+        .expect("SoftParticle must map to a generated shader line");
+    let expression = compiled
+        .shader
+        .wesl
+        .lines()
+        .nth(expression_line as usize - 1)
+        .unwrap();
+    assert!(expression.contains('*'));
+    assert!(expression.contains("clamp"));
+    assert!(expression.contains("select"));
+    assert!(compiled.shader.wesl.contains("texture_depth_2d"));
+    assert!(
+        compiled
+            .multisampled_shader
+            .wesl
+            .contains("texture_depth_multisampled_2d")
     );
     assert_portable_shader_targets(&compiled.shader.wgsl);
     assert_portable_shader_targets(&compiled.multisampled_shader.wgsl);

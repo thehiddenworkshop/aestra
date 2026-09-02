@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 2;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 10;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 11;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
@@ -805,6 +805,13 @@ fn instruction_expression(
             fade_distance,
             invert,
         } => depth_fade_expression(*scene_depth, *pixel_depth, *fade_distance, *invert),
+        MaterialIrInstruction::SoftParticle {
+            alpha,
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => soft_particle_expression(*alpha, *scene_depth, *pixel_depth, *fade_distance, *invert),
         MaterialIrInstruction::PanUv { uv, speed, time } => format!(
             "({} + ({} * {}))",
             value_name(*uv),
@@ -993,6 +1000,17 @@ fn depth_fade_expression(
     let hard = format!("select(0.0, 1.0, ({separation} > 0.0))");
     let fade = format!("select({hard}, {soft}, {safe})");
     format!("select({fade}, (1.0 - {fade}), {invert})")
+}
+
+fn soft_particle_expression(
+    alpha: MaterialIrValueId,
+    scene_depth: MaterialIrValueId,
+    pixel_depth: MaterialIrValueId,
+    fade_distance: MaterialIrValueId,
+    invert: MaterialIrValueId,
+) -> String {
+    let fade = depth_fade_expression(scene_depth, pixel_depth, fade_distance, invert);
+    format!("({} * {fade})", value_name(alpha))
 }
 
 fn promote_operand(
@@ -1248,6 +1266,20 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             invert,
         } => {
             fingerprint.byte(19);
+            fingerprint.u32(scene_depth.0);
+            fingerprint.u32(pixel_depth.0);
+            fingerprint.u32(fade_distance.0);
+            fingerprint.u32(invert.0);
+        }
+        MaterialIrInstruction::SoftParticle {
+            alpha,
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => {
+            fingerprint.byte(20);
+            fingerprint.u32(alpha.0);
             fingerprint.u32(scene_depth.0);
             fingerprint.u32(pixel_depth.0);
             fingerprint.u32(fade_distance.0);

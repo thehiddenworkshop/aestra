@@ -125,6 +125,7 @@ pub enum MaterialExpressionInput {
     Texture,
     Uv,
     Source,
+    SourceAlpha,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -701,6 +702,25 @@ fn rewire_expression(
             MaterialExpressionInput::FadeDistance,
         ) => fade_distance,
         (MaterialExpressionKind::DepthFade { invert, .. }, MaterialExpressionInput::Invert) => {
+            invert
+        }
+        (
+            MaterialExpressionKind::SoftParticle { alpha, .. },
+            MaterialExpressionInput::SourceAlpha,
+        ) => alpha,
+        (
+            MaterialExpressionKind::SoftParticle { scene_depth, .. },
+            MaterialExpressionInput::SceneDepth,
+        ) => scene_depth,
+        (
+            MaterialExpressionKind::SoftParticle { pixel_depth, .. },
+            MaterialExpressionInput::PixelDepth,
+        ) => pixel_depth,
+        (
+            MaterialExpressionKind::SoftParticle { fade_distance, .. },
+            MaterialExpressionInput::FadeDistance,
+        ) => fade_distance,
+        (MaterialExpressionKind::SoftParticle { invert, .. }, MaterialExpressionInput::Invert) => {
             invert
         }
         (MaterialExpressionKind::PanUv { uv, .. }, MaterialExpressionInput::Uv) => uv,

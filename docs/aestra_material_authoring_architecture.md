@@ -1976,7 +1976,7 @@ Flipbook
 ```
 
 Implementation status (2026-09-02): `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`,
-`RadialMask`, `Dissolve`, `DissolveEdge`, and `DepthFade` are completed
+`RadialMask`, `Dissolve`, `DissolveEdge`, `DepthFade`, and `SoftParticle` are completed
 vertical slices. They retain semantic UV/speed/time, UV/center/radians, UV/center/scale, and
 value/input-range/output-range, and edge-minimum/edge-maximum/value inputs through the authored
 model, validation, command history, backend-neutral IR, source mapping, and portable shader
@@ -1996,7 +1996,10 @@ clamp to zero and zero distance becomes a deterministic hard intersection test. 
 ABI reserves bind group 3 for renderer-owned view inputs; the Bevy adapter binds its separate 3D
 depth-prepass texture and view reconstruction data, including an MSAA shader/layout variant. It
 does not sample the active depth attachment and does not claim scene-depth support for 2D views.
-The remaining primitives in this milestone are still planned.
+SoftParticle retains explicit source-alpha, scene-depth, pixel-depth, fade-distance, and invert
+sockets. It multiplies source alpha by the same deterministic depth-fade result, so it inherits the
+renderer-owned prepass, MSAA specialization, and non-positive-distance behavior without introducing
+a second depth contract. The remaining primitives in this milestone are still planned.
 
 Then:
 

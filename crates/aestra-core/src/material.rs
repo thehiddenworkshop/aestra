@@ -574,6 +574,14 @@ pub enum MaterialExpressionKind {
         fade_distance: MaterialExpressionId,
         invert: MaterialExpressionId,
     },
+    /// Applies intersection fading directly to a source alpha value.
+    SoftParticle {
+        alpha: MaterialExpressionId,
+        scene_depth: MaterialExpressionId,
+        pixel_depth: MaterialExpressionId,
+        fade_distance: MaterialExpressionId,
+        invert: MaterialExpressionId,
+    },
     PanUv {
         uv: MaterialExpressionId,
         speed: MaterialExpressionId,
@@ -654,6 +662,13 @@ impl MaterialExpressionKind {
                 fade_distance,
                 invert,
             } => vec![*scene_depth, *pixel_depth, *fade_distance, *invert],
+            Self::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => vec![*alpha, *scene_depth, *pixel_depth, *fade_distance, *invert],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -1400,6 +1415,59 @@ fn infer_expression(
                         value_type: MaterialValueType::Float,
                         evaluation_domain: scene_depth
                             .evaluation_domain
+                            .max(pixel_depth.evaluation_domain)
+                            .max(fade_distance.evaluation_domain)
+                            .max(invert.evaluation_domain),
+                    })
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::SoftParticle {
+            alpha,
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => {
+            let alpha = dependency(*alpha);
+            let scene_depth = dependency(*scene_depth);
+            let pixel_depth = dependency(*pixel_depth);
+            let fade_distance = dependency(*fade_distance);
+            let invert = dependency(*invert);
+            match (alpha, scene_depth, pixel_depth, fade_distance, invert) {
+                (
+                    Some(alpha),
+                    Some(scene_depth),
+                    Some(pixel_depth),
+                    Some(fade_distance),
+                    Some(invert),
+                ) => {
+                    let mut valid = true;
+                    for (socket, info, expected) in [
+                        ("alpha", alpha, MaterialValueType::Float),
+                        ("scene_depth", scene_depth, MaterialValueType::Float),
+                        ("pixel_depth", pixel_depth, MaterialValueType::Float),
+                        ("fade_distance", fade_distance, MaterialValueType::Float),
+                        ("invert", invert, MaterialValueType::Bool),
+                    ] {
+                        if info.value_type != expected {
+                            material_type_error(
+                                report,
+                                format!("{path}.{socket}"),
+                                format!(
+                                    "SoftParticle {socket} expects {expected:?} but received {:?}",
+                                    info.value_type
+                                ),
+                            );
+                            valid = false;
+                        }
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Float,
+                        evaluation_domain: alpha
+                            .evaluation_domain
+                            .max(scene_depth.evaluation_domain)
                             .max(pixel_depth.evaluation_domain)
                             .max(fade_distance.evaluation_domain)
                             .max(invert.evaluation_domain),

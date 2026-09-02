@@ -1210,6 +1210,152 @@ fn depth_fade_sockets_are_rewired_transactionally() {
 }
 
 #[test]
+fn soft_particle_sockets_are_rewired_transactionally() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x1e00);
+    let alpha = MaterialExpressionId::from_u128(0x1e01);
+    let scene_depth = MaterialExpressionId::from_u128(0x1e02);
+    let pixel_depth = MaterialExpressionId::from_u128(0x1e03);
+    let fade_distance = MaterialExpressionId::from_u128(0x1e04);
+    let invert = MaterialExpressionId::from_u128(0x1e05);
+    let alternate_alpha = MaterialExpressionId::from_u128(0x1e06);
+    let alternate_scene_depth = MaterialExpressionId::from_u128(0x1e07);
+    let alternate_pixel_depth = MaterialExpressionId::from_u128(0x1e08);
+    let alternate_fade_distance = MaterialExpressionId::from_u128(0x1e09);
+    let alternate_invert = MaterialExpressionId::from_u128(0x1e0a);
+    let soft_particle = MaterialExpressionId::from_u128(0x1e0b);
+    let mut program = MaterialProgram::additive_sprite("Authorable soft particle");
+    program.id = program_id;
+    program.expressions.extend([
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+        },
+        MaterialExpression {
+            id: pixel_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+        },
+        MaterialExpression {
+            id: fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: alternate_alpha,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: alternate_scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+        },
+        MaterialExpression {
+            id: alternate_pixel_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+        },
+        MaterialExpression {
+            id: alternate_fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: alternate_invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(true)),
+        },
+        MaterialExpression {
+            id: soft_particle,
+            kind: MaterialExpressionKind::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = soft_particle;
+    document.programs.push(program);
+    let mut history = MaterialCommandHistory::default();
+
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::new(
+                "Rewire soft particle",
+                vec![
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: soft_particle,
+                        input: MaterialExpressionInput::SourceAlpha,
+                        source: alternate_alpha,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: soft_particle,
+                        input: MaterialExpressionInput::SceneDepth,
+                        source: alternate_scene_depth,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: soft_particle,
+                        input: MaterialExpressionInput::PixelDepth,
+                        source: alternate_pixel_depth,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: soft_particle,
+                        input: MaterialExpressionInput::FadeDistance,
+                        source: alternate_fade_distance,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: soft_particle,
+                        input: MaterialExpressionInput::Invert,
+                        source: alternate_invert,
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+
+    let expression = &document.programs[0]
+        .expressions
+        .iter()
+        .find(|expression| expression.id == soft_particle)
+        .unwrap()
+        .kind;
+    assert!(matches!(expression,
+        MaterialExpressionKind::SoftParticle { alpha, scene_depth, pixel_depth, fade_distance, invert }
+            if *alpha == alternate_alpha
+                && *scene_depth == alternate_scene_depth
+                && *pixel_depth == alternate_pixel_depth
+                && *fade_distance == alternate_fade_distance
+                && *invert == alternate_invert
+    ));
+
+    history.undo(&mut document).unwrap().unwrap();
+    let expression = &document.programs[0]
+        .expressions
+        .iter()
+        .find(|expression| expression.id == soft_particle)
+        .unwrap()
+        .kind;
+    assert!(matches!(expression,
+        MaterialExpressionKind::SoftParticle { alpha: restored_alpha, scene_depth: restored_scene_depth, pixel_depth: restored_pixel_depth, fade_distance: restored_fade_distance, invert: restored_invert }
+            if *restored_alpha == alpha
+                && *restored_scene_depth == scene_depth
+                && *restored_pixel_depth == pixel_depth
+                && *restored_fade_distance == fade_distance
+                && *restored_invert == invert
+    ));
+}
+
+#[test]
 fn instance_parameter_render_state_and_assignment_commands_are_undoable() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x2000);

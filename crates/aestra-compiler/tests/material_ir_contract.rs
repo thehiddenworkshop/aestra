@@ -662,6 +662,72 @@ fn depth_fade_lowers_with_typed_sockets_and_source_mapping() {
 }
 
 #[test]
+fn soft_particle_lowers_with_typed_sockets_and_source_mapping() {
+    let alpha = MaterialExpressionId::from_u128(0x3801);
+    let scene_depth = MaterialExpressionId::from_u128(0x3802);
+    let pixel_depth = MaterialExpressionId::from_u128(0x3803);
+    let fade_distance = MaterialExpressionId::from_u128(0x3804);
+    let invert = MaterialExpressionId::from_u128(0x3805);
+    let soft_particle = MaterialExpressionId::from_u128(0x3806);
+    let mut program = MaterialProgram::additive_sprite("Soft particle IR");
+    program.expressions.extend([
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+        },
+        MaterialExpression {
+            id: pixel_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+        },
+        MaterialExpression {
+            id: fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: soft_particle,
+            kind: MaterialExpressionKind::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = soft_particle;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let value = ir.source_map.values[&soft_particle];
+    let MaterialIrInstruction::SoftParticle {
+        alpha: ir_alpha,
+        scene_depth: ir_scene_depth,
+        pixel_depth: ir_pixel_depth,
+        fade_distance: ir_fade_distance,
+        invert: ir_invert,
+    } = ir.value(value).unwrap().instruction
+    else {
+        panic!("SoftParticle must survive lowering as a semantic IR instruction");
+    };
+    assert_eq!(
+        ir.value(value).unwrap().value_type,
+        MaterialValueType::Float
+    );
+    assert_eq!(ir_alpha, ir.source_map.values[&alpha]);
+    assert_eq!(ir_scene_depth, ir.source_map.values[&scene_depth]);
+    assert_eq!(ir_pixel_depth, ir.source_map.values[&pixel_depth]);
+    assert_eq!(ir_fade_distance, ir.source_map.values[&fade_distance]);
+    assert_eq!(ir_invert, ir.source_map.values[&invert]);
+}
+
+#[test]
 fn lowering_is_deterministic_independent_of_authored_vector_order() {
     let program = two_texture_flame_program();
     let mut reordered = program.clone();

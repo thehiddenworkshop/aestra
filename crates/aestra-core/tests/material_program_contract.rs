@@ -1267,6 +1267,125 @@ fn depth_fade_reports_each_mistyped_socket() {
 }
 
 #[test]
+fn soft_particle_round_trips_typed_alpha_and_depth_sockets() {
+    let alpha = MaterialExpressionId::from_u128(0xbb01);
+    let scene_depth = MaterialExpressionId::from_u128(0xbb02);
+    let pixel_depth = MaterialExpressionId::from_u128(0xbb03);
+    let fade_distance = MaterialExpressionId::from_u128(0xbb04);
+    let invert = MaterialExpressionId::from_u128(0xbb05);
+    let soft_particle = MaterialExpressionId::from_u128(0xbb06);
+    let mut program = MaterialProgram::additive_sprite("Soft particle");
+    program.expressions.extend([
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+        },
+        MaterialExpression {
+            id: pixel_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+        },
+        MaterialExpression {
+            id: fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: soft_particle,
+            kind: MaterialExpressionKind::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = soft_particle;
+
+    let analysis = program.analyze().unwrap();
+    assert_eq!(
+        analysis.expressions[&soft_particle].value_type,
+        MaterialValueType::Float
+    );
+    assert_eq!(
+        analysis.expressions[&soft_particle].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
+    let encoded = program.to_pretty_ron().unwrap();
+    assert!(encoded.contains("SoftParticle"));
+    assert_eq!(
+        MaterialProgram::from_ron(&encoded).unwrap(),
+        program.normalized()
+    );
+}
+
+#[test]
+fn soft_particle_reports_each_mistyped_socket() {
+    let alpha = MaterialExpressionId::from_u128(0xbc01);
+    let scene_depth = MaterialExpressionId::from_u128(0xbc02);
+    let pixel_depth = MaterialExpressionId::from_u128(0xbc03);
+    let fade_distance = MaterialExpressionId::from_u128(0xbc04);
+    let invert = MaterialExpressionId::from_u128(0xbc05);
+    let soft_particle = MaterialExpressionId::from_u128(0xbc06);
+    let mut program = MaterialProgram::additive_sprite("Invalid soft particle");
+    program.expressions.extend([
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.0; 2])),
+        },
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: pixel_depth,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec3([0.0; 3])),
+        },
+        MaterialExpression {
+            id: fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec4([0.0; 4])),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: soft_particle,
+            kind: MaterialExpressionKind::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = soft_particle;
+
+    let report = program.validation_report();
+    for socket in [
+        ".alpha",
+        ".scene_depth",
+        ".pixel_depth",
+        ".fade_distance",
+        ".invert",
+    ] {
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+                && diagnostic.path.ends_with(socket)
+                && diagnostic.message.contains("SoftParticle")
+        }));
+    }
+}
+
+#[test]
 fn material_validation_rejects_output_and_socket_type_mismatches() {
     let mut program = MaterialProgram::additive_sprite("Bad types");
     let vector = MaterialExpressionId::from_u128(0xB01);
