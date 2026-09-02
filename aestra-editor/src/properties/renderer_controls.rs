@@ -21,6 +21,29 @@ pub(super) enum RendererToggleControl {
     FlipbookRandomStart(RendererId),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SemanticMaterialValueSlot {
+    Constant,
+    RandomMinimum,
+    RandomMaximum,
+}
+
+#[derive(Component, Debug, Clone)]
+pub(super) struct SemanticMaterialNumberControl {
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    slot: SemanticMaterialValueSlot,
+    component: u8,
+    fallback: MaterialValue,
+}
+
+#[derive(Component, Debug, Clone)]
+pub(super) struct SemanticMaterialToggleControl {
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    fallback: bool,
+}
+
 pub(super) fn handle_renderer_action(
     action: PropertiesAction,
     session: &mut EditorSession,
@@ -120,6 +143,210 @@ pub(super) fn sync_renderer_slider_inputs(
         };
         commands.entity(entity).insert(SliderValue(value));
     }
+}
+
+pub(super) fn sync_semantic_material_number_inputs(
+    mut commands: Commands,
+    session: Res<EditorSession>,
+    controls: Query<(Entity, &SemanticMaterialNumberControl), Added<SemanticMaterialNumberControl>>,
+) {
+    for (entity, control) in &controls {
+        let Some(value) = semantic_material_number_value(&session, control) else {
+            continue;
+        };
+        commands.trigger(UpdateNumberInput {
+            entity,
+            value: NumberInputValue::F32(value),
+        });
+    }
+}
+
+pub(super) fn handle_semantic_material_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&SemanticMaterialNumberControl>,
+    catalog: Option<Res<ProjectEffectCatalog>>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if semantic_material_number_value(&session, control)
+        .is_some_and(|current| (current - change.value).abs() <= f32::EPSILON)
+    {
+        return;
+    }
+    let Some(value) = updated_semantic_material_value(&session, control, change.value) else {
+        return;
+    };
+    commit_semantic_material_value(
+        &mut session,
+        catalog.as_deref(),
+        control.instance,
+        control.parameter,
+        value,
+    );
+}
+
+pub(super) fn handle_semantic_material_toggle_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&SemanticMaterialToggleControl>,
+    catalog: Option<Res<ProjectEffectCatalog>>,
+    mut commands: Commands,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    let current = session
+        .effect
+        .material_instances
+        .iter()
+        .find(|instance| instance.id == control.instance)
+        .and_then(|instance| instance.values.get(&control.parameter))
+        .and_then(|value| match value {
+            MaterialParameterValue::Constant(MaterialValue::Bool(value)) => Some(*value),
+            _ => None,
+        })
+        .unwrap_or(control.fallback);
+    if current != change.value {
+        commit_semantic_material_value(
+            &mut session,
+            catalog.as_deref(),
+            control.instance,
+            control.parameter,
+            MaterialParameterValue::Constant(MaterialValue::Bool(change.value)),
+        );
+    }
+}
+
+fn commit_semantic_material_value(
+    session: &mut EditorSession,
+    catalog: Option<&ProjectEffectCatalog>,
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    value: MaterialParameterValue,
+) {
+    let Some(catalog) = catalog else {
+        session.status = "Material program catalog is unavailable".into();
+        return;
+    };
+    match catalog.material_programs_for_effect(&session.effect) {
+        Ok(programs) => {
+            session.set_material_instance_parameter(&programs, instance, parameter, Some(value));
+        }
+        Err(error) => session.status = format!("Material program unavailable: {error}"),
+    }
+}
+
+fn semantic_material_number_value(
+    session: &EditorSession,
+    control: &SemanticMaterialNumberControl,
+) -> Option<f32> {
+    let authored = session
+        .effect
+        .material_instances
+        .iter()
+        .find(|instance| instance.id == control.instance)
+        .and_then(|instance| instance.values.get(&control.parameter));
+    let value = match (control.slot, authored) {
+        (SemanticMaterialValueSlot::Constant, Some(MaterialParameterValue::Constant(value))) => {
+            value
+        }
+        (
+            SemanticMaterialValueSlot::RandomMinimum,
+            Some(MaterialParameterValue::RandomRange { min, .. }),
+        ) => min,
+        (
+            SemanticMaterialValueSlot::RandomMaximum,
+            Some(MaterialParameterValue::RandomRange { max, .. }),
+        ) => max,
+        _ => &control.fallback,
+    };
+    material_value_component(value, control.component)
+}
+
+fn updated_semantic_material_value(
+    session: &EditorSession,
+    control: &SemanticMaterialNumberControl,
+    value: f32,
+) -> Option<MaterialParameterValue> {
+    let instance = session
+        .effect
+        .material_instances
+        .iter()
+        .find(|instance| instance.id == control.instance)?;
+    match control.slot {
+        SemanticMaterialValueSlot::Constant => {
+            let mut updated = match instance.values.get(&control.parameter) {
+                Some(MaterialParameterValue::Constant(value)) => value.clone(),
+                _ => control.fallback.clone(),
+            };
+            set_material_value_component(&mut updated, control.component, value)?;
+            Some(MaterialParameterValue::Constant(updated))
+        }
+        SemanticMaterialValueSlot::RandomMinimum | SemanticMaterialValueSlot::RandomMaximum => {
+            let MaterialParameterValue::RandomRange { min, max, domain } =
+                instance.values.get(&control.parameter)?
+            else {
+                return None;
+            };
+            let mut min = min.clone();
+            let mut max = max.clone();
+            let target = if control.slot == SemanticMaterialValueSlot::RandomMinimum {
+                &mut min
+            } else {
+                &mut max
+            };
+            set_material_value_component(target, control.component, value)?;
+            Some(MaterialParameterValue::RandomRange {
+                min,
+                max,
+                domain: *domain,
+            })
+        }
+    }
+}
+
+fn material_value_component(value: &MaterialValue, component: u8) -> Option<f32> {
+    match value {
+        MaterialValue::Float(value) if component == 0 => Some(*value),
+        MaterialValue::Vec2(value) => value.get(component as usize).copied(),
+        MaterialValue::Vec3(value) => value.get(component as usize).copied(),
+        MaterialValue::Vec4(value) | MaterialValue::ColorSrgb(value) => {
+            value.get(component as usize).copied()
+        }
+        MaterialValue::Texture2D(_) | MaterialValue::Bool(_) | MaterialValue::Float(_) => None,
+    }
+}
+
+fn set_material_value_component(
+    target: &mut MaterialValue,
+    component: u8,
+    value: f32,
+) -> Option<()> {
+    match target {
+        MaterialValue::Float(target) if component == 0 => *target = value,
+        MaterialValue::Vec2(target) => *target.get_mut(component as usize)? = value,
+        MaterialValue::Vec3(target) => *target.get_mut(component as usize)? = value,
+        MaterialValue::Vec4(target) | MaterialValue::ColorSrgb(target) => {
+            *target.get_mut(component as usize)? = value;
+        }
+        MaterialValue::Texture2D(_) | MaterialValue::Bool(_) | MaterialValue::Float(_) => {
+            return None;
+        }
+    }
+    Some(())
 }
 
 pub(super) fn renderer_number_input_value(
@@ -505,11 +732,273 @@ fn spawn_renderer_toggle_control(
         });
 }
 
+fn spawn_semantic_material_controls(
+    parent: &mut ChildSpawnerCommands,
+    renderer: &aestra_core::RendererInstance,
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+) -> Result<bool, String> {
+    let Some(instance) = session
+        .effect
+        .material_instances
+        .iter()
+        .find(|instance| instance.id == renderer.material)
+    else {
+        return Ok(false);
+    };
+    let programs = catalog.material_programs_for_effect(&session.effect)?;
+    let program = programs
+        .iter()
+        .find(|program| program.id == instance.program.id())
+        .ok_or_else(|| format!("material program {} is unavailable", instance.program.id()))?;
+    let controls = MaterialCompiler
+        .reflect_controls(program, Some(instance))
+        .map_err(|error| error.to_string())?;
+
+    spawn_properties_read_only_control(parent, "Material", &controls.name);
+    for descriptor in &controls.parameters {
+        spawn_semantic_material_parameter(parent, descriptor, instance.id, session);
+    }
+    Ok(true)
+}
+
+fn spawn_semantic_material_parameter(
+    parent: &mut ChildSpawnerCommands,
+    descriptor: &MaterialControlDescriptor,
+    instance: MaterialId,
+    session: &EditorSession,
+) {
+    let source = semantic_material_source_label(descriptor, session);
+    spawn_properties_read_only_control(parent, &descriptor.name, &source);
+    match descriptor.current_value.as_ref() {
+        Some(MaterialParameterValue::Constant(value)) => match descriptor.control {
+            MaterialControlKind::Number
+            | MaterialControlKind::Vector2
+            | MaterialControlKind::Vector3
+            | MaterialControlKind::Vector4
+            | MaterialControlKind::Color => {
+                spawn_semantic_material_value_rows(
+                    parent,
+                    instance,
+                    descriptor.id,
+                    SemanticMaterialValueSlot::Constant,
+                    value,
+                    descriptor.control,
+                    None,
+                );
+            }
+            MaterialControlKind::Toggle => {
+                if let MaterialValue::Bool(value) = value {
+                    spawn_semantic_material_toggle(parent, instance, descriptor.id, *value);
+                }
+            }
+            MaterialControlKind::Texture => {
+                spawn_semantic_material_texture(parent, instance, descriptor.id, value, session);
+            }
+        },
+        Some(MaterialParameterValue::RandomRange { min, max, .. }) => {
+            spawn_semantic_material_value_rows(
+                parent,
+                instance,
+                descriptor.id,
+                SemanticMaterialValueSlot::RandomMinimum,
+                min,
+                descriptor.control,
+                Some("Min"),
+            );
+            spawn_semantic_material_value_rows(
+                parent,
+                instance,
+                descriptor.id,
+                SemanticMaterialValueSlot::RandomMaximum,
+                max,
+                descriptor.control,
+                Some("Max"),
+            );
+        }
+        Some(
+            MaterialParameterValue::EffectParameter(_)
+            | MaterialParameterValue::EmitterParameter(_),
+        )
+        | None => {}
+    }
+}
+
+fn semantic_material_source_label(
+    descriptor: &MaterialControlDescriptor,
+    session: &EditorSession,
+) -> String {
+    match descriptor.current_value.as_ref() {
+        Some(MaterialParameterValue::Constant(_)) => {
+            if descriptor.value_origin
+                == aestra_compiler::MaterialControlValueOrigin::ProgramDefault
+            {
+                "Constant · program default".into()
+            } else {
+                "Constant".into()
+            }
+        }
+        Some(MaterialParameterValue::EffectParameter(parameter)) => {
+            format!("Effect · {}", semantic_parameter_name(session, *parameter))
+        }
+        Some(MaterialParameterValue::EmitterParameter(parameter)) => {
+            format!("Emitter · {}", semantic_parameter_name(session, *parameter))
+        }
+        Some(MaterialParameterValue::RandomRange { .. }) => "Random range".into(),
+        None => "Required · no value".into(),
+    }
+}
+
+fn semantic_parameter_name(session: &EditorSession, parameter: ParameterId) -> String {
+    session
+        .effect
+        .parameters
+        .iter()
+        .find(|candidate| candidate.id == parameter)
+        .map_or_else(|| parameter.to_string(), |parameter| parameter.name.clone())
+}
+
+fn spawn_semantic_material_value_rows(
+    parent: &mut ChildSpawnerCommands,
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    slot: SemanticMaterialValueSlot,
+    value: &MaterialValue,
+    kind: MaterialControlKind,
+    prefix: Option<&str>,
+) {
+    let labels: &[&str] = match kind {
+        MaterialControlKind::Number => &["Value"],
+        MaterialControlKind::Vector2 => &["X", "Y"],
+        MaterialControlKind::Vector3 => &["X", "Y", "Z"],
+        MaterialControlKind::Vector4 => &["X", "Y", "Z", "W"],
+        MaterialControlKind::Color => &["R", "G", "B", "A"],
+        MaterialControlKind::Texture | MaterialControlKind::Toggle => return,
+    };
+    for (component, label) in labels.iter().enumerate() {
+        let label =
+            prefix.map_or_else(|| (*label).to_owned(), |prefix| format!("{prefix} {label}"));
+        spawn_semantic_material_number(
+            parent,
+            &label,
+            SemanticMaterialNumberControl {
+                instance,
+                parameter,
+                slot,
+                component: component as u8,
+                fallback: value.clone(),
+            },
+        );
+    }
+}
+
+fn spawn_semantic_material_number(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    control: SemanticMaterialNumberControl,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(27.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(6.0),
+            ..default()
+        })
+        .with_children(|row| {
+            spawn_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            row.spawn(Node {
+                width: Val::Px(112.0),
+                ..default()
+            })
+            .with_children(|input| {
+                input
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_scalar_input())
+                    .insert((control, AccessibleLabel(title.to_owned())));
+            });
+        });
+}
+
+fn spawn_semantic_material_toggle(
+    parent: &mut ChildSpawnerCommands,
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    value: bool,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(27.0),
+            align_items: AlignItems::Center,
+            ..default()
+        })
+        .with_children(|row| {
+            spawn_property_label(row, "Value");
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            let mut checkbox = row.spawn_empty();
+            checkbox.apply_scene(ui_shell::feathers_checkbox()).insert((
+                SemanticMaterialToggleControl {
+                    instance,
+                    parameter,
+                    fallback: value,
+                },
+                AccessibleLabel("Material parameter value".into()),
+            ));
+            if value {
+                checkbox.insert(Checked);
+            }
+        });
+}
+
+fn spawn_semantic_material_texture(
+    parent: &mut ChildSpawnerCommands,
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    value: &MaterialValue,
+    session: &EditorSession,
+) {
+    let MaterialValue::Texture2D(selected) = value else {
+        return;
+    };
+    let options = session
+        .effect
+        .assets
+        .iter()
+        .enumerate()
+        .filter(|(_, asset)| asset.kind == AssetKind::Texture)
+        .map(|(index, asset)| ComboOption {
+            label: asset.name.clone(),
+            selected: asset.id == *selected,
+            action: PropertiesAction::SetSemanticMaterialTexture {
+                instance,
+                parameter,
+                asset: index,
+            },
+        })
+        .collect::<Vec<_>>();
+    let current = session
+        .effect
+        .assets
+        .iter()
+        .find(|asset| asset.id == *selected)
+        .map_or("Missing texture", |asset| asset.name.as_str());
+    spawn_properties_combo_row(parent, "Texture", current, &options, None);
+}
+
 pub(super) fn spawn_renderer_card(
     parent: &mut ChildSpawnerCommands,
     renderer: &aestra_core::RendererInstance,
     diagnostic_path: &str,
     session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
     collapsed: bool,
 ) {
     let display_name = match renderer.properties {
@@ -562,6 +1051,22 @@ pub(super) fn spawn_renderer_card(
             );
         },
         |card| {
+            match spawn_semantic_material_controls(card, renderer, session, catalog) {
+                Ok(true) => {
+                    spawn_inline_diagnostics(card, diagnostic_path, session);
+                    return;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    spawn_properties_read_only_control(
+                        card,
+                        "Semantic material",
+                        &format!("Unavailable · {error}"),
+                    );
+                    spawn_inline_diagnostics(card, diagnostic_path, session);
+                    return;
+                }
+            }
             let Some(material) = session
                 .effect
                 .materials
@@ -805,6 +1310,61 @@ mod tests {
         assert_eq!(
             renderer_number_step(RendererNumberControl::FlipbookFrameRate(id)),
             1.0
+        );
+    }
+
+    #[test]
+    fn semantic_material_numeric_edits_preserve_vector_and_random_components() {
+        let mut session = test_support::session_with_timing_slack();
+        let instance = MaterialId::from_u128(0x7200);
+        let parameter = MaterialParameterId::from_u128(0x7201);
+        session
+            .effect
+            .material_instances
+            .push(aestra_core::material::MaterialInstance {
+                id: instance,
+                program: aestra_core::material::MaterialProgramRef::BuiltIn(
+                    aestra_core::MaterialProgramId::from_u128(0x7202),
+                ),
+                values: std::collections::BTreeMap::new(),
+                render_state: aestra_core::material::MaterialRenderState::additive_sprite(),
+            });
+        let constant = SemanticMaterialNumberControl {
+            instance,
+            parameter,
+            slot: SemanticMaterialValueSlot::Constant,
+            component: 1,
+            fallback: MaterialValue::Vec3([1.0, 2.0, 3.0]),
+        };
+        assert_eq!(
+            updated_semantic_material_value(&session, &constant, 8.0),
+            Some(MaterialParameterValue::Constant(MaterialValue::Vec3([
+                1.0, 8.0, 3.0
+            ])))
+        );
+
+        session.effect.material_instances[0].values.insert(
+            parameter,
+            MaterialParameterValue::RandomRange {
+                min: MaterialValue::Vec2([1.0, 2.0]),
+                max: MaterialValue::Vec2([3.0, 4.0]),
+                domain: aestra_core::material::MaterialEvaluationDomain::Emitter,
+            },
+        );
+        let random_maximum = SemanticMaterialNumberControl {
+            instance,
+            parameter,
+            slot: SemanticMaterialValueSlot::RandomMaximum,
+            component: 0,
+            fallback: MaterialValue::Vec2([3.0, 4.0]),
+        };
+        assert_eq!(
+            updated_semantic_material_value(&session, &random_maximum, 9.0),
+            Some(MaterialParameterValue::RandomRange {
+                min: MaterialValue::Vec2([1.0, 2.0]),
+                max: MaterialValue::Vec2([9.0, 4.0]),
+                domain: aestra_core::material::MaterialEvaluationDomain::Emitter,
+            })
         );
     }
 }

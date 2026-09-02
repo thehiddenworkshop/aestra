@@ -1,8 +1,10 @@
 use aestra_authoring::{
     CommandError, CommandExecutor, CommandHistory, EffectCommand, EffectDiff, EffectTransaction,
-    LockState, Selection, TransactionPreview,
+    LockState, MaterialAuthoringDocument, MaterialCommand, MaterialCommandExecutor,
+    MaterialTransaction, Selection, TransactionPreview,
 };
 use aestra_compiler::{CompileError, EffectCompiler};
+use aestra_core::material::{MaterialParameterValue, MaterialProgram};
 use aestra_core::{
     AssetError, AssetId, AssetKind, BlendMode, ColorKey, CurveKey, EffectAsset, EffectClipId,
     EffectParameter, EffectPlaybackMode, Emitter, EmitterId, EmitterRegion, EmitterRegionId,
@@ -568,6 +570,47 @@ impl EditorSession {
                 false
             }
         }
+    }
+
+    pub(crate) fn set_material_instance_parameter(
+        &mut self,
+        programs: &[MaterialProgram],
+        instance: MaterialId,
+        parameter: aestra_core::MaterialParameterId,
+        value: Option<MaterialParameterValue>,
+    ) -> bool {
+        let mut document = MaterialAuthoringDocument::new(self.effect.clone(), programs.to_vec());
+        let transaction = MaterialTransaction::single(
+            "Set material parameter",
+            MaterialCommand::SetMaterialInstanceParameter {
+                instance,
+                parameter,
+                value,
+            },
+        );
+        if let Err(error) = MaterialCommandExecutor::execute(&mut document, &transaction) {
+            self.status = format!("Material edit failed: {error}");
+            self.ui_revision += 1;
+            return false;
+        }
+        let Some(replacement) = document
+            .effect
+            .material_instances
+            .into_iter()
+            .find(|candidate| candidate.id == instance)
+        else {
+            self.status = "Material edit failed: instance disappeared".into();
+            self.ui_revision += 1;
+            return false;
+        };
+        self.execute(
+            "Set material parameter",
+            EffectCommand::SetMaterialInstance {
+                id: instance,
+                instance: replacement,
+            },
+            true,
+        )
     }
 
     pub fn set_selected_emitter_transform(

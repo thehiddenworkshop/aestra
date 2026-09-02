@@ -2,18 +2,64 @@ use aestra_authoring::{
     ChangeKind, CommandError, CommandExecutor, CommandHistory, EffectCommand, EffectTransaction,
     LockState, Selection, SemanticTarget,
 };
+use aestra_core::material::{
+    MaterialInstance, MaterialParameterValue, MaterialProgramRef, MaterialRenderState,
+    MaterialValue,
+};
 use aestra_core::{
     BlendMode, ChoreographyEvent, ChoreographyEventPayload, ColorKey, Curve, CurveKey, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipSeed, EffectId, EffectMarker, EffectParameter, Emitter,
     EmitterRegionId, EmitterTransform, EventId, EventLink, EventTrigger, MODULE_APPEARANCE,
-    MODULE_EMISSION, MODULE_INITIALIZE, MarkerTimeReference, ParameterId, PropertyEvaluationDomain,
-    PropertySource, ScalarRange, Value,
+    MODULE_EMISSION, MODULE_INITIALIZE, MarkerTimeReference, MaterialId, MaterialParameterId,
+    MaterialProgramId, ParameterId, PropertyEvaluationDomain, PropertySource, ScalarRange, Value,
 };
+use std::collections::BTreeMap;
 
 fn test_effect() -> EffectAsset {
     let mut effect = EffectAsset::new("Authoring Test", 2.0);
     effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
     effect
+}
+
+#[test]
+fn semantic_material_instance_replacements_join_effect_history() {
+    let mut effect = test_effect();
+    let instance_id = MaterialId::from_u128(0x7100);
+    let parameter = MaterialParameterId::from_u128(0x7101);
+    effect.material_instances.push(MaterialInstance {
+        id: instance_id,
+        program: MaterialProgramRef::BuiltIn(MaterialProgramId::from_u128(0x7102)),
+        values: BTreeMap::new(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let original = effect.clone();
+    let mut replacement = effect.material_instances[0].clone();
+    replacement.values.insert(
+        parameter,
+        MaterialParameterValue::Constant(MaterialValue::Float(2.5)),
+    );
+    let mut history = CommandHistory::default();
+
+    let diff = history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Set semantic material instance",
+                EffectCommand::SetMaterialInstance {
+                    id: instance_id,
+                    instance: replacement.clone(),
+                },
+            ),
+        )
+        .unwrap();
+
+    assert!(!diff.is_empty());
+    assert_eq!(effect.material_instances[0], replacement);
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect, original);
+    history.redo(&mut effect).unwrap();
+    assert_eq!(effect.material_instances[0], replacement);
 }
 
 #[test]

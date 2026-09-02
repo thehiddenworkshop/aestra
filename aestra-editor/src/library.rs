@@ -176,6 +176,35 @@ impl ProjectEffectCatalog {
             .map_err(|error| error.to_string())
     }
 
+    pub(crate) fn material_programs_for_effect(
+        &self,
+        effect: &EffectAsset,
+    ) -> Result<Vec<aestra_core::material::MaterialProgram>, String> {
+        let mut programs = Vec::new();
+        for instance in &effect.material_instances {
+            if programs
+                .iter()
+                .any(|program: &aestra_core::material::MaterialProgram| {
+                    program.id == instance.program.id()
+                })
+            {
+                continue;
+            }
+            if matches!(
+                instance.program,
+                aestra_core::material::MaterialProgramRef::BuiltIn(_)
+            ) {
+                continue;
+            }
+            programs.push(
+                self.index
+                    .load_material_program(instance.program)
+                    .map_err(|error| error.to_string())?,
+            );
+        }
+        Ok(programs)
+    }
+
     pub(crate) fn compile_project(
         &self,
         root: &EffectAsset,

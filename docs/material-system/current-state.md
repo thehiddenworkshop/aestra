@@ -1,6 +1,6 @@
 # Current Material System Audit
 
-Status: Material authoring Milestones 5 and 6 complete; Material 7 next
+Status: Material authoring Milestones 5 and 6 complete; Material 7 in progress
 Audited: 2026-09-02
 
 This document records the material and renderer contract that exists before Aestra introduces a
@@ -270,8 +270,10 @@ adapter. A destructive format migration is not required to prove the first verti
 ## Known gaps
 
 - compiled effects carry semantic programs, instances, and their dynamic source descriptors;
-  presentation creates and refreshes emitter-specific contexts automatically, and the compiler
-  exposes an engine-neutral control catalog, but Properties does not yet render or edit that catalog;
+  presentation creates and refreshes emitter-specific contexts automatically, and Properties now
+  renders the first reflection-driven material controls for selected renderers. Constant, random
+  range, texture, and boolean edits share semantic validation and the editor undo/redo history;
+  source/binding pickers and authored render-state controls remain;
 - the initial generated backend supports UV0, particle color/opacity, effect time, arithmetic,
   interpolation, clamping, and sampled Texture2D parameters; richer inputs remain explicit errors;
 - no validated custom WESL functions;

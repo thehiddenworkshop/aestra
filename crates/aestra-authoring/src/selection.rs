@@ -339,6 +339,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         | EffectCommand::AddMaterial { .. }
         | EffectCommand::RemoveMaterial { .. }
         | EffectCommand::SetMaterial { .. }
+        | EffectCommand::SetMaterialInstance { .. }
         | EffectCommand::AddFlipbook { .. }
         | EffectCommand::RemoveFlipbook { .. }
         | EffectCommand::SetFlipbook { .. }

@@ -9,12 +9,15 @@ use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_s
 use crate::timeline::{EffectClipChildSelection, EffectClipPath, TimelineState};
 use crate::*;
 use aestra_compiler::{
-    InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, ModuleRegistry,
+    InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
+    MaterialControlDescriptor, MaterialControlKind, ModuleRegistry,
 };
+use aestra_core::material::{MaterialParameterValue, MaterialValue};
 use aestra_core::{
     ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, ColorKey, Curve,
     CurveKey, EffectAsset, EffectClip, EffectClipId, EffectParameter, Gradient, MarkerId,
-    MarkerTimeReference, ParameterId, ScalarRange, ValueType, Vec3Curve, Vec3Range,
+    MarkerTimeReference, MaterialId, MaterialParameterId, ParameterId, ScalarRange, ValueType,
+    Vec3Curve, Vec3Range,
 };
 use bevy::{
     feathers::controls::ButtonVariant,
@@ -54,10 +57,11 @@ use renderer_controls::properties_renderer_key;
 use renderer_controls::{
     RendererNumberControl, RendererSliderControl, handle_renderer_action,
     handle_renderer_enabled_change, handle_renderer_scalar_change, handle_renderer_toggle_change,
+    handle_semantic_material_scalar_change, handle_semantic_material_toggle_change,
     normalize_renderer_uv_scrub_value, properties_renderer_card_memory,
     properties_renderer_collapsed, renderer_number_input_value, renderer_number_step,
     renderer_numeric_scrub_command, spawn_renderer_card, sync_renderer_number_inputs,
-    sync_renderer_slider_inputs,
+    sync_renderer_slider_inputs, sync_semantic_material_number_inputs,
 };
 
 pub(crate) const PROPERTIES_HIGHLIGHT_DURATION: f32 = 1.6;
@@ -88,6 +92,8 @@ impl Plugin for PropertiesPlugin {
             .add_observer(handle_renderer_enabled_change)
             .add_observer(handle_renderer_scalar_change)
             .add_observer(handle_renderer_toggle_change)
+            .add_observer(handle_semantic_material_scalar_change)
+            .add_observer(handle_semantic_material_toggle_change)
             .add_observer(handle_emitter_scalar_change)
             .add_observer(handle_effect_clip_scalar_change)
             .add_observer(handle_marker_scalar_change)
@@ -126,6 +132,7 @@ impl Plugin for PropertiesPlugin {
                         sync_properties_slider_inputs,
                         sync_renderer_number_inputs,
                         sync_renderer_slider_inputs,
+                        sync_semantic_material_number_inputs,
                         sync_effect_clip_properties_timing,
                         sync_effect_clip_repair_candidates,
                     )
@@ -172,6 +179,11 @@ pub(crate) enum PropertiesAction {
     SetRendererFlipbook(RendererId, usize),
     SetFlipbookTimeSource(RendererId, FlipbookTimeSource),
     SetFlipbookPlayback(RendererId, FlipbookPlaybackMode),
+    SetSemanticMaterialTexture {
+        instance: MaterialId,
+        parameter: MaterialParameterId,
+        asset: usize,
+    },
     AddEventLink {
         trigger: EventTrigger,
         target: EmitterId,
@@ -521,6 +533,35 @@ fn handle_properties_actions(
                             },
                             true,
                         );
+                    }
+                    PropertiesAction::SetSemanticMaterialTexture {
+                        instance,
+                        parameter,
+                        asset,
+                    } => {
+                        let Some(asset) = session.effect.assets.get(asset).map(|asset| asset.id)
+                        else {
+                            continue;
+                        };
+                        let Some(catalog) = catalog.as_deref() else {
+                            session.status = "Material program catalog is unavailable".into();
+                            continue;
+                        };
+                        match catalog.material_programs_for_effect(&session.effect) {
+                            Ok(programs) => {
+                                session.set_material_instance_parameter(
+                                    &programs,
+                                    instance,
+                                    parameter,
+                                    Some(MaterialParameterValue::Constant(
+                                        MaterialValue::Texture2D(asset),
+                                    )),
+                                );
+                            }
+                            Err(error) => {
+                                session.status = format!("Material program unavailable: {error}");
+                            }
+                        }
                     }
                     PropertiesAction::OpenModulePalette(_)
                     | PropertiesAction::CloseModulePalette
@@ -5429,6 +5470,7 @@ pub(crate) fn spawn_properties(
                                         "effect.emitters[{emitter_index}].renderers[{renderer_index}]"
                                     ),
                                     session,
+                                    catalog,
                                     properties_renderer_collapsed(settings, renderer),
                                 );
                             }

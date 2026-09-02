@@ -479,6 +479,20 @@ fn apply_command(
                 material: previous,
             }]
         }
+        EffectCommand::SetMaterialInstance { id, instance } => {
+            let index = effect
+                .material_instances
+                .iter()
+                .position(|item| item.id == *id)
+                .ok_or_else(|| not_found("material instance", id))?;
+            let mut replacement = instance.clone();
+            replacement.id = *id;
+            let previous = std::mem::replace(&mut effect.material_instances[index], replacement);
+            vec![EffectCommand::SetMaterialInstance {
+                id: *id,
+                instance: previous,
+            }]
+        }
         EffectCommand::AddFlipbook { flipbook, index } => {
             checked_insert(
                 &mut effect.flipbooks,
