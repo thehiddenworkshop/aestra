@@ -264,7 +264,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   bounded history, and dockable presentation. The workspace exposes measured CPU/live-particle
   data, per-emitter counts, and clearly marked compiler estimates. Uninstrumented GPU values
   remain unavailable rather than being synthesized.
-- Consumes `aestra-bevy` through an explicit session resource.
+- Consumes the shared `aestra-bevy-render` presentation adapter directly; it does not depend on
+  the isolated `aestra-bevy` game-runtime adapter.
 - Must not add game-only concepts to the semantic asset schema.
 
 ### `aestra-viewer`

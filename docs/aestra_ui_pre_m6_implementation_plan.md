@@ -35,8 +35,8 @@ This plan is editor-only.
 Allowed areas:
 
 ```text
-aestra-editor/src
-aestra-editor/locales
+apps/aestra-editor/src
+apps/aestra-editor/locales
 editor layout/settings persistence where required
 editor tests
 documentation
@@ -62,7 +62,7 @@ ownership between editor plugins, but it must not bypass `EditorSession` or
 
 ### 3.1 Assets currently owns four unrelated responsibilities
 
-`aestra-editor/src/assets.rs` currently presents and controls:
+`apps/aestra-editor/src/assets.rs` currently presents and controls:
 
 1. the open document summary;
 2. a one-time project-effect directory scan;
@@ -306,12 +306,12 @@ Work:
 Likely files:
 
 ```text
-aestra-editor/src/assets.rs -> library.rs
-aestra-editor/src/main.rs
-aestra-editor/src/persistence.rs
-aestra-editor/src/dock_ui.rs
-aestra-editor/src/docking.rs
-aestra-editor/locales/*/editor.ftl
+apps/aestra-editor/src/assets.rs -> library.rs
+apps/aestra-editor/src/main.rs
+apps/aestra-editor/src/persistence.rs
+apps/aestra-editor/src/dock_ui.rs
+apps/aestra-editor/src/docking.rs
+apps/aestra-editor/locales/*/editor.ftl
 ```
 
 Tests:
@@ -337,11 +337,11 @@ Work:
 Likely files:
 
 ```text
-aestra-editor/src/feathers/search_field.rs
-aestra-editor/src/feathers/list_row.rs
-aestra-editor/src/feathers/mod.rs
-aestra-editor/src/library.rs
-aestra-editor/locales/*/editor.ftl
+apps/aestra-editor/src/feathers/search_field.rs
+apps/aestra-editor/src/feathers/list_row.rs
+apps/aestra-editor/src/feathers/mod.rs
+apps/aestra-editor/src/library.rs
+apps/aestra-editor/locales/*/editor.ftl
 ```
 
 Tests:
@@ -400,11 +400,11 @@ Work:
 Likely files:
 
 ```text
-aestra-editor/src/timeline.rs
-aestra-editor/src/library.rs
-aestra-editor/src/session.rs
-aestra-editor/src/menus.rs or a focused choreography-menu module
-aestra-editor/locales/*/editor.ftl
+apps/aestra-editor/src/timeline.rs
+apps/aestra-editor/src/library.rs
+apps/aestra-editor/src/session.rs
+apps/aestra-editor/src/menus.rs or a focused choreography-menu module
+apps/aestra-editor/locales/*/editor.ftl
 ```
 
 Tests:

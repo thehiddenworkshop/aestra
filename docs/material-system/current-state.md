@@ -222,8 +222,8 @@ approved native-GPU visuals.
 | GPU ABI | `aestra-bevy-render/src/gpu.rs` tests: multiple renderers, blend selectors, softness, tint, texture/UV, flipbook packing |
 | Shader source | `aestra-gpu/tests/shader_contract.rs`: WESL/WGSL snapshots, Naga validation, SPIR-V/HLSL translation |
 | Generated material shader | `aestra-gpu/tests/material_shader_contract.rs`: two-texture flame WESL, resource ABI, reflection, fingerprints, pipeline keys, and capability diagnostics |
-| Runtime ingestion | `aestra-bevy/tests/v3_contract.rs`: immutable v3 and textured-effect compilation/profile contract |
-| Native appearance | `aestra-viewer/tests/references/*`: eight fixed-seed reference frames for Prism Bloom, Ember Sigil, and Plasma Burst |
+| Runtime ingestion | `bevy/aestra-bevy/tests/v3_contract.rs`: immutable v3 and textured-effect compilation/profile contract |
+| Native appearance | `apps/aestra-viewer/tests/references/*`: eight fixed-seed reference frames for Prism Bloom, Ember Sigil, and Plasma Burst |
 | GPU approval | `.github/workflows/gpu-visual.yml`: native GPU conformance, editor viewport smoke, and showcase comparisons |
 
 The three showcase effects currently exercise distinct material paths:
@@ -247,13 +247,15 @@ memory and binds the resulting shaders without rewriting the source effect. Nati
 now verifies pixel-identical legacy and semantic output for all three showcase sources, and the
 approved images are the scheduled workflow baseline.
 
-Material 8 has begun with `PanUV`, `RotateUV`, `ScaleUV`, and `Remap` as end-to-end semantic
-primitives rather than pre-expanded arithmetic graphs. Pan retains explicit `Vec2` UV, `Vec2`
+Material 8 has begun with `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, and `Smoothstep` as
+end-to-end semantic primitives rather than pre-expanded arithmetic graphs. Pan retains explicit `Vec2` UV, `Vec2`
 speed, and `Float` time sockets; rotation retains `Vec2` UV, `Vec2` center, and radians-valued
 `Float` angle sockets; scale retains `Vec2` UV, center, and scale sockets. Remap retains value,
 input-range, and output-range sockets, promotes scalar bounds to one shared vector type, permits
-extrapolation, and resolves degenerate range components to the output minimum. All four survive
-stable RON, validation, undoable rewiring, backend-neutral IR, source mapping, and portable shader
+extrapolation, and resolves degenerate range components to the output minimum. Smoothstep retains
+explicit minimum-edge, maximum-edge, and value sockets; promotes scalar edges to a shared vector
+shape; supports reversed edges; and maps equal-edge components to a deterministic step. All five
+survive stable RON, validation, undoable rewiring, backend-neutral IR, source mapping, and portable shader
 generation. Generated WGSL is validated and translated to SPIR-V and HLSL by the contract suite.
 Remaining Material 8 operations are not yet implemented.
 

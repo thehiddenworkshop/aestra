@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 1;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 5;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 6;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 pub const MATERIAL_FRAGMENT_ENTRY_POINT: &str = "fragment_material";
 pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
@@ -680,6 +680,17 @@ fn instruction_expression(
             *output_max,
             value.value_type,
         ),
+        MaterialIrInstruction::Smoothstep {
+            edge_min,
+            edge_max,
+            value: smoothstep_value,
+        } => smoothstep_expression(
+            ir,
+            *edge_min,
+            *edge_max,
+            *smoothstep_value,
+            value.value_type,
+        ),
         MaterialIrInstruction::PanUv { uv, speed, time } => format!(
             "({} + ({} * {}))",
             value_name(*uv),
@@ -761,6 +772,30 @@ fn remap_expression(
     format!(
         "select({output_min}, ({output_min} + ((({value} - {input_min}) / {denominator}) * ({output_max} - {output_min}))), {safe})"
     )
+}
+
+fn smoothstep_expression(
+    ir: &MaterialIrProgram,
+    edge_min: MaterialIrValueId,
+    edge_max: MaterialIrValueId,
+    value: MaterialIrValueId,
+    result_type: MaterialValueType,
+) -> String {
+    let edge_min = promote_operand(ir, edge_min, result_type);
+    let edge_max = promote_operand(ir, edge_max, result_type);
+    let value = promote_operand(ir, value, result_type);
+    let delta = format!("({edge_max} - {edge_min})");
+    let epsilon = numeric_literal(result_type, 0.000_001);
+    let zero = numeric_literal(result_type, 0.0);
+    let one = numeric_literal(result_type, 1.0);
+    let two = numeric_literal(result_type, 2.0);
+    let three = numeric_literal(result_type, 3.0);
+    let safe = format!("(abs({delta}) >= {epsilon})");
+    let denominator = format!("select({one}, {delta}, {safe})");
+    let factor = format!("clamp((({value} - {edge_min}) / {denominator}), {zero}, {one})");
+    let curve = format!("(({factor} * {factor}) * ({three} - ({two} * {factor})))");
+    let step = format!("select({zero}, {one}, ({value} >= {edge_max}))");
+    format!("select({step}, {curve}, {safe})")
 }
 
 fn promote_operand(
@@ -970,6 +1005,16 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(input_max.0);
             fingerprint.u32(output_min.0);
             fingerprint.u32(output_max.0);
+        }
+        MaterialIrInstruction::Smoothstep {
+            edge_min,
+            edge_max,
+            value,
+        } => {
+            fingerprint.byte(15);
+            fingerprint.u32(edge_min.0);
+            fingerprint.u32(edge_max.0);
+            fingerprint.u32(value.0);
         }
         MaterialIrInstruction::SampleTexture { texture, uv } => {
             fingerprint.byte(9);

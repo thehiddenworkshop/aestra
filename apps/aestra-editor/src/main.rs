@@ -142,10 +142,10 @@ use viewport::{
     ViewportSet, emitter_transform_from_bevy,
 };
 
-const EFFECT_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
+const EFFECT_SOURCE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
-const EDITOR_ASSET_ROOT: &str = "../assets";
-const EDITOR_ICON: &[u8] = include_bytes!("../../assets/project/icon.png");
+const EDITOR_ASSET_ROOT: &str = "../../assets";
+const EDITOR_ICON: &[u8] = include_bytes!("../../../assets/project/icon.png");
 
 fn set_editor_window_icon(world: &mut World) {
     let Some(window_entity) = world
@@ -356,8 +356,8 @@ mod tests {
     fn editor_asset_root_contains_bundled_textures() {
         let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(EDITOR_ASSET_ROOT);
         for source in [
-            include_str!("../../assets/effects/ember_sigil.aestra.ron"),
-            include_str!("../../assets/effects/plasma_burst.aestra.ron"),
+            include_str!("../../../assets/effects/ember_sigil.aestra.ron"),
+            include_str!("../../../assets/effects/plasma_burst.aestra.ron"),
         ] {
             let effect = EffectAsset::from_ron(source).unwrap();
             for asset in effect.assets {

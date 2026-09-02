@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License: MIT OR Apache-2.0"></a>
-  <a href="#workspace"><img src="https://img.shields.io/badge/crates-10%20workspace-8a5cf6.svg" alt="10 workspace crates"></a>
+  <a href="#workspace"><img src="https://img.shields.io/badge/packages-11%20workspace-8a5cf6.svg" alt="11 workspace packages"></a>
   <a href="https://github.com/TheHiddenWorkshop/aestra/actions/workflows/ci.yml"><img src="https://github.com/TheHiddenWorkshop/aestra/actions/workflows/ci.yml/badge.svg" alt="Build status"></a>
 </p>
 
@@ -25,9 +25,11 @@ The sample asset lives at [`assets/effects/prism_bloom.aestra.ron`](assets/effec
 
 ```text
 aestra/
-├── aestra-editor/           Bevy UI choreography editor
-├── aestra-bevy/             Bevy playback and rendering integration
-├── aestra-viewer/           Viewer, frame capture, and contact-sheet binary
+├── apps/
+│   ├── aestra-editor/       Bevy UI choreography editor
+│   └── aestra-viewer/       Viewer, frame capture, and contact-sheet binary
+├── bevy/
+│   └── aestra-bevy/         Isolated Bevy game-runtime integration
 ├── assets/effects/          Authored `.aestra.ron` choreography assets
 ├── assets/textures/         Renderer textures referenced through stable asset IDs
 └── crates/
@@ -41,7 +43,7 @@ aestra/
     └── aestra-bevy-render/  Shared Bevy/WGPU presentation adapter
 ```
 
-The workspace deliberately has three top-level product modules. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v3 and its 3D particle model, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, `aestra-artifact` owns the versioned compiled-effect prototype, `aestra-runtime` owns immutable execution plans and instance state, and `aestra-gpu` lowers those plans into a packed engine-neutral GPU ABI and produces Naga-validated WGSL from Aestra-owned WESL. `aestra-bevy-render` registers and adapts those portable artifacts to Bevy/WGPU presentation, while `aestra-bevy` owns game playback integration. Both binaries use the same compile/runtime path.
+The workspace groups executable products under `apps/` and the isolated Bevy game-runtime adapter under `bevy/`. Shared internal libraries live under `crates/`; `aestra-core` owns authored format v3 and its 3D particle model, `aestra-authoring` owns UI-independent editing, `aestra-compiler` owns module discovery and lowering, `aestra-artifact` owns the versioned compiled-effect prototype, `aestra-runtime` owns immutable execution plans and instance state, and `aestra-gpu` lowers those plans into a packed engine-neutral GPU ABI and produces Naga-validated WGSL from Aestra-owned WESL. `aestra-bevy-render` registers and adapts those portable artifacts to Bevy/WGPU presentation, while `aestra-bevy` owns game playback integration. Both binaries use the same compile/runtime path.
 
 ## Viewer and visual analysis
 
@@ -85,7 +87,7 @@ auto|gpu|gpu-readback|cpu` to exercise a specific policy, or
 Run the native-GPU visual regression against the approved, effect-only reference:
 
 ```powershell
-cargo run -p aestra-viewer -- --visual-test aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom --frames 8
+cargo run -p aestra-viewer -- --visual-test apps/aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom --frames 8
 ```
 
 Run the editor viewport GPU smoke test after changing cameras, render layers, gizmos,
@@ -102,7 +104,7 @@ overlay-only probe viewport, and writes the captured frames and contact sheet fo
 Use the same workflow for the textured renderer reference:
 
 ```powershell
-cargo run -p aestra-viewer -- --effect assets/effects/ember_sigil.aestra.ron --visual-test aestra-viewer/tests/references/ember_sigil target/visual-regression/ember-sigil --frames 8
+cargo run -p aestra-viewer -- --effect assets/effects/ember_sigil.aestra.ron --visual-test apps/aestra-viewer/tests/references/ember_sigil target/visual-regression/ember-sigil --frames 8
 ```
 
 The command exits with an error when a frame exceeds the tolerant foreground RMSE,
@@ -111,7 +113,7 @@ and `regression-report.md` to the output directory. After intentionally approvin
 visual change, regenerate the reference with:
 
 ```powershell
-cargo run -p aestra-viewer -- --approve-visual-reference aestra-viewer/tests/references/prism_bloom --frames 8
+cargo run -p aestra-viewer -- --approve-visual-reference apps/aestra-viewer/tests/references/prism_bloom --frames 8
 ```
 
 ## Quality gates

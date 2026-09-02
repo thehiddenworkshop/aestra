@@ -262,15 +262,17 @@ the current sprite-material path until the native-GPU compatibility gate approve
   effect/emitter bindings while preserving useful values. Blend, depth-test, depth-write, and cull
   controls project only transitions allowed by the reflected render-state policy and commit through
   the same semantic history.
-- [ ] **Material 8 — VFX semantic primitives.** `PanUV`, `RotateUV`, `ScaleUV`, and `Remap` are
-  complete vertical slices: authored programs retain their explicit typed sockets; validation
+- [ ] **Material 8 — VFX semantic primitives.** `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, and
+  `Smoothstep` are complete vertical slices: authored programs retain their explicit typed sockets; validation
   reports socket-specific type errors; semantic commands rewire every socket with undo/redo;
   backend-neutral IR preserves each operation and source map; and generated portable shaders
   retain the semantic operation. Rotation uses radians around an explicit center; scale uses
   `center + (uv - center) * scale`. Remap supports scalar-to-vector promotion and extrapolation;
   degenerate input-range components resolve to the corresponding output minimum instead of
-  producing NaN/Infinity. Continue with smoothstep, mask/dissolve, depth-fade/soft-particle, and
-  flipbook operations.
+  producing NaN/Infinity. Smoothstep promotes scalar edges to the value shape, supports reversed
+  edges, and resolves equal-edge components as a deterministic step rather than relying on
+  backend-undefined behavior. Continue with mask/dissolve, depth-fade/soft-particle, and flipbook
+  operations.
 - [ ] **Material 9 — material stack.** Provide the ordered high-level modifier projection before a
   node graph.
 
@@ -455,8 +457,8 @@ but its format-v1 schema is not retained.
    compilation, and preview APIs work without a UI.
 2. The visual node graph is a projection of semantic data. It is never the
    canonical saved effect.
-3. Keep the three product packages at the workspace root. Put reusable internal
-   libraries under `crates/`.
+3. Group executable products under `apps/`, keep engine integration adapters under
+   their engine boundary (`bevy/` today), and put reusable internal libraries under `crates/`.
 4. Do not create every future crate immediately. Extract a crate when its public
    boundary is needed and tested.
 5. Keep the CPU evaluator as the conformance oracle while introducing a compiler
@@ -471,9 +473,11 @@ but its format-v1 schema is not retained.
 ## 3. Target repository boundaries
 
 ```text
-aestra-editor/                 Bevy UI authoring product
-aestra-bevy/                   Public Bevy integration and GPU backend
-aestra-viewer/                 Playback, capture, and analysis product
+apps/
+  aestra-editor/               Bevy UI authoring product
+  aestra-viewer/               Playback, capture, and analysis product
+bevy/
+  aestra-bevy/                 Public Bevy game-runtime integration
 crates/
   aestra-core/                 Semantic source model, IDs, values, diagnostics
   aestra-project/              Project asset index, typed references, source resolution
@@ -838,7 +842,7 @@ domain assumptions:
 - keep numeric scrub mechanics independent from the semantic command committed by
   the owning Properties field.
 
-The first slice is implemented in `aestra-editor/src/feathers/`. Its widgets cover
+The first slice is implemented in `apps/aestra-editor/src/feathers/`. Its widgets cover
 Aestra's current shared controls. The following Jackdaw primitives become useful as
 the corresponding Aestra feature lands, rather than being copied unused:
 

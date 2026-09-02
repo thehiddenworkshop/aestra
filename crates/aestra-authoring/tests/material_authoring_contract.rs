@@ -587,6 +587,114 @@ fn remap_semantic_sockets_are_rewireable_and_undoable() {
 }
 
 #[test]
+fn smoothstep_semantic_sockets_are_rewireable_and_undoable() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x1400);
+    let edge_min = MaterialExpressionId::from_u128(0x1401);
+    let edge_max = MaterialExpressionId::from_u128(0x1402);
+    let value = MaterialExpressionId::from_u128(0x1403);
+    let alternate = MaterialExpressionId::from_u128(0x1404);
+    let smoothstep = MaterialExpressionId::from_u128(0x1405);
+    let alpha = MaterialExpressionId::from_u128(0x1406);
+    let mut program = MaterialProgram::additive_sprite("Authorable smoothstep");
+    program.id = program_id;
+    program.expressions.extend([
+        MaterialExpression {
+            id: edge_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: edge_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: value,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: alternate,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.25, 0.75])),
+        },
+        MaterialExpression {
+            id: smoothstep,
+            kind: MaterialExpressionKind::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: smoothstep,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+    document.programs.push(program);
+    let mut history = MaterialCommandHistory::default();
+
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::new(
+                "Rewire smoothstep",
+                vec![
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: smoothstep,
+                        input: MaterialExpressionInput::EdgeMinimum,
+                        source: edge_max,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: smoothstep,
+                        input: MaterialExpressionInput::EdgeMaximum,
+                        source: edge_min,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: smoothstep,
+                        input: MaterialExpressionInput::Value,
+                        source: alternate,
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == smoothstep)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Smoothstep {
+            edge_min: rewired_min,
+            edge_max: rewired_max,
+            value: rewired_value,
+        } if rewired_min == edge_max && rewired_max == edge_min && rewired_value == alternate
+    ));
+
+    history.undo(&mut document).unwrap().unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == smoothstep)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Smoothstep {
+            edge_min: original_min,
+            edge_max: original_max,
+            value: original_value,
+        } if original_min == edge_min && original_max == edge_max && original_value == value
+    ));
+}
+
+#[test]
 fn instance_parameter_render_state_and_assignment_commands_are_undoable() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x2000);

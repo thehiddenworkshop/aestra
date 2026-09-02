@@ -743,6 +743,114 @@ fn remap_rejects_non_numeric_and_mismatched_vector_sockets() {
 }
 
 #[test]
+fn smoothstep_promotes_scalar_edges_and_round_trips_its_semantic_sockets() {
+    let edge_min = MaterialExpressionId::from_u128(0xB101);
+    let edge_max = MaterialExpressionId::from_u128(0xB102);
+    let value = MaterialExpressionId::from_u128(0xB103);
+    let smoothstep = MaterialExpressionId::from_u128(0xB104);
+    let alpha = MaterialExpressionId::from_u128(0xB105);
+    let mut program = MaterialProgram::additive_sprite("Vector smoothstep");
+    program.expressions.extend([
+        MaterialExpression {
+            id: edge_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.25)),
+        },
+        MaterialExpression {
+            id: edge_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: value,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: smoothstep,
+            kind: MaterialExpressionKind::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: smoothstep,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let analysis = program.analyze().unwrap();
+    assert_eq!(
+        analysis.expressions[&smoothstep].value_type,
+        MaterialValueType::Vec2
+    );
+    assert_eq!(
+        analysis.expressions[&smoothstep].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
+    let encoded = program.to_pretty_ron().unwrap();
+    assert!(encoded.contains("Smoothstep"));
+    assert_eq!(
+        MaterialProgram::from_ron(&encoded).unwrap(),
+        program.normalized()
+    );
+}
+
+#[test]
+fn smoothstep_reports_each_incompatible_numeric_socket() {
+    let edge_min = MaterialExpressionId::from_u128(0xB201);
+    let edge_max = MaterialExpressionId::from_u128(0xB202);
+    let value = MaterialExpressionId::from_u128(0xB203);
+    let smoothstep = MaterialExpressionId::from_u128(0xB204);
+    let alpha = MaterialExpressionId::from_u128(0xB205);
+    let mut program = MaterialProgram::additive_sprite("Invalid smoothstep");
+    program.expressions.extend([
+        MaterialExpression {
+            id: edge_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: edge_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec3([1.0; 3])),
+        },
+        MaterialExpression {
+            id: value,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5; 2])),
+        },
+        MaterialExpression {
+            id: smoothstep,
+            kind: MaterialExpressionKind::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: smoothstep,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let report = program.validation_report();
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".edge_min")
+            && diagnostic.message.contains("received Bool")
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".value")
+            && diagnostic.message.contains("received Vec2")
+    }));
+}
+
+#[test]
 fn material_validation_rejects_output_and_socket_type_mismatches() {
     let mut program = MaterialProgram::additive_sprite("Bad types");
     let vector = MaterialExpressionId::from_u128(0xB01);

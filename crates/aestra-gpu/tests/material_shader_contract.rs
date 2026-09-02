@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "d5f7e9d57ba02465dce3251e1610d4fdc33b063494c4985a6c524c10b809ba53"
+        "48dbdcd5ece54f7092720005274f59b12f3cf50d0b371b487862eaf68cfbafe4"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -424,6 +424,9 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     let output_min = MaterialExpressionId::from_u128(0x201A);
     let output_max = MaterialExpressionId::from_u128(0x201B);
     let remap = MaterialExpressionId::from_u128(0x201C);
+    let edge_min = MaterialExpressionId::from_u128(0x201D);
+    let edge_max = MaterialExpressionId::from_u128(0x201E);
+    let smoothstep = MaterialExpressionId::from_u128(0x201F);
     program.expressions.extend([
         MaterialExpression {
             id: speed,
@@ -495,10 +498,26 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
                 output_max,
             },
         },
+        MaterialExpression {
+            id: edge_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: edge_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.25)),
+        },
+        MaterialExpression {
+            id: smoothstep,
+            kind: MaterialExpressionKind::Smoothstep {
+                edge_min,
+                edge_max,
+                value: remap,
+            },
+        },
     ]);
     for expression in &mut program.expressions {
         if let MaterialExpressionKind::SampleTexture { uv, .. } = &mut expression.kind {
-            *uv = remap;
+            *uv = smoothstep;
         }
     }
 
@@ -601,6 +620,32 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     assert!(remap_expression.contains("select"));
     assert!(remap_expression.contains("abs"));
     assert!(remap_expression.contains("0.000001"));
+    let smoothstep_line = compiled
+        .source_map
+        .wesl_lines
+        .iter()
+        .find_map(|(line, value)| {
+            compiled
+                .source_map
+                .ir
+                .expressions
+                .get(value)
+                .is_some_and(|expressions| expressions.contains(&smoothstep))
+                .then_some(*line)
+        })
+        .expect("Smoothstep must map to a generated shader line");
+    let smoothstep_expression = compiled
+        .shader
+        .wesl
+        .lines()
+        .nth(smoothstep_line as usize - 1)
+        .unwrap();
+    assert!(smoothstep_expression.contains("clamp"));
+    assert!(smoothstep_expression.contains("select"));
+    assert!(smoothstep_expression.contains("abs"));
+    assert!(smoothstep_expression.contains(">="));
+    assert!(smoothstep_expression.contains("vec2<f32>"));
+    assert!(smoothstep_expression.contains("0.000001"));
     assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 

@@ -30,7 +30,7 @@
         "aestra-viewer",
         "--",
         "--visual-test",
-        "aestra-viewer/tests/references/prism_bloom",
+        "apps/aestra-viewer/tests/references/prism_bloom",
         "target/visual-regression/prism-bloom",
         "--frames",
         "8"

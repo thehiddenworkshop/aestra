@@ -1,6 +1,6 @@
 # Aestra editor Feathers
 
-This folder is the reusable widget boundary for `aestra-editor`. Panels compose these controls;
+This folder is the reusable widget boundary for `apps/aestra-editor`. Panels compose these controls;
 they do not duplicate control styling, activation bridges, overflow behavior, or numeric scrub
 policy.
 

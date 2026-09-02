@@ -46,7 +46,7 @@ jobs:
           --backend gpu
           --semantic-materials
           --effect assets/effects/prism_bloom.aestra.ron
-          --visual-test aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom
+          --visual-test apps/aestra-viewer/tests/references/prism_bloom target/visual-regression/prism-bloom
           --frames 8
 
       - name: Compare Ember Sigil reference
@@ -55,7 +55,7 @@ jobs:
           --backend gpu
           --semantic-materials
           --effect assets/effects/ember_sigil.aestra.ron
-          --visual-test aestra-viewer/tests/references/ember_sigil target/visual-regression/ember-sigil
+          --visual-test apps/aestra-viewer/tests/references/ember_sigil target/visual-regression/ember-sigil
           --frames 8
 
       - name: Compare Plasma Burst reference
@@ -64,7 +64,7 @@ jobs:
           --backend gpu
           --semantic-materials
           --effect assets/effects/plasma_burst.aestra.ron
-          --visual-test aestra-viewer/tests/references/plasma_burst target/visual-regression/plasma-burst
+          --visual-test apps/aestra-viewer/tests/references/plasma_burst target/visual-regression/plasma-burst
           --frames 8
 
       - name: Upload captures and regression reports

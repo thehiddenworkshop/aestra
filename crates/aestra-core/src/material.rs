@@ -539,6 +539,11 @@ pub enum MaterialExpressionKind {
         output_min: MaterialExpressionId,
         output_max: MaterialExpressionId,
     },
+    Smoothstep {
+        edge_min: MaterialExpressionId,
+        edge_max: MaterialExpressionId,
+        value: MaterialExpressionId,
+    },
     PanUv {
         uv: MaterialExpressionId,
         speed: MaterialExpressionId,
@@ -589,6 +594,11 @@ impl MaterialExpressionKind {
                 output_min,
                 output_max,
             } => vec![*value, *input_min, *input_max, *output_min, *output_max],
+            Self::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            } => vec![*edge_min, *edge_max, *value],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -1140,6 +1150,28 @@ fn infer_expression(
                         ("input_max", input_max),
                         ("output_min", output_min),
                         ("output_max", output_max),
+                    ],
+                ),
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::Smoothstep {
+            edge_min,
+            edge_max,
+            value,
+        } => {
+            let edge_min = dependency(*edge_min);
+            let edge_max = dependency(*edge_max);
+            let value = dependency(*value);
+            match (edge_min, edge_max, value) {
+                (Some(edge_min), Some(edge_max), Some(value)) => infer_promoted_numeric_inputs(
+                    report,
+                    &path,
+                    "Smoothstep",
+                    [
+                        ("edge_min", edge_min),
+                        ("edge_max", edge_max),
+                        ("value", value),
                     ],
                 ),
                 _ => None,

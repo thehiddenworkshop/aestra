@@ -20,7 +20,7 @@ use std::{collections::BTreeMap, env, fs, path::PathBuf, sync::Arc};
 
 use visual_regression::compare_capture;
 
-const SAMPLE_SOURCE: &str = include_str!("../../assets/effects/prism_bloom.aestra.ron");
+const SAMPLE_SOURCE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
 const VIEW_WIDTH: u32 = 960;
 const VIEW_HEIGHT: u32 = 540;
 const REGRESSION_SEED: u64 = 0xa357_2a11_5eed_0001;
@@ -54,7 +54,7 @@ fn main() {
         .add_plugins((
             DefaultPlugins
                 .set(AssetPlugin {
-                    file_path: "../assets".into(),
+                    file_path: "../../assets".into(),
                     ..default()
                 })
                 .set(WindowPlugin {

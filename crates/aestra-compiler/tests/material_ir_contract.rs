@@ -364,6 +364,64 @@ fn remap_lowers_with_promoted_bounds_and_source_mapping() {
 }
 
 #[test]
+fn smoothstep_lowers_with_promoted_edges_and_source_mapping() {
+    let edge_min = MaterialExpressionId::from_u128(0x3301);
+    let edge_max = MaterialExpressionId::from_u128(0x3302);
+    let value = MaterialExpressionId::from_u128(0x3303);
+    let smoothstep = MaterialExpressionId::from_u128(0x3304);
+    let alpha = MaterialExpressionId::from_u128(0x3305);
+    let mut program = MaterialProgram::additive_sprite("Smoothstep IR");
+    program.expressions.extend([
+        MaterialExpression {
+            id: edge_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.25)),
+        },
+        MaterialExpression {
+            id: edge_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: value,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: smoothstep,
+            kind: MaterialExpressionKind::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: smoothstep,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let smoothstep_value = ir.source_map.values[&smoothstep];
+    let MaterialIrInstruction::Smoothstep {
+        edge_min: ir_edge_min,
+        edge_max: ir_edge_max,
+        value: ir_value,
+    } = ir.value(smoothstep_value).unwrap().instruction
+    else {
+        panic!("Smoothstep must survive lowering as a semantic IR instruction");
+    };
+    assert_eq!(
+        ir.value(smoothstep_value).unwrap().value_type,
+        MaterialValueType::Vec2
+    );
+    assert_eq!(ir_edge_min, ir.source_map.values[&edge_min]);
+    assert_eq!(ir_edge_max, ir.source_map.values[&edge_max]);
+    assert_eq!(ir_value, ir.source_map.values[&value]);
+}
+
+#[test]
 fn lowering_is_deterministic_independent_of_authored_vector_order() {
     let program = two_texture_flame_program();
     let mut reordered = program.clone();

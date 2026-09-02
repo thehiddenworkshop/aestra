@@ -66,6 +66,11 @@ pub enum MaterialIrInstruction {
         output_min: MaterialIrValueId,
         output_max: MaterialIrValueId,
     },
+    Smoothstep {
+        edge_min: MaterialIrValueId,
+        edge_max: MaterialIrValueId,
+        value: MaterialIrValueId,
+    },
     PanUv {
         uv: MaterialIrValueId,
         speed: MaterialIrValueId,
@@ -108,6 +113,11 @@ impl MaterialIrInstruction {
                 output_min,
                 output_max,
             } => vec![*value, *input_min, *input_max, *output_min, *output_max],
+            Self::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            } => vec![*edge_min, *edge_max, *value],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -151,6 +161,15 @@ impl MaterialIrInstruction {
                 remap(input_max);
                 remap(output_min);
                 remap(output_max);
+            }
+            Self::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            } => {
+                remap(edge_min);
+                remap(edge_max);
+                remap(value);
             }
             Self::PanUv { uv, speed, time } => {
                 remap(uv);
@@ -430,6 +449,15 @@ impl MaterialIrBuilder<'_> {
                     output_max,
                 }
             }
+            MaterialExpressionKind::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            } => MaterialIrInstruction::Smoothstep {
+                edge_min: self.lower(edge_min),
+                edge_max: self.lower(edge_max),
+                value: self.lower(value),
+            },
             MaterialExpressionKind::PanUv { uv, speed, time } => {
                 let uv = self.lower(uv);
                 let speed = self.lower(speed);

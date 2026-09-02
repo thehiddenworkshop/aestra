@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "aestra-editor",
-    "aestra-bevy",
-    "aestra-viewer",
+    "apps/aestra-editor",
+    "apps/aestra-viewer",
+    "bevy/aestra-bevy",
     "crates/aestra-artifact",
     "crates/aestra-bevy-render",
     "crates/aestra-core",
