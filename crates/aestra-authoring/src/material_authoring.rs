@@ -103,6 +103,8 @@ pub enum MaterialExpressionInput {
     Value,
     Minimum,
     Maximum,
+    Speed,
+    Time,
     Texture,
     Uv,
     Source,
@@ -601,6 +603,9 @@ fn rewire_expression(
         (MaterialExpressionKind::Clamp { value, .. }, MaterialExpressionInput::Value) => value,
         (MaterialExpressionKind::Clamp { min, .. }, MaterialExpressionInput::Minimum) => min,
         (MaterialExpressionKind::Clamp { max, .. }, MaterialExpressionInput::Maximum) => max,
+        (MaterialExpressionKind::PanUv { uv, .. }, MaterialExpressionInput::Uv) => uv,
+        (MaterialExpressionKind::PanUv { speed, .. }, MaterialExpressionInput::Speed) => speed,
+        (MaterialExpressionKind::PanUv { time, .. }, MaterialExpressionInput::Time) => time,
         (
             MaterialExpressionKind::SampleTexture { texture, .. },
             MaterialExpressionInput::Texture,

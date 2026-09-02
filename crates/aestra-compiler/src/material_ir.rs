@@ -59,6 +59,11 @@ pub enum MaterialIrInstruction {
         min: MaterialIrValueId,
         max: MaterialIrValueId,
     },
+    PanUv {
+        uv: MaterialIrValueId,
+        speed: MaterialIrValueId,
+        time: MaterialIrValueId,
+    },
     SampleTexture {
         texture: MaterialIrValueId,
         uv: MaterialIrValueId,
@@ -79,6 +84,7 @@ impl MaterialIrInstruction {
             | Self::Divide(left, right) => vec![*left, *right],
             Self::Lerp { start, end, factor } => vec![*start, *end, *factor],
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
+            Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::SampleTexture { texture, uv } => vec![*texture, *uv],
             Self::ExtractComponent { value, .. } => vec![*value],
         }
@@ -106,6 +112,11 @@ impl MaterialIrInstruction {
                 remap(value);
                 remap(min);
                 remap(max);
+            }
+            Self::PanUv { uv, speed, time } => {
+                remap(uv);
+                remap(speed);
+                remap(time);
             }
             Self::SampleTexture { texture, uv } => {
                 remap(texture);
@@ -349,6 +360,12 @@ impl MaterialIrBuilder<'_> {
                 } else {
                     MaterialIrInstruction::Clamp { value, min, max }
                 }
+            }
+            MaterialExpressionKind::PanUv { uv, speed, time } => {
+                let uv = self.lower(uv);
+                let speed = self.lower(speed);
+                let time = self.lower(time);
+                MaterialIrInstruction::PanUv { uv, speed, time }
             }
             MaterialExpressionKind::SampleTexture { texture, uv } => {
                 let texture = self.lower(texture);

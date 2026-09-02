@@ -1975,6 +1975,11 @@ SoftParticle
 Flipbook
 ```
 
+Implementation status (2026-09-02): `PanUV` is the first completed vertical slice. It retains
+semantic UV, speed, and time inputs through the authored model, validation, command history,
+backend-neutral IR, source mapping, and portable shader generation. The remaining primitives in
+this milestone are still planned.
+
 Then:
 
 ```text

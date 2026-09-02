@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 1;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 1;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 2;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 pub const MATERIAL_FRAGMENT_ENTRY_POINT: &str = "fragment_material";
 pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
@@ -665,6 +665,12 @@ fn instruction_expression(
             value_name(*min),
             value_name(*max)
         ),
+        MaterialIrInstruction::PanUv { uv, speed, time } => format!(
+            "({} + ({} * {}))",
+            value_name(*uv),
+            value_name(*speed),
+            value_name(*time)
+        ),
         MaterialIrInstruction::SampleTexture { texture, uv } => {
             let texture_value = ir
                 .value(*texture)
@@ -904,6 +910,12 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
                 MaterialVectorComponent::Z => 2,
                 MaterialVectorComponent::W => 3,
             });
+        }
+        MaterialIrInstruction::PanUv { uv, speed, time } => {
+            fingerprint.byte(11);
+            fingerprint.u32(uv.0);
+            fingerprint.u32(speed.0);
+            fingerprint.u32(time.0);
         }
     }
 }

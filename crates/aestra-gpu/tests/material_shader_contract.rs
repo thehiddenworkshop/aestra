@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "fb26041b7d08fe78f19bbd5c9c19a6d36d68f0836a4e7b5585df3de3d5e10230"
+        "a674b8c5f0846d7e55304e487ff2c9fe2f5a464347bbaacd261d1efffc199883"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -405,6 +405,71 @@ fn effect_time_is_reflected_as_a_scene_input() {
         vec![MaterialInput::EffectTime]
     );
     assert!(compiled.shader.wesl.contains("input.effect_time"));
+}
+
+#[test]
+fn pan_uv_generates_portable_animated_texture_coordinates() {
+    let mut program = two_texture_flame_program();
+    let original_uv = MaterialExpressionId::from_u128(0x2005);
+    let speed = MaterialExpressionId::from_u128(0x2010);
+    let time = MaterialExpressionId::from_u128(0x2011);
+    let pan = MaterialExpressionId::from_u128(0x2012);
+    program.expressions.extend([
+        MaterialExpression {
+            id: speed,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.2, -0.1])),
+        },
+        MaterialExpression {
+            id: time,
+            kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: pan,
+            kind: MaterialExpressionKind::PanUv {
+                uv: original_uv,
+                speed,
+                time,
+            },
+        },
+    ]);
+    for expression in &mut program.expressions {
+        if let MaterialExpressionKind::SampleTexture { uv, .. } = &mut expression.kind {
+            *uv = pan;
+        }
+    }
+
+    let compiled = compile(&program);
+
+    assert!(compiled.shader.wesl.contains("input.effect_time"));
+    assert!(
+        compiled
+            .reflection
+            .required_scene_inputs
+            .contains(&MaterialInput::EffectTime)
+    );
+    let pan_line = compiled
+        .source_map
+        .wesl_lines
+        .iter()
+        .find_map(|(line, value)| {
+            compiled
+                .source_map
+                .ir
+                .expressions
+                .get(value)
+                .is_some_and(|expressions| expressions.contains(&pan))
+                .then_some(*line)
+        })
+        .expect("PanUV must map to a generated shader line");
+    let pan_expression = compiled
+        .shader
+        .wesl
+        .lines()
+        .nth(pan_line as usize - 1)
+        .unwrap();
+    assert!(pan_expression.contains('+'));
+    assert!(pan_expression.contains('*'));
+    assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 
 #[test]

@@ -8,6 +8,7 @@ use aestra_core::{
         MaterialMipFilterMode, MaterialParameter, MaterialParameterValue, MaterialProgram,
         MaterialProgramRef, MaterialRenderState, MaterialSamplerDescriptor, MaterialSchemaVersion,
         MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
+        MaterialVectorComponent,
     },
 };
 use std::collections::BTreeMap;
@@ -352,6 +353,109 @@ fn material_analysis_infers_typed_sockets_and_evaluation_domains() {
         analysis.expressions[&color].evaluation_domain,
         MaterialExpressionDomain::Fragment
     );
+}
+
+#[test]
+fn pan_uv_round_trips_and_preserves_its_typed_semantic_sockets() {
+    let uv = MaterialExpressionId::from_u128(0xAA01);
+    let speed = MaterialExpressionId::from_u128(0xAA02);
+    let time = MaterialExpressionId::from_u128(0xAA03);
+    let pan = MaterialExpressionId::from_u128(0xAA04);
+    let alpha = MaterialExpressionId::from_u128(0xAA05);
+    let mut program = MaterialProgram::additive_sprite("Panning UV");
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: speed,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.25, -0.5])),
+        },
+        MaterialExpression {
+            id: time,
+            kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: pan,
+            kind: MaterialExpressionKind::PanUv { uv, speed, time },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: pan,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let analysis = program.analyze().unwrap();
+    assert_eq!(
+        analysis.expressions[&pan].value_type,
+        MaterialValueType::Vec2
+    );
+    assert_eq!(
+        analysis.expressions[&pan].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
+
+    let encoded = program.to_pretty_ron().unwrap();
+    assert!(encoded.contains("PanUv"));
+    assert_eq!(
+        MaterialProgram::from_ron(&encoded).unwrap(),
+        program.normalized()
+    );
+}
+
+#[test]
+fn pan_uv_reports_the_socket_with_the_wrong_type() {
+    let uv = MaterialExpressionId::from_u128(0xAB01);
+    let speed = MaterialExpressionId::from_u128(0xAB02);
+    let time = MaterialExpressionId::from_u128(0xAB03);
+    let pan = MaterialExpressionId::from_u128(0xAB04);
+    let alpha = MaterialExpressionId::from_u128(0xAB05);
+    let mut program = MaterialProgram::additive_sprite("Invalid panning UV");
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: speed,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: time,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleColor),
+        },
+        MaterialExpression {
+            id: pan,
+            kind: MaterialExpressionKind::PanUv { uv, speed, time },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: pan,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let report = program.validation_report();
+
+    assert!(!report.is_valid());
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".speed")
+            && diagnostic.message.contains("expects Vec2")
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".time")
+            && diagnostic.message.contains("expects Float")
+    }));
 }
 
 #[test]

@@ -7,9 +7,10 @@ use aestra_core::{
     BlendMode, EffectAsset, Emitter, MaterialExpressionId, MaterialId, MaterialParameterId,
     MaterialProgramId, RendererId,
     material::{
-        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInstance,
-        MaterialParameter, MaterialParameterValue, MaterialProgram, MaterialProgramRef,
-        MaterialRenderState, MaterialValue, MaterialValueType,
+        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
+        MaterialInstance, MaterialParameter, MaterialParameterValue, MaterialProgram,
+        MaterialProgramRef, MaterialRenderState, MaterialValue, MaterialValueType,
+        MaterialVectorComponent,
     },
 };
 use std::collections::BTreeMap;
@@ -178,6 +179,115 @@ fn program_and_expression_commands_are_transactional_and_reversible() {
     assert_eq!(document.programs[0].id, program_id);
     history.redo(&mut document).unwrap().unwrap();
     assert!(document.programs.is_empty());
+}
+
+#[test]
+fn pan_uv_semantic_sockets_are_rewireable_and_undoable() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x1200);
+    let uv = MaterialExpressionId::from_u128(0x1201);
+    let alternate_uv = MaterialExpressionId::from_u128(0x1202);
+    let speed = MaterialExpressionId::from_u128(0x1203);
+    let time = MaterialExpressionId::from_u128(0x1204);
+    let alternate_time = MaterialExpressionId::from_u128(0x1205);
+    let pan = MaterialExpressionId::from_u128(0x1206);
+    let alpha = MaterialExpressionId::from_u128(0x1207);
+    let mut program = MaterialProgram::additive_sprite("Authorable panning UV");
+    program.id = program_id;
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: alternate_uv,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5, 0.5])),
+        },
+        MaterialExpression {
+            id: speed,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.1, -0.2])),
+        },
+        MaterialExpression {
+            id: time,
+            kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: alternate_time,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(2.0)),
+        },
+        MaterialExpression {
+            id: pan,
+            kind: MaterialExpressionKind::PanUv { uv, speed, time },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: pan,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+    document.programs.push(program);
+    let mut history = MaterialCommandHistory::default();
+
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::new(
+                "Rewire panning UV",
+                vec![
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: pan,
+                        input: MaterialExpressionInput::Uv,
+                        source: alternate_uv,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: pan,
+                        input: MaterialExpressionInput::Speed,
+                        source: uv,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: pan,
+                        input: MaterialExpressionInput::Time,
+                        source: alternate_time,
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+
+    let expression = document.programs[0]
+        .expressions
+        .iter()
+        .find(|expression| expression.id == pan)
+        .unwrap();
+    assert!(matches!(
+        expression.kind,
+        MaterialExpressionKind::PanUv {
+            uv: rewired_uv,
+            speed: rewired_speed,
+            time: rewired_time,
+        } if rewired_uv == alternate_uv && rewired_speed == uv && rewired_time == alternate_time
+    ));
+
+    history.undo(&mut document).unwrap().unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == pan)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::PanUv {
+            uv: original_uv,
+            speed: original_speed,
+            time: original_time,
+        } if original_uv == uv && original_speed == speed && original_time == time
+    ));
 }
 
 #[test]

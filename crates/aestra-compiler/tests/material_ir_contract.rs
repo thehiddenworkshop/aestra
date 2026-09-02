@@ -8,7 +8,7 @@ use aestra_core::{
         MaterialAddressMode, MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind,
         MaterialFilterMode, MaterialInput, MaterialMipFilterMode, MaterialParameter,
         MaterialProgram, MaterialSamplerDescriptor, MaterialTextureColorSpace,
-        MaterialTextureDescriptor, MaterialValue, MaterialValueType,
+        MaterialTextureDescriptor, MaterialValue, MaterialValueType, MaterialVectorComponent,
     },
 };
 
@@ -175,6 +175,61 @@ fn valid_two_texture_flame_lowers_to_typed_backend_neutral_ir() {
             .all(|(index, value)| value.id == MaterialIrValueId(index as u32))
     );
     assert_eq!(ir.source_map.eliminated.len(), 0);
+}
+
+#[test]
+fn pan_uv_lowers_as_one_semantic_instruction_with_source_mapping() {
+    let uv = MaterialExpressionId::from_u128(0x3101);
+    let speed = MaterialExpressionId::from_u128(0x3102);
+    let time = MaterialExpressionId::from_u128(0x3103);
+    let pan = MaterialExpressionId::from_u128(0x3104);
+    let alpha = MaterialExpressionId::from_u128(0x3105);
+    let mut program = MaterialProgram::additive_sprite("Panning UV IR");
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: speed,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.25, -0.5])),
+        },
+        MaterialExpression {
+            id: time,
+            kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: pan,
+            kind: MaterialExpressionKind::PanUv { uv, speed, time },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: pan,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let pan_value = ir.source_map.values[&pan];
+    let MaterialIrInstruction::PanUv {
+        uv: ir_uv,
+        speed: ir_speed,
+        time: ir_time,
+    } = ir.value(pan_value).unwrap().instruction
+    else {
+        panic!("PanUV must survive lowering as a semantic IR instruction");
+    };
+
+    assert_eq!(ir_uv, ir.source_map.values[&uv]);
+    assert_eq!(ir_speed, ir.source_map.values[&speed]);
+    assert_eq!(ir_time, ir.source_map.values[&time]);
+    assert!(matches!(
+        ir.value(ir_time).unwrap().instruction,
+        MaterialIrInstruction::Input(MaterialInput::EffectTime)
+    ));
 }
 
 #[test]

@@ -532,6 +532,11 @@ pub enum MaterialExpressionKind {
         min: MaterialExpressionId,
         max: MaterialExpressionId,
     },
+    PanUv {
+        uv: MaterialExpressionId,
+        speed: MaterialExpressionId,
+        time: MaterialExpressionId,
+    },
     SampleTexture {
         texture: MaterialExpressionId,
         uv: MaterialExpressionId,
@@ -560,6 +565,7 @@ impl MaterialExpressionKind {
             | Self::Divide(left, right) => vec![*left, *right],
             Self::Lerp { start, end, factor } => vec![*start, *end, *factor],
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
+            Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::SampleTexture { texture, uv } => vec![*texture, *uv],
             Self::ExtractComponent { value, .. } => vec![*value],
         }
@@ -1075,6 +1081,54 @@ fn infer_expression(
                                 .max(max.evaluation_domain),
                         })
                     }
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::PanUv { uv, speed, time } => {
+            let uv = dependency(*uv);
+            let speed = dependency(*speed);
+            let time = dependency(*time);
+            match (uv, speed, time) {
+                (Some(uv), Some(speed), Some(time)) => {
+                    let mut valid = true;
+                    if uv.value_type != MaterialValueType::Vec2 {
+                        material_type_error(
+                            report,
+                            format!("{path}.uv"),
+                            format!("PanUV UV expects Vec2 but received {:?}", uv.value_type),
+                        );
+                        valid = false;
+                    }
+                    if speed.value_type != MaterialValueType::Vec2 {
+                        material_type_error(
+                            report,
+                            format!("{path}.speed"),
+                            format!(
+                                "PanUV speed expects Vec2 but received {:?}",
+                                speed.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if time.value_type != MaterialValueType::Float {
+                        material_type_error(
+                            report,
+                            format!("{path}.time"),
+                            format!(
+                                "PanUV time expects Float but received {:?}",
+                                time.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Vec2,
+                        evaluation_domain: uv
+                            .evaluation_domain
+                            .max(speed.evaluation_domain)
+                            .max(time.evaluation_domain),
+                    })
                 }
                 _ => None,
             }

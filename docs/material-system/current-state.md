@@ -1,6 +1,6 @@
 # Current Material System Audit
 
-Status: Material authoring Milestones 5, 6, and 7 complete
+Status: Material authoring Milestones 5, 6, and 7 complete; Milestone 8 in progress
 Audited: 2026-09-02
 
 This document records the material and renderer contract that exists before Aestra introduces a
@@ -246,6 +246,13 @@ semantic primitive. The viewer's opt-in `--semantic-materials` path performs thi
 memory and binds the resulting shaders without rewriting the source effect. Native-GPU comparison
 now verifies pixel-identical legacy and semantic output for all three showcase sources, and the
 approved images are the scheduled workflow baseline.
+
+Material 8 has begun with `PanUV` as an end-to-end semantic primitive rather than a pre-expanded
+multiply/add graph. Its explicit `Vec2` UV, `Vec2` speed, and `Float` time sockets survive stable
+RON, validation, undoable rewiring, backend-neutral IR, source mapping, and portable shader
+generation. The generated shader uses reflected effect time, and its WGSL is validated and
+translated to SPIR-V and HLSL by the contract suite. Remaining Material 8 operations are not yet
+implemented.
 
 ## Migration classification
 
