@@ -90,6 +90,12 @@ pub enum MaterialIrInstruction {
         edge_width: MaterialIrValueId,
         invert: MaterialIrValueId,
     },
+    DepthFade {
+        scene_depth: MaterialIrValueId,
+        pixel_depth: MaterialIrValueId,
+        fade_distance: MaterialIrValueId,
+        invert: MaterialIrValueId,
+    },
     PanUv {
         uv: MaterialIrValueId,
         speed: MaterialIrValueId,
@@ -156,6 +162,12 @@ impl MaterialIrInstruction {
                 edge_width,
                 invert,
             } => vec![*source, *threshold, *edge_width, *invert],
+            Self::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => vec![*scene_depth, *pixel_depth, *fade_distance, *invert],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -242,6 +254,17 @@ impl MaterialIrInstruction {
                 remap(source);
                 remap(threshold);
                 remap(edge_width);
+                remap(invert);
+            }
+            Self::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => {
+                remap(scene_depth);
+                remap(pixel_depth);
+                remap(fade_distance);
                 remap(invert);
             }
             Self::PanUv { uv, speed, time } => {
@@ -564,6 +587,17 @@ impl MaterialIrBuilder<'_> {
                 source: self.lower(source),
                 threshold: self.lower(threshold),
                 edge_width: self.lower(edge_width),
+                invert: self.lower(invert),
+            },
+            MaterialExpressionKind::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => MaterialIrInstruction::DepthFade {
+                scene_depth: self.lower(scene_depth),
+                pixel_depth: self.lower(pixel_depth),
+                fade_distance: self.lower(fade_distance),
                 invert: self.lower(invert),
             },
             MaterialExpressionKind::PanUv { uv, speed, time } => {

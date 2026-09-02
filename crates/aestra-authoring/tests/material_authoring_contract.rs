@@ -1121,6 +1121,95 @@ fn dissolve_edge_semantic_sockets_are_rewireable_and_undoable() {
 }
 
 #[test]
+fn depth_fade_sockets_are_rewired_transactionally() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x1d00);
+    let scene_depth = MaterialExpressionId::from_u128(0x1d01);
+    let alternate_scene_depth = MaterialExpressionId::from_u128(0x1d02);
+    let pixel_depth = MaterialExpressionId::from_u128(0x1d03);
+    let fade_distance = MaterialExpressionId::from_u128(0x1d04);
+    let invert = MaterialExpressionId::from_u128(0x1d05);
+    let depth_fade = MaterialExpressionId::from_u128(0x1d06);
+    let mut program = MaterialProgram::additive_sprite("Authorable depth fade");
+    program.id = program_id;
+    program.expressions.extend([
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+        },
+        MaterialExpression {
+            id: alternate_scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+        },
+        MaterialExpression {
+            id: pixel_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+        },
+        MaterialExpression {
+            id: fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: depth_fade,
+            kind: MaterialExpressionKind::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = depth_fade;
+    document.programs.push(program);
+    let mut history = MaterialCommandHistory::default();
+
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::single(
+                "Rewire depth fade",
+                MaterialCommand::RewireMaterialExpressionInput {
+                    program: program_id,
+                    expression: depth_fade,
+                    input: MaterialExpressionInput::SceneDepth,
+                    source: alternate_scene_depth,
+                },
+            ),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == depth_fade)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::DepthFade {
+            scene_depth: rewired,
+            ..
+        } if rewired == alternate_scene_depth
+    ));
+    history.undo(&mut document).unwrap().unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == depth_fade)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::DepthFade {
+            scene_depth: restored,
+            ..
+        } if restored == scene_depth
+    ));
+}
+
+#[test]
 fn instance_parameter_render_state_and_assignment_commands_are_undoable() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x2000);

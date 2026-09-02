@@ -123,8 +123,11 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   setup, compute dispatch, readback, texture resolution, and draw submission.
 - Converts WGPU device limits and semantic-material resource layouts at the adapter boundary,
   packs constant/default instance values, resolves portable texture IDs, and selects generated
-  fragment shaders through portable pipeline keys; portable compiler crates never import Bevy or
-  WGPU types. The legacy sprite shader remains an explicit compatibility fallback during migration.
+  fragment shaders through portable pipeline keys. Scene-depth materials receive a renderer-owned
+  group-3 binding containing the separate 3D prepass depth texture plus view reconstruction data;
+  single-sample and MSAA depth layouts/shaders are specialized without exposing Bevy or WGPU types
+  to portable compiler crates. The legacy sprite shader remains an explicit compatibility fallback
+  during migration.
 - Exercises generated simulation WGSL through a deterministic native-compute conformance harness;
   fixed-time particle readback is compared with the CPU semantic reference across once,
   restart-loop, and continuous-loop playback, including emitter regions and surviving prior-cycle

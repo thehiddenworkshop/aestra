@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "f2a5229fa6271cac3c57a2877162c48689830f7c25ed764ca043212e5f1a88d6"
+        "918d43602516c816009c4618455397ba0f890cfa548851b7b9359c05cac4a4cf"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -371,7 +371,7 @@ fn unsupported_inputs_report_their_semantic_expression() {
         .iter_mut()
         .find(|expression| expression.id == opacity)
         .unwrap()
-        .kind = MaterialExpressionKind::Input(MaterialInput::SceneDepth);
+        .kind = MaterialExpressionKind::Input(MaterialInput::ParticleAge);
     let ir = MaterialCompiler.compile(&program).unwrap();
 
     let error = MaterialShaderCompiler
@@ -381,7 +381,7 @@ fn unsupported_inputs_report_their_semantic_expression() {
     assert!(matches!(
         error,
         MaterialGpuError::UnsupportedInput {
-            input: MaterialInput::SceneDepth,
+            input: MaterialInput::ParticleAge,
             expressions,
         } if expressions == vec![opacity]
     ));
@@ -818,4 +818,95 @@ fn reflection_links_each_parameter_to_its_portable_binding() {
             offset: 16,
         }
     ));
+}
+
+#[test]
+fn depth_fade_compiles_single_and_multisampled_scene_depth_variants() {
+    let scene_depth = MaterialExpressionId::from_u128(0xd001);
+    let pixel_depth = MaterialExpressionId::from_u128(0xd002);
+    let fade_distance = MaterialExpressionId::from_u128(0xd003);
+    let invert = MaterialExpressionId::from_u128(0xd004);
+    let fade = MaterialExpressionId::from_u128(0xd005);
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Depth fade");
+    program.expressions.extend([
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+        },
+        MaterialExpression {
+            id: pixel_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+        },
+        MaterialExpression {
+            id: fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: fade,
+            kind: MaterialExpressionKind::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = fade;
+
+    let compiled = compile(&program);
+
+    assert_eq!(
+        compiled.reflection.required_scene_inputs,
+        vec![MaterialInput::SceneDepth, MaterialInput::PixelDepth]
+    );
+    assert!(compiled.shader.wesl.contains("@group(3) @binding(0)"));
+    assert!(compiled.shader.wesl.contains("texture_depth_2d"));
+    assert!(compiled.shader.wesl.contains("aestra_linear_view_depth"));
+    assert!(compiled.shader.wesl.contains("scene_depth"));
+    assert!(compiled.shader.wesl.contains("pixel_depth"));
+    assert!(compiled.shader.wesl.contains("0.5"));
+    assert!(compiled.shader.wesl.contains("select"));
+    assert!(
+        compiled
+            .multisampled_shader
+            .wesl
+            .contains("texture_depth_multisampled_2d")
+    );
+    assert!(
+        compiled
+            .multisampled_shader
+            .wesl
+            .contains("@builtin(sample_index)")
+    );
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+    assert_portable_shader_targets(&compiled.multisampled_shader.wgsl);
+}
+
+#[test]
+fn depth_inputs_report_the_scene_bind_group_capability() {
+    let scene_depth = MaterialExpressionId::from_u128(0xd101);
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Scene depth");
+    program.expressions.push(MaterialExpression {
+        id: scene_depth,
+        kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+    });
+    program.outputs.alpha = scene_depth;
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let mut capabilities = MaterialBackendCapabilities::portable_minimum();
+    capabilities.max_bind_groups = 3;
+
+    let error = MaterialShaderCompiler
+        .compile(&ir, &capabilities)
+        .unwrap_err();
+    let MaterialGpuError::Capabilities(report) = error else {
+        panic!("depth input must be rejected when group 3 is unavailable");
+    };
+    assert!(report.issues.iter().any(|issue| {
+        issue.code == MaterialCapabilityIssueCode::BindGroupUnavailable
+            && issue.message.contains("scene depth group 3")
+    }));
 }

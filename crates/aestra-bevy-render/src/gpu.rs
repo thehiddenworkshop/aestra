@@ -105,13 +105,20 @@ struct GpuSemanticMaterialBinding {
     program: Arc<CompiledMaterialProgram>,
     render_state: aestra_core::material::MaterialRenderState,
     shader: Handle<Shader>,
+    multisampled_shader: Handle<Shader>,
     uniforms: Arc<[u8]>,
     textures: Vec<Handle<Image>>,
     fallback_texture: Handle<Image>,
 }
 
+#[derive(Clone)]
+struct MaterialShaderVariants {
+    single_sampled: Handle<Shader>,
+    multisampled: Handle<Shader>,
+}
+
 #[derive(Resource, Default)]
-pub(crate) struct MaterialShaderCache(BTreeMap<MaterialProgramFingerprint, Handle<Shader>>);
+pub(crate) struct MaterialShaderCache(BTreeMap<MaterialProgramFingerprint, MaterialShaderVariants>);
 
 impl SyncComponent for GpuDrawInstance {
     type Target = Self;
@@ -756,17 +763,32 @@ fn prepare_semantic_material(
 ) -> Result<GpuSemanticMaterialBinding, MaterialBindingError> {
     let prepared = binding.prepare()?;
     let program = binding.program().clone();
-    let shader = shader_cache
+    let shader_variants = shader_cache
         .0
         .entry(program.program_fingerprint)
         .or_insert_with(|| {
-            shaders.add(Shader::from_wgsl(
+            let single_sampled = shaders.add(Shader::from_wgsl(
                 program.shader.wgsl.clone(),
                 format!(
                     "generated://aestra/material/{}.wgsl",
                     program.program_fingerprint
                 ),
-            ))
+            ));
+            let multisampled = if program.requires_scene_depth() {
+                shaders.add(Shader::from_wgsl(
+                    program.multisampled_shader.wgsl.clone(),
+                    format!(
+                        "generated://aestra/material/{}_multisampled.wgsl",
+                        program.program_fingerprint
+                    ),
+                ))
+            } else {
+                single_sampled.clone()
+            };
+            MaterialShaderVariants {
+                single_sampled,
+                multisampled,
+            }
         })
         .clone();
     let textures = prepared
@@ -784,7 +806,8 @@ fn prepare_semantic_material(
     Ok(GpuSemanticMaterialBinding {
         program,
         render_state: binding.render_state(),
-        shader,
+        shader: shader_variants.single_sampled,
+        multisampled_shader: shader_variants.multisampled,
         uniforms: prepared.uniforms.into(),
         textures,
         fallback_texture: fallback_textures.missing.clone(),

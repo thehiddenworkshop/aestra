@@ -1976,7 +1976,7 @@ Flipbook
 ```
 
 Implementation status (2026-09-02): `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`,
-`RadialMask`, `Dissolve`, and `DissolveEdge` are completed
+`RadialMask`, `Dissolve`, `DissolveEdge`, and `DepthFade` are completed
 vertical slices. They retain semantic UV/speed/time, UV/center/radians, UV/center/scale, and
 value/input-range/output-range, and edge-minimum/edge-maximum/value inputs through the authored
 model, validation, command history, backend-neutral IR, source mapping, and portable shader
@@ -1990,6 +1990,12 @@ zero, and resolves zero edge width as a deterministic hard cut.
 DissolveEdge reuses those sockets to emit a one-sided band that peaks at the threshold and fades
 across the edge width. Inversion moves the band to the opposite side, negative edge width clamps to
 zero, and zero edge width produces no edge.
+DepthFade retains explicit scene-depth, pixel-depth, fade-distance, and invert sockets. Both depths
+are linear view-space distances in the same units as the authored distance. Negative distances
+clamp to zero and zero distance becomes a deterministic hard intersection test. The portable shader
+ABI reserves bind group 3 for renderer-owned view inputs; the Bevy adapter binds its separate 3D
+depth-prepass texture and view reconstruction data, including an MSAA shader/layout variant. It
+does not sample the active depth attachment and does not claim scene-depth support for 2D views.
 The remaining primitives in this milestone are still planned.
 
 Then:

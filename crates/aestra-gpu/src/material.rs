@@ -22,9 +22,11 @@ use std::{
 };
 use thiserror::Error;
 
-pub const MATERIAL_ABI_VERSION: u32 = 1;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 9;
+pub const MATERIAL_ABI_VERSION: u32 = 2;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 10;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
+/// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
+pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
 pub const MATERIAL_FRAGMENT_ENTRY_POINT: &str = "fragment_material";
 pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
 
@@ -217,6 +219,9 @@ impl MaterialCapabilityReport {
 pub struct CompiledMaterialProgram {
     pub source: MaterialProgramId,
     pub shader: CompiledWesl,
+    /// Shader variant for multisampled scene-depth attachments. This is equal
+    /// to `shader` when the program does not read depth.
+    pub multisampled_shader: CompiledWesl,
     pub source_map: MaterialShaderSourceMap,
     pub resource_layout: MaterialResourceLayout,
     pub reflection: MaterialReflection,
@@ -225,6 +230,13 @@ pub struct CompiledMaterialProgram {
 }
 
 impl CompiledMaterialProgram {
+    pub fn requires_scene_depth(&self) -> bool {
+        self.reflection
+            .required_scene_inputs
+            .iter()
+            .any(|input| matches!(input, MaterialInput::SceneDepth | MaterialInput::PixelDepth))
+    }
+
     pub fn pipeline_key(
         &self,
         render_state: MaterialRenderState,
@@ -283,13 +295,17 @@ impl MaterialShaderCompiler {
         capabilities: &MaterialBackendCapabilities,
     ) -> Result<CompiledMaterialProgram, MaterialGpuError> {
         let resource_layout = build_resource_layout(ir);
-        let report = validate_capabilities(&resource_layout, capabilities);
+        let reflection = build_reflection(ir, &resource_layout)?;
+        let requires_scene_depth = reflection
+            .required_scene_inputs
+            .iter()
+            .any(|input| matches!(input, MaterialInput::SceneDepth | MaterialInput::PixelDepth));
+        let report = validate_capabilities(&resource_layout, capabilities, requires_scene_depth);
         if !report.is_compatible() {
             return Err(MaterialGpuError::Capabilities(report));
         }
-        let reflection = build_reflection(ir, &resource_layout)?;
         let program_fingerprint = fingerprint_program(ir, &resource_layout);
-        let (wesl, wesl_lines) = generate_wesl(ir, &resource_layout)?;
+        let (wesl, wesl_lines) = generate_wesl(ir, &resource_layout, false)?;
         let source_map = MaterialShaderSourceMap {
             ir: ir.source_map.clone(),
             wesl_lines,
@@ -304,9 +320,24 @@ impl MaterialShaderCompiler {
                 source_map: Box::new(source_map.clone()),
             },
         )?;
+        let multisampled_shader = if requires_scene_depth {
+            let (wesl, _) = generate_wesl(ir, &resource_layout, true)?;
+            compile_wesl(
+                &format!("{module_name}_multisampled"),
+                &wesl,
+                &[MATERIAL_FRAGMENT_ENTRY_POINT],
+            )
+            .map_err(|error| MaterialGpuError::Shader {
+                error,
+                source_map: Box::new(source_map.clone()),
+            })?
+        } else {
+            shader.clone()
+        };
         Ok(CompiledMaterialProgram {
             source: ir.source,
             shader,
+            multisampled_shader,
             source_map,
             resource_layout,
             reflection,
@@ -398,6 +429,7 @@ fn build_resource_layout(ir: &MaterialIrProgram) -> MaterialResourceLayout {
 fn validate_capabilities(
     layout: &MaterialResourceLayout,
     capabilities: &MaterialBackendCapabilities,
+    requires_scene_depth: bool,
 ) -> MaterialCapabilityReport {
     let mut report = MaterialCapabilityReport::default();
     if capabilities.max_bind_groups <= layout.group {
@@ -407,6 +439,16 @@ fn validate_capabilities(
                 "material group {} requires at least {} bind groups, but the backend exposes {}",
                 layout.group,
                 layout.group + 1,
+                capabilities.max_bind_groups
+            ),
+        });
+    }
+    if requires_scene_depth && capabilities.max_bind_groups <= MATERIAL_SCENE_BIND_GROUP {
+        report.issues.push(MaterialCapabilityIssue {
+            code: MaterialCapabilityIssueCode::BindGroupUnavailable,
+            message: format!(
+                "scene depth group {MATERIAL_SCENE_BIND_GROUP} requires at least {} bind groups, but the backend exposes {}",
+                MATERIAL_SCENE_BIND_GROUP + 1,
                 capabilities.max_bind_groups
             ),
         });
@@ -421,13 +463,22 @@ fn validate_capabilities(
             ),
         });
     }
-    if layout.textures.len() as u32 > capabilities.max_sampled_textures_per_shader_stage {
+    if requires_scene_depth && capabilities.max_bindings_per_bind_group < 2 {
+        report.issues.push(MaterialCapabilityIssue {
+            code: MaterialCapabilityIssueCode::BindingLimitExceeded,
+            message: format!(
+                "scene depth uses 2 bindings, but the backend supports {} per group",
+                capabilities.max_bindings_per_bind_group
+            ),
+        });
+    }
+    let sampled_texture_count = layout.textures.len() as u32 + u32::from(requires_scene_depth);
+    if sampled_texture_count > capabilities.max_sampled_textures_per_shader_stage {
         report.issues.push(MaterialCapabilityIssue {
             code: MaterialCapabilityIssueCode::TextureLimitExceeded,
             message: format!(
                 "material uses {} sampled textures, but the backend supports {}",
-                layout.textures.len(),
-                capabilities.max_sampled_textures_per_shader_stage
+                sampled_texture_count, capabilities.max_sampled_textures_per_shader_stage
             ),
         });
     }
@@ -465,6 +516,8 @@ fn build_reflection(
                 | MaterialInput::ParticleColor
                 | MaterialInput::ParticleOpacity
                 | MaterialInput::EffectTime
+                | MaterialInput::SceneDepth
+                | MaterialInput::PixelDepth
         ) {
             let expressions = ir
                 .values
@@ -534,14 +587,50 @@ fn build_reflection(
 fn generate_wesl(
     ir: &MaterialIrProgram,
     layout: &MaterialResourceLayout,
+    multisampled_depth: bool,
 ) -> Result<(String, BTreeMap<u32, MaterialIrValueId>), MaterialGpuError> {
     let mut source = String::new();
     let mut lines = BTreeMap::new();
     source.push_str("// Generated by Aestra's portable material backend.\n");
     source.push_str("// Resource bindings are described by MaterialResourceLayout.\n\n");
     source.push_str(
-        "struct MaterialFragmentInput {\n    @location(6) uv0: vec2<f32>,\n    @location(7) particle_color: vec4<f32>,\n    @location(8) particle_opacity: f32,\n    @location(9) effect_time: f32,\n    @location(10) quad_position: vec2<f32>,\n    @location(11) softness: f32,\n    @location(12) @interpolate(flat) textured: u32,\n    @location(13) @interpolate(flat) visible: u32,\n}\n\n",
+        "struct MaterialFragmentInput {\n    @builtin(position) fragment_position: vec4<f32>,\n    @location(6) uv0: vec2<f32>,\n    @location(7) particle_color: vec4<f32>,\n    @location(8) particle_opacity: f32,\n    @location(9) effect_time: f32,\n    @location(10) quad_position: vec2<f32>,\n    @location(11) softness: f32,\n    @location(12) @interpolate(flat) textured: u32,\n    @location(13) @interpolate(flat) visible: u32,\n",
     );
+    if multisampled_depth {
+        source.push_str("    @builtin(sample_index) sample_index: u32,\n");
+    }
+    source.push_str("}\n\n");
+    let requires_scene_depth = reflect_material_inputs(ir)
+        .scene
+        .iter()
+        .any(|input| matches!(input, MaterialInput::SceneDepth | MaterialInput::PixelDepth));
+    if requires_scene_depth {
+        source.push_str(
+            "struct MaterialSceneUniforms {\n    view_from_clip: mat4x4<f32>,\n    viewport: vec4<f32>,\n}\n\n",
+        );
+        source.push_str(&format!(
+            "@group({MATERIAL_SCENE_BIND_GROUP}) @binding(0) var<uniform> material_scene: MaterialSceneUniforms;\n"
+        ));
+        source.push_str(&format!(
+            "@group({MATERIAL_SCENE_BIND_GROUP}) @binding(1) var material_scene_depth: {};\n\n",
+            if multisampled_depth {
+                "texture_depth_multisampled_2d"
+            } else {
+                "texture_depth_2d"
+            }
+        ));
+        source.push_str(
+            "fn aestra_linear_view_depth(raw_depth: f32, fragment_position: vec4<f32>) -> f32 {\n    let uv = (fragment_position.xy - material_scene.viewport.xy) / material_scene.viewport.zw;\n    let ndc = vec2<f32>((uv.x * 2.0) - 1.0, ((1.0 - uv.y) * 2.0) - 1.0);\n    let view_position = material_scene.view_from_clip * vec4<f32>(ndc, raw_depth, 1.0);\n    return abs(view_position.z / view_position.w);\n}\n\n",
+        );
+        let load = if multisampled_depth {
+            "textureLoad(material_scene_depth, vec2<i32>(input.fragment_position.xy), i32(input.sample_index))"
+        } else {
+            "textureLoad(material_scene_depth, vec2<i32>(input.fragment_position.xy), 0)"
+        };
+        source.push_str(&format!(
+            "fn aestra_scene_depth(input: MaterialFragmentInput) -> f32 {{\n    return aestra_linear_view_depth({load}, input.fragment_position);\n}}\n\nfn aestra_pixel_depth(input: MaterialFragmentInput) -> f32 {{\n    return aestra_linear_view_depth(input.fragment_position.z, input.fragment_position);\n}}\n\n"
+        ));
+    }
     if let Some(binding) = layout.uniforms.binding {
         source.push_str("struct MaterialUniforms {\n");
         for slot in &layout.uniforms.slots {
@@ -710,6 +799,12 @@ fn instruction_expression(
             edge_width,
             invert,
         } => dissolve_edge_expression(*source, *threshold, *edge_width, *invert),
+        MaterialIrInstruction::DepthFade {
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => depth_fade_expression(*scene_depth, *pixel_depth, *fade_distance, *invert),
         MaterialIrInstruction::PanUv { uv, speed, time } => format!(
             "({} + ({} * {}))",
             value_name(*uv),
@@ -881,6 +976,25 @@ fn dissolve_edge_expression(
     format!("select(0.0, (1.0 - {smooth}), {inside})")
 }
 
+fn depth_fade_expression(
+    scene_depth: MaterialIrValueId,
+    pixel_depth: MaterialIrValueId,
+    fade_distance: MaterialIrValueId,
+    invert: MaterialIrValueId,
+) -> String {
+    let scene_depth = value_name(scene_depth);
+    let pixel_depth = value_name(pixel_depth);
+    let fade_distance = format!("max({}, 0.0)", value_name(fade_distance));
+    let invert = value_name(invert);
+    let separation = format!("max(({scene_depth} - {pixel_depth}), 0.0)");
+    let safe = format!("({fade_distance} >= 0.000001)");
+    let denominator = format!("select(1.0, {fade_distance}, {safe})");
+    let soft = format!("clamp(({separation} / {denominator}), 0.0, 1.0)");
+    let hard = format!("select(0.0, 1.0, ({separation} > 0.0))");
+    let fade = format!("select({hard}, {soft}, {safe})");
+    format!("select({fade}, (1.0 - {fade}), {invert})")
+}
+
 fn promote_operand(
     ir: &MaterialIrProgram,
     id: MaterialIrValueId,
@@ -903,6 +1017,8 @@ fn input_expression(input: MaterialInput) -> Option<&'static str> {
         MaterialInput::ParticleColor => Some("input.particle_color"),
         MaterialInput::ParticleOpacity => Some("input.particle_opacity"),
         MaterialInput::EffectTime => Some("input.effect_time"),
+        MaterialInput::SceneDepth => Some("aestra_scene_depth(input)"),
+        MaterialInput::PixelDepth => Some("aestra_pixel_depth(input)"),
         _ => None,
     }
 }
@@ -1123,6 +1239,18 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(source.0);
             fingerprint.u32(threshold.0);
             fingerprint.u32(edge_width.0);
+            fingerprint.u32(invert.0);
+        }
+        MaterialIrInstruction::DepthFade {
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => {
+            fingerprint.byte(19);
+            fingerprint.u32(scene_depth.0);
+            fingerprint.u32(pixel_depth.0);
+            fingerprint.u32(fade_distance.0);
             fingerprint.u32(invert.0);
         }
         MaterialIrInstruction::DissolveEdge {

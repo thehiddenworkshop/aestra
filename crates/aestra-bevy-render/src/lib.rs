@@ -263,6 +263,7 @@ impl Plugin for AestraRenderPlugin {
         app.add_systems(
             Update,
             (
+                ensure_aestra_depth_prepass,
                 assign_effect_backends,
                 cpu::prepare_cpu_effects,
                 gpu::prepare_gpu_effects,
@@ -271,6 +272,26 @@ impl Plugin for AestraRenderPlugin {
                 .chain()
                 .in_set(AestraRenderSet::Prepare),
         );
+    }
+}
+
+/// Aestra's semantic scene-depth inputs sample Bevy's separate 3D prepass
+/// texture. Enabling it on 3D cameras avoids the invalid feedback loop that
+/// would result from sampling the active main-pass depth attachment.
+fn ensure_aestra_depth_prepass(
+    mut commands: bevy::prelude::Commands,
+    cameras: bevy::prelude::Query<
+        bevy::prelude::Entity,
+        (
+            bevy::prelude::With<bevy::prelude::Camera3d>,
+            bevy::prelude::Without<bevy::core_pipeline::prepass::DepthPrepass>,
+        ),
+    >,
+) {
+    for camera in &cameras {
+        commands
+            .entity(camera)
+            .insert(bevy::core_pipeline::prepass::DepthPrepass);
     }
 }
 

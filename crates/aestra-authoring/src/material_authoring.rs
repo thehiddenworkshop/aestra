@@ -113,6 +113,9 @@ pub enum MaterialExpressionInput {
     Softness,
     Threshold,
     EdgeWidth,
+    SceneDepth,
+    PixelDepth,
+    FadeDistance,
     Invert,
     Speed,
     Time,
@@ -683,6 +686,21 @@ fn rewire_expression(
             MaterialExpressionInput::EdgeWidth,
         ) => edge_width,
         (MaterialExpressionKind::DissolveEdge { invert, .. }, MaterialExpressionInput::Invert) => {
+            invert
+        }
+        (
+            MaterialExpressionKind::DepthFade { scene_depth, .. },
+            MaterialExpressionInput::SceneDepth,
+        ) => scene_depth,
+        (
+            MaterialExpressionKind::DepthFade { pixel_depth, .. },
+            MaterialExpressionInput::PixelDepth,
+        ) => pixel_depth,
+        (
+            MaterialExpressionKind::DepthFade { fade_distance, .. },
+            MaterialExpressionInput::FadeDistance,
+        ) => fade_distance,
+        (MaterialExpressionKind::DepthFade { invert, .. }, MaterialExpressionInput::Invert) => {
             invert
         }
         (MaterialExpressionKind::PanUv { uv, .. }, MaterialExpressionInput::Uv) => uv,

@@ -1166,6 +1166,107 @@ fn dissolve_edge_reports_each_mistyped_socket() {
 }
 
 #[test]
+fn depth_fade_round_trips_linear_depth_sockets() {
+    let scene_depth = MaterialExpressionId::from_u128(0xb901);
+    let pixel_depth = MaterialExpressionId::from_u128(0xb902);
+    let fade_distance = MaterialExpressionId::from_u128(0xb903);
+    let invert = MaterialExpressionId::from_u128(0xb904);
+    let depth_fade = MaterialExpressionId::from_u128(0xb905);
+    let mut program = MaterialProgram::additive_sprite("Depth fade");
+    program.expressions.extend([
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+        },
+        MaterialExpression {
+            id: pixel_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+        },
+        MaterialExpression {
+            id: fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: depth_fade,
+            kind: MaterialExpressionKind::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = depth_fade;
+
+    let analysis = program.analyze().unwrap();
+    assert_eq!(
+        analysis.expressions[&depth_fade].value_type,
+        MaterialValueType::Float
+    );
+    assert_eq!(
+        analysis.expressions[&depth_fade].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
+    let encoded = program.to_pretty_ron().unwrap();
+    assert!(encoded.contains("DepthFade"));
+    assert_eq!(
+        MaterialProgram::from_ron(&encoded).unwrap(),
+        program.normalized()
+    );
+}
+
+#[test]
+fn depth_fade_reports_each_mistyped_socket() {
+    let scene_depth = MaterialExpressionId::from_u128(0xba01);
+    let pixel_depth = MaterialExpressionId::from_u128(0xba02);
+    let fade_distance = MaterialExpressionId::from_u128(0xba03);
+    let invert = MaterialExpressionId::from_u128(0xba04);
+    let depth_fade = MaterialExpressionId::from_u128(0xba05);
+    let mut program = MaterialProgram::additive_sprite("Invalid depth fade");
+    program.expressions.extend([
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.0; 2])),
+        },
+        MaterialExpression {
+            id: pixel_depth,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: fade_distance,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec3([0.0; 3])),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: depth_fade,
+            kind: MaterialExpressionKind::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = depth_fade;
+
+    let report = program.validation_report();
+    for socket in [".scene_depth", ".pixel_depth", ".fade_distance", ".invert"] {
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+                && diagnostic.path.ends_with(socket)
+                && diagnostic.message.contains("DepthFade")
+        }));
+    }
+}
+
+#[test]
 fn material_validation_rejects_output_and_socket_type_mismatches() {
     let mut program = MaterialProgram::additive_sprite("Bad types");
     let vector = MaterialExpressionId::from_u128(0xB01);

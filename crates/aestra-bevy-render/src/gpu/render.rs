@@ -12,6 +12,7 @@ use bevy::{
     core_pipeline::{
         core_2d::{CORE_2D_DEPTH_FORMAT, Transparent2d},
         core_3d::{CORE_3D_DEPTH_FORMAT, Transparent3d, TransparentSortingInfo3d},
+        prepass::ViewPrepassTextures,
     },
     ecs::{
         query::ROQueryItem,
@@ -33,10 +34,14 @@ use bevy::{
             BlendState, BufferInitDescriptor, BufferUsages, ColorTargetState, ColorWrites,
             CompareFunction, DepthBiasState, DepthStencilState, Face, FragmentState,
             MultisampleState, PipelineCache, PrimitiveState, PrimitiveTopology,
-            RenderPipelineDescriptor, Sampler, SamplerBindingType, ShaderStages,
+            RenderPipelineDescriptor, Sampler, SamplerBindingType, ShaderStages, ShaderType,
             SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState,
             TextureFormat, TextureSampleType, VertexState,
-            binding_types::{sampler, storage_buffer_read_only, texture_2d},
+            binding_types::{
+                sampler, storage_buffer_read_only, texture_2d, texture_depth_2d,
+                texture_depth_2d_multisampled, uniform_buffer,
+            },
+            encase::UniformBuffer,
         },
         renderer::RenderDevice,
         storage::GpuShaderBuffer,
@@ -55,6 +60,7 @@ pub(super) fn install(render_app: &mut SubApp) {
         .add_render_command::<Transparent2d, DrawSemanticGpuSprites>()
         .add_render_command::<Transparent3d, DrawGpuSprites3d>()
         .add_render_command::<Transparent3d, DrawSemanticGpuSprites3d>()
+        .add_render_command::<Transparent3d, DrawSemanticDepthGpuSprites3d>()
         .init_resource::<SpecializedRenderPipelines<GpuSpritePipeline>>()
         .add_systems(
             RenderStartup,
@@ -66,6 +72,7 @@ pub(super) fn install(render_app: &mut SubApp) {
             Render,
             (
                 prepare_render_bind_groups.in_set(RenderSystems::PrepareBindGroups),
+                prepare_scene_depth_bind_groups.in_set(RenderSystems::PrepareBindGroups),
                 queue_gpu_sprites.in_set(RenderSystems::QueueMeshes),
                 queue_gpu_sprites_3d.in_set(RenderSystems::QueueMeshes),
             ),
@@ -91,6 +98,7 @@ struct GpuSemanticPipelineKey {
     key: MaterialPipelineKey,
     shader: Handle<Shader>,
     layout: std::sync::Arc<MaterialResourceLayout>,
+    requires_scene_depth: bool,
 }
 
 impl PartialEq for GpuSemanticPipelineKey {
@@ -113,7 +121,34 @@ struct GpuSpritePipeline {
     mesh2d: Mesh2dPipeline,
     mesh3d: MeshPipeline,
     effect_layout: BindGroupLayoutDescriptor,
+    scene_depth_layout: BindGroupLayoutDescriptor,
+    multisampled_scene_depth_layout: BindGroupLayoutDescriptor,
     shader: Handle<Shader>,
+}
+
+#[derive(Clone, Copy, ShaderType)]
+struct MaterialSceneUniforms {
+    view_from_clip: Mat4,
+    viewport: Vec4,
+}
+
+fn scene_depth_bind_group_layout(multisampled: bool) -> BindGroupLayoutDescriptor {
+    let depth = if multisampled {
+        texture_depth_2d_multisampled()
+    } else {
+        texture_depth_2d()
+    };
+    BindGroupLayoutDescriptor::new(
+        if multisampled {
+            "aestra material multisampled scene depth"
+        } else {
+            "aestra material scene depth"
+        },
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (uniform_buffer::<MaterialSceneUniforms>(false), depth),
+        ),
+    )
 }
 
 fn init_render_pipeline(
@@ -137,10 +172,14 @@ fn init_render_pipeline(
             ),
         ),
     );
+    let scene_depth_layout = scene_depth_bind_group_layout(false);
+    let multisampled_scene_depth_layout = scene_depth_bind_group_layout(true);
     commands.insert_resource(GpuSpritePipeline {
         mesh2d: mesh2d.clone(),
         mesh3d: mesh3d.clone(),
         effect_layout,
+        scene_depth_layout,
+        multisampled_scene_depth_layout,
         shader: asset_server.load(WESL_RENDER_SHADER_PATH),
     });
 }
@@ -201,6 +240,13 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
         let mut layout = vec![view_layout, self.effect_layout.clone()];
         if let Some(material) = &key.material {
             layout.push(material_bind_group_layout(&material.layout));
+            if material.requires_scene_depth {
+                layout.push(if msaa_samples > 1 {
+                    self.multisampled_scene_depth_layout.clone()
+                } else {
+                    self.scene_depth_layout.clone()
+                });
+            }
         }
         let fragment_shader = key
             .material
@@ -283,6 +329,49 @@ struct GpuRenderBindGroup(BindGroup);
 
 #[derive(Component)]
 struct GpuMaterialBindGroup(BindGroup);
+
+#[derive(Component)]
+struct GpuSceneDepthBindGroup(BindGroup);
+
+fn prepare_scene_depth_bind_groups(
+    mut commands: Commands,
+    pipeline: Res<GpuSpritePipeline>,
+    render_device: Res<RenderDevice>,
+    pipeline_cache: Res<PipelineCache>,
+    views: Query<(Entity, &ExtractedView, &ViewPrepassTextures, &Msaa)>,
+) {
+    for (entity, view, prepass, msaa) in &views {
+        let Some(depth_view) = prepass.depth_view() else {
+            commands.entity(entity).remove::<GpuSceneDepthBindGroup>();
+            continue;
+        };
+        let mut encoded = UniformBuffer::new(Vec::new());
+        encoded
+            .write(&MaterialSceneUniforms {
+                view_from_clip: view.clip_from_view.inverse(),
+                viewport: view.viewport.as_vec4(),
+            })
+            .expect("material scene uniforms have a fixed valid layout");
+        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("aestra material scene uniforms"),
+            contents: &encoded.into_inner(),
+            usage: BufferUsages::UNIFORM,
+        });
+        let descriptor = if msaa.samples() > 1 {
+            &pipeline.multisampled_scene_depth_layout
+        } else {
+            &pipeline.scene_depth_layout
+        };
+        let bind_group = render_device.create_bind_group(
+            Some("aestra material scene depth"),
+            &pipeline_cache.get_bind_group_layout(descriptor),
+            &BindGroupEntries::sequential((buffer.as_entire_buffer_binding(), depth_view)),
+        );
+        commands
+            .entity(entity)
+            .insert(GpuSceneDepthBindGroup(bind_group));
+    }
+}
 
 fn prepare_render_bind_groups(
     mut commands: Commands,
@@ -433,6 +522,21 @@ fn queue_gpu_sprites(
             let Ok(effect) = effects.get(*render_entity) else {
                 continue;
             };
+            let material = semantic_pipeline_key(
+                effect.semantic_material.as_ref(),
+                view.target_format,
+                msaa.samples(),
+                0,
+            );
+            // Scene-depth materials require the 3D depth prepass. Keeping this
+            // unsupported in 2D is preferable to sampling the active depth
+            // attachment, which is invalid on portable WebGPU backends.
+            if material
+                .as_ref()
+                .is_some_and(|material| material.requires_scene_depth)
+            {
+                continue;
+            }
             let pipeline_id = pipelines.specialize(
                 &pipeline_cache,
                 &pipeline,
@@ -440,12 +544,7 @@ fn queue_gpu_sprites(
                     view: GpuSpriteViewKey::TwoD(mesh_key),
                     blend: effect.blend,
                     render_mode: effect.render_mode,
-                    material: semantic_pipeline_key(
-                        effect.semantic_material.as_ref(),
-                        view.target_format,
-                        msaa.samples(),
-                        0,
-                    ),
+                    material,
                 },
             );
             phase.add_retained(Transparent2d {
@@ -484,6 +583,7 @@ fn queue_gpu_sprites_3d(
     let draw_functions = draw_functions.read();
     let legacy_draw_function = draw_functions.id::<DrawGpuSprites3d>();
     let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites3d>();
+    let semantic_depth_draw_function = draw_functions.id::<DrawSemanticDepthGpuSprites3d>();
     for (visible_entities, view) in &views {
         let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
             continue;
@@ -495,6 +595,15 @@ fn queue_gpu_sprites_3d(
             let Ok(effect) = effects.get(render_entity) else {
                 continue;
             };
+            let material = semantic_pipeline_key(
+                effect.semantic_material.as_ref(),
+                view.target_format,
+                mesh_key.msaa_samples(),
+                1,
+            );
+            let requires_scene_depth = material
+                .as_ref()
+                .is_some_and(|material| material.requires_scene_depth);
             let pipeline_id = pipelines.specialize(
                 &pipeline_cache,
                 &pipeline,
@@ -502,19 +611,18 @@ fn queue_gpu_sprites_3d(
                     view: GpuSpriteViewKey::ThreeD(mesh_key),
                     blend: effect.blend,
                     render_mode: effect.render_mode,
-                    material: semantic_pipeline_key(
-                        effect.semantic_material.as_ref(),
-                        view.target_format,
-                        mesh_key.msaa_samples(),
-                        1,
-                    ),
+                    material,
                 },
             );
             phase.add_retained(Transparent3d {
                 sorting_info: gpu_draw_sorting_info(effect.mesh_center, effect.renderer_order),
                 entity: (render_entity, main_entity),
                 pipeline: pipeline_id,
-                draw_function: if effect.semantic_material.is_some()
+                draw_function: if requires_scene_depth
+                    && effect.render_mode == GpuRenderMode::Rendered
+                {
+                    semantic_depth_draw_function
+                } else if effect.semantic_material.is_some()
                     && effect.render_mode == GpuRenderMode::Rendered
                 {
                     semantic_draw_function
@@ -546,10 +654,16 @@ fn semantic_pipeline_key(
         .program
         .pipeline_key(binding.render_state, variant)
         .expect("runtime bindings validate their material render state");
+    let requires_scene_depth = binding.program.requires_scene_depth();
     Some(GpuSemanticPipelineKey {
         key,
-        shader: binding.shader.clone(),
+        shader: if requires_scene_depth && sample_count > 1 {
+            binding.multisampled_shader.clone()
+        } else {
+            binding.shader.clone()
+        },
         layout: std::sync::Arc::new(binding.program.resource_layout.clone()),
+        requires_scene_depth,
     })
 }
 
@@ -611,6 +725,15 @@ type DrawSemanticGpuSprites3d = (
     DrawGpuSpritesIndirect,
 );
 
+type DrawSemanticDepthGpuSprites3d = (
+    SetItemPipeline,
+    SetMeshViewBindGroup<0>,
+    SetGpuRenderBindGroup<1>,
+    SetGpuMaterialBindGroup<2>,
+    SetGpuSceneDepthBindGroup<3>,
+    DrawGpuSpritesIndirect,
+);
+
 struct SetGpuRenderBindGroup<const I: usize>;
 
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGpuRenderBindGroup<I> {
@@ -650,6 +773,25 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGpuMaterialBindGroup<
         let Some(bind_group) = bind_group else {
             return RenderCommandResult::Skip;
         };
+        pass.set_bind_group(I, &bind_group.0, &[]);
+        RenderCommandResult::Success
+    }
+}
+
+struct SetGpuSceneDepthBindGroup<const I: usize>;
+
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGpuSceneDepthBindGroup<I> {
+    type Param = ();
+    type ViewQuery = Read<GpuSceneDepthBindGroup>;
+    type ItemQuery = ();
+
+    fn render<'w>(
+        _item: &P,
+        bind_group: ROQueryItem<'w, '_, Self::ViewQuery>,
+        _item_query: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
+        _param: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
         pass.set_bind_group(I, &bind_group.0, &[]);
         RenderCommandResult::Success
     }
@@ -705,6 +847,7 @@ mod tests {
             program: program.clone(),
             render_state: MaterialRenderState::additive_sprite(),
             shader: Handle::default(),
+            multisampled_shader: Handle::default(),
             uniforms: std::sync::Arc::from(uniforms),
             textures: Vec::new(),
             fallback_texture: Handle::default(),

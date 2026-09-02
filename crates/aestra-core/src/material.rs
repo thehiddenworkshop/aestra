@@ -563,6 +563,17 @@ pub enum MaterialExpressionKind {
         edge_width: MaterialExpressionId,
         invert: MaterialExpressionId,
     },
+    /// Fades a fragment as it approaches opaque scene geometry.
+    ///
+    /// Both depth inputs are linear view-space distances in the same units as
+    /// `fade_distance`. A non-positive distance produces a deterministic hard
+    /// intersection test.
+    DepthFade {
+        scene_depth: MaterialExpressionId,
+        pixel_depth: MaterialExpressionId,
+        fade_distance: MaterialExpressionId,
+        invert: MaterialExpressionId,
+    },
     PanUv {
         uv: MaterialExpressionId,
         speed: MaterialExpressionId,
@@ -637,6 +648,12 @@ impl MaterialExpressionKind {
                 edge_width,
                 invert,
             } => vec![*source, *threshold, *edge_width, *invert],
+            Self::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => vec![*scene_depth, *pixel_depth, *fade_distance, *invert],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -1342,6 +1359,49 @@ fn infer_expression(
                             .evaluation_domain
                             .max(threshold.evaluation_domain)
                             .max(edge_width.evaluation_domain)
+                            .max(invert.evaluation_domain),
+                    })
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::DepthFade {
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => {
+            let scene_depth = dependency(*scene_depth);
+            let pixel_depth = dependency(*pixel_depth);
+            let fade_distance = dependency(*fade_distance);
+            let invert = dependency(*invert);
+            match (scene_depth, pixel_depth, fade_distance, invert) {
+                (Some(scene_depth), Some(pixel_depth), Some(fade_distance), Some(invert)) => {
+                    let mut valid = true;
+                    for (socket, info, expected) in [
+                        ("scene_depth", scene_depth, MaterialValueType::Float),
+                        ("pixel_depth", pixel_depth, MaterialValueType::Float),
+                        ("fade_distance", fade_distance, MaterialValueType::Float),
+                        ("invert", invert, MaterialValueType::Bool),
+                    ] {
+                        if info.value_type != expected {
+                            material_type_error(
+                                report,
+                                format!("{path}.{socket}"),
+                                format!(
+                                    "DepthFade {socket} expects {expected:?} but received {:?}",
+                                    info.value_type
+                                ),
+                            );
+                            valid = false;
+                        }
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Float,
+                        evaluation_domain: scene_depth
+                            .evaluation_domain
+                            .max(pixel_depth.evaluation_domain)
+                            .max(fade_distance.evaluation_domain)
                             .max(invert.evaluation_domain),
                     })
                 }

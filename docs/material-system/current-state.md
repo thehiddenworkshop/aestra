@@ -248,7 +248,7 @@ now verifies pixel-identical legacy and semantic output for all three showcase s
 approved images are the scheduled workflow baseline.
 
 Material 8 has begun with `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`, `RadialMask`,
-`Dissolve`, and `DissolveEdge` as
+`Dissolve`, `DissolveEdge`, and `DepthFade` as
 end-to-end semantic primitives rather than pre-expanded arithmetic graphs. Pan retains explicit `Vec2` UV, `Vec2`
 speed, and `Float` time sockets; rotation retains `Vec2` UV, `Vec2` center, and radians-valued
 `Float` angle sockets; scale retains `Vec2` UV, center, and scale sockets. Remap retains value,
@@ -261,7 +261,11 @@ softness to zero, and uses a deterministic hard boundary when softness is zero. 
 explicit source, threshold, edge-width, and invert sockets, clamps negative edge width to zero, and
 uses a deterministic hard cut when edge width is zero. DissolveEdge reuses those sockets to produce
 a one-sided band that peaks at the threshold and fades across the edge width; inversion changes
-sides, and zero edge width produces no band. All eight
+sides, and zero edge width produces no band. DepthFade compares linear view-space SceneDepth and
+PixelDepth through an explicit fade distance and invert socket; non-positive distance produces a
+hard intersection test. The Bevy renderer sources depth from a separate 3D depth-prepass texture,
+reconstructs both distances through renderer-owned view data, and specializes single-sample and
+MSAA shader/layout variants. Scene depth remains deliberately unsupported for 2D views. All nine
 survive stable RON, validation, undoable rewiring, backend-neutral IR, source mapping, and portable shader
 generation. Generated WGSL is validated and translated to SPIR-V and HLSL by the contract suite.
 Remaining Material 8 operations are not yet implemented.
