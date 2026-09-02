@@ -1,5 +1,6 @@
 use aestra_authoring::{
-    MaterialAuthoringDocument, MaterialInspectionError, MaterialInspectionTarget, MaterialInspector,
+    MaterialAuthoringDocument, MaterialCompilationReport, MaterialCompilationReporter,
+    MaterialInspectionError, MaterialInspectionTarget, MaterialInspector,
 };
 use aestra_core::{
     EffectAsset, Emitter, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId,
@@ -184,5 +185,84 @@ fn material_inspection_rejects_stale_stable_targets() {
         )
         .unwrap_err(),
         MaterialInspectionError::InstanceNotFound(missing_instance)
+    );
+}
+
+#[test]
+fn material_compilation_report_is_serializable_deterministic_and_non_mutating() {
+    let (document, program, instance) = inspection_document();
+    let before = document.clone();
+    let alpha = document.programs[0].outputs.alpha;
+    let target = MaterialInspectionTarget::Instance(instance);
+
+    let report = MaterialCompilationReporter::compile(&document, target).unwrap();
+
+    assert_eq!(document, before);
+    assert!(report.is_valid());
+    assert_eq!(report.program, program);
+    assert_eq!(report.instance, Some(instance));
+    let ir = report.ir.as_ref().expect("valid target must compile to IR");
+    assert_eq!(ir.source, program);
+    assert!(ir.source_map.values.contains_key(&alpha));
+    assert_eq!(
+        MaterialCompilationReporter::compile(&document, target).unwrap(),
+        report,
+        "compilation report and optimized IR must be deterministic"
+    );
+    let encoded = ron::to_string(&report).unwrap();
+    assert_eq!(
+        ron::from_str::<MaterialCompilationReport>(&encoded).unwrap(),
+        report
+    );
+}
+
+#[test]
+fn invalid_material_compilation_returns_diagnostics_without_ir() {
+    let (mut invalid_program, program, _) = inspection_document();
+    invalid_program.programs[0].outputs.alpha = invalid_program.programs[0].outputs.color;
+    let program_report = MaterialCompilationReporter::compile(
+        &invalid_program,
+        MaterialInspectionTarget::Program(program),
+    )
+    .unwrap();
+    assert!(!program_report.is_valid());
+    assert!(program_report.ir.is_none());
+    assert!(!program_report.diagnostics.diagnostics.is_empty());
+
+    let (mut invalid_instance, _, instance) = inspection_document();
+    let unknown = MaterialParameterId::from_u128(0x74ff);
+    invalid_instance.effect.material_instances[0].values.insert(
+        unknown,
+        MaterialParameterValue::Constant(MaterialValue::Float(1.0)),
+    );
+    let instance_report = MaterialCompilationReporter::compile(
+        &invalid_instance,
+        MaterialInspectionTarget::Instance(instance),
+    )
+    .unwrap();
+    assert!(!instance_report.is_valid());
+    assert!(instance_report.ir.is_none());
+    assert_eq!(instance_report.instance, Some(instance));
+    assert!(
+        instance_report
+            .diagnostics
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.path.ends_with(&format!(".values[{unknown}]")) })
+    );
+}
+
+#[test]
+fn material_compilation_rejects_stale_targets() {
+    let (document, _, _) = inspection_document();
+    let missing = MaterialProgramId::from_u128(0x75ff);
+
+    assert_eq!(
+        MaterialCompilationReporter::compile(
+            &document,
+            MaterialInspectionTarget::Program(missing),
+        )
+        .unwrap_err(),
+        MaterialInspectionError::ProgramNotFound(missing)
     );
 }

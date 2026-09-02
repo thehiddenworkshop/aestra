@@ -2159,7 +2159,10 @@ and returns one deterministic serializable report. The report includes the autho
 optional instance, reflected controls, stack projection, compiler-approved modifier and preset
 insertion edges expressed as stable placements, and structured target diagnostics. Invalid targets
 retain their authored snapshots and diagnostics while compiler-derived fields that would be
-misleading are omitted.
+misleading are omitted. `MaterialCompilationReporter` accepts the same targets and returns the
+optimized backend-neutral `MaterialIrProgram`, including expression source maps and optimization
+statistics, only after both program and optional instance bindings validate. Invalid targets return
+their scoped diagnostics with no partial IR.
 
 ### Completion Criterion
 

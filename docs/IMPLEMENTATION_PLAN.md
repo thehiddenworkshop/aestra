@@ -337,6 +337,9 @@ the current sprite-material path until the native-GPU compatibility gate approve
   and diagnostics. The first read-only slice now resolves stable program or instance targets into a
   deterministic serializable report containing authored snapshots, reflected controls, stack
   projection, compiler-approved operation/preset insertion edges, and structured diagnostics.
+  `MaterialCompilationReporter` uses those same targets to return deterministic backend-neutral IR
+  with its expression source map and optimization statistics; invalid program or instance state
+  returns scoped diagnostics with no misleading partial IR.
 
 ### Phase D — advanced human authoring
 
