@@ -35,7 +35,8 @@ pub use material_migration::{
     migrate_legacy_sprite_materials, plan_legacy_sprite_material_migration,
 };
 pub use material_tools::{
-    MaterialConnectionTarget, MaterialInsertionPoint, MaterialParameterBinding,
-    MaterialToolCommand, MaterialToolError, MaterialToolPlan, MaterialToolPlanner,
+    MaterialConnectionTarget, MaterialFresnelIntensity, MaterialInsertionPoint,
+    MaterialParameterBinding, MaterialToolCommand, MaterialToolError, MaterialToolPlan,
+    MaterialToolPlanner,
 };
 pub use selection::{LockState, Selection, SemanticTarget};

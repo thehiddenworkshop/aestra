@@ -1,6 +1,6 @@
 use aestra_compiler::{
     MaterialCompileError, MaterialCompiler, MaterialIrConstant, MaterialIrInstruction,
-    MaterialIrValueId,
+    MaterialIrValueId, MaterialStackModifierKind, MaterialStackProjection,
 };
 use aestra_core::{
     AssetId, DiagnosticCode, MaterialExpressionId, MaterialParameterId, MaterialProgramId,
@@ -419,6 +419,64 @@ fn smoothstep_lowers_with_promoted_edges_and_source_mapping() {
     assert_eq!(ir_edge_min, ir.source_map.values[&edge_min]);
     assert_eq!(ir_edge_max, ir.source_map.values[&edge_max]);
     assert_eq!(ir_value, ir.source_map.values[&value]);
+}
+
+#[test]
+fn fresnel_lowers_with_typed_sockets_and_source_mapping() {
+    let normal = MaterialExpressionId::from_u128(0x3311);
+    let view = MaterialExpressionId::from_u128(0x3312);
+    let power = MaterialExpressionId::from_u128(0x3313);
+    let fresnel = MaterialExpressionId::from_u128(0x3314);
+    let mut program = MaterialProgram::additive_sprite("Fresnel IR");
+    program.expressions.extend([
+        MaterialExpression {
+            id: normal,
+            kind: MaterialExpressionKind::Input(MaterialInput::Normal),
+        },
+        MaterialExpression {
+            id: view,
+            kind: MaterialExpressionKind::Input(MaterialInput::ViewDirection),
+        },
+        MaterialExpression {
+            id: power,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(3.0)),
+        },
+        MaterialExpression {
+            id: fresnel,
+            kind: MaterialExpressionKind::Fresnel {
+                normal,
+                view,
+                power,
+            },
+        },
+    ]);
+    program.outputs.alpha = fresnel;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let fresnel_value = ir.source_map.values[&fresnel];
+    let MaterialIrInstruction::Fresnel {
+        normal: ir_normal,
+        view: ir_view,
+        power: ir_power,
+    } = ir.value(fresnel_value).unwrap().instruction
+    else {
+        panic!("Fresnel must survive lowering as a semantic IR instruction");
+    };
+    assert_eq!(
+        ir.value(fresnel_value).unwrap().value_type,
+        MaterialValueType::Float
+    );
+    assert_eq!(ir_normal, ir.source_map.values[&normal]);
+    assert_eq!(ir_view, ir.source_map.values[&view]);
+    assert_eq!(ir_power, ir.source_map.values[&power]);
+    let MaterialStackProjection::Stack { entries } =
+        MaterialCompiler.project_stack(&program).unwrap()
+    else {
+        panic!("a single Fresnel chain must have a stack projection");
+    };
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].expression, fresnel);
+    assert_eq!(entries[0].kind, MaterialStackModifierKind::Fresnel);
 }
 
 #[test]

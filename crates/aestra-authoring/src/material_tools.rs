@@ -52,6 +52,13 @@ pub enum MaterialParameterBinding {
     },
 }
 
+/// High-level intensity source for a semantic Fresnel edge.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum MaterialFresnelIntensity {
+    Constant(f32),
+    ParticleNormalizedAge { scale: f32 },
+}
+
 impl MaterialParameterBinding {
     fn into_override(self) -> Option<MaterialParameterValue> {
         match self {
@@ -112,6 +119,13 @@ pub enum MaterialToolCommand {
         preset: MaterialStackPresetKind,
         placement: MaterialInsertionPoint,
     },
+    /// Adds an emissive-style edge to the color output without exposing expression identities.
+    AddFresnelEdge {
+        program: MaterialProgramId,
+        color: [f32; 4],
+        power: f32,
+        intensity: MaterialFresnelIntensity,
+    },
 }
 
 /// A validated baseline transaction and the semantic changes it will make.
@@ -170,6 +184,8 @@ pub enum MaterialToolError {
         kind: MaterialStackModifierKind,
         target: MaterialConnectionTarget,
     },
+    #[error("invalid Fresnel edge settings: {0}")]
+    InvalidFresnelSettings(&'static str),
     #[error(transparent)]
     StackEdit(#[from] MaterialStackEditError),
     #[error(transparent)]
@@ -216,6 +232,12 @@ impl MaterialToolPlanner {
                 preset,
                 placement,
             } => Self::plan_apply_material_preset(document, program, preset, placement),
+            MaterialToolCommand::AddFresnelEdge {
+                program,
+                color,
+                power,
+                intensity,
+            } => Self::plan_add_fresnel_edge(document, program, color, power, intensity),
         }
     }
 
@@ -444,6 +466,132 @@ impl MaterialToolPlanner {
 
         validate_plan(document, command, transaction, preset_plan.expressions)
     }
+
+    fn plan_add_fresnel_edge(
+        document: &MaterialAuthoringDocument,
+        program_id: MaterialProgramId,
+        color: [f32; 4],
+        power: f32,
+        intensity: MaterialFresnelIntensity,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        if !color.into_iter().all(f32::is_finite) {
+            return Err(MaterialToolError::InvalidFresnelSettings(
+                "color components must be finite",
+            ));
+        }
+        if !power.is_finite() || power <= 0.0 {
+            return Err(MaterialToolError::InvalidFresnelSettings(
+                "power must be finite and greater than zero",
+            ));
+        }
+        let intensity_scale = match intensity {
+            MaterialFresnelIntensity::Constant(value) => value,
+            MaterialFresnelIntensity::ParticleNormalizedAge { scale } => scale,
+        };
+        if !intensity_scale.is_finite() || intensity_scale < 0.0 {
+            return Err(MaterialToolError::InvalidFresnelSettings(
+                "intensity must be finite and non-negative",
+            ));
+        }
+
+        let program = find_program(document, program_id)?;
+        let mut replacement = program.clone();
+        let source_color = replacement.outputs.color;
+        let normal = append_unique_expression(
+            &mut replacement,
+            MaterialExpressionKind::Input(aestra_core::material::MaterialInput::Normal),
+        );
+        let view = append_unique_expression(
+            &mut replacement,
+            MaterialExpressionKind::Input(aestra_core::material::MaterialInput::ViewDirection),
+        );
+        let power_expression = append_unique_expression(
+            &mut replacement,
+            MaterialExpressionKind::Constant(MaterialValue::Float(power)),
+        );
+        let fresnel = append_unique_expression(
+            &mut replacement,
+            MaterialExpressionKind::Fresnel {
+                normal,
+                view,
+                power: power_expression,
+            },
+        );
+        let color_expression = append_unique_expression(
+            &mut replacement,
+            MaterialExpressionKind::Constant(MaterialValue::ColorSrgb(color)),
+        );
+        let colored_edge = append_unique_expression(
+            &mut replacement,
+            MaterialExpressionKind::Multiply(color_expression, fresnel),
+        );
+        let intensity_expression = match intensity {
+            MaterialFresnelIntensity::Constant(value) => append_unique_expression(
+                &mut replacement,
+                MaterialExpressionKind::Constant(MaterialValue::Float(value)),
+            ),
+            MaterialFresnelIntensity::ParticleNormalizedAge { scale } => {
+                let age = append_unique_expression(
+                    &mut replacement,
+                    MaterialExpressionKind::Input(
+                        aestra_core::material::MaterialInput::ParticleNormalizedAge,
+                    ),
+                );
+                let scale = append_unique_expression(
+                    &mut replacement,
+                    MaterialExpressionKind::Constant(MaterialValue::Float(scale)),
+                );
+                append_unique_expression(
+                    &mut replacement,
+                    MaterialExpressionKind::Multiply(age, scale),
+                )
+            }
+        };
+        let driven_edge = append_unique_expression(
+            &mut replacement,
+            MaterialExpressionKind::Multiply(colored_edge, intensity_expression),
+        );
+        let output = append_unique_expression(
+            &mut replacement,
+            MaterialExpressionKind::Add(source_color, driven_edge),
+        );
+        replacement.outputs.color = output;
+
+        let created_expressions = replacement.expressions[program.expressions.len()..]
+            .iter()
+            .map(|expression| expression.id)
+            .collect::<Vec<_>>();
+        let command = MaterialToolCommand::AddFresnelEdge {
+            program: program_id,
+            color,
+            power,
+            intensity,
+        };
+        let transaction = MaterialTransaction::single(
+            "Add Fresnel edge",
+            MaterialCommand::ReplaceMaterialProgram {
+                id: program_id,
+                program: replacement,
+            },
+        );
+        validate_plan(document, command, transaction, created_expressions)
+    }
+}
+
+fn append_unique_expression(
+    program: &mut MaterialProgram,
+    kind: MaterialExpressionKind,
+) -> MaterialExpressionId {
+    let mut id = MaterialExpressionId::new();
+    while program
+        .expressions
+        .iter()
+        .any(|expression| expression.id == id)
+    {
+        id = MaterialExpressionId::new();
+    }
+    program.expressions.push(MaterialExpression { id, kind });
+    id
 }
 
 fn wrap_changes_only_requested_edge(

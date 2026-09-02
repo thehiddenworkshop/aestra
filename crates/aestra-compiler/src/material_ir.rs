@@ -71,6 +71,11 @@ pub enum MaterialIrInstruction {
         edge_max: MaterialIrValueId,
         value: MaterialIrValueId,
     },
+    Fresnel {
+        normal: MaterialIrValueId,
+        view: MaterialIrValueId,
+        power: MaterialIrValueId,
+    },
     RadialMask {
         uv: MaterialIrValueId,
         center: MaterialIrValueId,
@@ -150,6 +155,11 @@ impl MaterialIrInstruction {
                 edge_max,
                 value,
             } => vec![*edge_min, *edge_max, *value],
+            Self::Fresnel {
+                normal,
+                view,
+                power,
+            } => vec![*normal, *view, *power],
             Self::RadialMask {
                 uv,
                 center,
@@ -234,6 +244,15 @@ impl MaterialIrInstruction {
                 remap(edge_min);
                 remap(edge_max);
                 remap(value);
+            }
+            Self::Fresnel {
+                normal,
+                view,
+                power,
+            } => {
+                remap(normal);
+                remap(view);
+                remap(power);
             }
             Self::RadialMask {
                 uv,
@@ -592,6 +611,15 @@ impl MaterialIrBuilder<'_> {
                 edge_min: self.lower(edge_min),
                 edge_max: self.lower(edge_max),
                 value: self.lower(value),
+            },
+            MaterialExpressionKind::Fresnel {
+                normal,
+                view,
+                power,
+            } => MaterialIrInstruction::Fresnel {
+                normal: self.lower(normal),
+                view: self.lower(view),
+                power: self.lower(power),
             },
             MaterialExpressionKind::RadialMask {
                 uv,

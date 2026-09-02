@@ -2166,6 +2166,14 @@ their scoped diagnostics with no partial IR. `MaterialApi` exposes inspection, n
 edit planning, and compilation as tagged serializable requests and responses. Failures are response
 values with stable codes, human-readable context, and structured validation diagnostics, allowing a
 tool client to inspect, plan, preview on a clone, and compile without direct storage mutation.
+`AddFresnelEdge` completes the first semantic vertical slice without exposing expression IDs: it
+adds a typed view-dependent Fresnel mask, a configurable edge color and power, and either constant
+or particle-normalized-age intensity as one validated transaction. Sprite rendering derives a
+stable billboard sphere normal from quad coordinates, transports normalized particle age through
+the portable material varying ABI, and lowers Fresnel to backend-neutral IR and generated WESL.
+The compiler reflects Fresnel as a stack operation with an editable power setting when it belongs
+to a single modifier chain; independent color and alpha chains continue to use the safe Advanced
+projection rather than implying a false order.
 
 ### Completion Criterion
 

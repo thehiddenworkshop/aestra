@@ -80,7 +80,9 @@ struct VertexOutput {
     @location(12) @interpolate(flat)
     material_textured: u32,
     @location(13) @interpolate(flat)
-    material_visible: u32
+    material_visible: u32,
+    @location(14)
+    material_particle_normalized_age: f32
 }
 
 @group(0) @binding(0)
@@ -187,6 +189,7 @@ fn vertex(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) ins
     output.material_softness = renderer.softness;
     output.material_textured = renderer.textured;
     output.material_visible = output.visible;
+    output.material_particle_normalized_age = particle.normalized_age;
     return output;
 }
 

@@ -333,7 +333,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   It rejects stale and unexposed binding parameters plus incompatible types/domains before returning
   one baseline transaction with an exact instance-parameter diff. Function extraction is owned by
   Material 15 so it can target the canonical typed function model rather than a temporary format.
-- [ ] **Material 11 — AI material API.** Expose machine-readable inspection, editing, compilation,
+- [x] **Material 11 — AI material API.** Expose machine-readable inspection, editing, compilation,
   and diagnostics. The first read-only slice now resolves stable program or instance targets into a
   deterministic serializable report containing authored snapshots, reflected controls, stack
   projection, compiler-approved operation/preset insertion edges, and structured diagnostics.
@@ -341,7 +341,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   with its expression source map and optimization statistics; invalid program or instance state
   returns scoped diagnostics with no misleading partial IR. `MaterialApi` now unifies inspection,
   non-mutating edit planning, and compilation behind serializable tagged requests and responses;
-  stable error codes preserve structured validation diagnostics for tool clients.
+  stable error codes preserve structured validation diagnostics for tool clients. The ID-free
+  `AddFresnelEdge` command proves the full contract by composing a typed Fresnel mask with constant
+  or particle-age intensity, returning one previewable transaction, compiling to portable IR and
+  WESL. Fresnel is reflected as a normal stack operation for single-root graphs; compositions with
+  independent color and alpha modifier roots retain the explicit Advanced projection.
 
 ### Phase D — advanced human authoring
 

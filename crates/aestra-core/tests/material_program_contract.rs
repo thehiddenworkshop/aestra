@@ -851,6 +851,54 @@ fn smoothstep_reports_each_incompatible_numeric_socket() {
 }
 
 #[test]
+fn fresnel_accepts_sprite_billboard_inputs_and_returns_a_fragment_mask() {
+    let normal = MaterialExpressionId::from_u128(0xB211);
+    let view = MaterialExpressionId::from_u128(0xB212);
+    let power = MaterialExpressionId::from_u128(0xB213);
+    let fresnel = MaterialExpressionId::from_u128(0xB214);
+    let mut program = MaterialProgram::additive_sprite("Fresnel");
+    program.expressions.extend([
+        MaterialExpression {
+            id: normal,
+            kind: MaterialExpressionKind::Input(MaterialInput::Normal),
+        },
+        MaterialExpression {
+            id: view,
+            kind: MaterialExpressionKind::Input(MaterialInput::ViewDirection),
+        },
+        MaterialExpression {
+            id: power,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(3.0)),
+        },
+        MaterialExpression {
+            id: fresnel,
+            kind: MaterialExpressionKind::Fresnel {
+                normal,
+                view,
+                power,
+            },
+        },
+    ]);
+    program.outputs.alpha = fresnel;
+
+    let analysis = program.analyze().unwrap();
+    assert_eq!(
+        analysis.expressions[&fresnel].value_type,
+        MaterialValueType::Float
+    );
+    assert_eq!(
+        analysis.expressions[&fresnel].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
+    let encoded = program.to_pretty_ron().unwrap();
+    assert!(encoded.contains("Fresnel"));
+    assert_eq!(
+        MaterialProgram::from_ron(&encoded).unwrap(),
+        program.normalized()
+    );
+}
+
+#[test]
 fn radial_mask_round_trips_typed_semantic_sockets_and_outputs_a_fragment_mask() {
     let uv = MaterialExpressionId::from_u128(0xB301);
     let center = MaterialExpressionId::from_u128(0xB302);

@@ -20,6 +20,7 @@ pub enum MaterialStackModifierKind {
     ScaleUv,
     Remap,
     Smoothstep,
+    Fresnel,
     RadialMask,
     Dissolve,
     DissolveEdge,
@@ -48,6 +49,7 @@ impl MaterialStackModifierKind {
             Self::ScaleUv => "UV Scale",
             Self::Remap => "Remap",
             Self::Smoothstep => "Smoothstep",
+            Self::Fresnel => "Fresnel",
             Self::RadialMask => "Radial Mask",
             Self::Dissolve => "Dissolve",
             Self::DissolveEdge => "Dissolve Edge",
@@ -198,6 +200,7 @@ pub enum MaterialStackProperty {
     OutputMaximum,
     EdgeMinimum,
     EdgeMaximum,
+    Power,
     Radius,
     Softness,
     Threshold,
@@ -219,6 +222,7 @@ impl MaterialStackProperty {
             Self::OutputMaximum => "Output Max",
             Self::EdgeMinimum => "Edge Min",
             Self::EdgeMaximum => "Edge Max",
+            Self::Power => "Power",
             Self::Radius => "Radius",
             Self::Softness => "Softness",
             Self::Threshold => "Threshold",
@@ -725,6 +729,9 @@ fn modifier_property_targets(
             (MaterialStackProperty::EdgeMinimum, *edge_min),
             (MaterialStackProperty::EdgeMaximum, *edge_max),
         ],
+        MaterialExpressionKind::Fresnel { power, .. } => {
+            vec![(MaterialStackProperty::Power, *power)]
+        }
         MaterialExpressionKind::RadialMask {
             center,
             radius,
@@ -1165,6 +1172,9 @@ fn append_default_modifier(
                 value: source,
             }
         }
+        // Fresnel is a scalar generator rather than a pass-through modifier. It is inserted by
+        // the semantic Fresnel-edge command, which composes it with the selected color output.
+        MaterialStackModifierKind::Fresnel => return None,
         MaterialStackModifierKind::RadialMask => {
             let center = constant(program, MaterialValue::Vec2([0.5, 0.5]));
             let radius = constant(program, MaterialValue::Float(0.5));
@@ -1436,6 +1446,7 @@ fn primary_source(kind: &MaterialExpressionKind) -> Option<MaterialExpressionId>
         | MaterialExpressionKind::Divide(_, _)
         | MaterialExpressionKind::Lerp { .. }
         | MaterialExpressionKind::Clamp { .. }
+        | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => None,
     }
@@ -1462,6 +1473,7 @@ fn set_primary_source(kind: &mut MaterialExpressionKind, source: MaterialExpress
         | MaterialExpressionKind::Divide(_, _)
         | MaterialExpressionKind::Lerp { .. }
         | MaterialExpressionKind::Clamp { .. }
+        | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return false,
     }
@@ -1476,6 +1488,7 @@ fn modifier_kind(kind: &MaterialExpressionKind) -> Option<MaterialStackModifierK
         MaterialExpressionKind::ScaleUv { .. } => MaterialStackModifierKind::ScaleUv,
         MaterialExpressionKind::Remap { .. } => MaterialStackModifierKind::Remap,
         MaterialExpressionKind::Smoothstep { .. } => MaterialStackModifierKind::Smoothstep,
+        MaterialExpressionKind::Fresnel { .. } => MaterialStackModifierKind::Fresnel,
         MaterialExpressionKind::RadialMask { .. } => MaterialStackModifierKind::RadialMask,
         MaterialExpressionKind::Dissolve { .. } => MaterialStackModifierKind::Dissolve,
         MaterialExpressionKind::DissolveEdge { .. } => MaterialStackModifierKind::DissolveEdge,
@@ -1549,6 +1562,11 @@ fn dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
             edge_max,
             value,
         } => vec![*edge_min, *edge_max, *value],
+        MaterialExpressionKind::Fresnel {
+            normal,
+            view,
+            power,
+        } => vec![*normal, *view, *power],
         MaterialExpressionKind::RadialMask {
             uv,
             center,

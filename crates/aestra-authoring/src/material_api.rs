@@ -102,6 +102,10 @@ fn tool_error(error: MaterialToolError) -> MaterialApiError {
             MaterialApiErrorCode::NotExposed,
             ValidationReport::default(),
         ),
+        MaterialToolError::InvalidFresnelSettings(_) => (
+            MaterialApiErrorCode::InvalidRequest,
+            ValidationReport::default(),
+        ),
         MaterialToolError::IncompatibleWrap { .. } => (
             MaterialApiErrorCode::IncompatibleEdit,
             ValidationReport::default(),

@@ -240,6 +240,72 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
 }
 
 #[test]
+fn fresnel_and_particle_age_generate_portable_sprite_shader_inputs() {
+    let normal = MaterialExpressionId::from_u128(0x2f01);
+    let view = MaterialExpressionId::from_u128(0x2f02);
+    let power = MaterialExpressionId::from_u128(0x2f03);
+    let fresnel = MaterialExpressionId::from_u128(0x2f04);
+    let age = MaterialExpressionId::from_u128(0x2f05);
+    let driven = MaterialExpressionId::from_u128(0x2f06);
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Age Fresnel");
+    program.expressions.extend([
+        MaterialExpression {
+            id: normal,
+            kind: MaterialExpressionKind::Input(MaterialInput::Normal),
+        },
+        MaterialExpression {
+            id: view,
+            kind: MaterialExpressionKind::Input(MaterialInput::ViewDirection),
+        },
+        MaterialExpression {
+            id: power,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(3.0)),
+        },
+        MaterialExpression {
+            id: fresnel,
+            kind: MaterialExpressionKind::Fresnel {
+                normal,
+                view,
+                power,
+            },
+        },
+        MaterialExpression {
+            id: age,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleNormalizedAge),
+        },
+        MaterialExpression {
+            id: driven,
+            kind: MaterialExpressionKind::Multiply(fresnel, age),
+        },
+    ]);
+    program.outputs.alpha = driven;
+
+    let compiled = compile(&program);
+    assert_eq!(
+        compiled.reflection.required_vertex_inputs,
+        vec![MaterialInput::Normal, MaterialInput::ViewDirection]
+    );
+    assert_eq!(
+        compiled.reflection.required_particle_inputs,
+        vec![MaterialInput::ParticleNormalizedAge]
+    );
+    assert!(
+        compiled
+            .shader
+            .wesl
+            .contains("pow(clamp(1.0 - dot(normalize(")
+    );
+    assert!(
+        compiled
+            .shader
+            .wesl
+            .contains("input.particle_normalized_age")
+    );
+    assert!(compiled.shader.wesl.contains("input.quad_position"));
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
 fn authored_order_does_not_change_layout_shader_or_fingerprint() {
     let program = two_texture_flame_program();
     let mut reordered = program.clone();

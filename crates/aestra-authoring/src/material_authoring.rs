@@ -109,6 +109,9 @@ pub enum MaterialExpressionInput {
     OutputMaximum,
     EdgeMinimum,
     EdgeMaximum,
+    Normal,
+    View,
+    Power,
     Radius,
     Softness,
     Threshold,
@@ -647,6 +650,9 @@ pub(crate) fn rewire_expression(
             MaterialExpressionInput::EdgeMaximum,
         ) => edge_max,
         (MaterialExpressionKind::Smoothstep { value, .. }, MaterialExpressionInput::Value) => value,
+        (MaterialExpressionKind::Fresnel { normal, .. }, MaterialExpressionInput::Normal) => normal,
+        (MaterialExpressionKind::Fresnel { view, .. }, MaterialExpressionInput::View) => view,
+        (MaterialExpressionKind::Fresnel { power, .. }, MaterialExpressionInput::Power) => power,
         (MaterialExpressionKind::RadialMask { uv, .. }, MaterialExpressionInput::Uv) => uv,
         (MaterialExpressionKind::RadialMask { center, .. }, MaterialExpressionInput::Center) => {
             center

@@ -550,6 +550,12 @@ pub enum MaterialExpressionKind {
         edge_max: MaterialExpressionId,
         value: MaterialExpressionId,
     },
+    /// View-dependent edge mask: `(1 - saturate(dot(normal, view))) ^ power`.
+    Fresnel {
+        normal: MaterialExpressionId,
+        view: MaterialExpressionId,
+        power: MaterialExpressionId,
+    },
     RadialMask {
         uv: MaterialExpressionId,
         center: MaterialExpressionId,
@@ -644,6 +650,7 @@ impl MaterialExpressionKind {
             | Self::Divide(_, _)
             | Self::Lerp { .. }
             | Self::Clamp { .. }
+            | Self::Fresnel { .. }
             | Self::DepthFade { .. }
             | Self::ExtractComponent { .. } => None,
         }
@@ -670,6 +677,11 @@ impl MaterialExpressionKind {
                 edge_max,
                 value,
             } => vec![*edge_min, *edge_max, *value],
+            Self::Fresnel {
+                normal,
+                view,
+                power,
+            } => vec![*normal, *view, *power],
             Self::RadialMask {
                 uv,
                 center,
@@ -1319,6 +1331,45 @@ fn infer_expression(
                         ("value", value),
                     ],
                 ),
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::Fresnel {
+            normal,
+            view,
+            power,
+        } => {
+            let normal = dependency(*normal);
+            let view = dependency(*view);
+            let power = dependency(*power);
+            match (normal, view, power) {
+                (Some(normal), Some(view), Some(power)) => {
+                    let mut valid = true;
+                    for (socket, info, expected) in [
+                        ("normal", normal, MaterialValueType::Vec3),
+                        ("view", view, MaterialValueType::Vec3),
+                        ("power", power, MaterialValueType::Float),
+                    ] {
+                        if info.value_type != expected {
+                            material_type_error(
+                                report,
+                                format!("{path}.{socket}"),
+                                format!(
+                                    "Fresnel {socket} expects {expected:?} but received {:?}",
+                                    info.value_type
+                                ),
+                            );
+                            valid = false;
+                        }
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Float,
+                        evaluation_domain: normal
+                            .evaluation_domain
+                            .max(view.evaluation_domain)
+                            .max(power.evaluation_domain),
+                    })
+                }
                 _ => None,
             }
         }
@@ -2066,10 +2117,7 @@ fn material_input_info(input: MaterialInput) -> MaterialExpressionInfo {
 }
 
 fn sprite_domain_supports_input(input: MaterialInput) -> bool {
-    !matches!(
-        input,
-        MaterialInput::Uv1 | MaterialInput::Normal | MaterialInput::Tangent
-    )
+    !matches!(input, MaterialInput::Uv1 | MaterialInput::Tangent)
 }
 
 fn material_type_error(

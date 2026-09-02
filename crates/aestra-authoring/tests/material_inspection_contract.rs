@@ -1,8 +1,9 @@
 use aestra_authoring::{
     MaterialApi, MaterialApiErrorCode, MaterialApiRequest, MaterialApiResponse,
     MaterialAuthoringDocument, MaterialCommandExecutor, MaterialCompilationReport,
-    MaterialCompilationReporter, MaterialConnectionTarget, MaterialInspectionError,
-    MaterialInspectionTarget, MaterialInspector, MaterialOutputSocket, MaterialToolCommand,
+    MaterialCompilationReporter, MaterialConnectionTarget, MaterialFresnelIntensity,
+    MaterialInspectionError, MaterialInspectionTarget, MaterialInspector, MaterialOutputSocket,
+    MaterialToolCommand,
 };
 use aestra_core::{
     EffectAsset, Emitter, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId,
@@ -367,4 +368,66 @@ fn material_api_returns_serializable_stable_errors_and_validation_diagnostics() 
             response
         );
     }
+}
+
+#[test]
+fn material_api_adds_an_age_driven_fresnel_edge_without_expression_ids() {
+    let (document, program, _) = inspection_document();
+    let before = document.clone();
+    let target = MaterialInspectionTarget::Program(program);
+    let response = MaterialApi::handle(
+        &document,
+        MaterialApiRequest::PlanEdit {
+            command: MaterialToolCommand::AddFresnelEdge {
+                program,
+                color: [1.0, 0.4, 0.05, 1.0],
+                power: 3.0,
+                intensity: MaterialFresnelIntensity::ParticleNormalizedAge { scale: 2.5 },
+            },
+        },
+    );
+    let MaterialApiResponse::EditPlan(plan) = &response else {
+        panic!("valid Fresnel request must return a semantic edit plan");
+    };
+    assert_eq!(document, before, "API planning must not mutate the source");
+    assert!(!plan.diff.is_empty());
+    assert_eq!(plan.created_expressions.len(), 11);
+
+    let mut preview = document.clone();
+    MaterialCommandExecutor::execute(&mut preview, &plan.transaction).unwrap();
+    let replacement = &preview.programs[0];
+    assert!(
+        replacement
+            .expressions
+            .iter()
+            .any(|expression| matches!(expression.kind, MaterialExpressionKind::Fresnel { .. }))
+    );
+    assert!(replacement.expressions.iter().any(|expression| matches!(
+        expression.kind,
+        MaterialExpressionKind::Input(aestra_core::material::MaterialInput::ParticleNormalizedAge)
+    )));
+    let inspection = MaterialInspector::inspect(&preview, target).unwrap();
+    assert!(matches!(
+        inspection.stack,
+        Some(aestra_compiler::MaterialStackProjection::Advanced {
+            reason: aestra_compiler::MaterialStackFallbackReason::MultipleRoots { .. }
+        })
+    ));
+
+    let compilation = MaterialApi::handle(&preview, MaterialApiRequest::Compile { target });
+    let MaterialApiResponse::Compilation(compilation) = compilation else {
+        panic!("Fresnel preview must compile through the Material API");
+    };
+    assert!(compilation.is_valid());
+    let ir = compilation
+        .ir
+        .expect("valid Fresnel preview must include IR");
+    assert!(ir.values.iter().any(|value| matches!(
+        value.instruction,
+        aestra_compiler::MaterialIrInstruction::Fresnel { .. }
+    )));
+    assert_eq!(
+        ron::from_str::<MaterialApiResponse>(&ron::to_string(&response).unwrap()).unwrap(),
+        response
+    );
 }
