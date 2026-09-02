@@ -433,6 +433,160 @@ fn uv_transform_semantic_sockets_are_rewireable_and_undoable() {
 }
 
 #[test]
+fn remap_semantic_sockets_are_rewireable_and_undoable() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x1300);
+    let value = MaterialExpressionId::from_u128(0x1301);
+    let alternate_value = MaterialExpressionId::from_u128(0x1302);
+    let input_min = MaterialExpressionId::from_u128(0x1303);
+    let input_max = MaterialExpressionId::from_u128(0x1304);
+    let alternate_scalar = MaterialExpressionId::from_u128(0x1305);
+    let output_min = MaterialExpressionId::from_u128(0x1306);
+    let output_max = MaterialExpressionId::from_u128(0x1307);
+    let alternate_vector = MaterialExpressionId::from_u128(0x1308);
+    let remap = MaterialExpressionId::from_u128(0x1309);
+    let alpha = MaterialExpressionId::from_u128(0x130A);
+    let mut program = MaterialProgram::additive_sprite("Authorable remap");
+    program.id = program_id;
+    program.expressions.extend([
+        MaterialExpression {
+            id: value,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: alternate_value,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.25, 0.75])),
+        },
+        MaterialExpression {
+            id: input_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: input_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: alternate_scalar,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(2.0)),
+        },
+        MaterialExpression {
+            id: output_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([-1.0; 2])),
+        },
+        MaterialExpression {
+            id: output_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.0; 2])),
+        },
+        MaterialExpression {
+            id: alternate_vector,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([3.0, 4.0])),
+        },
+        MaterialExpression {
+            id: remap,
+            kind: MaterialExpressionKind::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: remap,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+    document.programs.push(program);
+    let mut history = MaterialCommandHistory::default();
+
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::new(
+                "Rewire remap",
+                vec![
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: remap,
+                        input: MaterialExpressionInput::Value,
+                        source: alternate_value,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: remap,
+                        input: MaterialExpressionInput::InputMinimum,
+                        source: alternate_scalar,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: remap,
+                        input: MaterialExpressionInput::InputMaximum,
+                        source: input_min,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: remap,
+                        input: MaterialExpressionInput::OutputMinimum,
+                        source: alternate_vector,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: remap,
+                        input: MaterialExpressionInput::OutputMaximum,
+                        source: output_min,
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == remap)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Remap {
+            value: rewired_value,
+            input_min: rewired_input_min,
+            input_max: rewired_input_max,
+            output_min: rewired_output_min,
+            output_max: rewired_output_max,
+        } if rewired_value == alternate_value
+            && rewired_input_min == alternate_scalar
+            && rewired_input_max == input_min
+            && rewired_output_min == alternate_vector
+            && rewired_output_max == output_min
+    ));
+
+    history.undo(&mut document).unwrap().unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == remap)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Remap {
+            value: original_value,
+            input_min: original_input_min,
+            input_max: original_input_max,
+            output_min: original_output_min,
+            output_max: original_output_max,
+        } if original_value == value
+            && original_input_min == input_min
+            && original_input_max == input_max
+            && original_output_min == output_min
+            && original_output_max == output_max
+    ));
+}
+
+#[test]
 fn instance_parameter_render_state_and_assignment_commands_are_undoable() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x2000);

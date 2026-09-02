@@ -532,6 +532,13 @@ pub enum MaterialExpressionKind {
         min: MaterialExpressionId,
         max: MaterialExpressionId,
     },
+    Remap {
+        value: MaterialExpressionId,
+        input_min: MaterialExpressionId,
+        input_max: MaterialExpressionId,
+        output_min: MaterialExpressionId,
+        output_max: MaterialExpressionId,
+    },
     PanUv {
         uv: MaterialExpressionId,
         speed: MaterialExpressionId,
@@ -575,6 +582,13 @@ impl MaterialExpressionKind {
             | Self::Divide(left, right) => vec![*left, *right],
             Self::Lerp { start, end, factor } => vec![*start, *end, *factor],
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
+            Self::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            } => vec![*value, *input_min, *input_max, *output_min, *output_max],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -1097,6 +1111,40 @@ fn infer_expression(
                 _ => None,
             }
         }
+        MaterialExpressionKind::Remap {
+            value,
+            input_min,
+            input_max,
+            output_min,
+            output_max,
+        } => {
+            let value = dependency(*value);
+            let input_min = dependency(*input_min);
+            let input_max = dependency(*input_max);
+            let output_min = dependency(*output_min);
+            let output_max = dependency(*output_max);
+            match (value, input_min, input_max, output_min, output_max) {
+                (
+                    Some(value),
+                    Some(input_min),
+                    Some(input_max),
+                    Some(output_min),
+                    Some(output_max),
+                ) => infer_promoted_numeric_inputs(
+                    report,
+                    &path,
+                    "Remap",
+                    [
+                        ("value", value),
+                        ("input_min", input_min),
+                        ("input_max", input_max),
+                        ("output_min", output_min),
+                        ("output_max", output_max),
+                    ],
+                ),
+                _ => None,
+            }
+        }
         MaterialExpressionKind::PanUv { uv, speed, time } => {
             let uv = dependency(*uv);
             let speed = dependency(*speed);
@@ -1404,6 +1452,43 @@ fn infer_scaled_numeric_binary(
     Some(MaterialExpressionInfo {
         value_type,
         evaluation_domain: left.evaluation_domain.max(right.evaluation_domain),
+    })
+}
+
+fn infer_promoted_numeric_inputs<const N: usize>(
+    report: &mut ValidationReport,
+    path: &str,
+    operation: &str,
+    inputs: [(&str, MaterialExpressionInfo); N],
+) -> Option<MaterialExpressionInfo> {
+    let value_type = inputs
+        .iter()
+        .map(|(_, info)| info.value_type)
+        .find(|value_type| value_type.is_numeric() && *value_type != MaterialValueType::Float)
+        .unwrap_or(MaterialValueType::Float);
+    let mut valid = true;
+    for (socket, info) in &inputs {
+        if !info.value_type.is_numeric()
+            || (info.value_type != MaterialValueType::Float && info.value_type != value_type)
+        {
+            material_type_error(
+                report,
+                format!("{path}.{socket}"),
+                format!(
+                    "{operation} {socket} expects Float or {value_type:?} but received {:?}",
+                    info.value_type
+                ),
+            );
+            valid = false;
+        }
+    }
+    valid.then_some(MaterialExpressionInfo {
+        value_type,
+        evaluation_domain: inputs
+            .iter()
+            .map(|(_, info)| info.evaluation_domain)
+            .max()
+            .unwrap_or(MaterialExpressionDomain::ShaderStatic),
     })
 }
 

@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 1;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 4;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 5;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 pub const MATERIAL_FRAGMENT_ENTRY_POINT: &str = "fragment_material";
 pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
@@ -665,6 +665,21 @@ fn instruction_expression(
             value_name(*min),
             value_name(*max)
         ),
+        MaterialIrInstruction::Remap {
+            value: remap_value,
+            input_min,
+            input_max,
+            output_min,
+            output_max,
+        } => remap_expression(
+            ir,
+            *remap_value,
+            *input_min,
+            *input_max,
+            *output_min,
+            *output_max,
+            value.value_type,
+        ),
         MaterialIrInstruction::PanUv { uv, speed, time } => format!(
             "({} + ({} * {}))",
             value_name(*uv),
@@ -720,6 +735,31 @@ fn binary_expression(
         "({} {operator} {})",
         promote_operand(ir, left, result.value_type),
         promote_operand(ir, right, result.value_type)
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn remap_expression(
+    ir: &MaterialIrProgram,
+    value: MaterialIrValueId,
+    input_min: MaterialIrValueId,
+    input_max: MaterialIrValueId,
+    output_min: MaterialIrValueId,
+    output_max: MaterialIrValueId,
+    result_type: MaterialValueType,
+) -> String {
+    let value = promote_operand(ir, value, result_type);
+    let input_min = promote_operand(ir, input_min, result_type);
+    let input_max = promote_operand(ir, input_max, result_type);
+    let output_min = promote_operand(ir, output_min, result_type);
+    let output_max = promote_operand(ir, output_max, result_type);
+    let delta = format!("({input_max} - {input_min})");
+    let epsilon = numeric_literal(result_type, 0.000_001);
+    let one = numeric_literal(result_type, 1.0);
+    let safe = format!("(abs({delta}) >= {epsilon})");
+    let denominator = format!("select({one}, {delta}, {safe})");
+    format!(
+        "select({output_min}, ({output_min} + ((({value} - {input_min}) / {denominator}) * ({output_max} - {output_min}))), {safe})"
     )
 }
 
@@ -785,6 +825,15 @@ fn float_literal(value: f32) -> String {
         rendered.push('0');
     }
     rendered
+}
+
+fn numeric_literal(value_type: MaterialValueType, value: f32) -> String {
+    let value = float_literal(value);
+    if value_type == MaterialValueType::Float {
+        value
+    } else {
+        format!("{}({value})", wgsl_type(value_type))
+    }
 }
 
 fn wgsl_type(value_type: MaterialValueType) -> &'static str {
@@ -907,6 +956,20 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(value.0);
             fingerprint.u32(min.0);
             fingerprint.u32(max.0);
+        }
+        MaterialIrInstruction::Remap {
+            value,
+            input_min,
+            input_max,
+            output_min,
+            output_max,
+        } => {
+            fingerprint.byte(14);
+            fingerprint.u32(value.0);
+            fingerprint.u32(input_min.0);
+            fingerprint.u32(input_max.0);
+            fingerprint.u32(output_min.0);
+            fingerprint.u32(output_max.0);
         }
         MaterialIrInstruction::SampleTexture { texture, uv } => {
             fingerprint.byte(9);

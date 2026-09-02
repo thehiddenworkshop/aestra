@@ -1975,10 +1975,12 @@ SoftParticle
 Flipbook
 ```
 
-Implementation status (2026-09-02): `PanUV`, `RotateUV`, and `ScaleUV` are completed vertical
-slices. They retain semantic UV/speed/time, UV/center/radians, and UV/center/scale inputs through
-the authored model, validation, command history, backend-neutral IR, source mapping, and portable
-shader generation. The remaining primitives in this milestone are still planned.
+Implementation status (2026-09-02): `PanUV`, `RotateUV`, `ScaleUV`, and `Remap` are completed
+vertical slices. They retain semantic UV/speed/time, UV/center/radians, UV/center/scale, and
+value/input-range/output-range inputs through the authored model, validation, command history,
+backend-neutral IR, source mapping, and portable shader generation. Remap extrapolates, promotes
+scalar bounds to a shared vector type, and maps degenerate range components to the output minimum.
+The remaining primitives in this milestone are still planned.
 
 Then:
 

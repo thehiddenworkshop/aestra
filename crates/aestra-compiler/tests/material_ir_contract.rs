@@ -290,6 +290,80 @@ fn uv_transforms_lower_as_semantic_instructions_with_source_mapping() {
 }
 
 #[test]
+fn remap_lowers_with_promoted_bounds_and_source_mapping() {
+    let value = MaterialExpressionId::from_u128(0x3201);
+    let input_min = MaterialExpressionId::from_u128(0x3202);
+    let input_max = MaterialExpressionId::from_u128(0x3203);
+    let output_min = MaterialExpressionId::from_u128(0x3204);
+    let output_max = MaterialExpressionId::from_u128(0x3205);
+    let remap = MaterialExpressionId::from_u128(0x3206);
+    let alpha = MaterialExpressionId::from_u128(0x3207);
+    let mut program = MaterialProgram::additive_sprite("Remap IR");
+    program.expressions.extend([
+        MaterialExpression {
+            id: value,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: input_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: input_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: output_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([-1.0; 2])),
+        },
+        MaterialExpression {
+            id: output_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.0; 2])),
+        },
+        MaterialExpression {
+            id: remap,
+            kind: MaterialExpressionKind::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: remap,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let remap_value = ir.source_map.values[&remap];
+    let MaterialIrInstruction::Remap {
+        value: ir_value,
+        input_min: ir_input_min,
+        input_max: ir_input_max,
+        output_min: ir_output_min,
+        output_max: ir_output_max,
+    } = ir.value(remap_value).unwrap().instruction
+    else {
+        panic!("Remap must survive lowering as a semantic IR instruction");
+    };
+    assert_eq!(
+        ir.value(remap_value).unwrap().value_type,
+        MaterialValueType::Vec2
+    );
+    assert_eq!(ir_value, ir.source_map.values[&value]);
+    assert_eq!(ir_input_min, ir.source_map.values[&input_min]);
+    assert_eq!(ir_input_max, ir.source_map.values[&input_max]);
+    assert_eq!(ir_output_min, ir.source_map.values[&output_min]);
+    assert_eq!(ir_output_max, ir.source_map.values[&output_max]);
+}
+
+#[test]
 fn lowering_is_deterministic_independent_of_authored_vector_order() {
     let program = two_texture_flame_program();
     let mut reordered = program.clone();

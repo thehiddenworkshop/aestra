@@ -262,14 +262,15 @@ the current sprite-material path until the native-GPU compatibility gate approve
   effect/emitter bindings while preserving useful values. Blend, depth-test, depth-write, and cull
   controls project only transitions allowed by the reflected render-state policy and commit through
   the same semantic history.
-- [ ] **Material 8 — VFX semantic primitives.** `PanUV`, `RotateUV`, and `ScaleUV` are complete
-  vertical slices: authored programs retain their explicit typed sockets; validation reports
-  socket-specific type errors; semantic commands rewire every socket with undo/redo;
+- [ ] **Material 8 — VFX semantic primitives.** `PanUV`, `RotateUV`, `ScaleUV`, and `Remap` are
+  complete vertical slices: authored programs retain their explicit typed sockets; validation
+  reports socket-specific type errors; semantic commands rewire every socket with undo/redo;
   backend-neutral IR preserves each operation and source map; and generated portable shaders
-  animate, rotate, or scale sampled coordinates. Rotation uses radians around an explicit center;
-  scale uses `center + (uv - center) * scale`. Both allow authoring projections to supply the
-  conventional `[0.5, 0.5]` center without hard-coding it into shader semantics. Continue with
-  remap/smoothstep, mask/dissolve, depth-fade/soft-particle, and flipbook operations.
+  retain the semantic operation. Rotation uses radians around an explicit center; scale uses
+  `center + (uv - center) * scale`. Remap supports scalar-to-vector promotion and extrapolation;
+  degenerate input-range components resolve to the corresponding output minimum instead of
+  producing NaN/Infinity. Continue with smoothstep, mask/dissolve, depth-fade/soft-particle, and
+  flipbook operations.
 - [ ] **Material 9 — material stack.** Provide the ordered high-level modifier projection before a
   node graph.
 

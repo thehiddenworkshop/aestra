@@ -610,6 +610,139 @@ fn scale_uv_reports_the_socket_with_the_wrong_type() {
 }
 
 #[test]
+fn remap_promotes_scalar_bounds_and_round_trips_its_semantic_sockets() {
+    let value = MaterialExpressionId::from_u128(0xAE01);
+    let input_min = MaterialExpressionId::from_u128(0xAE02);
+    let input_max = MaterialExpressionId::from_u128(0xAE03);
+    let output_min = MaterialExpressionId::from_u128(0xAE04);
+    let output_max = MaterialExpressionId::from_u128(0xAE05);
+    let remap = MaterialExpressionId::from_u128(0xAE06);
+    let alpha = MaterialExpressionId::from_u128(0xAE07);
+    let mut program = MaterialProgram::additive_sprite("Vector remap");
+    program.expressions.extend([
+        MaterialExpression {
+            id: value,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: input_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: input_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: output_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([-1.0, -2.0])),
+        },
+        MaterialExpression {
+            id: output_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.0, 2.0])),
+        },
+        MaterialExpression {
+            id: remap,
+            kind: MaterialExpressionKind::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: remap,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let analysis = program.analyze().unwrap();
+    assert_eq!(
+        analysis.expressions[&remap].value_type,
+        MaterialValueType::Vec2
+    );
+    assert_eq!(
+        analysis.expressions[&remap].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
+    let encoded = program.to_pretty_ron().unwrap();
+    assert!(encoded.contains("Remap"));
+    assert_eq!(
+        MaterialProgram::from_ron(&encoded).unwrap(),
+        program.normalized()
+    );
+}
+
+#[test]
+fn remap_rejects_non_numeric_and_mismatched_vector_sockets() {
+    let value = MaterialExpressionId::from_u128(0xAF01);
+    let input_min = MaterialExpressionId::from_u128(0xAF02);
+    let input_max = MaterialExpressionId::from_u128(0xAF03);
+    let output_min = MaterialExpressionId::from_u128(0xAF04);
+    let output_max = MaterialExpressionId::from_u128(0xAF05);
+    let remap = MaterialExpressionId::from_u128(0xAF06);
+    let alpha = MaterialExpressionId::from_u128(0xAF07);
+    let mut program = MaterialProgram::additive_sprite("Invalid remap");
+    program.expressions.extend([
+        MaterialExpression {
+            id: value,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.0, 1.0])),
+        },
+        MaterialExpression {
+            id: input_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: input_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec3([1.0; 3])),
+        },
+        MaterialExpression {
+            id: output_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: output_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.0; 2])),
+        },
+        MaterialExpression {
+            id: remap,
+            kind: MaterialExpressionKind::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: remap,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let report = program.validation_report();
+
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".input_max")
+            && diagnostic.message.contains("received Vec3")
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".output_min")
+            && diagnostic.message.contains("received Bool")
+    }));
+}
+
+#[test]
 fn material_validation_rejects_output_and_socket_type_mismatches() {
     let mut program = MaterialProgram::additive_sprite("Bad types");
     let vector = MaterialExpressionId::from_u128(0xB01);

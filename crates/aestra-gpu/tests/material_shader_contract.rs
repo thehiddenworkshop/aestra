@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "0d4fd8a5bd089cf66515d7457caacd0ed03e7511f99cb097b3fdb805e1cd1251"
+        "d5f7e9d57ba02465dce3251e1610d4fdc33b063494c4985a6c524c10b809ba53"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -419,6 +419,11 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     let rotate = MaterialExpressionId::from_u128(0x2015);
     let scale_value = MaterialExpressionId::from_u128(0x2016);
     let scale = MaterialExpressionId::from_u128(0x2017);
+    let input_min = MaterialExpressionId::from_u128(0x2018);
+    let input_max = MaterialExpressionId::from_u128(0x2019);
+    let output_min = MaterialExpressionId::from_u128(0x201A);
+    let output_max = MaterialExpressionId::from_u128(0x201B);
+    let remap = MaterialExpressionId::from_u128(0x201C);
     program.expressions.extend([
         MaterialExpression {
             id: speed,
@@ -464,10 +469,36 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
                 scale: scale_value,
             },
         },
+        MaterialExpression {
+            id: input_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: input_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: output_min,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(-1.0)),
+        },
+        MaterialExpression {
+            id: output_max,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: remap,
+            kind: MaterialExpressionKind::Remap {
+                value: scale,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            },
+        },
     ]);
     for expression in &mut program.expressions {
         if let MaterialExpressionKind::SampleTexture { uv, .. } = &mut expression.kind {
-            *uv = scale;
+            *uv = remap;
         }
     }
 
@@ -547,6 +578,29 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
         .unwrap();
     assert!(scale_expression.contains('-'));
     assert!(scale_expression.contains('*'));
+    let remap_line = compiled
+        .source_map
+        .wesl_lines
+        .iter()
+        .find_map(|(line, value)| {
+            compiled
+                .source_map
+                .ir
+                .expressions
+                .get(value)
+                .is_some_and(|expressions| expressions.contains(&remap))
+                .then_some(*line)
+        })
+        .expect("Remap must map to a generated shader line");
+    let remap_expression = compiled
+        .shader
+        .wesl
+        .lines()
+        .nth(remap_line as usize - 1)
+        .unwrap();
+    assert!(remap_expression.contains("select"));
+    assert!(remap_expression.contains("abs"));
+    assert!(remap_expression.contains("0.000001"));
     assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 

@@ -59,6 +59,13 @@ pub enum MaterialIrInstruction {
         min: MaterialIrValueId,
         max: MaterialIrValueId,
     },
+    Remap {
+        value: MaterialIrValueId,
+        input_min: MaterialIrValueId,
+        input_max: MaterialIrValueId,
+        output_min: MaterialIrValueId,
+        output_max: MaterialIrValueId,
+    },
     PanUv {
         uv: MaterialIrValueId,
         speed: MaterialIrValueId,
@@ -94,6 +101,13 @@ impl MaterialIrInstruction {
             | Self::Divide(left, right) => vec![*left, *right],
             Self::Lerp { start, end, factor } => vec![*start, *end, *factor],
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
+            Self::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            } => vec![*value, *input_min, *input_max, *output_min, *output_max],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -124,6 +138,19 @@ impl MaterialIrInstruction {
                 remap(value);
                 remap(min);
                 remap(max);
+            }
+            Self::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            } => {
+                remap(value);
+                remap(input_min);
+                remap(input_max);
+                remap(output_min);
+                remap(output_max);
             }
             Self::PanUv { uv, speed, time } => {
                 remap(uv);
@@ -381,6 +408,26 @@ impl MaterialIrBuilder<'_> {
                     MaterialIrInstruction::Constant(constant)
                 } else {
                     MaterialIrInstruction::Clamp { value, min, max }
+                }
+            }
+            MaterialExpressionKind::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            } => {
+                let value = self.lower(value);
+                let input_min = self.lower(input_min);
+                let input_max = self.lower(input_max);
+                let output_min = self.lower(output_min);
+                let output_max = self.lower(output_max);
+                MaterialIrInstruction::Remap {
+                    value,
+                    input_min,
+                    input_max,
+                    output_min,
+                    output_max,
                 }
             }
             MaterialExpressionKind::PanUv { uv, speed, time } => {
