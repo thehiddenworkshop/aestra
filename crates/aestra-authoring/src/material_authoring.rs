@@ -105,6 +105,8 @@ pub enum MaterialExpressionInput {
     Maximum,
     Speed,
     Time,
+    Center,
+    Angle,
     Texture,
     Uv,
     Source,
@@ -606,6 +608,11 @@ fn rewire_expression(
         (MaterialExpressionKind::PanUv { uv, .. }, MaterialExpressionInput::Uv) => uv,
         (MaterialExpressionKind::PanUv { speed, .. }, MaterialExpressionInput::Speed) => speed,
         (MaterialExpressionKind::PanUv { time, .. }, MaterialExpressionInput::Time) => time,
+        (MaterialExpressionKind::RotateUv { uv, .. }, MaterialExpressionInput::Uv) => uv,
+        (MaterialExpressionKind::RotateUv { center, .. }, MaterialExpressionInput::Center) => {
+            center
+        }
+        (MaterialExpressionKind::RotateUv { angle, .. }, MaterialExpressionInput::Angle) => angle,
         (
             MaterialExpressionKind::SampleTexture { texture, .. },
             MaterialExpressionInput::Texture,

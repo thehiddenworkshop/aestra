@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "a674b8c5f0846d7e55304e487ff2c9fe2f5a464347bbaacd261d1efffc199883"
+        "1fc71791991a849a79292979dcd0f354375db846018673c4f8bc44a75133b4f1"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -408,12 +408,15 @@ fn effect_time_is_reflected_as_a_scene_input() {
 }
 
 #[test]
-fn pan_uv_generates_portable_animated_texture_coordinates() {
+fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     let mut program = two_texture_flame_program();
     let original_uv = MaterialExpressionId::from_u128(0x2005);
     let speed = MaterialExpressionId::from_u128(0x2010);
     let time = MaterialExpressionId::from_u128(0x2011);
     let pan = MaterialExpressionId::from_u128(0x2012);
+    let center = MaterialExpressionId::from_u128(0x2013);
+    let angle = MaterialExpressionId::from_u128(0x2014);
+    let rotate = MaterialExpressionId::from_u128(0x2015);
     program.expressions.extend([
         MaterialExpression {
             id: speed,
@@ -431,10 +434,26 @@ fn pan_uv_generates_portable_animated_texture_coordinates() {
                 time,
             },
         },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5, 0.5])),
+        },
+        MaterialExpression {
+            id: angle,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: rotate,
+            kind: MaterialExpressionKind::RotateUv {
+                uv: pan,
+                center,
+                angle,
+            },
+        },
     ]);
     for expression in &mut program.expressions {
         if let MaterialExpressionKind::SampleTexture { uv, .. } = &mut expression.kind {
-            *uv = pan;
+            *uv = rotate;
         }
     }
 
@@ -469,6 +488,29 @@ fn pan_uv_generates_portable_animated_texture_coordinates() {
         .unwrap();
     assert!(pan_expression.contains('+'));
     assert!(pan_expression.contains('*'));
+    let rotate_line = compiled
+        .source_map
+        .wesl_lines
+        .iter()
+        .find_map(|(line, value)| {
+            compiled
+                .source_map
+                .ir
+                .expressions
+                .get(value)
+                .is_some_and(|expressions| expressions.contains(&rotate))
+                .then_some(*line)
+        })
+        .expect("RotateUV must map to a generated shader line");
+    let rotate_expression = compiled
+        .shader
+        .wesl
+        .lines()
+        .nth(rotate_line as usize - 1)
+        .unwrap();
+    assert!(rotate_expression.contains("mat2x2<f32>"));
+    assert!(rotate_expression.contains("cos"));
+    assert!(rotate_expression.contains("sin"));
     assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 

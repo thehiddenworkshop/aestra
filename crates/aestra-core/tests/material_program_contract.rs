@@ -356,13 +356,16 @@ fn material_analysis_infers_typed_sockets_and_evaluation_domains() {
 }
 
 #[test]
-fn pan_uv_round_trips_and_preserves_its_typed_semantic_sockets() {
+fn uv_transforms_round_trip_and_preserve_their_typed_semantic_sockets() {
     let uv = MaterialExpressionId::from_u128(0xAA01);
     let speed = MaterialExpressionId::from_u128(0xAA02);
     let time = MaterialExpressionId::from_u128(0xAA03);
     let pan = MaterialExpressionId::from_u128(0xAA04);
-    let alpha = MaterialExpressionId::from_u128(0xAA05);
-    let mut program = MaterialProgram::additive_sprite("Panning UV");
+    let center = MaterialExpressionId::from_u128(0xAA05);
+    let angle = MaterialExpressionId::from_u128(0xAA06);
+    let rotate = MaterialExpressionId::from_u128(0xAA07);
+    let alpha = MaterialExpressionId::from_u128(0xAA08);
+    let mut program = MaterialProgram::additive_sprite("UV transforms");
     program.expressions.extend([
         MaterialExpression {
             id: uv,
@@ -381,9 +384,25 @@ fn pan_uv_round_trips_and_preserves_its_typed_semantic_sockets() {
             kind: MaterialExpressionKind::PanUv { uv, speed, time },
         },
         MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5, 0.5])),
+        },
+        MaterialExpression {
+            id: angle,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: rotate,
+            kind: MaterialExpressionKind::RotateUv {
+                uv: pan,
+                center,
+                angle,
+            },
+        },
+        MaterialExpression {
             id: alpha,
             kind: MaterialExpressionKind::ExtractComponent {
-                value: pan,
+                value: rotate,
                 component: MaterialVectorComponent::X,
             },
         },
@@ -399,9 +418,18 @@ fn pan_uv_round_trips_and_preserves_its_typed_semantic_sockets() {
         analysis.expressions[&pan].evaluation_domain,
         MaterialExpressionDomain::Fragment
     );
+    assert_eq!(
+        analysis.expressions[&rotate].value_type,
+        MaterialValueType::Vec2
+    );
+    assert_eq!(
+        analysis.expressions[&rotate].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
 
     let encoded = program.to_pretty_ron().unwrap();
     assert!(encoded.contains("PanUv"));
+    assert!(encoded.contains("RotateUv"));
     assert_eq!(
         MaterialProgram::from_ron(&encoded).unwrap(),
         program.normalized()
@@ -455,6 +483,56 @@ fn pan_uv_reports_the_socket_with_the_wrong_type() {
         diagnostic.code == DiagnosticCode::MaterialTypeMismatch
             && diagnostic.path.ends_with(".time")
             && diagnostic.message.contains("expects Float")
+    }));
+}
+
+#[test]
+fn rotate_uv_reports_the_socket_with_the_wrong_type() {
+    let uv = MaterialExpressionId::from_u128(0xAC01);
+    let center = MaterialExpressionId::from_u128(0xAC02);
+    let angle = MaterialExpressionId::from_u128(0xAC03);
+    let rotate = MaterialExpressionId::from_u128(0xAC04);
+    let alpha = MaterialExpressionId::from_u128(0xAC05);
+    let mut program = MaterialProgram::additive_sprite("Invalid rotating UV");
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: angle,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.0, 1.0])),
+        },
+        MaterialExpression {
+            id: rotate,
+            kind: MaterialExpressionKind::RotateUv { uv, center, angle },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: rotate,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let report = program.validation_report();
+
+    assert!(!report.is_valid());
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".center")
+            && diagnostic.message.contains("expects Vec2")
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".angle")
+            && diagnostic.message.contains("Float radians")
     }));
 }
 

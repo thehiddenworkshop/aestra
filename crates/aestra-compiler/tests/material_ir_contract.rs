@@ -178,13 +178,16 @@ fn valid_two_texture_flame_lowers_to_typed_backend_neutral_ir() {
 }
 
 #[test]
-fn pan_uv_lowers_as_one_semantic_instruction_with_source_mapping() {
+fn uv_transforms_lower_as_semantic_instructions_with_source_mapping() {
     let uv = MaterialExpressionId::from_u128(0x3101);
     let speed = MaterialExpressionId::from_u128(0x3102);
     let time = MaterialExpressionId::from_u128(0x3103);
     let pan = MaterialExpressionId::from_u128(0x3104);
-    let alpha = MaterialExpressionId::from_u128(0x3105);
-    let mut program = MaterialProgram::additive_sprite("Panning UV IR");
+    let center = MaterialExpressionId::from_u128(0x3105);
+    let angle = MaterialExpressionId::from_u128(0x3106);
+    let rotate = MaterialExpressionId::from_u128(0x3107);
+    let alpha = MaterialExpressionId::from_u128(0x3108);
+    let mut program = MaterialProgram::additive_sprite("UV transform IR");
     program.expressions.extend([
         MaterialExpression {
             id: uv,
@@ -203,9 +206,25 @@ fn pan_uv_lowers_as_one_semantic_instruction_with_source_mapping() {
             kind: MaterialExpressionKind::PanUv { uv, speed, time },
         },
         MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5, 0.5])),
+        },
+        MaterialExpression {
+            id: angle,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: rotate,
+            kind: MaterialExpressionKind::RotateUv {
+                uv: pan,
+                center,
+                angle,
+            },
+        },
+        MaterialExpression {
             id: alpha,
             kind: MaterialExpressionKind::ExtractComponent {
-                value: pan,
+                value: rotate,
                 component: MaterialVectorComponent::X,
             },
         },
@@ -230,6 +249,18 @@ fn pan_uv_lowers_as_one_semantic_instruction_with_source_mapping() {
         ir.value(ir_time).unwrap().instruction,
         MaterialIrInstruction::Input(MaterialInput::EffectTime)
     ));
+    let rotate_value = ir.source_map.values[&rotate];
+    let MaterialIrInstruction::RotateUv {
+        uv: ir_rotate_uv,
+        center: ir_center,
+        angle: ir_angle,
+    } = ir.value(rotate_value).unwrap().instruction
+    else {
+        panic!("RotateUV must survive lowering as a semantic IR instruction");
+    };
+    assert_eq!(ir_rotate_uv, pan_value);
+    assert_eq!(ir_center, ir.source_map.values[&center]);
+    assert_eq!(ir_angle, ir.source_map.values[&angle]);
 }
 
 #[test]

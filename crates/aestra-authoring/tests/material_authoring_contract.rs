@@ -182,7 +182,7 @@ fn program_and_expression_commands_are_transactional_and_reversible() {
 }
 
 #[test]
-fn pan_uv_semantic_sockets_are_rewireable_and_undoable() {
+fn uv_transform_semantic_sockets_are_rewireable_and_undoable() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x1200);
     let uv = MaterialExpressionId::from_u128(0x1201);
@@ -191,8 +191,13 @@ fn pan_uv_semantic_sockets_are_rewireable_and_undoable() {
     let time = MaterialExpressionId::from_u128(0x1204);
     let alternate_time = MaterialExpressionId::from_u128(0x1205);
     let pan = MaterialExpressionId::from_u128(0x1206);
-    let alpha = MaterialExpressionId::from_u128(0x1207);
-    let mut program = MaterialProgram::additive_sprite("Authorable panning UV");
+    let center = MaterialExpressionId::from_u128(0x1207);
+    let alternate_center = MaterialExpressionId::from_u128(0x1208);
+    let angle = MaterialExpressionId::from_u128(0x1209);
+    let alternate_angle = MaterialExpressionId::from_u128(0x120A);
+    let rotate = MaterialExpressionId::from_u128(0x120B);
+    let alpha = MaterialExpressionId::from_u128(0x120C);
+    let mut program = MaterialProgram::additive_sprite("Authorable UV transforms");
     program.id = program_id;
     program.expressions.extend([
         MaterialExpression {
@@ -220,9 +225,33 @@ fn pan_uv_semantic_sockets_are_rewireable_and_undoable() {
             kind: MaterialExpressionKind::PanUv { uv, speed, time },
         },
         MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5, 0.5])),
+        },
+        MaterialExpression {
+            id: alternate_center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.25, 0.75])),
+        },
+        MaterialExpression {
+            id: angle,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: alternate_angle,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: rotate,
+            kind: MaterialExpressionKind::RotateUv {
+                uv: pan,
+                center,
+                angle,
+            },
+        },
+        MaterialExpression {
             id: alpha,
             kind: MaterialExpressionKind::ExtractComponent {
-                value: pan,
+                value: rotate,
                 component: MaterialVectorComponent::X,
             },
         },
@@ -255,6 +284,24 @@ fn pan_uv_semantic_sockets_are_rewireable_and_undoable() {
                         input: MaterialExpressionInput::Time,
                         source: alternate_time,
                     },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: rotate,
+                        input: MaterialExpressionInput::Uv,
+                        source: uv,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: rotate,
+                        input: MaterialExpressionInput::Center,
+                        source: alternate_center,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: rotate,
+                        input: MaterialExpressionInput::Angle,
+                        source: alternate_angle,
+                    },
                 ],
             ),
         )
@@ -273,6 +320,21 @@ fn pan_uv_semantic_sockets_are_rewireable_and_undoable() {
             time: rewired_time,
         } if rewired_uv == alternate_uv && rewired_speed == uv && rewired_time == alternate_time
     ));
+    let expression = document.programs[0]
+        .expressions
+        .iter()
+        .find(|expression| expression.id == rotate)
+        .unwrap();
+    assert!(matches!(
+        expression.kind,
+        MaterialExpressionKind::RotateUv {
+            uv: rewired_uv,
+            center: rewired_center,
+            angle: rewired_angle,
+        } if rewired_uv == uv
+            && rewired_center == alternate_center
+            && rewired_angle == alternate_angle
+    ));
 
     history.undo(&mut document).unwrap().unwrap();
     assert!(matches!(
@@ -287,6 +349,19 @@ fn pan_uv_semantic_sockets_are_rewireable_and_undoable() {
             speed: original_speed,
             time: original_time,
         } if original_uv == uv && original_speed == speed && original_time == time
+    ));
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == rotate)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RotateUv {
+            uv: original_uv,
+            center: original_center,
+            angle: original_angle,
+        } if original_uv == pan && original_center == center && original_angle == angle
     ));
 }
 

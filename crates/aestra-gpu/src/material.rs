@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 1;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 2;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 3;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 pub const MATERIAL_FRAGMENT_ENTRY_POINT: &str = "fragment_material";
 pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
@@ -671,6 +671,12 @@ fn instruction_expression(
             value_name(*speed),
             value_name(*time)
         ),
+        MaterialIrInstruction::RotateUv { uv, center, angle } => format!(
+            "({center} + (mat2x2<f32>(cos({angle}), sin({angle}), -sin({angle}), cos({angle})) * ({uv} - {center})))",
+            uv = value_name(*uv),
+            center = value_name(*center),
+            angle = value_name(*angle),
+        ),
         MaterialIrInstruction::SampleTexture { texture, uv } => {
             let texture_value = ir
                 .value(*texture)
@@ -916,6 +922,12 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(uv.0);
             fingerprint.u32(speed.0);
             fingerprint.u32(time.0);
+        }
+        MaterialIrInstruction::RotateUv { uv, center, angle } => {
+            fingerprint.byte(12);
+            fingerprint.u32(uv.0);
+            fingerprint.u32(center.0);
+            fingerprint.u32(angle.0);
         }
     }
 }

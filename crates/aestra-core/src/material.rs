@@ -537,6 +537,11 @@ pub enum MaterialExpressionKind {
         speed: MaterialExpressionId,
         time: MaterialExpressionId,
     },
+    RotateUv {
+        uv: MaterialExpressionId,
+        center: MaterialExpressionId,
+        angle: MaterialExpressionId,
+    },
     SampleTexture {
         texture: MaterialExpressionId,
         uv: MaterialExpressionId,
@@ -566,6 +571,7 @@ impl MaterialExpressionKind {
             Self::Lerp { start, end, factor } => vec![*start, *end, *factor],
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
+            Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::SampleTexture { texture, uv } => vec![*texture, *uv],
             Self::ExtractComponent { value, .. } => vec![*value],
         }
@@ -1128,6 +1134,54 @@ fn infer_expression(
                             .evaluation_domain
                             .max(speed.evaluation_domain)
                             .max(time.evaluation_domain),
+                    })
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::RotateUv { uv, center, angle } => {
+            let uv = dependency(*uv);
+            let center = dependency(*center);
+            let angle = dependency(*angle);
+            match (uv, center, angle) {
+                (Some(uv), Some(center), Some(angle)) => {
+                    let mut valid = true;
+                    if uv.value_type != MaterialValueType::Vec2 {
+                        material_type_error(
+                            report,
+                            format!("{path}.uv"),
+                            format!("RotateUV UV expects Vec2 but received {:?}", uv.value_type),
+                        );
+                        valid = false;
+                    }
+                    if center.value_type != MaterialValueType::Vec2 {
+                        material_type_error(
+                            report,
+                            format!("{path}.center"),
+                            format!(
+                                "RotateUV center expects Vec2 but received {:?}",
+                                center.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if angle.value_type != MaterialValueType::Float {
+                        material_type_error(
+                            report,
+                            format!("{path}.angle"),
+                            format!(
+                                "RotateUV angle expects Float radians but received {:?}",
+                                angle.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Vec2,
+                        evaluation_domain: uv
+                            .evaluation_domain
+                            .max(center.evaluation_domain)
+                            .max(angle.evaluation_domain),
                     })
                 }
                 _ => None,

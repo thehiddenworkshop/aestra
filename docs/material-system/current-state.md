@@ -247,12 +247,12 @@ memory and binds the resulting shaders without rewriting the source effect. Nati
 now verifies pixel-identical legacy and semantic output for all three showcase sources, and the
 approved images are the scheduled workflow baseline.
 
-Material 8 has begun with `PanUV` as an end-to-end semantic primitive rather than a pre-expanded
-multiply/add graph. Its explicit `Vec2` UV, `Vec2` speed, and `Float` time sockets survive stable
-RON, validation, undoable rewiring, backend-neutral IR, source mapping, and portable shader
-generation. The generated shader uses reflected effect time, and its WGSL is validated and
-translated to SPIR-V and HLSL by the contract suite. Remaining Material 8 operations are not yet
-implemented.
+Material 8 has begun with `PanUV` and `RotateUV` as end-to-end semantic primitives rather than
+pre-expanded arithmetic graphs. Pan retains explicit `Vec2` UV, `Vec2` speed, and `Float` time
+sockets; rotation retains `Vec2` UV, `Vec2` center, and radians-valued `Float` angle sockets. Both
+survive stable RON, validation, undoable rewiring, backend-neutral IR, source mapping, and portable
+shader generation. Generated WGSL is validated and translated to SPIR-V and HLSL by the contract
+suite. Remaining Material 8 operations are not yet implemented.
 
 ## Migration classification
 
