@@ -339,7 +339,9 @@ the current sprite-material path until the native-GPU compatibility gate approve
   projection, compiler-approved operation/preset insertion edges, and structured diagnostics.
   `MaterialCompilationReporter` uses those same targets to return deterministic backend-neutral IR
   with its expression source map and optimization statistics; invalid program or instance state
-  returns scoped diagnostics with no misleading partial IR.
+  returns scoped diagnostics with no misleading partial IR. `MaterialApi` now unifies inspection,
+  non-mutating edit planning, and compilation behind serializable tagged requests and responses;
+  stable error codes preserve structured validation diagnostics for tool clients.
 
 ### Phase D — advanced human authoring
 

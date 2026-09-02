@@ -2162,7 +2162,10 @@ retain their authored snapshots and diagnostics while compiler-derived fields th
 misleading are omitted. `MaterialCompilationReporter` accepts the same targets and returns the
 optimized backend-neutral `MaterialIrProgram`, including expression source maps and optimization
 statistics, only after both program and optional instance bindings validate. Invalid targets return
-their scoped diagnostics with no partial IR.
+their scoped diagnostics with no partial IR. `MaterialApi` exposes inspection, non-mutating semantic
+edit planning, and compilation as tagged serializable requests and responses. Failures are response
+values with stable codes, human-readable context, and structured validation diagnostics, allowing a
+tool client to inspect, plan, preview on a clone, and compile without direct storage mutation.
 
 ### Completion Criterion
 

@@ -1,6 +1,8 @@
 use aestra_authoring::{
-    MaterialAuthoringDocument, MaterialCompilationReport, MaterialCompilationReporter,
-    MaterialInspectionError, MaterialInspectionTarget, MaterialInspector,
+    MaterialApi, MaterialApiErrorCode, MaterialApiRequest, MaterialApiResponse,
+    MaterialAuthoringDocument, MaterialCommandExecutor, MaterialCompilationReport,
+    MaterialCompilationReporter, MaterialConnectionTarget, MaterialInspectionError,
+    MaterialInspectionTarget, MaterialInspector, MaterialOutputSocket, MaterialToolCommand,
 };
 use aestra_core::{
     EffectAsset, Emitter, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId,
@@ -265,4 +267,104 @@ fn material_compilation_rejects_stale_targets() {
         .unwrap_err(),
         MaterialInspectionError::ProgramNotFound(missing)
     );
+}
+
+#[test]
+fn material_api_runs_inspect_plan_preview_compile_without_mutating_the_source() {
+    let (document, program, _) = inspection_document();
+    let before = document.clone();
+    let target = MaterialInspectionTarget::Program(program);
+    let inspect_request = MaterialApiRequest::Inspect { target };
+    let encoded_request = ron::to_string(&inspect_request).unwrap();
+    assert_eq!(
+        ron::from_str::<MaterialApiRequest>(&encoded_request).unwrap(),
+        inspect_request
+    );
+
+    let inspect_response = MaterialApi::handle(&document, inspect_request);
+    let MaterialApiResponse::Inspection(inspection) = &inspect_response else {
+        panic!("inspection request must return an inspection report");
+    };
+    let operation = inspection
+        .operations
+        .first()
+        .copied()
+        .expect("inspection must advertise an insertable operation");
+    let edit_request = MaterialApiRequest::PlanEdit {
+        command: MaterialToolCommand::InsertMaterialOperation {
+            program,
+            kind: operation.kind,
+            placement: operation.placement,
+        },
+    };
+    let edit_response = MaterialApi::handle(&document, edit_request);
+    let MaterialApiResponse::EditPlan(plan) = &edit_response else {
+        panic!("valid semantic edit request must return a plan");
+    };
+    assert!(!plan.diff.is_empty());
+    assert_eq!(document, before, "API edit planning must be non-mutating");
+
+    let mut preview = document.clone();
+    MaterialCommandExecutor::execute(&mut preview, &plan.transaction).unwrap();
+    let compile_response = MaterialApi::handle(&preview, MaterialApiRequest::Compile { target });
+    let MaterialApiResponse::Compilation(compilation) = &compile_response else {
+        panic!("valid preview must return a compilation report");
+    };
+    assert!(compilation.is_valid());
+    assert!(compilation.ir.is_some());
+
+    for response in [inspect_response, edit_response, compile_response] {
+        let encoded = ron::to_string(&response).unwrap();
+        assert_eq!(
+            ron::from_str::<MaterialApiResponse>(&encoded).unwrap(),
+            response
+        );
+    }
+}
+
+#[test]
+fn material_api_returns_serializable_stable_errors_and_validation_diagnostics() {
+    let (document, program, _) = inspection_document();
+    let before = document.clone();
+    let missing = MaterialProgramId::from_u128(0x76ff);
+    let not_found = MaterialApi::handle(
+        &document,
+        MaterialApiRequest::Inspect {
+            target: MaterialInspectionTarget::Program(missing),
+        },
+    );
+    let MaterialApiResponse::Error(not_found_error) = &not_found else {
+        panic!("stale target must return an API error");
+    };
+    assert_eq!(not_found_error.code, MaterialApiErrorCode::NotFound);
+    assert!(not_found_error.diagnostics.diagnostics.is_empty());
+
+    let color = document.programs[0].outputs.color;
+    let invalid_edit = MaterialApi::handle(
+        &document,
+        MaterialApiRequest::PlanEdit {
+            command: MaterialToolCommand::ConnectMaterialExpression {
+                program,
+                source: color,
+                target: MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha),
+            },
+        },
+    );
+    let MaterialApiResponse::Error(validation_error) = &invalid_edit else {
+        panic!("type-invalid edit must return an API error");
+    };
+    assert_eq!(
+        validation_error.code,
+        MaterialApiErrorCode::ValidationFailed
+    );
+    assert!(!validation_error.diagnostics.diagnostics.is_empty());
+    assert_eq!(document, before);
+
+    for response in [not_found, invalid_edit] {
+        let encoded = ron::to_string(&response).unwrap();
+        assert_eq!(
+            ron::from_str::<MaterialApiResponse>(&encoded).unwrap(),
+            response
+        );
+    }
 }
