@@ -2040,7 +2040,8 @@ Implement:
 
 - ordered modifier list;
 - add/remove operation;
-- reorder when valid;
+- reorder when valid (safe move planning and exact transaction undo/redo are implemented for
+  direct homogeneous chains; editor persistence/history integration remains);
 - per-modifier inspector;
 - enable/disable;
 - preset insertion;

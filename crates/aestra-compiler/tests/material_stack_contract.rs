@@ -1,6 +1,6 @@
 use aestra_compiler::{
     MaterialCompiler, MaterialStackFallbackReason, MaterialStackModifierKind,
-    MaterialStackProjection,
+    MaterialStackMoveError, MaterialStackMoveTarget, MaterialStackProjection,
 };
 use aestra_core::material::{
     MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
@@ -128,6 +128,95 @@ fn linear_stack_program() -> MaterialProgram {
     program
 }
 
+fn reorderable_uv_stack_program() -> MaterialProgram {
+    let uv = MaterialExpressionId::from_u128(0x5301);
+    let speed = MaterialExpressionId::from_u128(0x5302);
+    let time = MaterialExpressionId::from_u128(0x5303);
+    let pan = MaterialExpressionId::from_u128(0x5304);
+    let center = MaterialExpressionId::from_u128(0x5305);
+    let angle = MaterialExpressionId::from_u128(0x5306);
+    let rotate = MaterialExpressionId::from_u128(0x5307);
+    let scale_value = MaterialExpressionId::from_u128(0x5308);
+    let scale = MaterialExpressionId::from_u128(0x5309);
+    let texture_parameter = MaterialParameterId::from_u128(0x530a);
+    let texture = MaterialExpressionId::from_u128(0x530b);
+    let sample = MaterialExpressionId::from_u128(0x530c);
+    let alpha = MaterialExpressionId::from_u128(0x530d);
+    let texture_type = texture_type();
+    let mut program = MaterialProgram::additive_sprite("Reorderable UV stack");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "Texture".into(),
+        value_type: texture_type,
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x530e))),
+    });
+    program.expressions = vec![
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: speed,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.1, 0.0])),
+        },
+        MaterialExpression {
+            id: time,
+            kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: pan,
+            kind: MaterialExpressionKind::PanUv { uv, speed, time },
+        },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5, 0.5])),
+        },
+        MaterialExpression {
+            id: angle,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: rotate,
+            kind: MaterialExpressionKind::RotateUv {
+                uv: pan,
+                center,
+                angle,
+            },
+        },
+        MaterialExpression {
+            id: scale_value,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([2.0, 2.0])),
+        },
+        MaterialExpression {
+            id: scale,
+            kind: MaterialExpressionKind::ScaleUv {
+                uv: rotate,
+                center,
+                scale: scale_value,
+            },
+        },
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: sample,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv: scale },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: sample,
+                component: MaterialVectorComponent::W,
+            },
+        },
+    ];
+    program.outputs.color = sample;
+    program.outputs.alpha = alpha;
+    program
+}
+
 #[test]
 fn linear_semantic_program_projects_in_source_to_output_order() {
     let program = linear_stack_program();
@@ -247,4 +336,101 @@ fn independent_texture_chains_require_the_advanced_representation() {
             expressions: vec![first, second],
         }
     );
+}
+
+#[test]
+fn move_targets_only_include_valid_positions_in_a_direct_typed_chain() {
+    let program = reorderable_uv_stack_program();
+    let rotate = MaterialExpressionId::from_u128(0x5307);
+    let sample = MaterialExpressionId::from_u128(0x530c);
+
+    assert_eq!(
+        MaterialCompiler
+            .stack_move_targets(&program, rotate)
+            .unwrap(),
+        vec![
+            MaterialStackMoveTarget { index: 0 },
+            MaterialStackMoveTarget { index: 2 },
+        ]
+    );
+    assert!(
+        MaterialCompiler
+            .stack_move_targets(&program, sample)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn stack_move_preserves_ids_and_rewires_the_terminal_consumer() {
+    let program = reorderable_uv_stack_program();
+    let pan = MaterialExpressionId::from_u128(0x5304);
+    let rotate = MaterialExpressionId::from_u128(0x5307);
+    let scale = MaterialExpressionId::from_u128(0x5309);
+    let sample = MaterialExpressionId::from_u128(0x530c);
+    let original_ids = program
+        .expressions
+        .iter()
+        .map(|expression| expression.id)
+        .collect::<Vec<_>>();
+
+    let plan = MaterialCompiler.plan_stack_move(&program, pan, 2).unwrap();
+    assert_eq!(plan.from_index, 0);
+    assert_eq!(plan.to_index, 2);
+    assert_eq!(
+        plan.replacement
+            .expressions
+            .iter()
+            .map(|expression| expression.id)
+            .collect::<Vec<_>>(),
+        original_ids
+    );
+    let MaterialStackProjection::Stack { entries } =
+        MaterialCompiler.project_stack(&plan.replacement).unwrap()
+    else {
+        panic!("moved program must remain a stack");
+    };
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| entry.expression)
+            .collect::<Vec<_>>(),
+        vec![rotate, scale, pan, sample]
+    );
+    assert!(matches!(
+        plan.replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == sample)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::SampleTexture { uv, .. } if uv == pan
+    ));
+}
+
+#[test]
+fn incompatible_and_advanced_moves_are_rejected_without_a_replacement() {
+    let program = reorderable_uv_stack_program();
+    let pan = MaterialExpressionId::from_u128(0x5304);
+    assert!(matches!(
+        MaterialCompiler.plan_stack_move(&program, pan, 3),
+        Err(MaterialStackMoveError::IncompatibleTarget { index: 3 })
+    ));
+
+    let mut advanced = linear_stack_program();
+    let source = MaterialExpressionId::from_u128(0x5104);
+    let texture = MaterialExpressionId::from_u128(0x5105);
+    let alternate = MaterialExpressionId::from_u128(0x5310);
+    advanced.expressions.push(MaterialExpression {
+        id: alternate,
+        kind: MaterialExpressionKind::SampleTexture {
+            texture,
+            uv: source,
+        },
+    });
+    advanced.outputs.color = alternate;
+    assert!(matches!(
+        MaterialCompiler.plan_stack_move(&advanced, source, 1),
+        Err(MaterialStackMoveError::Advanced)
+    ));
 }

@@ -292,8 +292,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   deterministically projects reachable semantic operations into a source-to-output stack with
   stable expression IDs. Linear chains appear in Properties; branched or independent modifier
   chains explicitly fall back to an Advanced representation instead of implying an unsafe order.
-  Continue with transactional add, reorder, and enable/disable modifier commands before a node
-  graph.
+  Safe reorder planning is now complete for direct, homogeneous chains: it reports only moves
+  that preserve type/domain validity, keeps stable expression identities and storage order, and
+  returns a full replacement that commits as one exactly reversible material transaction.
+  Properties exposes those compatible before/after positions while Advanced graphs remain
+  non-reorderable. Continue with the project-material persistence/history bridge, then add and
+  enable/disable modifier commands before a node graph.
 
 ### Phase C — AI-first authoring
 

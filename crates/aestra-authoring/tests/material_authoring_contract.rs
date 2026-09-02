@@ -4,12 +4,13 @@ use aestra_authoring::{
     MaterialSemanticTarget, MaterialTransaction,
 };
 use aestra_core::{
-    BlendMode, EffectAsset, Emitter, MaterialExpressionId, MaterialId, MaterialParameterId,
-    MaterialProgramId, RendererId,
+    AssetId, BlendMode, EffectAsset, Emitter, MaterialExpressionId, MaterialId,
+    MaterialParameterId, MaterialProgramId, RendererId,
     material::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
         MaterialInstance, MaterialParameter, MaterialParameterValue, MaterialProgram,
-        MaterialProgramRef, MaterialRenderState, MaterialValue, MaterialValueType,
+        MaterialProgramRef, MaterialRenderState, MaterialSamplerDescriptor,
+        MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
         MaterialVectorComponent,
     },
 };
@@ -33,6 +34,88 @@ fn parameterized_program(id: MaterialProgramId) -> (MaterialProgram, MaterialPar
         default: Some(MaterialValue::Float(1.0)),
     });
     (program, parameter)
+}
+
+fn reorderable_material_program(id: MaterialProgramId) -> (MaterialProgram, MaterialExpressionId) {
+    let uv = MaterialExpressionId::from_u128(0x1180);
+    let speed = MaterialExpressionId::from_u128(0x1181);
+    let time = MaterialExpressionId::from_u128(0x1182);
+    let pan = MaterialExpressionId::from_u128(0x1183);
+    let center = MaterialExpressionId::from_u128(0x1184);
+    let angle = MaterialExpressionId::from_u128(0x1185);
+    let rotate = MaterialExpressionId::from_u128(0x1186);
+    let texture_parameter = MaterialParameterId::from_u128(0x1187);
+    let texture = MaterialExpressionId::from_u128(0x1188);
+    let sample = MaterialExpressionId::from_u128(0x1189);
+    let alpha = MaterialExpressionId::from_u128(0x118a);
+    let texture_type = MaterialValueType::Texture2D(MaterialTextureDescriptor {
+        color_space: MaterialTextureColorSpace::SrgbColor,
+        sampler: MaterialSamplerDescriptor::default(),
+    });
+    let mut program = MaterialProgram::additive_sprite("Reorder transaction");
+    program.id = id;
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "Texture".into(),
+        value_type: texture_type,
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x118b))),
+    });
+    program.expressions = vec![
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: speed,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.1, 0.0])),
+        },
+        MaterialExpression {
+            id: time,
+            kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: pan,
+            kind: MaterialExpressionKind::PanUv { uv, speed, time },
+        },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5, 0.5])),
+        },
+        MaterialExpression {
+            id: angle,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.25)),
+        },
+        MaterialExpression {
+            id: rotate,
+            kind: MaterialExpressionKind::RotateUv {
+                uv: pan,
+                center,
+                angle,
+            },
+        },
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: sample,
+            kind: MaterialExpressionKind::SampleTexture {
+                texture,
+                uv: rotate,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: sample,
+                component: MaterialVectorComponent::W,
+            },
+        },
+    ];
+    program.outputs.color = sample;
+    program.outputs.alpha = alpha;
+    (program, pan)
 }
 
 #[test]
@@ -179,6 +262,39 @@ fn program_and_expression_commands_are_transactional_and_reversible() {
     assert_eq!(document.programs[0].id, program_id);
     history.redo(&mut document).unwrap().unwrap();
     assert!(document.programs.is_empty());
+}
+
+#[test]
+fn planned_stack_move_is_one_transaction_with_exact_undo_and_redo() {
+    let program_id = MaterialProgramId::from_u128(0x117f);
+    let (program, pan) = reorderable_material_program(program_id);
+    let original = program.clone();
+    let plan = aestra_compiler::MaterialCompiler
+        .plan_stack_move(&program, pan, 1)
+        .unwrap();
+    let mut document = authoring_document();
+    document.programs.push(program);
+    let mut history = MaterialCommandHistory::default();
+
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::single(
+                "Move material modifier",
+                MaterialCommand::ReplaceMaterialProgram {
+                    id: program_id,
+                    program: plan.replacement.clone(),
+                },
+            ),
+        )
+        .unwrap();
+    assert_eq!(document.programs[0], plan.replacement);
+
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document.programs[0], original);
+
+    history.redo(&mut document).unwrap().unwrap();
+    assert_eq!(document.programs[0], plan.replacement);
 }
 
 #[test]

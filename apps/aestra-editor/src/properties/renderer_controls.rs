@@ -966,7 +966,7 @@ fn spawn_semantic_material_controls(
         .map_err(|error| error.to_string())?;
 
     spawn_properties_read_only_control(parent, "Material", &controls.name);
-    spawn_semantic_material_stack(parent, &stack);
+    spawn_semantic_material_stack(parent, program, &stack);
     for descriptor in &controls.parameters {
         spawn_semantic_material_parameter(parent, descriptor, instance.id, session, asset_server);
     }
@@ -981,6 +981,7 @@ fn spawn_semantic_material_controls(
 
 fn spawn_semantic_material_stack(
     parent: &mut ChildSpawnerCommands,
+    program: &aestra_core::material::MaterialProgram,
     projection: &MaterialStackProjection,
 ) {
     match projection {
@@ -988,15 +989,44 @@ fn spawn_semantic_material_stack(
             spawn_properties_read_only_control(parent, "Stack", "No semantic modifiers");
         }
         MaterialStackProjection::Stack { entries } => {
-            spawn_properties_read_only_control(parent, "Material Stack", "Read only");
-            for entry in entries {
+            spawn_properties_read_only_control(parent, "Material Stack", "Compatible moves");
+            for (index, entry) in entries.iter().enumerate() {
                 spawn_properties_read_only_control(parent, "Modifier", entry.kind.display_name());
+                let targets = MaterialCompiler
+                    .stack_move_targets(program, entry.expression)
+                    .unwrap_or_default();
+                if !targets.is_empty() {
+                    spawn_properties_read_only_control(
+                        parent,
+                        "Valid positions",
+                        &material_stack_move_labels(entries, index, &targets),
+                    );
+                }
             }
         }
         MaterialStackProjection::Advanced { reason } => {
             spawn_properties_read_only_control(parent, "Material Stack", reason.display_name());
         }
     }
+}
+
+fn material_stack_move_labels(
+    entries: &[MaterialStackEntry],
+    from_index: usize,
+    targets: &[MaterialStackMoveTarget],
+) -> String {
+    targets
+        .iter()
+        .filter_map(|target| {
+            let anchor = entries.get(target.index)?.kind.display_name();
+            Some(if target.index < from_index {
+                format!("Before {anchor}")
+            } else {
+                format!("After {anchor}")
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1838,6 +1868,36 @@ mod tests {
         assert_eq!(
             renderer_number_step(RendererNumberControl::FlipbookFrameRate(id)),
             1.0
+        );
+    }
+
+    #[test]
+    fn material_stack_move_labels_describe_final_relative_positions() {
+        let entries = [
+            MaterialStackEntry {
+                expression: aestra_core::MaterialExpressionId::from_u128(0x7100),
+                kind: aestra_compiler::MaterialStackModifierKind::PanUv,
+            },
+            MaterialStackEntry {
+                expression: aestra_core::MaterialExpressionId::from_u128(0x7101),
+                kind: aestra_compiler::MaterialStackModifierKind::RotateUv,
+            },
+            MaterialStackEntry {
+                expression: aestra_core::MaterialExpressionId::from_u128(0x7102),
+                kind: aestra_compiler::MaterialStackModifierKind::ScaleUv,
+            },
+        ];
+
+        assert_eq!(
+            material_stack_move_labels(
+                &entries,
+                1,
+                &[
+                    MaterialStackMoveTarget { index: 0 },
+                    MaterialStackMoveTarget { index: 2 },
+                ],
+            ),
+            "Before UV Pan · After UV Scale"
         );
     }
 
