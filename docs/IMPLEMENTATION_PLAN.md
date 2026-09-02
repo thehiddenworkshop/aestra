@@ -325,6 +325,9 @@ the current sprite-material path until the native-GPU compatibility gate approve
   `WrapMaterialExpression` now compiler-plans a default semantic modifier around one exact stable
   connection edge, verifies that the wrapper consumes the prior source and replaces only the
   requested destination, and rejects fan-out, non-primary, stale, or incompatible edges atomically.
+  `ReplaceMaterialExpression` now replaces an expression kind while preserving its stable identity
+  and every downstream connection. Its upstream references and resulting type/domain compatibility
+  are validated as one undoable baseline transaction, so stale or invalid substitutions are atomic.
 - [ ] **Material 11 — AI material API.** Expose machine-readable inspection, editing, compilation,
   and diagnostics.
 

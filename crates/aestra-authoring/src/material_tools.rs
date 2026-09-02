@@ -9,7 +9,10 @@ use aestra_compiler::{
     MaterialCompiler, MaterialStackEditError, MaterialStackModifierKind, MaterialStackPresetKind,
     MaterialStackProjection,
 };
-use aestra_core::{MaterialExpressionId, MaterialProgramId, material::MaterialProgram};
+use aestra_core::{
+    MaterialExpressionId, MaterialProgramId,
+    material::{MaterialExpression, MaterialExpressionKind, MaterialProgram},
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -33,8 +36,13 @@ pub enum MaterialConnectionTarget {
 }
 
 /// A semantic material edit request suitable for editor, CLI, and tool clients.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MaterialToolCommand {
+    ReplaceMaterialExpression {
+        program: MaterialProgramId,
+        expression: MaterialExpressionId,
+        replacement: MaterialExpressionKind,
+    },
     WrapMaterialExpression {
         program: MaterialProgramId,
         target: MaterialConnectionTarget,
@@ -118,6 +126,11 @@ impl MaterialToolPlanner {
         command: MaterialToolCommand,
     ) -> Result<MaterialToolPlan, MaterialToolError> {
         match command {
+            MaterialToolCommand::ReplaceMaterialExpression {
+                program,
+                expression,
+                replacement,
+            } => Self::plan_replace_material_expression(document, program, expression, replacement),
             MaterialToolCommand::WrapMaterialExpression {
                 program,
                 target,
@@ -139,6 +152,42 @@ impl MaterialToolPlanner {
                 placement,
             } => Self::plan_apply_material_preset(document, program, preset, placement),
         }
+    }
+
+    fn plan_replace_material_expression(
+        document: &MaterialAuthoringDocument,
+        program_id: MaterialProgramId,
+        expression_id: MaterialExpressionId,
+        replacement: MaterialExpressionKind,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        let program = find_program(document, program_id)?;
+        if !program
+            .expressions
+            .iter()
+            .any(|expression| expression.id == expression_id)
+        {
+            return Err(MaterialToolError::DestinationExpressionNotFound(
+                expression_id,
+            ));
+        }
+
+        let command = MaterialToolCommand::ReplaceMaterialExpression {
+            program: program_id,
+            expression: expression_id,
+            replacement: replacement.clone(),
+        };
+        let transaction = MaterialTransaction::single(
+            "Replace material expression",
+            MaterialCommand::ReplaceMaterialExpression {
+                program: program_id,
+                expression: expression_id,
+                replacement: MaterialExpression {
+                    id: expression_id,
+                    kind: replacement,
+                },
+            },
+        );
+        validate_plan(document, command, transaction, Vec::new())
     }
 
     fn plan_wrap_material_expression(

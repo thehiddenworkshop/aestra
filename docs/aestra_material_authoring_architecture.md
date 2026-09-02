@@ -2112,6 +2112,10 @@ document validation rejects incompatible value types and evaluation domains atom
 around one exact destination. The planner accepts the result only when the new operation consumes
 the previous source and becomes that destination's new source; fan-out and ambiguous graph edits
 remain explicit failures rather than silently changing additional consumers.
+`ReplaceMaterialExpression` accepts a stable expression identity and a replacement semantic kind.
+The replacement keeps that identity, and therefore every downstream connection, while its incoming
+references and complete graph type/domain compatibility are validated before the planner returns a
+single undoable baseline transaction and expression-specific diff.
 
 ### Completion Criterion
 

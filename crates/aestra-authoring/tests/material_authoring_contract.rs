@@ -1960,6 +1960,143 @@ fn material_connection_tool_rejects_stale_and_incompatible_sockets_atomically() 
 }
 
 #[test]
+fn material_replace_tool_preserves_identity_connections_and_exact_undo() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6680);
+    let (program, pan) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+    let uv = MaterialExpressionId::from_u128(0x1180);
+    let center = MaterialExpressionId::from_u128(0x1184);
+    let angle = MaterialExpressionId::from_u128(0x1185);
+    let rotate = MaterialExpressionId::from_u128(0x1186);
+    let replacement = MaterialExpressionKind::RotateUv { uv, center, angle };
+    let command = MaterialToolCommand::ReplaceMaterialExpression {
+        program: program_id,
+        expression: pan,
+        replacement: replacement.clone(),
+    };
+
+    let encoded = ron::to_string(&command).unwrap();
+    assert_eq!(
+        ron::from_str::<MaterialToolCommand>(&encoded).unwrap(),
+        command
+    );
+    let plan = MaterialToolPlanner::plan(&document, command).unwrap();
+
+    assert_eq!(document, before, "planning must not mutate its input");
+    assert!(plan.created_expressions.is_empty());
+    assert_eq!(plan.transaction.commands.len(), 1);
+    assert!(matches!(
+        &plan.transaction.commands[0],
+        MaterialCommand::ReplaceMaterialExpression {
+            program,
+            expression,
+            replacement: MaterialExpression { id, kind },
+        } if *program == program_id
+            && *expression == pan
+            && *id == pan
+            && *kind == replacement
+    ));
+    assert!(plan.diff.changes.iter().any(|change| {
+        change.kind == MaterialChangeKind::Modified
+            && change.target == MaterialSemanticTarget::Expression(pan)
+            && change.path.ends_with(&format!(".expressions[{pan}]"))
+    }));
+
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    let program = &document.programs[0];
+    assert!(matches!(
+        program
+            .expressions
+            .iter()
+            .find(|expression| expression.id == pan)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RotateUv {
+            uv: source,
+            center: replacement_center,
+            angle: replacement_angle,
+        } if source == uv && replacement_center == center && replacement_angle == angle
+    ));
+    assert!(matches!(
+        program
+            .expressions
+            .iter()
+            .find(|expression| expression.id == rotate)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RotateUv { uv: source, .. } if source == pan
+    ));
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+    history.redo(&mut document).unwrap().unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == pan)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RotateUv { .. }
+    ));
+}
+
+#[test]
+fn material_replace_tool_rejects_stale_and_incompatible_replacements_atomically() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6690);
+    let (program, pan) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+    let missing = MaterialExpressionId::from_u128(0x669f);
+
+    let stale = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ReplaceMaterialExpression {
+            program: program_id,
+            expression: missing,
+            replacement: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        stale,
+        MaterialToolError::DestinationExpressionNotFound(expression) if expression == missing
+    ));
+
+    let wrong_type = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ReplaceMaterialExpression {
+            program: program_id,
+            expression: pan,
+            replacement: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        wrong_type,
+        MaterialToolError::Transaction(MaterialCommandError::Validation(_))
+    ));
+
+    let stale_dependency = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ReplaceMaterialExpression {
+            program: program_id,
+            expression: pan,
+            replacement: MaterialExpressionKind::Add(missing, missing),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        stale_dependency,
+        MaterialToolError::Transaction(MaterialCommandError::Validation(_))
+    ));
+    assert_eq!(document, before);
+}
+
+#[test]
 fn material_wrap_tool_wraps_an_exact_input_edge_and_undoes_as_one_edit() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x6700);
