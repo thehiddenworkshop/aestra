@@ -337,6 +337,22 @@ pub(super) fn set_semantic_material_source(
     session.set_material_instance_parameter(&programs, instance, parameter, Some(value))
 }
 
+pub(super) fn set_semantic_material_render_state(
+    session: &mut EditorSession,
+    catalog: &ProjectEffectCatalog,
+    instance: MaterialId,
+    render_state: MaterialRenderState,
+) -> bool {
+    let programs = match catalog.material_programs_for_effect(&session.effect) {
+        Ok(programs) => programs,
+        Err(error) => {
+            session.status = format!("Material program unavailable: {error}");
+            return false;
+        }
+    };
+    session.set_material_instance_render_state(&programs, instance, render_state)
+}
+
 fn semantic_material_source_is_supported(
     descriptor: &MaterialControlDescriptor,
     source: SemanticMaterialSourceChoice,
@@ -950,7 +966,160 @@ fn spawn_semantic_material_controls(
     for descriptor in &controls.parameters {
         spawn_semantic_material_parameter(parent, descriptor, instance.id, session, asset_server);
     }
+    spawn_semantic_material_render_state_controls(
+        parent,
+        instance.id,
+        &controls.render_state_policy,
+        controls.current_render_state,
+    );
     Ok(true)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SemanticRenderStateField {
+    Blend,
+    DepthTest,
+    DepthWrite,
+    CullMode,
+}
+
+fn spawn_semantic_material_render_state_controls(
+    parent: &mut ChildSpawnerCommands,
+    instance: MaterialId,
+    policy: &MaterialRenderStatePolicy,
+    current: MaterialRenderState,
+) {
+    spawn_semantic_render_state_row(
+        parent,
+        "Blend",
+        instance,
+        current,
+        semantic_render_state_candidates(policy, current, SemanticRenderStateField::Blend),
+        semantic_blend_label,
+        "Blend mode. Only transitions allowed by this material program are available.",
+    );
+    spawn_semantic_render_state_row(
+        parent,
+        "Depth Test",
+        instance,
+        current,
+        semantic_render_state_candidates(policy, current, SemanticRenderStateField::DepthTest),
+        semantic_depth_test_label,
+        "Depth comparison. Only transitions allowed by this material program are available.",
+    );
+    spawn_semantic_render_state_row(
+        parent,
+        "Depth Write",
+        instance,
+        current,
+        semantic_render_state_candidates(policy, current, SemanticRenderStateField::DepthWrite),
+        semantic_depth_write_label,
+        "Controls depth-buffer writes. Only transitions allowed by this material program are available.",
+    );
+    spawn_semantic_render_state_row(
+        parent,
+        "Cull Mode",
+        instance,
+        current,
+        semantic_render_state_candidates(policy, current, SemanticRenderStateField::CullMode),
+        semantic_cull_mode_label,
+        "Face culling. Only transitions allowed by this material program are available.",
+    );
+}
+
+fn spawn_semantic_render_state_row(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    instance: MaterialId,
+    current: MaterialRenderState,
+    candidates: Vec<MaterialRenderState>,
+    label: fn(MaterialRenderState) -> &'static str,
+    description: &str,
+) {
+    let current_label = label(current);
+    if candidates.len() <= 1 {
+        spawn_properties_read_only_control(parent, title, current_label);
+        return;
+    }
+    let options = candidates
+        .into_iter()
+        .map(|render_state| ComboOption {
+            label: label(render_state).into(),
+            selected: render_state == current,
+            action: PropertiesAction::SetSemanticMaterialRenderState {
+                instance,
+                render_state,
+            },
+        })
+        .collect::<Vec<_>>();
+    spawn_properties_combo_row(parent, title, current_label, &options, Some(description));
+}
+
+fn semantic_render_state_candidates(
+    policy: &MaterialRenderStatePolicy,
+    current: MaterialRenderState,
+    field: SemanticRenderStateField,
+) -> Vec<MaterialRenderState> {
+    policy
+        .allowed
+        .iter()
+        .copied()
+        .filter(|candidate| match field {
+            SemanticRenderStateField::Blend => {
+                candidate.depth_test == current.depth_test
+                    && candidate.depth_write == current.depth_write
+                    && candidate.cull_mode == current.cull_mode
+            }
+            SemanticRenderStateField::DepthTest => {
+                candidate.blend == current.blend
+                    && candidate.depth_write == current.depth_write
+                    && candidate.cull_mode == current.cull_mode
+            }
+            SemanticRenderStateField::DepthWrite => {
+                candidate.blend == current.blend
+                    && candidate.depth_test == current.depth_test
+                    && candidate.cull_mode == current.cull_mode
+            }
+            SemanticRenderStateField::CullMode => {
+                candidate.blend == current.blend
+                    && candidate.depth_test == current.depth_test
+                    && candidate.depth_write == current.depth_write
+            }
+        })
+        .collect()
+}
+
+fn semantic_blend_label(state: MaterialRenderState) -> &'static str {
+    match state.blend {
+        BlendMode::Alpha => "Alpha",
+        BlendMode::Additive => "Additive",
+        BlendMode::Multiply => "Multiply",
+    }
+}
+
+fn semantic_depth_test_label(state: MaterialRenderState) -> &'static str {
+    match state.depth_test {
+        MaterialDepthTest::Disabled => "Disabled",
+        MaterialDepthTest::Less => "Less",
+        MaterialDepthTest::LessEqual => "Less or Equal",
+        MaterialDepthTest::Always => "Always",
+    }
+}
+
+fn semantic_depth_write_label(state: MaterialRenderState) -> &'static str {
+    if state.depth_write {
+        "Enabled"
+    } else {
+        "Disabled"
+    }
+}
+
+fn semantic_cull_mode_label(state: MaterialRenderState) -> &'static str {
+    match state.cull_mode {
+        MaterialCullMode::None => "None",
+        MaterialCullMode::Front => "Front",
+        MaterialCullMode::Back => "Back",
+    }
 }
 
 fn spawn_semantic_material_parameter(
@@ -1805,5 +1974,71 @@ mod tests {
             semantic_material_constant_value(&descriptor, &session),
             Some(MaterialValue::ColorSrgb([0.5, 0.5, 0.5, 0.8]))
         );
+    }
+
+    #[test]
+    fn reflected_render_state_options_never_create_an_invalid_intermediate_state() {
+        let current = MaterialRenderState::additive_sprite();
+        let alpha = MaterialRenderState {
+            blend: BlendMode::Alpha,
+            ..current
+        };
+        let depth_disabled = MaterialRenderState {
+            depth_test: MaterialDepthTest::Disabled,
+            ..current
+        };
+        let multi_field_variant = MaterialRenderState {
+            blend: BlendMode::Alpha,
+            cull_mode: MaterialCullMode::Back,
+            ..current
+        };
+        let policy = MaterialRenderStatePolicy {
+            default: current,
+            allowed: vec![current, alpha, depth_disabled, multi_field_variant],
+        };
+
+        assert_eq!(
+            semantic_render_state_candidates(&policy, current, SemanticRenderStateField::Blend),
+            vec![current, alpha]
+        );
+        assert_eq!(
+            semantic_render_state_candidates(&policy, current, SemanticRenderStateField::DepthTest,),
+            vec![current, depth_disabled]
+        );
+        assert_eq!(
+            semantic_render_state_candidates(&policy, current, SemanticRenderStateField::CullMode),
+            vec![current]
+        );
+    }
+
+    #[test]
+    fn semantic_render_state_edits_join_shared_effect_history() {
+        let mut session = test_support::session_with_timing_slack();
+        let instance_id = MaterialId::from_u128(0x7500);
+        let program_id = aestra_core::MaterialProgramId::from_u128(0x7501);
+        let current = MaterialRenderState::additive_sprite();
+        let alpha = MaterialRenderState {
+            blend: BlendMode::Alpha,
+            ..current
+        };
+        let mut program = aestra_core::material::MaterialProgram::additive_sprite("Flexible");
+        program.id = program_id;
+        program.render_state_policy.allowed.push(alpha);
+        session
+            .effect
+            .material_instances
+            .push(aestra_core::material::MaterialInstance {
+                id: instance_id,
+                program: aestra_core::material::MaterialProgramRef::Project(program_id),
+                values: std::collections::BTreeMap::new(),
+                render_state: current,
+            });
+
+        assert!(session.set_material_instance_render_state(&[program], instance_id, alpha));
+        assert_eq!(session.effect.material_instances[0].render_state, alpha);
+        assert!(session.can_undo());
+
+        session.undo();
+        assert_eq!(session.effect.material_instances[0].render_state, current);
     }
 }

@@ -613,6 +613,45 @@ impl EditorSession {
         )
     }
 
+    pub(crate) fn set_material_instance_render_state(
+        &mut self,
+        programs: &[MaterialProgram],
+        instance: MaterialId,
+        render_state: aestra_core::material::MaterialRenderState,
+    ) -> bool {
+        let mut document = MaterialAuthoringDocument::new(self.effect.clone(), programs.to_vec());
+        let transaction = MaterialTransaction::single(
+            "Set material render state",
+            MaterialCommand::SetMaterialInstanceRenderState {
+                instance,
+                render_state,
+            },
+        );
+        if let Err(error) = MaterialCommandExecutor::execute(&mut document, &transaction) {
+            self.status = format!("Material edit failed: {error}");
+            self.ui_revision += 1;
+            return false;
+        }
+        let Some(replacement) = document
+            .effect
+            .material_instances
+            .into_iter()
+            .find(|candidate| candidate.id == instance)
+        else {
+            self.status = "Material edit failed: instance disappeared".into();
+            self.ui_revision += 1;
+            return false;
+        };
+        self.execute(
+            "Set material render state",
+            EffectCommand::SetMaterialInstance {
+                id: instance,
+                instance: replacement,
+            },
+            true,
+        )
+    }
+
     pub fn set_selected_emitter_transform(
         &mut self,
         transform: EmitterTransform,

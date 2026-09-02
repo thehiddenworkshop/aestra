@@ -1,6 +1,6 @@
 # Current Material System Audit
 
-Status: Material authoring Milestones 5 and 6 complete; Material 7 in progress
+Status: Material authoring Milestones 5, 6, and 7 complete
 Audited: 2026-09-02
 
 This document records the material and renderer contract that exists before Aestra introduces a
@@ -274,12 +274,13 @@ adapter. A destructive format migration is not required to prove the first verti
   renders the first reflection-driven material controls for selected renderers. Constant, random
   range, texture, and boolean edits share semantic validation and the editor undo/redo history.
   Reflected source menus expose only compatible constant, random-range, and typed public
-  effect/emitter bindings; authored render-state controls remain;
+  effect/emitter bindings. Reflected blend, depth-test, depth-write, and cull controls expose only
+  complete render states permitted by the program policy;
 - the initial generated backend supports UV0, particle color/opacity, effect time, arithmetic,
   interpolation, clamping, and sampled Texture2D parameters; richer inputs remain explicit errors;
 - no validated custom WESL functions;
 - no mesh, ribbon, trail, lit, decal, or volumetric material domains;
-- no authored depth, cull, sorting, or stencil controls;
+- no material-program policy editor for expanding allowed render states, sorting, or stencil;
 - no CPU pixel-reference evaluator for blend and softness;
 - no dedicated material preview or material inspector;
 - no node-graph projection.
@@ -308,4 +309,5 @@ persistence, automatic emitter-specific presentation contexts, and reusable engi
 reflection. Material 7 can now generate Properties controls from that catalog and route edits
 through semantic authoring commands. Its reflected source menus can bind compatible public effect
 or emitter parameters and can switch back to editable constants or random ranges without replacing
-the compiled material program.
+the compiled material program. Its render-state controls author only policy-approved blend, depth,
+and cull transitions through the same undoable instance replacement path. Material 7 is complete.

@@ -12,7 +12,10 @@ use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
     MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, ModuleRegistry,
 };
-use aestra_core::material::{MaterialParameterValue, MaterialValue, MaterialValueType};
+use aestra_core::material::{
+    MaterialCullMode, MaterialDepthTest, MaterialParameterValue, MaterialRenderState,
+    MaterialRenderStatePolicy, MaterialValue, MaterialValueType,
+};
 use aestra_core::{
     ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, ColorKey, Curve,
     CurveKey, EffectAsset, EffectClip, EffectClipId, EffectParameter, Gradient, MarkerId,
@@ -60,8 +63,9 @@ use renderer_controls::{
     handle_semantic_material_scalar_change, handle_semantic_material_toggle_change,
     normalize_renderer_uv_scrub_value, properties_renderer_card_memory,
     properties_renderer_collapsed, renderer_number_input_value, renderer_number_step,
-    renderer_numeric_scrub_command, set_semantic_material_source, spawn_renderer_card,
-    sync_renderer_number_inputs, sync_renderer_slider_inputs, sync_semantic_material_number_inputs,
+    renderer_numeric_scrub_command, set_semantic_material_render_state,
+    set_semantic_material_source, spawn_renderer_card, sync_renderer_number_inputs,
+    sync_renderer_slider_inputs, sync_semantic_material_number_inputs,
 };
 
 pub(crate) const PROPERTIES_HIGHLIGHT_DURATION: f32 = 1.6;
@@ -196,6 +200,10 @@ pub(crate) enum PropertiesAction {
         instance: MaterialId,
         parameter: MaterialParameterId,
         source: SemanticMaterialSourceChoice,
+    },
+    SetSemanticMaterialRenderState {
+        instance: MaterialId,
+        render_state: MaterialRenderState,
     },
     AddEventLink {
         trigger: EventTrigger,
@@ -591,6 +599,21 @@ fn handle_properties_actions(
                             instance,
                             parameter,
                             source,
+                        );
+                    }
+                    PropertiesAction::SetSemanticMaterialRenderState {
+                        instance,
+                        render_state,
+                    } => {
+                        let Some(catalog) = catalog.as_deref() else {
+                            session.status = "Material program catalog is unavailable".into();
+                            continue;
+                        };
+                        set_semantic_material_render_state(
+                            &mut session,
+                            catalog,
+                            instance,
+                            render_state,
                         );
                     }
                     PropertiesAction::OpenModulePalette(_)

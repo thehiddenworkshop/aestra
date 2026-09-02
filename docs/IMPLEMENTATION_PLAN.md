@@ -254,13 +254,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
   automatically. The compiler now publishes a serializable, engine-neutral control catalog with
   typed controls, defaults/current sources, resource constraints, live vertex/particle/scene input
   requirements, and render-state policy. GPU reflection consumes the shared input classification.
-- [ ] **Material 7 — Properties material editor.** The first vertical slice now resolves a selected
+- [x] **Material 7 — Properties material editor.** The completed vertical slice resolves a selected
   renderer's semantic instance/program, generates typed constant and random-range controls from
   compiler reflection, identifies effect/emitter bindings, offers texture assets, and submits edits
   through `SetMaterialInstanceParameter` into the editor's shared undo/redo history. Reflected
   source pickers now switch compatible controls between constants, random ranges, and exposed typed
-  effect/emitter bindings while preserving useful values. Authored render-state controls remain
-  before the milestone is complete.
+  effect/emitter bindings while preserving useful values. Blend, depth-test, depth-write, and cull
+  controls project only transitions allowed by the reflected render-state policy and commit through
+  the same semantic history.
 - [ ] **Material 8 — VFX semantic primitives.** Add the initial UV, mask, dissolve, depth-fade,
   soft-particle, and flipbook operations.
 - [ ] **Material 9 — material stack.** Provide the ordered high-level modifier projection before a
