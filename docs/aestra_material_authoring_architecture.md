@@ -2039,11 +2039,13 @@ Make common material composition faster than graph editing.
 Implement:
 
 - ordered modifier list;
-- add/remove operation;
+- add/remove operation (implemented for compiler-approved linear-stack edges, including safe
+  reconnection and owned-helper cleanup);
 - reorder when valid (implemented for direct homogeneous chains with atomic project persistence,
   external-change rejection, consumer refresh, and shared chronological undo/redo);
 - per-modifier inspector;
-- enable/disable;
+- enable/disable (implemented as a persisted, lossless typed bypass that retains operation IDs and
+  settings);
 - preset insertion;
 - automatic lowering to AST.
 

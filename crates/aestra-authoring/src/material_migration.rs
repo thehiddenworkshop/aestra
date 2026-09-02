@@ -390,6 +390,7 @@ fn migrate_group(
         render_state_policy: MaterialRenderStatePolicy::fixed(render_state),
         parameters,
         expressions,
+        disabled_expressions: Vec::new(),
         outputs: aestra_core::material::MaterialOutputs {
             color: color_expression,
             alpha: alpha_expression,

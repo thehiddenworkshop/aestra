@@ -411,6 +411,7 @@ impl MaterialCompiler {
         let mut builder = MaterialIrBuilder {
             analysis: &analysis.expressions,
             expressions,
+            disabled_expressions: normalized.disabled_expressions.iter().copied().collect(),
             values: Vec::new(),
             source_map: MaterialIrSourceMap::default(),
             optimizations: MaterialIrOptimizationStats::default(),
@@ -459,6 +460,7 @@ impl MaterialCompiler {
 struct MaterialIrBuilder<'a> {
     analysis: &'a BTreeMap<MaterialExpressionId, MaterialExpressionInfo>,
     expressions: BTreeMap<MaterialExpressionId, &'a MaterialExpressionKind>,
+    disabled_expressions: BTreeSet<MaterialExpressionId>,
     values: Vec<MaterialIrValue>,
     source_map: MaterialIrSourceMap,
     optimizations: MaterialIrOptimizationStats,
@@ -470,6 +472,16 @@ impl MaterialIrBuilder<'_> {
             return *id;
         }
         let kind = self.expressions[&expression].clone();
+        if self.disabled_expressions.contains(&expression) {
+            let source = kind
+                .bypass_input()
+                .expect("validated disabled expression has a bypass input");
+            let alias = self.lower(source);
+            self.source_map.values.insert(expression, alias);
+            self.source_map.eliminated.insert(expression);
+            self.optimizations.eliminated_expressions += 1;
+            return alias;
+        }
         let info = self.analysis[&expression];
         let instruction = match kind {
             MaterialExpressionKind::Constant(value) => {

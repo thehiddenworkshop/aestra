@@ -622,6 +622,33 @@ pub enum MaterialVectorComponent {
 }
 
 impl MaterialExpressionKind {
+    /// Returns the semantic value that this operation can pass through when disabled.
+    ///
+    /// Operations without one unambiguous primary value are intentionally not bypassable.
+    pub fn bypass_input(&self) -> Option<MaterialExpressionId> {
+        match self {
+            Self::Remap { value, .. } | Self::Smoothstep { value, .. } => Some(*value),
+            Self::RadialMask { uv, .. }
+            | Self::PanUv { uv, .. }
+            | Self::RotateUv { uv, .. }
+            | Self::ScaleUv { uv, .. }
+            | Self::SampleTexture { uv, .. } => Some(*uv),
+            Self::Dissolve { source, .. } | Self::DissolveEdge { source, .. } => Some(*source),
+            Self::SoftParticle { alpha, .. } => Some(*alpha),
+            Self::Constant(_)
+            | Self::Input(_)
+            | Self::Parameter(_)
+            | Self::Add(_, _)
+            | Self::Subtract(_, _)
+            | Self::Multiply(_, _)
+            | Self::Divide(_, _)
+            | Self::Lerp { .. }
+            | Self::Clamp { .. }
+            | Self::DepthFade { .. }
+            | Self::ExtractComponent { .. } => None,
+        }
+    }
+
     fn dependencies(&self) -> Vec<MaterialExpressionId> {
         match self {
             Self::Constant(_) | Self::Input(_) | Self::Parameter(_) => Vec::new(),
@@ -705,6 +732,9 @@ pub struct MaterialProgram {
     pub render_state_policy: MaterialRenderStatePolicy,
     pub parameters: Vec<MaterialParameter>,
     pub expressions: Vec<MaterialExpression>,
+    /// Semantic operations retained in the authored graph but bypassed during compilation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_expressions: Vec<MaterialExpressionId>,
     pub outputs: MaterialOutputs,
 }
 
@@ -752,6 +782,7 @@ impl MaterialProgram {
                     kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
                 },
             ],
+            disabled_expressions: Vec::new(),
             outputs: MaterialOutputs { color, alpha },
         }
     }
@@ -762,6 +793,8 @@ impl MaterialProgram {
         normalized
             .expressions
             .sort_by_key(|expression| expression.id);
+        normalized.disabled_expressions.sort();
+        normalized.disabled_expressions.dedup();
         normalized
             .render_state_policy
             .allowed
@@ -943,6 +976,33 @@ impl MaterialProgram {
             }
         }
 
+        let mut disabled = BTreeSet::new();
+        for (index, expression) in self.disabled_expressions.iter().copied().enumerate() {
+            let path = format!("material_program.disabled_expressions[{index}]");
+            if !disabled.insert(expression) {
+                error(
+                    &mut report,
+                    DiagnosticCode::DuplicateId,
+                    path,
+                    "disabled material expression IDs must be unique",
+                );
+            } else if !expressions.contains_key(&expression) {
+                error(
+                    &mut report,
+                    DiagnosticCode::InvalidReference,
+                    path,
+                    format!("disabled material expression {expression} does not exist"),
+                );
+            } else if expressions[&expression].kind.bypass_input().is_none() {
+                error(
+                    &mut report,
+                    DiagnosticCode::InvalidValue,
+                    path,
+                    "material expression does not have an unambiguous bypass input",
+                );
+            }
+        }
+
         validate_output(
             &mut report,
             &expressions,
@@ -1088,6 +1148,15 @@ fn infer_expression(
             report,
         )
     };
+
+    if program.disabled_expressions.contains(&id) {
+        let info = expression.kind.bypass_input().and_then(&mut dependency);
+        visiting.remove(&id);
+        if let Some(info) = info {
+            inferred.insert(id, info);
+        }
+        return info;
+    }
 
     let info = match &expression.kind {
         MaterialExpressionKind::Constant(value) => Some(MaterialExpressionInfo {

@@ -989,31 +989,40 @@ fn spawn_semantic_material_stack(
             spawn_properties_read_only_control(parent, "Stack", "No semantic modifiers");
         }
         MaterialStackProjection::Stack { entries } => {
-            spawn_properties_read_only_control(parent, "Material Stack", "Reorder compatible");
+            spawn_properties_read_only_control(parent, "Material Stack", "Semantic modifiers");
+            let insert_targets = MaterialCompiler
+                .stack_insert_targets(program)
+                .unwrap_or_default();
+            let insert_options =
+                material_stack_insert_options(program.id, entries, &insert_targets);
+            if !insert_options.is_empty() {
+                spawn_properties_combo_row(
+                    parent,
+                    "Add",
+                    "Modifier",
+                    &insert_options,
+                    Some("Insert a compatible semantic modifier at a valid stack position."),
+                );
+            }
             for (index, entry) in entries.iter().enumerate() {
                 let targets = MaterialCompiler
                     .stack_move_targets(program, entry.expression)
                     .unwrap_or_default();
-                let options = material_stack_move_options(
-                    program.id,
-                    entries,
-                    index,
-                    entry.expression,
-                    &targets,
-                );
+                let options = material_stack_modifier_options(program, entries, index, &targets);
+                let current = if entry.enabled {
+                    entry.kind.display_name().to_owned()
+                } else {
+                    format!("{} (Disabled)", entry.kind.display_name())
+                };
                 if options.is_empty() {
-                    spawn_properties_read_only_control(
-                        parent,
-                        "Modifier",
-                        entry.kind.display_name(),
-                    );
+                    spawn_properties_read_only_control(parent, "Modifier", &current);
                 } else {
                     spawn_properties_combo_row(
                         parent,
                         "Modifier",
-                        entry.kind.display_name(),
+                        &current,
                         &options,
-                        Some("Move this modifier to a compatible position in the material stack."),
+                        Some("Enable, disable, remove, or move this semantic modifier."),
                     );
                 }
             }
@@ -1024,33 +1033,84 @@ fn spawn_semantic_material_stack(
     }
 }
 
-fn material_stack_move_options(
+fn material_stack_insert_options(
     program: MaterialProgramId,
     entries: &[MaterialStackEntry],
-    from_index: usize,
-    expression: MaterialExpressionId,
-    targets: &[MaterialStackMoveTarget],
+    targets: &[MaterialStackInsertTarget],
 ) -> Vec<ComboOption<PropertiesAction>> {
     targets
         .iter()
-        .filter_map(|target| {
-            let anchor = entries.get(target.index)?.kind.display_name();
-            let label = if target.index < from_index {
-                format!("Before {anchor}")
-            } else {
-                format!("After {anchor}")
-            };
-            Some(ComboOption {
-                label,
+        .map(|target| {
+            let position = target.index.checked_sub(1).map_or_else(
+                || "First".to_owned(),
+                |index| format!("After {}", entries[index].kind.display_name()),
+            );
+            ComboOption {
+                label: format!("{} · {position}", target.kind.display_name()),
                 selected: false,
-                action: PropertiesAction::MoveSemanticMaterialModifier {
+                action: PropertiesAction::InsertSemanticMaterialModifier {
                     program,
-                    expression,
+                    kind: target.kind,
                     target_index: target.index,
                 },
-            })
+            }
         })
         .collect()
+}
+
+fn material_stack_modifier_options(
+    program: &aestra_core::material::MaterialProgram,
+    entries: &[MaterialStackEntry],
+    from_index: usize,
+    targets: &[MaterialStackMoveTarget],
+) -> Vec<ComboOption<PropertiesAction>> {
+    let entry = &entries[from_index];
+    let mut options = Vec::new();
+    if MaterialCompiler
+        .plan_stack_set_enabled(program, entry.expression, !entry.enabled)
+        .is_ok()
+    {
+        options.push(ComboOption {
+            label: if entry.enabled { "Disable" } else { "Enable" }.to_owned(),
+            selected: false,
+            action: PropertiesAction::SetSemanticMaterialModifierEnabled {
+                program: program.id,
+                expression: entry.expression,
+                enabled: !entry.enabled,
+            },
+        });
+    }
+    options.extend(targets.iter().filter_map(|target| {
+        let anchor = entries.get(target.index)?.kind.display_name();
+        let label = if target.index < from_index {
+            format!("Before {anchor}")
+        } else {
+            format!("After {anchor}")
+        };
+        Some(ComboOption {
+            label,
+            selected: false,
+            action: PropertiesAction::MoveSemanticMaterialModifier {
+                program: program.id,
+                expression: entry.expression,
+                target_index: target.index,
+            },
+        })
+    }));
+    if MaterialCompiler
+        .plan_stack_remove(program, entry.expression)
+        .is_ok()
+    {
+        options.push(ComboOption {
+            label: "Remove".to_owned(),
+            selected: false,
+            action: PropertiesAction::RemoveSemanticMaterialModifier {
+                program: program.id,
+                expression: entry.expression,
+            },
+        });
+    }
+    options
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1901,23 +1961,27 @@ mod tests {
             MaterialStackEntry {
                 expression: aestra_core::MaterialExpressionId::from_u128(0x7100),
                 kind: aestra_compiler::MaterialStackModifierKind::PanUv,
+                enabled: true,
             },
             MaterialStackEntry {
                 expression: aestra_core::MaterialExpressionId::from_u128(0x7101),
                 kind: aestra_compiler::MaterialStackModifierKind::RotateUv,
+                enabled: true,
             },
             MaterialStackEntry {
                 expression: aestra_core::MaterialExpressionId::from_u128(0x7102),
                 kind: aestra_compiler::MaterialStackModifierKind::ScaleUv,
+                enabled: true,
             },
         ];
+        let mut program = aestra_core::material::MaterialProgram::additive_sprite("Options");
+        program.id = MaterialProgramId::from_u128(0x70ff);
 
         assert_eq!(
-            material_stack_move_options(
-                MaterialProgramId::from_u128(0x70ff),
+            material_stack_modifier_options(
+                &program,
                 &entries,
                 1,
-                entries[1].expression,
                 &[
                     MaterialStackMoveTarget { index: 0 },
                     MaterialStackMoveTarget { index: 2 },
@@ -1927,6 +1991,36 @@ mod tests {
             .map(|option| option.label)
             .collect::<Vec<_>>(),
             vec!["Before UV Pan", "After UV Scale"]
+        );
+    }
+
+    #[test]
+    fn material_stack_insert_options_name_the_modifier_and_edge() {
+        let entries = [MaterialStackEntry {
+            expression: aestra_core::MaterialExpressionId::from_u128(0x7110),
+            kind: aestra_compiler::MaterialStackModifierKind::PanUv,
+            enabled: true,
+        }];
+        let options = material_stack_insert_options(
+            MaterialProgramId::from_u128(0x7111),
+            &entries,
+            &[
+                MaterialStackInsertTarget {
+                    index: 0,
+                    kind: aestra_compiler::MaterialStackModifierKind::RotateUv,
+                },
+                MaterialStackInsertTarget {
+                    index: 1,
+                    kind: aestra_compiler::MaterialStackModifierKind::ScaleUv,
+                },
+            ],
+        );
+        assert_eq!(
+            options
+                .into_iter()
+                .map(|option| option.label)
+                .collect::<Vec<_>>(),
+            vec!["UV Rotate · First", "UV Scale · After UV Pan"]
         );
     }
 

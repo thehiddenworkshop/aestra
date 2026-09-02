@@ -296,10 +296,13 @@ the current sprite-material path until the native-GPU compatibility gate approve
   that preserve type/domain validity, keeps stable expression identities and storage order, and
   returns a full replacement that commits as one exactly reversible material transaction.
   Properties exposes those compatible before/after positions as actions while Advanced graphs
-  remain non-reorderable. Project-program replacements are persisted atomically with stale-source
-  conflict detection, refresh every consumer through the catalog, and participate chronologically
-  in the editor's shared undo/redo stream. Continue with add and enable/disable modifier commands
-  before a node graph.
+  remain non-reorderable. Compiler-planned add/remove actions now expose only type- and
+  domain-compatible insertion edges, reconnect direct chains safely, and remove only the detached
+  owned subgraph. A persisted disabled-expression list bypasses a modifier as a typed alias while
+  retaining its stable ID and settings for lossless re-enabling. Project-program replacements are
+  persisted atomically with stale-source conflict detection, refresh every consumer through the
+  catalog, and participate chronologically in the editor's shared undo/redo stream. Continue with
+  per-modifier inspectors and preset insertion before a node graph.
 
 ### Phase C — AI-first authoring
 

@@ -11,7 +11,7 @@ use crate::*;
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
     MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, MaterialStackEntry,
-    MaterialStackMoveTarget, MaterialStackProjection, ModuleRegistry,
+    MaterialStackInsertTarget, MaterialStackMoveTarget, MaterialStackProjection, ModuleRegistry,
 };
 use aestra_core::material::{
     MaterialCullMode, MaterialDepthTest, MaterialParameterValue, MaterialRenderState,
@@ -212,6 +212,20 @@ pub(crate) enum PropertiesAction {
         program: MaterialProgramId,
         expression: MaterialExpressionId,
         target_index: usize,
+    },
+    InsertSemanticMaterialModifier {
+        program: MaterialProgramId,
+        kind: aestra_compiler::MaterialStackModifierKind,
+        target_index: usize,
+    },
+    RemoveSemanticMaterialModifier {
+        program: MaterialProgramId,
+        expression: MaterialExpressionId,
+    },
+    SetSemanticMaterialModifierEnabled {
+        program: MaterialProgramId,
+        expression: MaterialExpressionId,
+        enabled: bool,
     },
     AddEventLink {
         trigger: EventTrigger,
@@ -631,51 +645,83 @@ fn handle_properties_actions(
                         expression,
                         target_index,
                     } => {
-                        let Some(catalog) = catalog.as_deref_mut() else {
-                            session.status = "Material program catalog is unavailable".into();
-                            continue;
-                        };
-                        let Some(material_history) = material_history.as_deref_mut() else {
-                            session.status = "Material edit history is unavailable".into();
-                            continue;
-                        };
-                        let Some(history_ledger) = history_ledger.as_deref_mut() else {
-                            session.status = "Editor history is unavailable".into();
-                            continue;
-                        };
-                        let current = catalog
-                            .material_programs_for_effect(&session.effect)
-                            .and_then(|programs| {
-                                programs
-                                    .into_iter()
-                                    .find(|candidate| candidate.id == program)
-                                    .ok_or_else(|| {
-                                        format!("Material program {program} is unavailable")
-                                    })
-                            });
-                        let result = current.and_then(|current| {
-                            let plan = MaterialCompiler
-                                .plan_stack_move(&current, expression, target_index)
-                                .map_err(|error| error.to_string())?;
-                            material_history.execute_replacement(
-                                &session.effect,
-                                catalog,
-                                "Moved material modifier",
-                                current,
-                                plan.replacement,
-                            )
-                        });
-                        match result {
-                            Ok(()) => {
-                                history_ledger.record_material_edit(&mut session);
-                                session.status = "Moved material modifier".into();
-                                session.ui_revision += 1;
-                            }
-                            Err(error) => {
-                                session.status = format!("Material move failed: {error}");
-                                session.ui_revision += 1;
-                            }
-                        }
+                        apply_material_program_edit(
+                            &mut session,
+                            catalog.as_deref_mut(),
+                            material_history.as_deref_mut(),
+                            history_ledger.as_deref_mut(),
+                            program,
+                            "Moved material modifier",
+                            |current| {
+                                MaterialCompiler
+                                    .plan_stack_move(current, expression, target_index)
+                                    .map(|plan| plan.replacement)
+                                    .map_err(|error| error.to_string())
+                            },
+                        );
+                    }
+                    PropertiesAction::InsertSemanticMaterialModifier {
+                        program,
+                        kind,
+                        target_index,
+                    } => {
+                        apply_material_program_edit(
+                            &mut session,
+                            catalog.as_deref_mut(),
+                            material_history.as_deref_mut(),
+                            history_ledger.as_deref_mut(),
+                            program,
+                            "Added material modifier",
+                            |current| {
+                                MaterialCompiler
+                                    .plan_stack_insert(current, kind, target_index)
+                                    .map(|plan| plan.replacement)
+                                    .map_err(|error| error.to_string())
+                            },
+                        );
+                    }
+                    PropertiesAction::RemoveSemanticMaterialModifier {
+                        program,
+                        expression,
+                    } => {
+                        apply_material_program_edit(
+                            &mut session,
+                            catalog.as_deref_mut(),
+                            material_history.as_deref_mut(),
+                            history_ledger.as_deref_mut(),
+                            program,
+                            "Removed material modifier",
+                            |current| {
+                                MaterialCompiler
+                                    .plan_stack_remove(current, expression)
+                                    .map(|plan| plan.replacement)
+                                    .map_err(|error| error.to_string())
+                            },
+                        );
+                    }
+                    PropertiesAction::SetSemanticMaterialModifierEnabled {
+                        program,
+                        expression,
+                        enabled,
+                    } => {
+                        apply_material_program_edit(
+                            &mut session,
+                            catalog.as_deref_mut(),
+                            material_history.as_deref_mut(),
+                            history_ledger.as_deref_mut(),
+                            program,
+                            if enabled {
+                                "Enabled material modifier"
+                            } else {
+                                "Disabled material modifier"
+                            },
+                            |current| {
+                                MaterialCompiler
+                                    .plan_stack_set_enabled(current, expression, enabled)
+                                    .map(|plan| plan.replacement)
+                                    .map_err(|error| error.to_string())
+                            },
+                        );
                     }
                     PropertiesAction::OpenModulePalette(_)
                     | PropertiesAction::CloseModulePalette
@@ -711,6 +757,51 @@ fn handle_properties_actions(
             _ => {}
         }
     }
+}
+
+fn apply_material_program_edit(
+    session: &mut EditorSession,
+    catalog: Option<&mut ProjectEffectCatalog>,
+    material_history: Option<&mut MaterialProgramEditHistory>,
+    history_ledger: Option<&mut EditorHistoryLedger>,
+    program: MaterialProgramId,
+    label: &str,
+    plan: impl FnOnce(
+        &aestra_core::material::MaterialProgram,
+    ) -> Result<aestra_core::material::MaterialProgram, String>,
+) {
+    let Some(catalog) = catalog else {
+        session.status = "Material program catalog is unavailable".into();
+        return;
+    };
+    let Some(material_history) = material_history else {
+        session.status = "Material edit history is unavailable".into();
+        return;
+    };
+    let Some(history_ledger) = history_ledger else {
+        session.status = "Editor history is unavailable".into();
+        return;
+    };
+    let current = catalog
+        .material_programs_for_effect(&session.effect)
+        .and_then(|programs| {
+            programs
+                .into_iter()
+                .find(|candidate| candidate.id == program)
+                .ok_or_else(|| format!("Material program {program} is unavailable"))
+        });
+    let result = current.and_then(|current| {
+        let replacement = plan(&current)?;
+        material_history.execute_replacement(&session.effect, catalog, label, current, replacement)
+    });
+    match result {
+        Ok(()) => {
+            history_ledger.record_material_edit(session);
+            session.status = label.into();
+        }
+        Err(error) => session.status = format!("Material edit failed: {error}"),
+    }
+    session.ui_revision += 1;
 }
 
 // Properties domain implementation.

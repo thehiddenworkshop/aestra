@@ -1,6 +1,7 @@
 use aestra_compiler::{
-    MaterialCompiler, MaterialStackFallbackReason, MaterialStackModifierKind,
-    MaterialStackMoveError, MaterialStackMoveTarget, MaterialStackProjection,
+    MaterialCompiler, MaterialStackEditError, MaterialStackFallbackReason,
+    MaterialStackInsertTarget, MaterialStackModifierKind, MaterialStackMoveError,
+    MaterialStackMoveTarget, MaterialStackProjection,
 };
 use aestra_core::material::{
     MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
@@ -433,4 +434,124 @@ fn incompatible_and_advanced_moves_are_rejected_without_a_replacement() {
         MaterialCompiler.plan_stack_move(&advanced, source, 1),
         Err(MaterialStackMoveError::Advanced)
     ));
+}
+
+#[test]
+fn compatible_modifier_insertion_uses_defaults_and_preserves_the_linear_stack() {
+    let program = reorderable_uv_stack_program();
+    let rotate = MaterialExpressionId::from_u128(0x5307);
+    let targets = MaterialCompiler.stack_insert_targets(&program).unwrap();
+    assert!(targets.contains(&MaterialStackInsertTarget {
+        index: 1,
+        kind: MaterialStackModifierKind::ScaleUv,
+    }));
+
+    let plan = MaterialCompiler
+        .plan_stack_insert(&program, MaterialStackModifierKind::ScaleUv, 1)
+        .unwrap();
+    assert_eq!(plan.index, 1);
+    assert_eq!(plan.kind, MaterialStackModifierKind::ScaleUv);
+    let MaterialStackProjection::Stack { entries } =
+        MaterialCompiler.project_stack(&plan.replacement).unwrap()
+    else {
+        panic!("inserted modifier must remain a linear stack");
+    };
+    assert_eq!(entries[1].expression, plan.expression);
+    assert_eq!(entries[2].expression, rotate);
+    assert!(entries[1].enabled);
+}
+
+#[test]
+fn modifier_removal_reconnects_the_primary_chain_and_rejects_unsafe_nodes() {
+    let program = reorderable_uv_stack_program();
+    let pan = MaterialExpressionId::from_u128(0x5304);
+    let angle = MaterialExpressionId::from_u128(0x5306);
+    let rotate = MaterialExpressionId::from_u128(0x5307);
+    let scale = MaterialExpressionId::from_u128(0x5309);
+    let sample = MaterialExpressionId::from_u128(0x530c);
+
+    let plan = MaterialCompiler
+        .plan_stack_remove(&program, rotate)
+        .unwrap();
+    assert!(
+        !plan
+            .replacement
+            .expressions
+            .iter()
+            .any(|expression| expression.id == rotate)
+    );
+    assert!(
+        !plan
+            .replacement
+            .expressions
+            .iter()
+            .any(|expression| expression.id == angle)
+    );
+    assert!(matches!(
+        plan.replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == scale)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::ScaleUv { uv, .. } if uv == pan
+    ));
+    assert!(matches!(
+        MaterialCompiler.plan_stack_remove(&program, sample),
+        Err(MaterialStackEditError::IncompatibleRemoval { expression }) if expression == sample
+    ));
+}
+
+#[test]
+fn disabled_modifier_is_a_lossless_typed_bypass() {
+    let program = reorderable_uv_stack_program();
+    let rotate = MaterialExpressionId::from_u128(0x5307);
+    let original_kind = program
+        .expressions
+        .iter()
+        .find(|expression| expression.id == rotate)
+        .unwrap()
+        .kind
+        .clone();
+
+    let disabled = MaterialCompiler
+        .plan_stack_set_enabled(&program, rotate, false)
+        .unwrap();
+    assert_eq!(disabled.replacement.disabled_expressions, vec![rotate]);
+    assert_eq!(
+        disabled
+            .replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == rotate)
+            .unwrap()
+            .kind,
+        original_kind
+    );
+    let MaterialStackProjection::Stack { entries } = MaterialCompiler
+        .project_stack(&disabled.replacement)
+        .unwrap()
+    else {
+        panic!("disabled modifier must remain visible in the stack");
+    };
+    assert!(
+        !entries
+            .iter()
+            .find(|entry| entry.expression == rotate)
+            .unwrap()
+            .enabled
+    );
+    let ir = MaterialCompiler.compile(&disabled.replacement).unwrap();
+    assert!(ir.source_map.eliminated.contains(&rotate));
+    let serialized = disabled.replacement.to_pretty_ron().unwrap();
+    assert_eq!(
+        MaterialProgram::from_ron(&serialized).unwrap(),
+        disabled.replacement.normalized()
+    );
+
+    let enabled = MaterialCompiler
+        .plan_stack_set_enabled(&disabled.replacement, rotate, true)
+        .unwrap();
+    assert!(enabled.replacement.disabled_expressions.is_empty());
+    assert_eq!(enabled.replacement, program);
 }

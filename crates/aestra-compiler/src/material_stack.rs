@@ -3,7 +3,10 @@
 use crate::{MaterialCompileError, MaterialCompiler};
 use aestra_core::{
     MaterialExpressionId,
-    material::{MaterialExpressionKind, MaterialProgram, MaterialValueType},
+    material::{
+        MaterialExpression, MaterialExpressionKind, MaterialInput, MaterialProgram, MaterialValue,
+        MaterialValueType,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,6 +28,18 @@ pub enum MaterialStackModifierKind {
 }
 
 impl MaterialStackModifierKind {
+    pub const INSERTABLE: [Self; 9] = [
+        Self::PanUv,
+        Self::RotateUv,
+        Self::ScaleUv,
+        Self::Remap,
+        Self::Smoothstep,
+        Self::RadialMask,
+        Self::Dissolve,
+        Self::DissolveEdge,
+        Self::SoftParticle,
+    ];
+
     pub const fn display_name(self) -> &'static str {
         match self {
             Self::BaseTexture => "Base Texture",
@@ -47,6 +62,7 @@ pub struct MaterialStackEntry {
     /// Stable authored identity used by future stack edit commands.
     pub expression: MaterialExpressionId,
     pub kind: MaterialStackModifierKind,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +106,36 @@ pub struct MaterialStackMovePlan {
     pub replacement: MaterialProgram,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterialStackInsertTarget {
+    /// Final source-to-output stack index for the new modifier.
+    pub index: usize,
+    pub kind: MaterialStackModifierKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialStackInsertPlan {
+    pub expression: MaterialExpressionId,
+    pub index: usize,
+    pub kind: MaterialStackModifierKind,
+    pub replacement: MaterialProgram,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialStackRemovePlan {
+    pub expression: MaterialExpressionId,
+    pub index: usize,
+    pub replacement: MaterialProgram,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialStackEnabledPlan {
+    pub expression: MaterialExpressionId,
+    pub index: usize,
+    pub enabled: bool,
+    pub replacement: MaterialProgram,
+}
+
 #[derive(Debug, Error)]
 pub enum MaterialStackMoveError {
     #[error(transparent)]
@@ -104,6 +150,30 @@ pub enum MaterialStackMoveError {
         "material modifier cannot move to stack index {index} without changing graph type or domain"
     )]
     IncompatibleTarget { index: usize },
+}
+
+#[derive(Debug, Error)]
+pub enum MaterialStackEditError {
+    #[error(transparent)]
+    Compile(#[from] MaterialCompileError),
+    #[error("advanced material graphs cannot be edited as a stack")]
+    Advanced,
+    #[error("material expression {expression} is not present in the projected stack")]
+    ExpressionMissing { expression: MaterialExpressionId },
+    #[error("stack insertion index {index} is outside the projected stack")]
+    TargetOutOfBounds { index: usize },
+    #[error("{kind:?} cannot be inserted at stack index {index} without changing graph meaning")]
+    IncompatibleInsertion {
+        kind: MaterialStackModifierKind,
+        index: usize,
+    },
+    #[error("material modifier {expression} cannot be removed without changing graph meaning")]
+    IncompatibleRemoval { expression: MaterialExpressionId },
+    #[error("material modifier {expression} cannot be {operation} without changing graph meaning")]
+    IncompatibleEnabledState {
+        expression: MaterialExpressionId,
+        operation: &'static str,
+    },
 }
 
 impl MaterialCompiler {
@@ -196,6 +266,7 @@ impl MaterialCompiler {
             ordered.push(MaterialStackEntry {
                 expression,
                 kind: modifiers[&expression],
+                enabled: !program.disabled_expressions.contains(&expression),
             });
             current = downstream[&expression].iter().next().copied();
         }
@@ -259,6 +330,109 @@ impl MaterialCompiler {
             replacement,
         })
     }
+
+    /// Reports every modifier and insertion edge that produces a valid linear stack.
+    pub fn stack_insert_targets(
+        &self,
+        program: &MaterialProgram,
+    ) -> Result<Vec<MaterialStackInsertTarget>, MaterialStackEditError> {
+        let entries = editable_stack_entries(self.project_stack(program)?)?;
+        let mut targets = Vec::new();
+        for index in 0..=entries.len() {
+            for kind in MaterialStackModifierKind::INSERTABLE {
+                if plan_stack_insert_inner(program, &entries, kind, index).is_some() {
+                    targets.push(MaterialStackInsertTarget { index, kind });
+                }
+            }
+        }
+        Ok(targets)
+    }
+
+    /// Creates a modifier with useful defaults and inserts it at one compiler-approved edge.
+    pub fn plan_stack_insert(
+        &self,
+        program: &MaterialProgram,
+        kind: MaterialStackModifierKind,
+        index: usize,
+    ) -> Result<MaterialStackInsertPlan, MaterialStackEditError> {
+        let entries = editable_stack_entries(self.project_stack(program)?)?;
+        if index > entries.len() {
+            return Err(MaterialStackEditError::TargetOutOfBounds { index });
+        }
+        let (expression, replacement) = plan_stack_insert_inner(program, &entries, kind, index)
+            .ok_or(MaterialStackEditError::IncompatibleInsertion { kind, index })?;
+        Ok(MaterialStackInsertPlan {
+            expression,
+            index,
+            kind,
+            replacement,
+        })
+    }
+
+    /// Removes a modifier and reconnects its direct primary input to its consumer or output.
+    pub fn plan_stack_remove(
+        &self,
+        program: &MaterialProgram,
+        expression: MaterialExpressionId,
+    ) -> Result<MaterialStackRemovePlan, MaterialStackEditError> {
+        let entries = editable_stack_entries(self.project_stack(program)?)?;
+        let index = entries
+            .iter()
+            .position(|entry| entry.expression == expression)
+            .ok_or(MaterialStackEditError::ExpressionMissing { expression })?;
+        let replacement = plan_stack_remove_inner(program, &entries, index)
+            .ok_or(MaterialStackEditError::IncompatibleRemoval { expression })?;
+        Ok(MaterialStackRemovePlan {
+            expression,
+            index,
+            replacement,
+        })
+    }
+
+    /// Enables or bypasses a modifier without deleting its semantic identity or settings.
+    pub fn plan_stack_set_enabled(
+        &self,
+        program: &MaterialProgram,
+        expression: MaterialExpressionId,
+        enabled: bool,
+    ) -> Result<MaterialStackEnabledPlan, MaterialStackEditError> {
+        let entries = editable_stack_entries(self.project_stack(program)?)?;
+        let index = entries
+            .iter()
+            .position(|entry| entry.expression == expression)
+            .ok_or(MaterialStackEditError::ExpressionMissing { expression })?;
+        let mut replacement = program.clone();
+        if enabled {
+            replacement
+                .disabled_expressions
+                .retain(|candidate| *candidate != expression);
+        } else if !replacement.disabled_expressions.contains(&expression) {
+            replacement.disabled_expressions.push(expression);
+        }
+        replacement
+            .analyze()
+            .map_err(|_| MaterialStackEditError::IncompatibleEnabledState {
+                expression,
+                operation: if enabled { "enabled" } else { "disabled" },
+            })?;
+        let projected = editable_stack_entries(self.project_stack(&replacement)?)?;
+        if projected
+            .iter()
+            .map(|entry| entry.expression)
+            .ne(entries.iter().map(|entry| entry.expression))
+        {
+            return Err(MaterialStackEditError::IncompatibleEnabledState {
+                expression,
+                operation: if enabled { "enabled" } else { "disabled" },
+            });
+        }
+        Ok(MaterialStackEnabledPlan {
+            expression,
+            index,
+            enabled,
+            replacement,
+        })
+    }
 }
 
 fn stack_entries(
@@ -268,6 +442,320 @@ fn stack_entries(
         MaterialStackProjection::Stack { entries } => Ok(entries),
         MaterialStackProjection::Advanced { .. } => Err(MaterialStackMoveError::Advanced),
     }
+}
+
+fn editable_stack_entries(
+    projection: MaterialStackProjection,
+) -> Result<Vec<MaterialStackEntry>, MaterialStackEditError> {
+    match projection {
+        MaterialStackProjection::Stack { entries } => Ok(entries),
+        MaterialStackProjection::Advanced { .. } => Err(MaterialStackEditError::Advanced),
+    }
+}
+
+fn plan_stack_insert_inner(
+    program: &MaterialProgram,
+    entries: &[MaterialStackEntry],
+    kind: MaterialStackModifierKind,
+    index: usize,
+) -> Option<(MaterialExpressionId, MaterialProgram)> {
+    if entries.is_empty() || index > entries.len() {
+        return None;
+    }
+    let expressions = program
+        .expressions
+        .iter()
+        .map(|expression| (expression.id, &expression.kind))
+        .collect::<BTreeMap<_, _>>();
+    let source = if index == 0 {
+        primary_source(expressions[&entries[0].expression])?
+    } else {
+        entries[index - 1].expression
+    };
+    let boundary = entries.get(index).map(|entry| entry.expression);
+    if boundary.is_some_and(|expression| primary_source(expressions[&expression]) != Some(source)) {
+        return None;
+    }
+    let allowed_references = usize::from(boundary.is_some())
+        + usize::from(program.outputs.color == source)
+        + usize::from(program.outputs.alpha == source);
+    if allowed_references == 0 || expression_reference_count(program, source) != allowed_references
+    {
+        return None;
+    }
+
+    let mut replacement = program.clone();
+    let expression = append_default_modifier(&mut replacement, kind, source)?;
+    if let Some(boundary) = boundary {
+        let boundary = replacement
+            .expressions
+            .iter_mut()
+            .find(|candidate| candidate.id == boundary)?;
+        if !set_primary_source(&mut boundary.kind, expression) {
+            return None;
+        }
+    }
+    if replacement.outputs.color == source {
+        replacement.outputs.color = expression;
+    }
+    if replacement.outputs.alpha == source {
+        replacement.outputs.alpha = expression;
+    }
+    replacement.analyze().ok()?;
+    let MaterialStackProjection::Stack { entries: projected } =
+        MaterialCompiler.project_stack(&replacement).ok()?
+    else {
+        return None;
+    };
+    let mut expected = entries
+        .iter()
+        .map(|entry| entry.expression)
+        .collect::<Vec<_>>();
+    expected.insert(index, expression);
+    projected
+        .iter()
+        .map(|entry| entry.expression)
+        .eq(expected)
+        .then_some((expression, replacement))
+}
+
+fn plan_stack_remove_inner(
+    program: &MaterialProgram,
+    entries: &[MaterialStackEntry],
+    index: usize,
+) -> Option<MaterialProgram> {
+    let selected = entries.get(index)?.expression;
+    let expressions = program
+        .expressions
+        .iter()
+        .map(|expression| (expression.id, &expression.kind))
+        .collect::<BTreeMap<_, _>>();
+    let mut originally_reachable = BTreeSet::new();
+    collect_reachable(
+        program.outputs.color,
+        &expressions,
+        &mut originally_reachable,
+    );
+    collect_reachable(
+        program.outputs.alpha,
+        &expressions,
+        &mut originally_reachable,
+    );
+    let source = primary_source(expressions[&selected])?;
+    let boundary = entries
+        .get(index + 1)
+        .map(|entry| entry.expression)
+        .filter(|expression| primary_source(expressions[expression]) == Some(selected));
+    let allowed_references = usize::from(boundary.is_some())
+        + usize::from(program.outputs.color == selected)
+        + usize::from(program.outputs.alpha == selected);
+    if allowed_references == 0
+        || expression_reference_count(program, selected) != allowed_references
+    {
+        return None;
+    }
+
+    let mut replacement = program.clone();
+    if let Some(boundary) = boundary {
+        let boundary = replacement
+            .expressions
+            .iter_mut()
+            .find(|candidate| candidate.id == boundary)?;
+        if !set_primary_source(&mut boundary.kind, source) {
+            return None;
+        }
+    }
+    if replacement.outputs.color == selected {
+        replacement.outputs.color = source;
+    }
+    if replacement.outputs.alpha == selected {
+        replacement.outputs.alpha = source;
+    }
+    replacement
+        .expressions
+        .retain(|candidate| candidate.id != selected);
+    let remaining = replacement
+        .expressions
+        .iter()
+        .map(|expression| (expression.id, &expression.kind))
+        .collect::<BTreeMap<_, _>>();
+    let mut still_reachable = BTreeSet::new();
+    collect_reachable(replacement.outputs.color, &remaining, &mut still_reachable);
+    collect_reachable(replacement.outputs.alpha, &remaining, &mut still_reachable);
+    replacement.expressions.retain(|candidate| {
+        !originally_reachable.contains(&candidate.id) || still_reachable.contains(&candidate.id)
+    });
+    replacement
+        .disabled_expressions
+        .retain(|candidate| still_reachable.contains(candidate));
+    replacement.analyze().ok()?;
+    let MaterialStackProjection::Stack { entries: projected } =
+        MaterialCompiler.project_stack(&replacement).ok()?
+    else {
+        return None;
+    };
+    let expected = entries
+        .iter()
+        .filter_map(|entry| (entry.expression != selected).then_some(entry.expression));
+    projected
+        .iter()
+        .map(|entry| entry.expression)
+        .eq(expected)
+        .then_some(replacement)
+}
+
+fn expression_reference_count(
+    program: &MaterialProgram,
+    expression: MaterialExpressionId,
+) -> usize {
+    program
+        .expressions
+        .iter()
+        .map(|candidate| {
+            dependencies(&candidate.kind)
+                .into_iter()
+                .filter(|source| *source == expression)
+                .count()
+        })
+        .sum::<usize>()
+        + usize::from(program.outputs.color == expression)
+        + usize::from(program.outputs.alpha == expression)
+}
+
+fn append_default_modifier(
+    program: &mut MaterialProgram,
+    kind: MaterialStackModifierKind,
+    source: MaterialExpressionId,
+) -> Option<MaterialExpressionId> {
+    let constant = |program: &mut MaterialProgram, value: MaterialValue| {
+        append_expression(program, MaterialExpressionKind::Constant(value))
+    };
+    let operation = match kind {
+        MaterialStackModifierKind::PanUv => {
+            let speed = constant(program, MaterialValue::Vec2([0.0, 0.0]));
+            let time = append_expression(
+                program,
+                MaterialExpressionKind::Input(MaterialInput::EffectTime),
+            );
+            MaterialExpressionKind::PanUv {
+                uv: source,
+                speed,
+                time,
+            }
+        }
+        MaterialStackModifierKind::RotateUv => {
+            let center = constant(program, MaterialValue::Vec2([0.5, 0.5]));
+            let angle = constant(program, MaterialValue::Float(0.0));
+            MaterialExpressionKind::RotateUv {
+                uv: source,
+                center,
+                angle,
+            }
+        }
+        MaterialStackModifierKind::ScaleUv => {
+            let center = constant(program, MaterialValue::Vec2([0.5, 0.5]));
+            let scale = constant(program, MaterialValue::Vec2([1.0, 1.0]));
+            MaterialExpressionKind::ScaleUv {
+                uv: source,
+                center,
+                scale,
+            }
+        }
+        MaterialStackModifierKind::Remap => {
+            let input_min = constant(program, MaterialValue::Float(0.0));
+            let input_max = constant(program, MaterialValue::Float(1.0));
+            let output_min = constant(program, MaterialValue::Float(0.0));
+            let output_max = constant(program, MaterialValue::Float(1.0));
+            MaterialExpressionKind::Remap {
+                value: source,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            }
+        }
+        MaterialStackModifierKind::Smoothstep => {
+            let edge_min = constant(program, MaterialValue::Float(0.0));
+            let edge_max = constant(program, MaterialValue::Float(1.0));
+            MaterialExpressionKind::Smoothstep {
+                edge_min,
+                edge_max,
+                value: source,
+            }
+        }
+        MaterialStackModifierKind::RadialMask => {
+            let center = constant(program, MaterialValue::Vec2([0.5, 0.5]));
+            let radius = constant(program, MaterialValue::Float(0.5));
+            let softness = constant(program, MaterialValue::Float(0.1));
+            let invert = constant(program, MaterialValue::Bool(false));
+            MaterialExpressionKind::RadialMask {
+                uv: source,
+                center,
+                radius,
+                softness,
+                invert,
+            }
+        }
+        MaterialStackModifierKind::Dissolve | MaterialStackModifierKind::DissolveEdge => {
+            let threshold = constant(program, MaterialValue::Float(0.5));
+            let edge_width = constant(program, MaterialValue::Float(0.1));
+            let invert = constant(program, MaterialValue::Bool(false));
+            if kind == MaterialStackModifierKind::Dissolve {
+                MaterialExpressionKind::Dissolve {
+                    source,
+                    threshold,
+                    edge_width,
+                    invert,
+                }
+            } else {
+                MaterialExpressionKind::DissolveEdge {
+                    source,
+                    threshold,
+                    edge_width,
+                    invert,
+                }
+            }
+        }
+        MaterialStackModifierKind::SoftParticle => {
+            let scene_depth = append_expression(
+                program,
+                MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+            );
+            let pixel_depth = append_expression(
+                program,
+                MaterialExpressionKind::Input(MaterialInput::PixelDepth),
+            );
+            let fade_distance = constant(program, MaterialValue::Float(0.5));
+            let invert = constant(program, MaterialValue::Bool(false));
+            MaterialExpressionKind::SoftParticle {
+                alpha: source,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            }
+        }
+        MaterialStackModifierKind::BaseTexture | MaterialStackModifierKind::DepthFade => {
+            return None;
+        }
+    };
+    Some(append_expression(program, operation))
+}
+
+fn append_expression(
+    program: &mut MaterialProgram,
+    kind: MaterialExpressionKind,
+) -> MaterialExpressionId {
+    let mut id = MaterialExpressionId::new();
+    while program
+        .expressions
+        .iter()
+        .any(|expression| expression.id == id)
+    {
+        id = MaterialExpressionId::new();
+    }
+    program.expressions.push(MaterialExpression { id, kind });
+    id
 }
 
 fn plan_stack_move_inner(
