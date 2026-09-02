@@ -781,6 +781,7 @@ fn diff_programs(
                     Some(replacement.name.clone()),
                 );
                 diff_expressions(changes, *id, program, replacement);
+                diff_program_outputs(changes, *id, program, replacement);
             }
             Some(_) => {}
         }
@@ -794,6 +795,29 @@ fn diff_programs(
                 "material_document.programs",
                 None,
                 Some(program.name.clone()),
+            );
+        }
+    }
+}
+
+fn diff_program_outputs(
+    changes: &mut Vec<MaterialSemanticChange>,
+    program_id: MaterialProgramId,
+    before: &MaterialProgram,
+    after: &MaterialProgram,
+) {
+    for (socket, before, after) in [
+        ("color", before.outputs.color, after.outputs.color),
+        ("alpha", before.outputs.alpha, after.outputs.alpha),
+    ] {
+        if before != after {
+            push_change(
+                changes,
+                MaterialChangeKind::Modified,
+                MaterialSemanticTarget::Program(program_id),
+                format!("material_document.programs[{program_id}].outputs.{socket}"),
+                Some(before.to_string()),
+                Some(after.to_string()),
             );
         }
     }

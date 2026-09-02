@@ -1,8 +1,8 @@
 use aestra_authoring::{
     MaterialAuthoringDocument, MaterialChangeKind, MaterialCommand, MaterialCommandError,
-    MaterialCommandExecutor, MaterialCommandHistory, MaterialExpressionInput,
-    MaterialInsertionPoint, MaterialOutputSocket, MaterialSemanticTarget, MaterialToolCommand,
-    MaterialToolError, MaterialToolPlanner, MaterialTransaction,
+    MaterialCommandExecutor, MaterialCommandHistory, MaterialConnectionTarget,
+    MaterialExpressionInput, MaterialInsertionPoint, MaterialOutputSocket, MaterialSemanticTarget,
+    MaterialToolCommand, MaterialToolError, MaterialToolPlanner, MaterialTransaction,
 };
 use aestra_compiler::{
     MaterialCompiler, MaterialStackModifierKind, MaterialStackPresetKind, MaterialStackProjection,
@@ -1788,6 +1788,173 @@ fn material_operation_tool_rejects_a_stale_insertion_anchor() {
     assert!(matches!(
         error,
         MaterialToolError::InsertionAnchorNotFound(expression) if expression == missing
+    ));
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_connection_tool_rewires_a_stable_input_and_undoes_exactly() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6400);
+    let (program, _) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+    let time = MaterialExpressionId::from_u128(0x1182);
+    let rotate = MaterialExpressionId::from_u128(0x1186);
+    let command = MaterialToolCommand::ConnectMaterialExpression {
+        program: program_id,
+        source: time,
+        target: MaterialConnectionTarget::ExpressionInput {
+            expression: rotate,
+            input: MaterialExpressionInput::Angle,
+        },
+    };
+
+    let encoded = ron::to_string(&command).unwrap();
+    assert_eq!(
+        ron::from_str::<MaterialToolCommand>(&encoded).unwrap(),
+        command
+    );
+    let plan = MaterialToolPlanner::plan(&document, command).unwrap();
+
+    assert_eq!(document, before, "planning must not mutate its input");
+    assert!(plan.created_expressions.is_empty());
+    assert!(plan.diff.changes.iter().any(|change| {
+        change.kind == MaterialChangeKind::Modified
+            && change.target == MaterialSemanticTarget::Expression(rotate)
+    }));
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == rotate)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RotateUv { angle, .. } if angle == time
+    ));
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_connection_tool_reports_the_exact_program_output_diff() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6500);
+    let (program, _) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+    let previous = document.programs[0].outputs.alpha;
+    let angle = MaterialExpressionId::from_u128(0x1185);
+
+    let plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ConnectMaterialExpression {
+            program: program_id,
+            source: angle,
+            target: MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha),
+        },
+    )
+    .unwrap();
+
+    let output_change = plan
+        .diff
+        .changes
+        .iter()
+        .find(|change| change.path.ends_with(".outputs.alpha"))
+        .expect("output connection must identify its exact semantic path");
+    assert_eq!(
+        output_change.target,
+        MaterialSemanticTarget::Program(program_id)
+    );
+    assert_eq!(
+        output_change.before.as_deref(),
+        Some(previous.to_string().as_str())
+    );
+    assert_eq!(
+        output_change.after.as_deref(),
+        Some(angle.to_string().as_str())
+    );
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_connection_tool_rejects_stale_and_incompatible_sockets_atomically() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6600);
+    let (program, pan) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+    let rotate = MaterialExpressionId::from_u128(0x1186);
+    let angle = MaterialExpressionId::from_u128(0x1185);
+    let missing = MaterialExpressionId::from_u128(0x66ff);
+
+    let stale_source = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ConnectMaterialExpression {
+            program: program_id,
+            source: missing,
+            target: MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        stale_source,
+        MaterialToolError::SourceExpressionNotFound(expression) if expression == missing
+    ));
+
+    let stale_destination = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ConnectMaterialExpression {
+            program: program_id,
+            source: angle,
+            target: MaterialConnectionTarget::ExpressionInput {
+                expression: missing,
+                input: MaterialExpressionInput::Angle,
+            },
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        stale_destination,
+        MaterialToolError::DestinationExpressionNotFound(expression) if expression == missing
+    ));
+
+    let missing_socket = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ConnectMaterialExpression {
+            program: program_id,
+            source: angle,
+            target: MaterialConnectionTarget::ExpressionInput {
+                expression: pan,
+                input: MaterialExpressionInput::Angle,
+            },
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        missing_socket,
+        MaterialToolError::Transaction(MaterialCommandError::InvalidExpressionInput {
+            input: MaterialExpressionInput::Angle
+        })
+    ));
+
+    let wrong_type = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ConnectMaterialExpression {
+            program: program_id,
+            source: pan,
+            target: MaterialConnectionTarget::ExpressionInput {
+                expression: rotate,
+                input: MaterialExpressionInput::Angle,
+            },
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        wrong_type,
+        MaterialToolError::Transaction(MaterialCommandError::Validation(_))
     ));
     assert_eq!(document, before);
 }

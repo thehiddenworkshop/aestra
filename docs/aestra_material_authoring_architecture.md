@@ -2105,6 +2105,9 @@ this same plan before persisting the replacement through its shared material his
 `InsertMaterialOperation` uses the same boundary and represents placement as `Start`, `End`,
 `Before(expression)`, or `After(expression)`. Missing anchors fail atomically, preventing delayed
 editor or tool requests from applying to a different stack position after the program changes.
+`ConnectMaterialExpression` provides one stable command for expression input sockets and program
+outputs. It distinguishes stale source/destination identities from invalid sockets, while complete
+document validation rejects incompatible value types and evaluation domains atomically.
 
 ### Completion Criterion
 

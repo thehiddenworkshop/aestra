@@ -319,6 +319,9 @@ the current sprite-material path until the native-GPU compatibility gate approve
   `InsertMaterialOperation` now follows the same path and addresses insertion points with stable
   start/end or before/after-expression anchors instead of fragile stack indices; Properties
   captures those semantic anchors when presenting compatible modifier and preset choices.
+  `ConnectMaterialExpression` unifies expression-input and program-output destinations, rejects
+  missing sources or destinations before mutation, and validates socket type/domain compatibility
+  through the same serializable transaction contract with socket-specific semantic diffs.
 - [ ] **Material 11 — AI material API.** Expose machine-readable inspection, editing, compilation,
   and diagnostics.
 

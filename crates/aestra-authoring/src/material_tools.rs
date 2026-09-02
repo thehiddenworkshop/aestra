@@ -2,7 +2,7 @@
 
 use crate::{
     MaterialAuthoringDocument, MaterialCommand, MaterialCommandError, MaterialCommandExecutor,
-    MaterialDiff, MaterialTransaction,
+    MaterialDiff, MaterialExpressionInput, MaterialOutputSocket, MaterialTransaction,
 };
 use aestra_compiler::{
     MaterialCompiler, MaterialStackEditError, MaterialStackModifierKind, MaterialStackPresetKind,
@@ -21,9 +21,24 @@ pub enum MaterialInsertionPoint {
     End,
 }
 
+/// Stable destination for a material expression connection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MaterialConnectionTarget {
+    ExpressionInput {
+        expression: MaterialExpressionId,
+        input: MaterialExpressionInput,
+    },
+    ProgramOutput(MaterialOutputSocket),
+}
+
 /// A semantic material edit request suitable for editor, CLI, and tool clients.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MaterialToolCommand {
+    ConnectMaterialExpression {
+        program: MaterialProgramId,
+        source: MaterialExpressionId,
+        target: MaterialConnectionTarget,
+    },
     InsertMaterialOperation {
         program: MaterialProgramId,
         kind: MaterialStackModifierKind,
@@ -67,6 +82,10 @@ pub enum MaterialToolError {
     ProgramNotFound(MaterialProgramId),
     #[error("material insertion anchor '{0}' is not present in the editable stack")]
     InsertionAnchorNotFound(MaterialExpressionId),
+    #[error("source material expression '{0}' was not found")]
+    SourceExpressionNotFound(MaterialExpressionId),
+    #[error("destination material expression '{0}' was not found")]
+    DestinationExpressionNotFound(MaterialExpressionId),
     #[error(transparent)]
     StackEdit(#[from] MaterialStackEditError),
     #[error(transparent)]
@@ -83,6 +102,11 @@ impl MaterialToolPlanner {
         command: MaterialToolCommand,
     ) -> Result<MaterialToolPlan, MaterialToolError> {
         match command {
+            MaterialToolCommand::ConnectMaterialExpression {
+                program,
+                source,
+                target,
+            } => Self::plan_connect_material_expression(document, program, source, target),
             MaterialToolCommand::InsertMaterialOperation {
                 program,
                 kind,
@@ -94,6 +118,51 @@ impl MaterialToolPlanner {
                 placement,
             } => Self::plan_apply_material_preset(document, program, preset, placement),
         }
+    }
+
+    fn plan_connect_material_expression(
+        document: &MaterialAuthoringDocument,
+        program_id: MaterialProgramId,
+        source: MaterialExpressionId,
+        target: MaterialConnectionTarget,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        let program = find_program(document, program_id)?;
+        if !program
+            .expressions
+            .iter()
+            .any(|expression| expression.id == source)
+        {
+            return Err(MaterialToolError::SourceExpressionNotFound(source));
+        }
+        let baseline = match target {
+            MaterialConnectionTarget::ExpressionInput { expression, input } => {
+                if !program
+                    .expressions
+                    .iter()
+                    .any(|candidate| candidate.id == expression)
+                {
+                    return Err(MaterialToolError::DestinationExpressionNotFound(expression));
+                }
+                MaterialCommand::RewireMaterialExpressionInput {
+                    program: program_id,
+                    expression,
+                    input,
+                    source,
+                }
+            }
+            MaterialConnectionTarget::ProgramOutput(output) => MaterialCommand::SetMaterialOutput {
+                program: program_id,
+                output,
+                expression: source,
+            },
+        };
+        let command = MaterialToolCommand::ConnectMaterialExpression {
+            program: program_id,
+            source,
+            target,
+        };
+        let transaction = MaterialTransaction::single("Connect material expression", baseline);
+        validate_plan(document, command, transaction, Vec::new())
     }
 
     fn plan_insert_material_operation(
