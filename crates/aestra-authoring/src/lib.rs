@@ -5,6 +5,7 @@ mod diff;
 mod executor;
 mod history;
 mod material_authoring;
+mod material_inspection;
 mod material_migration;
 mod material_tools;
 mod selection;
@@ -18,6 +19,10 @@ pub use material_authoring::{
     MaterialCommandExecutor, MaterialCommandHistory, MaterialDiff, MaterialExpressionInput,
     MaterialHistoryResult, MaterialOutputSocket, MaterialSemanticChange, MaterialSemanticTarget,
     MaterialTransaction, MaterialTransactionOutcome,
+};
+pub use material_inspection::{
+    MaterialInspectionError, MaterialInspectionReport, MaterialInspectionTarget, MaterialInspector,
+    MaterialOperationAvailability, MaterialPresetAvailability,
 };
 pub use material_migration::{
     LegacyMaterialMigrationError, LegacyMaterialMigrationMapping, LegacyMaterialMigrationPlan,

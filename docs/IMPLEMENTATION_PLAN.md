@@ -311,7 +311,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
 
 ### Phase C — AI-first authoring
 
-- [ ] **Material 10 — advanced semantic commands/tool API.** Compose validated wrap, connect,
+- [x] **Material 10 — advanced semantic commands/tool API.** Compose validated wrap, connect,
   preset, insertion, and extraction transformations from baseline commands. The first vertical
   slice now exposes `ApplyMaterialPreset` as a UI-independent request that compiler-plans a full
   preset, returns one validated baseline transaction plus its semantic diff, and is consumed by
@@ -331,9 +331,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   `BindMaterialParameter` now addresses a stable material instance and program parameter with an
   explicit constant, effect parameter, emitter parameter, random range, or program-default source.
   It rejects stale and unexposed binding parameters plus incompatible types/domains before returning
-  one baseline transaction with an exact instance-parameter diff.
+  one baseline transaction with an exact instance-parameter diff. Function extraction is owned by
+  Material 15 so it can target the canonical typed function model rather than a temporary format.
 - [ ] **Material 11 — AI material API.** Expose machine-readable inspection, editing, compilation,
-  and diagnostics.
+  and diagnostics. The first read-only slice now resolves stable program or instance targets into a
+  deterministic serializable report containing authored snapshots, reflected controls, stack
+  projection, compiler-approved operation/preset insertion edges, and structured diagnostics.
 
 ### Phase D — advanced human authoring
 
@@ -343,7 +346,8 @@ the current sprite-material path until the native-GPU compatibility gate approve
 
 ### Phase E — reuse and extensibility
 
-- [ ] **Material 15 — typed material functions.**
+- [ ] **Material 15 — typed material functions.** Add `ExtractMaterialFunction` only after the
+  canonical function/input/output/call representation exists.
 - [ ] **Material 16 — semantic preset library.**
 - [ ] **Material 17 — validated custom WESL escape hatch.**
 

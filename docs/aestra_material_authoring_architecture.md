@@ -2071,6 +2071,8 @@ Artists can create a moderately complex flame/shield/dissolve material without o
 
 ## Milestone 10 — Advanced Semantic Commands and Tool API
 
+**Status: complete.**
+
 ### Goal
 
 Build ergonomic high-level operations on the baseline transactional commands
@@ -2087,7 +2089,6 @@ ConnectMaterialExpression
 BindMaterialParameter
 ApplyMaterialPreset
 InsertMaterialOperation
-ExtractMaterialFunction
 ```
 
 Commands must support:
@@ -2121,6 +2122,8 @@ random range as explicit serializable sources rather than encoding default as a 
 resolves the instance's program and stable parameter identity, limits external bindings to exposed
 effect parameters, and validates type and evaluation-domain compatibility before returning one
 undoable baseline transaction with a parameter-specific semantic diff.
+`ExtractMaterialFunction` is intentionally deferred to Milestone 15, where it can create the
+canonical typed function/input/output/call model instead of a short-lived extraction format.
 
 ### Completion Criterion
 
@@ -2150,6 +2153,13 @@ Expose:
 - return diagnostics.
 
 Prefer structured semantic operations rather than raw source editing.
+
+Current implementation: `MaterialInspector` accepts a stable program or material-instance target
+and returns one deterministic serializable report. The report includes the authored program and
+optional instance, reflected controls, stack projection, compiler-approved modifier and preset
+insertion edges expressed as stable placements, and structured target diagnostics. Invalid targets
+retain their authored snapshots and diagnostics while compiler-derived fields that would be
+misleading are omitted.
 
 ### Completion Criterion
 
@@ -2262,6 +2272,7 @@ MaterialFunction
 FunctionInput
 FunctionOutput
 FunctionCall
+ExtractMaterialFunction
 ```
 
 Support:
