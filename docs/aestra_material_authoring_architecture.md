@@ -857,6 +857,12 @@ The stack is easier than a graph for:
 
 Complex AST structures that cannot be represented cleanly as a stack can automatically switch to an advanced representation.
 
+Implementation status (2026-09-02): the compiler now exposes a deterministic, engine-neutral
+read-only stack projection. Reachable semantic operations keep their stable expression IDs and are
+ordered from source to output. Properties displays that order for linear programs. Programs with
+multiple semantic roots, fan-in, or fan-out report an explicit Advanced fallback; the editor never
+pretends that a branched graph is safely reorderable. Modifier editing remains planned.
+
 ---
 
 # 12. Node Graph as an Advanced Projection

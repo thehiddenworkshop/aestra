@@ -288,8 +288,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   coordinates cross the material ABI as `Uv0`. Semantic materials therefore sample sprite and
   flipbook renderers through the same typed texture operation without duplicating animation state
   in the expression graph.
-- [ ] **Material 9 — material stack.** Provide the ordered high-level modifier projection before a
-  node graph.
+- [ ] **Material 9 — material stack.** The first read-only vertical slice is complete. The compiler
+  deterministically projects reachable semantic operations into a source-to-output stack with
+  stable expression IDs. Linear chains appear in Properties; branched or independent modifier
+  chains explicitly fall back to an Advanced representation instead of implying an unsafe order.
+  Continue with transactional add, reorder, and enable/disable modifier commands before a node
+  graph.
 
 ### Phase C — AI-first authoring
 

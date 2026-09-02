@@ -10,7 +10,8 @@ use crate::timeline::{EffectClipChildSelection, EffectClipPath, TimelineState};
 use crate::*;
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
-    MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, ModuleRegistry,
+    MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, MaterialStackProjection,
+    ModuleRegistry,
 };
 use aestra_core::material::{
     MaterialCullMode, MaterialDepthTest, MaterialParameterValue, MaterialRenderState,

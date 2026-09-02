@@ -275,6 +275,12 @@ rectangle is resolved before `Uv0` crosses the material ABI, so the same semanti
 samples sprites and animated flipbooks without duplicating playback state in the expression graph.
 This closes Material 8.
 
+Material 9 has begun with an engine-neutral stack projection. The compiler extracts reachable
+semantic operations in deterministic source-to-output order and retains each authored expression
+ID. Properties presents linear programs as a read-only modifier stack. Multiple roots, fan-in, and
+fan-out produce an explicit Advanced fallback so the projection cannot misrepresent graph
+semantics. Transactional stack editing is not implemented yet.
+
 ## Migration classification
 
 The next material model should move current fields as follows:

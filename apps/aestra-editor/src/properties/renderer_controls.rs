@@ -961,8 +961,12 @@ fn spawn_semantic_material_controls(
     let controls = MaterialCompiler
         .reflect_controls(program, Some(instance))
         .map_err(|error| error.to_string())?;
+    let stack = MaterialCompiler
+        .project_stack(program)
+        .map_err(|error| error.to_string())?;
 
     spawn_properties_read_only_control(parent, "Material", &controls.name);
+    spawn_semantic_material_stack(parent, &stack);
     for descriptor in &controls.parameters {
         spawn_semantic_material_parameter(parent, descriptor, instance.id, session, asset_server);
     }
@@ -973,6 +977,26 @@ fn spawn_semantic_material_controls(
         controls.current_render_state,
     );
     Ok(true)
+}
+
+fn spawn_semantic_material_stack(
+    parent: &mut ChildSpawnerCommands,
+    projection: &MaterialStackProjection,
+) {
+    match projection {
+        MaterialStackProjection::Stack { entries } if entries.is_empty() => {
+            spawn_properties_read_only_control(parent, "Stack", "No semantic modifiers");
+        }
+        MaterialStackProjection::Stack { entries } => {
+            spawn_properties_read_only_control(parent, "Material Stack", "Read only");
+            for entry in entries {
+                spawn_properties_read_only_control(parent, "Modifier", entry.kind.display_name());
+            }
+        }
+        MaterialStackProjection::Advanced { reason } => {
+            spawn_properties_read_only_control(parent, "Material Stack", reason.display_name());
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
