@@ -1,15 +1,16 @@
 use aestra_authoring::{
     MaterialAuthoringDocument, MaterialChangeKind, MaterialCommand, MaterialCommandError,
     MaterialCommandExecutor, MaterialCommandHistory, MaterialConnectionTarget,
-    MaterialExpressionInput, MaterialInsertionPoint, MaterialOutputSocket, MaterialSemanticTarget,
-    MaterialToolCommand, MaterialToolError, MaterialToolPlanner, MaterialTransaction,
+    MaterialExpressionInput, MaterialInsertionPoint, MaterialOutputSocket,
+    MaterialParameterBinding, MaterialSemanticTarget, MaterialToolCommand, MaterialToolError,
+    MaterialToolPlanner, MaterialTransaction,
 };
 use aestra_compiler::{
     MaterialCompiler, MaterialStackModifierKind, MaterialStackPresetKind, MaterialStackProjection,
 };
 use aestra_core::{
-    AssetId, BlendMode, EffectAsset, Emitter, MaterialExpressionId, MaterialId,
-    MaterialParameterId, MaterialProgramId, RendererId,
+    AssetId, BlendMode, EffectAsset, EffectParameter, Emitter, MaterialExpressionId, MaterialId,
+    MaterialParameterId, MaterialProgramId, ParameterId, RendererId, Value,
     material::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
         MaterialInstance, MaterialParameter, MaterialParameterValue, MaterialProgram,
@@ -1659,6 +1660,277 @@ fn renderer_lookup_is_scoped_to_the_authored_emitter() {
     .unwrap_err();
 
     assert!(matches!(error, MaterialCommandError::NotFound { .. }));
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_binding_tool_plans_a_stable_effect_binding_and_exact_undo() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x5800);
+    let (program, material_parameter) = parameterized_program(program_id);
+    document.programs.push(program);
+    let instance_id = MaterialId::from_u128(0x5801);
+    document.effect.material_instances.push(MaterialInstance {
+        id: instance_id,
+        program: MaterialProgramRef::Project(program_id),
+        values: BTreeMap::new(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let effect_parameter = ParameterId::from_u128(0x5802);
+    document.effect.parameters.push(EffectParameter {
+        id: effect_parameter,
+        name: "Effect intensity".into(),
+        default: Value::Scalar(0.75),
+        exposed: true,
+    });
+    let before = document.clone();
+    let command = MaterialToolCommand::BindMaterialParameter {
+        instance: instance_id,
+        parameter: material_parameter,
+        binding: MaterialParameterBinding::EffectParameter(effect_parameter),
+    };
+
+    let encoded = ron::to_string(&command).unwrap();
+    assert_eq!(
+        ron::from_str::<MaterialToolCommand>(&encoded).unwrap(),
+        command
+    );
+    let plan = MaterialToolPlanner::plan(&document, command).unwrap();
+
+    assert_eq!(document, before, "planning must not mutate its input");
+    assert!(plan.created_expressions.is_empty());
+    assert!(matches!(
+        &plan.transaction.commands[..],
+        [MaterialCommand::SetMaterialInstanceParameter {
+            instance,
+            parameter,
+            value: Some(MaterialParameterValue::EffectParameter(binding)),
+        }] if *instance == instance_id
+            && *parameter == material_parameter
+            && *binding == effect_parameter
+    ));
+    let parameter_change = plan
+        .diff
+        .changes
+        .iter()
+        .find(|change| {
+            change
+                .path
+                .ends_with(&format!(".values[{material_parameter}]"))
+        })
+        .expect("binding diff must identify the exact instance parameter");
+    assert_eq!(parameter_change.kind, MaterialChangeKind::Added);
+    assert_eq!(
+        parameter_change.target,
+        MaterialSemanticTarget::Instance(instance_id)
+    );
+
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    assert_eq!(
+        document.effect.material_instances[0].values[&material_parameter],
+        MaterialParameterValue::EffectParameter(effect_parameter)
+    );
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_binding_tool_uses_an_explicit_program_default_source() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x5900);
+    let (program, material_parameter) = parameterized_program(program_id);
+    document.programs.push(program);
+    let instance_id = MaterialId::from_u128(0x5901);
+    document.effect.material_instances.push(MaterialInstance {
+        id: instance_id,
+        program: MaterialProgramRef::Project(program_id),
+        values: BTreeMap::new(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let before = document.clone();
+    let random_binding = MaterialParameterBinding::RandomRange {
+        min: MaterialValue::Float(0.25),
+        max: MaterialValue::Float(1.5),
+        domain: MaterialEvaluationDomain::Effect,
+    };
+    let random_plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::BindMaterialParameter {
+            instance: instance_id,
+            parameter: material_parameter,
+            binding: random_binding,
+        },
+    )
+    .unwrap();
+    let mut history = MaterialCommandHistory::default();
+    history
+        .execute(&mut document, random_plan.transaction)
+        .unwrap();
+    assert!(matches!(
+        document.effect.material_instances[0]
+            .values
+            .get(&material_parameter),
+        Some(MaterialParameterValue::RandomRange { min, max, domain })
+            if *min == MaterialValue::Float(0.25)
+                && *max == MaterialValue::Float(1.5)
+                && *domain == MaterialEvaluationDomain::Effect
+    ));
+    let with_random_override = document.clone();
+
+    let plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::BindMaterialParameter {
+            instance: instance_id,
+            parameter: material_parameter,
+            binding: MaterialParameterBinding::ProgramDefault,
+        },
+    )
+    .unwrap();
+
+    assert!(matches!(
+        &plan.transaction.commands[..],
+        [MaterialCommand::SetMaterialInstanceParameter {
+            instance,
+            parameter,
+            value: None,
+        }] if *instance == instance_id && *parameter == material_parameter
+    ));
+    assert!(plan.diff.changes.iter().any(|change| {
+        change.kind == MaterialChangeKind::Removed
+            && change.target == MaterialSemanticTarget::Instance(instance_id)
+            && change
+                .path
+                .ends_with(&format!(".values[{material_parameter}]"))
+    }));
+
+    history.execute(&mut document, plan.transaction).unwrap();
+    assert!(
+        !document.effect.material_instances[0]
+            .values
+            .contains_key(&material_parameter)
+    );
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, with_random_override);
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_binding_tool_rejects_stale_and_incompatible_bindings_atomically() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x5a00);
+    let (program, material_parameter) = parameterized_program(program_id);
+    document.programs.push(program);
+    let instance_id = MaterialId::from_u128(0x5a01);
+    document.effect.material_instances.push(MaterialInstance {
+        id: instance_id,
+        program: MaterialProgramRef::Project(program_id),
+        values: BTreeMap::new(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let vector_parameter = ParameterId::from_u128(0x5a02);
+    document.effect.parameters.push(EffectParameter {
+        id: vector_parameter,
+        name: "Wrong type".into(),
+        default: Value::Vec2([1.0, 2.0]),
+        exposed: true,
+    });
+    let scalar_parameter = ParameterId::from_u128(0x5a04);
+    document.effect.parameters.push(EffectParameter {
+        id: scalar_parameter,
+        name: "Wrong source domain".into(),
+        default: Value::Scalar(1.0),
+        exposed: true,
+    });
+    let hidden_parameter = ParameterId::from_u128(0x5a03);
+    document.effect.parameters.push(EffectParameter {
+        id: hidden_parameter,
+        name: "Internal scalar".into(),
+        default: Value::Scalar(1.0),
+        exposed: false,
+    });
+    let before = document.clone();
+    let missing_instance = MaterialId::from_u128(0x5aff);
+    let missing_material_parameter = MaterialParameterId::from_u128(0x5afe);
+    let missing_binding = ParameterId::from_u128(0x5afd);
+
+    let stale_instance = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::BindMaterialParameter {
+            instance: missing_instance,
+            parameter: material_parameter,
+            binding: MaterialParameterBinding::Constant(MaterialValue::Float(1.0)),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        stale_instance,
+        MaterialToolError::InstanceNotFound(instance) if instance == missing_instance
+    ));
+
+    let stale_material_parameter = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::BindMaterialParameter {
+            instance: instance_id,
+            parameter: missing_material_parameter,
+            binding: MaterialParameterBinding::Constant(MaterialValue::Float(1.0)),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        stale_material_parameter,
+        MaterialToolError::ParameterNotFound { program, parameter }
+            if program == program_id && parameter == missing_material_parameter
+    ));
+
+    let stale_binding = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::BindMaterialParameter {
+            instance: instance_id,
+            parameter: material_parameter,
+            binding: MaterialParameterBinding::EffectParameter(missing_binding),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        stale_binding,
+        MaterialToolError::BindingParameterNotFound(parameter) if parameter == missing_binding
+    ));
+
+    let hidden_binding = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::BindMaterialParameter {
+            instance: instance_id,
+            parameter: material_parameter,
+            binding: MaterialParameterBinding::EffectParameter(hidden_parameter),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        hidden_binding,
+        MaterialToolError::BindingParameterNotExposed(parameter) if parameter == hidden_parameter
+    ));
+
+    for binding in [
+        MaterialParameterBinding::EffectParameter(vector_parameter),
+        MaterialParameterBinding::EmitterParameter(scalar_parameter),
+        MaterialParameterBinding::Constant(MaterialValue::Vec2([1.0, 2.0])),
+    ] {
+        let incompatible = MaterialToolPlanner::plan(
+            &document,
+            MaterialToolCommand::BindMaterialParameter {
+                instance: instance_id,
+                parameter: material_parameter,
+                binding,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            incompatible,
+            MaterialToolError::Transaction(MaterialCommandError::Validation(_))
+        ));
+    }
     assert_eq!(document, before);
 }
 

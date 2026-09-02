@@ -906,14 +906,17 @@ fn diff_instances(
                 Some(format!("{:?}", instance.program)),
                 None,
             ),
-            Some(replacement) if *instance != *replacement => push_change(
-                changes,
-                MaterialChangeKind::Modified,
-                MaterialSemanticTarget::Instance(*id),
-                format!("effect.material_instances[{id}]"),
-                Some(format!("{:?}", instance.values)),
-                Some(format!("{:?}", replacement.values)),
-            ),
+            Some(replacement) if *instance != *replacement => {
+                push_change(
+                    changes,
+                    MaterialChangeKind::Modified,
+                    MaterialSemanticTarget::Instance(*id),
+                    format!("effect.material_instances[{id}]"),
+                    Some(format!("{:?}", instance.values)),
+                    Some(format!("{:?}", replacement.values)),
+                );
+                diff_instance_parameters(changes, *id, instance, replacement);
+            }
             Some(_) => {}
         }
     }
@@ -926,6 +929,48 @@ fn diff_instances(
                 "effect.material_instances",
                 None,
                 Some(format!("{:?}", instance.program)),
+            );
+        }
+    }
+}
+
+fn diff_instance_parameters(
+    changes: &mut Vec<MaterialSemanticChange>,
+    instance_id: MaterialId,
+    before: &MaterialInstance,
+    after: &MaterialInstance,
+) {
+    for (parameter, value) in &before.values {
+        let path = format!("effect.material_instances[{instance_id}].values[{parameter}]");
+        match after.values.get(parameter) {
+            None => push_change(
+                changes,
+                MaterialChangeKind::Removed,
+                MaterialSemanticTarget::Instance(instance_id),
+                path,
+                Some(format!("{value:?}")),
+                None,
+            ),
+            Some(replacement) if value != replacement => push_change(
+                changes,
+                MaterialChangeKind::Modified,
+                MaterialSemanticTarget::Instance(instance_id),
+                path,
+                Some(format!("{value:?}")),
+                Some(format!("{replacement:?}")),
+            ),
+            Some(_) => {}
+        }
+    }
+    for (parameter, value) in &after.values {
+        if !before.values.contains_key(parameter) {
+            push_change(
+                changes,
+                MaterialChangeKind::Added,
+                MaterialSemanticTarget::Instance(instance_id),
+                format!("effect.material_instances[{instance_id}].values[{parameter}]"),
+                None,
+                Some(format!("{value:?}")),
             );
         }
     }

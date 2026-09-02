@@ -328,6 +328,10 @@ the current sprite-material path until the native-GPU compatibility gate approve
   `ReplaceMaterialExpression` now replaces an expression kind while preserving its stable identity
   and every downstream connection. Its upstream references and resulting type/domain compatibility
   are validated as one undoable baseline transaction, so stale or invalid substitutions are atomic.
+  `BindMaterialParameter` now addresses a stable material instance and program parameter with an
+  explicit constant, effect parameter, emitter parameter, random range, or program-default source.
+  It rejects stale and unexposed binding parameters plus incompatible types/domains before returning
+  one baseline transaction with an exact instance-parameter diff.
 - [ ] **Material 11 — AI material API.** Expose machine-readable inspection, editing, compilation,
   and diagnostics.
 

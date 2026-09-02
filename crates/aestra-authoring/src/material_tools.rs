@@ -10,8 +10,11 @@ use aestra_compiler::{
     MaterialStackProjection,
 };
 use aestra_core::{
-    MaterialExpressionId, MaterialProgramId,
-    material::{MaterialExpression, MaterialExpressionKind, MaterialProgram},
+    MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
+    material::{
+        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind,
+        MaterialParameterValue, MaterialProgram, MaterialValue,
+    },
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -35,9 +38,55 @@ pub enum MaterialConnectionTarget {
     ProgramOutput(MaterialOutputSocket),
 }
 
+/// A complete material-instance parameter source, including removal of an instance override.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum MaterialParameterBinding {
+    ProgramDefault,
+    Constant(MaterialValue),
+    EffectParameter(ParameterId),
+    EmitterParameter(ParameterId),
+    RandomRange {
+        min: MaterialValue,
+        max: MaterialValue,
+        domain: MaterialEvaluationDomain,
+    },
+}
+
+impl MaterialParameterBinding {
+    fn into_override(self) -> Option<MaterialParameterValue> {
+        match self {
+            Self::ProgramDefault => None,
+            Self::Constant(value) => Some(MaterialParameterValue::Constant(value)),
+            Self::EffectParameter(parameter) => {
+                Some(MaterialParameterValue::EffectParameter(parameter))
+            }
+            Self::EmitterParameter(parameter) => {
+                Some(MaterialParameterValue::EmitterParameter(parameter))
+            }
+            Self::RandomRange { min, max, domain } => {
+                Some(MaterialParameterValue::RandomRange { min, max, domain })
+            }
+        }
+    }
+
+    fn referenced_parameter(&self) -> Option<ParameterId> {
+        match self {
+            Self::EffectParameter(parameter) | Self::EmitterParameter(parameter) => {
+                Some(*parameter)
+            }
+            Self::ProgramDefault | Self::Constant(_) | Self::RandomRange { .. } => None,
+        }
+    }
+}
+
 /// A semantic material edit request suitable for editor, CLI, and tool clients.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MaterialToolCommand {
+    BindMaterialParameter {
+        instance: MaterialId,
+        parameter: MaterialParameterId,
+        binding: MaterialParameterBinding,
+    },
     ReplaceMaterialExpression {
         program: MaterialProgramId,
         expression: MaterialExpressionId,
@@ -94,6 +143,17 @@ impl MaterialToolPlan {
 pub enum MaterialToolError {
     #[error("material program '{0}' was not found")]
     ProgramNotFound(MaterialProgramId),
+    #[error("material instance '{0}' was not found")]
+    InstanceNotFound(MaterialId),
+    #[error("material parameter '{parameter}' was not found in program '{program}'")]
+    ParameterNotFound {
+        program: MaterialProgramId,
+        parameter: MaterialParameterId,
+    },
+    #[error("effect or emitter binding parameter '{0}' was not found")]
+    BindingParameterNotFound(ParameterId),
+    #[error("effect or emitter binding parameter '{0}' is not exposed")]
+    BindingParameterNotExposed(ParameterId),
     #[error("material insertion anchor '{0}' is not present in the editable stack")]
     InsertionAnchorNotFound(MaterialExpressionId),
     #[error("source material expression '{0}' was not found")]
@@ -126,6 +186,11 @@ impl MaterialToolPlanner {
         command: MaterialToolCommand,
     ) -> Result<MaterialToolPlan, MaterialToolError> {
         match command {
+            MaterialToolCommand::BindMaterialParameter {
+                instance,
+                parameter,
+                binding,
+            } => Self::plan_bind_material_parameter(document, instance, parameter, binding),
             MaterialToolCommand::ReplaceMaterialExpression {
                 program,
                 expression,
@@ -152,6 +217,62 @@ impl MaterialToolPlanner {
                 placement,
             } => Self::plan_apply_material_preset(document, program, preset, placement),
         }
+    }
+
+    fn plan_bind_material_parameter(
+        document: &MaterialAuthoringDocument,
+        instance_id: MaterialId,
+        parameter_id: MaterialParameterId,
+        binding: MaterialParameterBinding,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        let instance = document
+            .effect
+            .material_instances
+            .iter()
+            .find(|instance| instance.id == instance_id)
+            .ok_or(MaterialToolError::InstanceNotFound(instance_id))?;
+        let program_id = instance.program.id();
+        let program = find_program(document, program_id)?;
+        if !program
+            .parameters
+            .iter()
+            .any(|parameter| parameter.id == parameter_id)
+        {
+            return Err(MaterialToolError::ParameterNotFound {
+                program: program_id,
+                parameter: parameter_id,
+            });
+        }
+        if let Some(binding_parameter) = binding.referenced_parameter() {
+            let parameter = document
+                .effect
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == binding_parameter)
+                .ok_or(MaterialToolError::BindingParameterNotFound(
+                    binding_parameter,
+                ))?;
+            if !parameter.exposed {
+                return Err(MaterialToolError::BindingParameterNotExposed(
+                    binding_parameter,
+                ));
+            }
+        }
+
+        let command = MaterialToolCommand::BindMaterialParameter {
+            instance: instance_id,
+            parameter: parameter_id,
+            binding: binding.clone(),
+        };
+        let transaction = MaterialTransaction::single(
+            "Bind material parameter",
+            MaterialCommand::SetMaterialInstanceParameter {
+                instance: instance_id,
+                parameter: parameter_id,
+                value: binding.into_override(),
+            },
+        );
+        validate_plan(document, command, transaction, Vec::new())
     }
 
     fn plan_replace_material_expression(

@@ -2116,6 +2116,11 @@ remain explicit failures rather than silently changing additional consumers.
 The replacement keeps that identity, and therefore every downstream connection, while its incoming
 references and complete graph type/domain compatibility are validated before the planner returns a
 single undoable baseline transaction and expression-specific diff.
+`BindMaterialParameter` exposes program default, constant, effect parameter, emitter parameter, and
+random range as explicit serializable sources rather than encoding default as a nullable value. It
+resolves the instance's program and stable parameter identity, limits external bindings to exposed
+effect parameters, and validates type and evaluation-domain compatibility before returning one
+undoable baseline transaction with a parameter-specific semantic diff.
 
 ### Completion Criterion
 
