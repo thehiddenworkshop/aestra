@@ -13,6 +13,7 @@ use aestra_gpu::material::{
     MaterialCapabilityIssueCode, MaterialColorTargetFormat, MaterialGpuError,
     MaterialParameterBinding, MaterialPipelineVariant, MaterialShaderCompiler,
 };
+use aestra_gpu::shader::SPRITE_RENDER_WESL;
 use naga::{
     back::{hlsl, spv},
     valid::{Capabilities, ValidationFlags, Validator},
@@ -791,6 +792,29 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     assert!(dissolve_edge_expression.contains(">="));
     assert!(dissolve_edge_expression.contains("0.000001"));
     assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
+fn flipbook_frame_is_resolved_before_semantic_material_uv0() {
+    let frame_selection = SPRITE_RENDER_WESL
+        .find("uv_bounds = renderer.frames[flipbook_frame(renderer, particle)];")
+        .expect("sprite vertex shader must select the current flipbook frame");
+    let resolved_uv = SPRITE_RENDER_WESL
+        .find("output.uv = mix(uv_bounds.xy, uv_bounds.zw")
+        .expect("sprite vertex shader must resolve atlas coordinates");
+    let material_uv = SPRITE_RENDER_WESL
+        .find("output.material_uv0 = output.uv;")
+        .expect("semantic material ABI must receive renderer-resolved UV0");
+
+    assert!(frame_selection < resolved_uv);
+    assert!(resolved_uv < material_uv);
+
+    let compiled = compile(&two_texture_flame_program());
+    assert_eq!(
+        compiled.reflection.required_vertex_inputs,
+        vec![MaterialInput::Uv0]
+    );
+    assert!(compiled.shader.wesl.contains("input.uv0"));
 }
 
 #[test]

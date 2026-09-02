@@ -175,6 +175,8 @@ fn vertex(
     }
     output.uv = mix(uv_bounds.xy, uv_bounds.zw, corner * 0.5 + vec2<f32>(0.5));
     output.textured = renderer.textured;
+    // The material ABI receives the final renderer-resolved UV. Flipbook playback remains
+    // renderer state rather than becoming a second material expression graph.
     output.material_uv0 = output.uv;
     output.material_particle_color = output.color;
     output.material_particle_opacity = output.color.a;

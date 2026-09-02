@@ -1945,6 +1945,42 @@ mod tests {
     }
 
     #[test]
+    fn flipbook_effect_time_selects_the_expected_frame_across_playback_modes() {
+        let flipbook = CompiledFlipbook {
+            source: AssetId::new(),
+            name: "Playback contract".into(),
+            texture: AssetId::new(),
+            frames: vec![UvRect::FULL; 4],
+            frame_rate: 4.0,
+            looping: true,
+        };
+        let times = [0.0, 0.25, 0.5, 0.75, 1.0];
+        let cases = [
+            (FlipbookPlaybackMode::Forward, [0, 1, 2, 3, 0]),
+            (FlipbookPlaybackMode::Reverse, [3, 2, 1, 0, 3]),
+            (FlipbookPlaybackMode::PingPong, [0, 1, 2, 3, 2]),
+        ];
+
+        for (playback, expected) in cases {
+            let actual = times.map(|effect_time| {
+                flipbook_frame_index(
+                    &flipbook,
+                    FlipbookFrameContext {
+                        time_source: FlipbookTimeSource::EffectTime,
+                        playback,
+                        random_start: false,
+                        effect_time,
+                        normalized_age: 0.0,
+                        particle_index: 0,
+                        seed: 0,
+                    },
+                )
+            });
+            assert_eq!(actual, expected, "unexpected {playback:?} frame sequence");
+        }
+    }
+
+    #[test]
     fn emitter_time_curve_integrates_emission_and_inverts_spawn_times() {
         let curve = CompiledCurve::compile(&Curve::new(vec![
             CurveKey::new(0.0, 0.0),

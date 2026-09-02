@@ -484,7 +484,13 @@ impl MaterialInstance {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MaterialInput {
+    /// Renderer-resolved primary UV coordinates.
+    ///
+    /// In the sprite domain this already includes the renderer UV rectangle or the currently
+    /// selected flipbook frame. Material programs consume the resolved coordinates and do not own
+    /// flipbook timing, playback, or frame tables.
     Uv0,
+    /// Optional secondary UV coordinates supplied by domains that support them.
     Uv1,
     LocalPosition,
     WorldPosition,

@@ -247,7 +247,7 @@ memory and binds the resulting shaders without rewriting the source effect. Nati
 now verifies pixel-identical legacy and semantic output for all three showcase sources, and the
 approved images are the scheduled workflow baseline.
 
-Material 8 has begun with `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`, `RadialMask`,
+Material 8 is complete with `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`, `RadialMask`,
 `Dissolve`, `DissolveEdge`, `DepthFade`, and `SoftParticle` as
 end-to-end semantic primitives rather than pre-expanded arithmetic graphs. Pan retains explicit `Vec2` UV, `Vec2`
 speed, and `Float` time sockets; rotation retains `Vec2` UV, `Vec2` center, and radians-valued
@@ -270,7 +270,10 @@ SoftParticle multiplies a typed source alpha by that depth-fade result and there
 same deterministic distance and inversion rules. All ten operations survive stable RON, validation,
 undoable rewiring, backend-neutral IR, source mapping, and portable shader
 generation. Generated WGSL is validated and translated to SPIR-V and HLSL by the contract suite.
-Remaining Material 8 operations are not yet implemented.
+Flipbook timing, playback, random start, and frame tables remain renderer-owned. The selected atlas
+rectangle is resolved before `Uv0` crosses the material ABI, so the same semantic texture program
+samples sprites and animated flipbooks without duplicating playback state in the expression graph.
+This closes Material 8.
 
 ## Migration classification
 

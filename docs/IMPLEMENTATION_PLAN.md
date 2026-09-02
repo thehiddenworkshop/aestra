@@ -262,7 +262,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   effect/emitter bindings while preserving useful values. Blend, depth-test, depth-write, and cull
   controls project only transitions allowed by the reflected render-state policy and commit through
   the same semantic history.
-- [ ] **Material 8 — VFX semantic primitives.** `PanUV`, `RotateUV`, `ScaleUV`, `Remap`,
+- [x] **Material 8 — VFX semantic primitives.** `PanUV`, `RotateUV`, `ScaleUV`, `Remap`,
   `Smoothstep`, `RadialMask`, `Dissolve`, `DissolveEdge`, `DepthFade`, and `SoftParticle` are complete vertical slices: authored programs retain their explicit typed sockets; validation
   reports socket-specific type errors; semantic commands rewire every socket with undo/redo;
   backend-neutral IR preserves each operation and source map; and generated portable shaders
@@ -283,7 +283,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   prepass through a portable group-3 ABI and specializes single-sample/MSAA shaders; depth inputs
   are intentionally unavailable on the 2D presentation path. SoftParticle is the artist-facing
   alpha operation: it multiplies a typed source alpha by the same deterministic depth fade and
-  reuses the existing prepass contract. Continue with the flipbook operation.
+  reuses the existing prepass contract. Flipbook integration deliberately remains renderer-owned:
+  timing, playback mode, and frame tables resolve the current atlas rectangle before the final
+  coordinates cross the material ABI as `Uv0`. Semantic materials therefore sample sprite and
+  flipbook renderers through the same typed texture operation without duplicating animation state
+  in the expression graph.
 - [ ] **Material 9 — material stack.** Provide the ordered high-level modifier projection before a
   node graph.
 

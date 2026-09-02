@@ -1999,7 +1999,11 @@ does not sample the active depth attachment and does not claim scene-depth suppo
 SoftParticle retains explicit source-alpha, scene-depth, pixel-depth, fade-distance, and invert
 sockets. It multiplies source alpha by the same deterministic depth-fade result, so it inherits the
 renderer-owned prepass, MSAA specialization, and non-positive-distance behavior without introducing
-a second depth contract. The remaining primitives in this milestone are still planned.
+a second depth contract. Flipbook completes the milestone as a renderer/material integration rather
+than an expression node: the renderer owns timing, playback, random start, and the frame table, then
+passes the selected atlas coordinates through the typed `Uv0` material input. This keeps one
+animation authority while allowing every semantic texture program to work unchanged for sprites
+and flipbooks.
 
 Then:
 
