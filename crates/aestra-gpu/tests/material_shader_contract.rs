@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "1fc71791991a849a79292979dcd0f354375db846018673c4f8bc44a75133b4f1"
+        "0d4fd8a5bd089cf66515d7457caacd0ed03e7511f99cb097b3fdb805e1cd1251"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -417,6 +417,8 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     let center = MaterialExpressionId::from_u128(0x2013);
     let angle = MaterialExpressionId::from_u128(0x2014);
     let rotate = MaterialExpressionId::from_u128(0x2015);
+    let scale_value = MaterialExpressionId::from_u128(0x2016);
+    let scale = MaterialExpressionId::from_u128(0x2017);
     program.expressions.extend([
         MaterialExpression {
             id: speed,
@@ -450,10 +452,22 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
                 angle,
             },
         },
+        MaterialExpression {
+            id: scale_value,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.5, 0.75])),
+        },
+        MaterialExpression {
+            id: scale,
+            kind: MaterialExpressionKind::ScaleUv {
+                uv: rotate,
+                center,
+                scale: scale_value,
+            },
+        },
     ]);
     for expression in &mut program.expressions {
         if let MaterialExpressionKind::SampleTexture { uv, .. } = &mut expression.kind {
-            *uv = rotate;
+            *uv = scale;
         }
     }
 
@@ -511,6 +525,28 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     assert!(rotate_expression.contains("mat2x2<f32>"));
     assert!(rotate_expression.contains("cos"));
     assert!(rotate_expression.contains("sin"));
+    let scale_line = compiled
+        .source_map
+        .wesl_lines
+        .iter()
+        .find_map(|(line, value)| {
+            compiled
+                .source_map
+                .ir
+                .expressions
+                .get(value)
+                .is_some_and(|expressions| expressions.contains(&scale))
+                .then_some(*line)
+        })
+        .expect("ScaleUV must map to a generated shader line");
+    let scale_expression = compiled
+        .shader
+        .wesl
+        .lines()
+        .nth(scale_line as usize - 1)
+        .unwrap();
+    assert!(scale_expression.contains('-'));
+    assert!(scale_expression.contains('*'));
     assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 

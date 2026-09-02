@@ -364,7 +364,9 @@ fn uv_transforms_round_trip_and_preserve_their_typed_semantic_sockets() {
     let center = MaterialExpressionId::from_u128(0xAA05);
     let angle = MaterialExpressionId::from_u128(0xAA06);
     let rotate = MaterialExpressionId::from_u128(0xAA07);
-    let alpha = MaterialExpressionId::from_u128(0xAA08);
+    let scale_value = MaterialExpressionId::from_u128(0xAA08);
+    let scale = MaterialExpressionId::from_u128(0xAA09);
+    let alpha = MaterialExpressionId::from_u128(0xAA0A);
     let mut program = MaterialProgram::additive_sprite("UV transforms");
     program.expressions.extend([
         MaterialExpression {
@@ -400,9 +402,21 @@ fn uv_transforms_round_trip_and_preserve_their_typed_semantic_sockets() {
             },
         },
         MaterialExpression {
+            id: scale_value,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.5, 0.75])),
+        },
+        MaterialExpression {
+            id: scale,
+            kind: MaterialExpressionKind::ScaleUv {
+                uv: rotate,
+                center,
+                scale: scale_value,
+            },
+        },
+        MaterialExpression {
             id: alpha,
             kind: MaterialExpressionKind::ExtractComponent {
-                value: rotate,
+                value: scale,
                 component: MaterialVectorComponent::X,
             },
         },
@@ -426,10 +440,19 @@ fn uv_transforms_round_trip_and_preserve_their_typed_semantic_sockets() {
         analysis.expressions[&rotate].evaluation_domain,
         MaterialExpressionDomain::Fragment
     );
+    assert_eq!(
+        analysis.expressions[&scale].value_type,
+        MaterialValueType::Vec2
+    );
+    assert_eq!(
+        analysis.expressions[&scale].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
 
     let encoded = program.to_pretty_ron().unwrap();
     assert!(encoded.contains("PanUv"));
     assert!(encoded.contains("RotateUv"));
+    assert!(encoded.contains("ScaleUv"));
     assert_eq!(
         MaterialProgram::from_ron(&encoded).unwrap(),
         program.normalized()
@@ -534,6 +557,56 @@ fn rotate_uv_reports_the_socket_with_the_wrong_type() {
             && diagnostic.path.ends_with(".angle")
             && diagnostic.message.contains("Float radians")
     }));
+}
+
+#[test]
+fn scale_uv_reports_the_socket_with_the_wrong_type() {
+    let uv = MaterialExpressionId::from_u128(0xAD01);
+    let center = MaterialExpressionId::from_u128(0xAD02);
+    let scale_value = MaterialExpressionId::from_u128(0xAD03);
+    let scale = MaterialExpressionId::from_u128(0xAD04);
+    let alpha = MaterialExpressionId::from_u128(0xAD05);
+    let mut program = MaterialProgram::additive_sprite("Invalid scaling UV");
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleColor),
+        },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: scale_value,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(2.0)),
+        },
+        MaterialExpression {
+            id: scale,
+            kind: MaterialExpressionKind::ScaleUv {
+                uv,
+                center,
+                scale: scale_value,
+            },
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::ExtractComponent {
+                value: scale,
+                component: MaterialVectorComponent::X,
+            },
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let report = program.validation_report();
+
+    for socket in [".uv", ".center", ".scale"] {
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+                && diagnostic.path.ends_with(socket)
+                && diagnostic.message.contains("expects Vec2")
+        }));
+    }
 }
 
 #[test]

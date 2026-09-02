@@ -1975,10 +1975,10 @@ SoftParticle
 Flipbook
 ```
 
-Implementation status (2026-09-02): `PanUV` and `RotateUV` are completed vertical slices. They
-retain semantic UV/speed/time and UV/center/radians inputs through the authored model, validation,
-command history, backend-neutral IR, source mapping, and portable shader generation. The remaining
-primitives in this milestone are still planned.
+Implementation status (2026-09-02): `PanUV`, `RotateUV`, and `ScaleUV` are completed vertical
+slices. They retain semantic UV/speed/time, UV/center/radians, and UV/center/scale inputs through
+the authored model, validation, command history, backend-neutral IR, source mapping, and portable
+shader generation. The remaining primitives in this milestone are still planned.
 
 Then:
 

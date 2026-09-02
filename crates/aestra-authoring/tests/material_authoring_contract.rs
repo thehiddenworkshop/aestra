@@ -196,7 +196,10 @@ fn uv_transform_semantic_sockets_are_rewireable_and_undoable() {
     let angle = MaterialExpressionId::from_u128(0x1209);
     let alternate_angle = MaterialExpressionId::from_u128(0x120A);
     let rotate = MaterialExpressionId::from_u128(0x120B);
-    let alpha = MaterialExpressionId::from_u128(0x120C);
+    let scale_value = MaterialExpressionId::from_u128(0x120C);
+    let alternate_scale = MaterialExpressionId::from_u128(0x120D);
+    let scale = MaterialExpressionId::from_u128(0x120E);
+    let alpha = MaterialExpressionId::from_u128(0x120F);
     let mut program = MaterialProgram::additive_sprite("Authorable UV transforms");
     program.id = program_id;
     program.expressions.extend([
@@ -249,9 +252,25 @@ fn uv_transform_semantic_sockets_are_rewireable_and_undoable() {
             },
         },
         MaterialExpression {
+            id: scale_value,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.0, 1.0])),
+        },
+        MaterialExpression {
+            id: alternate_scale,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([2.0, 0.5])),
+        },
+        MaterialExpression {
+            id: scale,
+            kind: MaterialExpressionKind::ScaleUv {
+                uv: rotate,
+                center,
+                scale: scale_value,
+            },
+        },
+        MaterialExpression {
             id: alpha,
             kind: MaterialExpressionKind::ExtractComponent {
-                value: rotate,
+                value: scale,
                 component: MaterialVectorComponent::X,
             },
         },
@@ -302,6 +321,24 @@ fn uv_transform_semantic_sockets_are_rewireable_and_undoable() {
                         input: MaterialExpressionInput::Angle,
                         source: alternate_angle,
                     },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: scale,
+                        input: MaterialExpressionInput::Uv,
+                        source: pan,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: scale,
+                        input: MaterialExpressionInput::Center,
+                        source: alternate_center,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: scale,
+                        input: MaterialExpressionInput::Scale,
+                        source: alternate_scale,
+                    },
                 ],
             ),
         )
@@ -335,6 +372,21 @@ fn uv_transform_semantic_sockets_are_rewireable_and_undoable() {
             && rewired_center == alternate_center
             && rewired_angle == alternate_angle
     ));
+    let expression = document.programs[0]
+        .expressions
+        .iter()
+        .find(|expression| expression.id == scale)
+        .unwrap();
+    assert!(matches!(
+        expression.kind,
+        MaterialExpressionKind::ScaleUv {
+            uv: rewired_uv,
+            center: rewired_center,
+            scale: rewired_scale,
+        } if rewired_uv == pan
+            && rewired_center == alternate_center
+            && rewired_scale == alternate_scale
+    ));
 
     history.undo(&mut document).unwrap().unwrap();
     assert!(matches!(
@@ -362,6 +414,21 @@ fn uv_transform_semantic_sockets_are_rewireable_and_undoable() {
             center: original_center,
             angle: original_angle,
         } if original_uv == pan && original_center == center && original_angle == angle
+    ));
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == scale)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::ScaleUv {
+            uv: original_uv,
+            center: original_center,
+            scale: original_scale,
+        } if original_uv == rotate
+            && original_center == center
+            && original_scale == scale_value
     ));
 }
 

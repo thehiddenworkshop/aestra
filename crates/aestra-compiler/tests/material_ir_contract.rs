@@ -186,7 +186,9 @@ fn uv_transforms_lower_as_semantic_instructions_with_source_mapping() {
     let center = MaterialExpressionId::from_u128(0x3105);
     let angle = MaterialExpressionId::from_u128(0x3106);
     let rotate = MaterialExpressionId::from_u128(0x3107);
-    let alpha = MaterialExpressionId::from_u128(0x3108);
+    let scale_value = MaterialExpressionId::from_u128(0x3108);
+    let scale = MaterialExpressionId::from_u128(0x3109);
+    let alpha = MaterialExpressionId::from_u128(0x310A);
     let mut program = MaterialProgram::additive_sprite("UV transform IR");
     program.expressions.extend([
         MaterialExpression {
@@ -222,9 +224,21 @@ fn uv_transforms_lower_as_semantic_instructions_with_source_mapping() {
             },
         },
         MaterialExpression {
+            id: scale_value,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.5, 0.75])),
+        },
+        MaterialExpression {
+            id: scale,
+            kind: MaterialExpressionKind::ScaleUv {
+                uv: rotate,
+                center,
+                scale: scale_value,
+            },
+        },
+        MaterialExpression {
             id: alpha,
             kind: MaterialExpressionKind::ExtractComponent {
-                value: rotate,
+                value: scale,
                 component: MaterialVectorComponent::X,
             },
         },
@@ -261,6 +275,18 @@ fn uv_transforms_lower_as_semantic_instructions_with_source_mapping() {
     assert_eq!(ir_rotate_uv, pan_value);
     assert_eq!(ir_center, ir.source_map.values[&center]);
     assert_eq!(ir_angle, ir.source_map.values[&angle]);
+    let scale_ir_value = ir.source_map.values[&scale];
+    let MaterialIrInstruction::ScaleUv {
+        uv: ir_scale_uv,
+        center: ir_scale_center,
+        scale: ir_scale,
+    } = ir.value(scale_ir_value).unwrap().instruction
+    else {
+        panic!("ScaleUV must survive lowering as a semantic IR instruction");
+    };
+    assert_eq!(ir_scale_uv, rotate_value);
+    assert_eq!(ir_scale_center, ir.source_map.values[&center]);
+    assert_eq!(ir_scale, ir.source_map.values[&scale_value]);
 }
 
 #[test]

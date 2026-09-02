@@ -542,6 +542,11 @@ pub enum MaterialExpressionKind {
         center: MaterialExpressionId,
         angle: MaterialExpressionId,
     },
+    ScaleUv {
+        uv: MaterialExpressionId,
+        center: MaterialExpressionId,
+        scale: MaterialExpressionId,
+    },
     SampleTexture {
         texture: MaterialExpressionId,
         uv: MaterialExpressionId,
@@ -572,6 +577,7 @@ impl MaterialExpressionKind {
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
+            Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
             Self::SampleTexture { texture, uv } => vec![*texture, *uv],
             Self::ExtractComponent { value, .. } => vec![*value],
         }
@@ -1182,6 +1188,54 @@ fn infer_expression(
                             .evaluation_domain
                             .max(center.evaluation_domain)
                             .max(angle.evaluation_domain),
+                    })
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::ScaleUv { uv, center, scale } => {
+            let uv = dependency(*uv);
+            let center = dependency(*center);
+            let scale = dependency(*scale);
+            match (uv, center, scale) {
+                (Some(uv), Some(center), Some(scale)) => {
+                    let mut valid = true;
+                    if uv.value_type != MaterialValueType::Vec2 {
+                        material_type_error(
+                            report,
+                            format!("{path}.uv"),
+                            format!("ScaleUV UV expects Vec2 but received {:?}", uv.value_type),
+                        );
+                        valid = false;
+                    }
+                    if center.value_type != MaterialValueType::Vec2 {
+                        material_type_error(
+                            report,
+                            format!("{path}.center"),
+                            format!(
+                                "ScaleUV center expects Vec2 but received {:?}",
+                                center.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if scale.value_type != MaterialValueType::Vec2 {
+                        material_type_error(
+                            report,
+                            format!("{path}.scale"),
+                            format!(
+                                "ScaleUV scale expects Vec2 but received {:?}",
+                                scale.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Vec2,
+                        evaluation_domain: uv
+                            .evaluation_domain
+                            .max(center.evaluation_domain)
+                            .max(scale.evaluation_domain),
                     })
                 }
                 _ => None,

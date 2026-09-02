@@ -69,6 +69,11 @@ pub enum MaterialIrInstruction {
         center: MaterialIrValueId,
         angle: MaterialIrValueId,
     },
+    ScaleUv {
+        uv: MaterialIrValueId,
+        center: MaterialIrValueId,
+        scale: MaterialIrValueId,
+    },
     SampleTexture {
         texture: MaterialIrValueId,
         uv: MaterialIrValueId,
@@ -91,6 +96,7 @@ impl MaterialIrInstruction {
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
+            Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
             Self::SampleTexture { texture, uv } => vec![*texture, *uv],
             Self::ExtractComponent { value, .. } => vec![*value],
         }
@@ -128,6 +134,11 @@ impl MaterialIrInstruction {
                 remap(uv);
                 remap(center);
                 remap(angle);
+            }
+            Self::ScaleUv { uv, center, scale } => {
+                remap(uv);
+                remap(center);
+                remap(scale);
             }
             Self::SampleTexture { texture, uv } => {
                 remap(texture);
@@ -383,6 +394,12 @@ impl MaterialIrBuilder<'_> {
                 let center = self.lower(center);
                 let angle = self.lower(angle);
                 MaterialIrInstruction::RotateUv { uv, center, angle }
+            }
+            MaterialExpressionKind::ScaleUv { uv, center, scale } => {
+                let uv = self.lower(uv);
+                let center = self.lower(center);
+                let scale = self.lower(scale);
+                MaterialIrInstruction::ScaleUv { uv, center, scale }
             }
             MaterialExpressionKind::SampleTexture { texture, uv } => {
                 let texture = self.lower(texture);

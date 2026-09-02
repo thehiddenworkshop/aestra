@@ -107,6 +107,7 @@ pub enum MaterialExpressionInput {
     Time,
     Center,
     Angle,
+    Scale,
     Texture,
     Uv,
     Source,
@@ -613,6 +614,9 @@ fn rewire_expression(
             center
         }
         (MaterialExpressionKind::RotateUv { angle, .. }, MaterialExpressionInput::Angle) => angle,
+        (MaterialExpressionKind::ScaleUv { uv, .. }, MaterialExpressionInput::Uv) => uv,
+        (MaterialExpressionKind::ScaleUv { center, .. }, MaterialExpressionInput::Center) => center,
+        (MaterialExpressionKind::ScaleUv { scale, .. }, MaterialExpressionInput::Scale) => scale,
         (
             MaterialExpressionKind::SampleTexture { texture, .. },
             MaterialExpressionInput::Texture,

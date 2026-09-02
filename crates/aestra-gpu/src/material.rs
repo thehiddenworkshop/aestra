@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 1;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 3;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 4;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 pub const MATERIAL_FRAGMENT_ENTRY_POINT: &str = "fragment_material";
 pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
@@ -677,6 +677,12 @@ fn instruction_expression(
             center = value_name(*center),
             angle = value_name(*angle),
         ),
+        MaterialIrInstruction::ScaleUv { uv, center, scale } => format!(
+            "({center} + (({uv} - {center}) * {scale}))",
+            uv = value_name(*uv),
+            center = value_name(*center),
+            scale = value_name(*scale),
+        ),
         MaterialIrInstruction::SampleTexture { texture, uv } => {
             let texture_value = ir
                 .value(*texture)
@@ -928,6 +934,12 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(uv.0);
             fingerprint.u32(center.0);
             fingerprint.u32(angle.0);
+        }
+        MaterialIrInstruction::ScaleUv { uv, center, scale } => {
+            fingerprint.byte(13);
+            fingerprint.u32(uv.0);
+            fingerprint.u32(center.0);
+            fingerprint.u32(scale.0);
         }
     }
 }
