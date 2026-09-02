@@ -1,0 +1,140 @@
+(
+    format_version: 3,
+    id: "a3574a00-0000-4000-8000-000000009001",
+    name: "Material Graph Lab",
+    duration: 3.0,
+    playback_mode: LoopContinuous,
+    material_instances: [
+        (
+            id: "a3574a00-0000-4000-8000-000000009101",
+            program: Project("a3574a00-0000-4000-8000-000000009201"),
+            values: {},
+            render_state: (
+                blend: Additive,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: None,
+            ),
+        ),
+    ],
+    parameters: [],
+    emitters: [
+        (
+            id: "a3574a00-0000-4000-8000-000000009301",
+            name: "Graph Orb",
+            enabled: true,
+            display_color: Some((0.22, 0.55, 1.0, 1.0)),
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 3.0,
+            max_particles: 128,
+            simulation_domain: Particle,
+            modules: [
+                (
+                    id: "a3574a00-0000-4000-8000-000000009311",
+                    module_type: "aestra.emission.rate",
+                    stage: EmitterUpdate,
+                    enabled: true,
+                    parameters: Emission(
+                        spawn_rate: 30.0,
+                        burst_count: 10,
+                    ),
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-000000009312",
+                    module_type: "aestra.spawn.shape",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Shape(
+                        shape: Sphere(
+                            radius: 10.0,
+                        ),
+                    ),
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-000000009313",
+                    module_type: "aestra.spawn.initialize",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Initialize(
+                        lifetime: (
+                            min: 0.9,
+                            max: 1.6,
+                        ),
+                        speed: (
+                            min: 5.0,
+                            max: 18.0,
+                        ),
+                        direction: (0.0, 1.0, 0.0),
+                        spread_degrees: 360.0,
+                        angular_velocity: (
+                            min: -1.5,
+                            max: 1.5,
+                        ),
+                    ),
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-000000009314",
+                    module_type: "aestra.update.motion",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Motion(
+                        gravity: (0.0, 5.0, 0.0),
+                        drag: 0.8,
+                        turbulence: 2.0,
+                    ),
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-000000009315",
+                    module_type: "aestra.update.appearance",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Appearance(
+                        size: (
+                            id: "a3574a00-0000-4000-8000-000000009321",
+                            keys: [
+                                (time: 0.0, value: 3.0),
+                                (time: 0.35, value: 9.0),
+                                (time: 1.0, value: 1.5),
+                            ],
+                        ),
+                        opacity: (
+                            id: "a3574a00-0000-4000-8000-000000009322",
+                            keys: [
+                                (time: 0.0, value: 0.0),
+                                (time: 0.12, value: 1.0),
+                                (time: 1.0, value: 0.0),
+                            ],
+                        ),
+                        color: (
+                            id: "a3574a00-0000-4000-8000-000000009323",
+                            keys: [
+                                (time: 0.0, color: (0.08, 0.2, 0.95, 1.0)),
+                                (time: 0.5, color: (0.25, 0.8, 1.0, 1.0)),
+                                (time: 1.0, color: (0.65, 0.2, 1.0, 0.0)),
+                            ],
+                        ),
+                    ),
+                ),
+            ],
+            renderers: [
+                (
+                    id: "a3574a00-0000-4000-8000-000000009331",
+                    renderer_type: "aestra.renderer.sprite",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-000000009101",
+                    properties: Sprite,
+                ),
+            ],
+        ),
+    ],
+    events: [],
+    dependencies: [],
+    metadata: {
+        "purpose": "Material graph projection test asset",
+    },
+)

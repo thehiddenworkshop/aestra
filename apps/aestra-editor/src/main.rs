@@ -146,6 +146,12 @@ use viewport::{
 };
 
 const EFFECT_SOURCE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
+#[cfg(test)]
+const MATERIAL_GRAPH_LAB_EFFECT_SOURCE: &str =
+    include_str!("../../../assets/effects/material_graph_lab.aestra.ron");
+#[cfg(test)]
+const MATERIAL_GRAPH_LAB_PROGRAM_SOURCE: &str =
+    include_str!("../../../assets/materials/material_graph_lab.aestra.material.ron");
 const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
 const EDITOR_ASSET_ROOT: &str = "../../assets";
 const EDITOR_ICON: &[u8] = include_bytes!("../../../assets/project/icon.png");
@@ -354,6 +360,38 @@ mod tests {
         let effect = EffectAsset::from_ron(EFFECT_SOURCE).expect("bundled effect should parse");
         assert_eq!(effect.format_version, 3);
         assert_eq!(effect.emitters.len(), 4);
+    }
+
+    #[test]
+    fn bundled_material_graph_lab_is_valid_compilable_and_graph_rich() {
+        let effect = EffectAsset::from_ron(MATERIAL_GRAPH_LAB_EFFECT_SOURCE)
+            .expect("material graph lab effect should parse");
+        let program =
+            aestra_core::material::MaterialProgram::from_ron(MATERIAL_GRAPH_LAB_PROGRAM_SOURCE)
+                .expect("material graph lab program should parse");
+        assert!(
+            effect.material_instances[0]
+                .validate_against(&program)
+                .is_valid()
+        );
+
+        let ir = aestra_compiler::MaterialCompiler.compile(&program).unwrap();
+        let graph = aestra_compiler::MaterialCompiler.project_graph(&program, Some(&ir));
+        assert_eq!(graph.nodes.len(), 16);
+        assert_eq!(graph.nodes.iter().filter(|node| !node.reachable).count(), 1);
+        assert_eq!(graph.outputs.len(), 2);
+        assert!(graph.nodes.iter().any(|node| matches!(
+            node.kind,
+            aestra_compiler::MaterialGraphNodeKind::Function(
+                aestra_compiler::MaterialGraphFunction::Fresnel
+            )
+        )));
+
+        let asset_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(EDITOR_ASSET_ROOT);
+        let index = aestra_project::ProjectAssetIndex::scan(&asset_root);
+        aestra_compiler::EffectCompiler::default()
+            .compile_project(&effect, &index)
+            .expect("material graph lab should compile through the project path");
     }
 
     #[test]

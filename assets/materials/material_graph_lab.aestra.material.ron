@@ -1,0 +1,128 @@
+(
+    id: "a3574a00-0000-4000-8000-000000009201",
+    schema_version: 1,
+    name: "Material Graph Lab",
+    domain: Sprite,
+    render_state_policy: (
+        default: (
+            blend: Additive,
+            depth_test: LessEqual,
+            depth_write: false,
+            cull_mode: None,
+        ),
+        allowed: [
+            (
+                blend: Additive,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: None,
+            ),
+        ],
+    ),
+    parameters: [
+        (
+            id: "a3574a00-0000-4000-8000-000000009211",
+            name: "Edge Color",
+            value_type: Color,
+            evaluation_domain: Instance,
+            default: Some(ColorSrgb((0.15, 0.45, 1.0, 1.0))),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009212",
+            name: "Fresnel Power",
+            value_type: Float,
+            evaluation_domain: Instance,
+            default: Some(Float(3.0)),
+        ),
+    ],
+    expressions: [
+        (
+            id: "a3574a00-0000-4000-8000-000000009221",
+            kind: Input(ParticleColor),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009222",
+            kind: Input(ParticleNormalizedAge),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009223",
+            kind: Constant(Float(0.08)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009224",
+            kind: Constant(Float(0.82)),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009225",
+            kind: Smoothstep(
+                edge_min: "a3574a00-0000-4000-8000-000000009223",
+                edge_max: "a3574a00-0000-4000-8000-000000009224",
+                value: "a3574a00-0000-4000-8000-000000009222",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009226",
+            kind: Input(Normal),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009227",
+            kind: Input(ViewDirection),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009228",
+            kind: Parameter("a3574a00-0000-4000-8000-000000009212"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009229",
+            kind: Fresnel(
+                normal: "a3574a00-0000-4000-8000-000000009226",
+                view: "a3574a00-0000-4000-8000-000000009227",
+                power: "a3574a00-0000-4000-8000-000000009228",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000922a",
+            kind: Multiply(
+                "a3574a00-0000-4000-8000-000000009225",
+                "a3574a00-0000-4000-8000-000000009229",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000922b",
+            kind: Parameter("a3574a00-0000-4000-8000-000000009211"),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000922c",
+            kind: Multiply(
+                "a3574a00-0000-4000-8000-00000000922b",
+                "a3574a00-0000-4000-8000-00000000922a",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000922d",
+            kind: Add(
+                "a3574a00-0000-4000-8000-000000009221",
+                "a3574a00-0000-4000-8000-00000000922c",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000922e",
+            kind: Input(ParticleOpacity),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-00000000922f",
+            kind: Multiply(
+                "a3574a00-0000-4000-8000-00000000922e",
+                "a3574a00-0000-4000-8000-000000009225",
+            ),
+        ),
+        (
+            id: "a3574a00-0000-4000-8000-000000009230",
+            kind: Constant(Float(0.42)),
+        ),
+    ],
+    outputs: (
+        color: "a3574a00-0000-4000-8000-00000000922d",
+        alpha: "a3574a00-0000-4000-8000-00000000922f",
+    ),
+)
