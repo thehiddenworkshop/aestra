@@ -853,27 +853,34 @@ pub(crate) fn reveal_dock_panel(
     }
 }
 
-fn activate_staged_editor_ui(
-    mut commands: Commands,
-    session: Res<EditorSession>,
-    mut rendered: ResMut<RenderedUiRevision>,
-    contents: Query<(Entity, Option<&StagedEditorContent>), With<EditorContent>>,
-) {
-    let Some(staged) = contents.iter().find_map(|(entity, staged)| {
-        (staged.is_some_and(|staged| staged.0 == session.ui_revision)).then_some(entity)
-    }) else {
+fn activate_staged_editor_ui(world: &mut World) {
+    let revision = world.resource::<EditorSession>().ui_revision;
+    let contents = {
+        let mut query =
+            world.query_filtered::<(Entity, Option<&StagedEditorContent>), With<EditorContent>>();
+        query
+            .iter(world)
+            .map(|(entity, staged)| (entity, staged.map(|staged| staged.0)))
+            .collect::<Vec<_>>()
+    };
+    let Some(staged) = contents
+        .iter()
+        .find_map(|(entity, staged)| (*staged == Some(revision)).then_some(*entity))
+    else {
         return;
     };
-    for (content, _) in &contents {
+    // This runs in `First` as an exclusive system so the retired hierarchy is gone before any
+    // normal UI system can observe its children and queue commands against stale entity IDs.
+    for (content, _) in contents {
         if content != staged {
-            commands.entity(content).despawn();
+            world.despawn(content);
         }
     }
-    commands
-        .entity(staged)
+    world
+        .entity_mut(staged)
         .remove::<StagedEditorContent>()
         .insert(Visibility::Inherited);
-    rendered.0 = session.ui_revision;
+    world.resource_mut::<RenderedUiRevision>().0 = revision;
 }
 
 fn stage_editor_ui_rebuild(
@@ -992,6 +999,19 @@ mod tests {
 
     #[test]
     fn editor_rebuild_keeps_rendered_content_until_hidden_replacement_is_ready() {
+        #[derive(Component)]
+        struct RetiredContentProbe;
+
+        #[derive(Resource, Default)]
+        struct ProbeRuns(usize);
+
+        fn count_visible_probes(
+            probes: Query<(), With<RetiredContentProbe>>,
+            mut runs: ResMut<ProbeRuns>,
+        ) {
+            runs.0 += probes.iter().count();
+        }
+
         let mut session = test_support::session_with_timing_slack();
         session.ui_revision = 1;
         let mut app = App::new();
@@ -1000,8 +1020,9 @@ mod tests {
         app.insert_resource(MenuState::default());
         app.insert_resource(Localizer::new("en-US").unwrap());
         app.insert_resource(RenderedUiRevision::default());
+        app.init_resource::<ProbeRuns>();
         app.add_systems(First, activate_staged_editor_ui);
-        app.add_systems(Update, stage_editor_ui_rebuild);
+        app.add_systems(Update, (stage_editor_ui_rebuild, count_visible_probes));
         app.world_mut().spawn(EditorContentHost);
         let rendered_content = app
             .world_mut()
@@ -1013,6 +1034,8 @@ mod tests {
                 },
             ))
             .id();
+        app.world_mut()
+            .spawn((RetiredContentProbe, ChildOf(rendered_content)));
 
         app.update();
 
@@ -1030,10 +1053,12 @@ mod tests {
         assert_eq!(staged.3.display, Display::Flex);
         assert_eq!(staged.3.position_type, PositionType::Absolute);
         assert_eq!(app.world().resource::<RenderedUiRevision>().0, 0);
+        assert_eq!(app.world().resource::<ProbeRuns>().0, 1);
 
         app.update();
 
         assert!(app.world().get_entity(rendered_content).is_err());
+        assert_eq!(app.world().resource::<ProbeRuns>().0, 1);
         let contents = app
             .world_mut()
             .query_filtered::<

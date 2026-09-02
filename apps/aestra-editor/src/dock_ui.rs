@@ -144,26 +144,32 @@ pub(crate) fn persist_native_window_geometry(
 }
 
 /// Atomically swaps initialized floating-panel trees before normal editor systems query them.
-pub(crate) fn activate_staged_native_floating_ui(
-    mut commands: Commands,
-    session: Res<EditorSession>,
-    roots: Query<(Entity, &NativeFloatingUi, Option<&StagedNativeFloatingUi>)>,
-) {
+pub(crate) fn activate_staged_native_floating_ui(world: &mut World) {
+    let revision = world.resource::<EditorSession>().ui_revision;
+    let roots = {
+        let mut query =
+            world.query::<(Entity, &NativeFloatingUi, Option<&StagedNativeFloatingUi>)>();
+        query
+            .iter(world)
+            .map(|(entity, root, staged)| (entity, root.panel, root.revision, staged.is_some()))
+            .collect::<Vec<_>>()
+    };
     let staged_panels = roots
         .iter()
-        .filter_map(|(entity, root, staged)| {
-            (staged.is_some() && root.revision == session.ui_revision)
-                .then_some((entity, root.panel))
+        .filter_map(|(entity, panel, root_revision, staged)| {
+            (*staged && *root_revision == revision).then_some((*entity, *panel))
         })
         .collect::<Vec<_>>();
     for (staged_entity, staged_panel) in staged_panels {
-        for (entity, root, _) in &roots {
-            if entity != staged_entity && root.panel == staged_panel {
-                commands.entity(entity).despawn();
+        // Retire the old hierarchy immediately in `First`; deferring this until a command flush
+        // lets later UI systems enqueue work for descendants that are about to be despawned.
+        for (entity, panel, _, _) in &roots {
+            if *entity != staged_entity && *panel == staged_panel {
+                world.despawn(*entity);
             }
         }
-        commands
-            .entity(staged_entity)
+        world
+            .entity_mut(staged_entity)
             .remove::<StagedNativeFloatingUi>()
             .insert(Visibility::Inherited);
     }
@@ -1291,11 +1297,26 @@ mod tests {
 
     #[test]
     fn floating_panel_swap_keeps_only_the_initialized_current_revision() {
+        #[derive(Component)]
+        struct RetiredFloatingProbe;
+
+        #[derive(Resource, Default)]
+        struct ProbeRuns(usize);
+
+        fn count_visible_probes(
+            probes: Query<(), With<RetiredFloatingProbe>>,
+            mut runs: ResMut<ProbeRuns>,
+        ) {
+            runs.0 += probes.iter().count();
+        }
+
         let mut session = test_support::session_with_timing_slack();
         session.ui_revision = 4;
         let mut app = App::new();
         app.insert_resource(session);
+        app.init_resource::<ProbeRuns>();
         app.add_systems(First, activate_staged_native_floating_ui);
+        app.add_systems(Update, count_visible_probes);
         let old = app
             .world_mut()
             .spawn(NativeFloatingUi {
@@ -1304,6 +1325,7 @@ mod tests {
             })
             .insert(Node::default())
             .id();
+        app.world_mut().spawn((RetiredFloatingProbe, ChildOf(old)));
         let staged = app
             .world_mut()
             .spawn((
@@ -1323,6 +1345,7 @@ mod tests {
         app.update();
 
         assert!(app.world().get_entity(old).is_err());
+        assert_eq!(app.world().resource::<ProbeRuns>().0, 0);
         let staged = app.world().entity(staged);
         assert!(!staged.contains::<StagedNativeFloatingUi>());
         assert_eq!(staged.get::<Visibility>(), Some(&Visibility::Inherited));
