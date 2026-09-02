@@ -71,6 +71,13 @@ pub enum MaterialIrInstruction {
         edge_max: MaterialIrValueId,
         value: MaterialIrValueId,
     },
+    RadialMask {
+        uv: MaterialIrValueId,
+        center: MaterialIrValueId,
+        radius: MaterialIrValueId,
+        softness: MaterialIrValueId,
+        invert: MaterialIrValueId,
+    },
     PanUv {
         uv: MaterialIrValueId,
         speed: MaterialIrValueId,
@@ -118,6 +125,13 @@ impl MaterialIrInstruction {
                 edge_max,
                 value,
             } => vec![*edge_min, *edge_max, *value],
+            Self::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            } => vec![*uv, *center, *radius, *softness, *invert],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -170,6 +184,19 @@ impl MaterialIrInstruction {
                 remap(edge_min);
                 remap(edge_max);
                 remap(value);
+            }
+            Self::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            } => {
+                remap(uv);
+                remap(center);
+                remap(radius);
+                remap(softness);
+                remap(invert);
             }
             Self::PanUv { uv, speed, time } => {
                 remap(uv);
@@ -457,6 +484,19 @@ impl MaterialIrBuilder<'_> {
                 edge_min: self.lower(edge_min),
                 edge_max: self.lower(edge_max),
                 value: self.lower(value),
+            },
+            MaterialExpressionKind::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            } => MaterialIrInstruction::RadialMask {
+                uv: self.lower(uv),
+                center: self.lower(center),
+                radius: self.lower(radius),
+                softness: self.lower(softness),
+                invert: self.lower(invert),
             },
             MaterialExpressionKind::PanUv { uv, speed, time } => {
                 let uv = self.lower(uv);

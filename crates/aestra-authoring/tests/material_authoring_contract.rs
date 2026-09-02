@@ -695,6 +695,162 @@ fn smoothstep_semantic_sockets_are_rewireable_and_undoable() {
 }
 
 #[test]
+fn radial_mask_semantic_sockets_are_rewireable_and_undoable() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x1500);
+    let uv = MaterialExpressionId::from_u128(0x1501);
+    let center = MaterialExpressionId::from_u128(0x1502);
+    let radius = MaterialExpressionId::from_u128(0x1503);
+    let softness = MaterialExpressionId::from_u128(0x1504);
+    let invert = MaterialExpressionId::from_u128(0x1505);
+    let alternate_uv = MaterialExpressionId::from_u128(0x1506);
+    let alternate_center = MaterialExpressionId::from_u128(0x1507);
+    let alternate_radius = MaterialExpressionId::from_u128(0x1508);
+    let alternate_softness = MaterialExpressionId::from_u128(0x1509);
+    let alternate_invert = MaterialExpressionId::from_u128(0x150A);
+    let radial_mask = MaterialExpressionId::from_u128(0x150B);
+    let mut program = MaterialProgram::additive_sprite("Authorable radial mask");
+    program.id = program_id;
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5; 2])),
+        },
+        MaterialExpression {
+            id: radius,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: softness,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.1)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: alternate_uv,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.25; 2])),
+        },
+        MaterialExpression {
+            id: alternate_center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.75; 2])),
+        },
+        MaterialExpression {
+            id: alternate_radius,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: alternate_softness,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.2)),
+        },
+        MaterialExpression {
+            id: alternate_invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(true)),
+        },
+        MaterialExpression {
+            id: radial_mask,
+            kind: MaterialExpressionKind::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = radial_mask;
+    document.programs.push(program);
+    let mut history = MaterialCommandHistory::default();
+
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::new(
+                "Rewire radial mask",
+                vec![
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: radial_mask,
+                        input: MaterialExpressionInput::Uv,
+                        source: alternate_uv,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: radial_mask,
+                        input: MaterialExpressionInput::Center,
+                        source: alternate_center,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: radial_mask,
+                        input: MaterialExpressionInput::Radius,
+                        source: alternate_radius,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: radial_mask,
+                        input: MaterialExpressionInput::Softness,
+                        source: alternate_softness,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: radial_mask,
+                        input: MaterialExpressionInput::Invert,
+                        source: alternate_invert,
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == radial_mask)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RadialMask {
+            uv: rewired_uv,
+            center: rewired_center,
+            radius: rewired_radius,
+            softness: rewired_softness,
+            invert: rewired_invert,
+        } if rewired_uv == alternate_uv
+            && rewired_center == alternate_center
+            && rewired_radius == alternate_radius
+            && rewired_softness == alternate_softness
+            && rewired_invert == alternate_invert
+    ));
+
+    history.undo(&mut document).unwrap().unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == radial_mask)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RadialMask {
+            uv: original_uv,
+            center: original_center,
+            radius: original_radius,
+            softness: original_softness,
+            invert: original_invert,
+        } if original_uv == uv
+            && original_center == center
+            && original_radius == radius
+            && original_softness == softness
+            && original_invert == invert
+    ));
+}
+
+#[test]
 fn instance_parameter_render_state_and_assignment_commands_are_undoable() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x2000);

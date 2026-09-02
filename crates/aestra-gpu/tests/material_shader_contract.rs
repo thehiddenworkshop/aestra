@@ -226,7 +226,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "48dbdcd5ece54f7092720005274f59b12f3cf50d0b371b487862eaf68cfbafe4"
+        "a6689fd2ff94d5c1541b335abd522cf096750cd99513d642eec37abb8aab8d92"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -427,6 +427,10 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     let edge_min = MaterialExpressionId::from_u128(0x201D);
     let edge_max = MaterialExpressionId::from_u128(0x201E);
     let smoothstep = MaterialExpressionId::from_u128(0x201F);
+    let mask_radius = MaterialExpressionId::from_u128(0x2020);
+    let mask_softness = MaterialExpressionId::from_u128(0x2021);
+    let mask_invert = MaterialExpressionId::from_u128(0x2022);
+    let radial_mask = MaterialExpressionId::from_u128(0x2023);
     program.expressions.extend([
         MaterialExpression {
             id: speed,
@@ -514,12 +518,35 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
                 value: remap,
             },
         },
+        MaterialExpression {
+            id: mask_radius,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.45)),
+        },
+        MaterialExpression {
+            id: mask_softness,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: mask_invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: radial_mask,
+            kind: MaterialExpressionKind::RadialMask {
+                uv: original_uv,
+                center,
+                radius: mask_radius,
+                softness: mask_softness,
+                invert: mask_invert,
+            },
+        },
     ]);
     for expression in &mut program.expressions {
         if let MaterialExpressionKind::SampleTexture { uv, .. } = &mut expression.kind {
             *uv = smoothstep;
         }
     }
+    program.outputs.alpha = radial_mask;
 
     let compiled = compile(&program);
 
@@ -646,6 +673,32 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
     assert!(smoothstep_expression.contains(">="));
     assert!(smoothstep_expression.contains("vec2<f32>"));
     assert!(smoothstep_expression.contains("0.000001"));
+    let radial_mask_line = compiled
+        .source_map
+        .wesl_lines
+        .iter()
+        .find_map(|(line, value)| {
+            compiled
+                .source_map
+                .ir
+                .expressions
+                .get(value)
+                .is_some_and(|expressions| expressions.contains(&radial_mask))
+                .then_some(*line)
+        })
+        .expect("RadialMask must map to a generated shader line");
+    let radial_mask_expression = compiled
+        .shader
+        .wesl
+        .lines()
+        .nth(radial_mask_line as usize - 1)
+        .unwrap();
+    assert!(radial_mask_expression.contains("length"));
+    assert!(radial_mask_expression.contains("max"));
+    assert!(radial_mask_expression.contains("clamp"));
+    assert!(radial_mask_expression.contains("select"));
+    assert!(radial_mask_expression.contains("<="));
+    assert!(radial_mask_expression.contains("0.000001"));
     assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 

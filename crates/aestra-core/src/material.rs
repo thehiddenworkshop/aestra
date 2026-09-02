@@ -544,6 +544,13 @@ pub enum MaterialExpressionKind {
         edge_max: MaterialExpressionId,
         value: MaterialExpressionId,
     },
+    RadialMask {
+        uv: MaterialExpressionId,
+        center: MaterialExpressionId,
+        radius: MaterialExpressionId,
+        softness: MaterialExpressionId,
+        invert: MaterialExpressionId,
+    },
     PanUv {
         uv: MaterialExpressionId,
         speed: MaterialExpressionId,
@@ -599,6 +606,13 @@ impl MaterialExpressionKind {
                 edge_max,
                 value,
             } => vec![*edge_min, *edge_max, *value],
+            Self::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            } => vec![*uv, *center, *radius, *softness, *invert],
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
@@ -1174,6 +1188,53 @@ fn infer_expression(
                         ("value", value),
                     ],
                 ),
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::RadialMask {
+            uv,
+            center,
+            radius,
+            softness,
+            invert,
+        } => {
+            let uv = dependency(*uv);
+            let center = dependency(*center);
+            let radius = dependency(*radius);
+            let softness = dependency(*softness);
+            let invert = dependency(*invert);
+            match (uv, center, radius, softness, invert) {
+                (Some(uv), Some(center), Some(radius), Some(softness), Some(invert)) => {
+                    let mut valid = true;
+                    for (socket, info, expected) in [
+                        ("uv", uv, MaterialValueType::Vec2),
+                        ("center", center, MaterialValueType::Vec2),
+                        ("radius", radius, MaterialValueType::Float),
+                        ("softness", softness, MaterialValueType::Float),
+                        ("invert", invert, MaterialValueType::Bool),
+                    ] {
+                        if info.value_type != expected {
+                            material_type_error(
+                                report,
+                                format!("{path}.{socket}"),
+                                format!(
+                                    "RadialMask {socket} expects {expected:?} but received {:?}",
+                                    info.value_type
+                                ),
+                            );
+                            valid = false;
+                        }
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Float,
+                        evaluation_domain: uv
+                            .evaluation_domain
+                            .max(center.evaluation_domain)
+                            .max(radius.evaluation_domain)
+                            .max(softness.evaluation_domain)
+                            .max(invert.evaluation_domain),
+                    })
+                }
                 _ => None,
             }
         }

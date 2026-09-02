@@ -247,14 +247,16 @@ memory and binds the resulting shaders without rewriting the source effect. Nati
 now verifies pixel-identical legacy and semantic output for all three showcase sources, and the
 approved images are the scheduled workflow baseline.
 
-Material 8 has begun with `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, and `Smoothstep` as
+Material 8 has begun with `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`, and `RadialMask` as
 end-to-end semantic primitives rather than pre-expanded arithmetic graphs. Pan retains explicit `Vec2` UV, `Vec2`
 speed, and `Float` time sockets; rotation retains `Vec2` UV, `Vec2` center, and radians-valued
 `Float` angle sockets; scale retains `Vec2` UV, center, and scale sockets. Remap retains value,
 input-range, and output-range sockets, promotes scalar bounds to one shared vector type, permits
 extrapolation, and resolves degenerate range components to the output minimum. Smoothstep retains
 explicit minimum-edge, maximum-edge, and value sockets; promotes scalar edges to a shared vector
-shape; supports reversed edges; and maps equal-edge components to a deterministic step. All five
+shape; supports reversed edges; and maps equal-edge components to a deterministic step. RadialMask
+retains explicit UV, center, radius, softness, and invert sockets, clamps negative radius and
+softness to zero, and uses a deterministic hard boundary when softness is zero. All six
 survive stable RON, validation, undoable rewiring, backend-neutral IR, source mapping, and portable shader
 generation. Generated WGSL is validated and translated to SPIR-V and HLSL by the contract suite.
 Remaining Material 8 operations are not yet implemented.

@@ -1975,13 +1975,16 @@ SoftParticle
 Flipbook
 ```
 
-Implementation status (2026-09-02): `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, and `Smoothstep` are completed
+Implementation status (2026-09-02): `PanUV`, `RotateUV`, `ScaleUV`, `Remap`, `Smoothstep`, and
+`RadialMask` are completed
 vertical slices. They retain semantic UV/speed/time, UV/center/radians, UV/center/scale, and
 value/input-range/output-range, and edge-minimum/edge-maximum/value inputs through the authored
 model, validation, command history, backend-neutral IR, source mapping, and portable shader
 generation. Remap extrapolates, promotes scalar bounds to a shared vector type, and maps degenerate
 range components to the output minimum. Smoothstep promotes scalar edges, supports reversed edges,
 and maps equal-edge components to a deterministic step instead of backend-undefined behavior.
+RadialMask preserves UV, center, radius, softness, and invert sockets, clamps negative radius and
+softness to zero, and resolves zero softness as a deterministic hard boundary.
 The remaining primitives in this milestone are still planned.
 
 Then:

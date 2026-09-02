@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 1;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 6;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 7;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 pub const MATERIAL_FRAGMENT_ENTRY_POINT: &str = "fragment_material";
 pub const MISSING_TEXTURE_FALLBACK_RGBA: [u8; 4] = [255, 0, 255, 255];
@@ -691,6 +691,13 @@ fn instruction_expression(
             *smoothstep_value,
             value.value_type,
         ),
+        MaterialIrInstruction::RadialMask {
+            uv,
+            center,
+            radius,
+            softness,
+            invert,
+        } => radial_mask_expression(*uv, *center, *radius, *softness, *invert),
         MaterialIrInstruction::PanUv { uv, speed, time } => format!(
             "({} + ({} * {}))",
             value_name(*uv),
@@ -796,6 +803,30 @@ fn smoothstep_expression(
     let curve = format!("(({factor} * {factor}) * ({three} - ({two} * {factor})))");
     let step = format!("select({zero}, {one}, ({value} >= {edge_max}))");
     format!("select({step}, {curve}, {safe})")
+}
+
+fn radial_mask_expression(
+    uv: MaterialIrValueId,
+    center: MaterialIrValueId,
+    radius: MaterialIrValueId,
+    softness: MaterialIrValueId,
+    invert: MaterialIrValueId,
+) -> String {
+    let uv = value_name(uv);
+    let center = value_name(center);
+    let radius = format!("max({}, 0.0)", value_name(radius));
+    let softness = format!("max({}, 0.0)", value_name(softness));
+    let invert = value_name(invert);
+    let distance = format!("length({uv} - {center})");
+    let safe = format!("({softness} >= 0.000001)");
+    let denominator = format!("select(1.0, {softness}, {safe})");
+    let factor =
+        format!("clamp((({distance} - ({radius} - {softness})) / {denominator}), 0.0, 1.0)");
+    let smooth = format!("(({factor} * {factor}) * (3.0 - (2.0 * {factor})))");
+    let soft_mask = format!("(1.0 - {smooth})");
+    let hard_mask = format!("select(0.0, 1.0, ({distance} <= {radius}))");
+    let mask = format!("select({hard_mask}, {soft_mask}, {safe})");
+    format!("select({mask}, (1.0 - {mask}), {invert})")
 }
 
 fn promote_operand(
@@ -1015,6 +1046,20 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(edge_min.0);
             fingerprint.u32(edge_max.0);
             fingerprint.u32(value.0);
+        }
+        MaterialIrInstruction::RadialMask {
+            uv,
+            center,
+            radius,
+            softness,
+            invert,
+        } => {
+            fingerprint.byte(16);
+            fingerprint.u32(uv.0);
+            fingerprint.u32(center.0);
+            fingerprint.u32(radius.0);
+            fingerprint.u32(softness.0);
+            fingerprint.u32(invert.0);
         }
         MaterialIrInstruction::SampleTexture { texture, uv } => {
             fingerprint.byte(9);

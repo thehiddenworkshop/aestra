@@ -422,6 +422,72 @@ fn smoothstep_lowers_with_promoted_edges_and_source_mapping() {
 }
 
 #[test]
+fn radial_mask_lowers_with_typed_sockets_and_source_mapping() {
+    let uv = MaterialExpressionId::from_u128(0x3401);
+    let center = MaterialExpressionId::from_u128(0x3402);
+    let radius = MaterialExpressionId::from_u128(0x3403);
+    let softness = MaterialExpressionId::from_u128(0x3404);
+    let invert = MaterialExpressionId::from_u128(0x3405);
+    let radial_mask = MaterialExpressionId::from_u128(0x3406);
+    let mut program = MaterialProgram::additive_sprite("Radial mask IR");
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5; 2])),
+        },
+        MaterialExpression {
+            id: radius,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.5)),
+        },
+        MaterialExpression {
+            id: softness,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.1)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: radial_mask,
+            kind: MaterialExpressionKind::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = radial_mask;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let radial_value = ir.source_map.values[&radial_mask];
+    let MaterialIrInstruction::RadialMask {
+        uv: ir_uv,
+        center: ir_center,
+        radius: ir_radius,
+        softness: ir_softness,
+        invert: ir_invert,
+    } = ir.value(radial_value).unwrap().instruction
+    else {
+        panic!("RadialMask must survive lowering as a semantic IR instruction");
+    };
+    assert_eq!(
+        ir.value(radial_value).unwrap().value_type,
+        MaterialValueType::Float
+    );
+    assert_eq!(ir_uv, ir.source_map.values[&uv]);
+    assert_eq!(ir_center, ir.source_map.values[&center]);
+    assert_eq!(ir_radius, ir.source_map.values[&radius]);
+    assert_eq!(ir_softness, ir.source_map.values[&softness]);
+    assert_eq!(ir_invert, ir.source_map.values[&invert]);
+}
+
+#[test]
 fn lowering_is_deterministic_independent_of_authored_vector_order() {
     let program = two_texture_flame_program();
     let mut reordered = program.clone();

@@ -851,6 +851,119 @@ fn smoothstep_reports_each_incompatible_numeric_socket() {
 }
 
 #[test]
+fn radial_mask_round_trips_typed_semantic_sockets_and_outputs_a_fragment_mask() {
+    let uv = MaterialExpressionId::from_u128(0xB301);
+    let center = MaterialExpressionId::from_u128(0xB302);
+    let radius = MaterialExpressionId::from_u128(0xB303);
+    let softness = MaterialExpressionId::from_u128(0xB304);
+    let invert = MaterialExpressionId::from_u128(0xB305);
+    let radial_mask = MaterialExpressionId::from_u128(0xB306);
+    let mut program = MaterialProgram::additive_sprite("Radial mask");
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5, 0.5])),
+        },
+        MaterialExpression {
+            id: radius,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.45)),
+        },
+        MaterialExpression {
+            id: softness,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.1)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: radial_mask,
+            kind: MaterialExpressionKind::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = radial_mask;
+
+    let analysis = program.analyze().unwrap();
+    assert_eq!(
+        analysis.expressions[&radial_mask].value_type,
+        MaterialValueType::Float
+    );
+    assert_eq!(
+        analysis.expressions[&radial_mask].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
+    let encoded = program.to_pretty_ron().unwrap();
+    assert!(encoded.contains("RadialMask"));
+    assert_eq!(
+        MaterialProgram::from_ron(&encoded).unwrap(),
+        program.normalized()
+    );
+}
+
+#[test]
+fn radial_mask_reports_each_mistyped_socket() {
+    let uv = MaterialExpressionId::from_u128(0xB401);
+    let center = MaterialExpressionId::from_u128(0xB402);
+    let radius = MaterialExpressionId::from_u128(0xB403);
+    let softness = MaterialExpressionId::from_u128(0xB404);
+    let invert = MaterialExpressionId::from_u128(0xB405);
+    let radial_mask = MaterialExpressionId::from_u128(0xB406);
+    let mut program = MaterialProgram::additive_sprite("Invalid radial mask");
+    program.expressions.extend([
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec3([0.0; 3])),
+        },
+        MaterialExpression {
+            id: radius,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.0; 2])),
+        },
+        MaterialExpression {
+            id: softness,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: radial_mask,
+            kind: MaterialExpressionKind::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            },
+        },
+    ]);
+    program.outputs.alpha = radial_mask;
+
+    let report = program.validation_report();
+    for socket in [".uv", ".center", ".radius", ".softness", ".invert"] {
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+                && diagnostic.path.ends_with(socket)
+                && diagnostic.message.contains("RadialMask")
+        }));
+    }
+}
+
+#[test]
 fn material_validation_rejects_output_and_socket_type_mismatches() {
     let mut program = MaterialProgram::additive_sprite("Bad types");
     let vector = MaterialExpressionId::from_u128(0xB01);

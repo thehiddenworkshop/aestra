@@ -109,6 +109,9 @@ pub enum MaterialExpressionInput {
     OutputMaximum,
     EdgeMinimum,
     EdgeMaximum,
+    Radius,
+    Softness,
+    Invert,
     Speed,
     Time,
     Center,
@@ -638,6 +641,20 @@ fn rewire_expression(
             MaterialExpressionInput::EdgeMaximum,
         ) => edge_max,
         (MaterialExpressionKind::Smoothstep { value, .. }, MaterialExpressionInput::Value) => value,
+        (MaterialExpressionKind::RadialMask { uv, .. }, MaterialExpressionInput::Uv) => uv,
+        (MaterialExpressionKind::RadialMask { center, .. }, MaterialExpressionInput::Center) => {
+            center
+        }
+        (MaterialExpressionKind::RadialMask { radius, .. }, MaterialExpressionInput::Radius) => {
+            radius
+        }
+        (
+            MaterialExpressionKind::RadialMask { softness, .. },
+            MaterialExpressionInput::Softness,
+        ) => softness,
+        (MaterialExpressionKind::RadialMask { invert, .. }, MaterialExpressionInput::Invert) => {
+            invert
+        }
         (MaterialExpressionKind::PanUv { uv, .. }, MaterialExpressionInput::Uv) => uv,
         (MaterialExpressionKind::PanUv { speed, .. }, MaterialExpressionInput::Speed) => speed,
         (MaterialExpressionKind::PanUv { time, .. }, MaterialExpressionInput::Time) => time,
