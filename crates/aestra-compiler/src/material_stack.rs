@@ -136,6 +136,63 @@ pub struct MaterialStackEnabledPlan {
     pub replacement: MaterialProgram,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MaterialStackProperty {
+    Speed,
+    Center,
+    Angle,
+    Scale,
+    InputMinimum,
+    InputMaximum,
+    OutputMinimum,
+    OutputMaximum,
+    EdgeMinimum,
+    EdgeMaximum,
+    Radius,
+    Softness,
+    Threshold,
+    EdgeWidth,
+    FadeDistance,
+    Invert,
+}
+
+impl MaterialStackProperty {
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::Speed => "Speed",
+            Self::Center => "Center",
+            Self::Angle => "Angle",
+            Self::Scale => "Scale",
+            Self::InputMinimum => "Input Min",
+            Self::InputMaximum => "Input Max",
+            Self::OutputMinimum => "Output Min",
+            Self::OutputMaximum => "Output Max",
+            Self::EdgeMinimum => "Edge Min",
+            Self::EdgeMaximum => "Edge Max",
+            Self::Radius => "Radius",
+            Self::Softness => "Softness",
+            Self::Threshold => "Threshold",
+            Self::EdgeWidth => "Edge Width",
+            Self::FadeDistance => "Fade Distance",
+            Self::Invert => "Invert",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialStackPropertyDescriptor {
+    pub property: MaterialStackProperty,
+    pub name: &'static str,
+    pub value: MaterialValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialStackPropertyEditPlan {
+    pub expression: MaterialExpressionId,
+    pub property: MaterialStackProperty,
+    pub replacement: MaterialProgram,
+}
+
 #[derive(Debug, Error)]
 pub enum MaterialStackMoveError {
     #[error(transparent)]
@@ -174,6 +231,15 @@ pub enum MaterialStackEditError {
         expression: MaterialExpressionId,
         operation: &'static str,
     },
+    #[error("material modifier {expression} does not expose property {property:?}")]
+    PropertyUnavailable {
+        expression: MaterialExpressionId,
+        property: MaterialStackProperty,
+    },
+    #[error("material modifier property {property:?} is not backed by an editable constant")]
+    PropertyNotConstant { property: MaterialStackProperty },
+    #[error("material modifier property {property:?} rejects the supplied value type")]
+    PropertyTypeMismatch { property: MaterialStackProperty },
 }
 
 impl MaterialCompiler {
@@ -432,6 +498,190 @@ impl MaterialCompiler {
             enabled,
             replacement,
         })
+    }
+
+    /// Reflects the literal settings owned by one projected modifier.
+    ///
+    /// Parameter- or input-driven sockets remain part of the semantic graph and are intentionally
+    /// omitted: the stack inspector only claims ownership of authored constants.
+    pub fn stack_modifier_properties(
+        &self,
+        program: &MaterialProgram,
+        expression: MaterialExpressionId,
+    ) -> Result<Vec<MaterialStackPropertyDescriptor>, MaterialStackEditError> {
+        let entries = editable_stack_entries(self.project_stack(program)?)?;
+        if !entries.iter().any(|entry| entry.expression == expression) {
+            return Err(MaterialStackEditError::ExpressionMissing { expression });
+        }
+        let operation = program
+            .expressions
+            .iter()
+            .find(|candidate| candidate.id == expression)
+            .ok_or(MaterialStackEditError::ExpressionMissing { expression })?;
+        Ok(modifier_property_targets(&operation.kind)
+            .into_iter()
+            .filter_map(|(property, target)| {
+                let value = program
+                    .expressions
+                    .iter()
+                    .find(|candidate| candidate.id == target)
+                    .and_then(|candidate| match &candidate.kind {
+                        MaterialExpressionKind::Constant(value) => Some(value.clone()),
+                        _ => None,
+                    })?;
+                Some(MaterialStackPropertyDescriptor {
+                    property,
+                    name: property.display_name(),
+                    value,
+                })
+            })
+            .collect())
+    }
+
+    /// Replaces one reflected literal setting while preserving all expression identities.
+    pub fn plan_stack_set_property(
+        &self,
+        program: &MaterialProgram,
+        expression: MaterialExpressionId,
+        property: MaterialStackProperty,
+        value: MaterialValue,
+    ) -> Result<MaterialStackPropertyEditPlan, MaterialStackEditError> {
+        let entries = editable_stack_entries(self.project_stack(program)?)?;
+        if !entries.iter().any(|entry| entry.expression == expression) {
+            return Err(MaterialStackEditError::ExpressionMissing { expression });
+        }
+        let operation = program
+            .expressions
+            .iter()
+            .find(|candidate| candidate.id == expression)
+            .ok_or(MaterialStackEditError::ExpressionMissing { expression })?;
+        let target = modifier_property_targets(&operation.kind)
+            .into_iter()
+            .find_map(|(candidate, target)| (candidate == property).then_some(target))
+            .ok_or(MaterialStackEditError::PropertyUnavailable {
+                expression,
+                property,
+            })?;
+        let mut replacement = program.clone();
+        let target = replacement
+            .expressions
+            .iter_mut()
+            .find(|candidate| candidate.id == target)
+            .ok_or(MaterialStackEditError::PropertyNotConstant { property })?;
+        let MaterialExpressionKind::Constant(current) = &mut target.kind else {
+            return Err(MaterialStackEditError::PropertyNotConstant { property });
+        };
+        if !current.has_same_type(&value) || !value.is_valid() {
+            return Err(MaterialStackEditError::PropertyTypeMismatch { property });
+        }
+        *current = value;
+        replacement
+            .analyze()
+            .map_err(MaterialCompileError::Validation)?;
+        let projected = editable_stack_entries(self.project_stack(&replacement)?)?;
+        if projected
+            .iter()
+            .map(|entry| entry.expression)
+            .ne(entries.iter().map(|entry| entry.expression))
+        {
+            return Err(MaterialStackEditError::PropertyUnavailable {
+                expression,
+                property,
+            });
+        }
+        Ok(MaterialStackPropertyEditPlan {
+            expression,
+            property,
+            replacement,
+        })
+    }
+}
+
+fn modifier_property_targets(
+    kind: &MaterialExpressionKind,
+) -> Vec<(MaterialStackProperty, MaterialExpressionId)> {
+    match kind {
+        MaterialExpressionKind::PanUv { speed, .. } => {
+            vec![(MaterialStackProperty::Speed, *speed)]
+        }
+        MaterialExpressionKind::RotateUv { center, angle, .. } => vec![
+            (MaterialStackProperty::Center, *center),
+            (MaterialStackProperty::Angle, *angle),
+        ],
+        MaterialExpressionKind::ScaleUv { center, scale, .. } => vec![
+            (MaterialStackProperty::Center, *center),
+            (MaterialStackProperty::Scale, *scale),
+        ],
+        MaterialExpressionKind::Remap {
+            input_min,
+            input_max,
+            output_min,
+            output_max,
+            ..
+        } => vec![
+            (MaterialStackProperty::InputMinimum, *input_min),
+            (MaterialStackProperty::InputMaximum, *input_max),
+            (MaterialStackProperty::OutputMinimum, *output_min),
+            (MaterialStackProperty::OutputMaximum, *output_max),
+        ],
+        MaterialExpressionKind::Smoothstep {
+            edge_min, edge_max, ..
+        } => vec![
+            (MaterialStackProperty::EdgeMinimum, *edge_min),
+            (MaterialStackProperty::EdgeMaximum, *edge_max),
+        ],
+        MaterialExpressionKind::RadialMask {
+            center,
+            radius,
+            softness,
+            invert,
+            ..
+        } => vec![
+            (MaterialStackProperty::Center, *center),
+            (MaterialStackProperty::Radius, *radius),
+            (MaterialStackProperty::Softness, *softness),
+            (MaterialStackProperty::Invert, *invert),
+        ],
+        MaterialExpressionKind::Dissolve {
+            threshold,
+            edge_width,
+            invert,
+            ..
+        }
+        | MaterialExpressionKind::DissolveEdge {
+            threshold,
+            edge_width,
+            invert,
+            ..
+        } => vec![
+            (MaterialStackProperty::Threshold, *threshold),
+            (MaterialStackProperty::EdgeWidth, *edge_width),
+            (MaterialStackProperty::Invert, *invert),
+        ],
+        MaterialExpressionKind::DepthFade {
+            fade_distance,
+            invert,
+            ..
+        }
+        | MaterialExpressionKind::SoftParticle {
+            fade_distance,
+            invert,
+            ..
+        } => vec![
+            (MaterialStackProperty::FadeDistance, *fade_distance),
+            (MaterialStackProperty::Invert, *invert),
+        ],
+        MaterialExpressionKind::Constant(_)
+        | MaterialExpressionKind::Input(_)
+        | MaterialExpressionKind::Parameter(_)
+        | MaterialExpressionKind::Add(_, _)
+        | MaterialExpressionKind::Subtract(_, _)
+        | MaterialExpressionKind::Multiply(_, _)
+        | MaterialExpressionKind::Divide(_, _)
+        | MaterialExpressionKind::Lerp { .. }
+        | MaterialExpressionKind::Clamp { .. }
+        | MaterialExpressionKind::SampleTexture { .. }
+        | MaterialExpressionKind::ExtractComponent { .. } => Vec::new(),
     }
 }
 

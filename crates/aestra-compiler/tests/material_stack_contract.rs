@@ -1,7 +1,7 @@
 use aestra_compiler::{
     MaterialCompiler, MaterialStackEditError, MaterialStackFallbackReason,
     MaterialStackInsertTarget, MaterialStackModifierKind, MaterialStackMoveError,
-    MaterialStackMoveTarget, MaterialStackProjection,
+    MaterialStackMoveTarget, MaterialStackProjection, MaterialStackProperty,
 };
 use aestra_core::material::{
     MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
@@ -554,4 +554,78 @@ fn disabled_modifier_is_a_lossless_typed_bypass() {
         .unwrap();
     assert!(enabled.replacement.disabled_expressions.is_empty());
     assert_eq!(enabled.replacement, program);
+}
+
+#[test]
+fn modifier_inspector_reflects_only_owned_constant_settings() {
+    let program = reorderable_uv_stack_program();
+    let pan = MaterialExpressionId::from_u128(0x5304);
+    let properties = MaterialCompiler
+        .stack_modifier_properties(&program, pan)
+        .unwrap();
+
+    assert_eq!(properties.len(), 1);
+    assert_eq!(properties[0].property, MaterialStackProperty::Speed);
+    assert_eq!(properties[0].name, "Speed");
+    assert_eq!(properties[0].value, MaterialValue::Vec2([0.1, 0.0]));
+
+    let sample = MaterialExpressionId::from_u128(0x530c);
+    assert!(
+        MaterialCompiler
+            .stack_modifier_properties(&program, sample)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn modifier_property_edit_preserves_identity_and_validates_the_replacement() {
+    let program = reorderable_uv_stack_program();
+    let pan = MaterialExpressionId::from_u128(0x5304);
+    let speed = MaterialExpressionId::from_u128(0x5302);
+    let original_ids = program
+        .expressions
+        .iter()
+        .map(|expression| expression.id)
+        .collect::<Vec<_>>();
+
+    let plan = MaterialCompiler
+        .plan_stack_set_property(
+            &program,
+            pan,
+            MaterialStackProperty::Speed,
+            MaterialValue::Vec2([0.75, -0.25]),
+        )
+        .unwrap();
+    assert_eq!(
+        plan.replacement
+            .expressions
+            .iter()
+            .map(|expression| expression.id)
+            .collect::<Vec<_>>(),
+        original_ids
+    );
+    assert!(matches!(
+        &plan
+            .replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == speed)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Constant(MaterialValue::Vec2(value))
+            if *value == [0.75, -0.25]
+    ));
+    plan.replacement.analyze().unwrap();
+    assert!(matches!(
+        MaterialCompiler.plan_stack_set_property(
+            &program,
+            pan,
+            MaterialStackProperty::Speed,
+            MaterialValue::Float(1.0),
+        ),
+        Err(MaterialStackEditError::PropertyTypeMismatch {
+            property: MaterialStackProperty::Speed
+        })
+    ));
 }

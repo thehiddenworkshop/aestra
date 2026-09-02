@@ -11,7 +11,8 @@ use crate::*;
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
     MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, MaterialStackEntry,
-    MaterialStackInsertTarget, MaterialStackMoveTarget, MaterialStackProjection, ModuleRegistry,
+    MaterialStackInsertTarget, MaterialStackMoveTarget, MaterialStackProjection,
+    MaterialStackProperty, ModuleRegistry,
 };
 use aestra_core::material::{
     MaterialCullMode, MaterialDepthTest, MaterialParameterValue, MaterialRenderState,
@@ -59,14 +60,15 @@ use referenced_effect::{
 #[cfg(test)]
 use renderer_controls::properties_renderer_key;
 use renderer_controls::{
-    RendererNumberControl, RendererSliderControl, handle_renderer_action,
+    RendererNumberControl, RendererSliderControl, handle_material_stack_property_scalar_change,
+    handle_material_stack_property_toggle_change, handle_renderer_action,
     handle_renderer_enabled_change, handle_renderer_scalar_change, handle_renderer_toggle_change,
     handle_semantic_material_scalar_change, handle_semantic_material_toggle_change,
     normalize_renderer_uv_scrub_value, properties_renderer_card_memory,
     properties_renderer_collapsed, renderer_number_input_value, renderer_number_step,
     renderer_numeric_scrub_command, set_semantic_material_render_state,
-    set_semantic_material_source, spawn_renderer_card, sync_renderer_number_inputs,
-    sync_renderer_slider_inputs, sync_semantic_material_number_inputs,
+    set_semantic_material_source, spawn_renderer_card, sync_material_stack_property_number_inputs,
+    sync_renderer_number_inputs, sync_renderer_slider_inputs, sync_semantic_material_number_inputs,
 };
 
 pub(crate) const PROPERTIES_HIGHLIGHT_DURATION: f32 = 1.6;
@@ -87,6 +89,7 @@ impl Plugin for PropertiesPlugin {
             .init_resource::<EffectClipRepairState>()
             .init_resource::<MaterialProgramEditHistory>()
             .init_resource::<EditorHistoryLedger>()
+            .init_resource::<MaterialStackInspectorState>()
             .init_resource::<PropertiesFocus>()
             .init_resource::<NumericScrubState>()
             .init_resource::<BoundedSliderState>()
@@ -101,6 +104,8 @@ impl Plugin for PropertiesPlugin {
             .add_observer(handle_renderer_toggle_change)
             .add_observer(handle_semantic_material_scalar_change)
             .add_observer(handle_semantic_material_toggle_change)
+            .add_observer(handle_material_stack_property_scalar_change)
+            .add_observer(handle_material_stack_property_toggle_change)
             .add_observer(handle_emitter_scalar_change)
             .add_observer(handle_effect_clip_scalar_change)
             .add_observer(handle_marker_scalar_change)
@@ -140,6 +145,7 @@ impl Plugin for PropertiesPlugin {
                         sync_renderer_number_inputs,
                         sync_renderer_slider_inputs,
                         sync_semantic_material_number_inputs,
+                        sync_material_stack_property_number_inputs,
                         sync_effect_clip_properties_timing,
                         sync_effect_clip_repair_candidates,
                     )
@@ -168,6 +174,11 @@ pub(crate) enum SemanticMaterialSourceChoice {
     RandomRange,
     EffectParameter(ParameterId),
     EmitterParameter(ParameterId),
+}
+
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MaterialStackInspectorState {
+    pub(crate) selected: Option<(MaterialProgramId, MaterialExpressionId)>,
 }
 
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
@@ -226,6 +237,10 @@ pub(crate) enum PropertiesAction {
         program: MaterialProgramId,
         expression: MaterialExpressionId,
         enabled: bool,
+    },
+    InspectSemanticMaterialModifier {
+        program: MaterialProgramId,
+        expression: MaterialExpressionId,
     },
     AddEventLink {
         trigger: EventTrigger,
@@ -397,6 +412,7 @@ fn handle_properties_actions(
     mut repair: Option<ResMut<EffectClipRepairState>>,
     mut material_history: Option<ResMut<MaterialProgramEditHistory>>,
     mut history_ledger: Option<ResMut<EditorHistoryLedger>>,
+    mut material_stack_inspector: Option<ResMut<MaterialStackInspectorState>>,
 ) {
     for (entity, interaction, action, feathers_action, pending, disabled, mut background) in
         &mut actions
@@ -722,6 +738,24 @@ fn handle_properties_actions(
                                     .map_err(|error| error.to_string())
                             },
                         );
+                    }
+                    PropertiesAction::InspectSemanticMaterialModifier {
+                        program,
+                        expression,
+                    } => {
+                        let selected = Some((program, expression));
+                        if material_stack_inspector
+                            .as_deref()
+                            .is_some_and(|inspector| inspector.selected == selected)
+                        {
+                            continue;
+                        }
+                        if let Some(inspector) = material_stack_inspector.as_deref_mut() {
+                            inspector.selected = selected;
+                            session.ui_revision += 1;
+                        } else {
+                            session.status = "Material stack inspector is unavailable".into();
+                        }
                     }
                     PropertiesAction::OpenModulePalette(_)
                     | PropertiesAction::CloseModulePalette
@@ -5535,6 +5569,7 @@ pub(crate) fn spawn_properties(
     catalog: &ProjectEffectCatalog,
     timeline: &TimelineState,
     repair: &EffectClipRepairState,
+    material_stack_inspector: &MaterialStackInspectorState,
     navigation: Option<&SourceNavigationState>,
     asset_server: &AssetServer,
 ) {
@@ -5677,6 +5712,7 @@ pub(crate) fn spawn_properties(
                                     session,
                                     catalog,
                                     properties_renderer_collapsed(settings, renderer),
+                                    material_stack_inspector,
                                     asset_server,
                                 );
                             }

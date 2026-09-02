@@ -2043,7 +2043,8 @@ Implement:
   reconnection and owned-helper cleanup);
 - reorder when valid (implemented for direct homogeneous chains with atomic project persistence,
   external-change rejection, consumer refresh, and shared chronological undo/redo);
-- per-modifier inspector;
+- per-modifier inspector (implemented for compiler-reflected literal numeric, vector, and boolean
+  settings, with validated atomic project persistence and shared undo/redo);
 - enable/disable (implemented as a persisted, lossless typed bypass that retains operation IDs and
   settings);
 - preset insertion;

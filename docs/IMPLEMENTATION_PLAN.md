@@ -301,8 +301,10 @@ the current sprite-material path until the native-GPU compatibility gate approve
   owned subgraph. A persisted disabled-expression list bypasses a modifier as a typed alias while
   retaining its stable ID and settings for lossless re-enabling. Project-program replacements are
   persisted atomically with stale-source conflict detection, refresh every consumer through the
-  catalog, and participate chronologically in the editor's shared undo/redo stream. Continue with
-  per-modifier inspectors and preset insertion before a node graph.
+  catalog, and participate chronologically in the editor's shared undo/redo stream. Selecting a
+  modifier now opens a compiler-reflected inspector for its owned literal settings; numeric,
+  vector, and boolean edits preserve expression identity and use that same validated transaction
+  path. Continue with preset insertion before a node graph.
 
 ### Phase C — AI-first authoring
 

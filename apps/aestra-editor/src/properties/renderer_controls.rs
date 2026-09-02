@@ -44,6 +44,23 @@ pub(super) struct SemanticMaterialToggleControl {
     fallback: bool,
 }
 
+#[derive(Component, Debug, Clone)]
+pub(super) struct MaterialStackPropertyNumberControl {
+    program: MaterialProgramId,
+    expression: MaterialExpressionId,
+    property: MaterialStackProperty,
+    component: u8,
+    value: MaterialValue,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub(super) struct MaterialStackPropertyToggleControl {
+    program: MaterialProgramId,
+    expression: MaterialExpressionId,
+    property: MaterialStackProperty,
+    value: bool,
+}
+
 pub(super) fn handle_renderer_action(
     action: PropertiesAction,
     session: &mut EditorSession,
@@ -159,6 +176,108 @@ pub(super) fn sync_semantic_material_number_inputs(
             value: NumberInputValue::F32(value),
         });
     }
+}
+
+pub(super) fn sync_material_stack_property_number_inputs(
+    mut commands: Commands,
+    controls: Query<
+        (Entity, &MaterialStackPropertyNumberControl),
+        Added<MaterialStackPropertyNumberControl>,
+    >,
+) {
+    for (entity, control) in &controls {
+        let Some(value) = material_value_component(&control.value, control.component) else {
+            continue;
+        };
+        commands.trigger(UpdateNumberInput {
+            entity,
+            value: NumberInputValue::F32(value),
+        });
+    }
+}
+
+pub(super) fn handle_material_stack_property_scalar_change(
+    change: On<ValueChange<f32>>,
+    controls: Query<&MaterialStackPropertyNumberControl>,
+    mut catalog: Option<ResMut<ProjectEffectCatalog>>,
+    mut material_history: Option<ResMut<MaterialProgramEditHistory>>,
+    mut history_ledger: Option<ResMut<EditorHistoryLedger>>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final || !change.value.is_finite() {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    let Some(current) = material_value_component(&control.value, control.component) else {
+        return;
+    };
+    if (current - change.value).abs() <= f32::EPSILON {
+        return;
+    }
+    let mut value = control.value.clone();
+    if set_material_value_component(&mut value, control.component, change.value).is_none() {
+        return;
+    }
+    apply_material_program_edit(
+        &mut session,
+        catalog.as_deref_mut(),
+        material_history.as_deref_mut(),
+        history_ledger.as_deref_mut(),
+        control.program,
+        "Edited material modifier",
+        |current| {
+            MaterialCompiler
+                .plan_stack_set_property(current, control.expression, control.property, value)
+                .map(|plan| plan.replacement)
+                .map_err(|error| error.to_string())
+        },
+    );
+}
+
+pub(super) fn handle_material_stack_property_toggle_change(
+    change: On<ValueChange<bool>>,
+    controls: Query<&MaterialStackPropertyToggleControl>,
+    mut commands: Commands,
+    mut catalog: Option<ResMut<ProjectEffectCatalog>>,
+    mut material_history: Option<ResMut<MaterialProgramEditHistory>>,
+    mut history_ledger: Option<ResMut<EditorHistoryLedger>>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !change.is_final {
+        return;
+    }
+    let Ok(control) = controls.get(change.source) else {
+        return;
+    };
+    if change.value {
+        commands.entity(change.source).insert(Checked);
+    } else {
+        commands.entity(change.source).remove::<Checked>();
+    }
+    if control.value == change.value {
+        return;
+    }
+    apply_material_program_edit(
+        &mut session,
+        catalog.as_deref_mut(),
+        material_history.as_deref_mut(),
+        history_ledger.as_deref_mut(),
+        control.program,
+        "Edited material modifier",
+        |current| {
+            MaterialCompiler
+                .plan_stack_set_property(
+                    current,
+                    control.expression,
+                    control.property,
+                    MaterialValue::Bool(change.value),
+                )
+                .map(|plan| plan.replacement)
+                .map_err(|error| error.to_string())
+        },
+    );
 }
 
 pub(super) fn handle_semantic_material_scalar_change(
@@ -943,6 +1062,7 @@ fn spawn_semantic_material_controls(
     renderer: &aestra_core::RendererInstance,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
+    inspector: &MaterialStackInspectorState,
     asset_server: &AssetServer,
 ) -> Result<bool, String> {
     let Some(instance) = session
@@ -966,7 +1086,7 @@ fn spawn_semantic_material_controls(
         .map_err(|error| error.to_string())?;
 
     spawn_properties_read_only_control(parent, "Material", &controls.name);
-    spawn_semantic_material_stack(parent, program, &stack);
+    spawn_semantic_material_stack(parent, program, &stack, inspector);
     for descriptor in &controls.parameters {
         spawn_semantic_material_parameter(parent, descriptor, instance.id, session, asset_server);
     }
@@ -983,6 +1103,7 @@ fn spawn_semantic_material_stack(
     parent: &mut ChildSpawnerCommands,
     program: &aestra_core::material::MaterialProgram,
     projection: &MaterialStackProjection,
+    inspector: &MaterialStackInspectorState,
 ) {
     match projection {
         MaterialStackProjection::Stack { entries } if entries.is_empty() => {
@@ -1025,6 +1146,9 @@ fn spawn_semantic_material_stack(
                         Some("Enable, disable, remove, or move this semantic modifier."),
                     );
                 }
+                if inspector.selected == Some((program.id, entry.expression)) {
+                    spawn_material_stack_modifier_inspector(parent, program, entry);
+                }
             }
         }
         MaterialStackProjection::Advanced { reason } => {
@@ -1065,7 +1189,14 @@ fn material_stack_modifier_options(
     targets: &[MaterialStackMoveTarget],
 ) -> Vec<ComboOption<PropertiesAction>> {
     let entry = &entries[from_index];
-    let mut options = Vec::new();
+    let mut options = vec![ComboOption {
+        label: "Edit settings".to_owned(),
+        selected: false,
+        action: PropertiesAction::InspectSemanticMaterialModifier {
+            program: program.id,
+            expression: entry.expression,
+        },
+    }];
     if MaterialCompiler
         .plan_stack_set_enabled(program, entry.expression, !entry.enabled)
         .is_ok()
@@ -1111,6 +1242,155 @@ fn material_stack_modifier_options(
         });
     }
     options
+}
+
+fn spawn_material_stack_modifier_inspector(
+    parent: &mut ChildSpawnerCommands,
+    program: &aestra_core::material::MaterialProgram,
+    entry: &MaterialStackEntry,
+) {
+    let properties = MaterialCompiler
+        .stack_modifier_properties(program, entry.expression)
+        .unwrap_or_default();
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(7.0)),
+                row_gap: Val::Px(2.0),
+                ..default()
+            },
+            BackgroundColor(theme::PANEL_DARK),
+            BorderColor::all(theme::ACCENT_DIM),
+        ))
+        .with_children(|inspector| {
+            inspector.spawn((
+                Text::new(format!("{} Settings", entry.kind.display_name())),
+                TextFont {
+                    font_size: FontSize::Px(10.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Pickable::IGNORE,
+            ));
+            if properties.is_empty() {
+                spawn_properties_read_only_control(inspector, "Settings", "No editable constants");
+                return;
+            }
+            for descriptor in properties {
+                spawn_material_stack_property(inspector, program.id, entry.expression, descriptor);
+            }
+        });
+}
+
+fn spawn_material_stack_property(
+    parent: &mut ChildSpawnerCommands,
+    program: MaterialProgramId,
+    expression: MaterialExpressionId,
+    descriptor: aestra_compiler::MaterialStackPropertyDescriptor,
+) {
+    let components: &[&str] = match &descriptor.value {
+        MaterialValue::Float(_) => &[""],
+        MaterialValue::Vec2(_) => &["X", "Y"],
+        MaterialValue::Vec3(_) => &["X", "Y", "Z"],
+        MaterialValue::Vec4(_) | MaterialValue::ColorSrgb(_) => &["X", "Y", "Z", "W"],
+        MaterialValue::Bool(value) => {
+            spawn_material_stack_property_toggle(
+                parent,
+                descriptor.name,
+                MaterialStackPropertyToggleControl {
+                    program,
+                    expression,
+                    property: descriptor.property,
+                    value: *value,
+                },
+            );
+            return;
+        }
+        MaterialValue::Texture2D(_) => {
+            spawn_properties_read_only_control(parent, descriptor.name, "Texture source");
+            return;
+        }
+    };
+    for (component, suffix) in components.iter().enumerate() {
+        let title = if suffix.is_empty() {
+            descriptor.name.to_owned()
+        } else {
+            format!("{} {suffix}", descriptor.name)
+        };
+        spawn_material_stack_property_number(
+            parent,
+            &title,
+            MaterialStackPropertyNumberControl {
+                program,
+                expression,
+                property: descriptor.property,
+                component: component as u8,
+                value: descriptor.value.clone(),
+            },
+        );
+    }
+}
+
+fn spawn_material_stack_property_number(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    control: MaterialStackPropertyNumberControl,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(27.0),
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(6.0),
+            ..default()
+        })
+        .with_children(|row| {
+            spawn_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            row.spawn(Node {
+                width: Val::Px(112.0),
+                ..default()
+            })
+            .with_children(|input| {
+                input
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_scalar_input())
+                    .insert((control, AccessibleLabel(title.to_owned())));
+            });
+        });
+}
+
+fn spawn_material_stack_property_toggle(
+    parent: &mut ChildSpawnerCommands,
+    title: &str,
+    control: MaterialStackPropertyToggleControl,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            min_height: Val::Px(27.0),
+            align_items: AlignItems::Center,
+            ..default()
+        })
+        .with_children(|row| {
+            spawn_property_label(row, title);
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            let mut checkbox = row.spawn_empty();
+            checkbox
+                .apply_scene(ui_shell::feathers_checkbox())
+                .insert((control, AccessibleLabel(title.to_owned())));
+            if control.value {
+                checkbox.insert(Checked);
+            }
+        });
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1641,6 +1921,7 @@ pub(super) fn spawn_renderer_card(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
     collapsed: bool,
+    material_stack_inspector: &MaterialStackInspectorState,
     asset_server: &AssetServer,
 ) {
     let display_name = match renderer.properties {
@@ -1693,7 +1974,14 @@ pub(super) fn spawn_renderer_card(
             );
         },
         |card| {
-            match spawn_semantic_material_controls(card, renderer, session, catalog, asset_server) {
+            match spawn_semantic_material_controls(
+                card,
+                renderer,
+                session,
+                catalog,
+                material_stack_inspector,
+                asset_server,
+            ) {
                 Ok(true) => {
                     spawn_inline_diagnostics(card, diagnostic_path, session);
                     return;
@@ -1990,7 +2278,7 @@ mod tests {
             .into_iter()
             .map(|option| option.label)
             .collect::<Vec<_>>(),
-            vec!["Before UV Pan", "After UV Scale"]
+            vec!["Edit settings", "Before UV Pan", "After UV Scale"]
         );
     }
 
