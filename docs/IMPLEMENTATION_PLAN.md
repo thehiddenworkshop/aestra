@@ -312,7 +312,10 @@ the current sprite-material path until the native-GPU compatibility gate approve
 ### Phase C — AI-first authoring
 
 - [ ] **Material 10 — advanced semantic commands/tool API.** Compose validated wrap, connect,
-  preset, insertion, and extraction transformations from baseline commands.
+  preset, insertion, and extraction transformations from baseline commands. The first vertical
+  slice now exposes `ApplyMaterialPreset` as a UI-independent request that compiler-plans a full
+  preset, returns one validated baseline transaction plus its semantic diff, and is consumed by
+  the Properties workflow without directly constructing or mutating stored material programs.
 - [ ] **Material 11 — AI material API.** Expose machine-readable inspection, editing, compilation,
   and diagnostics.
 

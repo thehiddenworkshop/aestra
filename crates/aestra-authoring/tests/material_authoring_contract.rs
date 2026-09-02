@@ -1,8 +1,10 @@
 use aestra_authoring::{
     MaterialAuthoringDocument, MaterialChangeKind, MaterialCommand, MaterialCommandError,
     MaterialCommandExecutor, MaterialCommandHistory, MaterialExpressionInput, MaterialOutputSocket,
-    MaterialSemanticTarget, MaterialTransaction,
+    MaterialSemanticTarget, MaterialToolCommand, MaterialToolError, MaterialToolPlanner,
+    MaterialTransaction,
 };
+use aestra_compiler::MaterialStackPresetKind;
 use aestra_core::{
     AssetId, BlendMode, EffectAsset, Emitter, MaterialExpressionId, MaterialId,
     MaterialParameterId, MaterialProgramId, RendererId,
@@ -1655,5 +1657,66 @@ fn renderer_lookup_is_scoped_to_the_authored_emitter() {
     .unwrap_err();
 
     assert!(matches!(error, MaterialCommandError::NotFound { .. }));
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_preset_tool_plans_a_valid_reversible_semantic_transaction() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6000);
+    let (program, _) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+
+    let plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ApplyMaterialPreset {
+            program: program_id,
+            preset: MaterialStackPresetKind::UvDrift,
+            target_index: 0,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(document, before, "planning must not mutate its input");
+    assert_eq!(plan.created_expressions.len(), 2);
+    assert!(plan.diff.changes.iter().any(|change| {
+        change.kind == MaterialChangeKind::Modified
+            && change.target == MaterialSemanticTarget::Program(program_id)
+    }));
+    assert!(plan.created_expressions.iter().all(|expression| {
+        plan.diff.changes.iter().any(|change| {
+            change.kind == MaterialChangeKind::Added
+                && change.target == MaterialSemanticTarget::Expression(*expression)
+        })
+    }));
+    let replacement = plan.replacement_program(program_id).unwrap().clone();
+
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    assert_eq!(document.programs[0], replacement);
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_preset_tool_rejects_incompatible_requests_without_mutation() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6100);
+    let (program, _) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+
+    let error = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ApplyMaterialPreset {
+            program: program_id,
+            preset: MaterialStackPresetKind::SoftDissolve,
+            target_index: 0,
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, MaterialToolError::StackEdit(_)));
     assert_eq!(document, before);
 }

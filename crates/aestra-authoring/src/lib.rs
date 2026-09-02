@@ -6,6 +6,7 @@ mod executor;
 mod history;
 mod material_authoring;
 mod material_migration;
+mod material_tools;
 mod selection;
 
 pub use command::{EffectCommand, EffectTransaction};
@@ -21,5 +22,8 @@ pub use material_authoring::{
 pub use material_migration::{
     LegacyMaterialMigrationError, LegacyMaterialMigrationMapping, LegacyMaterialMigrationPlan,
     migrate_legacy_sprite_materials, plan_legacy_sprite_material_migration,
+};
+pub use material_tools::{
+    MaterialToolCommand, MaterialToolError, MaterialToolPlan, MaterialToolPlanner,
 };
 pub use selection::{LockState, Selection, SemanticTarget};

@@ -227,7 +227,7 @@ pub(super) fn handle_material_stack_property_scalar_change(
         history_ledger.as_deref_mut(),
         control.program,
         "Edited material modifier",
-        |current| {
+        |_, current| {
             MaterialCompiler
                 .plan_stack_set_property(current, control.expression, control.property, value)
                 .map(|plan| plan.replacement)
@@ -266,7 +266,7 @@ pub(super) fn handle_material_stack_property_toggle_change(
         history_ledger.as_deref_mut(),
         control.program,
         "Edited material modifier",
-        |current| {
+        |_, current| {
             MaterialCompiler
                 .plan_stack_set_property(
                     current,

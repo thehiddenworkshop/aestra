@@ -8,6 +8,7 @@ use crate::feathers::panel_card::{
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
 use crate::timeline::{EffectClipChildSelection, EffectClipPath, TimelineState};
 use crate::*;
+use aestra_authoring::{MaterialAuthoringDocument, MaterialToolCommand, MaterialToolPlanner};
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
     MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, MaterialStackEntry,
@@ -673,7 +674,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Moved material modifier",
-                            |current| {
+                            |_, current| {
                                 MaterialCompiler
                                     .plan_stack_move(current, expression, target_index)
                                     .map(|plan| plan.replacement)
@@ -693,7 +694,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Added material modifier",
-                            |current| {
+                            |_, current| {
                                 MaterialCompiler
                                     .plan_stack_insert(current, kind, target_index)
                                     .map(|plan| plan.replacement)
@@ -713,11 +714,19 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Applied material preset",
-                            |current| {
-                                MaterialCompiler
-                                    .plan_stack_insert_preset(current, preset, target_index)
-                                    .map(|plan| plan.replacement)
-                                    .map_err(|error| error.to_string())
+                            |document, _| {
+                                let command = MaterialToolCommand::ApplyMaterialPreset {
+                                    program,
+                                    preset,
+                                    target_index,
+                                };
+                                let plan = MaterialToolPlanner::plan(document, command)
+                                    .map_err(|error| error.to_string())?;
+                                plan.replacement_program(program).cloned().ok_or_else(|| {
+                                    format!(
+                                        "material tool plan omitted replacement program {program}"
+                                    )
+                                })
                             },
                         );
                     }
@@ -732,7 +741,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Removed material modifier",
-                            |current| {
+                            |_, current| {
                                 MaterialCompiler
                                     .plan_stack_remove(current, expression)
                                     .map(|plan| plan.replacement)
@@ -756,7 +765,7 @@ fn handle_properties_actions(
                             } else {
                                 "Disabled material modifier"
                             },
-                            |current| {
+                            |_, current| {
                                 MaterialCompiler
                                     .plan_stack_set_enabled(current, expression, enabled)
                                     .map(|plan| plan.replacement)
@@ -826,6 +835,7 @@ fn apply_material_program_edit(
     program: MaterialProgramId,
     label: &str,
     plan: impl FnOnce(
+        &MaterialAuthoringDocument,
         &aestra_core::material::MaterialProgram,
     ) -> Result<aestra_core::material::MaterialProgram, String>,
 ) {
@@ -841,18 +851,24 @@ fn apply_material_program_edit(
         session.status = "Editor history is unavailable".into();
         return;
     };
-    let current = catalog
+    let result = catalog
         .material_programs_for_effect(&session.effect)
         .and_then(|programs| {
-            programs
-                .into_iter()
+            let current = programs
+                .iter()
                 .find(|candidate| candidate.id == program)
-                .ok_or_else(|| format!("Material program {program} is unavailable"))
+                .cloned()
+                .ok_or_else(|| format!("Material program {program} is unavailable"))?;
+            let document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
+            let replacement = plan(&document, &current)?;
+            material_history.execute_replacement(
+                &session.effect,
+                catalog,
+                label,
+                current,
+                replacement,
+            )
         });
-    let result = current.and_then(|current| {
-        let replacement = plan(&current)?;
-        material_history.execute_replacement(&session.effect, catalog, label, current, replacement)
-    });
     match result {
         Ok(()) => {
             history_ledger.record_material_edit(session);

@@ -2097,6 +2097,12 @@ Commands must support:
 - undo/redo;
 - useful diffs.
 
+Current implementation: `ApplyMaterialPreset` is the first end-to-end tool command. The authoring
+planner accepts a document and semantic request, delegates graph-safe construction to the material
+compiler, validates the resulting baseline transaction against the complete authoring document,
+and returns both that transaction and its semantic diff without mutating storage. The editor uses
+this same plan before persisting the replacement through its shared material history.
+
 ### Completion Criterion
 
 AI and tools can perform common multi-step material transformations as one
