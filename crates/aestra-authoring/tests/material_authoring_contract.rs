@@ -1958,3 +1958,191 @@ fn material_connection_tool_rejects_stale_and_incompatible_sockets_atomically() 
     ));
     assert_eq!(document, before);
 }
+
+#[test]
+fn material_wrap_tool_wraps_an_exact_input_edge_and_undoes_as_one_edit() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6700);
+    let (program, _) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+    let rotate = MaterialExpressionId::from_u128(0x1186);
+    let sample = MaterialExpressionId::from_u128(0x1189);
+    let target = MaterialConnectionTarget::ExpressionInput {
+        expression: sample,
+        input: MaterialExpressionInput::Uv,
+    };
+    let command = MaterialToolCommand::WrapMaterialExpression {
+        program: program_id,
+        target,
+        kind: MaterialStackModifierKind::ScaleUv,
+    };
+
+    let encoded = ron::to_string(&command).unwrap();
+    assert_eq!(
+        ron::from_str::<MaterialToolCommand>(&encoded).unwrap(),
+        command
+    );
+    let plan = MaterialToolPlanner::plan(&document, command).unwrap();
+
+    assert_eq!(document, before, "planning must not mutate its input");
+    assert_eq!(plan.created_expressions.len(), 1);
+    let wrapper = plan.created_expressions[0];
+    assert!(plan.transaction.commands.len() > 1);
+    assert!(
+        !plan
+            .transaction
+            .commands
+            .iter()
+            .any(|command| matches!(command, MaterialCommand::ReplaceMaterialProgram { .. }))
+    );
+    let mut preview = document.clone();
+    MaterialCommandExecutor::execute(&mut preview, &plan.transaction).unwrap();
+    let replacement = preview.programs[0].clone();
+    assert!(matches!(
+        replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == wrapper)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::ScaleUv { uv, .. } if uv == rotate
+    ));
+    assert!(matches!(
+        replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == sample)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::SampleTexture { uv, .. } if uv == wrapper
+    ));
+    assert!(plan.diff.changes.iter().any(|change| {
+        change.kind == MaterialChangeKind::Added
+            && change.target == MaterialSemanticTarget::Expression(wrapper)
+    }));
+    assert!(plan.diff.changes.iter().any(|change| {
+        change.kind == MaterialChangeKind::Modified
+            && change.target == MaterialSemanticTarget::Expression(sample)
+    }));
+
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    assert_eq!(document.programs[0], replacement);
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_wrap_tool_wraps_an_exact_program_output() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6800);
+    let (mut program, _) = reorderable_material_program(program_id);
+    let alpha = MaterialExpressionId::from_u128(0x118a);
+    let angle = MaterialExpressionId::from_u128(0x1185);
+    let sample = MaterialExpressionId::from_u128(0x1189);
+    program.outputs.alpha = angle;
+    program
+        .expressions
+        .retain(|expression| expression.id != alpha);
+    document.programs.push(program);
+    let before = document.clone();
+
+    let plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::WrapMaterialExpression {
+            program: program_id,
+            target: MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Color),
+            kind: MaterialStackModifierKind::Remap,
+        },
+    )
+    .unwrap();
+
+    let wrapper = plan.created_expressions[0];
+    let mut preview = document.clone();
+    MaterialCommandExecutor::execute(&mut preview, &plan.transaction).unwrap();
+    let replacement = &preview.programs[0];
+    assert_eq!(replacement.outputs.color, wrapper);
+    assert!(matches!(
+        replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == wrapper)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Remap { value, .. } if value == sample
+    ));
+    assert!(
+        plan.diff
+            .changes
+            .iter()
+            .any(|change| change.path.ends_with(".outputs.color"))
+    );
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_wrap_tool_rejects_fanout_non_primary_and_stale_targets_atomically() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6900);
+    let (program, pan) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+    let rotate = MaterialExpressionId::from_u128(0x1186);
+    let missing = MaterialExpressionId::from_u128(0x69ff);
+
+    for (target, kind) in [
+        (
+            MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Color),
+            MaterialStackModifierKind::Remap,
+        ),
+        (
+            MaterialConnectionTarget::ExpressionInput {
+                expression: rotate,
+                input: MaterialExpressionInput::Angle,
+            },
+            MaterialStackModifierKind::Smoothstep,
+        ),
+    ] {
+        let error = MaterialToolPlanner::plan(
+            &document,
+            MaterialToolCommand::WrapMaterialExpression {
+                program: program_id,
+                target,
+                kind,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            MaterialToolError::IncompatibleWrap {
+                kind: rejected_kind,
+                target: rejected_target,
+            } if rejected_kind == kind && rejected_target == target
+        ));
+    }
+
+    let stale = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::WrapMaterialExpression {
+            program: program_id,
+            target: MaterialConnectionTarget::ExpressionInput {
+                expression: missing,
+                input: MaterialExpressionInput::Uv,
+            },
+            kind: MaterialStackModifierKind::ScaleUv,
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        stale,
+        MaterialToolError::DestinationExpressionNotFound(expression) if expression == missing
+    ));
+    assert!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .any(|expression| expression.id == pan)
+    );
+    assert_eq!(document, before);
+}

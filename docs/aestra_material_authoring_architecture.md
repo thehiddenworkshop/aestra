@@ -2108,6 +2108,10 @@ editor or tool requests from applying to a different stack position after the pr
 `ConnectMaterialExpression` provides one stable command for expression input sockets and program
 outputs. It distinguishes stale source/destination identities from invalid sockets, while complete
 document validation rejects incompatible value types and evaluation domains atomically.
+`WrapMaterialExpression` composes compiler-approved operation construction and connection changes
+around one exact destination. The planner accepts the result only when the new operation consumes
+the previous source and becomes that destination's new source; fan-out and ambiguous graph edits
+remain explicit failures rather than silently changing additional consumers.
 
 ### Completion Criterion
 

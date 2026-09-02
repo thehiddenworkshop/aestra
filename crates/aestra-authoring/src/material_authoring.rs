@@ -601,7 +601,7 @@ fn apply_command(
     Ok(inverse)
 }
 
-fn rewire_expression(
+pub(crate) fn rewire_expression(
     expression: &mut MaterialExpressionKind,
     input: MaterialExpressionInput,
     source: MaterialExpressionId,
@@ -746,6 +746,15 @@ fn rewire_expression(
         (_, input) => return Err(MaterialCommandError::InvalidExpressionInput { input }),
     };
     Ok(std::mem::replace(target, source))
+}
+
+pub(crate) fn material_expression_input_source(
+    expression: &MaterialExpressionKind,
+    input: MaterialExpressionInput,
+) -> Result<MaterialExpressionId, MaterialCommandError> {
+    // Reuse the authoritative mutable socket map; the probe mutation is discarded.
+    let mut probe = expression.clone();
+    rewire_expression(&mut probe, input, MaterialExpressionId::from_u128(0))
 }
 
 fn diff_programs(
