@@ -42,9 +42,19 @@ panel-timeline = TIMELINE
 panel-curves = COURBES
 panel-diagnostics = DIAGNOSTICS
 panel-compiler-inspector = INSPECTEUR DU COMPILATEUR
+panel-material-graph = GRAPHE DE MATÉRIAU
 panel-profiler = PROFILEUR
 panel-changes = MODIFICATIONS
 panel-settings = PARAMÈTRES
+
+material-graph-read-only = GRAPHE SÉMANTIQUE EN LECTURE SEULE
+material-graph-empty = Aucun matériau sémantique sélectionné
+material-graph-empty-description = Sélectionnez un émetteur ou un moteur de rendu utilisant un programme de matériau du projet.
+material-graph-valid = VALIDE
+material-graph-invalid = INVALIDE
+material-graph-unreachable = INACCESSIBLE
+material-graph-disabled = DÉSACTIVÉ
+material-graph-outputs = SORTIES DU MATÉRIAU
 
 viewport-frame-effect = Centrer l’effet
 viewport-frame-effect-description = Centrer la caméra de l’aperçu sur l’effet.

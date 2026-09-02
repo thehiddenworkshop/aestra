@@ -349,7 +349,15 @@ the current sprite-material path until the native-GPU compatibility gate approve
 
 ### Phase D — advanced human authoring
 
-- [ ] **Material 12 — read-only graph projection.** Visualize any supported semantic program.
+- [x] **Material 12 — read-only graph projection.** The compiler now projects every authored
+  expression into a deterministic backend-neutral graph with stable expression identity, labeled
+  typed input ports, evaluation domains, explicit color/alpha output nodes, generated links,
+  disabled/unreachable state, validation diagnostics, and optional optimized-IR source-map aliases.
+  Invalid programs remain inspectable with unresolved types instead of losing their authored
+  topology. Material inspection and the serializable tool API expose the same projection. A
+  dockable read-only Material Graph workspace resolves the selected emitter or renderer's semantic
+  material, displays its complete topology and output roots, and synchronizes node selection with
+  the existing Properties modifier inspector.
 - [ ] **Material 13 — editable graph.** Translate graph interaction into semantic commands.
 - [ ] **Material 14 — graph layout metadata.** Persist optional layout separately from semantics.
 

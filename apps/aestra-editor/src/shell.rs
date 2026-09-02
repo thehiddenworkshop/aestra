@@ -62,6 +62,7 @@ pub(crate) enum ScrollMemoryKey {
     LibraryDeletion,
     Properties,
     CompilerInspector,
+    MaterialGraph,
     Profiler,
     Settings,
     Diagnostics,

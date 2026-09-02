@@ -390,13 +390,14 @@ pub(crate) enum DockPanel {
     Diagnostics,
     #[serde(alias = "GeneratedCode")]
     CompilerInspector,
+    MaterialGraph,
     Profiler,
     Changes,
     Settings,
 }
 
 impl DockPanel {
-    pub(crate) const ALL: [Self; 10] = [
+    pub(crate) const ALL: [Self; 11] = [
         Self::Viewport,
         Self::Assets,
         Self::Properties,
@@ -404,6 +405,7 @@ impl DockPanel {
         Self::Curves,
         Self::Diagnostics,
         Self::CompilerInspector,
+        Self::MaterialGraph,
         Self::Profiler,
         Self::Changes,
         Self::Settings,
@@ -418,6 +420,7 @@ impl DockPanel {
             Self::Curves => "panel-curves",
             Self::Diagnostics => "panel-diagnostics",
             Self::CompilerInspector => "panel-compiler-inspector",
+            Self::MaterialGraph => "panel-material-graph",
             Self::Profiler => "panel-profiler",
             Self::Changes => "panel-changes",
             Self::Settings => "panel-settings",
@@ -672,6 +675,7 @@ impl Default for WorkspaceLayout {
                 DockPanel::Diagnostics,
                 DockPanel::Profiler,
                 DockPanel::Changes,
+                DockPanel::MaterialGraph,
             ],
             DockPanel::Timeline,
         );
@@ -838,6 +842,7 @@ impl WorkspaceLayout {
             DockPanel::Curves,
             DockPanel::Diagnostics,
             DockPanel::CompilerInspector,
+            DockPanel::MaterialGraph,
             DockPanel::Profiler,
             DockPanel::Changes,
         ];
@@ -1012,6 +1017,7 @@ fn default_floating_size(panel: DockPanel, available_size: [f32; 2]) -> [f32; 2]
         | DockPanel::Curves
         | DockPanel::Diagnostics
         | DockPanel::CompilerInspector
+        | DockPanel::MaterialGraph
         | DockPanel::Profiler
         | DockPanel::Changes => [720.0, 320.0],
         DockPanel::Assets | DockPanel::Properties => [420.0, 520.0],
@@ -1279,6 +1285,7 @@ mod tests {
                 DockPanel::Curves,
                 DockPanel::Diagnostics,
                 DockPanel::Profiler,
+                DockPanel::MaterialGraph,
             ]
         );
 

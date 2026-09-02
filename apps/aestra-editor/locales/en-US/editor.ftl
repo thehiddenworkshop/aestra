@@ -42,9 +42,19 @@ panel-timeline = TIMELINE
 panel-curves = CURVES
 panel-diagnostics = DIAGNOSTICS
 panel-compiler-inspector = COMPILER INSPECTOR
+panel-material-graph = MATERIAL GRAPH
 panel-profiler = PROFILER
 panel-changes = CHANGES
 panel-settings = SETTINGS
+
+material-graph-read-only = READ-ONLY SEMANTIC GRAPH
+material-graph-empty = No semantic material selected
+material-graph-empty-description = Select an emitter or renderer that uses a project material program.
+material-graph-valid = VALID
+material-graph-invalid = INVALID
+material-graph-unreachable = UNREACHABLE
+material-graph-disabled = DISABLED
+material-graph-outputs = MATERIAL OUTPUTS
 
 viewport-frame-effect = Frame Effect
 viewport-frame-effect-description = Center the viewport camera on the effect.

@@ -12,6 +12,7 @@ mod feathers;
 mod history;
 mod library;
 mod localization;
+mod material_graph;
 mod menus;
 mod persistence;
 mod profiler;
@@ -118,6 +119,8 @@ pub(crate) use library::{
 };
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
+use material_graph::EditorMaterialGraphPlugin;
+pub(crate) use material_graph::spawn_material_graph_workspace;
 pub(crate) use menus::{DocumentMenuLabel, MenuState, TabContextMenu};
 use menus::{EditorMenusPlugin, spawn_about_overlay, spawn_menu_bar, spawn_tab_context_menu};
 pub(crate) use persistence::persist_editor_settings;
@@ -210,6 +213,7 @@ fn main() {
         .add_plugins(localization)
         .add_plugins(EditorMenusPlugin::new(show_grid))
         .add_plugins(EditorLibraryPlugin)
+        .add_plugins(EditorMaterialGraphPlugin)
         .add_plugins(EditorChangesPlugin)
         .add_plugins(EditorCompilerInspectorPlugin)
         .add_plugins(EditorCurvesPlugin)

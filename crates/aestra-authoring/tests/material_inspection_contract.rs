@@ -413,6 +413,25 @@ fn material_api_adds_an_age_driven_fresnel_edge_without_expression_ids() {
             reason: aestra_compiler::MaterialStackFallbackReason::MultipleRoots { .. }
         })
     ));
+    assert!(inspection.graph.diagnostics.is_valid());
+    assert!(inspection.graph.nodes.iter().any(|node| matches!(
+        node.kind,
+        aestra_compiler::MaterialGraphNodeKind::Function(
+            aestra_compiler::MaterialGraphFunction::Fresnel
+        )
+    )));
+    assert_eq!(
+        inspection
+            .graph
+            .outputs
+            .iter()
+            .map(|output| output.kind)
+            .collect::<Vec<_>>(),
+        [
+            aestra_compiler::MaterialGraphOutputKind::Color,
+            aestra_compiler::MaterialGraphOutputKind::Alpha,
+        ]
+    );
 
     let compilation = MaterialApi::handle(&preview, MaterialApiRequest::Compile { target });
     let MaterialApiResponse::Compilation(compilation) = compilation else {

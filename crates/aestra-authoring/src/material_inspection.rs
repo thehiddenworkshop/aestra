@@ -2,8 +2,8 @@
 
 use crate::{MaterialAuthoringDocument, MaterialInsertionPoint};
 use aestra_compiler::{
-    MaterialCompiler, MaterialControlCatalog, MaterialStackModifierKind, MaterialStackPresetKind,
-    MaterialStackProjection,
+    MaterialCompiler, MaterialControlCatalog, MaterialGraphProjection, MaterialStackModifierKind,
+    MaterialStackPresetKind, MaterialStackProjection,
 };
 use aestra_core::{
     MaterialId, MaterialProgramId, ValidationReport,
@@ -43,6 +43,8 @@ pub struct MaterialInspectionReport {
     pub controls: Option<MaterialControlCatalog>,
     /// The stack is absent only when the program itself cannot be projected.
     pub stack: Option<MaterialStackProjection>,
+    /// Complete read-only graph projection, including invalid and unreachable authored nodes.
+    pub graph: MaterialGraphProjection,
     pub operations: Vec<MaterialOperationAvailability>,
     pub presets: Vec<MaterialPresetAvailability>,
     pub diagnostics: ValidationReport,
@@ -95,6 +97,8 @@ impl MaterialInspector {
         let instance = instance_index.map(|index| &document.effect.material_instances[index]);
         let diagnostics = target_diagnostics(document, program_index, instance_index);
         let compiler = MaterialCompiler;
+        let ir = compiler.compile(program).ok();
+        let graph = compiler.project_graph(program, ir.as_ref());
         let stack = compiler.project_stack(program).ok();
         let operations = stack.as_ref().map_or_else(Vec::new, |projection| {
             operation_availability(&compiler, program, projection)
@@ -113,6 +117,7 @@ impl MaterialInspector {
             instance: instance.cloned(),
             controls,
             stack,
+            graph,
             operations,
             presets,
             diagnostics,

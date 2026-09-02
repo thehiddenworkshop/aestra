@@ -449,6 +449,13 @@ fn spawn_panel_content(
         DockPanel::CompilerInspector => {
             spawn_compiler_inspector_workspace(parent, sources.session, sources.localizer)
         }
+        DockPanel::MaterialGraph => spawn_material_graph_workspace(
+            parent,
+            sources.session,
+            sources.catalog,
+            sources.material_stack_inspector,
+            sources.localizer,
+        ),
         DockPanel::Profiler => {
             spawn_profiler_workspace(parent, sources.session, sources.profiler, sources.localizer)
         }
