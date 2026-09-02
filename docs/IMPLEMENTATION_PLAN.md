@@ -295,9 +295,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Safe reorder planning is now complete for direct, homogeneous chains: it reports only moves
   that preserve type/domain validity, keeps stable expression identities and storage order, and
   returns a full replacement that commits as one exactly reversible material transaction.
-  Properties exposes those compatible before/after positions while Advanced graphs remain
-  non-reorderable. Continue with the project-material persistence/history bridge, then add and
-  enable/disable modifier commands before a node graph.
+  Properties exposes those compatible before/after positions as actions while Advanced graphs
+  remain non-reorderable. Project-program replacements are persisted atomically with stale-source
+  conflict detection, refresh every consumer through the catalog, and participate chronologically
+  in the editor's shared undo/redo stream. Continue with add and enable/disable modifier commands
+  before a node graph.
 
 ### Phase C — AI-first authoring
 

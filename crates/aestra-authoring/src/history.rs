@@ -130,6 +130,18 @@ impl CommandHistory {
         !self.redo.is_empty()
     }
 
+    pub fn undo_len(&self) -> usize {
+        self.undo.len()
+    }
+
+    pub fn redo_len(&self) -> usize {
+        self.redo.len()
+    }
+
+    pub fn clear_redo(&mut self) {
+        self.redo.clear();
+    }
+
     pub fn clear(&mut self) {
         self.undo.clear();
         self.redo.clear();

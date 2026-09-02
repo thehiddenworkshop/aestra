@@ -2,11 +2,19 @@
 
 use crate::{
     EditorNativeControl, FeathersActionButton, ModulePaletteState, PendingFeathersActivation,
+    ProjectEffectCatalog,
     menus::{MenuState, RedoMenuItem, UndoMenuItem},
     session::EditorSession,
     theme,
 };
+use aestra_authoring::{
+    MaterialAuthoringDocument, MaterialCommand, MaterialCommandExecutor, MaterialTransaction,
+};
+use aestra_core::{EffectId, material::MaterialProgram};
 use bevy::{prelude::*, ui::InteractionDisabled, ui_widgets::Activate};
+use std::collections::VecDeque;
+
+const MATERIAL_HISTORY_LIMIT: usize = 256;
 
 pub(crate) struct EditorHistoryPlugin;
 
@@ -19,7 +27,9 @@ pub(crate) enum HistorySet {
 
 impl Plugin for EditorHistoryPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(queue_history_action_activation)
+        app.init_resource::<MaterialProgramEditHistory>()
+            .init_resource::<EditorHistoryLedger>()
+            .add_observer(queue_history_action_activation)
             .add_observer(execute_history_action)
             .add_systems(
                 Update,
@@ -28,9 +38,219 @@ impl Plugin for EditorHistoryPlugin {
                     (handle_history_buttons, audit_history_controls)
                         .chain()
                         .in_set(HistorySet::Actions),
-                    update_history_availability.in_set(HistorySet::Sync),
+                    (sync_effect_history_ledger, update_history_availability)
+                        .chain()
+                        .in_set(HistorySet::Sync),
                 ),
             );
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MaterialProgramHistoryEntry {
+    label: String,
+    before: MaterialProgram,
+    after: MaterialProgram,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct MaterialProgramEditHistory {
+    undo: VecDeque<MaterialProgramHistoryEntry>,
+    redo: Vec<MaterialProgramHistoryEntry>,
+}
+
+impl MaterialProgramEditHistory {
+    pub(crate) fn execute_replacement(
+        &mut self,
+        effect: &aestra_core::EffectAsset,
+        catalog: &mut ProjectEffectCatalog,
+        label: impl Into<String>,
+        before: MaterialProgram,
+        after: MaterialProgram,
+    ) -> Result<(), String> {
+        let label = label.into();
+        apply_material_program_replacement(effect, catalog, &label, &before, &after)?;
+        self.undo.push_back(MaterialProgramHistoryEntry {
+            label,
+            before,
+            after,
+        });
+        while self.undo.len() > MATERIAL_HISTORY_LIMIT {
+            self.undo.pop_front();
+        }
+        self.redo.clear();
+        Ok(())
+    }
+
+    fn undo(
+        &mut self,
+        effect: &aestra_core::EffectAsset,
+        catalog: &mut ProjectEffectCatalog,
+    ) -> Result<Option<String>, String> {
+        let Some(entry) = self.undo.pop_back() else {
+            return Ok(None);
+        };
+        match apply_material_program_replacement(
+            effect,
+            catalog,
+            &format!("Undo {}", entry.label),
+            &entry.after,
+            &entry.before,
+        ) {
+            Ok(()) => {
+                let label = entry.label.clone();
+                self.redo.push(entry);
+                Ok(Some(label))
+            }
+            Err(error) => {
+                self.undo.push_back(entry);
+                Err(error)
+            }
+        }
+    }
+
+    fn redo(
+        &mut self,
+        effect: &aestra_core::EffectAsset,
+        catalog: &mut ProjectEffectCatalog,
+    ) -> Result<Option<String>, String> {
+        let Some(entry) = self.redo.pop() else {
+            return Ok(None);
+        };
+        match apply_material_program_replacement(
+            effect,
+            catalog,
+            &format!("Redo {}", entry.label),
+            &entry.before,
+            &entry.after,
+        ) {
+            Ok(()) => {
+                let label = entry.label.clone();
+                self.undo.push_back(entry);
+                Ok(Some(label))
+            }
+            Err(error) => {
+                self.redo.push(entry);
+                Err(error)
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+    }
+
+    fn clear_redo(&mut self) {
+        self.redo.clear();
+    }
+}
+
+fn apply_material_program_replacement(
+    effect: &aestra_core::EffectAsset,
+    catalog: &mut ProjectEffectCatalog,
+    label: &str,
+    expected: &MaterialProgram,
+    replacement: &MaterialProgram,
+) -> Result<(), String> {
+    let programs = catalog.material_programs_for_effect(effect)?;
+    let mut document = MaterialAuthoringDocument::new(effect.clone(), programs);
+    MaterialCommandExecutor::execute(
+        &mut document,
+        &MaterialTransaction::single(
+            label,
+            MaterialCommand::ReplaceMaterialProgram {
+                id: expected.id,
+                program: replacement.clone(),
+            },
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+    let replacement = document
+        .programs
+        .into_iter()
+        .find(|program| program.id == expected.id)
+        .ok_or_else(|| format!("material program {} disappeared", expected.id))?;
+    catalog.replace_material_program(expected, &replacement)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HistoryDomain {
+    Effect,
+    MaterialProgram,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct EditorHistoryLedger {
+    undo: Vec<HistoryDomain>,
+    redo: Vec<HistoryDomain>,
+    effect: Option<EffectId>,
+    observed_generation: u64,
+    observed_effect_undo: usize,
+    observed_effect_redo: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EffectHistoryChange {
+    None,
+    Edited,
+    Reset,
+}
+
+impl EditorHistoryLedger {
+    fn capture_effect_changes(&mut self, session: &EditorSession) -> EffectHistoryChange {
+        let effect_changed = self
+            .effect
+            .is_some_and(|effect| effect != session.effect.id);
+        let generation_changed =
+            self.effect.is_some() && self.observed_generation != session.history_generation();
+        let history_cleared =
+            session.effect_undo_len() < self.observed_effect_undo && session.effect_redo_len() == 0;
+        if effect_changed || generation_changed || history_cleared {
+            self.undo.clear();
+            self.redo.clear();
+            self.effect = Some(session.effect.id);
+            self.observed_generation = session.history_generation();
+            self.observed_effect_undo = session.effect_undo_len();
+            self.observed_effect_redo = session.effect_redo_len();
+            return EffectHistoryChange::Reset;
+        }
+        self.effect.get_or_insert(session.effect.id);
+        self.observed_generation = session.history_generation();
+        if session.effect_undo_len() > self.observed_effect_undo {
+            self.undo.extend(std::iter::repeat_n(
+                HistoryDomain::Effect,
+                session.effect_undo_len() - self.observed_effect_undo,
+            ));
+            self.redo.clear();
+            self.observed_effect_undo = session.effect_undo_len();
+            self.observed_effect_redo = session.effect_redo_len();
+            return EffectHistoryChange::Edited;
+        }
+        self.observed_effect_undo = session.effect_undo_len();
+        self.observed_effect_redo = session.effect_redo_len();
+        EffectHistoryChange::None
+    }
+
+    pub(crate) fn record_material_edit(&mut self, session: &mut EditorSession) {
+        self.capture_effect_changes(session);
+        session.clear_effect_redo();
+        self.observe_effect_history(session);
+        self.undo.push(HistoryDomain::MaterialProgram);
+        self.redo.clear();
+    }
+
+    fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    fn observe_effect_history(&mut self, session: &EditorSession) {
+        self.observed_effect_undo = session.effect_undo_len();
+        self.observed_effect_redo = session.effect_redo_len();
     }
 }
 
@@ -107,11 +327,83 @@ fn handle_history_buttons(
     }
 }
 
-fn execute_history_action(action: On<HistoryAction>, mut session: ResMut<EditorSession>) {
-    match *action {
-        HistoryAction::Undo => session.undo(),
-        HistoryAction::Redo => session.redo(),
+fn execute_history_action(
+    action: On<HistoryAction>,
+    mut session: ResMut<EditorSession>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
+    mut material_history: ResMut<MaterialProgramEditHistory>,
+    mut ledger: ResMut<EditorHistoryLedger>,
+) {
+    match ledger.capture_effect_changes(&session) {
+        EffectHistoryChange::Reset => material_history.clear(),
+        EffectHistoryChange::Edited => material_history.clear_redo(),
+        EffectHistoryChange::None => {}
     }
+    let domain = match *action {
+        HistoryAction::Undo => ledger.undo.pop(),
+        HistoryAction::Redo => ledger.redo.pop(),
+    };
+    let Some(domain) = domain else {
+        session.status = match *action {
+            HistoryAction::Undo => "Nothing to undo".into(),
+            HistoryAction::Redo => "Nothing to redo".into(),
+        };
+        return;
+    };
+
+    let result = match (*action, domain) {
+        (HistoryAction::Undo, HistoryDomain::Effect) => {
+            let before = session.effect_undo_len();
+            session.undo();
+            (session.effect_undo_len() < before).then(|| {
+                ledger.redo.push(domain);
+            })
+        }
+        (HistoryAction::Redo, HistoryDomain::Effect) => {
+            let before = session.effect_redo_len();
+            session.redo();
+            (session.effect_redo_len() < before).then(|| {
+                ledger.undo.push(domain);
+            })
+        }
+        (HistoryAction::Undo, HistoryDomain::MaterialProgram) => {
+            match material_history.undo(&session.effect, &mut catalog) {
+                Ok(Some(label)) => {
+                    session.status = format!("Undid {label}");
+                    session.ui_revision += 1;
+                    ledger.redo.push(domain);
+                    Some(())
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    session.status = format!("Material undo failed: {error}");
+                    None
+                }
+            }
+        }
+        (HistoryAction::Redo, HistoryDomain::MaterialProgram) => {
+            match material_history.redo(&session.effect, &mut catalog) {
+                Ok(Some(label)) => {
+                    session.status = format!("Redid {label}");
+                    session.ui_revision += 1;
+                    ledger.undo.push(domain);
+                    Some(())
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    session.status = format!("Material redo failed: {error}");
+                    None
+                }
+            }
+        }
+    };
+    if result.is_none() {
+        match *action {
+            HistoryAction::Undo => ledger.undo.push(domain),
+            HistoryAction::Redo => ledger.redo.push(domain),
+        }
+    }
+    ledger.observe_effect_history(&session);
 }
 
 fn history_keyboard_input(
@@ -133,22 +425,36 @@ fn history_keyboard_input(
 
 fn update_history_availability(
     session: Res<EditorSession>,
+    ledger: Res<EditorHistoryLedger>,
     mut commands: Commands,
     items: Query<
         (Entity, Has<UndoMenuItem>, Has<RedoMenuItem>),
         Or<(With<UndoMenuItem>, With<RedoMenuItem>)>,
     >,
 ) {
-    if !session.is_changed() {
+    if !session.is_changed() && !ledger.is_changed() {
         return;
     }
     for (entity, undo, redo) in &items {
-        let enabled = (undo && session.can_undo()) || (redo && session.can_redo());
+        let enabled = (undo && (ledger.can_undo() || session.can_undo()))
+            || (redo && (ledger.can_redo() || session.can_redo()));
         if enabled {
             commands.entity(entity).remove::<InteractionDisabled>();
         } else {
             commands.entity(entity).insert(InteractionDisabled);
         }
+    }
+}
+
+fn sync_effect_history_ledger(
+    session: Res<EditorSession>,
+    mut ledger: ResMut<EditorHistoryLedger>,
+    mut material_history: ResMut<MaterialProgramEditHistory>,
+) {
+    match ledger.capture_effect_changes(&session) {
+        EffectHistoryChange::Reset => material_history.clear(),
+        EffectHistoryChange::Edited => material_history.clear_redo(),
+        EffectHistoryChange::None => {}
     }
 }
 
@@ -181,13 +487,20 @@ mod tests {
         session
     }
 
+    fn add_history_resources(app: &mut App) {
+        app.init_resource::<ProjectEffectCatalog>()
+            .init_resource::<MaterialProgramEditHistory>()
+            .init_resource::<EditorHistoryLedger>();
+    }
+
     #[test]
     fn history_actions_own_undo_and_redo() {
         let session = edited_session();
         let changed_duration = session.effect.duration;
         let mut app = App::new();
-        app.insert_resource(session)
-            .add_observer(execute_history_action);
+        app.insert_resource(session);
+        add_history_resources(&mut app);
+        app.add_observer(execute_history_action);
 
         app.world_mut().trigger(HistoryAction::Undo);
         app.update();
@@ -213,8 +526,9 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(edited_session())
             .insert_resource(keys)
-            .init_resource::<ModulePaletteState>()
-            .add_observer(execute_history_action)
+            .init_resource::<ModulePaletteState>();
+        add_history_resources(&mut app);
+        app.add_observer(execute_history_action)
             .add_systems(Update, history_keyboard_input);
 
         app.update();
@@ -228,8 +542,9 @@ mod tests {
     #[test]
     fn availability_sync_does_not_disable_unrelated_ui() {
         let mut app = App::new();
-        app.insert_resource(test_support::session_with_timing_slack())
-            .add_systems(Update, update_history_availability);
+        app.insert_resource(test_support::session_with_timing_slack());
+        add_history_resources(&mut app);
+        app.add_systems(Update, update_history_availability);
         let particle_color = Color::srgba(0.8, 0.4, 1.0, 0.75);
         let particle = app.world_mut().spawn(BackgroundColor(particle_color)).id();
         let undo = app
@@ -263,5 +578,73 @@ mod tests {
         let action = app.world().entity(action);
         assert!(action.contains::<PendingFeathersActivation>());
         assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+    }
+
+    #[test]
+    fn global_history_preserves_effect_and_material_edit_order() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("ordered.aestra.material.ron");
+        let mut original = MaterialProgram::additive_sprite("Original");
+        original.id = aestra_core::MaterialProgramId::from_u128(0x7600);
+        original.save_ron(&path).unwrap();
+        let original = MaterialProgram::load_ron(&path).unwrap();
+        let mut replacement = original.clone();
+        replacement.name = "Reordered".into();
+
+        let mut session = test_support::session_with_timing_slack();
+        session
+            .effect
+            .material_instances
+            .push(aestra_core::material::MaterialInstance {
+                id: aestra_core::MaterialId::from_u128(0x7601),
+                program: aestra_core::material::MaterialProgramRef::Project(original.id),
+                values: default(),
+                render_state: aestra_core::material::MaterialRenderState::additive_sprite(),
+            });
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let mut material_history = MaterialProgramEditHistory::default();
+        let mut ledger = EditorHistoryLedger::default();
+        material_history
+            .execute_replacement(
+                &session.effect,
+                &mut catalog,
+                "Move material modifier",
+                original.clone(),
+                replacement.clone(),
+            )
+            .unwrap();
+        ledger.record_material_edit(&mut session);
+        session.adjust_effect_duration(0.25);
+        let changed_duration = session.effect.duration;
+
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .insert_resource(material_history)
+            .insert_resource(ledger)
+            .add_observer(execute_history_action);
+
+        app.world_mut().trigger(HistoryAction::Undo);
+        app.update();
+        assert_ne!(
+            app.world().resource::<EditorSession>().effect.duration,
+            changed_duration
+        );
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), replacement);
+
+        app.world_mut().trigger(HistoryAction::Undo);
+        app.update();
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), original);
+
+        app.world_mut().trigger(HistoryAction::Redo);
+        app.update();
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), replacement);
+
+        app.world_mut().trigger(HistoryAction::Redo);
+        app.update();
+        assert_eq!(
+            app.world().resource::<EditorSession>().effect.duration,
+            changed_duration
+        );
     }
 }

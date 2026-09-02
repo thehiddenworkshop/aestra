@@ -989,17 +989,31 @@ fn spawn_semantic_material_stack(
             spawn_properties_read_only_control(parent, "Stack", "No semantic modifiers");
         }
         MaterialStackProjection::Stack { entries } => {
-            spawn_properties_read_only_control(parent, "Material Stack", "Compatible moves");
+            spawn_properties_read_only_control(parent, "Material Stack", "Reorder compatible");
             for (index, entry) in entries.iter().enumerate() {
-                spawn_properties_read_only_control(parent, "Modifier", entry.kind.display_name());
                 let targets = MaterialCompiler
                     .stack_move_targets(program, entry.expression)
                     .unwrap_or_default();
-                if !targets.is_empty() {
+                let options = material_stack_move_options(
+                    program.id,
+                    entries,
+                    index,
+                    entry.expression,
+                    &targets,
+                );
+                if options.is_empty() {
                     spawn_properties_read_only_control(
                         parent,
-                        "Valid positions",
-                        &material_stack_move_labels(entries, index, &targets),
+                        "Modifier",
+                        entry.kind.display_name(),
+                    );
+                } else {
+                    spawn_properties_combo_row(
+                        parent,
+                        "Modifier",
+                        entry.kind.display_name(),
+                        &options,
+                        Some("Move this modifier to a compatible position in the material stack."),
                     );
                 }
             }
@@ -1010,23 +1024,33 @@ fn spawn_semantic_material_stack(
     }
 }
 
-fn material_stack_move_labels(
+fn material_stack_move_options(
+    program: MaterialProgramId,
     entries: &[MaterialStackEntry],
     from_index: usize,
+    expression: MaterialExpressionId,
     targets: &[MaterialStackMoveTarget],
-) -> String {
+) -> Vec<ComboOption<PropertiesAction>> {
     targets
         .iter()
         .filter_map(|target| {
             let anchor = entries.get(target.index)?.kind.display_name();
-            Some(if target.index < from_index {
+            let label = if target.index < from_index {
                 format!("Before {anchor}")
             } else {
                 format!("After {anchor}")
+            };
+            Some(ComboOption {
+                label,
+                selected: false,
+                action: PropertiesAction::MoveSemanticMaterialModifier {
+                    program,
+                    expression,
+                    target_index: target.index,
+                },
             })
         })
-        .collect::<Vec<_>>()
-        .join(" · ")
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1872,7 +1896,7 @@ mod tests {
     }
 
     #[test]
-    fn material_stack_move_labels_describe_final_relative_positions() {
+    fn material_stack_move_options_describe_final_relative_positions() {
         let entries = [
             MaterialStackEntry {
                 expression: aestra_core::MaterialExpressionId::from_u128(0x7100),
@@ -1889,15 +1913,20 @@ mod tests {
         ];
 
         assert_eq!(
-            material_stack_move_labels(
+            material_stack_move_options(
+                MaterialProgramId::from_u128(0x70ff),
                 &entries,
                 1,
+                entries[1].expression,
                 &[
                     MaterialStackMoveTarget { index: 0 },
                     MaterialStackMoveTarget { index: 2 },
                 ],
-            ),
-            "Before UV Pan · After UV Scale"
+            )
+            .into_iter()
+            .map(|option| option.label)
+            .collect::<Vec<_>>(),
+            vec!["Before UV Pan", "After UV Scale"]
         );
     }
 

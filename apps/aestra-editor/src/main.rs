@@ -110,7 +110,7 @@ use feathers::{
 };
 use fluent_bundle::FluentArgs;
 pub(crate) use history::HistoryAction;
-use history::{EditorHistoryPlugin, HistorySet};
+use history::{EditorHistoryLedger, EditorHistoryPlugin, HistorySet, MaterialProgramEditHistory};
 use library::{EditorLibraryPlugin, LibrarySet};
 pub(crate) use library::{
     LibraryAssetOperationState, LibraryState, ProjectEffectCatalog, spawn_library,

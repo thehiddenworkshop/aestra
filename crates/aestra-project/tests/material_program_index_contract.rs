@@ -7,7 +7,8 @@ use aestra_core::{
 };
 use aestra_project::{
     ProjectAssetId, ProjectAssetIndex, ProjectMaterialDependencyDiagnosticCode,
-    ProjectMaterialProgramStatus, ResolveMaterialProgramError,
+    ProjectMaterialProgramOperationError, ProjectMaterialProgramStatus,
+    ResolveMaterialProgramError,
 };
 use std::{collections::BTreeMap, fs};
 
@@ -65,6 +66,42 @@ fn material_program_identity_survives_create_rename_and_move() {
     assert_eq!(moved.reference, created.reference);
     assert_eq!(index.effects().len(), 0);
     assert_eq!(index.material_programs().len(), 1);
+}
+
+#[test]
+fn material_program_replacement_is_atomic_and_rejects_external_changes() {
+    let temporary = tempfile::tempdir().unwrap();
+    let id = MaterialProgramId::from_u128(0xA007);
+    let path = temporary.path().join("program.aestra.material.ron");
+    let original = write_program(&path, id, "Original");
+    let mut index = ProjectAssetIndex::scan(temporary.path());
+    let source = index.material_programs()[0].id;
+    let mut replacement = original.clone();
+    replacement.name = "Replacement".into();
+
+    index
+        .replace_material_program_source(source, &original, &replacement)
+        .unwrap();
+    assert_eq!(
+        index
+            .load_material_program(MaterialProgramRef::Project(id))
+            .unwrap(),
+        replacement.normalized()
+    );
+
+    let mut external = replacement.clone();
+    external.name = "External edit".into();
+    external.save_ron(&path).unwrap();
+    let mut stale_replacement = replacement.clone();
+    stale_replacement.name = "Stale editor edit".into();
+    assert!(matches!(
+        index.replace_material_program_source(source, &replacement, &stale_replacement),
+        Err(ProjectMaterialProgramOperationError::SourceConflict { .. })
+    ));
+    assert_eq!(
+        MaterialProgram::load_ron(&path).unwrap(),
+        external.normalized()
+    );
 }
 
 #[test]

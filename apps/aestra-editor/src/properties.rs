@@ -20,8 +20,8 @@ use aestra_core::material::{
 use aestra_core::{
     ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, ColorKey, Curve,
     CurveKey, EffectAsset, EffectClip, EffectClipId, EffectParameter, Gradient, MarkerId,
-    MarkerTimeReference, MaterialId, MaterialParameterId, ParameterId, ScalarRange, ValueType,
-    Vec3Curve, Vec3Range,
+    MarkerTimeReference, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId,
+    ParameterId, ScalarRange, ValueType, Vec3Curve, Vec3Range,
 };
 use bevy::{
     feathers::controls::ButtonVariant,
@@ -85,6 +85,8 @@ impl Plugin for PropertiesPlugin {
         app.init_resource::<EditorModuleRegistry>()
             .init_resource::<ModulePaletteState>()
             .init_resource::<EffectClipRepairState>()
+            .init_resource::<MaterialProgramEditHistory>()
+            .init_resource::<EditorHistoryLedger>()
             .init_resource::<PropertiesFocus>()
             .init_resource::<NumericScrubState>()
             .init_resource::<BoundedSliderState>()
@@ -205,6 +207,11 @@ pub(crate) enum PropertiesAction {
     SetSemanticMaterialRenderState {
         instance: MaterialId,
         render_state: MaterialRenderState,
+    },
+    MoveSemanticMaterialModifier {
+        program: MaterialProgramId,
+        expression: MaterialExpressionId,
+        target_index: usize,
     },
     AddEventLink {
         trigger: EventTrigger,
@@ -372,8 +379,10 @@ fn handle_properties_actions(
     mut settings: ResMut<EditorSettings>,
     mut settings_persistence: ResMut<SettingsPersistence>,
     localizer: Res<Localizer>,
-    catalog: Option<Res<ProjectEffectCatalog>>,
+    mut catalog: Option<ResMut<ProjectEffectCatalog>>,
     mut repair: Option<ResMut<EffectClipRepairState>>,
+    mut material_history: Option<ResMut<MaterialProgramEditHistory>>,
+    mut history_ledger: Option<ResMut<EditorHistoryLedger>>,
 ) {
     for (entity, interaction, action, feathers_action, pending, disabled, mut background) in
         &mut actions
@@ -616,6 +625,57 @@ fn handle_properties_actions(
                             instance,
                             render_state,
                         );
+                    }
+                    PropertiesAction::MoveSemanticMaterialModifier {
+                        program,
+                        expression,
+                        target_index,
+                    } => {
+                        let Some(catalog) = catalog.as_deref_mut() else {
+                            session.status = "Material program catalog is unavailable".into();
+                            continue;
+                        };
+                        let Some(material_history) = material_history.as_deref_mut() else {
+                            session.status = "Material edit history is unavailable".into();
+                            continue;
+                        };
+                        let Some(history_ledger) = history_ledger.as_deref_mut() else {
+                            session.status = "Editor history is unavailable".into();
+                            continue;
+                        };
+                        let current = catalog
+                            .material_programs_for_effect(&session.effect)
+                            .and_then(|programs| {
+                                programs
+                                    .into_iter()
+                                    .find(|candidate| candidate.id == program)
+                                    .ok_or_else(|| {
+                                        format!("Material program {program} is unavailable")
+                                    })
+                            });
+                        let result = current.and_then(|current| {
+                            let plan = MaterialCompiler
+                                .plan_stack_move(&current, expression, target_index)
+                                .map_err(|error| error.to_string())?;
+                            material_history.execute_replacement(
+                                &session.effect,
+                                catalog,
+                                "Moved material modifier",
+                                current,
+                                plan.replacement,
+                            )
+                        });
+                        match result {
+                            Ok(()) => {
+                                history_ledger.record_material_edit(&mut session);
+                                session.status = "Moved material modifier".into();
+                                session.ui_revision += 1;
+                            }
+                            Err(error) => {
+                                session.status = format!("Material move failed: {error}");
+                                session.ui_revision += 1;
+                            }
+                        }
                     }
                     PropertiesAction::OpenModulePalette(_)
                     | PropertiesAction::CloseModulePalette

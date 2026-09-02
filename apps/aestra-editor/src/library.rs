@@ -7,6 +7,7 @@ use crate::feathers::context_menu::{
 use crate::timeline::TimelineState;
 use crate::*;
 use aestra_compiler::{EffectCompiler, ProjectCompileError};
+use aestra_core::material::{MaterialProgram, MaterialProgramRef};
 use aestra_core::{
     AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipId, EffectId, EffectParameter, Emitter, EmitterId,
@@ -203,6 +204,22 @@ impl ProjectEffectCatalog {
             );
         }
         Ok(programs)
+    }
+
+    pub(crate) fn replace_material_program(
+        &mut self,
+        expected: &MaterialProgram,
+        replacement: &MaterialProgram,
+    ) -> Result<(), String> {
+        let source = self
+            .index
+            .resolve_material_program(MaterialProgramRef::Project(expected.id))
+            .map_err(|error| error.to_string())?
+            .id;
+        self.index
+            .replace_material_program_source(source, expected, replacement)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 
     pub(crate) fn compile_project(

@@ -66,6 +66,7 @@ pub(crate) struct EditorSession {
     pub preview: Option<EffectInstance>,
     pub ui_revision: u64,
     history: CommandHistory,
+    history_generation: u64,
     saved_effect: Option<EffectAsset>,
     checkpoints: CheckpointStore<EffectInstance>,
     effect_revision: u64,
@@ -109,6 +110,7 @@ impl EditorSession {
             preview: Some(preview),
             ui_revision: 0,
             history: CommandHistory::default(),
+            history_generation: 0,
             saved_effect: Some(saved_effect),
             checkpoints: CheckpointStore::default(),
             effect_revision: 0,
@@ -439,6 +441,7 @@ impl EditorSession {
         self.dirty = true;
         self.saved_effect = None;
         self.history.clear();
+        self.history_generation = self.history_generation.wrapping_add(1);
         self.ui_revision += 1;
     }
 
@@ -462,6 +465,7 @@ impl EditorSession {
         self.playing = false;
         self.dirty = false;
         self.history.clear();
+        self.history_generation = self.history_generation.wrapping_add(1);
         self.ui_revision += 1;
         Ok(())
     }
@@ -487,6 +491,7 @@ impl EditorSession {
         self.saved_effect = saved_effect;
         self.update_dirty_state();
         self.history.clear();
+        self.history_generation = self.history_generation.wrapping_add(1);
         self.ui_revision += 1;
     }
 
@@ -832,6 +837,22 @@ impl EditorSession {
 
     pub fn can_redo(&self) -> bool {
         self.history.can_redo()
+    }
+
+    pub(crate) fn effect_undo_len(&self) -> usize {
+        self.history.undo_len()
+    }
+
+    pub(crate) fn effect_redo_len(&self) -> usize {
+        self.history.redo_len()
+    }
+
+    pub(crate) fn history_generation(&self) -> u64 {
+        self.history_generation
+    }
+
+    pub(crate) fn clear_effect_redo(&mut self) {
+        self.history.clear_redo();
     }
 
     pub fn selected_layer_index(&self) -> usize {

@@ -627,6 +627,71 @@ impl ProjectAssetIndex {
             })
     }
 
+    /// Atomically replaces one material-program source after verifying that it still contains
+    /// the exact program the caller edited.
+    ///
+    /// The expected-value check prevents an editor transaction from silently overwriting an
+    /// external change made after the program was loaded.
+    pub fn replace_material_program_source(
+        &mut self,
+        source: ProjectSourceId,
+        expected: &MaterialProgram,
+        replacement: &MaterialProgram,
+    ) -> Result<ProjectMaterialProgramEntry, ProjectMaterialProgramOperationError> {
+        let expected = expected.normalized();
+        let replacement = replacement.normalized();
+        let entry = self.material_program_source_for_operation(source)?;
+        let reference = entry
+            .reference
+            .expect("a resolvable material program source has a semantic reference");
+        if expected.id != reference.id() {
+            return Err(ProjectMaterialProgramOperationError::IdentityChanged {
+                reference,
+                path: entry.path,
+            });
+        }
+        if replacement.id != expected.id {
+            return Err(
+                ProjectMaterialProgramOperationError::ReplacementIdentityChanged {
+                    expected: expected.id,
+                    actual: replacement.id,
+                },
+            );
+        }
+        replacement
+            .validate()
+            .map_err(|error| ProjectMaterialProgramOperationError::Asset {
+                path: entry.path.clone(),
+                message: error.to_string(),
+            })?;
+        let current = MaterialProgram::load_ron(&entry.path).map_err(|error| {
+            ProjectMaterialProgramOperationError::Asset {
+                path: entry.path.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        if current != expected {
+            return Err(ProjectMaterialProgramOperationError::SourceConflict {
+                reference,
+                path: entry.path,
+            });
+        }
+        replacement.save_ron(&entry.path).map_err(|error| {
+            ProjectMaterialProgramOperationError::Asset {
+                path: entry.path.clone(),
+                message: error.to_string(),
+            }
+        })?;
+
+        self.refresh();
+        self.resolve_material_program(reference)
+            .cloned()
+            .map_err(|error| ProjectMaterialProgramOperationError::Refresh {
+                reference,
+                message: error.to_string(),
+            })
+    }
+
     pub fn rename_material_program_source(
         &mut self,
         source: ProjectSourceId,
@@ -1076,6 +1141,16 @@ pub enum ProjectMaterialProgramOperationError {
     DestinationExists { path: PathBuf },
     #[error("material program source at {path} changed semantic identity from {reference:?}")]
     IdentityChanged {
+        reference: MaterialProgramRef,
+        path: PathBuf,
+    },
+    #[error("replacement material program must preserve identity {expected}, received {actual}")]
+    ReplacementIdentityChanged {
+        expected: MaterialProgramId,
+        actual: MaterialProgramId,
+    },
+    #[error("material program {reference:?} changed on disk at {path}; reload before editing")]
+    SourceConflict {
         reference: MaterialProgramRef,
         path: PathBuf,
     },
