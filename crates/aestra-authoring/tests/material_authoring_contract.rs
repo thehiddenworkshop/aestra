@@ -1,10 +1,12 @@
 use aestra_authoring::{
     MaterialAuthoringDocument, MaterialChangeKind, MaterialCommand, MaterialCommandError,
-    MaterialCommandExecutor, MaterialCommandHistory, MaterialExpressionInput, MaterialOutputSocket,
-    MaterialSemanticTarget, MaterialToolCommand, MaterialToolError, MaterialToolPlanner,
-    MaterialTransaction,
+    MaterialCommandExecutor, MaterialCommandHistory, MaterialExpressionInput,
+    MaterialInsertionPoint, MaterialOutputSocket, MaterialSemanticTarget, MaterialToolCommand,
+    MaterialToolError, MaterialToolPlanner, MaterialTransaction,
 };
-use aestra_compiler::MaterialStackPresetKind;
+use aestra_compiler::{
+    MaterialCompiler, MaterialStackModifierKind, MaterialStackPresetKind, MaterialStackProjection,
+};
 use aestra_core::{
     AssetId, BlendMode, EffectAsset, Emitter, MaterialExpressionId, MaterialId,
     MaterialParameterId, MaterialProgramId, RendererId,
@@ -1673,7 +1675,7 @@ fn material_preset_tool_plans_a_valid_reversible_semantic_transaction() {
         MaterialToolCommand::ApplyMaterialPreset {
             program: program_id,
             preset: MaterialStackPresetKind::UvDrift,
-            target_index: 0,
+            placement: MaterialInsertionPoint::Start,
         },
     )
     .unwrap();
@@ -1712,11 +1714,80 @@ fn material_preset_tool_rejects_incompatible_requests_without_mutation() {
         MaterialToolCommand::ApplyMaterialPreset {
             program: program_id,
             preset: MaterialStackPresetKind::SoftDissolve,
-            target_index: 0,
+            placement: MaterialInsertionPoint::Start,
         },
     )
     .unwrap_err();
 
     assert!(matches!(error, MaterialToolError::StackEdit(_)));
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_operation_tool_uses_stable_placement_and_exact_undo() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6200);
+    let (program, pan) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+    let command = MaterialToolCommand::InsertMaterialOperation {
+        program: program_id,
+        kind: MaterialStackModifierKind::ScaleUv,
+        placement: MaterialInsertionPoint::After(pan),
+    };
+
+    let encoded = ron::to_string(&command).unwrap();
+    assert_eq!(
+        ron::from_str::<MaterialToolCommand>(&encoded).unwrap(),
+        command
+    );
+    let plan = MaterialToolPlanner::plan(&document, command).unwrap();
+
+    assert_eq!(document, before, "planning must not mutate its input");
+    assert_eq!(plan.created_expressions.len(), 1);
+    let replacement = plan.replacement_program(program_id).unwrap().clone();
+    let MaterialStackProjection::Stack { entries } =
+        MaterialCompiler.project_stack(&replacement).unwrap()
+    else {
+        panic!("inserted operation must remain an editable stack");
+    };
+    assert_eq!(entries[0].expression, pan);
+    assert_eq!(entries[1].expression, plan.created_expressions[0]);
+    assert_eq!(entries[1].kind, MaterialStackModifierKind::ScaleUv);
+    assert!(plan.diff.changes.iter().any(|change| {
+        change.kind == MaterialChangeKind::Added
+            && change.target == MaterialSemanticTarget::Expression(plan.created_expressions[0])
+    }));
+
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    assert_eq!(document.programs[0], replacement);
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_operation_tool_rejects_a_stale_insertion_anchor() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6300);
+    let (program, _) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let before = document.clone();
+    let missing = MaterialExpressionId::from_u128(0x63ff);
+
+    let error = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::InsertMaterialOperation {
+            program: program_id,
+            kind: MaterialStackModifierKind::ScaleUv,
+            placement: MaterialInsertionPoint::Before(missing),
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        MaterialToolError::InsertionAnchorNotFound(expression) if expression == missing
+    ));
     assert_eq!(document, before);
 }

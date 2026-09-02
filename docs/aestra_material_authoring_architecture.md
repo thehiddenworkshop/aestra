@@ -2102,6 +2102,9 @@ planner accepts a document and semantic request, delegates graph-safe constructi
 compiler, validates the resulting baseline transaction against the complete authoring document,
 and returns both that transaction and its semantic diff without mutating storage. The editor uses
 this same plan before persisting the replacement through its shared material history.
+`InsertMaterialOperation` uses the same boundary and represents placement as `Start`, `End`,
+`Before(expression)`, or `After(expression)`. Missing anchors fail atomically, preventing delayed
+editor or tool requests from applying to a different stack position after the program changes.
 
 ### Completion Criterion
 

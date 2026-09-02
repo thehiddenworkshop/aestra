@@ -316,6 +316,9 @@ the current sprite-material path until the native-GPU compatibility gate approve
   slice now exposes `ApplyMaterialPreset` as a UI-independent request that compiler-plans a full
   preset, returns one validated baseline transaction plus its semantic diff, and is consumed by
   the Properties workflow without directly constructing or mutating stored material programs.
+  `InsertMaterialOperation` now follows the same path and addresses insertion points with stable
+  start/end or before/after-expression anchors instead of fragile stack indices; Properties
+  captures those semantic anchors when presenting compatible modifier and preset choices.
 - [ ] **Material 11 — AI material API.** Expose machine-readable inspection, editing, compilation,
   and diagnostics.
 

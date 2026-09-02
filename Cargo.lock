@@ -114,6 +114,7 @@ dependencies = [
  "aestra-compiler",
  "aestra-core",
  "aestra-gpu",
+ "ron",
  "serde",
  "thiserror 2.0.20",
 ]

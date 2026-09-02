@@ -1189,7 +1189,7 @@ fn material_stack_preset_options(
                 action: PropertiesAction::InsertSemanticMaterialPreset {
                     program,
                     preset: target.preset,
-                    target_index: target.index,
+                    placement: material_stack_insertion_point(entries, target.index),
                 },
             }
         })
@@ -1214,11 +1214,22 @@ fn material_stack_insert_options(
                 action: PropertiesAction::InsertSemanticMaterialModifier {
                     program,
                     kind: target.kind,
-                    target_index: target.index,
+                    placement: material_stack_insertion_point(entries, target.index),
                 },
             }
         })
         .collect()
+}
+
+fn material_stack_insertion_point(
+    entries: &[MaterialStackEntry],
+    target_index: usize,
+) -> MaterialInsertionPoint {
+    target_index
+        .checked_sub(1)
+        .map_or(MaterialInsertionPoint::Start, |anchor_index| {
+            MaterialInsertionPoint::After(entries[anchor_index].expression)
+        })
 }
 
 fn material_stack_modifier_options(
@@ -2323,8 +2334,9 @@ mod tests {
 
     #[test]
     fn material_stack_insert_options_name_the_modifier_and_edge() {
+        let pan = aestra_core::MaterialExpressionId::from_u128(0x7110);
         let entries = [MaterialStackEntry {
-            expression: aestra_core::MaterialExpressionId::from_u128(0x7110),
+            expression: pan,
             kind: aestra_compiler::MaterialStackModifierKind::PanUv,
             enabled: true,
         }];
@@ -2344,17 +2356,32 @@ mod tests {
         );
         assert_eq!(
             options
-                .into_iter()
-                .map(|option| option.label)
+                .iter()
+                .map(|option| option.label.as_str())
                 .collect::<Vec<_>>(),
             vec!["UV Rotate · First", "UV Scale · After UV Pan"]
         );
+        assert!(matches!(
+            options[0].action,
+            PropertiesAction::InsertSemanticMaterialModifier {
+                placement: MaterialInsertionPoint::Start,
+                ..
+            }
+        ));
+        assert!(matches!(
+            options[1].action,
+            PropertiesAction::InsertSemanticMaterialModifier {
+                placement: MaterialInsertionPoint::After(anchor),
+                ..
+            } if anchor == pan
+        ));
     }
 
     #[test]
     fn material_stack_preset_options_name_the_chain_and_edge() {
+        let base = aestra_core::MaterialExpressionId::from_u128(0x7120);
         let entries = [MaterialStackEntry {
-            expression: aestra_core::MaterialExpressionId::from_u128(0x7120),
+            expression: base,
             kind: aestra_compiler::MaterialStackModifierKind::BaseTexture,
             enabled: true,
         }];
@@ -2374,11 +2401,25 @@ mod tests {
         );
         assert_eq!(
             options
-                .into_iter()
-                .map(|option| option.label)
+                .iter()
+                .map(|option| option.label.as_str())
                 .collect::<Vec<_>>(),
             vec!["UV Drift · First", "Soft Dissolve · After Base Texture"]
         );
+        assert!(matches!(
+            options[0].action,
+            PropertiesAction::InsertSemanticMaterialPreset {
+                placement: MaterialInsertionPoint::Start,
+                ..
+            }
+        ));
+        assert!(matches!(
+            options[1].action,
+            PropertiesAction::InsertSemanticMaterialPreset {
+                placement: MaterialInsertionPoint::After(anchor),
+                ..
+            } if anchor == base
+        ));
     }
 
     #[test]

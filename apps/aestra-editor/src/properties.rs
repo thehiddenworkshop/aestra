@@ -8,7 +8,9 @@ use crate::feathers::panel_card::{
 use crate::feathers::slider_row::{SliderNumberInputPair, SliderRowProps, spawn_slider_input_pair};
 use crate::timeline::{EffectClipChildSelection, EffectClipPath, TimelineState};
 use crate::*;
-use aestra_authoring::{MaterialAuthoringDocument, MaterialToolCommand, MaterialToolPlanner};
+use aestra_authoring::{
+    MaterialAuthoringDocument, MaterialInsertionPoint, MaterialToolCommand, MaterialToolPlanner,
+};
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
     MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, MaterialStackEntry,
@@ -228,12 +230,12 @@ pub(crate) enum PropertiesAction {
     InsertSemanticMaterialModifier {
         program: MaterialProgramId,
         kind: aestra_compiler::MaterialStackModifierKind,
-        target_index: usize,
+        placement: MaterialInsertionPoint,
     },
     InsertSemanticMaterialPreset {
         program: MaterialProgramId,
         preset: MaterialStackPresetKind,
-        target_index: usize,
+        placement: MaterialInsertionPoint,
     },
     RemoveSemanticMaterialModifier {
         program: MaterialProgramId,
@@ -685,7 +687,7 @@ fn handle_properties_actions(
                     PropertiesAction::InsertSemanticMaterialModifier {
                         program,
                         kind,
-                        target_index,
+                        placement,
                     } => {
                         apply_material_program_edit(
                             &mut session,
@@ -694,18 +696,26 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Added material modifier",
-                            |_, current| {
-                                MaterialCompiler
-                                    .plan_stack_insert(current, kind, target_index)
-                                    .map(|plan| plan.replacement)
-                                    .map_err(|error| error.to_string())
+                            |document, _| {
+                                let command = MaterialToolCommand::InsertMaterialOperation {
+                                    program,
+                                    kind,
+                                    placement,
+                                };
+                                let plan = MaterialToolPlanner::plan(document, command)
+                                    .map_err(|error| error.to_string())?;
+                                plan.replacement_program(program).cloned().ok_or_else(|| {
+                                    format!(
+                                        "material tool plan omitted replacement program {program}"
+                                    )
+                                })
                             },
                         );
                     }
                     PropertiesAction::InsertSemanticMaterialPreset {
                         program,
                         preset,
-                        target_index,
+                        placement,
                     } => {
                         apply_material_program_edit(
                             &mut session,
@@ -718,7 +728,7 @@ fn handle_properties_actions(
                                 let command = MaterialToolCommand::ApplyMaterialPreset {
                                     program,
                                     preset,
-                                    target_index,
+                                    placement,
                                 };
                                 let plan = MaterialToolPlanner::plan(document, command)
                                     .map_err(|error| error.to_string())?;
