@@ -1,6 +1,6 @@
 # Current Material System Audit
 
-Status: Material authoring Milestone 5 complete; Material 6 in progress
+Status: Material authoring Milestones 5 and 6 complete; Material 7 next
 Audited: 2026-09-02
 
 This document records the material and renderer contract that exists before Aestra introduces a
@@ -218,6 +218,7 @@ approved native-GPU visuals.
 | Semantic editing | `aestra-authoring/tests/authoring_contract.rs`: transactional material replacement, undo, referenced-material deletion guard |
 | Compiler lowering | `aestra-compiler/tests/compiler_contract.rs`: texture resolution, flipbook metadata, material parameter folding/runtime slots |
 | Material IR | `aestra-compiler/tests/material_ir_contract.rs`: deterministic typed lowering, source mapping, optimization, invalid-program rejection |
+| Control reflection | `aestra-compiler/tests/material_reflection_contract.rs`: typed controls, source choices, defaults/overrides, texture constraints, input requirements, and render state |
 | GPU ABI | `aestra-bevy-render/src/gpu.rs` tests: multiple renderers, blend selectors, softness, tint, texture/UV, flipbook packing |
 | Shader source | `aestra-gpu/tests/shader_contract.rs`: WESL/WGSL snapshots, Naga validation, SPIR-V/HLSL translation |
 | Generated material shader | `aestra-gpu/tests/material_shader_contract.rs`: two-texture flame WESL, resource ABI, reflection, fingerprints, pipeline keys, and capability diagnostics |
@@ -268,9 +269,9 @@ adapter. A destructive format migration is not required to prove the first verti
 
 ## Known gaps
 
-- compiled effects now carry semantic programs, instances, and their dynamic source descriptors;
-  presentation creates and refreshes emitter-specific contexts automatically, but Properties does
-  not yet project the reflected catalog into generated authoring controls;
+- compiled effects carry semantic programs, instances, and their dynamic source descriptors;
+  presentation creates and refreshes emitter-specific contexts automatically, and the compiler
+  exposes an engine-neutral control catalog, but Properties does not yet render or edit that catalog;
 - the initial generated backend supports UV0, particle color/opacity, effect time, arithmetic,
   interpolation, clamping, and sampled Texture2D parameters; richer inputs remain explicit errors;
 - no validated custom WESL functions;
@@ -299,6 +300,7 @@ model, compiler path, runtime binding, and preview are stable.
 
 Items 1–7 of this entrance contract are complete. The deterministic legacy migration covers the
 current sprite and flipbook showcase paths, and native-GPU approval closes the Material 5 release
-gate. Material 6 now has its scoped dynamic-value resolver, compiled/versioned descriptor
-persistence, and automatic emitter-specific presentation contexts. It continues by exposing the
-same reflection as reusable editor control metadata for generated Properties controls.
+gate. Material 6 is complete with its scoped dynamic-value resolver, compiled/versioned descriptor
+persistence, automatic emitter-specific presentation contexts, and reusable engine-neutral control
+reflection. Material 7 can now generate Properties controls from that catalog and route edits
+through semantic authoring commands.

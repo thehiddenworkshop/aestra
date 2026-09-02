@@ -4,7 +4,7 @@ use crate::shader::{CompiledWesl, GpuShaderError, compile_wesl};
 pub use aestra_compiler::MaterialIrConstant;
 use aestra_compiler::{
     MaterialIrInstruction, MaterialIrProgram, MaterialIrSourceMap, MaterialIrValue,
-    MaterialIrValueId,
+    MaterialIrValueId, reflect_material_inputs,
 };
 use aestra_core::{
     MaterialExpressionId, MaterialParameterId, MaterialProgramId,
@@ -457,33 +457,30 @@ fn build_reflection(
     ir: &MaterialIrProgram,
     layout: &MaterialResourceLayout,
 ) -> Result<MaterialReflection, MaterialGpuError> {
-    let mut required_vertex_inputs = Vec::new();
-    let mut required_particle_inputs = Vec::new();
-    let mut required_scene_inputs = Vec::new();
-    for value in &ir.values {
-        let MaterialIrInstruction::Input(input) = value.instruction else {
-            continue;
-        };
-        let target = match input {
-            MaterialInput::Uv0 => &mut required_vertex_inputs,
-            MaterialInput::ParticleColor | MaterialInput::ParticleOpacity => {
-                &mut required_particle_inputs
-            }
-            MaterialInput::EffectTime => &mut required_scene_inputs,
-            _ => {
-                return Err(MaterialGpuError::UnsupportedInput {
-                    input,
-                    expressions: ir
-                        .source_map
-                        .expressions
-                        .get(&value.id)
-                        .cloned()
-                        .unwrap_or_default(),
-                });
-            }
-        };
-        if !target.contains(&input) {
-            target.push(input);
+    let requirements = reflect_material_inputs(ir);
+    for input in requirements.all() {
+        if !matches!(
+            input,
+            MaterialInput::Uv0
+                | MaterialInput::ParticleColor
+                | MaterialInput::ParticleOpacity
+                | MaterialInput::EffectTime
+        ) {
+            let expressions = ir
+                .values
+                .iter()
+                .find_map(|value| {
+                    matches!(value.instruction, MaterialIrInstruction::Input(candidate) if candidate == input)
+                        .then(|| {
+                            ir.source_map
+                                .expressions
+                                .get(&value.id)
+                                .cloned()
+                                .unwrap_or_default()
+                        })
+                })
+                .unwrap_or_default();
+            return Err(MaterialGpuError::UnsupportedInput { input, expressions });
         }
     }
     let parameters = ir
@@ -528,9 +525,9 @@ fn build_reflection(
         .collect::<Result<Vec<_>, MaterialGpuError>>()?;
     Ok(MaterialReflection {
         parameters,
-        required_vertex_inputs,
-        required_particle_inputs,
-        required_scene_inputs,
+        required_vertex_inputs: requirements.vertex,
+        required_particle_inputs: requirements.particle,
+        required_scene_inputs: requirements.scene,
     })
 }
 
