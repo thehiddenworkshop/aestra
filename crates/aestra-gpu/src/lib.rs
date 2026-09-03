@@ -191,8 +191,39 @@ pub enum GpuBlend {
     Multiply = 2,
 }
 
+/// The dynamic, per-frame portion of a GPU effect artifact: emitter and renderer
+/// inputs plus the slot count and bounds, but not the capacity-sized particle
+/// scratch buffer. Building this avoids allocating and zeroing `Vec<GpuParticle>`
+/// on the per-frame update path, where only emitter and renderer inputs change.
+#[derive(Debug, Clone)]
+pub struct GpuEffectDynamics {
+    pub emitters: Vec<GpuEmitter>,
+    pub renderers: Vec<GpuRenderer>,
+    pub total_slots: u32,
+    pub bounds_half_extents: Vec3,
+}
+
 impl GpuEffectArtifact {
+    /// Builds the full artifact including capacity-sized particle storage. Use this
+    /// when persistent GPU particle buffers are first created or resized; the
+    /// per-frame update path should prefer [`Self::dynamics_from_instance`], whose
+    /// cost scales with emitter and renderer count rather than particle capacity.
     pub fn from_instance(instance: &EffectInstance) -> Result<Self, GpuArtifactError> {
+        let dynamics = Self::dynamics_from_instance(instance)?;
+        Ok(Self {
+            particles: vec![GpuParticle::default(); dynamics.total_slots as usize],
+            emitters: dynamics.emitters,
+            renderers: dynamics.renderers,
+            total_slots: dynamics.total_slots,
+            bounds_half_extents: dynamics.bounds_half_extents,
+        })
+    }
+
+    /// Builds only the dynamic emitter/renderer inputs (plus slot count and bounds)
+    /// without allocating the capacity-sized particle buffer.
+    pub fn dynamics_from_instance(
+        instance: &EffectInstance,
+    ) -> Result<GpuEffectDynamics, GpuArtifactError> {
         for flipbook in &instance.effect().flipbooks {
             if flipbook.frames.len() > MAX_FLIPBOOK_FRAMES {
                 return Err(GpuArtifactError::FlipbookFrameLimit {
@@ -415,10 +446,9 @@ impl GpuEffectArtifact {
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }
-        Ok(Self {
+        Ok(GpuEffectDynamics {
             emitters,
             renderers,
-            particles: vec![GpuParticle::default(); slot_offset as usize],
             total_slots: slot_offset,
             bounds_half_extents,
         })
@@ -815,6 +845,34 @@ mod tests {
         assert_eq!(artifact.emitters[0].slot_offset, 0);
         assert_eq!(artifact.emitters[1].slot_offset, 17);
         assert_eq!(artifact.particles.len(), 40);
+    }
+
+    #[test]
+    fn dynamics_match_the_full_artifact_without_allocating_particles() {
+        let mut effect = EffectAsset::new("GPU", 2.0);
+        let mut first = Emitter::basic_sprite("First", 2.0);
+        first.max_particles = 17;
+        let mut second = Emitter::basic_sprite("Second", 2.0);
+        second.max_particles = 23;
+        effect.emitters.extend([first, second]);
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let instance = EffectInstance::new(compiled);
+
+        let artifact = GpuEffectArtifact::from_instance(&instance).unwrap();
+        let dynamics = GpuEffectArtifact::dynamics_from_instance(&instance).unwrap();
+
+        // The dynamics builder must produce the same emitter/renderer inputs and
+        // slot count as the full builder — it only omits the particle scratch, which
+        // the full builder sizes from exactly this slot count.
+        assert_eq!(dynamics.total_slots, artifact.total_slots);
+        assert_eq!(dynamics.bounds_half_extents, artifact.bounds_half_extents);
+        assert_eq!(dynamics.emitters.len(), artifact.emitters.len());
+        assert_eq!(dynamics.renderers.len(), artifact.renderers.len());
+        assert_eq!(artifact.particles.len(), dynamics.total_slots as usize);
+        for (dynamic, full) in dynamics.emitters.iter().zip(&artifact.emitters) {
+            assert_eq!(dynamic.slot_offset, full.slot_offset);
+            assert_eq!(dynamic.max_particles, full.max_particles);
+        }
     }
 
     #[test]

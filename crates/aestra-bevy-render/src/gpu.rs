@@ -331,7 +331,7 @@ pub(crate) fn prepare_gpu_effects(
             commands.entity(entity).insert(GpuPresentationPrepared);
             continue;
         }
-        apply_semantic_sprite_compatibility_to_artifact(&mut artifact, &player);
+        apply_semantic_sprite_compatibility_to_renderers(&mut artifact.renderers, &player);
         let renderer_draws = artifact
             .renderers
             .iter_mut()
@@ -538,11 +538,11 @@ fn apply_semantic_sprite_compatibility(
     }
 }
 
-fn apply_semantic_sprite_compatibility_to_artifact(
-    artifact: &mut GpuEffectArtifact,
+fn apply_semantic_sprite_compatibility_to_renderers(
+    renderers: &mut [GpuRenderer],
     player: &PresentedEffect,
 ) {
-    for (renderer, plan) in artifact.renderers.iter_mut().zip(
+    for (renderer, plan) in renderers.iter_mut().zip(
         player
             .effect()
             .emitters
@@ -691,13 +691,16 @@ fn update_gpu_inputs(
 ) {
     for (mut player, transform, gpu, render_layers, children) in &mut players {
         player.refresh_automatic_material_bindings();
-        if let Ok(mut artifact) = GpuEffectArtifact::from_instance(&player.instance) {
-            apply_semantic_sprite_compatibility_to_artifact(&mut artifact, &player);
+        // Only emitter and renderer inputs change per frame; use the dynamics
+        // builder so we never reallocate the capacity-sized particle scratch buffer
+        // here (its cost scales with capacity, not with what actually changed).
+        if let Ok(mut dynamics) = GpuEffectArtifact::dynamics_from_instance(&player.instance) {
+            apply_semantic_sprite_compatibility_to_renderers(&mut dynamics.renderers, &player);
             if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
-                buffer.set_data(artifact.emitters);
+                buffer.set_data(dynamics.emitters);
             }
             if let Some(mut buffer) = buffers.get_mut(&gpu.renderers) {
-                buffer.set_data(artifact.renderers);
+                buffer.set_data(dynamics.renderers);
             }
         }
         if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
@@ -1045,7 +1048,7 @@ mod tests {
                 .material_binding_for_emitter(material, emitter_id)
                 .is_some()
         );
-        apply_semantic_sprite_compatibility_to_artifact(&mut artifact, &presented);
+        apply_semantic_sprite_compatibility_to_renderers(&mut artifact.renderers, &presented);
         assert_eq!(artifact.renderers[0].softness, 0.08);
     }
 

@@ -6,7 +6,7 @@
 //!
 //! * `runtime advance`       — `EffectInstance::advance` (clock + choreography)
 //! * `CPU reference eval`    — `EffectInstance::evaluate` (analytical particle reconstruction)
-//! * `artifact update`       — `GpuEffectArtifact::from_instance` (the §2.1 per-frame hotspot)
+//! * `artifact update`       — `GpuEffectArtifact::dynamics_from_instance` (per-frame emitter/renderer prep)
 //!
 //! It records distribution statistics (median/p95/p99/max/stddev), measured
 //! occupancy, and normalized ratios, then prints a summary and optionally writes
@@ -179,15 +179,14 @@ fn run_scenario(scenario: &scenario::Scenario, config: &Config) -> Result<BenchR
         .collect();
 
     // Per-instance analytical slot count; total capacity scales with instance count.
-    let per_instance_capacity = GpuEffectArtifact::from_instance(&instances[0])
+    let per_instance_capacity = GpuEffectArtifact::dynamics_from_instance(&instances[0])
         .map_err(|error| format!("GPU artifact is unavailable ({error}); cannot size capacity"))?
         .total_slots;
     let capacity =
         per_instance_capacity.saturating_mul(instance_count.min(u32::MAX as usize) as u32);
 
     // A single reused buffer keeps CPU-reference timing focused on reconstruction
-    // work rather than the caller's output allocation. `from_instance` allocates
-    // internally on purpose — that allocation is exactly what we want to measure.
+    // work rather than the caller's output allocation.
     let mut samples: Vec<ParticleSample> = Vec::new();
 
     for _ in 0..config.warmup {
@@ -195,7 +194,7 @@ fn run_scenario(scenario: &scenario::Scenario, config: &Config) -> Result<BenchR
             instance.advance(dt);
             samples.clear();
             instance.evaluate(&mut samples);
-            black_box(GpuEffectArtifact::from_instance(instance).ok());
+            black_box(GpuEffectArtifact::dynamics_from_instance(instance).ok());
         }
     }
 
@@ -220,8 +219,8 @@ fn run_scenario(scenario: &scenario::Scenario, config: &Config) -> Result<BenchR
         let start = Instant::now();
         for instance in &instances {
             black_box(
-                GpuEffectArtifact::from_instance(instance)
-                    .map(|artifact| artifact.total_slots)
+                GpuEffectArtifact::dynamics_from_instance(instance)
+                    .map(|dynamics| dynamics.total_slots)
                     .ok(),
             );
         }
