@@ -86,8 +86,17 @@ whole-frame + per-stage timing, so build them together.
   numbers on GPU hardware (Vulkan/DX12), so the values must be confirmed there, not
   in the headless CPU environment. This is why the code is written against Bevy's
   supported API and compile-checked here, but not runtime-verified.
-- Remaining: wrap the sprite draw (`gpu/render.rs`) too, and record GPU
-  sim-reset / sim / render timings into the bench JSON (strategy §7, §10 GPU block).
+- The sprite draw is **not** a separable Aestra pass to wrap: Aestra sprites are
+  phase items added to Bevy's `Transparent2d`/`Transparent3d` passes via
+  `add_render_command` (`gpu/render.rs`), so Aestra never begins its own render pass.
+  Their GPU render time is already recorded by `RenderDiagnosticsPlugin` as
+  `main_transparent_pass_2d` / `main_transparent_pass_3d`; in the viewer those passes
+  contain essentially only Aestra sprites, so that timing is the Aestra render cost
+  in practice. A dedicated `aestra::gpu::render` span would require fragile per-draw
+  timestamps and is deliberately not added.
+- Remaining: on the GPU lane, read the resolved GPU timings (sim-reset / sim /
+  transparent-pass render) from the diagnostics store into the bench/capture JSON
+  (strategy §7, §10 GPU block).
 
 ### 1e. Statistical output + JSON format
 - Per timing metric record median/p95/p99/max/stddev (strategy §10); optional
