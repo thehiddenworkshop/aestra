@@ -14,8 +14,8 @@ use aestra_core::{
     Value,
 };
 use aestra_runtime::{
-    CheckpointBackendId, CheckpointContext, CheckpointStore, EffectInstance, PlaybackClock,
-    SeekOrigin, SeekPlan, SimulationSeekMode,
+    CheckpointBackendId, CheckpointContext, CheckpointStore, CompiledEffect, EffectInstance,
+    PlaybackClock, SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 use bevy::prelude::Resource;
 use std::{
@@ -449,6 +449,22 @@ impl EditorSession {
         let path = path.as_ref();
         let effect = EffectAsset::load_ron(path)?;
         let preview = compile_preview(&effect, self.preview_seed)?;
+        self.install_open_document(path, effect, preview);
+        Ok(())
+    }
+
+    pub(crate) fn open_compiled_effect(
+        &mut self,
+        path: impl AsRef<Path>,
+        effect: EffectAsset,
+        compiled: Arc<CompiledEffect>,
+    ) {
+        debug_assert_eq!(compiled.source, effect.id);
+        let preview = EffectInstance::with_seed(compiled, self.preview_seed);
+        self.install_open_document(path.as_ref(), effect, preview);
+    }
+
+    fn install_open_document(&mut self, path: &Path, effect: EffectAsset, preview: EffectInstance) {
         self.saved_effect = Some(effect.clone());
         self.effect = effect;
         self.solo_emitter = None;
@@ -467,7 +483,6 @@ impl EditorSession {
         self.history.clear();
         self.history_generation = self.history_generation.wrapping_add(1);
         self.ui_revision += 1;
-        Ok(())
     }
 
     pub fn restore_recovery(&mut self, effect: EffectAsset, source_path: Option<PathBuf>) {
