@@ -184,37 +184,49 @@ loop pressure / curve complexity and GPU simulation time.
 gameplay runtime, and which §2.x risks are real bottlenecks vs. acceptable. Output
 is a written scaling report, not code.
 
-### Early GPU result — §2.2 refuted on the capacity axis
+### GPU scaling result — measured (RTX 4070 SUPER / Vulkan)
 
-A first GPU-timestamp pass (`aestra-viewer --gpu-bench`, RTX 4070 SUPER / Vulkan,
-archived under `benchmarks/gpu-baselines/20d5785…/`) already answers the strategy's
-central §2.2 worry ("GPU simulation scales with total particle capacity"):
+A GPU-timestamp sweep (`aestra-viewer --gpu-bench`, archived under
+`benchmarks/gpu-baselines/20d5785…/` and `…/a6e6103…/`) answers the strategy's four
+§2.x GPU-simulation risks with real distributions. **Three confirmed, one refuted:**
 
-- **b004 (500k capacity, 5k alive) simulates at 0.001 ms p50; b003 (100k capacity,
-  100k alive) at 0.362 ms p50.** 5× the capacity, ~360× *less* time — the kernel is
-  driven by alive particles, not capacity. Dead slots are effectively free.
-- Dense throughput ≈ 3.6 ns per live particle; 100k particles fit in ~0.36 ms.
+| Risk | Verdict | Evidence (sim p50) |
+| --- | --- | --- |
+| §2.2 capacity-bound | **REFUTED** | b004 500k/5k-alive = 0.001 ms vs b003 100k/100k = 0.362 ms |
+| §2.3 emitter lookup | **CONFIRMED** | b006 64-emitter/100k = 0.965 ms = **2.7×** b003 (1 emitter, same count) |
+| §2.4 loop pressure | **CONFIRMED** | b007 LP=32/~4k = 0.096 ms = **~100×/particle** vs b004 |
+| §2.5 curve emission | **CONFIRMED** | b008 curve/~2k = 0.389 ms = **~8×/particle** vs b007 constant rate |
 
-Implication: the capacity-bound-GPU-simulation premise behind several later
-optimizations (eliminating dead-slot dispatch, packed emitter ranges) is **not
-supported by measurement** on this hardware, so those drop in priority. The real
-capacity cost was CPU-side artifact allocation, already fixed in Phase 3. Remaining
-open axes to measure: occupancy at fixed alive-count, emitter count (§2.3), loop
-pressure (§2.4), and curve complexity (§2.5). The `--gpu-bench` tool + CPU bench now
-make each of these measurable.
+Implications:
+- The capacity-scaling optimizations (dead-slot dispatch elimination, packed slot
+  ranges) are **not** justified for the GPU kernel — dead slots are already free.
+  The real capacity cost was CPU-side artifact allocation, fixed in Phase 3.
+- The GPU bottlenecks that *are* real, by measured per-work severity: loop-pressure
+  reconstruction (§2.4) ≫ curve-driven emission (§2.5) > emitter lookup (§2.3).
+  These reorder Phase 7 (below).
+- Still open to sweep: occupancy at fixed alive-count, and emitter count at 4/16
+  (only 1 vs 64 measured so far).
 
 ---
 
 ## Phase 7 — Optimize measured analytical bottlenecks (strategy M6)
 
-Only address what Phase 6 flagged. Candidate levers (each tied to a measured number):
-eliminate linear emitter search (§2.3), drop unused dead-list bookkeeping (§2.6),
-reduce global atomics, simplify spawn-time reconstruction, precompute curve lookup
-data (§2.5), reorganize emitter slot ranges, specialize simple emitters, reduce
-branch divergence.
+Ordered by the Phase 6 GPU measurements (biggest measured per-work penalty first):
+
+1. **Bound/cache historical-cycle reconstruction (§2.4)** — the ~100×/particle
+   cliff for continuous long-lifetime effects (b007). Cap or memoize the per-frame
+   cycle search.
+2. **Precompute a curve→time lookup for emission (§2.5)** — replace the per-candidate
+   inverse-curve search with a prebuilt table (b008, ~8×/particle).
+3. **Eliminate linear per-slot emitter search (§2.3)** — precomputed slot→emitter
+   ranges or per-emitter dispatch (b006, 2.7× at 64 emitters).
+
+Explicitly **not** pursued (measurement did not justify): dead-slot dispatch
+elimination and packed slot ranges for capacity (§2.2 refuted). Dead-list
+bookkeeping / atomics (§2.6) remain unmeasured — profile before touching.
 
 **Exit criteria:** each landed optimization cites the scenario and before/after
-delta that justified it.
+delta (re-run its `--gpu-bench` capture) that justified it.
 
 ---
 
