@@ -1,0 +1,342 @@
+[
+  {
+    "scenario": "b001_empty",
+    "commit": "c09393ce50d6f7a9c3ad71753ead7915966c5ffd",
+    "frames": 240,
+    "warmup": 32,
+    "seed": 11769922405251481601,
+    "hardware": {
+      "cpu": "16 logical cores",
+      "os": "windows",
+      "arch": "x86_64",
+      "backend": "cpu-headless"
+    },
+    "content": {
+      "effects": 1,
+      "emitters": 1,
+      "capacity": 64,
+      "alive": 8,
+      "occupancy": 0.125
+    },
+    "cpu": {
+      "runtime_advance_ms": {
+        "samples": 240,
+        "median_ms": 0.0,
+        "p95_ms": 0.00009999999999999999,
+        "p99_ms": 0.00009999999999999999,
+        "max_ms": 0.00009999999999999999,
+        "min_ms": 0.0,
+        "mean_ms": 0.000019583333333333333,
+        "stddev_ms": 0.000039684082311285556
+      },
+      "cpu_reference_eval_ms": {
+        "samples": 240,
+        "median_ms": 0.0007999999999999999,
+        "p95_ms": 0.0009,
+        "p99_ms": 0.0012,
+        "max_ms": 0.0014,
+        "min_ms": 0.0007,
+        "mean_ms": 0.0007891666666666666,
+        "stddev_ms": 0.00010270981236257597
+      },
+      "artifact_update_ms": {
+        "samples": 240,
+        "median_ms": 0.0005,
+        "p95_ms": 0.0005,
+        "p99_ms": 0.001,
+        "max_ms": 0.001,
+        "min_ms": 0.00039999999999999996,
+        "mean_ms": 0.00047125,
+        "stddev_ms": 0.0001031104787755994
+      },
+      "aestra_total_ms": {
+        "samples": 240,
+        "median_ms": 0.0012,
+        "p95_ms": 0.0015,
+        "p99_ms": 0.0021999999999999997,
+        "max_ms": 0.0023,
+        "min_ms": 0.0010999999999999998,
+        "mean_ms": 0.0012799999999999999,
+        "stddev_ms": 0.00018978057505094316
+      }
+    },
+    "normalized": {
+      "cpu_ns_per_1k_slots": 18750.0,
+      "cpu_ns_per_1k_alive": 150000.0,
+      "occupancy": 0.125
+    },
+    "gpu": null
+  },
+  {
+    "scenario": "b002_single_small",
+    "commit": "c09393ce50d6f7a9c3ad71753ead7915966c5ffd",
+    "frames": 240,
+    "warmup": 32,
+    "seed": 11769922405251481601,
+    "hardware": {
+      "cpu": "16 logical cores",
+      "os": "windows",
+      "arch": "x86_64",
+      "backend": "cpu-headless"
+    },
+    "content": {
+      "effects": 1,
+      "emitters": 1,
+      "capacity": 1024,
+      "alive": 1024,
+      "occupancy": 1.0
+    },
+    "cpu": {
+      "runtime_advance_ms": {
+        "samples": 240,
+        "median_ms": 0.0,
+        "p95_ms": 0.00009999999999999999,
+        "p99_ms": 0.00009999999999999999,
+        "max_ms": 0.00009999999999999999,
+        "min_ms": 0.0,
+        "mean_ms": 0.000023333333333333332,
+        "stddev_ms": 0.00004229525846816502
+      },
+      "cpu_reference_eval_ms": {
+        "samples": 240,
+        "median_ms": 0.10039999999999999,
+        "p95_ms": 0.1146,
+        "p99_ms": 0.1306,
+        "max_ms": 0.148,
+        "min_ms": 0.0964,
+        "mean_ms": 0.10226958333333333,
+        "stddev_ms": 0.006574118432133864
+      },
+      "artifact_update_ms": {
+        "samples": 240,
+        "median_ms": 0.0005,
+        "p95_ms": 0.0010999999999999998,
+        "p99_ms": 0.0024,
+        "max_ms": 0.0031,
+        "min_ms": 0.00039999999999999996,
+        "mean_ms": 0.0006166666666666666,
+        "stddev_ms": 0.0003448026810929534
+      },
+      "aestra_total_ms": {
+        "samples": 240,
+        "median_ms": 0.10089999999999999,
+        "p95_ms": 0.1153,
+        "p99_ms": 0.13269999999999998,
+        "max_ms": 0.15109999999999998,
+        "min_ms": 0.09699999999999999,
+        "mean_ms": 0.10290958333333332,
+        "stddev_ms": 0.006857072978056225
+      }
+    },
+    "normalized": {
+      "cpu_ns_per_1k_slots": 98535.15624999999,
+      "cpu_ns_per_1k_alive": 98535.15624999999,
+      "occupancy": 1.0
+    },
+    "gpu": null
+  },
+  {
+    "scenario": "b003_single_dense",
+    "commit": "c09393ce50d6f7a9c3ad71753ead7915966c5ffd",
+    "frames": 240,
+    "warmup": 32,
+    "seed": 11769922405251481601,
+    "hardware": {
+      "cpu": "16 logical cores",
+      "os": "windows",
+      "arch": "x86_64",
+      "backend": "cpu-headless"
+    },
+    "content": {
+      "effects": 1,
+      "emitters": 1,
+      "capacity": 100000,
+      "alive": 100000,
+      "occupancy": 1.0
+    },
+    "cpu": {
+      "runtime_advance_ms": {
+        "samples": 240,
+        "median_ms": 0.0,
+        "p95_ms": 0.00009999999999999999,
+        "p99_ms": 0.00009999999999999999,
+        "max_ms": 0.00009999999999999999,
+        "min_ms": 0.0,
+        "mean_ms": 0.000031666666666666666,
+        "stddev_ms": 0.000046517619123176204
+      },
+      "cpu_reference_eval_ms": {
+        "samples": 240,
+        "median_ms": 11.645199999999999,
+        "p95_ms": 12.065999999999999,
+        "p99_ms": 12.6648,
+        "max_ms": 12.8042,
+        "min_ms": 11.4399,
+        "mean_ms": 11.677919166666666,
+        "stddev_ms": 0.206610132171615
+      },
+      "artifact_update_ms": {
+        "samples": 240,
+        "median_ms": 0.0024,
+        "p95_ms": 0.0028,
+        "p99_ms": 0.0033,
+        "max_ms": 0.005399999999999999,
+        "min_ms": 0.001,
+        "mean_ms": 0.0023254166666666666,
+        "stddev_ms": 0.000427468119344069
+      },
+      "aestra_total_ms": {
+        "samples": 240,
+        "median_ms": 11.6474,
+        "p95_ms": 12.0694,
+        "p99_ms": 12.667399999999999,
+        "max_ms": 12.8067,
+        "min_ms": 11.4409,
+        "mean_ms": 11.680276249999999,
+        "stddev_ms": 0.20676032254183627
+      }
+    },
+    "normalized": {
+      "cpu_ns_per_1k_slots": 116474.0,
+      "cpu_ns_per_1k_alive": 116474.0,
+      "occupancy": 1.0
+    },
+    "gpu": null
+  },
+  {
+    "scenario": "b004_sparse_large",
+    "commit": "c09393ce50d6f7a9c3ad71753ead7915966c5ffd",
+    "frames": 240,
+    "warmup": 32,
+    "seed": 11769922405251481601,
+    "hardware": {
+      "cpu": "16 logical cores",
+      "os": "windows",
+      "arch": "x86_64",
+      "backend": "cpu-headless"
+    },
+    "content": {
+      "effects": 1,
+      "emitters": 1,
+      "capacity": 500000,
+      "alive": 5000,
+      "occupancy": 0.01
+    },
+    "cpu": {
+      "runtime_advance_ms": {
+        "samples": 240,
+        "median_ms": 0.0,
+        "p95_ms": 0.00009999999999999999,
+        "p99_ms": 0.00009999999999999999,
+        "max_ms": 0.00009999999999999999,
+        "min_ms": 0.0,
+        "mean_ms": 0.000030416666666666666,
+        "stddev_ms": 0.000046005358987356576
+      },
+      "cpu_reference_eval_ms": {
+        "samples": 240,
+        "median_ms": 0.5567,
+        "p95_ms": 0.6583,
+        "p99_ms": 0.6800999999999999,
+        "max_ms": 0.7311,
+        "min_ms": 0.5431,
+        "mean_ms": 0.56826,
+        "stddev_ms": 0.03189988871453943
+      },
+      "artifact_update_ms": {
+        "samples": 240,
+        "median_ms": 0.0006,
+        "p95_ms": 0.0021999999999999997,
+        "p99_ms": 0.0034,
+        "max_ms": 0.0042,
+        "min_ms": 0.0005,
+        "mean_ms": 0.0009358333333333333,
+        "stddev_ms": 0.0006648678857905196
+      },
+      "aestra_total_ms": {
+        "samples": 240,
+        "median_ms": 0.5575,
+        "p95_ms": 0.6597,
+        "p99_ms": 0.6815,
+        "max_ms": 0.7337,
+        "min_ms": 0.5436,
+        "mean_ms": 0.5692262499999999,
+        "stddev_ms": 0.032238269483190835
+      }
+    },
+    "normalized": {
+      "cpu_ns_per_1k_slots": 1115.0,
+      "cpu_ns_per_1k_alive": 111500.0,
+      "occupancy": 0.01
+    },
+    "gpu": null
+  },
+  {
+    "scenario": "b005_many_small",
+    "commit": "c09393ce50d6f7a9c3ad71753ead7915966c5ffd",
+    "frames": 240,
+    "warmup": 32,
+    "seed": 11769922405251481601,
+    "hardware": {
+      "cpu": "16 logical cores",
+      "os": "windows",
+      "arch": "x86_64",
+      "backend": "cpu-headless"
+    },
+    "content": {
+      "effects": 100,
+      "emitters": 100,
+      "capacity": 10000,
+      "alive": 10000,
+      "occupancy": 1.0
+    },
+    "cpu": {
+      "runtime_advance_ms": {
+        "samples": 240,
+        "median_ms": 0.00019999999999999998,
+        "p95_ms": 0.0003,
+        "p99_ms": 0.0003,
+        "max_ms": 0.0005,
+        "min_ms": 0.00009999999999999999,
+        "mean_ms": 0.0002175,
+        "stddev_ms": 0.000043132547648691776
+      },
+      "cpu_reference_eval_ms": {
+        "samples": 240,
+        "median_ms": 1.1533,
+        "p95_ms": 1.1894,
+        "p99_ms": 1.4372,
+        "max_ms": 1.541,
+        "min_ms": 1.1302999999999999,
+        "mean_ms": 1.16074125,
+        "stddev_ms": 0.04461438209932047
+      },
+      "artifact_update_ms": {
+        "samples": 240,
+        "median_ms": 0.0277,
+        "p95_ms": 0.0292,
+        "p99_ms": 0.0412,
+        "max_ms": 0.0506,
+        "min_ms": 0.026799999999999997,
+        "mean_ms": 0.02831833333333333,
+        "stddev_ms": 0.0027087661192670156
+      },
+      "aestra_total_ms": {
+        "samples": 240,
+        "median_ms": 1.1813,
+        "p95_ms": 1.2181,
+        "p99_ms": 1.4706,
+        "max_ms": 1.5805,
+        "min_ms": 1.1578,
+        "mean_ms": 1.1892770833333333,
+        "stddev_ms": 0.04625732302197915
+      }
+    },
+    "normalized": {
+      "cpu_ns_per_1k_slots": 118130.0,
+      "cpu_ns_per_1k_alive": 118130.0,
+      "occupancy": 1.0
+    },
+    "gpu": null
+  }
+]
