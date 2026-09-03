@@ -11,6 +11,7 @@ use bevy::{
     app::AppExit,
     asset::AssetPlugin,
     camera::{Viewport, visibility::RenderLayers},
+    diagnostic::LogDiagnosticsPlugin,
     prelude::*,
     render::diagnostic::RenderDiagnosticsPlugin,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
@@ -36,7 +37,7 @@ const OVERLAY_PROBE_SIZE: u32 = 144;
 fn main() {
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--diagnostics] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     let preview_seed = config.resolved_seed();
@@ -44,6 +45,7 @@ fn main() {
         .capture_mode
         .clone()
         .map(|mode| CapturePlan::new(mode, config.capture_frames, preview_seed));
+    let log_diagnostics = config.diagnostics;
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.009, 0.012, 0.024)))
@@ -68,10 +70,10 @@ fn main() {
                     ..default()
                 }),
             AestraPlugin,
-            // Enables GPU timestamp diagnostics for Aestra's simulation pass (the
-            // `aestra::gpu::simulate` span). Records real GPU time on Vulkan/DX12,
-            // surfaced through Tracy (`--features bevy/trace_tracy`) or a diagnostics
-            // logger; a no-op elsewhere.
+            // Records GPU timestamps for Aestra's simulation pass (the
+            // `aestra::gpu::simulate` span) and Bevy's transparent passes on
+            // Vulkan/DX12. Pass `--diagnostics` to print them to the console via
+            // `LogDiagnosticsPlugin`.
             RenderDiagnosticsPlugin,
         ))
         .add_systems(Startup, setup)
@@ -81,6 +83,11 @@ fn main() {
         );
     if let Some(capture) = capture {
         app.insert_resource(capture);
+    }
+    if log_diagnostics {
+        // Prints the diagnostics store (whole-frame CPU time and, on Vulkan/DX12,
+        // GPU pass timings including `aestra::gpu::simulate`) to the console.
+        app.add_plugins(LogDiagnosticsPlugin::default());
     }
     if let AppExit::Error(code) = app.run() {
         std::process::exit(i32::from(code.get()));
@@ -96,6 +103,7 @@ struct ViewerConfig {
     presentation: PresentationMode,
     max_gpu_particles: u32,
     preview_seed: Option<u64>,
+    diagnostics: bool,
 }
 
 #[derive(Clone)]
@@ -134,6 +142,7 @@ impl ViewerConfig {
         let mut presentation = PresentationMode::Auto;
         let mut max_gpu_particles = DEFAULT_GPU_PARTICLE_BUDGET;
         let mut preview_seed = None;
+        let mut diagnostics = false;
         let mut args = env::args().skip(1);
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -143,6 +152,7 @@ impl ViewerConfig {
                     ));
                 }
                 "--semantic-materials" => semantic_materials = true,
+                "--diagnostics" => diagnostics = true,
                 "--capture" => {
                     set_capture_mode(
                         &mut capture_mode,
@@ -242,6 +252,7 @@ impl ViewerConfig {
             presentation,
             max_gpu_particles,
             preview_seed,
+            diagnostics,
         })
     }
 
