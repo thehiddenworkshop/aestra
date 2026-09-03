@@ -45,6 +45,24 @@ pub const SCENARIOS: &[Scenario] = &[
         ron: include_str!("../scenarios/b005_many_small.aestra.ron"),
         instances: 100,
     },
+    Scenario {
+        name: "b006_many_emitters",
+        purpose: "emitter-lookup complexity: 64 emitters, ~100k total (strategy §2.3)",
+        ron: include_str!("../scenarios/b006_many_emitters.aestra.ron"),
+        instances: 1,
+    },
+    Scenario {
+        name: "b007_loop_pressure",
+        purpose: "analytical historical reconstruction: lifetime/duration = 32 (strategy §2.4)",
+        ron: include_str!("../scenarios/b007_loop_pressure.aestra.ron"),
+        instances: 1,
+    },
+    Scenario {
+        name: "b008_curve_stress",
+        purpose: "inverse-curve emission evaluation: 8-key spawn-rate curve (strategy §2.5)",
+        ron: include_str!("../scenarios/b008_curve_stress.aestra.ron"),
+        instances: 1,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static Scenario> {
