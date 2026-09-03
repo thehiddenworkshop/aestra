@@ -70,6 +70,30 @@
         "panel": "dedicated",
         "clear": true
       }
+    },
+    {
+      "label": "Aestra: Run Benchmarks",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "run",
+        "-p",
+        "aestra-bench",
+        "--",
+        "--all",
+        "--out",
+        "target/bench/latest.json"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
     }
   ]
 }
