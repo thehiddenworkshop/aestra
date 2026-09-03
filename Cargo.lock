@@ -120,6 +120,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aestra-bench"
+version = "0.1.0"
+dependencies = [
+ "aestra-compiler",
+ "aestra-core",
+ "aestra-gpu",
+ "aestra-runtime",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aestra-bevy"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,16 @@
+[package]
+name = "aestra-bench"
+description = "Headless deterministic benchmark harness for the Aestra runtime and GPU-artifact preparation path"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+aestra-compiler = { path = "../../crates/aestra-compiler" }
+aestra-core = { path = "../../crates/aestra-core" }
+aestra-gpu = { path = "../../crates/aestra-gpu" }
+aestra-runtime = { path = "../../crates/aestra-runtime" }
+serde = { workspace = true }
+serde_json = { workspace = true }
