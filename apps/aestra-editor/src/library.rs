@@ -40,6 +40,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
+const DEFAULT_PROJECT_ASSET_ROOT: &str = "assets";
 const DEFAULT_PROJECT_EFFECT_ROOT: &str = "assets/effects";
 const PROJECT_EFFECT_POLL_INTERVAL_SECONDS: f32 = 0.25;
 const PROJECT_EFFECT_STABLE_OBSERVATIONS: u8 = 2;
@@ -104,18 +105,26 @@ impl Plugin for EditorLibraryPlugin {
 #[derive(Resource)]
 pub(crate) struct ProjectEffectCatalog {
     index: ProjectAssetIndex,
+    effect_root: PathBuf,
 }
 
 impl Default for ProjectEffectCatalog {
     fn default() -> Self {
-        Self::scan(DEFAULT_PROJECT_EFFECT_ROOT)
+        Self::scan_project(DEFAULT_PROJECT_ASSET_ROOT, DEFAULT_PROJECT_EFFECT_ROOT)
     }
 }
 
 impl ProjectEffectCatalog {
+    #[cfg(test)]
     pub(crate) fn scan(root: impl AsRef<Path>) -> Self {
+        let root = root.as_ref();
+        Self::scan_project(root, root)
+    }
+
+    fn scan_project(project_root: impl AsRef<Path>, effect_root: impl AsRef<Path>) -> Self {
         Self {
-            index: ProjectAssetIndex::scan(root),
+            index: ProjectAssetIndex::scan(project_root),
+            effect_root: effect_root.as_ref().to_owned(),
         }
     }
 
@@ -127,6 +136,10 @@ impl ProjectEffectCatalog {
         self.index.root()
     }
 
+    pub(crate) fn effect_root(&self) -> &Path {
+        &self.effect_root
+    }
+
     pub(crate) fn refresh(&mut self) {
         self.index.refresh();
     }
@@ -135,7 +148,18 @@ impl ProjectEffectCatalog {
         &mut self,
         effect: &EffectAsset,
     ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
-        self.index.create_effect_source(effect)
+        if self.effect_root == self.index.root() {
+            return self.index.create_effect_source(effect);
+        }
+        ProjectAssetIndex::scan(&self.effect_root).create_effect_source(effect)?;
+        let reference = EffectAssetRef::new(effect.id);
+        self.index.refresh();
+        self.index.resolve(reference).cloned().map_err(|error| {
+            ProjectAssetOperationError::Refresh {
+                reference,
+                message: error.to_string(),
+            }
+        })
     }
 
     pub(crate) fn entry(&self, id: ProjectEffectEntryId) -> Option<&ProjectEffectEntry> {
@@ -313,6 +337,31 @@ impl ProjectEffectCatalog {
         source: ProjectEffectEntryId,
         destination: &Path,
     ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
+        if !destination.is_dir() {
+            return Err(ProjectAssetOperationError::InvalidDestination {
+                path: destination.to_owned(),
+            });
+        }
+        let effect_root = fs::canonicalize(&self.effect_root).map_err(|error| {
+            ProjectAssetOperationError::FileSystem {
+                operation: "resolve project effect root",
+                path: self.effect_root.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        let destination = fs::canonicalize(destination).map_err(|error| {
+            ProjectAssetOperationError::FileSystem {
+                operation: "resolve destination",
+                path: destination.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        if !destination.starts_with(&effect_root) {
+            return Err(ProjectAssetOperationError::DestinationOutsideRoot {
+                destination,
+                root: effect_root,
+            });
+        }
         self.index.move_effect_source(source, destination)
     }
 
@@ -344,6 +393,7 @@ impl ProjectEffectCatalog {
     pub(crate) fn from_entries(entries: Vec<ProjectEffectEntry>) -> Self {
         Self {
             index: ProjectAssetIndex::from_entries("virtual", entries),
+            effect_root: PathBuf::from("virtual"),
         }
     }
 }
@@ -448,12 +498,13 @@ fn collect_project_effect_file_stamps(
             collect_project_effect_file_stamps(&path, files)?;
             continue;
         }
-        if !file_type.is_file()
-            || !path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".aestra.ron"))
-        {
+        let project_source = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                name.ends_with(".aestra.ron") || name.ends_with(".aestra.material.ron")
+            });
+        if !file_type.is_file() || !project_source {
             continue;
         }
         let metadata = entry.metadata()?;
@@ -1661,7 +1712,7 @@ fn activate_library_list_entry(
 }
 
 fn begin_project_effect_drag(
-    drag: On<Pointer<DragStart>>,
+    mut drag: On<Pointer<DragStart>>,
     rows: Query<&ProjectEffectRow>,
     parents: Query<&ChildOf>,
     catalog: Res<ProjectEffectCatalog>,
@@ -1677,6 +1728,7 @@ fn begin_project_effect_drag(
     let Some(entry) = catalog.entry(row.id()) else {
         return;
     };
+    drag.propagate(false);
     for ghost in &ghosts {
         commands.entity(ghost).despawn();
     }
@@ -1877,9 +1929,13 @@ fn open_focused_library_context_menu(
 }
 
 fn update_project_effect_drag(
-    drag: On<Pointer<Drag>>,
+    mut drag: On<Pointer<Drag>>,
     mut ghosts: Query<&mut Node, With<ProjectEffectDragGhost>>,
 ) {
+    if ghosts.is_empty() {
+        return;
+    }
+    drag.propagate(false);
     let position = drag.pointer_location.position + Vec2::new(14.0, 14.0);
     for mut node in &mut ghosts {
         node.left = Val::Px(position.x);
@@ -1888,10 +1944,14 @@ fn update_project_effect_drag(
 }
 
 fn end_project_effect_drag(
-    _drag: On<Pointer<DragEnd>>,
+    mut drag: On<Pointer<DragEnd>>,
     ghosts: Query<Entity, With<ProjectEffectDragGhost>>,
     mut commands: Commands,
 ) {
+    if ghosts.is_empty() {
+        return;
+    }
+    drag.propagate(false);
     for ghost in &ghosts {
         commands.entity(ghost).despawn();
     }
@@ -2111,7 +2171,7 @@ fn spawn_project_effects(
     let (unavailable_message, unavailable_tooltip) = match catalog.availability() {
         ProjectAssetIndexAvailability::Ready => {
             let mut args = FluentArgs::new();
-            args.set("path", DEFAULT_PROJECT_EFFECT_ROOT);
+            args.set("path", DEFAULT_PROJECT_ASSET_ROOT);
             let message = localizer.text_with("library-unavailable-message", &args);
             (message.clone(), EditorTooltip::description(message))
         }
@@ -2621,7 +2681,7 @@ fn execute_library_action(
                 .is_some_and(|path| paths_refer_to_same_source(path, &entry.path));
             let Some(destination) = rfd::FileDialog::new()
                 .set_title(localizer.text("library-move-dialog-title"))
-                .set_directory(catalog.root())
+                .set_directory(catalog.effect_root())
                 .pick_folder()
             else {
                 return;
@@ -3545,7 +3605,15 @@ mod tests {
     use crate::test_support;
     use crate::timeline::{TimelineState, spawn_timeline};
     use aestra_core::EventTrigger;
-    use bevy::{asset::AssetPlugin, scene::ScenePlugin, text::TextPlugin};
+    use bevy::{
+        asset::AssetPlugin,
+        camera::NormalizedRenderTarget,
+        ecs::error::{FallbackErrorHandler, panic},
+        picking::pointer::{Location, PointerId},
+        scene::ScenePlugin,
+        text::TextPlugin,
+        window::WindowRef,
+    };
 
     #[derive(Resource, Default)]
     struct CapturedDocumentAction(Option<DocumentAction>);
@@ -3707,6 +3775,81 @@ mod tests {
                 .map(|entry| entry.id)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn project_catalog_resolves_bundled_effect_materials_outside_the_effect_folder() {
+        let asset_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let effect_root = asset_root.join("effects");
+        let catalog = ProjectEffectCatalog::scan_project(&asset_root, &effect_root);
+        let reference =
+            EffectAssetRef::new(EffectId::from_u128(0xa3574a00_0000_4000_8000_000000009001));
+
+        let effect = catalog
+            .load_effect(reference)
+            .expect("the Material Graph Lab row should be openable");
+
+        assert_eq!(effect.name, "Material Graph Lab");
+        assert!(catalog.openable_path(reference).is_some());
+        catalog
+            .compile_project(&effect)
+            .expect("its sibling material program should resolve from the project asset root");
+    }
+
+    #[test]
+    fn project_catalog_creates_effects_in_the_effect_authoring_folder() {
+        let temporary = tempfile::tempdir().unwrap();
+        let effect_root = temporary.path().join("effects");
+        fs::create_dir(&effect_root).unwrap();
+        fs::create_dir(temporary.path().join("materials")).unwrap();
+        let mut catalog = ProjectEffectCatalog::scan_project(temporary.path(), &effect_root);
+        let effect = EffectAsset::new("Created Effect", 1.0);
+
+        let created = catalog.create_effect_source(&effect).unwrap();
+
+        assert_eq!(created.path.parent(), Some(effect_root.as_path()));
+        assert_eq!(catalog.effect_root(), effect_root);
+    }
+
+    #[test]
+    fn project_catalog_watch_tracks_material_program_sources() {
+        let temporary = tempfile::tempdir().unwrap();
+        let material = temporary.path().join("test.aestra.material.ron");
+        fs::write(&material, "material").unwrap();
+
+        let snapshot = ProjectEffectTreeSnapshot::scan(temporary.path());
+
+        assert!(snapshot.file(&material).is_some());
+    }
+
+    #[test]
+    fn project_effect_drag_end_cleanup_does_not_bubble_to_ancestors() {
+        let mut app = App::new();
+        app.insert_resource(FallbackErrorHandler(panic))
+            .add_observer(end_project_effect_drag);
+        let parent = app.world_mut().spawn_empty().id();
+        let target = app.world_mut().spawn(ChildOf(parent)).id();
+        let ghost = app.world_mut().spawn(ProjectEffectDragGhost).id();
+        let window = app.world_mut().spawn(Window::default()).id();
+        let event = Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target: NormalizedRenderTarget::Window(
+                    WindowRef::Entity(window).normalize(None).unwrap(),
+                ),
+                position: Vec2::ZERO,
+            },
+            DragEnd {
+                button: PointerButton::Primary,
+                distance: Vec2::ZERO,
+            },
+            target,
+        );
+
+        app.world_mut().trigger(event);
+        app.update();
+
+        assert!(app.world().get_entity(ghost).is_err());
     }
 
     #[test]
