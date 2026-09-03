@@ -120,7 +120,7 @@ pub(crate) use library::{
 use localization::{EditorLocalizationPlugin, LocalizationSet};
 pub(crate) use localization::{LocalizedText, Localizer};
 use material_graph::EditorMaterialGraphPlugin;
-pub(crate) use material_graph::spawn_material_graph_workspace;
+pub(crate) use material_graph::{MaterialGraphPaletteState, spawn_material_graph_workspace};
 pub(crate) use menus::{DocumentMenuLabel, MenuState, TabContextMenu};
 use menus::{EditorMenusPlugin, spawn_about_overlay, spawn_menu_bar, spawn_tab_context_menu};
 pub(crate) use persistence::persist_editor_settings;

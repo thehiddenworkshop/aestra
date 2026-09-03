@@ -119,6 +119,10 @@ impl FeathersGraphViewport {
     pub(crate) fn project_graph_point(&self, point: Vec2) -> Vec2 {
         self.pan + point * self.zoom
     }
+
+    pub(crate) fn unproject_viewport_point(&self, point: Vec2) -> Vec2 {
+        (point - self.pan) / self.zoom
+    }
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -150,9 +154,26 @@ struct GraphNodeView {
 }
 
 #[derive(Resource, Default)]
-struct GraphViewportMemory {
+pub(crate) struct GraphViewportMemory {
     views: HashMap<String, GraphView>,
     nodes: HashMap<(String, String), GraphNodeView>,
+}
+
+impl GraphViewportMemory {
+    pub(crate) fn place_node(
+        &mut self,
+        graph_key: impl Into<String>,
+        node_key: impl Into<String>,
+        position: Vec2,
+    ) {
+        self.nodes.insert(
+            (graph_key.into(), node_key.into()),
+            GraphNodeView {
+                position,
+                collapsed: false,
+            },
+        );
+    }
 }
 
 #[derive(Resource, Default)]

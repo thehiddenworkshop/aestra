@@ -349,37 +349,24 @@ impl MaterialToolPlanner {
             return Err(MaterialToolError::SourceExpressionNotFound(previous_source));
         }
 
-        let mut matched = None;
-        for insertion in MaterialCompiler
-            .stack_insert_targets(program)?
-            .into_iter()
-            .filter(|insertion| insertion.kind == kind)
-        {
-            let candidate = MaterialCompiler.plan_stack_insert(program, kind, insertion.index)?;
-            let wraps_requested_edge = connection_source(&candidate.replacement, target)
-                .is_ok_and(|source| source == candidate.expression);
-            let consumes_previous_source = candidate
-                .replacement
-                .expressions
-                .iter()
-                .find(|expression| expression.id == candidate.expression)
-                .and_then(|expression| expression.kind.bypass_input())
-                == Some(previous_source);
-            let changes_only_requested_edge = wrap_changes_only_requested_edge(
-                program,
-                &candidate.replacement,
-                target,
-                candidate.expression,
-            );
-            if !wraps_requested_edge || !consumes_previous_source || !changes_only_requested_edge {
-                continue;
-            }
-            if matched.is_some() {
-                return Err(MaterialToolError::AmbiguousWrap { kind, target });
-            }
-            matched = Some(candidate);
+        let mut wrap = MaterialCompiler
+            .plan_expression_wrap(program, kind, previous_source)
+            .map_err(|_| MaterialToolError::IncompatibleWrap { kind, target })?;
+        apply_connection(&mut wrap.replacement, target, wrap.expression)?;
+        let wraps_requested_edge = connection_source(&wrap.replacement, target)
+            .is_ok_and(|source| source == wrap.expression);
+        let consumes_previous_source = wrap
+            .replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == wrap.expression)
+            .and_then(|expression| expression.kind.bypass_input())
+            == Some(previous_source);
+        let changes_only_requested_edge =
+            wrap_changes_only_requested_edge(program, &wrap.replacement, target, wrap.expression);
+        if !wraps_requested_edge || !consumes_previous_source || !changes_only_requested_edge {
+            return Err(MaterialToolError::IncompatibleWrap { kind, target });
         }
-        let wrap = matched.ok_or(MaterialToolError::IncompatibleWrap { kind, target })?;
         let command = MaterialToolCommand::WrapMaterialExpression {
             program: program_id,
             target,

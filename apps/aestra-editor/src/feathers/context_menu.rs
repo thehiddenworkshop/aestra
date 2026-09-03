@@ -33,6 +33,25 @@ pub(crate) fn spawn_pointer_context_menu<A: Bundle, M: Bundle>(
     marker: M,
     build: impl FnOnce(&mut ChildSpawnerCommands),
 ) {
+    spawn_pointer_context_menu_sized(
+        parent,
+        position,
+        POINTER_CONTEXT_MENU_WIDTH,
+        anchor_marker,
+        marker,
+        build,
+    );
+}
+
+/// Spawns a window-clamped menu with a caller-selected width.
+pub(crate) fn spawn_pointer_context_menu_sized<A: Bundle, M: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    position: Vec2,
+    width: f32,
+    anchor_marker: A,
+    marker: M,
+    build: impl FnOnce(&mut ChildSpawnerCommands),
+) {
     parent
         .spawn((
             PointerContextMenuAnchor,
@@ -84,7 +103,7 @@ pub(crate) fn spawn_pointer_context_menu<A: Bundle, M: Bundle>(
                     GlobalZIndex(250),
                     Node {
                         position_type: PositionType::Absolute,
-                        width: Val::Px(POINTER_CONTEXT_MENU_WIDTH),
+                        width: Val::Px(width),
                         padding: UiRect::axes(Val::Px(0.0), Val::Px(4.0)),
                         flex_direction: FlexDirection::Column,
                         border: UiRect::all(Val::Px(1.0)),
@@ -125,10 +144,10 @@ pub(crate) fn spawn_pointer_context_menu_custom_item<A: Component>(
     label: &str,
     action: A,
     build: impl FnOnce(&mut ChildSpawnerCommands),
-) {
-    parent
-        .spawn_empty()
-        .apply_scene(scenes::feathers_menu_item())
+) -> Entity {
+    let mut item = parent.spawn_empty();
+    let entity = item.id();
+    item.apply_scene(scenes::feathers_menu_item())
         .insert((
             PointerContextMenuItem,
             Pickable::default(),
@@ -139,6 +158,7 @@ pub(crate) fn spawn_pointer_context_menu_custom_item<A: Component>(
         ))
         .observe(stop_pointer_context_menu_click_propagation)
         .with_children(build);
+    entity
 }
 
 fn stop_pointer_context_menu_click_propagation(mut click: On<Pointer<Click>>) {

@@ -47,7 +47,7 @@ panel-profiler = PROFILEUR
 panel-changes = MODIFICATIONS
 panel-settings = PARAMÈTRES
 
-material-graph-edit-hint = GLISSEZ UNE SORTIE VERS UNE ENTRÉE COMPATIBLE
+material-graph-edit-hint = GLISSEZ UNE SORTIE VERS UNE ENTRÉE COMPATIBLE · CLIC DROIT OU TAB POUR AJOUTER
 material-graph-frame-all = Cadrer tous les nœuds (Début)
 material-graph-frame-selection = Cadrer le nœud sélectionné (F)
 material-graph-collapse-node = Réduire le nœud
@@ -59,6 +59,9 @@ material-graph-invalid = INVALIDE
 material-graph-unreachable = INACCESSIBLE
 material-graph-disabled = DÉSACTIVÉ
 material-graph-outputs = SORTIES DU MATÉRIAU
+material-graph-search-nodes = Rechercher des nœuds
+material-graph-clear-search = Effacer la recherche de nœuds
+material-graph-no-compatible-nodes = Aucun nœud compatible n’est disponible ici.
 
 viewport-frame-effect = Centrer l’effet
 viewport-frame-effect-description = Centrer la caméra de l’aperçu sur l’effet.

@@ -47,7 +47,7 @@ panel-profiler = PROFILER
 panel-changes = CHANGES
 panel-settings = SETTINGS
 
-material-graph-edit-hint = DRAG AN OUTPUT SOCKET TO A COMPATIBLE INPUT
+material-graph-edit-hint = DRAG AN OUTPUT SOCKET TO A COMPATIBLE INPUT · RIGHT-CLICK OR TAB TO ADD
 material-graph-frame-all = Frame all nodes (Home)
 material-graph-frame-selection = Frame selected node (F)
 material-graph-collapse-node = Collapse node
@@ -59,6 +59,9 @@ material-graph-invalid = INVALID
 material-graph-unreachable = UNREACHABLE
 material-graph-disabled = DISABLED
 material-graph-outputs = MATERIAL OUTPUTS
+material-graph-search-nodes = Search nodes
+material-graph-clear-search = Clear node search
+material-graph-no-compatible-nodes = No compatible nodes are available here.
 
 viewport-frame-effect = Frame Effect
 viewport-frame-effect-description = Center the viewport camera on the effect.

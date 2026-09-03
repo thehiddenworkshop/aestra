@@ -123,6 +123,30 @@ pub struct MaterialStackInsertPlan {
     pub replacement: MaterialProgram,
 }
 
+/// A typed modifier expression and its default support expressions, without any output rewiring.
+///
+/// This is the graph-authoring counterpart to stack insertion: callers may connect the returned
+/// wrapper at any compatible semantic edge without requiring the whole program to be linear.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialExpressionWrapPlan {
+    pub expression: MaterialExpressionId,
+    pub kind: MaterialStackModifierKind,
+    pub replacement: MaterialProgram,
+}
+
+#[derive(Debug, Error)]
+pub enum MaterialExpressionWrapError {
+    #[error(transparent)]
+    Compile(#[from] MaterialCompileError),
+    #[error("material expression {expression} is unavailable as a wrapper source")]
+    SourceMissing { expression: MaterialExpressionId },
+    #[error("{kind:?} cannot wrap material expression {expression}")]
+    IncompatibleSource {
+        kind: MaterialStackModifierKind,
+        expression: MaterialExpressionId,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MaterialStackPresetKind {
     UvDrift,
@@ -304,6 +328,36 @@ pub enum MaterialStackEditError {
 }
 
 impl MaterialCompiler {
+    /// Creates one typed wrapper with useful defaults around `source` without changing a consumer.
+    /// This remains valid for branched graphs; the authoring layer chooses and rewires one edge.
+    pub fn plan_expression_wrap(
+        &self,
+        program: &MaterialProgram,
+        kind: MaterialStackModifierKind,
+        source: MaterialExpressionId,
+    ) -> Result<MaterialExpressionWrapPlan, MaterialExpressionWrapError> {
+        if !program
+            .expressions
+            .iter()
+            .any(|expression| expression.id == source)
+        {
+            return Err(MaterialExpressionWrapError::SourceMissing { expression: source });
+        }
+        let mut replacement = program.clone();
+        let expression = append_default_modifier(&mut replacement, kind, source).ok_or(
+            MaterialExpressionWrapError::IncompatibleSource {
+                kind,
+                expression: source,
+            },
+        )?;
+        self.compile(&replacement)?;
+        Ok(MaterialExpressionWrapPlan {
+            expression,
+            kind,
+            replacement,
+        })
+    }
+
     /// Projects the reachable semantic operations into a linear, source-to-output stack.
     ///
     /// Constants, parameters, inputs, and generic arithmetic remain implementation details. If

@@ -2,12 +2,16 @@
 
 use crate::{
     feathers::{
+        context_menu::{
+            pointer_position_in_node, should_dismiss_pointer_context_menu,
+            spawn_pointer_context_menu_custom_item, spawn_pointer_context_menu_sized,
+        },
         icon::load_svg_icon,
         node_graph::{
             FeathersGraphNode, FeathersGraphViewport, FeathersGraphWireLayer, GraphFrameAction,
-            GraphFrameTarget, GraphNodeProps, GraphPortProps, GraphSocketSide, GraphViewportProps,
-            GraphWireMaterial, NODE_WIDTH, PORT_ROW_HEIGHT, spawn_graph_frame_button,
-            spawn_graph_node, spawn_graph_port, spawn_graph_viewport,
+            GraphFrameTarget, GraphNodeProps, GraphPortProps, GraphSocketSide, GraphViewportMemory,
+            GraphViewportProps, GraphWireMaterial, NODE_HEADER_HEIGHT, NODE_WIDTH, PORT_ROW_HEIGHT,
+            spawn_graph_frame_button, spawn_graph_node, spawn_graph_port, spawn_graph_viewport,
         },
         panel::spawn_panel_empty_state,
     },
@@ -15,17 +19,22 @@ use crate::{
 };
 use aestra_authoring::{
     MaterialAuthoringDocument, MaterialConnectionTarget, MaterialExpressionInput,
-    MaterialOutputSocket, MaterialToolCommand, MaterialToolPlanner,
+    MaterialInsertionPoint, MaterialInspectionTarget, MaterialInspector,
+    MaterialOperationAvailability, MaterialOutputSocket, MaterialToolCommand, MaterialToolPlan,
+    MaterialToolPlanner,
 };
 use aestra_compiler::{
     MaterialCompiler, MaterialGraphEdgeTarget, MaterialGraphNode, MaterialGraphOutput,
-    MaterialGraphOutputKind, MaterialGraphProjection,
+    MaterialGraphOutputKind, MaterialGraphProjection, MaterialStackModifierKind,
 };
 use aestra_core::{
     MaterialExpressionId, MaterialProgramId,
     material::{MaterialExpressionDomain, MaterialValueType},
 };
-use bevy::ui_render::ui_material::MaterialNode;
+use bevy::{
+    input_focus::{FocusCause, InputFocus},
+    ui_render::ui_material::MaterialNode,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 const COLUMN_WIDTH: f32 = 282.0;
@@ -38,14 +47,21 @@ pub(crate) struct EditorMaterialGraphPlugin;
 impl Plugin for EditorMaterialGraphPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MaterialGraphGesture>()
+            .init_resource::<MaterialGraphPaletteState>()
             .add_observer(begin_material_connection_drag)
             .add_observer(update_material_connection_drag)
             .add_observer(finish_material_connection_drag)
             .add_observer(stop_material_socket_click)
             .add_observer(select_material_graph_node)
+            .add_observer(open_material_graph_palette)
+            .add_observer(update_material_graph_palette_search)
             .add_systems(
                 Update,
                 (
+                    open_material_graph_palette_from_keyboard,
+                    dismiss_material_graph_palette,
+                    focus_material_graph_palette_search,
+                    handle_material_graph_palette_actions,
                     handle_material_graph_actions,
                     attach_material_graph_wire_materials,
                 ),
@@ -69,6 +85,51 @@ struct MaterialGraphCanvas;
 #[derive(Component, Debug, Clone, Copy)]
 struct MaterialGraphViewport {
     program: MaterialProgramId,
+}
+
+#[derive(Debug, Clone)]
+struct MaterialGraphPaletteOpen {
+    program: MaterialProgramId,
+    menu_position: Vec2,
+    graph_position: Vec2,
+    graph_key: String,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct MaterialGraphPaletteState {
+    open: Option<MaterialGraphPaletteOpen>,
+    query: String,
+}
+
+#[derive(Component)]
+struct MaterialGraphPalette;
+
+#[derive(Component)]
+struct MaterialGraphPaletteAnchor;
+
+#[derive(Component)]
+struct MaterialGraphPaletteSearch;
+
+#[derive(Component, Debug, Clone)]
+struct MaterialGraphPaletteAction {
+    program: MaterialProgramId,
+    kind: MaterialStackModifierKind,
+    edit: MaterialGraphPaletteEdit,
+    graph_position: Vec2,
+    graph_key: String,
+    searchable: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum MaterialGraphPaletteEdit {
+    Insert(MaterialInsertionPoint),
+    Wrap(MaterialConnectionTarget),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MaterialGraphPaletteOption {
+    kind: MaterialStackModifierKind,
+    edit: MaterialGraphPaletteEdit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,6 +254,130 @@ fn select_material_graph_node(
     }
     reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
     click.propagate(false);
+}
+
+fn open_material_graph_palette(
+    mut click: On<Pointer<Click>>,
+    viewports: Query<(
+        &MaterialGraphViewport,
+        &FeathersGraphViewport,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
+    graph_nodes: Query<(), With<FeathersGraphNode>>,
+    palette_surfaces: Query<(), With<MaterialGraphPalette>>,
+    parents: Query<&ChildOf>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    let mut entity = click.event_target();
+    loop {
+        if graph_nodes.contains(entity) || palette_surfaces.contains(entity) {
+            return;
+        }
+        if let Ok((marker, viewport, computed, transform)) = viewports.get(entity) {
+            let menu_position =
+                pointer_position_in_node(click.pointer_location.position, computed, transform);
+            palette.open = Some(MaterialGraphPaletteOpen {
+                program: marker.program,
+                menu_position,
+                graph_position: viewport.unproject_viewport_point(menu_position),
+                graph_key: material_graph_view_key(marker.program),
+            });
+            palette.query.clear();
+            session.ui_revision += 1;
+            click.propagate(false);
+            return;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    }
+}
+
+fn open_material_graph_palette_from_keyboard(
+    keys: Res<ButtonInput<KeyCode>>,
+    viewports: Query<(
+        &MaterialGraphViewport,
+        &FeathersGraphViewport,
+        &RelativeCursorPosition,
+        &ComputedNode,
+    )>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if !keys.just_pressed(KeyCode::Tab) || palette.open.is_some() {
+        return;
+    }
+    let Some((marker, viewport, cursor, computed)) = viewports
+        .iter()
+        .find(|(_, _, cursor, _)| cursor.cursor_over())
+    else {
+        return;
+    };
+    let Some(normalized) = cursor.normalized else {
+        return;
+    };
+    let menu_position = (normalized + Vec2::splat(0.5)) * computed.size();
+    palette.open = Some(MaterialGraphPaletteOpen {
+        program: marker.program,
+        menu_position,
+        graph_position: viewport.unproject_viewport_point(menu_position),
+        graph_key: material_graph_view_key(marker.program),
+    });
+    palette.query.clear();
+    session.ui_revision += 1;
+}
+
+fn dismiss_material_graph_palette(
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    surfaces: Query<&RelativeCursorPosition, With<MaterialGraphPalette>>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if should_dismiss_pointer_context_menu(
+        palette.open.is_some(),
+        buttons.just_pressed(MouseButton::Left),
+        keys.just_pressed(KeyCode::Escape),
+        surfaces.iter().any(RelativeCursorPosition::cursor_over),
+    ) {
+        palette.open = None;
+        palette.query.clear();
+        session.ui_revision += 1;
+    }
+}
+
+fn update_material_graph_palette_search(
+    change: On<ValueChange<String>>,
+    searches: Query<(), With<MaterialGraphPaletteSearch>>,
+    mut items: Query<(&MaterialGraphPaletteAction, &mut Node)>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
+) {
+    if !searches.contains(change.source) {
+        return;
+    }
+    palette.query = change.value.trim().to_lowercase();
+    for (action, mut node) in &mut items {
+        node.display = if palette.query.is_empty() || action.searchable.contains(&palette.query) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+}
+
+fn focus_material_graph_palette_search(
+    searches: Query<Entity, Added<MaterialGraphPaletteSearch>>,
+    mut focus: ResMut<InputFocus>,
+) {
+    if let Some(entity) = searches.iter().next() {
+        focus.set(entity, FocusCause::Navigated);
+    }
 }
 
 fn begin_material_connection_drag(
@@ -327,44 +512,124 @@ fn apply_material_connection(
     source: MaterialExpressionId,
     target: MaterialConnectionTarget,
 ) {
-    let result = catalog
-        .material_programs_for_effect(&session.effect)
-        .and_then(|programs| {
-            let current = programs
-                .iter()
-                .find(|candidate| candidate.id == program)
-                .cloned()
-                .ok_or_else(|| format!("Material program {program} is unavailable"))?;
-            let document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
-            let plan = MaterialToolPlanner::plan(
-                &document,
-                MaterialToolCommand::ConnectMaterialExpression {
-                    program,
-                    source,
-                    target,
-                },
-            )
-            .map_err(|error| error.to_string())?;
-            let replacement = plan
-                .replacement_program(program)
-                .cloned()
-                .ok_or_else(|| "Connection plan did not replace its material program".to_owned())?;
-            material_history.execute_replacement(
-                &session.effect,
-                catalog,
-                "Connect material nodes",
-                current,
-                replacement,
-            )
-        });
+    let result = apply_material_tool_command(
+        &session.effect,
+        catalog,
+        material_history,
+        program,
+        "Connect material nodes",
+        MaterialToolCommand::ConnectMaterialExpression {
+            program,
+            source,
+            target,
+        },
+    );
     match result {
-        Ok(()) => {
+        Ok(_) => {
             history_ledger.record_material_edit(session);
             session.status = "Connected material nodes".into();
         }
         Err(error) => session.status = format!("Material connection failed: {error}"),
     }
     session.ui_revision += 1;
+}
+
+fn handle_material_graph_palette_actions(
+    mut commands: Commands,
+    actions: Query<
+        (
+            Entity,
+            &Interaction,
+            &MaterialGraphPaletteAction,
+            Option<&PendingFeathersActivation>,
+        ),
+        (Changed<Interaction>, With<FeathersActionButton>),
+    >,
+    mut session: ResMut<EditorSession>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
+    mut material_history: ResMut<MaterialProgramEditHistory>,
+    mut history_ledger: ResMut<EditorHistoryLedger>,
+    mut graph_memory: ResMut<GraphViewportMemory>,
+    mut inspector: ResMut<MaterialStackInspectorState>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
+) {
+    for (entity, interaction, action, pending) in &actions {
+        if *interaction != Interaction::Pressed || pending.is_none() {
+            continue;
+        }
+        commands
+            .entity(entity)
+            .remove::<PendingFeathersActivation>()
+            .insert(Interaction::None);
+        let command = match action.edit {
+            MaterialGraphPaletteEdit::Insert(placement) => {
+                MaterialToolCommand::InsertMaterialOperation {
+                    program: action.program,
+                    kind: action.kind,
+                    placement,
+                }
+            }
+            MaterialGraphPaletteEdit::Wrap(target) => MaterialToolCommand::WrapMaterialExpression {
+                program: action.program,
+                target,
+                kind: action.kind,
+            },
+        };
+        let result = apply_material_tool_command(
+            &session.effect,
+            &mut catalog,
+            &mut material_history,
+            action.program,
+            "Add material graph node",
+            command,
+        );
+        match result {
+            Ok(plan) => {
+                history_ledger.record_material_edit(&mut session);
+                let position =
+                    action.graph_position - Vec2::new(NODE_WIDTH * 0.5, NODE_HEADER_HEIGHT * 0.5);
+                for expression in &plan.created_expressions {
+                    graph_memory.place_node(
+                        action.graph_key.clone(),
+                        format!("expression:{expression}"),
+                        position,
+                    );
+                }
+                if let Some(expression) = plan.created_expressions.last().copied() {
+                    inspector.selected = Some((action.program, expression));
+                }
+                session.status = format!("Added {} node", action.kind.display_name());
+            }
+            Err(error) => session.status = format!("Could not add material node: {error}"),
+        }
+        palette.open = None;
+        palette.query.clear();
+        session.ui_revision += 1;
+    }
+}
+
+fn apply_material_tool_command(
+    effect: &aestra_core::EffectAsset,
+    catalog: &mut ProjectEffectCatalog,
+    material_history: &mut MaterialProgramEditHistory,
+    program: MaterialProgramId,
+    label: &str,
+    command: MaterialToolCommand,
+) -> Result<MaterialToolPlan, String> {
+    let programs = catalog.material_programs_for_effect(effect)?;
+    let current = programs
+        .iter()
+        .find(|candidate| candidate.id == program)
+        .cloned()
+        .ok_or_else(|| format!("Material program {program} is unavailable"))?;
+    let document = MaterialAuthoringDocument::new(effect.clone(), programs);
+    let plan = MaterialToolPlanner::plan(&document, command).map_err(|error| error.to_string())?;
+    let replacement = plan
+        .replacement_program(program)
+        .cloned()
+        .ok_or_else(|| format!("material tool plan omitted replacement program {program}"))?;
+    material_history.execute_replacement(effect, catalog, label, current, replacement)?;
+    Ok(plan)
 }
 
 fn attach_material_graph_wire_materials(
@@ -583,6 +848,7 @@ pub(crate) fn spawn_material_graph_workspace(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
     inspector: &MaterialStackInspectorState,
+    palette: &MaterialGraphPaletteState,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -654,7 +920,238 @@ pub(crate) fn spawn_material_graph_workspace(
                 .insert(MaterialGraphViewport {
                     program: projection.program,
                 });
+            if let Some(open) = palette
+                .open
+                .as_ref()
+                .filter(|open| open.program == projection.program)
+            {
+                let options = material_graph_palette_options(
+                    session,
+                    catalog,
+                    projection.program,
+                    &projection,
+                    &layout,
+                    open.graph_position.x,
+                );
+                panel.commands().entity(viewport).with_children(|viewport| {
+                    spawn_material_graph_palette(
+                        viewport,
+                        open,
+                        &options,
+                        &palette.query,
+                        localizer,
+                    );
+                });
+            }
         });
+}
+
+fn material_graph_palette_options(
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    program: MaterialProgramId,
+    projection: &MaterialGraphProjection,
+    layout: &MaterialGraphLayout,
+    graph_x: f32,
+) -> Vec<MaterialGraphPaletteOption> {
+    let Ok(programs) = catalog.material_programs_for_effect(&session.effect) else {
+        return Vec::new();
+    };
+    let document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
+    let Ok(report) =
+        MaterialInspector::inspect(&document, MaterialInspectionTarget::Program(program))
+    else {
+        return Vec::new();
+    };
+    select_palette_operations(
+        &document,
+        program,
+        projection,
+        &report.operations,
+        layout,
+        graph_x,
+    )
+}
+
+fn select_palette_operations(
+    document: &MaterialAuthoringDocument,
+    program: MaterialProgramId,
+    projection: &MaterialGraphProjection,
+    operations: &[MaterialOperationAvailability],
+    layout: &MaterialGraphLayout,
+    graph_x: f32,
+) -> Vec<MaterialGraphPaletteOption> {
+    MaterialStackModifierKind::INSERTABLE
+        .into_iter()
+        .filter_map(|kind| {
+            let insert = operations
+                .iter()
+                .filter(|operation| operation.kind == kind)
+                .map(|operation| {
+                    (
+                        (insertion_position_x(operation.placement, layout) - graph_x).abs(),
+                        MaterialGraphPaletteEdit::Insert(operation.placement),
+                    )
+                })
+                .min_by(|left, right| left.0.total_cmp(&right.0));
+            let wrap = projection
+                .edges
+                .iter()
+                .filter_map(|edge| edge_target(&edge.target))
+                .filter(|target| {
+                    MaterialToolPlanner::plan(
+                        document,
+                        MaterialToolCommand::WrapMaterialExpression {
+                            program,
+                            target: *target,
+                            kind,
+                        },
+                    )
+                    .is_ok()
+                })
+                .map(|target| {
+                    (
+                        (connection_target_x(target, layout) - graph_x).abs(),
+                        MaterialGraphPaletteEdit::Wrap(target),
+                    )
+                })
+                .min_by(|left, right| left.0.total_cmp(&right.0));
+            match (insert, wrap) {
+                (Some(left), Some(right)) => Some(if left.0 <= right.0 { left } else { right }),
+                (Some(candidate), None) | (None, Some(candidate)) => Some(candidate),
+                (None, None) => None,
+            }
+            .map(|(_, edit)| MaterialGraphPaletteOption { kind, edit })
+        })
+        .collect()
+}
+
+fn insertion_position_x(placement: MaterialInsertionPoint, layout: &MaterialGraphLayout) -> f32 {
+    match placement {
+        MaterialInsertionPoint::Start => CANVAS_PADDING,
+        MaterialInsertionPoint::End => layout.output.x,
+        MaterialInsertionPoint::Before(expression) => layout
+            .nodes
+            .get(&expression)
+            .map_or(layout.output.x, |position| position.x - COLUMN_WIDTH * 0.5),
+        MaterialInsertionPoint::After(expression) => layout
+            .nodes
+            .get(&expression)
+            .map_or(layout.output.x, |position| position.x + COLUMN_WIDTH * 0.5),
+    }
+}
+
+fn connection_target_x(target: MaterialConnectionTarget, layout: &MaterialGraphLayout) -> f32 {
+    match target {
+        MaterialConnectionTarget::ExpressionInput { expression, .. } => layout
+            .nodes
+            .get(&expression)
+            .map_or(layout.output.x, |position| position.x),
+        MaterialConnectionTarget::ProgramOutput(_) => layout.output.x,
+    }
+}
+
+fn spawn_material_graph_palette(
+    parent: &mut ChildSpawnerCommands,
+    open: &MaterialGraphPaletteOpen,
+    options: &[MaterialGraphPaletteOption],
+    query: &str,
+    localizer: &Localizer,
+) {
+    spawn_pointer_context_menu_sized(
+        parent,
+        open.menu_position,
+        268.0,
+        MaterialGraphPaletteAnchor,
+        MaterialGraphPalette,
+        |menu| {
+            spawn_search_field(
+                menu,
+                query,
+                &localizer.text("material-graph-search-nodes"),
+                &localizer.text("material-graph-clear-search"),
+                MaterialGraphPaletteSearch,
+            );
+            if options.is_empty() {
+                menu.spawn((
+                    Text::new(localizer.text("material-graph-no-compatible-nodes")),
+                    TextFont {
+                        font_size: FontSize::Px(10.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT_FAINT),
+                    Node {
+                        padding: UiRect::all(Val::Px(10.0)),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ));
+                return;
+            }
+            for option in options {
+                let label = option.kind.display_name();
+                let category = material_graph_node_category(option.kind);
+                let searchable = format!("{category} {label}").to_lowercase();
+                spawn_pointer_context_menu_custom_item(
+                    menu,
+                    label,
+                    MaterialGraphPaletteAction {
+                        program: open.program,
+                        kind: option.kind,
+                        edit: option.edit,
+                        graph_position: open.graph_position,
+                        graph_key: open.graph_key.clone(),
+                        searchable,
+                    },
+                    |item| {
+                        item.spawn(Node {
+                            min_height: Val::Px(34.0),
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::FlexStart,
+                            justify_content: JustifyContent::Center,
+                            ..default()
+                        })
+                        .with_children(|content| {
+                            content.spawn((
+                                Text::new(label),
+                                TextFont {
+                                    font_size: FontSize::Px(11.0),
+                                    ..default()
+                                },
+                                TextColor(theme::TEXT),
+                                Pickable::IGNORE,
+                            ));
+                            content.spawn((
+                                Text::new(category),
+                                TextFont {
+                                    font_size: FontSize::Px(8.0),
+                                    ..default()
+                                },
+                                TextColor(theme::TEXT_FAINT),
+                                Pickable::IGNORE,
+                            ));
+                        });
+                    },
+                );
+            }
+        },
+    );
+}
+
+fn material_graph_node_category(kind: MaterialStackModifierKind) -> &'static str {
+    match kind {
+        MaterialStackModifierKind::PanUv
+        | MaterialStackModifierKind::RotateUv
+        | MaterialStackModifierKind::ScaleUv => "UV",
+        MaterialStackModifierKind::Remap | MaterialStackModifierKind::Smoothstep => "Math",
+        MaterialStackModifierKind::RadialMask
+        | MaterialStackModifierKind::Dissolve
+        | MaterialStackModifierKind::DissolveEdge => "Mask",
+        MaterialStackModifierKind::SoftParticle => "Depth",
+        MaterialStackModifierKind::BaseTexture
+        | MaterialStackModifierKind::Fresnel
+        | MaterialStackModifierKind::DepthFade => "Material",
+    }
 }
 
 fn selected_projection(
@@ -1232,5 +1729,52 @@ mod tests {
         );
         assert_eq!(memo[&source], 0);
         assert_eq!(memo[&middle], 1);
+    }
+
+    #[test]
+    fn add_node_palette_offers_semantic_wraps_for_an_advanced_graph() {
+        let effect = aestra_core::EffectAsset::from_ron(crate::MATERIAL_GRAPH_LAB_EFFECT_SOURCE)
+            .expect("material graph lab effect should parse");
+        let program = aestra_core::material::MaterialProgram::from_ron(
+            crate::MATERIAL_GRAPH_LAB_PROGRAM_SOURCE,
+        )
+        .expect("material graph lab program should parse");
+        let document = MaterialAuthoringDocument::new(effect, vec![program.clone()]);
+        let compiler = MaterialCompiler;
+        let ir = compiler.compile(&program).unwrap();
+        let projection = compiler.project_graph(&program, Some(&ir));
+        let layout = layout_graph(&projection);
+
+        let options = select_palette_operations(
+            &document,
+            program.id,
+            &projection,
+            &[],
+            &layout,
+            layout.output.x,
+        );
+
+        assert!(!options.is_empty());
+        assert!(
+            options
+                .iter()
+                .all(|option| matches!(option.edit, MaterialGraphPaletteEdit::Wrap(_)))
+        );
+        for option in options {
+            let MaterialGraphPaletteEdit::Wrap(target) = option.edit else {
+                unreachable!();
+            };
+            assert!(
+                MaterialToolPlanner::plan(
+                    &document,
+                    MaterialToolCommand::WrapMaterialExpression {
+                        program: program.id,
+                        target,
+                        kind: option.kind,
+                    }
+                )
+                .is_ok()
+            );
+        }
     }
 }

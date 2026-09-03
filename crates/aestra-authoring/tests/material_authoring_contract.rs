@@ -2491,7 +2491,7 @@ fn material_wrap_tool_wraps_an_exact_program_output() {
 }
 
 #[test]
-fn material_wrap_tool_rejects_fanout_non_primary_and_stale_targets_atomically() {
+fn material_wrap_tool_handles_fanout_and_rejects_incompatible_or_stale_targets_atomically() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x6900);
     let (program, pan) = reorderable_material_program(program_id);
@@ -2500,36 +2500,39 @@ fn material_wrap_tool_rejects_fanout_non_primary_and_stale_targets_atomically() 
     let rotate = MaterialExpressionId::from_u128(0x1186);
     let missing = MaterialExpressionId::from_u128(0x69ff);
 
-    for (target, kind) in [
-        (
-            MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Color),
-            MaterialStackModifierKind::Remap,
-        ),
-        (
-            MaterialConnectionTarget::ExpressionInput {
-                expression: rotate,
-                input: MaterialExpressionInput::Angle,
-            },
-            MaterialStackModifierKind::Smoothstep,
-        ),
-    ] {
-        let error = MaterialToolPlanner::plan(
-            &document,
-            MaterialToolCommand::WrapMaterialExpression {
-                program: program_id,
-                target,
-                kind,
-            },
-        )
-        .unwrap_err();
-        assert!(matches!(
-            error,
-            MaterialToolError::IncompatibleWrap {
-                kind: rejected_kind,
-                target: rejected_target,
-            } if rejected_kind == kind && rejected_target == target
-        ));
-    }
+    let output_target = MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Color);
+    let fanout_plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::WrapMaterialExpression {
+            program: program_id,
+            target: output_target,
+            kind: MaterialStackModifierKind::Remap,
+        },
+    )
+    .expect("an exact output edge remains safe to wrap when its source has other consumers");
+    assert_eq!(fanout_plan.created_expressions.len(), 1);
+
+    let target = MaterialConnectionTarget::ExpressionInput {
+        expression: rotate,
+        input: MaterialExpressionInput::Angle,
+    };
+    let kind = MaterialStackModifierKind::ScaleUv;
+    let error = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::WrapMaterialExpression {
+            program: program_id,
+            target,
+            kind,
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        MaterialToolError::IncompatibleWrap {
+            kind: rejected_kind,
+            target: rejected_target,
+        } if rejected_kind == kind && rejected_target == target
+    ));
 
     let stale = MaterialToolPlanner::plan(
         &document,

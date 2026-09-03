@@ -365,8 +365,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   shared material undo/redo history. Its reusable graph viewport now provides an infinite
   viewport-space grid, zoom-stable wires, middle-mouse and Space-drag panning, cursor-anchored
   wheel zoom, persistent per-program views and node positions, collapsible nodes, and frame-all or
-  frame-selection commands. Node creation/deletion/duplication, explicit connection selection, and
-  the remaining semantic graph gestures are still required before this milestone is complete.
+  frame-selection commands. Right-click or Tab now opens a searchable, pointer-anchored Add Node
+  palette populated from compiler-approved semantic operations; it inserts or wraps at the nearest
+  valid graph edge, participates in material undo/redo, and places/selects the resulting expression.
+  Node deletion/duplication, explicit connection selection, and the remaining semantic graph
+  gestures are still required before this milestone is complete.
 - [ ] **Material 14 — graph layout metadata.** Persist optional layout separately from semantics.
 
 ### Phase E — reuse and extensibility
