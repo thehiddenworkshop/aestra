@@ -36,8 +36,11 @@ fn fragment(input: UiVertexOutput) -> @location(0) vec4<f32> {
         distance = min(distance, segment_distance(point, previous, current));
         previous = current;
     }
-    let edge = distance - wire.width * 0.5;
-    let feather = max(fwidth(edge), 0.75);
+    // Keep the requested width stable in screen pixels and retain derivative-based antialiasing
+    // at viewport edges and fractional display scales.
+    let local_pixel = max(max(fwidth(point.x), fwidth(point.y)), 0.001);
+    let edge = distance - wire.width * 0.5 * local_pixel;
+    let feather = max(fwidth(edge), 0.75 * local_pixel);
     let alpha = 1.0 - smoothstep(-feather, feather, edge);
     return vec4<f32>(wire.color.rgb, wire.color.a * alpha);
 }

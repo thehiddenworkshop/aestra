@@ -14,8 +14,8 @@ use bevy::{
     asset::embedded_asset,
     ecs::query::{QueryData, QueryFilter},
     feathers::cursor::{EntityCursor, OverrideCursor},
-    input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
-    picking::events::{Drag, DragEnd, DragStart, Pointer},
+    input::mouse::{MouseScrollUnit, MouseWheel},
+    picking::events::{Drag, DragEnd, DragStart, Pointer, Press},
     picking::pointer::PointerButton,
     prelude::*,
     reflect::TypePath,
@@ -24,7 +24,7 @@ use bevy::{
     ui::RelativeCursorPosition,
     ui_render::prelude::{UiMaterial, UiMaterialPlugin},
     ui_widgets::Activate,
-    window::SystemCursorIcon,
+    window::{CursorMoved, PrimaryWindow, SystemCursorIcon, Window},
 };
 use bevy_resvg::prelude::{SvgColor, SvgFile, UiSvg};
 use std::collections::HashMap;
@@ -51,6 +51,7 @@ impl Plugin for FeathersNodeGraphPlugin {
             .init_resource::<GraphPanGesture>()
             .add_observer(queue_graph_frame_activation)
             .add_observer(queue_graph_collapse_activation)
+            .add_observer(begin_graph_node_press)
             .add_observer(begin_graph_node_drag)
             .add_observer(drag_graph_node)
             .add_observer(end_graph_node_drag)
@@ -64,18 +65,15 @@ impl Plugin for FeathersNodeGraphPlugin {
                     handle_graph_frame_buttons,
                     handle_graph_collapse_buttons,
                     navigate_graph_viewports,
+                    sync_graph_viewport_transforms,
                     update_socket_visuals,
                 )
                     .chain(),
             )
             .add_systems(
                 PostUpdate,
-                (
-                    sync_graph_viewport_transforms.before(bevy::ui::UiSystems::Layout),
-                    sync_graph_grid_materials.after(bevy::ui::UiSystems::Layout),
-                ),
-            )
-            .add_systems(Last, clear_graph_node_drag_release);
+                sync_graph_grid_materials.after(bevy::ui::UiSystems::Layout),
+            );
     }
 }
 
@@ -108,7 +106,7 @@ impl GraphFrameAction {
 }
 
 #[derive(Component, Debug, Clone)]
-struct FeathersGraphViewport {
+pub(crate) struct FeathersGraphViewport {
     key: String,
     pan: Vec2,
     zoom: f32,
@@ -117,9 +115,21 @@ struct FeathersGraphViewport {
     frame_request: Option<GraphFrameTarget>,
 }
 
+impl FeathersGraphViewport {
+    pub(crate) fn project_graph_point(&self, point: Vec2) -> Vec2 {
+        self.pan + point * self.zoom
+    }
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 struct FeathersGraphCanvas {
     viewport: Entity,
+}
+
+/// Graph-space layer rendered below the node canvas with the exact same pan/zoom transform.
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct FeathersGraphWireLayer {
+    pub(crate) viewport: Entity,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -149,6 +159,7 @@ struct GraphViewportMemory {
 struct GraphPanGesture {
     viewport: Option<Entity>,
     button: Option<MouseButton>,
+    cursor_position: Option<Vec2>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,11 +199,27 @@ pub(crate) struct FeathersGraphNode {
     selected: bool,
     collapsed: bool,
     dragging: bool,
-    moved_during_drag: bool,
     suppress_release_click: bool,
 }
 
 impl FeathersGraphNode {
+    pub(crate) fn position(&self) -> Vec2 {
+        self.position
+    }
+
+    fn begin_drag(&mut self) {
+        self.dragging = true;
+        self.suppress_release_click = false;
+    }
+
+    fn note_drag_motion(&mut self) {
+        self.suppress_release_click = true;
+    }
+
+    fn end_drag(&mut self) {
+        self.dragging = false;
+    }
+
     pub(crate) fn consume_suppressed_release_click(&mut self) -> bool {
         std::mem::take(&mut self.suppress_release_click)
     }
@@ -315,6 +342,25 @@ pub(crate) fn graph_canvas_bundle<B: Bundle>(
     )
 }
 
+fn graph_wire_layer_bundle(viewport: Entity) -> impl Bundle {
+    (
+        FeathersGraphWireLayer { viewport },
+        UiTransform::IDENTITY,
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            top: Val::Px(0.0),
+            overflow: Overflow::visible(),
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            min_height: Val::Px(0.0),
+            ..default()
+        },
+        Pickable::IGNORE,
+    )
+}
+
 pub(crate) fn spawn_graph_viewport<B: Bundle>(
     parent: &mut ChildSpawnerCommands,
     props: GraphViewportProps,
@@ -362,7 +408,9 @@ pub(crate) fn spawn_graph_viewport<B: Bundle>(
             },
             Pickable::IGNORE,
         ));
-        overlay(viewport);
+        viewport
+            .spawn(graph_wire_layer_bundle(entity))
+            .with_children(overlay);
         viewport
             .spawn(graph_canvas_bundle(
                 entity,
@@ -540,6 +588,30 @@ fn restore_graph_nodes(
     }
 }
 
+fn begin_graph_node_press(
+    press: On<Pointer<Press>>,
+    mut nodes: Query<&mut FeathersGraphNode>,
+    parents: Query<&ChildOf>,
+    controls: Query<(), Or<(With<FeathersGraphSocket>, With<GraphCollapseAction>)>>,
+) {
+    if press.button != PointerButton::Primary {
+        return;
+    }
+    let Some(entity) = graph_node_from_target(
+        press.event_target(),
+        &nodes.as_readonly(),
+        &parents,
+        &controls,
+    ) else {
+        return;
+    };
+    if let Ok(mut node) = nodes.get_mut(entity) {
+        // A new press starts a new click-or-drag gesture. This clears a stale release guard when a
+        // platform did not synthesize a Click after the previous drag.
+        node.suppress_release_click = false;
+    }
+}
+
 fn begin_graph_node_drag(
     mut drag: On<Pointer<DragStart>>,
     mut nodes: Query<&mut FeathersGraphNode>,
@@ -561,9 +633,7 @@ fn begin_graph_node_drag(
     let Ok(mut node) = nodes.get_mut(entity) else {
         return;
     };
-    node.dragging = true;
-    node.moved_during_drag = false;
-    node.suppress_release_click = false;
+    node.begin_drag();
     drag.propagate(false);
 }
 
@@ -593,9 +663,9 @@ fn drag_graph_node(
     if !graph_node.dragging {
         return;
     }
-    if drag.delta.length_squared() > 0.25 {
-        graph_node.moved_during_drag = true;
-    }
+    // Drag is emitted only after picking has recognized a real drag. Arm the guard here rather
+    // than waiting for DragEnd: Click ordering differs by backend on pointer release.
+    graph_node.note_drag_motion();
     let zoom = viewports
         .iter()
         .find(|viewport| viewport.key == graph_node.graph_key)
@@ -639,16 +709,9 @@ fn end_graph_node_drag(
     let Ok(mut node) = nodes.get_mut(entity) else {
         return;
     };
-    node.dragging = false;
-    node.suppress_release_click = node.moved_during_drag;
+    node.end_drag();
     override_cursor.0 = None;
     drag.propagate(false);
-}
-
-fn clear_graph_node_drag_release(mut nodes: Query<&mut FeathersGraphNode>) {
-    for mut node in &mut nodes {
-        node.suppress_release_click = false;
-    }
 }
 
 fn graph_node_from_target<D: QueryData, F: QueryFilter>(
@@ -717,18 +780,13 @@ fn handle_graph_collapse_buttons(
             },
         );
         apply_graph_node_collapse(action.node, collapsed, &mut bodies, &mut icons);
-        commands.entity(entity).insert((
-            AccessibleLabel(if collapsed {
+        commands
+            .entity(entity)
+            .insert(AccessibleLabel(if collapsed {
                 action.expand_label.clone()
             } else {
                 action.collapse_label.clone()
-            }),
-            EditorTooltip::description(if collapsed {
-                action.expand_label.clone()
-            } else {
-                action.collapse_label.clone()
-            }),
-        ));
+            }));
     }
 }
 
@@ -759,12 +817,13 @@ fn apply_graph_node_collapse(
 }
 
 fn navigate_graph_viewports(
-    mut motion: MessageReader<MouseMotion>,
+    mut cursor_moved: MessageReader<CursorMoved>,
     mut wheel: MessageReader<MouseWheel>,
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut gesture: ResMut<GraphPanGesture>,
     mut override_cursor: ResMut<OverrideCursor>,
+    primary_window: Single<(Entity, &Window), With<PrimaryWindow>>,
     mut viewports: Query<(
         Entity,
         &RelativeCursorPosition,
@@ -772,9 +831,12 @@ fn navigate_graph_viewports(
         &mut FeathersGraphViewport,
     )>,
 ) {
-    let pointer_delta = motion
+    let cursor_position = cursor_moved
         .read()
-        .fold(Vec2::ZERO, |sum, event| sum + event.delta);
+        .filter(|event| event.window == primary_window.0)
+        .last()
+        .map(|event| event.position)
+        .or_else(|| primary_window.1.cursor_position());
     let scroll_delta = wheel.read().fold(0.0, |sum, event| {
         let scale = match event.unit {
             MouseScrollUnit::Line => 1.0,
@@ -786,8 +848,13 @@ fn navigate_graph_viewports(
         .iter()
         .find_map(|(entity, cursor, _, _)| cursor.cursor_over().then_some(entity));
     let space = keys.pressed(KeyCode::Space);
+    let was_panning = gesture.viewport.is_some();
 
-    if gesture.viewport.is_none() {
+    if !was_panning && let Some(cursor_position) = cursor_position {
+        gesture.cursor_position = Some(cursor_position);
+    }
+
+    if !was_panning {
         let button = if buttons.just_pressed(MouseButton::Middle) {
             Some(MouseButton::Middle)
         } else if space && buttons.just_pressed(MouseButton::Left) {
@@ -802,18 +869,29 @@ fn navigate_graph_viewports(
     }
 
     if let (Some(entity), Some(button)) = (gesture.viewport, gesture.button) {
-        let still_active = buttons.pressed(button) && (button != MouseButton::Left || space);
-        if still_active {
+        // Apply cursor movement before testing release. Otherwise the final movement and button-up
+        // arriving in the same frame leaves the canvas visibly trailing a fast pointer.
+        if was_panning && let Some(cursor_position) = cursor_position {
+            let pointer_delta = gesture
+                .cursor_position
+                .replace(cursor_position)
+                .map_or(Vec2::ZERO, |previous| cursor_position - previous);
             if pointer_delta != Vec2::ZERO
-                && let Ok((_, _, computed, mut viewport)) = viewports.get_mut(entity)
+                && let Ok((_, _, _, mut viewport)) = viewports.get_mut(entity)
             {
-                viewport.pan += pointer_delta * computed.inverse_scale_factor;
+                // CursorMoved is already expressed in logical window pixels, matching UiTransform.
+                // Pan is screen-space, so neither display scale nor graph zoom belongs here.
+                viewport.pan += pointer_delta;
                 viewport.frame_request = None;
             }
+        }
+        let still_active = buttons.pressed(button) && (button != MouseButton::Left || space);
+        if still_active {
             override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
         } else {
             gesture.viewport = None;
             gesture.button = None;
+            gesture.cursor_position = None;
             override_cursor.0 = None;
         }
     }
@@ -946,7 +1024,7 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
     parent: &mut ChildSpawnerCommands,
     props: GraphNodeProps,
     marker: B,
-    body: impl FnOnce(&mut ChildSpawnerCommands),
+    body: impl FnOnce(Entity, &mut ChildSpawnerCommands),
 ) -> Entity {
     let border = if props.selected {
         theme::ACCENT
@@ -978,7 +1056,6 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
             selected: props.selected,
             collapsed: false,
             dragging: false,
-            moved_during_drag: false,
             suppress_release_click: false,
         },
         Pickable {
@@ -1067,7 +1144,6 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
                     },
                     FeathersActionButton,
                     AccessibleLabel(collapse_label.clone()),
-                    EditorTooltip::description(collapse_label.clone()),
                     Node {
                         width: Val::Px(22.0),
                         height: Val::Px(22.0),
@@ -1103,7 +1179,7 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
                 ..default()
             },
         ))
-        .with_children(body);
+        .with_children(|children| body(entity, children));
     });
     entity
 }
@@ -1259,6 +1335,32 @@ mod tests {
     }
 
     #[test]
+    fn fixed_wire_layer_projects_graph_points_like_the_zoomed_node_canvas() {
+        let pan = Vec2::new(-137.0, 82.0);
+        let content_size = Vec2::new(1_800.0, 960.0);
+        let graph_point = Vec2::new(725.0, 318.0);
+
+        for zoom in [0.25, 0.7, 1.0, 1.8] {
+            let canvas = graph_canvas_transform(pan, zoom, content_size);
+            let canvas_translation = canvas.translation.resolve(1.0, content_size, content_size);
+            let canvas_top_left = canvas_translation + content_size * (1.0 - canvas.scale.x) * 0.5;
+            let node_socket_screen = canvas_top_left + graph_point * canvas.scale;
+
+            let viewport = FeathersGraphViewport {
+                key: "graph".into(),
+                pan,
+                zoom,
+                content_size,
+                selection_bounds: None,
+                frame_request: None,
+            };
+            let wire_endpoint_screen = viewport.project_graph_point(graph_point);
+
+            assert_vec2_close(wire_endpoint_screen, node_socket_screen);
+        }
+    }
+
+    #[test]
     fn node_drag_converts_screen_motion_to_graph_motion() {
         assert_vec2_close(
             graph_drag_delta(Vec2::new(30.0, -18.0), 1.5),
@@ -1268,5 +1370,25 @@ mod tests {
             graph_drag_delta(Vec2::new(30.0, -18.0), 0.5),
             Vec2::new(60.0, -36.0),
         );
+    }
+
+    #[test]
+    fn node_drag_release_click_guard_survives_until_the_release_click() {
+        let mut node = FeathersGraphNode {
+            graph_key: "graph".into(),
+            node_key: "node".into(),
+            position: Vec2::ZERO,
+            selected: false,
+            collapsed: false,
+            dragging: false,
+            suppress_release_click: false,
+        };
+
+        node.begin_drag();
+        node.note_drag_motion();
+        node.end_drag();
+
+        assert!(node.consume_suppressed_release_click());
+        assert!(!node.consume_suppressed_release_click());
     }
 }

@@ -4,9 +4,10 @@ use crate::{
     feathers::{
         icon::load_svg_icon,
         node_graph::{
-            FeathersGraphNode, GraphFrameAction, GraphFrameTarget, GraphNodeProps, GraphPortProps,
-            GraphSocketSide, GraphViewportProps, GraphWireMaterial, NODE_WIDTH, PORT_ROW_HEIGHT,
-            spawn_graph_frame_button, spawn_graph_node, spawn_graph_port, spawn_graph_viewport,
+            FeathersGraphNode, FeathersGraphViewport, FeathersGraphWireLayer, GraphFrameAction,
+            GraphFrameTarget, GraphNodeProps, GraphPortProps, GraphSocketSide, GraphViewportProps,
+            GraphWireMaterial, NODE_WIDTH, PORT_ROW_HEIGHT, spawn_graph_frame_button,
+            spawn_graph_node, spawn_graph_port, spawn_graph_viewport,
         },
         panel::spawn_panel_empty_state,
     },
@@ -80,6 +81,20 @@ enum MaterialGraphSocketKind {
 struct MaterialGraphSocket {
     program: MaterialProgramId,
     kind: MaterialGraphSocketKind,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct MaterialGraphSocketAnchor {
+    node: Entity,
+    offset: Option<Vec2>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MaterialGraphSocketPosition {
+    program: MaterialProgramId,
+    kind: MaterialGraphSocketKind,
+    graph: Vec2,
+    world: Vec2,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -184,6 +199,7 @@ fn begin_material_connection_drag(
     mut event: On<Pointer<DragStart>>,
     sockets: Query<(&MaterialGraphSocket, &ComputedNode)>,
     viewports: Query<(Entity, &MaterialGraphViewport)>,
+    wire_layers: Query<(Entity, &FeathersGraphWireLayer)>,
     mut materials: ResMut<Assets<GraphWireMaterial>>,
     mut gesture: ResMut<MaterialGraphGesture>,
     mut commands: Commands,
@@ -208,6 +224,9 @@ fn begin_material_connection_drag(
     if let Some((viewport, _)) = viewports
         .iter()
         .find(|(_, viewport)| viewport.program == socket.program)
+        && let Some((wire_layer, _)) = wire_layers
+            .iter()
+            .find(|(_, wire_layer)| wire_layer.viewport == viewport)
     {
         let material = materials.add(GraphWireMaterial::default());
         commands.spawn((
@@ -224,7 +243,7 @@ fn begin_material_connection_drag(
             },
             MaterialNode(material),
             Pickable::IGNORE,
-            ChildOf(viewport),
+            ChildOf(wire_layer),
         ));
     }
     event.propagate(false);
@@ -364,44 +383,68 @@ fn attach_material_graph_wire_materials(
 
 fn update_material_graph_wires(
     mut materials: ResMut<Assets<GraphWireMaterial>>,
-    wires: Query<(
-        &MaterialGraphWire,
-        &MaterialNode<GraphWireMaterial>,
+    wires: Query<(&MaterialGraphWire, &MaterialNode<GraphWireMaterial>)>,
+    ghosts: Query<(&MaterialGraphGhostWire, &MaterialNode<GraphWireMaterial>)>,
+    mut sockets: Query<(
+        &MaterialGraphSocket,
+        &UiGlobalTransform,
+        &mut MaterialGraphSocketAnchor,
+    )>,
+    graph_nodes: Query<(&FeathersGraphNode, &ComputedNode, &UiGlobalTransform)>,
+    viewports: Query<(
+        &MaterialGraphViewport,
+        &FeathersGraphViewport,
         &ComputedNode,
         &UiGlobalTransform,
     )>,
-    ghosts: Query<(
-        &MaterialGraphGhostWire,
-        &MaterialNode<GraphWireMaterial>,
-        &ComputedNode,
-        &UiGlobalTransform,
-    )>,
-    sockets: Query<(&MaterialGraphSocket, &UiGlobalTransform)>,
     session: Res<EditorSession>,
     catalog: Res<ProjectEffectCatalog>,
     mut gesture: ResMut<MaterialGraphGesture>,
 ) {
-    for (wire, material, computed, transform) in &wires {
-        let Some(start_world) = socket_position(
-            &sockets,
+    // Socket offsets are graph-local and invariant under pan and zoom. Cache them after layout,
+    // then project from graph state directly so a render frame can never mix UI transforms from
+    // two adjacent zoom layouts.
+    let mut socket_positions = Vec::with_capacity(sockets.iter().len());
+    for (socket, transform, mut anchor) in &mut sockets {
+        let Ok((node, computed, node_transform)) = graph_nodes.get(anchor.node) else {
+            continue;
+        };
+        let (_, _, world) = transform.to_scale_angle_translation();
+        let offset = *anchor
+            .offset
+            .get_or_insert_with(|| viewport_local_position(computed, node_transform, world));
+        socket_positions.push(MaterialGraphSocketPosition {
+            program: socket.program,
+            kind: socket.kind,
+            graph: node.position() + offset,
+            world,
+        });
+    }
+
+    for (wire, material) in &wires {
+        let Some(start_graph) = socket_graph_position(
+            &socket_positions,
             wire.program,
             MaterialGraphSocketKind::ExpressionOutput(wire.source),
         ) else {
             continue;
         };
-        let Some(end_world) = socket_position(
-            &sockets,
+        let Some(end_graph) = socket_graph_position(
+            &socket_positions,
             wire.program,
             MaterialGraphSocketKind::ConnectionInput(wire.target),
         ) else {
             continue;
         };
-        let start = viewport_local_position(computed, transform, start_world);
-        let end = viewport_local_position(computed, transform, end_world);
-        if let Some(mut material) = materials.get_mut(&material.0) {
-            set_wire_points(&mut material, start, end);
-            material.color = wire.color;
-        }
+        let Some((_, viewport, _, _)) = viewports
+            .iter()
+            .find(|(marker, _, _, _)| marker.program == wire.program)
+        else {
+            continue;
+        };
+        let start = viewport.project_graph_point(start_graph);
+        let end = viewport.project_graph_point(end_graph);
+        update_wire_material(&mut materials, &material.0, start, end, wire.color, 2.0);
     }
 
     let MaterialGraphGesture::Connecting {
@@ -413,8 +456,8 @@ fn update_material_graph_wires(
     else {
         return;
     };
-    let Some(start_world) = socket_position(
-        &sockets,
+    let Some(start_graph) = socket_graph_position(
+        &socket_positions,
         *program,
         MaterialGraphSocketKind::ExpressionOutput(*source),
     ) else {
@@ -426,15 +469,14 @@ fn update_material_graph_wires(
         .ok()
         .map(|programs| MaterialAuthoringDocument::new(session.effect.clone(), programs));
     let mut nearest: Option<(f32, MaterialConnectionTarget, Vec2)> = None;
-    for (socket, transform) in &sockets {
+    for socket in &socket_positions {
         let MaterialGraphSocketKind::ConnectionInput(target) = socket.kind else {
             continue;
         };
         if socket.program != *program {
             continue;
         }
-        let (_, _, position) = transform.to_scale_angle_translation();
-        let distance = position.distance(*cursor);
+        let distance = socket.world.distance(*cursor);
         if distance > SNAP_RADIUS
             || nearest
                 .as_ref()
@@ -454,26 +496,31 @@ fn update_material_graph_wires(
             .is_ok()
         });
         if valid {
-            nearest = Some((distance, target, position));
+            nearest = Some((distance, target, socket.graph));
         }
     }
     *snap_target = nearest.map(|(_, target, _)| target);
-    let end_world = nearest.map_or(*cursor, |(_, _, position)| position);
-    for (ghost, material, computed, transform) in &ghosts {
+    let Some((_, viewport, computed, transform)) = viewports
+        .iter()
+        .find(|(marker, _, _, _)| marker.program == *program)
+    else {
+        return;
+    };
+    let start = viewport.project_graph_point(start_graph);
+    let end = nearest.map_or_else(
+        || viewport_local_position(computed, transform, *cursor),
+        |(_, _, graph)| viewport.project_graph_point(graph),
+    );
+    for (ghost, material) in &ghosts {
         if ghost.program != *program {
             continue;
         }
-        let start = viewport_local_position(computed, transform, start_world);
-        let end = viewport_local_position(computed, transform, end_world);
-        if let Some(mut material) = materials.get_mut(&material.0) {
-            set_wire_points(&mut material, start, end);
-            material.color = if snap_target.is_some() {
-                Vec4::new(0.45, 1.0, 0.72, 1.0)
-            } else {
-                Vec4::new(0.76, 0.70, 0.92, 0.72)
-            };
-            material.width = 2.5;
-        }
+        let color = if snap_target.is_some() {
+            Vec4::new(0.45, 1.0, 0.72, 1.0)
+        } else {
+            Vec4::new(0.76, 0.70, 0.92, 0.72)
+        };
+        update_wire_material(&mut materials, &material.0, start, end, color, 2.5);
     }
 }
 
@@ -487,15 +534,15 @@ fn viewport_local_position(
     })
 }
 
-fn socket_position(
-    sockets: &Query<(&MaterialGraphSocket, &UiGlobalTransform)>,
+fn socket_graph_position(
+    sockets: &[MaterialGraphSocketPosition],
     program: MaterialProgramId,
     kind: MaterialGraphSocketKind,
 ) -> Option<Vec2> {
     sockets
         .iter()
-        .find(|(socket, _)| socket.program == program && socket.kind == kind)
-        .map(|(_, transform)| transform.to_scale_angle_translation().2)
+        .find(|socket| socket.program == program && socket.kind == kind)
+        .map(|socket| socket.graph)
 }
 
 fn set_wire_points(material: &mut GraphWireMaterial, start: Vec2, end: Vec2) {
@@ -504,6 +551,31 @@ fn set_wire_points(material: &mut GraphWireMaterial, start: Vec2, end: Vec2) {
     material.control_start = start + Vec2::new(control, 0.0);
     material.control_end = end - Vec2::new(control, 0.0);
     material.end = end;
+}
+
+fn update_wire_material(
+    materials: &mut Assets<GraphWireMaterial>,
+    handle: &Handle<GraphWireMaterial>,
+    start: Vec2,
+    end: Vec2,
+    color: Vec4,
+    width: f32,
+) {
+    const POSITION_EPSILON_SQUARED: f32 = 0.0001;
+    let unchanged = materials.get(handle).is_some_and(|material| {
+        material.start.distance_squared(start) <= POSITION_EPSILON_SQUARED
+            && material.end.distance_squared(end) <= POSITION_EPSILON_SQUARED
+            && material.color == color
+            && material.width == width
+    });
+    if unchanged {
+        return;
+    }
+    if let Some(mut material) = materials.get_mut(handle) {
+        set_wire_points(&mut material, start, end);
+        material.color = color;
+        material.width = width;
+    }
 }
 
 pub(crate) fn spawn_material_graph_workspace(
@@ -784,7 +856,7 @@ fn spawn_expression_node(
                 expression: node.expression,
             },
         ),
-        |body| {
+        |graph_node, body| {
             if node.disabled || !node.reachable {
                 let state = match (node.disabled, node.reachable) {
                     (true, false) => format!(
@@ -821,10 +893,16 @@ fn spawn_expression_node(
                         side: GraphSocketSide::Input,
                         color: socket_color(port.value_type),
                     },
-                    MaterialGraphSocket {
-                        program,
-                        kind: MaterialGraphSocketKind::ConnectionInput(target),
-                    },
+                    (
+                        MaterialGraphSocket {
+                            program,
+                            kind: MaterialGraphSocketKind::ConnectionInput(target),
+                        },
+                        MaterialGraphSocketAnchor {
+                            node: graph_node,
+                            offset: None,
+                        },
+                    ),
                 );
             }
             spawn_graph_port(
@@ -834,10 +912,16 @@ fn spawn_expression_node(
                     side: GraphSocketSide::Output,
                     color: socket_color(node.value_type),
                 },
-                MaterialGraphSocket {
-                    program,
-                    kind: MaterialGraphSocketKind::ExpressionOutput(node.expression),
-                },
+                (
+                    MaterialGraphSocket {
+                        program,
+                        kind: MaterialGraphSocketKind::ExpressionOutput(node.expression),
+                    },
+                    MaterialGraphSocketAnchor {
+                        node: graph_node,
+                        offset: None,
+                    },
+                ),
             );
         },
     );
@@ -868,7 +952,7 @@ fn spawn_output_node(
             expand_label: localizer.text("material-graph-expand-node"),
         },
         (),
-        |body| {
+        |graph_node, body| {
             for output in outputs {
                 let target = MaterialConnectionTarget::ProgramOutput(match output.kind {
                     MaterialGraphOutputKind::Color => MaterialOutputSocket::Color,
@@ -881,10 +965,16 @@ fn spawn_output_node(
                         side: GraphSocketSide::Input,
                         color: socket_color(output.value_type),
                     },
-                    MaterialGraphSocket {
-                        program,
-                        kind: MaterialGraphSocketKind::ConnectionInput(target),
-                    },
+                    (
+                        MaterialGraphSocket {
+                            program,
+                            kind: MaterialGraphSocketKind::ConnectionInput(target),
+                        },
+                        MaterialGraphSocketAnchor {
+                            node: graph_node,
+                            offset: None,
+                        },
+                    ),
                 );
             }
         },
