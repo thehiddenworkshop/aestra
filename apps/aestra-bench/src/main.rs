@@ -166,13 +166,24 @@ fn run_scenario(scenario: &scenario::Scenario, config: &Config) -> Result<BenchR
         .map_err(|error| format!("could not compile scenario: {error}"))?;
     let effect = Arc::new(compiled);
 
-    let mut instance = EffectInstance::with_seed(Arc::clone(&effect), config.seed);
+    let instance_count = scenario.instances.max(1);
     let dt = 1.0 / TICK_HZ;
 
-    // Capacity is the analytical GPU slot count the simulation would dispatch over.
-    let capacity = GpuEffectArtifact::from_instance(&instance)
+    // Independent instances with distinct seeds model N concurrent effects. Each
+    // stage is timed across the whole set, mirroring how the ECS systems advance
+    // and prepare every player before moving to the next stage.
+    let mut instances: Vec<EffectInstance> = (0..instance_count)
+        .map(|index| {
+            EffectInstance::with_seed(Arc::clone(&effect), config.seed.wrapping_add(index as u64))
+        })
+        .collect();
+
+    // Per-instance analytical slot count; total capacity scales with instance count.
+    let per_instance_capacity = GpuEffectArtifact::from_instance(&instances[0])
         .map_err(|error| format!("GPU artifact is unavailable ({error}); cannot size capacity"))?
         .total_slots;
+    let capacity =
+        per_instance_capacity.saturating_mul(instance_count.min(u32::MAX as usize) as u32);
 
     // A single reused buffer keeps CPU-reference timing focused on reconstruction
     // work rather than the caller's output allocation. `from_instance` allocates
@@ -180,28 +191,41 @@ fn run_scenario(scenario: &scenario::Scenario, config: &Config) -> Result<BenchR
     let mut samples: Vec<ParticleSample> = Vec::new();
 
     for _ in 0..config.warmup {
-        instance.advance(dt);
-        samples.clear();
-        instance.evaluate(&mut samples);
-        black_box(GpuEffectArtifact::from_instance(&instance).ok());
+        for instance in &mut instances {
+            instance.advance(dt);
+            samples.clear();
+            instance.evaluate(&mut samples);
+            black_box(GpuEffectArtifact::from_instance(instance).ok());
+        }
     }
 
     let mut accumulator = StageAccumulator::default();
     for _ in 0..config.frames {
         let start = Instant::now();
-        instance.advance(dt);
+        for instance in &mut instances {
+            instance.advance(dt);
+        }
         let advance_ns = start.elapsed().as_nanos() as f64;
 
-        samples.clear();
+        let mut alive_total = 0usize;
         let start = Instant::now();
-        instance.evaluate(&mut samples);
+        for instance in &instances {
+            samples.clear();
+            instance.evaluate(&mut samples);
+            alive_total += samples.len();
+        }
         let eval_ns = start.elapsed().as_nanos() as f64;
-        let alive = samples.len().min(u32::MAX as usize) as u32;
+        let alive = alive_total.min(u32::MAX as usize) as u32;
 
         let start = Instant::now();
-        let artifact = GpuEffectArtifact::from_instance(&instance);
+        for instance in &instances {
+            black_box(
+                GpuEffectArtifact::from_instance(instance)
+                    .map(|artifact| artifact.total_slots)
+                    .ok(),
+            );
+        }
         let artifact_ns = start.elapsed().as_nanos() as f64;
-        black_box(artifact.map(|artifact| artifact.total_slots).ok());
 
         accumulator.record(advance_ns, eval_ns, artifact_ns, alive);
     }
@@ -238,8 +262,9 @@ fn run_scenario(scenario: &scenario::Scenario, config: &Config) -> Result<BenchR
         seed: config.seed,
         hardware: host_hardware(),
         content: Content {
-            effects: 1,
-            emitters: effect.emitters.len().min(u32::MAX as usize) as u32,
+            effects: instance_count.min(u32::MAX as usize) as u32,
+            emitters: (effect.emitters.len() as u64 * instance_count as u64)
+                .min(u64::from(u32::MAX)) as u32,
             capacity,
             alive,
             occupancy,

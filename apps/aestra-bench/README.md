@@ -48,9 +48,14 @@ build time for determinism. This first set is a slice of the strategy's B001–B
 - `b001_empty` — floor / harness overhead (tiny emitter).
 - `b002_single_small` — 1 emitter, ~1k capacity, ~100% occupancy.
 - `b003_single_dense` — 1 emitter, 100k capacity, ~100% occupancy.
+- `b004_sparse_large` — 1 emitter, 500k capacity, ~1% occupancy.
+- `b005_many_small` — 100 concurrent instances of a 100-particle effect (~10k total).
 
 A `b002` → `b003` comparison (same shape, 100× capacity) isolates how CPU cost
-scales with particle capacity, including the artifact-reconstruction hotspot.
+scales with particle capacity. `b004` (sparse) shows how much of that cost is
+capacity-bound rather than alive-bound, and `b005` isolates per-instance overhead
+at roughly constant total particle count. A scenario's `instances` count lives in
+[`src/scenario.rs`](src/scenario.rs), not the asset.
 
 ## Adding a scenario
 
