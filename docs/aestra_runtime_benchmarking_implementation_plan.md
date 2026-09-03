@@ -60,19 +60,30 @@ whole-frame + per-stage timing, so build them together.
   material prep in `crates/aestra-bevy-render`) with `bevy_utils` spans so both
   Tracy and the bench harness read the same measurement points.
 
-### 1c. Tracy CPU + allocation instrumentation
-- Add `trace_tracy` (and `trace_tracy_memory`) as an **optional** feature on the
-  bench/editor binaries (feature-gated so default builds stay lean).
-- Add the named spans from strategy §6: `aestra::runtime::advance`,
-  `aestra::runtime::evaluate_cpu`, `aestra::gpu::{prepare_instance, artifact_update,
-  material_prepare, buffer_upload, bind_groups, simulate, render}`.
+### 1c. Tracy CPU + allocation instrumentation — **done (spans)**
+- Named `tracing` spans are placed at the strategy §6 points: `aestra::runtime::advance`
+  (aestra-bevy `play_effects`), and in aestra-bevy-render `aestra::gpu::{prepare_instance,
+  artifact_update, buffer_upload, material_prepare, bind_groups, simulate}` plus
+  `aestra::gpu::queue_sprites` for the CPU-side draw queue. The `buffer_upload` span
+  isolates the per-frame emitter/renderer upload — the CPU cost Phase 4 targets.
+- Spans use the `tracing` crate directly, so they need no extra dependency and are
+  no-ops without a subscriber.
+- **To capture with Tracy:** build a binary with Bevy's `trace_tracy` feature enabled,
+  e.g. `cargo run -p aestra-editor --features bevy/trace_tracy` (requires network to
+  fetch `tracy-client`; deliberately not wired as a committed cargo feature so the
+  offline workspace gate stays resolvable). `trace_tracy_memory` adds allocation
+  tracking. Remaining: `aestra::runtime::evaluate_cpu` on the CPU backend path.
 
-### 1d. GPU timestamps
-- Prefer Bevy's built-in render-graph GPU timestamp diagnostics over a hand-rolled
-  `TIMESTAMP_QUERY` pass. **Task: confirm the exact Bevy 0.19 API** and whether it
-  already brackets custom compute passes; only hand-roll if it does not reach the
-  Aestra simulation/render nodes.
-- Record GPU sim-reset / sim / render timings into the bench JSON (strategy §7, §10 GPU block).
+### 1d. GPU timestamps — **pending (needs GPU lane)**
+- Prefer Bevy's built-in render diagnostics (`RenderDiagnosticsPlugin` +
+  `RecordDiagnostics::time_span`) over a hand-rolled `TIMESTAMP_QUERY` pass.
+- Integration point identified: the `run_simulation` compute pass
+  (`crates/aestra-bevy-render/src/gpu.rs`, `begin_compute_pass("aestra simulation")`)
+  and the sprite draw in `gpu/render.rs`. Wrap these with GPU `time_span`s.
+- Deferred deliberately: GPU timestamps can only be verified on the self-hosted GPU
+  lane, so this is implemented and validated there rather than blind in a headless
+  environment. Record GPU sim-reset / sim / render timings into the bench JSON once
+  available (strategy §7, §10 GPU block).
 
 ### 1e. Statistical output + JSON format
 - Per timing metric record median/p95/p99/max/stddev (strategy §10); optional

@@ -14,6 +14,7 @@ aestra-core = { path = "../../crates/aestra-core" }
 aestra-runtime = { path = "../../crates/aestra-runtime" }
 bevy.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 aestra-artifact = { path = "../../crates/aestra-artifact" }

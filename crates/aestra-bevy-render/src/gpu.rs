@@ -205,6 +205,7 @@ impl MaterialPreparationParams<'_> {
         binding: &MaterialRuntimeBinding,
         effect: &aestra_runtime::CompiledEffect,
     ) -> Result<GpuSemanticMaterialBinding, MaterialBindingError> {
+        let _span = tracing::info_span!("aestra::gpu::material_prepare").entered();
         prepare_semantic_material(
             binding,
             effect,
@@ -300,6 +301,7 @@ pub(crate) fn prepare_gpu_effects(
     mut material_resources: MaterialPreparationParams,
     mut players: UnpreparedPlayers,
 ) {
+    let _span = tracing::info_span!("aestra::gpu::prepare_instance").entered();
     for (entity, mut player, runtime, render_layers) in &mut players {
         if !matches!(
             runtime.active,
@@ -689,6 +691,7 @@ fn update_gpu_inputs(
     mut players: PreparedGpuPlayers,
     mut draw_instances: Query<(&mut GpuDrawInstance, &mut RenderLayers), Without<PresentedEffect>>,
 ) {
+    let _span = tracing::info_span!("aestra::gpu::artifact_update").entered();
     for (mut player, transform, gpu, render_layers, children) in &mut players {
         player.refresh_automatic_material_bindings();
         // Only emitter and renderer inputs change per frame; use the dynamics
@@ -696,6 +699,7 @@ fn update_gpu_inputs(
         // here (its cost scales with capacity, not with what actually changed).
         if let Ok(mut dynamics) = GpuEffectArtifact::dynamics_from_instance(&player.instance) {
             apply_semantic_sprite_compatibility_to_renderers(&mut dynamics.renderers, &player);
+            let _upload = tracing::info_span!("aestra::gpu::buffer_upload").entered();
             if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
                 buffer.set_data(dynamics.emitters);
             }
@@ -904,6 +908,7 @@ fn prepare_bind_groups(
     buffers: Res<RenderAssets<GpuShaderBuffer>>,
     effects: Query<(Entity, &GpuEffectBuffers)>,
 ) {
+    let _span = tracing::info_span!("aestra::gpu::bind_groups").entered();
     for (entity, effect) in &effects {
         let Some(emitters) = buffers.get(&effect.emitters) else {
             continue;
@@ -949,6 +954,7 @@ fn run_simulation(
     pipeline: Res<SimulationPipeline>,
     effects: Query<(&GpuEffectBuffers, &GpuBindGroup)>,
 ) {
+    let _span = tracing::info_span!("aestra::gpu::simulate").entered();
     let (Some(reset), Some(simulate)) = (
         pipeline_cache.get_compute_pipeline(pipeline.reset),
         pipeline_cache.get_compute_pipeline(pipeline.simulate),

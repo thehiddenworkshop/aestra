@@ -142,6 +142,7 @@ dependencies = [
  "aestra-runtime",
  "bevy",
  "thiserror 2.0.20",
+ "tracing",
  "wesl",
 ]
 
@@ -156,6 +157,7 @@ dependencies = [
  "bevy",
  "encase",
  "pollster",
+ "tracing",
  "wgpu",
 ]
 

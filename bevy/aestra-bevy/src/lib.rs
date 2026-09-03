@@ -421,6 +421,7 @@ fn play_effects(
         &EffectRuntimeStatus,
     )>,
 ) {
+    let _span = tracing::info_span!("aestra::runtime::advance").entered();
     for (player_entity, mut player, presented, mut profiler, runtime) in &mut players {
         if !profiler.0.matches_compiled(player.effect()) {
             profiler.0 = bevy_profile(player.effect(), &capabilities, runtime);

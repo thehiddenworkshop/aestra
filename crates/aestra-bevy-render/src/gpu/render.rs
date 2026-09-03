@@ -506,6 +506,7 @@ fn queue_gpu_sprites(
     mut phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
     views: Query<(&RenderVisibleEntities, &ExtractedView, &Msaa)>,
 ) {
+    let _span = tracing::info_span!("aestra::gpu::queue_sprites").entered();
     let draw_functions = draw_functions.read();
     let legacy_draw_function = draw_functions.id::<DrawGpuSprites>();
     let semantic_draw_function = draw_functions.id::<DrawSemanticGpuSprites>();

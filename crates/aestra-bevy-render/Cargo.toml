@@ -13,6 +13,7 @@ aestra-core = { path = "../aestra-core" }
 aestra-gpu = { path = "../aestra-gpu" }
 aestra-runtime = { path = "../aestra-runtime" }
 bevy.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 aestra-core = { path = "../aestra-core" }
