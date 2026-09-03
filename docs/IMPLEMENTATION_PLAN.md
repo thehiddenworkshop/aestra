@@ -362,9 +362,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   first projectional editing slice is implemented: the workspace uses reusable Feathers node and
   typed-socket widgets, deterministic dependency-column layout, an anti-aliased GPU wire layer,
   compatible-target previews, and drag-to-reconnect through `ConnectMaterialExpression` plus the
-  shared material undo/redo history. Canvas pan/zoom, node creation/deletion/duplication, explicit
-  connection selection, and the remaining semantic graph gestures are still required before this
-  milestone is complete.
+  shared material undo/redo history. Its reusable graph viewport now provides an infinite
+  viewport-space grid, zoom-stable wires, middle-mouse and Space-drag panning, cursor-anchored
+  wheel zoom, persistent per-program views and node positions, collapsible nodes, and frame-all or
+  frame-selection commands. Node creation/deletion/duplication, explicit connection selection, and
+  the remaining semantic graph gestures are still required before this milestone is complete.
 - [ ] **Material 14 — graph layout metadata.** Persist optional layout separately from semantics.
 
 ### Phase E — reuse and extensibility

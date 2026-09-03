@@ -2,12 +2,13 @@
 
 use crate::{
     feathers::{
+        icon::load_svg_icon,
         node_graph::{
-            GraphNodeProps, GraphPortProps, GraphSocketSide, GraphWireMaterial, NODE_WIDTH,
-            PORT_ROW_HEIGHT, graph_canvas, spawn_graph_node, spawn_graph_port,
+            GraphFrameAction, GraphFrameTarget, GraphNodeProps, GraphPortProps, GraphSocketSide,
+            GraphViewportProps, GraphWireMaterial, NODE_WIDTH, PORT_ROW_HEIGHT,
+            spawn_graph_frame_button, spawn_graph_node, spawn_graph_port, spawn_graph_viewport,
         },
         panel::spawn_panel_empty_state,
-        scroll::spawn_bidirectional_scroll_area,
     },
     *,
 };
@@ -40,6 +41,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .add_observer(update_material_connection_drag)
             .add_observer(finish_material_connection_drag)
             .add_observer(stop_material_socket_click)
+            .add_observer(select_material_graph_node)
             .add_systems(
                 Update,
                 (
@@ -61,12 +63,11 @@ struct MaterialGraphAction {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
-struct MaterialGraphCanvas {
-    program: MaterialProgramId,
-}
+struct MaterialGraphCanvas;
 
-fn material_graph_canvas_bundle(program: MaterialProgramId, size: Vec2) -> impl Bundle {
-    (graph_canvas(size), MaterialGraphCanvas { program })
+#[derive(Component, Debug, Clone, Copy)]
+struct MaterialGraphViewport {
+    program: MaterialProgramId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,7 +91,9 @@ struct MaterialGraphWire {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
-struct MaterialGraphGhostWire;
+struct MaterialGraphGhostWire {
+    program: MaterialProgramId,
+}
 
 #[derive(Resource, Debug, Default)]
 enum MaterialGraphGesture {
@@ -116,9 +119,7 @@ fn handle_material_graph_actions(
         (&Interaction, &MaterialGraphAction, &mut BackgroundColor),
         (Changed<Interaction>, With<Button>),
     >,
-    mut inspector: ResMut<MaterialStackInspectorState>,
-    mut session: ResMut<EditorSession>,
-    mut layout: ResMut<WorkspaceLayout>,
+    inspector: Res<MaterialStackInspectorState>,
 ) {
     for (interaction, action, mut background) in &mut actions {
         match *interaction {
@@ -132,25 +133,55 @@ fn handle_material_graph_actions(
             }
             Interaction::Pressed => {
                 background.0 = theme::ACCENT_DIM;
-                if inspector.selected != Some((action.program, action.expression)) {
-                    inspector.selected = Some((action.program, action.expression));
-                    session.ui_revision += 1;
-                }
-                reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
             }
         }
     }
 }
 
+fn select_material_graph_node(
+    mut click: On<Pointer<Click>>,
+    actions: Query<&MaterialGraphAction>,
+    parents: Query<&ChildOf>,
+    sockets: Query<(), With<MaterialGraphSocket>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut inspector: ResMut<MaterialStackInspectorState>,
+    mut session: ResMut<EditorSession>,
+    mut layout: ResMut<WorkspaceLayout>,
+) {
+    if click.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
+        return;
+    }
+    let mut entity = click.event_target();
+    let action = loop {
+        if sockets.contains(entity) {
+            return;
+        }
+        if let Ok(action) = actions.get(entity) {
+            break action;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    if inspector.selected != Some((action.program, action.expression)) {
+        inspector.selected = Some((action.program, action.expression));
+        session.ui_revision += 1;
+    }
+    reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
+    click.propagate(false);
+}
+
 fn begin_material_connection_drag(
     mut event: On<Pointer<DragStart>>,
     sockets: Query<(&MaterialGraphSocket, &ComputedNode)>,
-    canvases: Query<(Entity, &MaterialGraphCanvas)>,
+    viewports: Query<(Entity, &MaterialGraphViewport)>,
     mut materials: ResMut<Assets<GraphWireMaterial>>,
     mut gesture: ResMut<MaterialGraphGesture>,
     mut commands: Commands,
+    keys: Res<ButtonInput<KeyCode>>,
 ) {
-    if event.button != PointerButton::Primary {
+    if event.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
         return;
     }
     let Ok((socket, computed)) = sockets.get(event.event_target()) else {
@@ -166,13 +197,15 @@ fn begin_material_connection_drag(
         cursor,
         snap_target: None,
     };
-    if let Some((canvas, _)) = canvases
+    if let Some((viewport, _)) = viewports
         .iter()
-        .find(|(_, canvas)| canvas.program == socket.program)
+        .find(|(_, viewport)| viewport.program == socket.program)
     {
         let material = materials.add(GraphWireMaterial::default());
         commands.spawn((
-            MaterialGraphGhostWire,
+            MaterialGraphGhostWire {
+                program: socket.program,
+            },
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(0.0),
@@ -183,7 +216,7 @@ fn begin_material_connection_drag(
             },
             MaterialNode(material),
             Pickable::IGNORE,
-            ChildOf(canvas),
+            ChildOf(viewport),
         ));
     }
     event.propagate(false);
@@ -323,34 +356,42 @@ fn attach_material_graph_wire_materials(
 
 fn update_material_graph_wires(
     mut materials: ResMut<Assets<GraphWireMaterial>>,
-    wires: Query<(&MaterialGraphWire, &MaterialNode<GraphWireMaterial>)>,
-    ghosts: Query<&MaterialNode<GraphWireMaterial>, With<MaterialGraphGhostWire>>,
+    wires: Query<(
+        &MaterialGraphWire,
+        &MaterialNode<GraphWireMaterial>,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
+    ghosts: Query<(
+        &MaterialGraphGhostWire,
+        &MaterialNode<GraphWireMaterial>,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
     sockets: Query<(&MaterialGraphSocket, &UiGlobalTransform)>,
-    canvases: Query<(&MaterialGraphCanvas, &ComputedNode, &UiGlobalTransform)>,
     session: Res<EditorSession>,
     catalog: Res<ProjectEffectCatalog>,
     mut gesture: ResMut<MaterialGraphGesture>,
 ) {
-    for (wire, material) in &wires {
-        let Some((origin, _)) = canvas_origin(&canvases, wire.program) else {
-            continue;
-        };
-        let Some(start) = socket_position(
+    for (wire, material, computed, transform) in &wires {
+        let Some(start_world) = socket_position(
             &sockets,
             wire.program,
             MaterialGraphSocketKind::ExpressionOutput(wire.source),
         ) else {
             continue;
         };
-        let Some(end) = socket_position(
+        let Some(end_world) = socket_position(
             &sockets,
             wire.program,
             MaterialGraphSocketKind::ConnectionInput(wire.target),
         ) else {
             continue;
         };
+        let start = viewport_local_position(computed, transform, start_world);
+        let end = viewport_local_position(computed, transform, end_world);
         if let Some(mut material) = materials.get_mut(&material.0) {
-            set_wire_points(&mut material, start - origin, end - origin);
+            set_wire_points(&mut material, start, end);
             material.color = wire.color;
         }
     }
@@ -364,10 +405,7 @@ fn update_material_graph_wires(
     else {
         return;
     };
-    let Some((origin, _)) = canvas_origin(&canvases, *program) else {
-        return;
-    };
-    let Some(start) = socket_position(
+    let Some(start_world) = socket_position(
         &sockets,
         *program,
         MaterialGraphSocketKind::ExpressionOutput(*source),
@@ -412,10 +450,15 @@ fn update_material_graph_wires(
         }
     }
     *snap_target = nearest.map(|(_, target, _)| target);
-    let end = nearest.map_or(*cursor, |(_, _, position)| position);
-    for material in &ghosts {
+    let end_world = nearest.map_or(*cursor, |(_, _, position)| position);
+    for (ghost, material, computed, transform) in &ghosts {
+        if ghost.program != *program {
+            continue;
+        }
+        let start = viewport_local_position(computed, transform, start_world);
+        let end = viewport_local_position(computed, transform, end_world);
         if let Some(mut material) = materials.get_mut(&material.0) {
-            set_wire_points(&mut material, start - origin, end - origin);
+            set_wire_points(&mut material, start, end);
             material.color = if snap_target.is_some() {
                 Vec4::new(0.45, 1.0, 0.72, 1.0)
             } else {
@@ -426,18 +469,14 @@ fn update_material_graph_wires(
     }
 }
 
-fn canvas_origin(
-    canvases: &Query<(&MaterialGraphCanvas, &ComputedNode, &UiGlobalTransform)>,
-    program: MaterialProgramId,
-) -> Option<(Vec2, Vec2)> {
-    canvases
-        .iter()
-        .find(|(canvas, _, _)| canvas.program == program)
-        .map(|(_, computed, transform)| {
-            let (_, _, center) = transform.to_scale_angle_translation();
-            let size = computed.size();
-            (center - size * 0.5, size)
-        })
+fn viewport_local_position(
+    computed: &ComputedNode,
+    transform: &UiGlobalTransform,
+    world_position: Vec2,
+) -> Vec2 {
+    transform.try_inverse().map_or(world_position, |inverse| {
+        inverse.transform_point2(world_position) + computed.size() * 0.5
+    })
 }
 
 fn socket_position(
@@ -465,6 +504,7 @@ pub(crate) fn spawn_material_graph_workspace(
     catalog: &ProjectEffectCatalog,
     inspector: &MaterialStackInspectorState,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     parent
         .spawn(Node {
@@ -477,7 +517,7 @@ pub(crate) fn spawn_material_graph_workspace(
         })
         .with_children(|panel| {
             let projection = selected_projection(session, catalog);
-            spawn_header(panel, projection.as_ref().ok(), localizer);
+            spawn_header(panel, projection.as_ref().ok(), localizer, asset_server);
             let Ok((_program_name, projection)) = projection else {
                 spawn_panel_empty_state(
                     panel,
@@ -488,48 +528,52 @@ pub(crate) fn spawn_material_graph_workspace(
                 return;
             };
             let layout = layout_graph(&projection);
-            spawn_bidirectional_scroll_area(
+            let graph_key = material_graph_view_key(projection.program);
+            let selection_bounds = selected_graph_node_bounds(&layout, &projection, inspector);
+            let viewport = spawn_graph_viewport(
                 panel,
-                ScrollMemoryKey::MaterialGraph,
-                Node {
-                    min_width: Val::Px(0.0),
-                    min_height: Val::Px(0.0),
-                    ..default()
+                GraphViewportProps {
+                    key: graph_key.clone(),
+                    content_size: layout.size,
+                    selection_bounds,
                 },
-                |viewport| {
-                    viewport
-                        .spawn(material_graph_canvas_bundle(
+                MaterialGraphCanvas,
+                |overlay| spawn_graph_wires(overlay, &projection),
+                |canvas| {
+                    for node in &projection.nodes {
+                        let position = layout
+                            .nodes
+                            .get(&node.expression)
+                            .copied()
+                            .unwrap_or(Vec2::splat(CANVAS_PADDING));
+                        spawn_expression_node(
+                            canvas,
                             projection.program,
-                            layout.size,
-                        ))
-                        .with_children(|canvas| {
-                            spawn_graph_background(canvas);
-                            spawn_graph_wires(canvas, &projection);
-                            for node in &projection.nodes {
-                                let position = layout
-                                    .nodes
-                                    .get(&node.expression)
-                                    .copied()
-                                    .unwrap_or(Vec2::splat(CANVAS_PADDING));
-                                spawn_expression_node(
-                                    canvas,
-                                    projection.program,
-                                    node,
-                                    position,
-                                    inspector,
-                                    localizer,
-                                );
-                            }
-                            spawn_output_node(
-                                canvas,
-                                projection.program,
-                                &projection.outputs,
-                                layout.output,
-                                localizer,
-                            );
-                        });
+                            node,
+                            position,
+                            inspector,
+                            localizer,
+                            asset_server,
+                            &graph_key,
+                        );
+                    }
+                    spawn_output_node(
+                        canvas,
+                        projection.program,
+                        &projection.outputs,
+                        layout.output,
+                        localizer,
+                        asset_server,
+                        &graph_key,
+                    );
                 },
             );
+            panel
+                .commands()
+                .entity(viewport)
+                .insert(MaterialGraphViewport {
+                    program: projection.program,
+                });
         });
 }
 
@@ -586,6 +630,7 @@ fn spawn_header(
     parent: &mut ChildSpawnerCommands,
     projection: Option<&(String, MaterialGraphProjection)>,
     localizer: &Localizer,
+    asset_server: &AssetServer,
 ) {
     parent
         .spawn((
@@ -613,6 +658,21 @@ fn spawn_header(
                 ..default()
             });
             if let Some((name, graph)) = projection {
+                let key = material_graph_view_key(graph.program);
+                spawn_graph_frame_button(
+                    header,
+                    asset_server,
+                    "icons/frame-all.svg",
+                    localizer.text("material-graph-frame-all"),
+                    GraphFrameAction::new(key.clone(), GraphFrameTarget::All),
+                );
+                spawn_graph_frame_button(
+                    header,
+                    asset_server,
+                    "icons/frame-selection.svg",
+                    localizer.text("material-graph-frame-selection"),
+                    GraphFrameAction::new(key, GraphFrameTarget::Selection),
+                );
                 header.spawn((
                     Text::new(format!(
                         "{name}  ·  {} NODES  ·  {} LINKS",
@@ -629,35 +689,32 @@ fn spawn_header(
         });
 }
 
-fn spawn_graph_background(parent: &mut ChildSpawnerCommands) {
-    const SPACING: f32 = 32.0;
-    for index in 0..64 {
-        let offset = index as f32 * SPACING;
-        parent.spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(offset),
-                top: Val::Px(0.0),
-                width: Val::Px(1.0),
-                height: Val::Percent(100.0),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.25, 0.28, 0.38, 0.10)),
-            Pickable::IGNORE,
-        ));
-        parent.spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(offset),
-                width: Val::Percent(100.0),
-                height: Val::Px(1.0),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.25, 0.28, 0.38, 0.10)),
-            Pickable::IGNORE,
-        ));
+fn material_graph_view_key(program: MaterialProgramId) -> String {
+    format!("material:{program}")
+}
+
+fn selected_graph_node_bounds(
+    layout: &MaterialGraphLayout,
+    graph: &MaterialGraphProjection,
+    inspector: &MaterialStackInspectorState,
+) -> Option<Rect> {
+    let (program, expression) = inspector.selected?;
+    if program != graph.program {
+        return None;
     }
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.expression == expression)?;
+    let position = *layout.nodes.get(&expression)?;
+    Some(Rect::from_corners(
+        position,
+        position
+            + Vec2::new(
+                NODE_WIDTH,
+                node_height(node.inputs.len(), node.disabled || !node.reachable),
+            ),
+    ))
 }
 
 fn spawn_graph_wires(parent: &mut ChildSpawnerCommands, graph: &MaterialGraphProjection) {
@@ -692,17 +749,25 @@ fn spawn_expression_node(
     position: Vec2,
     inspector: &MaterialStackInspectorState,
     localizer: &Localizer,
+    asset_server: &AssetServer,
+    graph_key: &str,
 ) {
     let selected = inspector.selected == Some((program, node.expression));
     let subtitle = type_domain(node.value_type, node.evaluation_domain);
     spawn_graph_node(
         parent,
         GraphNodeProps {
+            graph_key: graph_key.to_owned(),
+            node_key: format!("expression:{}", node.expression),
             title: node.label.clone(),
             subtitle,
             position,
             selected,
             muted: !node.reachable || node.disabled,
+            collapse_icon: load_svg_icon(asset_server, "icons/chevron-down.svg"),
+            expand_icon: load_svg_icon(asset_server, "icons/chevron-right.svg"),
+            collapse_label: localizer.text("material-graph-collapse-node"),
+            expand_label: localizer.text("material-graph-expand-node"),
         },
         (
             Button,
@@ -776,17 +841,25 @@ fn spawn_output_node(
     outputs: &[MaterialGraphOutput],
     position: Vec2,
     localizer: &Localizer,
+    asset_server: &AssetServer,
+    graph_key: &str,
 ) {
     spawn_graph_node(
         parent,
         GraphNodeProps {
+            graph_key: graph_key.to_owned(),
+            node_key: "output".to_owned(),
             title: localizer.text("material-graph-outputs"),
             subtitle: "FRAGMENT".into(),
             position,
             selected: false,
             muted: false,
+            collapse_icon: load_svg_icon(asset_server, "icons/chevron-down.svg"),
+            expand_icon: load_svg_icon(asset_server, "icons/chevron-right.svg"),
+            collapse_label: localizer.text("material-graph-collapse-node"),
+            expand_label: localizer.text("material-graph-expand-node"),
         },
-        Pickable::IGNORE,
+        (),
         |body| {
             for output in outputs {
                 let target = MaterialConnectionTarget::ProgramOutput(match output.kind {
@@ -987,10 +1060,12 @@ mod tests {
     #[test]
     fn material_graph_canvas_bundle_spawns_without_duplicate_components() {
         let mut world = World::new();
+        let viewport = world.spawn_empty().id();
         let entity = world
-            .spawn(material_graph_canvas_bundle(
-                MaterialProgramId::new(),
+            .spawn(crate::feathers::node_graph::graph_canvas_bundle(
+                viewport,
                 Vec2::new(720.0, 420.0),
+                MaterialGraphCanvas,
             ))
             .id();
 

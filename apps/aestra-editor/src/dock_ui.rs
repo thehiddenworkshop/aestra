@@ -461,6 +461,7 @@ fn spawn_panel_content(
             sources.catalog,
             sources.material_stack_inspector,
             sources.localizer,
+            sources.asset_server,
         ),
         DockPanel::Profiler => {
             spawn_profiler_workspace(parent, sources.session, sources.profiler, sources.localizer)

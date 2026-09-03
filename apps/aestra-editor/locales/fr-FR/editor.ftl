@@ -48,6 +48,10 @@ panel-changes = MODIFICATIONS
 panel-settings = PARAMÈTRES
 
 material-graph-edit-hint = GLISSEZ UNE SORTIE VERS UNE ENTRÉE COMPATIBLE
+material-graph-frame-all = Cadrer tous les nœuds (Début)
+material-graph-frame-selection = Cadrer le nœud sélectionné (F)
+material-graph-collapse-node = Réduire le nœud
+material-graph-expand-node = Développer le nœud
 material-graph-empty = Aucun matériau sémantique sélectionné
 material-graph-empty-description = Sélectionnez un émetteur ou un moteur de rendu utilisant un programme de matériau du projet.
 material-graph-valid = VALIDE
