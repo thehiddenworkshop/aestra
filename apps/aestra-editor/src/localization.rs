@@ -92,7 +92,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "panel-profiler",
     "panel-changes",
     "panel-settings",
-    "material-graph-read-only",
+    "material-graph-edit-hint",
     "material-graph-empty",
     "material-graph-empty-description",
     "material-graph-valid",

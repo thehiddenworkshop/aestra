@@ -13,6 +13,7 @@ pub(crate) mod context_menu;
 pub(crate) mod field_row;
 pub(crate) mod icon;
 pub(crate) mod list_row;
+pub(crate) mod node_graph;
 pub(crate) mod number_input;
 pub(crate) mod panel;
 pub(crate) mod panel_card;
@@ -39,6 +40,7 @@ pub(crate) struct AestraFeathersPlugin;
 impl Plugin for AestraFeathersPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(FeathersPlugins)
+            .add_plugins(node_graph::FeathersNodeGraphPlugin)
             .insert_resource(theme::feathers_theme())
             .init_resource::<automation_curve::AutomationCurveImageCache>()
             .init_resource::<tooltip::TooltipState>()

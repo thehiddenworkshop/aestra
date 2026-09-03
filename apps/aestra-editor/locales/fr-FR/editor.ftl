@@ -47,7 +47,7 @@ panel-profiler = PROFILEUR
 panel-changes = MODIFICATIONS
 panel-settings = PARAMÈTRES
 
-material-graph-read-only = GRAPHE SÉMANTIQUE EN LECTURE SEULE
+material-graph-edit-hint = GLISSEZ UNE SORTIE VERS UNE ENTRÉE COMPATIBLE
 material-graph-empty = Aucun matériau sémantique sélectionné
 material-graph-empty-description = Sélectionnez un émetteur ou un moteur de rendu utilisant un programme de matériau du projet.
 material-graph-valid = VALIDE

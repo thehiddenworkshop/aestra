@@ -47,7 +47,7 @@ panel-profiler = PROFILER
 panel-changes = CHANGES
 panel-settings = SETTINGS
 
-material-graph-read-only = READ-ONLY SEMANTIC GRAPH
+material-graph-edit-hint = DRAG AN OUTPUT SOCKET TO A COMPATIBLE INPUT
 material-graph-empty = No semantic material selected
 material-graph-empty-description = Select an emitter or renderer that uses a project material program.
 material-graph-valid = VALID
