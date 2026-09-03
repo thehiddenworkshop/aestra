@@ -74,16 +74,20 @@ whole-frame + per-stage timing, so build them together.
   offline workspace gate stays resolvable). `trace_tracy_memory` adds allocation
   tracking. Remaining: `aestra::runtime::evaluate_cpu` on the CPU backend path.
 
-### 1d. GPU timestamps — **pending (needs GPU lane)**
-- Prefer Bevy's built-in render diagnostics (`RenderDiagnosticsPlugin` +
-  `RecordDiagnostics::time_span`) over a hand-rolled `TIMESTAMP_QUERY` pass.
-- Integration point identified: the `run_simulation` compute pass
-  (`crates/aestra-bevy-render/src/gpu.rs`, `begin_compute_pass("aestra simulation")`)
-  and the sprite draw in `gpu/render.rs`. Wrap these with GPU `time_span`s.
-- Deferred deliberately: GPU timestamps can only be verified on the self-hosted GPU
-  lane, so this is implemented and validated there rather than blind in a headless
-  environment. Record GPU sim-reset / sim / render timings into the bench JSON once
-  available (strategy §7, §10 GPU block).
+### 1d. GPU timestamps — **wired (compile-verified); validate on GPU lane**
+- Uses Bevy's built-in render diagnostics (`RecordDiagnostics::time_span`) rather
+  than a hand-rolled `TIMESTAMP_QUERY` pass. The `run_simulation` compute pass in
+  `crates/aestra-bevy-render/src/gpu.rs` is wrapped in an `aestra::gpu::simulate`
+  GPU time span; it is a no-op unless the host app adds `RenderDiagnosticsPlugin`.
+- `aestra-viewer` adds `RenderDiagnosticsPlugin`, so the capture tool records GPU
+  time on Vulkan/DX12. Timings surface through Tracy (`--features bevy/trace_tracy`)
+  or a diagnostics logger.
+- **Validate on the self-hosted GPU lane:** timestamp queries only produce real
+  numbers on GPU hardware (Vulkan/DX12), so the values must be confirmed there, not
+  in the headless CPU environment. This is why the code is written against Bevy's
+  supported API and compile-checked here, but not runtime-verified.
+- Remaining: wrap the sprite draw (`gpu/render.rs`) too, and record GPU
+  sim-reset / sim / render timings into the bench JSON (strategy §7, §10 GPU block).
 
 ### 1e. Statistical output + JSON format
 - Per timing metric record median/p95/p99/max/stddev (strategy §10); optional

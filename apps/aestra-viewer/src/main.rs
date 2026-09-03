@@ -12,6 +12,7 @@ use bevy::{
     asset::AssetPlugin,
     camera::{Viewport, visibility::RenderLayers},
     prelude::*,
+    render::diagnostic::RenderDiagnosticsPlugin,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::WindowResolution,
 };
@@ -67,6 +68,11 @@ fn main() {
                     ..default()
                 }),
             AestraPlugin,
+            // Enables GPU timestamp diagnostics for Aestra's simulation pass (the
+            // `aestra::gpu::simulate` span). Records real GPU time on Vulkan/DX12,
+            // surfaced through Tracy (`--features bevy/trace_tracy`) or a diagnostics
+            // logger; a no-op elsewhere.
+            RenderDiagnosticsPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(

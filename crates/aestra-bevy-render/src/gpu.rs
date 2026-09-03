@@ -31,6 +31,7 @@ use bevy::{
     prelude::*,
     render::{
         ExtractSchedule, MainWorld, Render, RenderApp, RenderStartup, RenderSystems,
+        diagnostic::RecordDiagnostics,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         gpu_readback::{Readback, ReadbackComplete},
         render_asset::RenderAssets,
@@ -961,6 +962,12 @@ fn run_simulation(
     ) else {
         return;
     };
+    // GPU timestamp span around the whole simulation. This is a no-op unless the
+    // host app added `RenderDiagnosticsPlugin`; on Vulkan/DX12 it records real GPU
+    // elapsed time, surfaced through the diagnostics store and Tracy.
+    let diagnostics = render_context.diagnostic_recorder();
+    let diagnostics = diagnostics.as_deref();
+    let gpu_span = diagnostics.time_span(render_context.command_encoder(), "aestra::gpu::simulate");
     for (effect, bind_group) in &effects {
         let mut pass =
             render_context
@@ -975,6 +982,7 @@ fn run_simulation(
         pass.set_pipeline(simulate);
         pass.dispatch_workgroups(effect.workgroups, 1, 1);
     }
+    gpu_span.end(render_context.command_encoder());
 }
 
 fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {
