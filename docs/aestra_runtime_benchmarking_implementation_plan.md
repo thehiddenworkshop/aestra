@@ -184,6 +184,25 @@ loop pressure / curve complexity and GPU simulation time.
 gameplay runtime, and which §2.x risks are real bottlenecks vs. acceptable. Output
 is a written scaling report, not code.
 
+### Early GPU result — §2.2 refuted on the capacity axis
+
+A first GPU-timestamp pass (`aestra-viewer --gpu-bench`, RTX 4070 SUPER / Vulkan,
+archived under `benchmarks/gpu-baselines/20d5785…/`) already answers the strategy's
+central §2.2 worry ("GPU simulation scales with total particle capacity"):
+
+- **b004 (500k capacity, 5k alive) simulates at 0.001 ms p50; b003 (100k capacity,
+  100k alive) at 0.362 ms p50.** 5× the capacity, ~360× *less* time — the kernel is
+  driven by alive particles, not capacity. Dead slots are effectively free.
+- Dense throughput ≈ 3.6 ns per live particle; 100k particles fit in ~0.36 ms.
+
+Implication: the capacity-bound-GPU-simulation premise behind several later
+optimizations (eliminating dead-slot dispatch, packed emitter ranges) is **not
+supported by measurement** on this hardware, so those drop in priority. The real
+capacity cost was CPU-side artifact allocation, already fixed in Phase 3. Remaining
+open axes to measure: occupancy at fixed alive-count, emitter count (§2.3), loop
+pressure (§2.4), and curve complexity (§2.5). The `--gpu-bench` tool + CPU bench now
+make each of these measurable.
+
 ---
 
 ## Phase 7 — Optimize measured analytical bottlenecks (strategy M6)
