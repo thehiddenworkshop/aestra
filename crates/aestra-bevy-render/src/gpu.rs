@@ -42,7 +42,10 @@ use bevy::{
             TextureDimension, TextureFormat,
             binding_types::{storage_buffer, storage_buffer_read_only},
         },
-        renderer::{RenderAdapter, RenderAdapterInfo, RenderContext, RenderDevice, RenderGraph},
+        renderer::{
+            RenderAdapter, RenderAdapterInfo, RenderContext, RenderDevice, RenderGraph,
+            RenderGraphSystems,
+        },
         storage::{GpuShaderBuffer, ShaderBuffer},
         sync_component::SyncComponent,
     },
@@ -249,7 +252,15 @@ pub(crate) fn install(app: &mut App) {
             Render,
             prepare_bind_groups.in_set(RenderSystems::PrepareBindGroups),
         )
-        .add_systems(RenderGraph, run_simulation);
+        // Run inside the render-graph diagnostics window (after `Begin`) and before
+        // the graph draws (`Render`), so the `aestra::gpu::simulate` GPU timestamp
+        // span is captured and particles are simulated before they are rendered.
+        .add_systems(
+            RenderGraph,
+            run_simulation
+                .after(RenderGraphSystems::Begin)
+                .before(RenderGraphSystems::Render),
+        );
     render::install(render_app);
 }
 
