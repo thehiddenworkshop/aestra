@@ -249,6 +249,8 @@ dependencies = [
  "aestra-bevy",
  "bevy",
  "image",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

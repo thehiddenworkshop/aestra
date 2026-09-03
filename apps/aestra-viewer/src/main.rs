@@ -1,3 +1,4 @@
+mod gpu_bench;
 mod visual_regression;
 
 use aestra_authoring::{MaterialAuthoringDocument, migrate_legacy_sprite_materials};
@@ -37,7 +38,7 @@ const OVERLAY_PROBE_SIZE: u32 = 144;
 fn main() {
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--diagnostics] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--diagnostics] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     let preview_seed = config.resolved_seed();
@@ -46,6 +47,13 @@ fn main() {
         .clone()
         .map(|mode| CapturePlan::new(mode, config.capture_frames, preview_seed));
     let log_diagnostics = config.diagnostics;
+    let gpu_bench_output = config.gpu_bench.clone();
+    let gpu_bench_effect = config
+        .effect_path
+        .as_ref()
+        .and_then(|path| path.file_stem())
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "prism_bloom".to_owned());
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.009, 0.012, 0.024)))
@@ -79,10 +87,23 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (viewer_controls, update_hud, drive_capture.after(update_hud)),
+            (
+                viewer_controls,
+                update_hud,
+                drive_capture.after(update_hud),
+                gpu_bench::drive_gpu_bench,
+            ),
         );
     if let Some(capture) = capture {
         app.insert_resource(capture);
+    }
+    if let Some(output) = gpu_bench_output {
+        app.insert_resource(gpu_bench::GpuBenchPlan::new(
+            output,
+            gpu_bench_effect,
+            gpu_bench::DEFAULT_GPU_BENCH_WARMUP,
+            gpu_bench::DEFAULT_GPU_BENCH_FRAMES,
+        ));
     }
     if log_diagnostics {
         // Prints the diagnostics store (whole-frame CPU time and, on Vulkan/DX12,
@@ -104,6 +125,7 @@ struct ViewerConfig {
     max_gpu_particles: u32,
     preview_seed: Option<u64>,
     diagnostics: bool,
+    gpu_bench: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -143,6 +165,7 @@ impl ViewerConfig {
         let mut max_gpu_particles = DEFAULT_GPU_PARTICLE_BUDGET;
         let mut preview_seed = None;
         let mut diagnostics = false;
+        let mut gpu_bench = None;
         let mut args = env::args().skip(1);
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -153,6 +176,12 @@ impl ViewerConfig {
                 }
                 "--semantic-materials" => semantic_materials = true,
                 "--diagnostics" => diagnostics = true,
+                "--gpu-bench" => {
+                    gpu_bench = Some(PathBuf::from(
+                        args.next()
+                            .ok_or("--gpu-bench requires an output JSON path")?,
+                    ));
+                }
                 "--capture" => {
                     set_capture_mode(
                         &mut capture_mode,
@@ -253,6 +282,7 @@ impl ViewerConfig {
             max_gpu_particles,
             preview_seed,
             diagnostics,
+            gpu_bench,
         })
     }
 

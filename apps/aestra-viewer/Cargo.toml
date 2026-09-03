@@ -12,3 +12,5 @@ aestra-authoring = { path = "../../crates/aestra-authoring" }
 aestra-bevy = { path = "../../bevy/aestra-bevy" }
 bevy.workspace = true
 image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
