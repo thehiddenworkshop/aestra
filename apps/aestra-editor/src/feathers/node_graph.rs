@@ -74,7 +74,8 @@ impl Plugin for FeathersNodeGraphPlugin {
                     sync_graph_viewport_transforms.before(bevy::ui::UiSystems::Layout),
                     sync_graph_grid_materials.after(bevy::ui::UiSystems::Layout),
                 ),
-            );
+            )
+            .add_systems(Last, clear_graph_node_drag_release);
     }
 }
 
@@ -180,13 +181,21 @@ pub(crate) struct GraphNodeProps {
 }
 
 #[derive(Component, Debug, Clone)]
-struct FeathersGraphNode {
+pub(crate) struct FeathersGraphNode {
     graph_key: String,
     node_key: String,
     position: Vec2,
     selected: bool,
     collapsed: bool,
     dragging: bool,
+    moved_during_drag: bool,
+    suppress_release_click: bool,
+}
+
+impl FeathersGraphNode {
+    pub(crate) fn consume_suppressed_release_click(&mut self) -> bool {
+        std::mem::take(&mut self.suppress_release_click)
+    }
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -553,6 +562,8 @@ fn begin_graph_node_drag(
         return;
     };
     node.dragging = true;
+    node.moved_during_drag = false;
+    node.suppress_release_click = false;
     drag.propagate(false);
 }
 
@@ -581,6 +592,9 @@ fn drag_graph_node(
     };
     if !graph_node.dragging {
         return;
+    }
+    if drag.delta.length_squared() > 0.25 {
+        graph_node.moved_during_drag = true;
     }
     let zoom = viewports
         .iter()
@@ -626,8 +640,15 @@ fn end_graph_node_drag(
         return;
     };
     node.dragging = false;
+    node.suppress_release_click = node.moved_during_drag;
     override_cursor.0 = None;
     drag.propagate(false);
+}
+
+fn clear_graph_node_drag_release(mut nodes: Query<&mut FeathersGraphNode>) {
+    for mut node in &mut nodes {
+        node.suppress_release_click = false;
+    }
 }
 
 fn graph_node_from_target<D: QueryData, F: QueryFilter>(
@@ -784,9 +805,9 @@ fn navigate_graph_viewports(
         let still_active = buttons.pressed(button) && (button != MouseButton::Left || space);
         if still_active {
             if pointer_delta != Vec2::ZERO
-                && let Ok((_, _, _, mut viewport)) = viewports.get_mut(entity)
+                && let Ok((_, _, computed, mut viewport)) = viewports.get_mut(entity)
             {
-                viewport.pan += pointer_delta;
+                viewport.pan += pointer_delta * computed.inverse_scale_factor;
                 viewport.frame_request = None;
             }
             override_cursor.0 = Some(EntityCursor::System(SystemCursorIcon::Grabbing));
@@ -957,6 +978,8 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
             selected: props.selected,
             collapsed: false,
             dragging: false,
+            moved_during_drag: false,
+            suppress_release_click: false,
         },
         Pickable {
             should_block_lower: true,

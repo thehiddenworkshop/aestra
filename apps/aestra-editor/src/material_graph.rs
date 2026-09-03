@@ -4,8 +4,8 @@ use crate::{
     feathers::{
         icon::load_svg_icon,
         node_graph::{
-            GraphFrameAction, GraphFrameTarget, GraphNodeProps, GraphPortProps, GraphSocketSide,
-            GraphViewportProps, GraphWireMaterial, NODE_WIDTH, PORT_ROW_HEIGHT,
+            FeathersGraphNode, GraphFrameAction, GraphFrameTarget, GraphNodeProps, GraphPortProps,
+            GraphSocketSide, GraphViewportProps, GraphWireMaterial, NODE_WIDTH, PORT_ROW_HEIGHT,
             spawn_graph_frame_button, spawn_graph_node, spawn_graph_port, spawn_graph_viewport,
         },
         panel::spawn_panel_empty_state,
@@ -51,7 +51,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             )
             .add_systems(
                 PostUpdate,
-                update_material_graph_wires.after(bevy::ui::UiSystems::Layout),
+                update_material_graph_wires.after(bevy::transform::TransformSystems::Propagate),
             );
     }
 }
@@ -141,6 +141,7 @@ fn handle_material_graph_actions(
 fn select_material_graph_node(
     mut click: On<Pointer<Click>>,
     actions: Query<&MaterialGraphAction>,
+    mut graph_nodes: Query<&mut FeathersGraphNode>,
     parents: Query<&ChildOf>,
     sockets: Query<(), With<MaterialGraphSocket>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -164,6 +165,13 @@ fn select_material_graph_node(
         };
         entity = parent.parent();
     };
+    if graph_nodes
+        .get_mut(entity)
+        .is_ok_and(|mut node| node.consume_suppressed_release_click())
+    {
+        click.propagate(false);
+        return;
+    }
     if inspector.selected != Some((action.program, action.expression)) {
         inspector.selected = Some((action.program, action.expression));
         session.ui_revision += 1;
