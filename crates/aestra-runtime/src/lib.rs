@@ -546,6 +546,12 @@ pub struct CompiledParameter {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OptimizationStats {
+    /// Resolved material call-output sites, including nested sites within shared expansions.
+    pub material_function_calls_authored: usize,
+    /// Call-output sites removed by sharing or dead-value removal.
+    pub material_function_calls_eliminated: usize,
+    /// Distinct material invocation/output pairs contributing optimized values.
+    pub material_function_calls_live: usize,
     pub constant_expressions: usize,
     pub runtime_parameter_reads: usize,
     pub eliminated_attributes: usize,

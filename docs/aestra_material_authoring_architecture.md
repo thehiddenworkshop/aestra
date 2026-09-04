@@ -2512,8 +2512,15 @@ an explicit IR sampling contract; the level operand participates in CSE identity
 artifact serialization, and emits portable `textureSampleLevel`. Explicit-gradient sampling is
 now available through typed `Derivative X`, `Derivative Y`, and `Sample Texture Gradient` nodes.
 Their fragment-local `Vec2` gradients participate in CSE identity, survive artifact serialization,
-and emit portable `dpdx`, `dpdy`, and `textureSampleGrad`. Function deduplication, varying
-minimization, and required particle-attribute pruning remain planned.
+and emit portable `dpdx`, `dpdy`, and `textureSampleGrad`. Semantic function calls now share an
+expansion namespace by function reference and resolved input-ID-ordered bindings, allowing
+multiple outputs and nested functions to reuse internal work. Custom WESL and functions that
+transitively contain it remain separate without a purity contract. Original call identities map
+to surviving IR values or the eliminated-source set. Function statistics survive effect
+compilation and artifact round trips and appear in editor and preview reports: authored counts
+resolved call-output sites, including nested sites within shared expansions; live counts distinct
+invocation/output pairs in the optimized source map; eliminated is their difference. Varying
+minimization and required particle-attribute pruning remain planned.
 
 ### Completion Criterion
 

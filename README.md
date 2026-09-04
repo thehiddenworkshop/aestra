@@ -112,6 +112,13 @@ level participates in CSE identity and lowers portably to `textureSampleLevel`.
 Explicit-gradient sampling is available through `Derivative X`, `Derivative Y`, and
 `Sample Texture Gradient`. The typed `Vec2` gradients participate in CSE identity and lower
 portably to `dpdx`, `dpdy`, and `textureSampleGrad`.
+Reusable material functions share an expansion when their function reference and resolved,
+input-ID-ordered argument bindings match. Multiple outputs reuse the same internal expressions;
+custom WESL functions and functions containing them stay separate. Original call IDs remain in
+the source map or its eliminated set. Function-call counts are available in artifacts, the
+Compiler Inspector, and preview reports: authored counts resolved output sites (including nested
+sites in shared expansions), live counts surviving invocation/output pairs, and eliminated is
+their difference.
 Shader-static parameter reads are also replaced by their typed defaults during IR lowering, so
 dependent expressions can fold before backend resource reflection; the authored parameter
 metadata remains available for inspection and specialization changes still alter the shader

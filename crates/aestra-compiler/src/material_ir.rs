@@ -466,6 +466,15 @@ pub struct MaterialIrSourceMap {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialIrOptimizationStats {
+    /// Resolved call-output sites, including nested sites within shared function expansions.
+    #[serde(default)]
+    pub function_calls_authored: usize,
+    /// Call-output sites removed by invocation sharing or absent from the optimized source map.
+    #[serde(default)]
+    pub function_calls_eliminated: usize,
+    /// Distinct invocation/output pairs contributing values to the optimized source map.
+    #[serde(default)]
+    pub function_calls_live: usize,
     pub constant_folds: usize,
     pub trivial_simplifications: usize,
     /// Shader-static parameter reads replaced by their typed program defaults.

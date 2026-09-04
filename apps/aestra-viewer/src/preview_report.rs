@@ -47,6 +47,13 @@ impl CompilerPreviewData {
             material_program_count: effect.material_programs.len(),
             max_particles: effect.max_particles,
             optimizations: PreviewOptimizations {
+                material_function_calls_authored: effect
+                    .optimizations
+                    .material_function_calls_authored,
+                material_function_calls_eliminated: effect
+                    .optimizations
+                    .material_function_calls_eliminated,
+                material_function_calls_live: effect.optimizations.material_function_calls_live,
                 constant_expressions: effect.optimizations.constant_expressions,
                 runtime_parameter_reads: effect.optimizations.runtime_parameter_reads,
                 eliminated_attributes: effect.optimizations.eliminated_attributes,
@@ -297,6 +304,9 @@ struct PreviewCompiler {
 
 #[derive(Debug, Clone, Serialize)]
 struct PreviewOptimizations {
+    material_function_calls_authored: usize,
+    material_function_calls_eliminated: usize,
+    material_function_calls_live: usize,
     constant_expressions: usize,
     runtime_parameter_reads: usize,
     eliminated_attributes: usize,
@@ -626,6 +636,9 @@ mod tests {
         compiled.optimizations.material_texture_samples_authored = 13;
         compiled.optimizations.material_texture_samples_eliminated = 5;
         compiled.optimizations.material_texture_samples_live = 8;
+        compiled.optimizations.material_function_calls_authored = 9;
+        compiled.optimizations.material_function_calls_eliminated = 4;
+        compiled.optimizations.material_function_calls_live = 5;
         let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
         let profile = EffectProfile::from_compiled(&compiled);
 
@@ -657,6 +670,18 @@ mod tests {
             serde_json::from_slice(&fs::read(directory.path().join(PREVIEW_REPORT_FILE)).unwrap())
                 .unwrap();
         assert_eq!(value["status"], "succeeded");
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_function_calls_authored"],
+            9
+        );
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_function_calls_eliminated"],
+            4
+        );
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_function_calls_live"],
+            5
+        );
         assert_eq!(value["capture"]["frames"][1]["simulation_frame"], 30);
         assert_eq!(value["capture"]["frames"][1]["time_seconds"], 0.5);
         assert_eq!(value["capture"]["frames"][2]["image"], "frame-002.png");

@@ -395,6 +395,12 @@ struct OptimizationStatsV1 {
     material_texture_samples_eliminated: u64,
     #[serde(default)]
     material_texture_samples_live: u64,
+    #[serde(default)]
+    material_function_calls_authored: u64,
+    #[serde(default)]
+    material_function_calls_eliminated: u64,
+    #[serde(default)]
+    material_function_calls_live: u64,
 }
 
 impl TryFrom<&CompiledEffect> for EffectV1 {
@@ -1753,6 +1759,18 @@ impl From<RuntimeStageV1> for RuntimeStage {
 impl OptimizationStatsV1 {
     fn encode(stats: OptimizationStats) -> Result<Self, ArtifactError> {
         Ok(Self {
+            material_function_calls_authored: encode_u64(
+                stats.material_function_calls_authored,
+                "effect.optimizations.material_function_calls_authored",
+            )?,
+            material_function_calls_eliminated: encode_u64(
+                stats.material_function_calls_eliminated,
+                "effect.optimizations.material_function_calls_eliminated",
+            )?,
+            material_function_calls_live: encode_u64(
+                stats.material_function_calls_live,
+                "effect.optimizations.material_function_calls_live",
+            )?,
             constant_expressions: encode_u64(
                 stats.constant_expressions,
                 "effect.optimizations.constant_expressions",
@@ -1798,6 +1816,18 @@ impl OptimizationStatsV1 {
 
     fn decode(self) -> Result<OptimizationStats, ArtifactError> {
         Ok(OptimizationStats {
+            material_function_calls_authored: decode_usize(
+                self.material_function_calls_authored,
+                "effect.optimizations.material_function_calls_authored",
+            )?,
+            material_function_calls_eliminated: decode_usize(
+                self.material_function_calls_eliminated,
+                "effect.optimizations.material_function_calls_eliminated",
+            )?,
+            material_function_calls_live: decode_usize(
+                self.material_function_calls_live,
+                "effect.optimizations.material_function_calls_live",
+            )?,
             constant_expressions: decode_usize(
                 self.constant_expressions,
                 "effect.optimizations.constant_expressions",

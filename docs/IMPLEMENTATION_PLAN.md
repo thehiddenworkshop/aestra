@@ -469,7 +469,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
   `Select` branch pruning is now complete end to end: only the chosen branch is lowered, dead
   inputs, parameter bindings, texture samples, and custom calls are omitted from live reflection,
   and branch/feature counts flow through artifacts, the Compiler Inspector, and preview JSON.
-  Function deduplication, varying minimization, and required particle-attribute pruning remain.
+  Function deduplication is complete for semantic functions: stable function references and
+  resolved input bindings share one expansion namespace across calls and multiple outputs.
+  Nested functions participate, custom WESL and its transitive wrappers remain excluded, and
+  source mappings retain original calls or mark them eliminated. Resolved call-output-site,
+  eliminated, and surviving invocation/output counts flow through effect compilation,
+  backward-compatible artifacts, the Compiler Inspector, and preview reports. Nested sites are
+  counted within shared expansions; eliminated also includes outputs removed by IR optimization.
+  Varying minimization and required particle-attribute pruning remain.
 - [ ] **Material 20 — mesh and ribbon domains.**
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

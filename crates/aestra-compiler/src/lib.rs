@@ -286,10 +286,12 @@ impl EffectCompiler {
         let mut report = asset.validation_report();
         self.validate_compiler_contracts(asset, &mut report);
         let mut expanded_programs = BTreeMap::new();
+        let mut function_expansions = BTreeMap::new();
         for (&id, program) in material_programs {
-            match MaterialCompiler.inline_functions(program, functions) {
-                Ok(program) => {
-                    expanded_programs.insert(id, program);
+            match material_function::inline_material_functions(program, functions) {
+                Ok(expansion) => {
+                    expanded_programs.insert(id, expansion.program.clone());
+                    function_expansions.insert(id, expansion);
                 }
                 Err(error) => {
                     for mut diagnostic in error.report().diagnostics.clone() {
@@ -388,45 +390,30 @@ impl EffectCompiler {
         let mut discovered_attributes = BTreeSet::new();
         let mut emitters = Vec::with_capacity(asset.emitters.len());
         let mut optimizations = OptimizationStats::default();
-        let (
-            material_common_subexpressions,
-            material_specialized_parameter_reads,
-            material_pruned_static_branches,
-            material_pruned_features,
-            material_texture_samples_authored,
-            material_texture_samples_eliminated,
-            material_texture_samples_live,
-        ) = asset
+        for id in asset
             .material_instances
             .iter()
             .map(|instance| instance.program.id())
             .collect::<BTreeSet<_>>()
-            .into_iter()
-            .filter_map(|id| material_programs.get(&id))
-            .try_fold(
-                (0, 0, 0, 0, 0, 0, 0),
-                |(common, specialized, branches, features, authored, eliminated, live), program| {
-                    MaterialCompiler.compile_expanded(program).map(|ir| {
-                        (
-                            common + ir.optimizations.common_subexpressions,
-                            specialized + ir.optimizations.specialized_parameter_reads,
-                            branches + ir.optimizations.pruned_static_branches,
-                            features + ir.optimizations.pruned_features,
-                            authored + ir.optimizations.texture_samples_authored,
-                            eliminated + ir.optimizations.texture_samples_eliminated,
-                            live + ir.optimizations.texture_samples_live,
-                        )
-                    })
-                },
-            )
-            .map_err(|error| CompileError::Validation(error.report().clone()))?;
-        optimizations.material_common_subexpressions = material_common_subexpressions;
-        optimizations.material_specialized_parameter_reads = material_specialized_parameter_reads;
-        optimizations.material_pruned_static_branches = material_pruned_static_branches;
-        optimizations.material_pruned_features = material_pruned_features;
-        optimizations.material_texture_samples_authored = material_texture_samples_authored;
-        optimizations.material_texture_samples_eliminated = material_texture_samples_eliminated;
-        optimizations.material_texture_samples_live = material_texture_samples_live;
+        {
+            let Some(expansion) = function_expansions.get(&id) else {
+                continue;
+            };
+            let stats = MaterialCompiler
+                .compile_function_expansion(expansion)
+                .map_err(|error| CompileError::Validation(error.report().clone()))?
+                .optimizations;
+            optimizations.material_common_subexpressions += stats.common_subexpressions;
+            optimizations.material_specialized_parameter_reads += stats.specialized_parameter_reads;
+            optimizations.material_pruned_static_branches += stats.pruned_static_branches;
+            optimizations.material_pruned_features += stats.pruned_features;
+            optimizations.material_texture_samples_authored += stats.texture_samples_authored;
+            optimizations.material_texture_samples_eliminated += stats.texture_samples_eliminated;
+            optimizations.material_texture_samples_live += stats.texture_samples_live;
+            optimizations.material_function_calls_authored += stats.function_calls_authored;
+            optimizations.material_function_calls_eliminated += stats.function_calls_eliminated;
+            optimizations.material_function_calls_live += stats.function_calls_live;
+        }
         let materials = asset
             .materials
             .iter()

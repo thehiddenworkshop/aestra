@@ -202,28 +202,42 @@ impl MaterialCompiler {
         program: &MaterialProgram,
         functions: &MaterialFunctionLibrary,
     ) -> Result<MaterialIrProgram, MaterialCompileError> {
-        let expansion = inline_material_functions(program, functions)?;
+        self.compile_function_expansion(&inline_material_functions(program, functions)?)
+    }
+
+    pub(crate) fn compile_function_expansion(
+        &self,
+        expansion: &FunctionExpansion,
+    ) -> Result<MaterialIrProgram, MaterialCompileError> {
         let mut ir = self.compile_expanded(&expansion.program)?;
-        for (call, target) in expansion.call_aliases {
+        let mut live_calls = BTreeSet::new();
+        for (&call, &target) in &expansion.call_aliases {
             let Some(value) = ir.source_map.values.get(&target).copied() else {
+                ir.source_map.eliminated.insert(call);
                 continue;
             };
+            live_calls.insert(expansion.call_instances[&call]);
             ir.source_map.values.insert(call, value);
             let sources = ir.source_map.expressions.entry(value).or_default();
             sources.push(call);
             sources.sort();
             sources.dedup();
         }
+        ir.optimizations.function_calls_authored = expansion.call_aliases.len();
+        ir.optimizations.function_calls_live = live_calls.len();
+        ir.optimizations.function_calls_eliminated =
+            expansion.call_aliases.len() - live_calls.len();
         Ok(ir)
     }
 }
 
-struct FunctionExpansion {
-    program: MaterialProgram,
+pub(crate) struct FunctionExpansion {
+    pub(crate) program: MaterialProgram,
     call_aliases: BTreeMap<MaterialExpressionId, MaterialExpressionId>,
+    call_instances: BTreeMap<MaterialExpressionId, (u128, MaterialFunctionOutputId)>,
 }
 
-fn inline_material_functions(
+pub(crate) fn inline_material_functions(
     program: &MaterialProgram,
     functions: &MaterialFunctionLibrary,
 ) -> Result<FunctionExpansion, MaterialCompileError> {
@@ -249,11 +263,19 @@ fn inline_material_functions(
         program_memo: BTreeMap::new(),
         function_memo: BTreeMap::new(),
         call_aliases: BTreeMap::new(),
+        call_instances: BTreeMap::new(),
+        invocation_namespaces: BTreeMap::new(),
         binding_checks: Vec::new(),
         report: ValidationReport::default(),
     };
-    for expression in &program.expressions {
-        expander.expand_program(expression.id);
+    // Choose shared representatives by stable identity, independent of authored vector order.
+    for id in expander
+        .program_expressions
+        .keys()
+        .copied()
+        .collect::<Vec<_>>()
+    {
+        expander.expand_program(id);
     }
     let color = expander.expand_program(program.outputs.color);
     let alpha = expander.expand_program(program.outputs.alpha);
@@ -309,6 +331,7 @@ fn inline_material_functions(
     Ok(FunctionExpansion {
         program: expanded,
         call_aliases: expander.call_aliases,
+        call_instances: expander.call_instances,
     })
 }
 
@@ -326,8 +349,32 @@ struct FunctionExpander<'a> {
     program_memo: BTreeMap<MaterialExpressionId, MaterialExpressionId>,
     function_memo: BTreeMap<(u128, MaterialExpressionId), MaterialExpressionId>,
     call_aliases: BTreeMap<MaterialExpressionId, MaterialExpressionId>,
+    call_instances: BTreeMap<MaterialExpressionId, (u128, MaterialFunctionOutputId)>,
+    invocation_namespaces: BTreeMap<InvocationKey, u128>,
     binding_checks: Vec<BindingCheck>,
     report: ValidationReport,
+}
+
+/// Output is deliberately absent: outputs of one invocation share internal expressions.
+type InvocationKey = (
+    MaterialFunctionRef,
+    BTreeMap<MaterialFunctionInputId, MaterialExpressionId>,
+);
+
+fn function_is_shareable(function: &MaterialFunction, library: &MaterialFunctionLibrary) -> bool {
+    // The library has already been checked for recursion. Unknown/custom code has no purity
+    // contract, so this exclusion also applies to ordinary functions wrapping custom calls.
+    function.custom_wesl.is_none()
+        && function
+            .expressions
+            .iter()
+            .all(|expression| match &expression.kind {
+                MaterialExpressionKind::CustomWeslCall { .. } => false,
+                MaterialExpressionKind::FunctionCall { function, .. } => library
+                    .get(*function)
+                    .is_some_and(|function| function_is_shareable(function, library)),
+                _ => true,
+            })
 }
 
 impl FunctionExpander<'_> {
@@ -479,8 +526,17 @@ impl FunctionExpander<'_> {
                 },
             });
             self.call_aliases.insert(call_id, call_id);
+            self.call_instances.insert(call_id, (namespace, *output));
             return Some(call_id);
         }
+        let namespace = if function_is_shareable(function, self.functions) {
+            *self
+                .invocation_namespaces
+                .entry((*reference, bindings.clone()))
+                .or_insert(namespace)
+        } else {
+            namespace
+        };
         let target =
             self.expand_function(function, function_output.expression, namespace, &bindings)?;
         self.binding_checks.push(BindingCheck {
@@ -490,6 +546,7 @@ impl FunctionExpander<'_> {
             subject: "output",
         });
         self.call_aliases.insert(call_id, target);
+        self.call_instances.insert(call_id, (namespace, *output));
         Some(target)
     }
 
