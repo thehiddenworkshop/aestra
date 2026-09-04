@@ -227,16 +227,17 @@ Implications:
    b007 0.096 → 0.080 ms (~17%); bit-identical output (prism_bloom visual regression
    RMSE 0.0000). Smaller than expected — see the correction above. Correct and
    zero-cost, so it stays, but it was not the big lever it appeared to be.
-2. **Precompute a curve→time lookup for emission (§2.5)** — replace the per-candidate
-   inverse-curve search (`curve_spawn_time`, 12-iteration binary search) with a
-   prebuilt table. **Confirmed clean (`curve_control.ron`):** at b008's *exact*
-   capacity (8192, 128 workgroups) a constant-rate control is 0.081 ms vs b008's
-   0.389 ms 8-key curve — **4.8×**, with matched workgroup count so no confound.
-   Verifiable: `gpu_conformance.rs` already covers curve-driven spawn (source 2)
-   GPU-vs-CPU across playback modes. **Best-justified remaining target.** Open design
-   choice: an N-sample inverse table (small memory, approximation, changes both
-   runtimes) vs an exact per-particle table (exact, O(max_particles) memory + CPU
-   cost unless cached behind Phase 4 dirty-state).
+2. **Curve→time inverse table for emission (§2.5) — DONE (`14c20f3`).** Replaced the
+   per-particle 12-iteration `curve_spawn_time` binary search with a 32-entry
+   inverse-emission table (built CPU-side in `from_instance`, uploaded in
+   `GpuEmitter`) that seeds a tight bracket, then 8 refinement bisections. GPU-only;
+   the conformance tolerance absorbs it (as it did the prior 12-vs-20 gap). Measured
+   b008 simulate p50 **0.389 → 0.204 ms (1.9×)**; the inversion portion alone (vs the
+   0.081 ms constant-rate control) dropped **0.308 → 0.123 ms (~2.5×)**. Verified:
+   curve GPU/CPU conformance passes, prism_bloom visual regression bit-clean, snapshot
+   + full suite green. Bigger than Phase 7 #1 — and, unlike it, not confounded (the
+   b008-vs-control comparison shares workgroup counts).
+   - The confirming control lives at `benchmarks/sweep-scenarios/curve_control.ron`.
 3. **Eliminate linear per-slot emitter search (§2.3)** — precomputed slot→emitter
    ranges or per-emitter dispatch. Lower priority: only ~3× at 64 emitters, flat below.
 
