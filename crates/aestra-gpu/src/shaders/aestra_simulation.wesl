@@ -397,41 +397,71 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
             0.0,
         );
         let oldest_cycle = u32(floor(oldest_time / globals.duration));
-        var remaining_index = particle_index;
-        var candidate_cycle = current_cycle;
+
+        // Emission in the current, possibly partial, cycle.
+        let current_seed = seed_for_cycle(current_cycle);
+        var current_emit = 0u;
+        let phase_region_time = phase - emitter.start_time;
+        if phase_region_time >= 0.0 {
+            let phase_local_time = min(emitter.source_offset + phase_region_time, cycle_source_end);
+            current_emit = emitter.burst_count
+                + u32(max(floor(emitted_until(emitter, phase_local_time, current_seed)), 0.0));
+        }
+
         var found_cycle = false;
-        loop {
-            let candidate_seed = seed_for_cycle(candidate_cycle);
-            var candidate_emission_time = cycle_source_end;
-            if candidate_cycle == current_cycle {
-                let phase_region_time = phase - emitter.start_time;
-                if phase_region_time < 0.0 {
-                    candidate_emission_time = -1.0;
-                } else {
-                    let phase_local_time = emitter.source_offset + phase_region_time;
-                    candidate_emission_time = min(phase_local_time, cycle_source_end);
+        if particle_index < current_emit {
+            // The slot's particle belongs to the current cycle.
+            particle_cycle = current_cycle;
+            particle_seed = current_seed;
+            found_cycle = true;
+        } else {
+            let remaining = particle_index - current_emit;
+            if emitter.spawn_rate_source == 1u {
+                // Random per-cycle spawn rate: each cycle emits a different count,
+                // so the owning cycle must be found by walking backward.
+                var remaining_index = remaining;
+                var candidate_cycle = current_cycle;
+                loop {
+                    if candidate_cycle == oldest_cycle {
+                        break;
+                    }
+                    candidate_cycle -= 1u;
+                    let candidate_seed = seed_for_cycle(candidate_cycle);
+                    let emitted_in_cycle = emitter.burst_count
+                        + u32(max(
+                            floor(emitted_until(emitter, cycle_source_end, candidate_seed)),
+                            0.0,
+                        ));
+                    if remaining_index < emitted_in_cycle {
+                        particle_cycle = candidate_cycle;
+                        particle_index = remaining_index;
+                        particle_seed = candidate_seed;
+                        found_cycle = true;
+                        break;
+                    }
+                    remaining_index -= emitted_in_cycle;
                 }
-            }
-            var emitted_in_cycle = 0u;
-            if candidate_emission_time >= 0.0 {
-                emitted_in_cycle = emitter.burst_count
+            } else {
+                // Constant per-cycle emission (constant rate or emitter-time curve):
+                // every complete cycle emits the same integer count, so the owning
+                // cycle is found in O(1) instead of walking lifetime/duration cycles.
+                // Integer division reproduces the iterative subtraction exactly.
+                let full_emit = emitter.burst_count
                     + u32(max(
-                        floor(emitted_until(emitter, candidate_emission_time, candidate_seed)),
+                        floor(emitted_until(emitter, cycle_source_end, current_seed)),
                         0.0,
                     ));
+                let complete_cycles = current_cycle - oldest_cycle;
+                if full_emit > 0u {
+                    let skip = remaining / full_emit;
+                    if skip < complete_cycles {
+                        particle_cycle = current_cycle - 1u - skip;
+                        particle_index = remaining % full_emit;
+                        particle_seed = seed_for_cycle(particle_cycle);
+                        found_cycle = true;
+                    }
+                }
             }
-            if remaining_index < emitted_in_cycle {
-                particle_cycle = candidate_cycle;
-                particle_index = remaining_index;
-                particle_seed = candidate_seed;
-                found_cycle = true;
-                break;
-            }
-            remaining_index -= emitted_in_cycle;
-            if candidate_cycle == oldest_cycle {
-                break;
-            }
-            candidate_cycle -= 1u;
         }
         if !found_cycle {
             particles[slot] = dead_particle(emitter_index);
