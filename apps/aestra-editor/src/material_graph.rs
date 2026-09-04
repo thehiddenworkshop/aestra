@@ -2193,7 +2193,7 @@ fn expression_depth(
 }
 
 fn node_height(input_count: usize, has_state: bool) -> f32 {
-    40.0 + (input_count.max(1) + 1) as f32 * PORT_ROW_HEIGHT + if has_state { 18.0 } else { 0.0 }
+    40.0 + input_count.max(1) as f32 * PORT_ROW_HEIGHT + if has_state { 18.0 } else { 0.0 }
 }
 
 fn input_target(expression: MaterialExpressionId, name: &str) -> Option<MaterialConnectionTarget> {

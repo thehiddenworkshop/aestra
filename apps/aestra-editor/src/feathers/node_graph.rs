@@ -1206,6 +1206,7 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
             FeathersGraphNodeBody { node: entity },
             Node {
                 width: Val::Percent(100.0),
+                min_height: Val::Px(PORT_ROW_HEIGHT + 10.0),
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::vertical(Val::Px(5.0)),
                 ..default()
@@ -1221,25 +1222,7 @@ pub(crate) fn spawn_graph_port<B: Bundle>(
     props: GraphPortProps,
     marker: B,
 ) -> Entity {
-    let row_direction = match props.side {
-        GraphSocketSide::Input => FlexDirection::Row,
-        GraphSocketSide::Output => FlexDirection::RowReverse,
-    };
-    let row_align = match props.side {
-        GraphSocketSide::Input => JustifyContent::FlexStart,
-        GraphSocketSide::Output => JustifyContent::FlexEnd,
-    };
-    let mut row = parent.spawn(Node {
-        width: Val::Percent(100.0),
-        height: Val::Px(PORT_ROW_HEIGHT),
-        min_height: Val::Px(PORT_ROW_HEIGHT),
-        flex_direction: row_direction,
-        justify_content: row_align,
-        align_items: AlignItems::Center,
-        column_gap: Val::Px(5.0),
-        padding: UiRect::horizontal(Val::Px(4.0)),
-        ..default()
-    });
+    let mut row = parent.spawn(graph_port_row_node(props.side));
     let mut socket_entity = Entity::PLACEHOLDER;
     row.with_children(|row| {
         socket_entity = row
@@ -1284,6 +1267,39 @@ pub(crate) fn spawn_graph_port<B: Bundle>(
         ));
     });
     socket_entity
+}
+
+fn graph_port_row_node(side: GraphSocketSide) -> Node {
+    let (flex_direction, justify_content, position_type, top, right) = match side {
+        GraphSocketSide::Input => (
+            FlexDirection::Row,
+            JustifyContent::FlexStart,
+            PositionType::Relative,
+            Val::Auto,
+            Val::Auto,
+        ),
+        GraphSocketSide::Output => (
+            FlexDirection::RowReverse,
+            JustifyContent::FlexEnd,
+            PositionType::Absolute,
+            Val::Px(5.0),
+            Val::Px(0.0),
+        ),
+    };
+    Node {
+        width: Val::Percent(100.0),
+        height: Val::Px(PORT_ROW_HEIGHT),
+        min_height: Val::Px(PORT_ROW_HEIGHT),
+        flex_direction,
+        justify_content,
+        align_items: AlignItems::Center,
+        column_gap: Val::Px(5.0),
+        padding: UiRect::horizontal(Val::Px(4.0)),
+        position_type,
+        top,
+        right,
+        ..default()
+    }
 }
 
 fn update_socket_visuals(
@@ -1422,5 +1438,20 @@ mod tests {
 
         assert!(node.consume_suppressed_release_click());
         assert!(!node.consume_suppressed_release_click());
+    }
+
+    #[test]
+    fn graph_ports_anchor_inputs_left_and_outputs_right_on_the_first_body_row() {
+        let input = graph_port_row_node(GraphSocketSide::Input);
+        assert_eq!(input.position_type, PositionType::Relative);
+        assert_eq!(input.flex_direction, FlexDirection::Row);
+        assert_eq!(input.justify_content, JustifyContent::FlexStart);
+
+        let output = graph_port_row_node(GraphSocketSide::Output);
+        assert_eq!(output.position_type, PositionType::Absolute);
+        assert_eq!(output.top, Val::Px(5.0));
+        assert_eq!(output.right, Val::Px(0.0));
+        assert_eq!(output.flex_direction, FlexDirection::RowReverse);
+        assert_eq!(output.justify_content, JustifyContent::FlexEnd);
     }
 }

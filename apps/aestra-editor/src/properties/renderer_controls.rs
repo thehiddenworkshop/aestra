@@ -286,7 +286,7 @@ pub(super) fn handle_semantic_material_scalar_change(
     catalog: Option<Res<ProjectEffectCatalog>>,
     mut session: ResMut<EditorSession>,
 ) {
-    if !change.is_final || !change.value.is_finite() {
+    if !change.value.is_finite() {
         return;
     }
     let Ok(control) = controls.get(change.source) else {
@@ -295,11 +295,18 @@ pub(super) fn handle_semantic_material_scalar_change(
     if semantic_material_number_value(&session, control)
         .is_some_and(|current| (current - change.value).abs() <= f32::EPSILON)
     {
+        if change.is_final {
+            session.restore_interaction_preview();
+        }
         return;
     }
     let Some(value) = updated_semantic_material_value(&session, control, change.value) else {
         return;
     };
+    if !change.is_final {
+        preview_semantic_material_value(&mut session, control.instance, control.parameter, value);
+        return;
+    }
     commit_semantic_material_value(
         &mut session,
         catalog.as_deref(),
@@ -307,6 +314,31 @@ pub(super) fn handle_semantic_material_scalar_change(
         control.parameter,
         value,
     );
+}
+
+fn preview_semantic_material_value(
+    session: &mut EditorSession,
+    instance: MaterialId,
+    parameter: MaterialParameterId,
+    value: MaterialParameterValue,
+) -> bool {
+    let Some(mut replacement) = session
+        .effect
+        .material_instances
+        .iter()
+        .find(|candidate| candidate.id == instance)
+        .cloned()
+    else {
+        return false;
+    };
+    replacement.values.insert(parameter, value);
+    session.preview_interaction(EffectTransaction::single(
+        "Preview material parameter",
+        EffectCommand::SetMaterialInstance {
+            id: instance,
+            instance: replacement,
+        },
+    ))
 }
 
 pub(super) fn handle_semantic_material_toggle_change(
@@ -1435,6 +1467,10 @@ fn spawn_material_stack_property_number(
     title: &str,
     control: MaterialStackPropertyNumberControl,
 ) {
+    let Some(scrubbable) = material_value_scrubbable_number(&control.value, control.component)
+    else {
+        return;
+    };
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -1457,7 +1493,7 @@ fn spawn_material_stack_property_number(
                 input
                     .spawn_empty()
                     .apply_scene(ui_shell::feathers_scalar_input())
-                    .insert((control, AccessibleLabel(title.to_owned())));
+                    .insert((control, scrubbable, AccessibleLabel(title.to_owned())));
             });
         });
 }
@@ -1915,6 +1951,10 @@ fn spawn_semantic_material_number(
     title: &str,
     control: SemanticMaterialNumberControl,
 ) {
+    let Some(scrubbable) = material_value_scrubbable_number(&control.fallback, control.component)
+    else {
+        return;
+    };
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -1937,9 +1977,27 @@ fn spawn_semantic_material_number(
                 input
                     .spawn_empty()
                     .apply_scene(ui_shell::feathers_scalar_input())
-                    .insert((control, AccessibleLabel(title.to_owned())));
+                    .insert((control, scrubbable, AccessibleLabel(title.to_owned())));
             });
         });
+}
+
+fn material_value_scrubbable_number(
+    value: &MaterialValue,
+    component: u8,
+) -> Option<crate::feathers::number_input::ScrubbableNumber> {
+    use crate::feathers::number_input::ScrubbableNumber;
+
+    let value_component = material_value_component(value, component)?;
+    let (min, max, step) = match value {
+        MaterialValue::ColorSrgb(_) => (0.0, 1.0, 0.01),
+        MaterialValue::Float(_)
+        | MaterialValue::Vec2(_)
+        | MaterialValue::Vec3(_)
+        | MaterialValue::Vec4(_) => (-f32::MAX, f32::MAX, 0.1),
+        MaterialValue::Texture2D(_) | MaterialValue::Bool(_) => return None,
+    };
+    Some(ScrubbableNumber::new(value_component, min, max, step))
 }
 
 fn spawn_semantic_material_toggle(
@@ -2355,6 +2413,21 @@ mod tests {
             renderer_number_input_value(&session, RendererNumberControl::Softness(renderer))
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn semantic_color_and_stack_numbers_use_the_shared_scrubbable_contract() {
+        let color = MaterialValue::ColorSrgb([0.2, 0.4, 0.6, 0.8]);
+        let blue = material_value_scrubbable_number(&color, 2).unwrap();
+        assert_eq!(blue.value, 0.6);
+        assert_eq!((blue.min, blue.max, blue.step), (0.0, 1.0, 0.01));
+
+        let power = material_value_scrubbable_number(&MaterialValue::Float(3.5), 0).unwrap();
+        assert_eq!(power.value, 3.5);
+        assert_eq!(power.step, 0.1);
+        assert_eq!((power.min, power.max), (-f32::MAX, f32::MAX));
+
+        assert!(material_value_scrubbable_number(&MaterialValue::Bool(true), 0).is_none());
     }
 
     #[test]
