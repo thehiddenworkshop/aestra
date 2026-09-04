@@ -1165,7 +1165,7 @@ fn expression_reference_count(
         + usize::from(program.outputs.alpha == expression)
 }
 
-fn append_default_modifier(
+pub(crate) fn append_default_modifier(
     program: &mut MaterialProgram,
     kind: MaterialStackModifierKind,
     source: MaterialExpressionId,

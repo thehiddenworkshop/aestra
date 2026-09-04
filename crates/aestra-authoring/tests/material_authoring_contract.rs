@@ -6,7 +6,8 @@ use aestra_authoring::{
     MaterialToolPlanner, MaterialTransaction,
 };
 use aestra_compiler::{
-    MaterialCompiler, MaterialStackModifierKind, MaterialStackPresetKind, MaterialStackProjection,
+    MaterialCompiler, MaterialGraphCreateKind, MaterialGraphFunction, MaterialStackModifierKind,
+    MaterialStackPresetKind, MaterialStackProjection,
 };
 use aestra_core::{
     AssetId, BlendMode, EffectAsset, EffectParameter, Emitter, MaterialExpressionId, MaterialId,
@@ -2542,6 +2543,54 @@ fn material_create_expression_tool_builds_a_typed_downstream_node_without_rewiri
             .iter()
             .any(|diagnostic| diagnostic.code == aestra_core::DiagnosticCode::UnreachableExpression)
     );
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
+fn material_graph_node_tool_creates_connects_and_undoes_one_semantic_edit() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6860);
+    let (program, _) = reorderable_material_program(program_id);
+    let source = program.outputs.alpha;
+    document.programs.push(program);
+    let before = document.clone();
+    let target = MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha);
+    let command = MaterialToolCommand::CreateMaterialGraphNode {
+        program: program_id,
+        kind: MaterialGraphCreateKind::Function(MaterialGraphFunction::Multiply),
+        source: Some(source),
+        target: Some(target),
+    };
+
+    let encoded = ron::to_string(&command).unwrap();
+    assert_eq!(
+        ron::from_str::<MaterialToolCommand>(&encoded).unwrap(),
+        command
+    );
+    let plan = MaterialToolPlanner::plan(&document, command).unwrap();
+    assert_eq!(document, before);
+    assert_eq!(plan.created_expressions.len(), 1);
+    assert!(plan.transaction.commands.iter().any(|command| matches!(
+        command,
+        MaterialCommand::SetMaterialOutput {
+            output: MaterialOutputSocket::Alpha,
+            ..
+        }
+    )));
+
+    let created = plan.created_expressions[0];
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    assert_eq!(document.programs[0].outputs.alpha, created);
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == created)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::Multiply(left, _)) if *left == source
+    ));
     history.undo(&mut document).unwrap().unwrap();
     assert_eq!(document, before);
 }

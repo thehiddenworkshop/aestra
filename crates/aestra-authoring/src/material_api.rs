@@ -109,6 +109,7 @@ fn tool_error(error: MaterialToolError) -> MaterialApiError {
         ),
         MaterialToolError::IncompatibleWrap { .. }
         | MaterialToolError::IncompatibleSource { .. }
+        | MaterialToolError::GraphNode(_)
         | MaterialToolError::ExpressionCannotBeDeleted(_)
         | MaterialToolError::ConnectionCannotBeDisconnected(_) => (
             MaterialApiErrorCode::IncompatibleEdit,

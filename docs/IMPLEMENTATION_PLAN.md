@@ -358,7 +358,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   dockable read-only Material Graph workspace resolves the selected emitter or renderer's semantic
   material, displays its complete topology and output roots, and synchronizes node selection with
   the existing Properties modifier inspector.
-- [ ] **Material 13 — editable graph.** Translate graph interaction into semantic commands. The
+- [x] **Material 13 — editable graph.** Translate graph interaction into semantic commands. The
   first projectional editing slice is implemented: the workspace uses reusable Feathers node and
   typed-socket widgets, deterministic dependency-column layout, an anti-aliased GPU wire layer,
   compatible-target previews, and drag-to-reconnect through `ConnectMaterialExpression` plus the
@@ -375,8 +375,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   existing wire for direct reconnection, while dropping either endpoint on empty space opens a
   type-filtered palette. Input-originated creation wraps and reconnects the requested edge;
   output-originated creation uses the semantic `CreateMaterialExpression` command to build a typed
-  downstream node without modifying unrelated consumers. Remaining node kinds and graph gestures
-  are still required before this milestone is complete.
+  downstream node without modifying unrelated consumers. A compiler-owned node catalog now exposes
+  constants, supported material inputs, program parameters, arithmetic and interpolation, UV,
+  mask, depth, texture-sampling, and component operations to every authoring client. Palette
+  choices are compiler-filtered for the active socket, general node creation is one validated
+  semantic transaction, and scalar/boolean connection defaults plus all numeric constant
+  components use reusable Feather controls with the shared material undo/redo history.
 - [ ] **Material 14 — graph layout metadata.** Persist optional layout separately from semantics.
 
 ### Phase E — reuse and extensibility

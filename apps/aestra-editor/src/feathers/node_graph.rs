@@ -13,7 +13,10 @@ use crate::theme;
 use bevy::{
     asset::embedded_asset,
     ecs::query::{QueryData, QueryFilter},
-    feathers::cursor::{EntityCursor, OverrideCursor},
+    feathers::{
+        controls::{FeathersCheckbox, FeathersNumberInput},
+        cursor::{EntityCursor, OverrideCursor},
+    },
     input::mouse::{MouseScrollUnit, MouseWheel},
     picking::events::{Drag, DragEnd, DragStart, Pointer, Press},
     picking::pointer::PointerButton,
@@ -38,6 +41,13 @@ const MIN_ZOOM: f32 = 0.25;
 const MAX_ZOOM: f32 = 2.0;
 const FRAME_PADDING: f32 = 42.0;
 const GRID_SPACING: f32 = 32.0;
+
+type GraphNodeControlFilter = Or<(
+    With<FeathersGraphSocket>,
+    With<GraphCollapseAction>,
+    With<FeathersNumberInput>,
+    With<FeathersCheckbox>,
+)>;
 
 pub(crate) struct FeathersNodeGraphPlugin;
 
@@ -639,7 +649,7 @@ fn begin_graph_node_press(
     press: On<Pointer<Press>>,
     mut nodes: Query<&mut FeathersGraphNode>,
     parents: Query<&ChildOf>,
-    controls: Query<(), Or<(With<FeathersGraphSocket>, With<GraphCollapseAction>)>>,
+    controls: Query<(), GraphNodeControlFilter>,
 ) {
     if press.button != PointerButton::Primary {
         return;
@@ -663,7 +673,7 @@ fn begin_graph_node_drag(
     mut drag: On<Pointer<DragStart>>,
     mut nodes: Query<&mut FeathersGraphNode>,
     parents: Query<&ChildOf>,
-    controls: Query<(), Or<(With<FeathersGraphSocket>, With<GraphCollapseAction>)>>,
+    controls: Query<(), GraphNodeControlFilter>,
     keys: Res<ButtonInput<KeyCode>>,
 ) {
     if drag.button != PointerButton::Primary || keys.pressed(KeyCode::Space) {
@@ -688,7 +698,7 @@ fn drag_graph_node(
     mut drag: On<Pointer<Drag>>,
     mut nodes: Query<(&mut FeathersGraphNode, &mut Node, &ComputedNode)>,
     parents: Query<&ChildOf>,
-    controls: Query<(), Or<(With<FeathersGraphSocket>, With<GraphCollapseAction>)>>,
+    controls: Query<(), GraphNodeControlFilter>,
     viewports: Query<&FeathersGraphViewport>,
     mut memory: ResMut<GraphViewportMemory>,
     mut override_cursor: ResMut<OverrideCursor>,
@@ -739,7 +749,7 @@ fn end_graph_node_drag(
     mut drag: On<Pointer<DragEnd>>,
     mut nodes: Query<&mut FeathersGraphNode>,
     parents: Query<&ChildOf>,
-    controls: Query<(), Or<(With<FeathersGraphSocket>, With<GraphCollapseAction>)>>,
+    controls: Query<(), GraphNodeControlFilter>,
     mut override_cursor: ResMut<OverrideCursor>,
 ) {
     if drag.button != PointerButton::Primary {
@@ -765,7 +775,7 @@ fn graph_node_from_target<D: QueryData, F: QueryFilter>(
     mut entity: Entity,
     nodes: &Query<D, F>,
     parents: &Query<&ChildOf>,
-    controls: &Query<(), Or<(With<FeathersGraphSocket>, With<GraphCollapseAction>)>>,
+    controls: &Query<(), GraphNodeControlFilter>,
 ) -> Option<Entity> {
     loop {
         if controls.contains(entity) {
@@ -1307,6 +1317,16 @@ pub(crate) fn spawn_graph_port<B: Bundle>(
     props: GraphPortProps,
     marker: B,
 ) -> Entity {
+    spawn_graph_port_with(parent, props, marker, |_| {})
+}
+
+/// Spawns a typed port with an optional inline control after its label.
+pub(crate) fn spawn_graph_port_with<B: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    props: GraphPortProps,
+    marker: B,
+    accessory: impl FnOnce(&mut ChildSpawnerCommands),
+) -> Entity {
     let mut row = parent.spawn(graph_port_row_node(props.side));
     let mut socket_entity = Entity::PLACEHOLDER;
     row.with_children(|row| {
@@ -1350,6 +1370,7 @@ pub(crate) fn spawn_graph_port<B: Bundle>(
             TextColor(theme::TEXT_MUTED),
             Pickable::IGNORE,
         ));
+        accessory(row);
     });
     socket_entity
 }

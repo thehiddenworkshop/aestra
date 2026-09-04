@@ -1,10 +1,13 @@
 use aestra_compiler::{
-    MaterialCompiler, MaterialGraphEdgeTarget, MaterialGraphFunction, MaterialGraphNodeKind,
-    MaterialGraphOutputKind,
+    MaterialCompiler, MaterialGraphCreateKind, MaterialGraphEdgeTarget, MaterialGraphFunction,
+    MaterialGraphNodeKind, MaterialGraphOutputKind,
 };
 use aestra_core::{
     MaterialExpressionId,
-    material::{MaterialExpression, MaterialExpressionKind, MaterialProgram, MaterialValue},
+    material::{
+        MaterialExpression, MaterialExpressionKind, MaterialInput, MaterialProgram, MaterialValue,
+        MaterialValueType,
+    },
 };
 
 #[test]
@@ -102,4 +105,42 @@ fn graph_projection_keeps_disabled_unreachable_and_invalid_nodes_visible() {
     assert!(!orphan.reachable);
     assert_eq!(orphan.value_type, None);
     assert_eq!(orphan.inputs.len(), 3);
+}
+
+#[test]
+fn graph_node_catalog_and_factory_cover_primitives_and_math_without_rewiring() {
+    let program = MaterialProgram::additive_sprite("Editable graph");
+    let compiler = MaterialCompiler;
+    let catalog = compiler.graph_node_catalog(&program);
+    assert!(
+        catalog.iter().any(|node| {
+            node.kind == MaterialGraphCreateKind::Constant(MaterialValueType::Float)
+        })
+    );
+    assert!(catalog.iter().any(|node| {
+        node.kind == MaterialGraphCreateKind::Input(MaterialInput::ParticleNormalizedAge)
+    }));
+    assert!(catalog.iter().any(|node| {
+        node.kind == MaterialGraphCreateKind::Function(MaterialGraphFunction::Add)
+    }));
+
+    let source = program.outputs.alpha;
+    let plan = compiler
+        .plan_graph_node_creation(
+            &program,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::Add),
+            Some(source),
+        )
+        .unwrap();
+    assert_eq!(plan.replacement.outputs, program.outputs);
+    assert!(plan.created_expressions.contains(&plan.expression));
+    assert!(matches!(
+        plan.replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == plan.expression)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::Add(left, _)) if *left == source
+    ));
+    assert!(compiler.compile(&plan.replacement).is_ok());
 }

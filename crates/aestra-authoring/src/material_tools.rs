@@ -6,7 +6,8 @@ use crate::{
     material_authoring::{material_expression_input_source, rewire_expression},
 };
 use aestra_compiler::{
-    MaterialCompiler, MaterialGraphEdgeTarget, MaterialGraphOutputKind, MaterialStackEditError,
+    MaterialCompiler, MaterialGraphCreateKind, MaterialGraphEdgeTarget,
+    MaterialGraphNodeCreationError, MaterialGraphOutputKind, MaterialStackEditError,
     MaterialStackModifierKind, MaterialStackPresetKind, MaterialStackProjection,
 };
 use aestra_core::{
@@ -109,6 +110,12 @@ pub enum MaterialToolCommand {
         program: MaterialProgramId,
         source: MaterialExpressionId,
         kind: MaterialStackModifierKind,
+    },
+    CreateMaterialGraphNode {
+        program: MaterialProgramId,
+        kind: MaterialGraphCreateKind,
+        source: Option<MaterialExpressionId>,
+        target: Option<MaterialConnectionTarget>,
     },
     ConnectMaterialExpression {
         program: MaterialProgramId,
@@ -216,6 +223,8 @@ pub enum MaterialToolError {
     #[error("invalid Fresnel edge settings: {0}")]
     InvalidFresnelSettings(&'static str),
     #[error(transparent)]
+    GraphNode(#[from] MaterialGraphNodeCreationError),
+    #[error(transparent)]
     StackEdit(#[from] MaterialStackEditError),
     #[error(transparent)]
     Transaction(#[from] MaterialCommandError),
@@ -251,6 +260,12 @@ impl MaterialToolPlanner {
                 source,
                 kind,
             } => Self::plan_create_material_expression(document, program, source, kind),
+            MaterialToolCommand::CreateMaterialGraphNode {
+                program,
+                kind,
+                source,
+                target,
+            } => Self::plan_create_material_graph_node(document, program, kind, source, target),
             MaterialToolCommand::ConnectMaterialExpression {
                 program,
                 source,
@@ -445,6 +460,38 @@ impl MaterialToolPlanner {
         let transaction = MaterialTransaction::new(
             format!("Create {} material expression", kind.display_name()),
             append_expression_commands(program, &created.replacement),
+        );
+        validate_plan(document, command, transaction, vec![created.expression])
+    }
+
+    fn plan_create_material_graph_node(
+        document: &MaterialAuthoringDocument,
+        program_id: MaterialProgramId,
+        kind: MaterialGraphCreateKind,
+        source: Option<MaterialExpressionId>,
+        target: Option<MaterialConnectionTarget>,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        let program = find_program(document, program_id)?;
+        if let Some(target) = target {
+            connection_source(program, target)?;
+        }
+        let mut created = MaterialCompiler.plan_graph_node_creation(program, kind, source)?;
+        if let Some(target) = target {
+            apply_connection(&mut created.replacement, target, created.expression)?;
+        }
+        let command = MaterialToolCommand::CreateMaterialGraphNode {
+            program: program_id,
+            kind,
+            source,
+            target,
+        };
+        let mut commands = append_expression_commands(program, &created.replacement);
+        if let Some(target) = target {
+            commands.push(connection_command(program_id, target, created.expression));
+        }
+        let transaction = MaterialTransaction::new(
+            format!("Create {} material graph node", graph_node_name(kind)),
+            commands,
         );
         validate_plan(document, command, transaction, vec![created.expression])
     }
@@ -1180,6 +1227,16 @@ fn find_program(
         .iter()
         .find(|program| program.id == program_id)
         .ok_or(MaterialToolError::ProgramNotFound(program_id))
+}
+
+fn graph_node_name(kind: MaterialGraphCreateKind) -> String {
+    match kind {
+        MaterialGraphCreateKind::Constant(value_type) => format!("{value_type:?} constant"),
+        MaterialGraphCreateKind::Input(input) => format!("{input:?}"),
+        MaterialGraphCreateKind::Parameter(parameter) => format!("parameter {parameter}"),
+        MaterialGraphCreateKind::Function(function) => function.display_name().to_owned(),
+        MaterialGraphCreateKind::ExtractComponent(component) => format!("Extract {component:?}"),
+    }
 }
 
 fn connection_source(
