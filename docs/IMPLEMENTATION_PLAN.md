@@ -425,7 +425,15 @@ the current sprite-material path until the native-GPU compatibility gate approve
   GPU shader coverage. Heat Distortion remains gated on a future scene-color/refraction contract;
   Trail belongs to the mesh/ribbon-domain work in Material 20 rather than pretending to be a
   sprite-only material preset.
-- [ ] **Material 17 — validated custom WESL escape hatch.**
+- [x] **Material 17 — validated custom WESL escape hatch.** Material-function assets may now opt
+  into a typed custom WESL implementation while retaining stable function/input/output identities,
+  evaluation-domain reflection, project indexing, graph discovery, and semantic call nodes. The
+  v1 sandbox admits only ordinary side-effect-free function declarations: bindings, resources,
+  shader entry-point attributes, and imports are rejected structurally. Output-to-entry-point maps
+  are validated, calls are type checked before lowering, function symbols are deterministically
+  namespaced by stable ID, custom source lines map back to semantic IR values, and the final module
+  is validated and translated through portable WGSL, SPIR-V, and HLSL targets. The bundled Pulse
+  Wave example covers project loading, graph insertion, undo/redo, compilation, and portability.
 
 ### Phase F — next-generation tooling
 

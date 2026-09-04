@@ -57,6 +57,7 @@ fn scale_function() -> MaterialFunction {
                 kind: MaterialExpressionKind::Multiply(value_expression, scale_expression),
             },
         ],
+        custom_wesl: None,
     }
 }
 
@@ -95,6 +96,64 @@ fn calling_program(argument: MaterialValue) -> MaterialProgram {
     program.outputs.color = color;
     program.outputs.alpha = call;
     program
+}
+
+fn custom_wesl_calling_program(function: &MaterialFunction) -> MaterialProgram {
+    let color = MaterialExpressionId::from_u128(0xFA01);
+    let phase = MaterialExpressionId::from_u128(0xFA02);
+    let width = MaterialExpressionId::from_u128(0xFA03);
+    let call = MaterialExpressionId::from_u128(0xFA04);
+    let mut program = MaterialProgram::additive_sprite("Custom WESL caller");
+    program.expressions = vec![
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([1.0; 4])),
+        },
+        MaterialExpression {
+            id: phase,
+            kind: MaterialExpressionKind::Input(aestra_core::material::MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: width,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.35)),
+        },
+        MaterialExpression {
+            id: call,
+            kind: MaterialExpressionKind::FunctionCall {
+                function: MaterialFunctionRef::Project(function.id),
+                arguments: BTreeMap::from([
+                    (function.inputs[0].id, phase),
+                    (function.inputs[1].id, width),
+                ]),
+                output: function.outputs[0].id,
+            },
+        },
+    ];
+    program.outputs.color = color;
+    program.outputs.alpha = call;
+    program
+}
+
+#[test]
+fn typed_custom_wesl_calls_lower_without_erasing_the_validated_source() {
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let program = custom_wesl_calling_program(&function);
+    let ir = MaterialCompiler
+        .compile_with_functions(&program, &MaterialFunctionLibrary::new([function.clone()]))
+        .unwrap();
+
+    assert!(ir.values.iter().any(|value| matches!(
+        &value.instruction,
+        MaterialIrInstruction::CustomWeslCall {
+            function: id,
+            entry_point,
+            arguments,
+            ..
+        } if *id == function.id && entry_point == "pulse_wave" && arguments.len() == 2
+    )));
 }
 
 #[test]

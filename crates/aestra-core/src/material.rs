@@ -1151,6 +1151,19 @@ pub enum MaterialExpressionKind {
         arguments: BTreeMap<MaterialFunctionInputId, MaterialExpressionId>,
         output: MaterialFunctionOutputId,
     },
+    /// Compiler-expanded call to a validated custom WESL function.
+    ///
+    /// This form is produced from [`MaterialFunction::custom_wesl`] and is not intended to be
+    /// authored directly. Carrying the typed signature into the expression keeps ordinary
+    /// material analysis independent from the project function catalog.
+    CustomWeslCall {
+        function: MaterialFunctionId,
+        entry_point: String,
+        source: String,
+        arguments: Vec<MaterialCustomWeslArgument>,
+        output_type: MaterialValueType,
+        evaluation_domain: MaterialExpressionDomain,
+    },
     Add(MaterialExpressionId, MaterialExpressionId),
     Subtract(MaterialExpressionId, MaterialExpressionId),
     Multiply(MaterialExpressionId, MaterialExpressionId),
@@ -1273,6 +1286,7 @@ impl MaterialExpressionKind {
             | Self::Parameter(_)
             | Self::FunctionInput(_)
             | Self::FunctionCall { .. }
+            | Self::CustomWeslCall { .. }
             | Self::Add(_, _)
             | Self::Subtract(_, _)
             | Self::Multiply(_, _)
@@ -1292,6 +1306,10 @@ impl MaterialExpressionKind {
                 Vec::new()
             }
             Self::FunctionCall { arguments, .. } => arguments.values().copied().collect(),
+            Self::CustomWeslCall { arguments, .. } => arguments
+                .iter()
+                .map(|argument| argument.expression)
+                .collect(),
             Self::Add(left, right)
             | Self::Subtract(left, right)
             | Self::Multiply(left, right)
@@ -1377,6 +1395,23 @@ pub struct MaterialFunctionOutput {
     pub expression: MaterialExpressionId,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MaterialCustomWeslArgument {
+    pub expression: MaterialExpressionId,
+    pub value_type: MaterialValueType,
+}
+
+/// Sandboxed WESL implementation for an expert material function.
+///
+/// The source may only declare ordinary functions. Each declared material output maps to one
+/// entry point whose arguments follow [`MaterialFunction::inputs`] in stable order.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MaterialCustomWeslImplementation {
+    pub evaluation_domain: MaterialExpressionDomain,
+    pub source: String,
+    pub entry_points: BTreeMap<MaterialFunctionOutputId, String>,
+}
+
 /// Reusable typed semantic material logic.
 ///
 /// Function bodies share the normal material expression language. Their external values are
@@ -1391,6 +1426,8 @@ pub struct MaterialFunction {
     pub inputs: Vec<MaterialFunctionInput>,
     pub outputs: Vec<MaterialFunctionOutput>,
     pub expressions: Vec<MaterialExpression>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_wesl: Option<MaterialCustomWeslImplementation>,
 }
 
 impl MaterialFunction {
@@ -1546,8 +1583,23 @@ impl MaterialFunction {
                     arguments,
                     *output,
                 ),
+                MaterialExpressionKind::CustomWeslCall { .. } => error(
+                    &mut report,
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.kind"),
+                    "expanded custom WESL calls cannot be stored inside material-function assets",
+                ),
                 _ => {}
             }
+        }
+
+        if self.custom_wesl.is_some() && !self.expressions.is_empty() {
+            error(
+                &mut report,
+                DiagnosticCode::InvalidValue,
+                "material_function.expressions",
+                "custom WESL functions cannot also declare a semantic expression body",
+            );
         }
 
         for (index, expression) in self.expressions.iter().enumerate() {
@@ -1603,13 +1655,22 @@ impl MaterialFunction {
                     "material function output name must be unique",
                 );
             }
-            validate_output(
-                &mut report,
-                &expressions,
-                output.expression,
-                &format!("{path}.expression"),
-            );
-            collect_reachable(output.expression, &expressions, &mut reachable);
+            if self.custom_wesl.is_none() {
+                validate_output(
+                    &mut report,
+                    &expressions,
+                    output.expression,
+                    &format!("{path}.expression"),
+                );
+                collect_reachable(output.expression, &expressions, &mut reachable);
+            } else if output.expression.is_nil() {
+                error(
+                    &mut report,
+                    DiagnosticCode::NilId,
+                    format!("{path}.expression"),
+                    "custom WESL output identity cannot be nil",
+                );
+            }
         }
         if self.outputs.is_empty() {
             error(
@@ -1618,6 +1679,9 @@ impl MaterialFunction {
                 "material_function.outputs",
                 "material function must declare at least one output",
             );
+        }
+        if let Some(custom_wesl) = &self.custom_wesl {
+            validate_custom_wesl(self, custom_wesl, &mut report);
         }
         for (index, expression) in self.expressions.iter().enumerate() {
             if !reachable.contains(&expression.id) {
@@ -1631,6 +1695,127 @@ impl MaterialFunction {
         }
         report
     }
+}
+
+fn validate_custom_wesl(
+    function: &MaterialFunction,
+    implementation: &MaterialCustomWeslImplementation,
+    report: &mut ValidationReport,
+) {
+    let source = implementation.source.trim();
+    if source.is_empty() {
+        error(
+            report,
+            DiagnosticCode::InvalidValue,
+            "material_function.custom_wesl.source",
+            "custom WESL source cannot be empty",
+        );
+    }
+    for forbidden in [
+        "@group",
+        "@binding",
+        "var<",
+        "@vertex",
+        "@fragment",
+        "@compute",
+        "#import",
+        "enable ",
+        "requires ",
+        "override ",
+        "const_assert",
+        "discard",
+        "textureStore",
+        "atomic",
+        "workgroup",
+        "storage",
+    ] {
+        if source.contains(forbidden) {
+            error(
+                report,
+                DiagnosticCode::InvalidValue,
+                "material_function.custom_wesl.source",
+                format!("custom WESL source cannot contain '{forbidden}'"),
+            );
+        }
+    }
+    for (index, input) in function.inputs.iter().enumerate() {
+        if matches!(input.value_type, MaterialValueType::Texture2D(_)) {
+            error(
+                report,
+                DiagnosticCode::InvalidValue,
+                format!("material_function.inputs[{index}].value_type"),
+                "custom WESL v1 only accepts value inputs; texture resources stay in semantic material nodes",
+            );
+        }
+    }
+    for (index, output) in function.outputs.iter().enumerate() {
+        if matches!(output.value_type, MaterialValueType::Texture2D(_)) {
+            error(
+                report,
+                DiagnosticCode::InvalidValue,
+                format!("material_function.outputs[{index}].value_type"),
+                "custom WESL v1 only produces value outputs",
+            );
+        }
+    }
+    let declared_outputs = function
+        .outputs
+        .iter()
+        .map(|output| output.id)
+        .collect::<BTreeSet<_>>();
+    let mapped_outputs = implementation
+        .entry_points
+        .keys()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if declared_outputs != mapped_outputs {
+        error(
+            report,
+            DiagnosticCode::InvalidReference,
+            "material_function.custom_wesl.entry_points",
+            "custom WESL must map every declared output exactly once",
+        );
+    }
+    let mut entry_points = BTreeSet::new();
+    for (output, entry_point) in &implementation.entry_points {
+        if !is_wesl_identifier(entry_point) {
+            error(
+                report,
+                DiagnosticCode::InvalidValue,
+                format!("material_function.custom_wesl.entry_points[{output}]"),
+                "custom WESL entry point must be a valid identifier",
+            );
+        } else if !entry_points.insert(entry_point.as_str()) {
+            error(
+                report,
+                DiagnosticCode::DuplicateId,
+                format!("material_function.custom_wesl.entry_points[{output}]"),
+                "custom WESL entry points must be unique",
+            );
+        } else if !source.contains(&format!("fn {entry_point}(")) {
+            error(
+                report,
+                DiagnosticCode::InvalidReference,
+                format!("material_function.custom_wesl.entry_points[{output}]"),
+                format!("custom WESL source does not declare fn {entry_point}"),
+            );
+        }
+    }
+    let declared_function_count = source.match_indices("fn ").count();
+    if declared_function_count != implementation.entry_points.len() {
+        error(
+            report,
+            DiagnosticCode::InvalidValue,
+            "material_function.custom_wesl.source",
+            "custom WESL v1 allows exactly one declared function per output and no private helpers",
+        );
+    }
+}
+
+fn is_wesl_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    matches!(chars.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
 
 fn validate_function_call_identity(
@@ -2182,6 +2367,43 @@ fn infer_expression(
         // Function calls require a complete library to determine their output type. The compiler
         // performs that resolution before invoking the ordinary program analyzer.
         MaterialExpressionKind::FunctionCall { .. } => None,
+        MaterialExpressionKind::CustomWeslCall {
+            arguments,
+            output_type,
+            evaluation_domain,
+            ..
+        } => {
+            let mut valid = true;
+            let mut domain = *evaluation_domain;
+            let argument_info = arguments
+                .iter()
+                .map(|argument| dependency(argument.expression))
+                .collect::<Vec<_>>();
+            for (argument_index, (argument, info)) in
+                arguments.iter().zip(argument_info).enumerate()
+            {
+                let Some(info) = info else {
+                    valid = false;
+                    continue;
+                };
+                if info.value_type != argument.value_type {
+                    material_type_error(
+                        report,
+                        format!("{path}.arguments[{argument_index}]"),
+                        format!(
+                            "custom WESL argument expects {:?} but received {:?}",
+                            argument.value_type, info.value_type
+                        ),
+                    );
+                    valid = false;
+                }
+                domain = domain.max(info.evaluation_domain);
+            }
+            valid.then_some(MaterialExpressionInfo {
+                value_type: *output_type,
+                evaluation_domain: domain,
+            })
+        }
         MaterialExpressionKind::FunctionInput(_) => None,
         MaterialExpressionKind::Add(left, right)
         | MaterialExpressionKind::Subtract(left, right) => {

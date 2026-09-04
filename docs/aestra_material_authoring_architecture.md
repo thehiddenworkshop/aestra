@@ -2380,6 +2380,22 @@ Common material looks can be created from a small number of high-level actions.
 
 Provide an expert escape hatch without abandoning semantic authoring.
 
+### Implementation status
+
+Complete. A normal `.aestra.material-function.ron` asset can select either the semantic expression
+body or a `custom_wesl` implementation. Typed inputs and outputs remain the public contract, while
+the custom implementation declares its evaluation domain, source, and a stable output-to-entry-
+point map. This keeps project indexing, function references, graph insertion, transactions, and
+compiler inspection identical for both implementation kinds.
+
+The initial sandbox deliberately accepts only ordinary function declarations. It rejects imports,
+resource bindings, address-space globals, and vertex/fragment/compute entry points; validates that
+every output maps to one declared function; and reserves helper-function composition for a future
+schema revision. Compiler expansion preserves the typed call as semantic IR, namespaces every
+declared symbol by the stable function ID, records source-line ownership for diagnostics, and lets
+the normal portable shader validation reject invalid WESL signatures or bodies. The bundled Pulse
+Wave function exercises the complete project asset → graph call → undo/redo → compiler → GPU path.
+
 ### Tasks
 
 Implement typed custom function assets:

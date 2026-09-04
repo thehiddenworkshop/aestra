@@ -1,11 +1,14 @@
-use aestra_compiler::{MaterialCompiler, MaterialPresetCatalog, MaterialPresetDescriptor};
+use aestra_compiler::{
+    MaterialCompiler, MaterialFunctionLibrary, MaterialPresetCatalog, MaterialPresetDescriptor,
+};
 use aestra_core::{
     AssetId, MaterialExpressionId, MaterialParameterId, MaterialProgramId,
     material::{
         MaterialAddressMode, MaterialCullMode, MaterialDepthTest, MaterialEvaluationDomain,
-        MaterialExpression, MaterialExpressionKind, MaterialFilterMode, MaterialInput,
-        MaterialMipFilterMode, MaterialParameter, MaterialRenderState, MaterialSamplerDescriptor,
-        MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
+        MaterialExpression, MaterialExpressionKind, MaterialFilterMode, MaterialFunction,
+        MaterialFunctionRef, MaterialInput, MaterialMipFilterMode, MaterialParameter,
+        MaterialRenderState, MaterialSamplerDescriptor, MaterialTextureColorSpace,
+        MaterialTextureDescriptor, MaterialValue, MaterialValueType,
     },
 };
 use aestra_gpu::material::{
@@ -252,6 +255,104 @@ fn curated_material_presets_generate_portable_gpu_shaders() {
 }
 
 #[test]
+fn custom_wesl_function_is_namespaced_and_compiles_for_portable_gpu_targets() {
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let color = MaterialExpressionId::from_u128(0xFA11);
+    let phase = MaterialExpressionId::from_u128(0xFA12);
+    let width = MaterialExpressionId::from_u128(0xFA13);
+    let call = MaterialExpressionId::from_u128(0xFA14);
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Custom WESL GPU");
+    program.expressions = vec![
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([0.3, 0.8, 1.0, 1.0])),
+        },
+        MaterialExpression {
+            id: phase,
+            kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: width,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.25)),
+        },
+        MaterialExpression {
+            id: call,
+            kind: MaterialExpressionKind::FunctionCall {
+                function: MaterialFunctionRef::Project(function.id),
+                arguments: std::collections::BTreeMap::from([
+                    (function.inputs[0].id, phase),
+                    (function.inputs[1].id, width),
+                ]),
+                output: function.outputs[0].id,
+            },
+        },
+    ];
+    program.outputs.color = color;
+    program.outputs.alpha = call;
+    let ir = MaterialCompiler
+        .compile_with_functions(&program, &MaterialFunctionLibrary::new([function.clone()]))
+        .unwrap();
+    let custom_value = ir
+        .values
+        .iter()
+        .find(|value| {
+            matches!(
+                value.instruction,
+                aestra_compiler::MaterialIrInstruction::CustomWeslCall { .. }
+            )
+        })
+        .unwrap()
+        .id;
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+
+    assert!(compiled.shader.wesl.contains("fn aestra_custom_"));
+    assert!(!compiled.shader.wesl.contains("fn pulse_wave("));
+    assert!(
+        compiled
+            .source_map
+            .wesl_lines
+            .values()
+            .any(|value| *value == custom_value),
+        "custom WESL diagnostics should map back to the semantic call"
+    );
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+
+    let mut invalid = function;
+    invalid.custom_wesl.as_mut().unwrap().source =
+        "fn pulse_wave(phase: f32, width: f32) -> f32 { return vec2<f32>(phase, width); }".into();
+    let invalid_ir = MaterialCompiler
+        .compile_with_functions(&program, &MaterialFunctionLibrary::new([invalid]))
+        .unwrap();
+    let invalid_custom_value = invalid_ir
+        .values
+        .iter()
+        .find(|value| {
+            matches!(
+                value.instruction,
+                aestra_compiler::MaterialIrInstruction::CustomWeslCall { .. }
+            )
+        })
+        .unwrap()
+        .id;
+    let error = MaterialShaderCompiler
+        .compile(
+            &invalid_ir,
+            &MaterialBackendCapabilities::portable_minimum(),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        MaterialGpuError::Shader { source_map, .. }
+            if source_map.wesl_lines.values().any(|value| *value == invalid_custom_value)
+    ));
+}
+
+#[test]
 fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     let compiled = compile(&two_texture_flame_program());
 
@@ -291,7 +392,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "dd1b055ee8e8f793d1ffa72a1053e26ee607fe782d2b4d52ed9109a370a2c87e"
+        "e89c989a714ed9dcebca265921ad0551c751caf74dcb220e8f4364dd4cd3aec5"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,

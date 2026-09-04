@@ -1,5 +1,6 @@
 use aestra_core::{
-    AssetId, MaterialExpressionId, MaterialParameterId, MaterialProgramId, ValidationReport,
+    AssetId, MaterialExpressionId, MaterialFunctionId, MaterialParameterId, MaterialProgramId,
+    ValidationReport,
     material::{
         MaterialDomain, MaterialEvaluationDomain, MaterialExpressionDomain, MaterialExpressionInfo,
         MaterialExpressionKind, MaterialInput, MaterialProgram, MaterialRenderStatePolicy,
@@ -45,6 +46,12 @@ pub enum MaterialIrInstruction {
     Constant(MaterialIrConstant),
     Input(MaterialInput),
     Parameter(MaterialParameterId),
+    CustomWeslCall {
+        function: MaterialFunctionId,
+        entry_point: String,
+        source: String,
+        arguments: Vec<MaterialIrValueId>,
+    },
     Add(MaterialIrValueId, MaterialIrValueId),
     Subtract(MaterialIrValueId, MaterialIrValueId),
     Multiply(MaterialIrValueId, MaterialIrValueId),
@@ -137,6 +144,7 @@ impl MaterialIrInstruction {
     fn dependencies(&self) -> Vec<MaterialIrValueId> {
         match self {
             Self::Constant(_) | Self::Input(_) | Self::Parameter(_) => Vec::new(),
+            Self::CustomWeslCall { arguments, .. } => arguments.clone(),
             Self::Add(left, right)
             | Self::Subtract(left, right)
             | Self::Multiply(left, right)
@@ -206,6 +214,11 @@ impl MaterialIrInstruction {
         };
         match self {
             Self::Constant(_) | Self::Input(_) | Self::Parameter(_) => {}
+            Self::CustomWeslCall { arguments, .. } => {
+                for argument in arguments {
+                    remap(argument);
+                }
+            }
             Self::Add(left, right)
             | Self::Subtract(left, right)
             | Self::Multiply(left, right)
@@ -521,6 +534,21 @@ impl MaterialIrBuilder<'_> {
             | MaterialExpressionKind::FunctionCall { .. } => {
                 unreachable!("validated material functions must be inlined before IR lowering")
             }
+            MaterialExpressionKind::CustomWeslCall {
+                function,
+                entry_point,
+                source,
+                arguments,
+                ..
+            } => MaterialIrInstruction::CustomWeslCall {
+                function,
+                entry_point,
+                source,
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.lower(argument.expression))
+                    .collect(),
+            },
             MaterialExpressionKind::Add(left, right) => {
                 let left = self.lower(left);
                 let right = self.lower(right);

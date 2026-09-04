@@ -2827,6 +2827,49 @@ fn project_function_call_creation_and_signature_rewiring_are_transactional() {
 }
 
 #[test]
+fn custom_wesl_function_insertion_is_transactional_and_compiler_validated() {
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let mut document = authoring_document();
+    let mut program = MaterialProgram::additive_sprite("Custom WESL authoring");
+    program.id = MaterialProgramId::from_u128(0x68e0);
+    let source = program.outputs.alpha;
+    document.programs.push(program);
+    document.material_functions.push(function.clone());
+    let before = document.clone();
+
+    let plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::CreateMaterialGraphNode {
+            program: MaterialProgramId::from_u128(0x68e0),
+            kind: MaterialGraphCreateKind::FunctionCall {
+                function: MaterialFunctionRef::Project(function.id),
+                output: function.outputs[0].id,
+            },
+            source: Some(source),
+            target: Some(MaterialConnectionTarget::ProgramOutput(
+                MaterialOutputSocket::Alpha,
+            )),
+        },
+    )
+    .unwrap();
+    let call = plan.created_expressions[0];
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+
+    assert_eq!(document.programs[0].outputs.alpha, call);
+    MaterialCompiler
+        .compile_with_functions(&document.programs[0], &document.material_function_library())
+        .unwrap();
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+    history.redo(&mut document).unwrap().unwrap();
+    assert_eq!(document.programs[0].outputs.alpha, call);
+}
+
+#[test]
 fn connected_subgraph_extraction_creates_a_function_and_replaces_it_atomically() {
     let mut document = authoring_document();
     let mut program = MaterialProgram::additive_sprite("Extract function");

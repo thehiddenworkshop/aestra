@@ -32,6 +32,7 @@ fn identity_function(id: MaterialFunctionId) -> MaterialFunction {
             id: expression,
             kind: MaterialExpressionKind::FunctionInput(input),
         }],
+        custom_wesl: None,
     }
 }
 
@@ -61,6 +62,29 @@ fn project_index_resolves_typed_material_function_assets() {
         index.load_material_functions().unwrap().get(&function.id),
         Some(&function)
     );
+}
+
+#[test]
+fn project_index_resolves_custom_wesl_function_assets() {
+    let temporary = tempfile::tempdir().unwrap();
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    function
+        .save_ron(
+            temporary
+                .path()
+                .join("pulse_wave.aestra.material-function.ron"),
+        )
+        .unwrap();
+    let index = ProjectAssetIndex::scan(temporary.path());
+    let loaded = index
+        .load_material_function(MaterialFunctionRef::Project(function.id))
+        .unwrap();
+
+    assert_eq!(loaded, function);
+    assert!(loaded.custom_wesl.is_some());
 }
 
 #[test]

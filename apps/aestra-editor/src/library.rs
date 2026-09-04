@@ -4121,6 +4121,12 @@ mod tests {
                 "bundled preset {name} should be registered"
             );
         }
+        let functions = catalog.material_function_library().unwrap();
+        let pulse = functions
+            .iter()
+            .find(|function| function.name == "Pulse Wave (Custom WESL)")
+            .expect("the bundled custom WESL function should be registered");
+        assert!(pulse.custom_wesl.is_some());
     }
 
     #[test]

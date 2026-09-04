@@ -859,6 +859,7 @@ mod tests {
                 id: expression,
                 kind: MaterialExpressionKind::FunctionInput(input),
             }],
+            custom_wesl: None,
         };
         let mut session = test_support::session_with_timing_slack();
         session.effect.material_instances.push(MaterialInstance {

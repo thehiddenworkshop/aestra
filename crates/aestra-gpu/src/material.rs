@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 2;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 11;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 12;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
@@ -663,6 +663,26 @@ fn generate_wesl(
             layout.group, sampler.binding, sampler.binding
         ));
     }
+    let custom_sources = ir
+        .values
+        .iter()
+        .filter_map(|value| match &value.instruction {
+            MaterialIrInstruction::CustomWeslCall {
+                function, source, ..
+            } => Some((*function, (source.as_str(), value.id))),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (function, (custom_source, value)) in custom_sources {
+        source.push('\n');
+        let custom_source = namespace_custom_wesl(function.as_uuid().as_u128(), custom_source);
+        let first_line = source.bytes().filter(|byte| *byte == b'\n').count() as u32 + 1;
+        for offset in 0..custom_source.lines().count() as u32 {
+            lines.insert(first_line + offset, value);
+        }
+        source.push_str(&custom_source);
+        source.push('\n');
+    }
     source.push_str("\nfn aestra_evaluate_material(input: MaterialFragmentInput) -> vec4<f32> {\n");
     for value in &ir.values {
         if matches!(value.value_type, MaterialValueType::Texture2D(_)) {
@@ -735,6 +755,20 @@ fn instruction_expression(
                 format!("material_uniforms.{}", parameter_name(*parameter))
             }
         }
+        MaterialIrInstruction::CustomWeslCall {
+            function,
+            entry_point,
+            arguments,
+            ..
+        } => format!(
+            "{}({})",
+            custom_wesl_symbol(function.as_uuid().as_u128(), entry_point),
+            arguments
+                .iter()
+                .map(|argument| value_name(*argument))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         MaterialIrInstruction::Add(left, right) => binary_expression(ir, *left, *right, "+", value),
         MaterialIrInstruction::Subtract(left, right) => {
             binary_expression(ir, *left, *right, "-", value)
@@ -867,6 +901,56 @@ fn instruction_expression(
         }
     };
     Ok(expression)
+}
+
+fn namespace_custom_wesl(function: u128, source: &str) -> String {
+    let mut names = Vec::new();
+    for (offset, _) in source.match_indices("fn ") {
+        let rest = &source[offset + 3..];
+        let name = rest
+            .chars()
+            .take_while(|character| *character == '_' || character.is_ascii_alphanumeric())
+            .collect::<String>();
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    let mut namespaced = source.to_owned();
+    for name in names {
+        namespaced =
+            replace_wesl_identifier(&namespaced, &name, &custom_wesl_symbol(function, &name));
+    }
+    namespaced
+}
+
+fn custom_wesl_symbol(function: u128, entry_point: &str) -> String {
+    format!("aestra_custom_{function:032x}_{entry_point}")
+}
+
+fn replace_wesl_identifier(source: &str, from: &str, to: &str) -> String {
+    let mut output = String::with_capacity(source.len() + to.len());
+    let mut cursor = 0;
+    while let Some(relative) = source[cursor..].find(from) {
+        let start = cursor + relative;
+        let end = start + from.len();
+        let before_is_identifier = source[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|character| character == '_' || character.is_ascii_alphanumeric());
+        let after_is_identifier = source[end..]
+            .chars()
+            .next()
+            .is_some_and(|character| character == '_' || character.is_ascii_alphanumeric());
+        output.push_str(&source[cursor..start]);
+        if before_is_identifier || after_is_identifier {
+            output.push_str(from);
+        } else {
+            output.push_str(to);
+        }
+        cursor = end;
+    }
+    output.push_str(&source[cursor..]);
+    output
 }
 
 fn binary_expression(
@@ -1210,6 +1294,20 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
         MaterialIrInstruction::Parameter(parameter) => {
             fingerprint.byte(2);
             fingerprint.u128(parameter.as_uuid().as_u128());
+        }
+        MaterialIrInstruction::CustomWeslCall {
+            function,
+            entry_point,
+            source,
+            arguments,
+        } => {
+            fingerprint.byte(22);
+            fingerprint.u128(function.as_uuid().as_u128());
+            fingerprint.bytes(entry_point.as_bytes());
+            fingerprint.bytes(source.as_bytes());
+            for argument in arguments {
+                fingerprint.u32(argument.0);
+            }
         }
         MaterialIrInstruction::Add(left, right) => hash_binary(fingerprint, 3, *left, *right),
         MaterialIrInstruction::Subtract(left, right) => hash_binary(fingerprint, 4, *left, *right),

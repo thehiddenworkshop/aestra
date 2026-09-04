@@ -29,10 +29,28 @@ fn typed_material_function_round_trips_with_stable_identity() {
             id: expression,
             kind: MaterialExpressionKind::FunctionInput(input),
         }],
+        custom_wesl: None,
     };
 
     let encoded = function.to_pretty_ron().unwrap();
 
     assert_eq!(MaterialFunction::from_ron(&encoded).unwrap(), function);
     assert!(function.validate_structure().is_valid());
+}
+
+#[test]
+fn custom_wesl_function_round_trips_and_rejects_resource_declarations() {
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/pulse_wave.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let encoded = function.to_pretty_ron().unwrap();
+
+    assert_eq!(MaterialFunction::from_ron(&encoded).unwrap(), function);
+    assert!(function.custom_wesl.is_some());
+
+    let mut unsafe_function = function;
+    unsafe_function.custom_wesl.as_mut().unwrap().source =
+        "@group(0) @binding(0) var<uniform> secret: f32;".into();
+    assert!(!unsafe_function.validate_structure().is_valid());
 }

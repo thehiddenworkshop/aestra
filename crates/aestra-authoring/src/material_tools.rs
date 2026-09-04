@@ -947,6 +947,7 @@ impl MaterialToolPlanner {
             inputs: function_inputs,
             outputs: function_outputs,
             expressions: function_expressions,
+            custom_wesl: None,
         };
         let created_expressions = output_calls.values().copied().collect::<Vec<_>>();
         let command = MaterialToolCommand::ExtractMaterialFunction {
@@ -1229,6 +1230,11 @@ fn remap_expression_sources(
         MaterialExpressionKind::FunctionCall { arguments, .. } => {
             for source in arguments.values_mut() {
                 remap(source);
+            }
+        }
+        MaterialExpressionKind::CustomWeslCall { arguments, .. } => {
+            for argument in arguments {
+                remap(&mut argument.expression);
             }
         }
         MaterialExpressionKind::Add(left, right)

@@ -992,6 +992,9 @@ fn node_kind(kind: &MaterialExpressionKind) -> MaterialGraphNodeKind {
         E::FunctionCall { function, .. } => {
             return MaterialGraphNodeKind::FunctionCall(*function);
         }
+        E::CustomWeslCall { function, .. } => {
+            return MaterialGraphNodeKind::FunctionCall(MaterialFunctionRef::Project(*function));
+        }
         E::Add(..) => MaterialGraphFunction::Add,
         E::Subtract(..) => MaterialGraphFunction::Subtract,
         E::Multiply(..) => MaterialGraphFunction::Multiply,
@@ -1034,6 +1037,7 @@ fn node_label(
             .get(*function)
             .map(|function| function.name.clone())
             .unwrap_or_else(|| format!("Missing function {}", function.id())),
+        MaterialExpressionKind::CustomWeslCall { entry_point, .. } => entry_point.clone(),
         MaterialExpressionKind::ExtractComponent { component, .. } => {
             format!("Extract {component:?}")
         }
@@ -1092,6 +1096,10 @@ fn expression_inputs(kind: &MaterialExpressionKind) -> Vec<(&'static str, Materi
             .values()
             .copied()
             .map(|expression| ("argument", expression))
+            .collect(),
+        E::CustomWeslCall { arguments, .. } => arguments
+            .iter()
+            .map(|argument| ("argument", argument.expression))
             .collect(),
         E::Add(left, right)
         | E::Subtract(left, right)

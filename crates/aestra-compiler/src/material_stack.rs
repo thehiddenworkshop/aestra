@@ -934,6 +934,7 @@ fn modifier_property_targets(
         | MaterialExpressionKind::Parameter(_)
         | MaterialExpressionKind::FunctionInput(_)
         | MaterialExpressionKind::FunctionCall { .. }
+        | MaterialExpressionKind::CustomWeslCall { .. }
         | MaterialExpressionKind::Add(_, _)
         | MaterialExpressionKind::Subtract(_, _)
         | MaterialExpressionKind::Multiply(_, _)
@@ -1764,6 +1765,7 @@ fn primary_source(kind: &MaterialExpressionKind) -> Option<MaterialExpressionId>
         | MaterialExpressionKind::Parameter(_)
         | MaterialExpressionKind::FunctionInput(_)
         | MaterialExpressionKind::FunctionCall { .. }
+        | MaterialExpressionKind::CustomWeslCall { .. }
         | MaterialExpressionKind::Add(_, _)
         | MaterialExpressionKind::Subtract(_, _)
         | MaterialExpressionKind::Multiply(_, _)
@@ -1793,6 +1795,7 @@ fn set_primary_source(kind: &mut MaterialExpressionKind, source: MaterialExpress
         | MaterialExpressionKind::Parameter(_)
         | MaterialExpressionKind::FunctionInput(_)
         | MaterialExpressionKind::FunctionCall { .. }
+        | MaterialExpressionKind::CustomWeslCall { .. }
         | MaterialExpressionKind::Add(_, _)
         | MaterialExpressionKind::Subtract(_, _)
         | MaterialExpressionKind::Multiply(_, _)
@@ -1825,6 +1828,7 @@ fn modifier_kind(kind: &MaterialExpressionKind) -> Option<MaterialStackModifierK
         | MaterialExpressionKind::Parameter(_)
         | MaterialExpressionKind::FunctionInput(_)
         | MaterialExpressionKind::FunctionCall { .. }
+        | MaterialExpressionKind::CustomWeslCall { .. }
         | MaterialExpressionKind::Add(_, _)
         | MaterialExpressionKind::Subtract(_, _)
         | MaterialExpressionKind::Multiply(_, _)
@@ -1876,6 +1880,10 @@ fn dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
         MaterialExpressionKind::FunctionCall { arguments, .. } => {
             arguments.values().copied().collect()
         }
+        MaterialExpressionKind::CustomWeslCall { arguments, .. } => arguments
+            .iter()
+            .map(|argument| argument.expression)
+            .collect(),
         MaterialExpressionKind::Add(left, right)
         | MaterialExpressionKind::Subtract(left, right)
         | MaterialExpressionKind::Multiply(left, right)

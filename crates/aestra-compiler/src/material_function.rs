@@ -5,9 +5,9 @@ use aestra_core::{
     Diagnostic, DiagnosticCode, DiagnosticSeverity, MaterialExpressionId, MaterialFunctionId,
     MaterialFunctionInputId, MaterialFunctionOutputId, ValidationReport,
     material::{
-        MaterialExpression, MaterialExpressionKind, MaterialFunction, MaterialFunctionInput,
-        MaterialFunctionOutput, MaterialFunctionRef, MaterialProgram, MaterialSchemaVersion,
-        MaterialValueType,
+        MaterialCustomWeslArgument, MaterialExpression, MaterialExpressionKind, MaterialFunction,
+        MaterialFunctionInput, MaterialFunctionOutput, MaterialFunctionRef, MaterialProgram,
+        MaterialSchemaVersion, MaterialValueType,
     },
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -182,6 +182,7 @@ pub fn built_in_material_functions() -> Vec<MaterialFunction> {
                 },
             },
         ],
+        custom_wesl: None,
     }]
 }
 
@@ -435,6 +436,7 @@ impl FunctionExpander<'_> {
         };
 
         let mut bindings = BTreeMap::new();
+        let mut ordered_arguments = Vec::new();
         for input in &function.inputs {
             let Some(argument) = arguments.get(&input.id) else {
                 push_error(
@@ -452,12 +454,32 @@ impl FunctionExpander<'_> {
                 None => self.expand_program(*argument),
             }?;
             bindings.insert(input.id, expanded);
+            ordered_arguments.push(MaterialCustomWeslArgument {
+                expression: expanded,
+                value_type: input.value_type,
+            });
             self.binding_checks.push(BindingCheck {
                 path: format!("material_function_call[{call_id}].arguments[{}]", input.id),
                 expression: expanded,
                 expected: input.value_type,
                 subject: "input",
             });
+        }
+        if let Some(custom_wesl) = &function.custom_wesl {
+            let entry_point = custom_wesl.entry_points.get(output)?;
+            self.output.push(MaterialExpression {
+                id: call_id,
+                kind: MaterialExpressionKind::CustomWeslCall {
+                    function: function.id,
+                    entry_point: entry_point.clone(),
+                    source: custom_wesl.source.clone(),
+                    arguments: ordered_arguments,
+                    output_type: function_output.value_type,
+                    evaluation_domain: custom_wesl.evaluation_domain,
+                },
+            });
+            self.call_aliases.insert(call_id, call_id);
+            return Some(call_id);
         }
         let target =
             self.expand_function(function, function_output.expression, namespace, &bindings)?;
@@ -500,7 +522,7 @@ fn remap_kind(
         E::Constant(value) => E::Constant(value.clone()),
         E::Input(input) => E::Input(*input),
         E::Parameter(parameter) => E::Parameter(*parameter),
-        E::FunctionInput(_) | E::FunctionCall { .. } => return None,
+        E::FunctionInput(_) | E::FunctionCall { .. } | E::CustomWeslCall { .. } => return None,
         E::Add(a, b) => E::Add(remap(*a)?, remap(*b)?),
         E::Subtract(a, b) => E::Subtract(remap(*a)?, remap(*b)?),
         E::Multiply(a, b) => E::Multiply(remap(*a)?, remap(*b)?),
