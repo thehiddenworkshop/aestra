@@ -2285,14 +2285,16 @@ Enable reuse of complex semantic logic.
 
 ### Implementation status
 
-The first vertical slice is implemented. `MaterialFunction` assets have stable function, input,
+The reusable authoring slice is implemented. `MaterialFunction` assets have stable function, input,
 output, and expression identities; typed signatures; normalized RON persistence; and project-local
 index resolution. `FunctionInput` and `FunctionCall` participate in the shared semantic expression
 language. The compiler validates exact signatures, missing references, output types, and recursive
 function graphs, then deterministically inlines calls while preserving authored call aliases in the
 IR source map. Effect-project compilation stores the expanded call-free programs consumed by the
-runtime and render backends. Built-in registration, graph authoring UX, and
-`ExtractMaterialFunction` remain to complete this milestone.
+runtime and render backends. A canonical built-in catalog and project-local functions are available
+in the categorized graph browser; created call nodes derive their named, typed ports from the
+function signature and preserve stable socket identities through reconnect, delete, and undo.
+The validated `ExtractMaterialFunction` command remains to complete this milestone.
 
 ### Tasks
 

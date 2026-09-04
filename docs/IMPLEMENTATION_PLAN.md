@@ -390,14 +390,17 @@ the current sprite-material path until the native-GPU compatibility gate approve
 
 ### Phase E — reuse and extensibility
 
-- [ ] **Material 15 — typed material functions.** The semantic foundation is implemented:
+- [ ] **Material 15 — typed material functions.** The reusable authoring slice is implemented:
   canonical stable function/input/output identities, typed function signatures, function-input
   and function-call expressions, normalized RON assets, project-local discovery and resolution,
   exact call-signature validation, missing-reference and recursion diagnostics, deterministic
   compiler inlining, and source-map aliases for authored calls. Project effect compilation erases
   function boundaries before handing semantic programs to the runtime, so render backends remain
-  isolated from authoring assets. Remaining work is built-in function registration, function-aware
-  graph projection/palette UX, and the validated `ExtractMaterialFunction` command.
+  isolated from authoring assets. The compiler now registers a canonical built-in catalog; graph
+  projection exposes signature-named, typed call sockets; and the categorized node browser offers
+  built-in and project-local functions with validated creation, rewiring, undo, and diagnostics.
+  The bundled Material Graph Lab exercises a built-in call and ships a project-local Dissolve Edge
+  function. The validated `ExtractMaterialFunction` command remains to complete this milestone.
 - [ ] **Material 16 — semantic preset library.**
 - [ ] **Material 17 — validated custom WESL escape hatch.**
 

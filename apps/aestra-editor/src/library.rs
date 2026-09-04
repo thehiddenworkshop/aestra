@@ -6,8 +6,8 @@ use crate::feathers::context_menu::{
 };
 use crate::timeline::TimelineState;
 use crate::*;
-use aestra_compiler::{EffectCompiler, ProjectCompileError};
-use aestra_core::material::{MaterialProgram, MaterialProgramRef};
+use aestra_compiler::{EffectCompiler, MaterialFunctionLibrary, ProjectCompileError};
+use aestra_core::material::{MaterialFunction, MaterialProgram, MaterialProgramRef};
 use aestra_core::{
     AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipId, EffectId, EffectParameter, Emitter, EmitterId,
@@ -228,6 +228,17 @@ impl ProjectEffectCatalog {
             );
         }
         Ok(programs)
+    }
+
+    pub(crate) fn material_functions(&self) -> Result<Vec<MaterialFunction>, String> {
+        self.index
+            .load_material_functions()
+            .map(|functions| functions.into_values().collect())
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn material_function_library(&self) -> Result<MaterialFunctionLibrary, String> {
+        self.material_functions().map(MaterialFunctionLibrary::new)
     }
 
     pub(crate) fn replace_material_program(

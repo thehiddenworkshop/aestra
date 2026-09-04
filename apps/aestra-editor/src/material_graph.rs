@@ -1362,8 +1362,9 @@ fn current_material_connection_source(
 ) -> Option<MaterialExpressionId> {
     let programs = catalog.material_programs_for_effect(&session.effect).ok()?;
     let program = programs.iter().find(|candidate| candidate.id == program)?;
+    let functions = catalog.material_function_library().ok()?;
     MaterialCompiler
-        .project_graph(program, None)
+        .project_graph_with_functions(program, None, &functions)
         .edges
         .into_iter()
         .find(|edge| edge_target(&edge.target) == Some(target))
@@ -1750,7 +1751,9 @@ fn apply_material_tool_command(
         .find(|candidate| candidate.id == program)
         .cloned()
         .ok_or_else(|| format!("Material program {program} is unavailable"))?;
-    let document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
+    let functions = catalog.material_functions()?;
+    let document = MaterialAuthoringDocument::new(session.effect.clone(), programs)
+        .with_material_functions(functions);
     let plan = MaterialToolPlanner::plan(&document, command).map_err(|error| error.to_string())?;
     let mut preview = document;
     MaterialCommandExecutor::execute(&mut preview, &plan.transaction)
@@ -1894,7 +1897,12 @@ fn update_material_graph_wires(
     let document = catalog
         .material_programs_for_effect(&session.effect)
         .ok()
-        .map(|programs| MaterialAuthoringDocument::new(session.effect.clone(), programs));
+        .and_then(|programs| {
+            catalog.material_functions().ok().map(|functions| {
+                MaterialAuthoringDocument::new(session.effect.clone(), programs)
+                    .with_material_functions(functions)
+            })
+        });
     let mut nearest: Option<(f32, MaterialGraphSocketKind, Vec2)> = None;
     for socket in &socket_positions {
         if socket.program != *program {
@@ -3011,8 +3019,14 @@ fn material_graph_palette_options(
     let Some(program_definition) = programs.iter().find(|candidate| candidate.id == program) else {
         return Vec::new();
     };
-    let descriptors = MaterialCompiler.graph_node_catalog(program_definition);
-    let document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
+    let Ok(functions) = catalog.material_functions() else {
+        return Vec::new();
+    };
+    let function_library = aestra_compiler::MaterialFunctionLibrary::new(functions.clone());
+    let descriptors =
+        MaterialCompiler.graph_node_catalog_with_functions(program_definition, &function_library);
+    let document = MaterialAuthoringDocument::new(session.effect.clone(), programs)
+        .with_material_functions(functions);
     select_palette_operations(&document, program, projection, &descriptors, connection)
 }
 
@@ -3319,11 +3333,12 @@ fn selected_projection(
         .iter()
         .find(|program| program.id == instance.program.id())
         .ok_or_else(|| "selected material program is unavailable".to_owned())?;
+    let functions = catalog.material_function_library()?;
     let compiler = MaterialCompiler;
-    let ir = compiler.compile(program).ok();
+    let ir = compiler.compile_with_functions(program, &functions).ok();
     Ok((
         program.name.clone(),
-        compiler.project_graph(program, ir.as_ref()),
+        compiler.project_graph_with_functions(program, ir.as_ref(), &functions),
         instance.id,
         program.clone(),
     ))
@@ -3941,7 +3956,7 @@ fn spawn_expression_node(
             },
             position,
             selected,
-            muted: !node.reachable || node.disabled,
+            muted: !node.reachable || node.disabled || node.validation_message.is_some(),
             collapse_icon: load_svg_icon(asset_server, "icons/chevron-down.svg"),
             expand_icon: load_svg_icon(asset_server, "icons/chevron-right.svg"),
             collapse_label: localizer.text("material-graph-collapse-node"),
@@ -3967,17 +3982,19 @@ fn spawn_expression_node(
             {
                 spawn_material_graph_constant_editor(body, program, node.expression, value);
             }
-            if node.disabled || !node.reachable {
-                let state = match (node.disabled, node.reachable) {
-                    (true, false) => format!(
-                        "{} · {}",
-                        localizer.text("material-graph-disabled"),
-                        localizer.text("material-graph-unreachable")
-                    ),
-                    (true, true) => localizer.text("material-graph-disabled"),
-                    (false, false) => localizer.text("material-graph-unreachable"),
-                    (false, true) => String::new(),
-                };
+            if node.disabled || !node.reachable || node.validation_message.is_some() {
+                let state = node.validation_message.clone().unwrap_or_else(|| {
+                    match (node.disabled, node.reachable) {
+                        (true, false) => format!(
+                            "{} · {}",
+                            localizer.text("material-graph-disabled"),
+                            localizer.text("material-graph-unreachable")
+                        ),
+                        (true, true) => localizer.text("material-graph-disabled"),
+                        (false, false) => localizer.text("material-graph-unreachable"),
+                        (false, true) => String::new(),
+                    }
+                });
                 body.spawn((
                     Text::new(state),
                     TextFont {
@@ -3993,7 +4010,16 @@ fn spawn_expression_node(
                 ));
             }
             for port in &node.inputs {
-                let Some(target) = input_target(node.expression, &port.name) else {
+                let target = port.function_input.map_or_else(
+                    || input_target(node.expression, &port.name),
+                    |input| {
+                        Some(MaterialConnectionTarget::ExpressionInput {
+                            expression: node.expression,
+                            input: MaterialExpressionInput::FunctionArgument(input),
+                        })
+                    },
+                );
+                let Some(target) = target else {
                     continue;
                 };
                 let presentation = input_port_presentation(&port.name);
@@ -4347,6 +4373,12 @@ fn input_target(expression: MaterialExpressionId, name: &str) -> Option<Material
 fn edge_target(target: &MaterialGraphEdgeTarget) -> Option<MaterialConnectionTarget> {
     match target {
         MaterialGraphEdgeTarget::Input { expression, port } => input_target(*expression, port),
+        MaterialGraphEdgeTarget::FunctionInput { expression, input } => {
+            Some(MaterialConnectionTarget::ExpressionInput {
+                expression: *expression,
+                input: MaterialExpressionInput::FunctionArgument(*input),
+            })
+        }
         MaterialGraphEdgeTarget::Output(MaterialGraphOutputKind::Color) => Some(
             MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Color),
         ),

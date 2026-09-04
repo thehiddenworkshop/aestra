@@ -475,7 +475,9 @@ impl MaterialToolPlanner {
         if let Some(target) = target {
             connection_source(program, target)?;
         }
-        let mut created = MaterialCompiler.plan_graph_node_creation(program, kind, source)?;
+        let functions = document.material_function_library();
+        let mut created = MaterialCompiler
+            .plan_graph_node_creation_with_functions(program, kind, source, &functions)?;
         if let Some(target) = target {
             apply_connection(&mut created.replacement, target, created.expression)?;
         }
@@ -611,7 +613,8 @@ impl MaterialToolPlanner {
             }
         }
 
-        let projection = MaterialCompiler.project_graph(program, None);
+        let functions = document.material_function_library();
+        let projection = MaterialCompiler.project_graph_with_functions(program, None, &functions);
         let mut replacement = program.clone();
         let mut created_expressions = Vec::new();
         for edge in &projection.edges {
@@ -668,7 +671,8 @@ impl MaterialToolPlanner {
     ) -> Result<MaterialToolPlan, MaterialToolError> {
         let program = find_program(document, program_id)?;
         connection_source(program, target)?;
-        let projection = MaterialCompiler.project_graph(program, None);
+        let functions = document.material_function_library();
+        let projection = MaterialCompiler.project_graph_with_functions(program, None, &functions);
         let value_type = projection.edges.iter().find_map(|edge| {
             (graph_connection_target(&edge.target) == Some(target))
                 .then_some(edge.value_type)
@@ -1076,6 +1080,12 @@ fn graph_connection_target(target: &MaterialGraphEdgeTarget) -> Option<MaterialC
         MaterialGraphEdgeTarget::Output(MaterialGraphOutputKind::Alpha) => Some(
             MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha),
         ),
+        MaterialGraphEdgeTarget::FunctionInput { expression, input } => {
+            Some(MaterialConnectionTarget::ExpressionInput {
+                expression: *expression,
+                input: MaterialExpressionInput::FunctionArgument(*input),
+            })
+        }
         MaterialGraphEdgeTarget::Input { expression, port } => {
             let input = match port.as_str() {
                 "left" => MaterialExpressionInput::Left,
@@ -1252,6 +1262,9 @@ fn graph_node_name(kind: MaterialGraphCreateKind) -> String {
         MaterialGraphCreateKind::Constant(value_type) => format!("{value_type:?} constant"),
         MaterialGraphCreateKind::Input(input) => format!("{input:?}"),
         MaterialGraphCreateKind::Parameter(parameter) => format!("parameter {parameter}"),
+        MaterialGraphCreateKind::FunctionCall { function, .. } => {
+            format!("material function {}", function.id())
+        }
         MaterialGraphCreateKind::Function(function) => function.display_name().to_owned(),
         MaterialGraphCreateKind::ExtractComponent(component) => format!("Extract {component:?}"),
     }

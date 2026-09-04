@@ -1,9 +1,12 @@
+use aestra_compiler::{MaterialCompiler, MaterialFunctionLibrary};
 use aestra_core::{
-    Diagnostic, DiagnosticCode, EffectAsset, EmitterId, MaterialExpressionId, MaterialId,
-    MaterialParameterId, MaterialProgramId, RendererId, ValidationReport, Value,
+    Diagnostic, DiagnosticCode, EffectAsset, EmitterId, MaterialExpressionId,
+    MaterialFunctionInputId, MaterialId, MaterialParameterId, MaterialProgramId, RendererId,
+    ValidationReport, Value,
     material::{
-        MaterialExpression, MaterialExpressionKind, MaterialInstance, MaterialParameterValue,
-        MaterialProgram, MaterialProgramRef, MaterialRenderState, MaterialValueType,
+        MaterialExpression, MaterialExpressionKind, MaterialFunction, MaterialInstance,
+        MaterialParameterValue, MaterialProgram, MaterialProgramRef, MaterialRenderState,
+        MaterialValueType,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -18,11 +21,29 @@ const DEFAULT_MATERIAL_HISTORY_LIMIT: usize = 256;
 pub struct MaterialAuthoringDocument {
     pub effect: EffectAsset,
     pub programs: Vec<MaterialProgram>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub material_functions: Vec<MaterialFunction>,
 }
 
 impl MaterialAuthoringDocument {
     pub fn new(effect: EffectAsset, programs: Vec<MaterialProgram>) -> Self {
-        Self { effect, programs }
+        Self {
+            effect,
+            programs,
+            material_functions: Vec::new(),
+        }
+    }
+
+    pub fn with_material_functions(
+        mut self,
+        material_functions: impl IntoIterator<Item = MaterialFunction>,
+    ) -> Self {
+        self.material_functions = material_functions.into_iter().collect();
+        self
+    }
+
+    pub fn material_function_library(&self) -> MaterialFunctionLibrary {
+        MaterialFunctionLibrary::new(self.material_functions.clone())
     }
 
     pub fn validation_report(&self) -> ValidationReport {
@@ -34,6 +55,12 @@ impl MaterialAuthoringDocument {
             )
         });
 
+        let functions = self.material_function_library();
+        append_prefixed_report(
+            &mut report,
+            "material_document.functions",
+            functions.validation_report(),
+        );
         let mut program_ids = BTreeSet::new();
         for (index, program) in self.programs.iter().enumerate() {
             let path = format!("material_document.programs[{index}]");
@@ -45,6 +72,11 @@ impl MaterialAuthoringDocument {
                 ));
             }
             append_prefixed_report(&mut report, &path, program.validation_report());
+            if let Err(aestra_compiler::MaterialCompileError::Validation(compile_report)) =
+                MaterialCompiler.compile_with_functions(program, &functions)
+            {
+                append_prefixed_report(&mut report, &path, compile_report);
+            }
         }
 
         for (index, instance) in self.effect.material_instances.iter().enumerate() {
@@ -95,6 +127,7 @@ pub enum MaterialOutputSocket {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MaterialExpressionInput {
+    FunctionArgument(MaterialFunctionInputId),
     Left,
     Right,
     Start,
@@ -648,6 +681,14 @@ pub(crate) fn rewire_expression(
     source: MaterialExpressionId,
 ) -> Result<MaterialExpressionId, MaterialCommandError> {
     let target = match (expression, input) {
+        (
+            MaterialExpressionKind::FunctionCall { arguments, .. },
+            MaterialExpressionInput::FunctionArgument(function_input),
+        ) => arguments.get_mut(&function_input).ok_or(
+            MaterialCommandError::InvalidExpressionInput {
+                input: MaterialExpressionInput::FunctionArgument(function_input),
+            },
+        )?,
         (MaterialExpressionKind::Add(left, _), MaterialExpressionInput::Left)
         | (MaterialExpressionKind::Subtract(left, _), MaterialExpressionInput::Left)
         | (MaterialExpressionKind::Multiply(left, _), MaterialExpressionInput::Left)

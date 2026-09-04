@@ -97,8 +97,9 @@ impl MaterialInspector {
         let instance = instance_index.map(|index| &document.effect.material_instances[index]);
         let diagnostics = target_diagnostics(document, program_index, instance_index);
         let compiler = MaterialCompiler;
-        let ir = compiler.compile(program).ok();
-        let graph = compiler.project_graph(program, ir.as_ref());
+        let functions = document.material_function_library();
+        let ir = compiler.compile_with_functions(program, &functions).ok();
+        let graph = compiler.project_graph_with_functions(program, ir.as_ref(), &functions);
         let stack = compiler.project_stack(program).ok();
         let operations = stack.as_ref().map_or_else(Vec::new, |projection| {
             operation_availability(&compiler, program, projection)

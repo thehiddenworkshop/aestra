@@ -13,11 +13,11 @@ use aestra_core::{
     AssetId, BlendMode, EffectAsset, EffectParameter, Emitter, MaterialExpressionId, MaterialId,
     MaterialParameterId, MaterialProgramId, ParameterId, RendererId, Value,
     material::{
-        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
-        MaterialInstance, MaterialParameter, MaterialParameterValue, MaterialProgram,
-        MaterialProgramRef, MaterialRenderState, MaterialSamplerDescriptor,
-        MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
-        MaterialVectorComponent,
+        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialFunction,
+        MaterialFunctionRef, MaterialInput, MaterialInstance, MaterialParameter,
+        MaterialParameterValue, MaterialProgram, MaterialProgramRef, MaterialRenderState,
+        MaterialSamplerDescriptor, MaterialTextureColorSpace, MaterialTextureDescriptor,
+        MaterialValue, MaterialValueType, MaterialVectorComponent,
     },
 };
 use std::collections::BTreeMap;
@@ -2607,6 +2607,77 @@ fn material_graph_node_tool_creates_connects_and_undoes_one_semantic_edit() {
     assert!(document.programs[0].inline_constants.contains(&inline));
     history.undo(&mut document).unwrap().unwrap();
     assert_eq!(document, before);
+}
+
+#[test]
+fn project_function_call_creation_and_signature_rewiring_are_transactional() {
+    let function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+    ))
+    .unwrap();
+    let mut document = authoring_document();
+    let mut program = MaterialProgram::additive_sprite("Function authoring");
+    program.id = MaterialProgramId::from_u128(0x68f0);
+    let source = program.outputs.alpha;
+    let output = function.outputs[0].id;
+    let source_input = function.inputs[0].id;
+    let threshold_input = function.inputs[1].id;
+    document.programs.push(program);
+    document.material_functions.push(function.clone());
+
+    let create = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::CreateMaterialGraphNode {
+            program: MaterialProgramId::from_u128(0x68f0),
+            kind: MaterialGraphCreateKind::FunctionCall {
+                function: MaterialFunctionRef::Project(function.id),
+                output,
+            },
+            source: Some(source),
+            target: Some(MaterialConnectionTarget::ProgramOutput(
+                MaterialOutputSocket::Alpha,
+            )),
+        },
+    )
+    .unwrap();
+    let call = create.created_expressions[0];
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, create.transaction).unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == call)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::FunctionCall { arguments, .. })
+            if arguments[&source_input] == source
+    ));
+
+    let rewire = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ConnectMaterialExpression {
+            program: MaterialProgramId::from_u128(0x68f0),
+            source,
+            target: MaterialConnectionTarget::ExpressionInput {
+                expression: call,
+                input: MaterialExpressionInput::FunctionArgument(threshold_input),
+            },
+        },
+    )
+    .unwrap();
+    let before_rewire = document.clone();
+    history.execute(&mut document, rewire.transaction).unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == call)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::FunctionCall { arguments, .. })
+            if arguments[&threshold_input] == source
+    ));
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before_rewire);
 }
 
 #[test]

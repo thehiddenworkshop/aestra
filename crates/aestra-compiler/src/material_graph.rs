@@ -1,12 +1,12 @@
 //! Backend-neutral, read-only projection of a semantic material program as a graph.
 
 use crate::{
-    MaterialCompileError, MaterialCompiler, MaterialIrProgram, MaterialIrValueId,
-    MaterialStackModifierKind, material_stack::append_default_modifier,
+    MaterialCompileError, MaterialCompiler, MaterialFunctionLibrary, MaterialIrProgram,
+    MaterialIrValueId, MaterialStackModifierKind, material_stack::append_default_modifier,
 };
 use aestra_core::{
-    MaterialExpressionId, MaterialFunctionInputId, MaterialParameterId, MaterialProgramId,
-    ValidationReport,
+    MaterialExpressionId, MaterialFunctionInputId, MaterialFunctionOutputId, MaterialParameterId,
+    MaterialProgramId, ValidationReport,
     material::{
         MaterialExpression, MaterialExpressionDomain, MaterialExpressionKind, MaterialFunctionRef,
         MaterialInput, MaterialProgram, MaterialValue, MaterialValueType, MaterialVectorComponent,
@@ -103,13 +103,20 @@ pub enum MaterialGraphCreateKind {
     Constant(MaterialValueType),
     Input(MaterialInput),
     Parameter(MaterialParameterId),
+    FunctionCall {
+        function: MaterialFunctionRef,
+        output: MaterialFunctionOutputId,
+    },
     Function(MaterialGraphFunction),
     ExtractComponent(MaterialVectorComponent),
 }
 
 impl MaterialGraphCreateKind {
     pub const fn consumes_source(self) -> bool {
-        matches!(self, Self::Function(_) | Self::ExtractComponent(_))
+        matches!(
+            self,
+            Self::FunctionCall { .. } | Self::Function(_) | Self::ExtractComponent(_)
+        )
     }
 }
 
@@ -142,6 +149,15 @@ pub enum MaterialGraphNodeCreationError {
     TextureParameterMissing,
     #[error("texture constants are resources and cannot be created as literal graph nodes")]
     TextureConstantUnsupported,
+    #[error("material function {function:?} is unavailable")]
+    FunctionUnavailable { function: MaterialFunctionRef },
+    #[error("material function {function:?} has no output {output}")]
+    FunctionOutputUnavailable {
+        function: MaterialFunctionRef,
+        output: MaterialFunctionOutputId,
+    },
+    #[error("material function input '{input}' requires a resource connection")]
+    FunctionInputDefaultUnavailable { input: String },
 }
 
 const MATERIAL_INPUTS: [MaterialInput; 27] = [
@@ -199,6 +215,9 @@ const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 18] = [
 pub struct MaterialGraphPort {
     /// Stable semantic socket name within the node.
     pub name: String,
+    /// Stable function signature identity when this is a function-call input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function_input: Option<MaterialFunctionInputId>,
     pub source: MaterialExpressionId,
     /// The connected value's analyzed type. Absent when validation failed.
     pub value_type: Option<MaterialValueType>,
@@ -216,6 +235,9 @@ pub struct MaterialGraphNode {
     pub evaluation_domain: Option<MaterialExpressionDomain>,
     pub disabled: bool,
     pub reachable: bool,
+    /// Function-resolution error associated with this node, when one is available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_message: Option<String>,
     /// Optional link into optimized compiler IR. Multiple expressions can alias one IR value.
     pub ir_value: Option<MaterialIrValueId>,
 }
@@ -240,6 +262,10 @@ pub enum MaterialGraphEdgeTarget {
     Input {
         expression: MaterialExpressionId,
         port: String,
+    },
+    FunctionInput {
+        expression: MaterialExpressionId,
+        input: MaterialFunctionInputId,
     },
     Output(MaterialGraphOutputKind),
 }
@@ -267,6 +293,16 @@ impl MaterialCompiler {
     pub fn graph_node_catalog(
         &self,
         program: &MaterialProgram,
+    ) -> Vec<MaterialGraphNodeDescriptor> {
+        self.graph_node_catalog_with_functions(program, &MaterialFunctionLibrary::default())
+    }
+
+    /// Returns the canonical graph-node catalog, including reusable built-in and project
+    /// material functions from the supplied library.
+    pub fn graph_node_catalog_with_functions(
+        &self,
+        program: &MaterialProgram,
+        functions: &MaterialFunctionLibrary,
     ) -> Vec<MaterialGraphNodeDescriptor> {
         let mut nodes = [
             MaterialValueType::Float,
@@ -312,6 +348,30 @@ impl MaterialCompiler {
                 }),
         );
         nodes.extend(
+            functions
+                .iter_with_references()
+                .flat_map(|(reference, function)| {
+                    function
+                        .outputs
+                        .iter()
+                        .map(move |output| MaterialGraphNodeDescriptor {
+                            kind: MaterialGraphCreateKind::FunctionCall {
+                                function: reference,
+                                output: output.id,
+                            },
+                            label: if function.outputs.len() == 1 {
+                                function.name.clone()
+                            } else {
+                                format!("{} · {}", function.name, output.name)
+                            },
+                            category: match reference {
+                                MaterialFunctionRef::BuiltIn(_) => "Built-in Functions".to_owned(),
+                                MaterialFunctionRef::Project(_) => "Project Functions".to_owned(),
+                            },
+                        })
+                }),
+        );
+        nodes.extend(
             [
                 MaterialVectorComponent::X,
                 MaterialVectorComponent::Y,
@@ -336,6 +396,22 @@ impl MaterialCompiler {
         kind: MaterialGraphCreateKind,
         source: Option<MaterialExpressionId>,
     ) -> Result<MaterialGraphNodeCreationPlan, MaterialGraphNodeCreationError> {
+        self.plan_graph_node_creation_with_functions(
+            program,
+            kind,
+            source,
+            &MaterialFunctionLibrary::default(),
+        )
+    }
+
+    /// Builds a graph node using the complete reusable function environment.
+    pub fn plan_graph_node_creation_with_functions(
+        &self,
+        program: &MaterialProgram,
+        kind: MaterialGraphCreateKind,
+        source: Option<MaterialExpressionId>,
+        functions: &MaterialFunctionLibrary,
+    ) -> Result<MaterialGraphNodeCreationPlan, MaterialGraphNodeCreationError> {
         if let Some(source) = source
             && !program
                 .expressions
@@ -359,6 +435,16 @@ impl MaterialCompiler {
                 &mut replacement,
                 MaterialExpressionKind::Parameter(parameter),
             ),
+            MaterialGraphCreateKind::FunctionCall { function, output } => {
+                append_graph_function_call(
+                    self,
+                    &mut replacement,
+                    functions,
+                    function,
+                    output,
+                    source,
+                )?
+            }
             MaterialGraphCreateKind::Function(function) => {
                 append_graph_function(&mut replacement, function, source)?
             }
@@ -386,7 +472,7 @@ impl MaterialCompiler {
                 .collect::<Vec<_>>();
             replacement.inline_constants.extend(inline_constants);
         }
-        self.compile(&replacement)?;
+        self.compile_with_functions(&replacement, functions)?;
         let created_expressions = replacement.expressions[first_created..]
             .iter()
             .map(|expression| expression.id)
@@ -408,8 +494,28 @@ impl MaterialCompiler {
         program: &MaterialProgram,
         ir: Option<&MaterialIrProgram>,
     ) -> MaterialGraphProjection {
+        self.project_graph_with_functions(program, ir, &MaterialFunctionLibrary::default())
+    }
+
+    /// Projects a program with signature-aware material-function nodes and ports.
+    pub fn project_graph_with_functions(
+        &self,
+        program: &MaterialProgram,
+        ir: Option<&MaterialIrProgram>,
+        functions: &MaterialFunctionLibrary,
+    ) -> MaterialGraphProjection {
         let program = program.normalized();
-        let diagnostics = program.validation_report();
+        let mut diagnostics = program.validation_report();
+        diagnostics
+            .diagnostics
+            .extend(functions.validation_report().diagnostics);
+        if let Err(MaterialCompileError::Validation(report)) =
+            self.compile_with_functions(&program, functions)
+        {
+            diagnostics.diagnostics.extend(report.diagnostics);
+        }
+        diagnostics.diagnostics.sort();
+        diagnostics.diagnostics.dedup();
         let analysis = program.analyze().ok();
         let info = analysis
             .as_ref()
@@ -436,28 +542,91 @@ impl MaterialCompiler {
             .iter()
             .filter(|expression| !inline_constants.contains(&expression.id))
             .map(|expression| {
-                let inputs = expression_inputs(&expression.kind)
+                let inputs = expression_ports(&expression.kind, functions)
                     .into_iter()
-                    .map(|(name, source)| {
+                    .map(|(name, source, function_input)| {
                         let source_info = info.get(&source);
+                        let ir_info = ir_values
+                            .and_then(|values| values.get(&source))
+                            .and_then(|value| ir.and_then(|ir| ir.value(*value)));
+                        let signature_type = function_input.and_then(|input| {
+                            let MaterialExpressionKind::FunctionCall { function, .. } =
+                                &expression.kind
+                            else {
+                                return None;
+                            };
+                            functions
+                                .get(*function)
+                                .and_then(|function| {
+                                    function
+                                        .inputs
+                                        .iter()
+                                        .find(|candidate| candidate.id == input)
+                                })
+                                .map(|input| input.value_type)
+                        });
                         MaterialGraphPort {
-                            name: name.into(),
+                            name,
+                            function_input,
                             source,
-                            value_type: source_info.map(|info| info.value_type),
-                            evaluation_domain: source_info.map(|info| info.evaluation_domain),
+                            value_type: signature_type.or_else(|| {
+                                source_info
+                                    .map(|info| info.value_type)
+                                    .or_else(|| ir_info.map(|info| info.value_type))
+                            }),
+                            evaluation_domain: source_info
+                                .map(|info| info.evaluation_domain)
+                                .or_else(|| ir_info.map(|info| info.evaluation_domain)),
                         }
                     })
                     .collect();
                 let expression_info = info.get(&expression.id);
+                let ir_info = ir_values
+                    .and_then(|values| values.get(&expression.id))
+                    .and_then(|value| ir.and_then(|ir| ir.value(*value)));
+                let signature_type = match &expression.kind {
+                    MaterialExpressionKind::FunctionCall {
+                        function, output, ..
+                    } => functions
+                        .get(*function)
+                        .and_then(|function| {
+                            function
+                                .outputs
+                                .iter()
+                                .find(|candidate| candidate.id == *output)
+                        })
+                        .map(|output| output.value_type),
+                    _ => None,
+                };
+                let validation_message = match &expression.kind {
+                    MaterialExpressionKind::FunctionCall { function, .. } => diagnostics
+                        .diagnostics
+                        .iter()
+                        .find(|diagnostic| {
+                            let id = function.id().to_string();
+                            diagnostic.path.contains(&expression.id.to_string())
+                                || diagnostic.path.contains(&id)
+                                || diagnostic.message.contains(&id)
+                        })
+                        .map(|diagnostic| diagnostic.message.clone()),
+                    _ => None,
+                };
                 MaterialGraphNode {
                     expression: expression.id,
                     kind: node_kind(&expression.kind),
-                    label: node_label(&expression.kind, &program),
+                    label: node_label(&expression.kind, &program, functions),
                     inputs,
-                    value_type: expression_info.map(|info| info.value_type),
-                    evaluation_domain: expression_info.map(|info| info.evaluation_domain),
+                    value_type: signature_type.or_else(|| {
+                        expression_info
+                            .map(|info| info.value_type)
+                            .or_else(|| ir_info.map(|info| info.value_type))
+                    }),
+                    evaluation_domain: expression_info
+                        .map(|info| info.evaluation_domain)
+                        .or_else(|| ir_info.map(|info| info.evaluation_domain)),
                     disabled: disabled.contains(&expression.id),
                     reachable: reachable.contains(&expression.id),
+                    validation_message,
                     ir_value: ir_values
                         .and_then(|values| values.get(&expression.id))
                         .copied(),
@@ -473,10 +642,16 @@ impl MaterialCompiler {
                     .filter(|port| !inline_constants.contains(&port.source))
                     .map(|port| MaterialGraphEdge {
                         source: port.source,
-                        target: MaterialGraphEdgeTarget::Input {
-                            expression: node.expression,
-                            port: port.name.clone(),
-                        },
+                        target: port.function_input.map_or_else(
+                            || MaterialGraphEdgeTarget::Input {
+                                expression: node.expression,
+                                port: port.name.clone(),
+                            },
+                            |input| MaterialGraphEdgeTarget::FunctionInput {
+                                expression: node.expression,
+                                input,
+                            },
+                        ),
                         value_type: port.value_type,
                         evaluation_domain: port.evaluation_domain,
                     })
@@ -489,11 +664,18 @@ impl MaterialCompiler {
         .into_iter()
         .map(|(kind, source)| {
             let source_info = info.get(&source);
+            let ir_info = ir_values
+                .and_then(|values| values.get(&source))
+                .and_then(|value| ir.and_then(|ir| ir.value(*value)));
             MaterialGraphOutput {
                 kind,
                 source,
-                value_type: source_info.map(|info| info.value_type),
-                evaluation_domain: source_info.map(|info| info.evaluation_domain),
+                value_type: source_info
+                    .map(|info| info.value_type)
+                    .or_else(|| ir_info.map(|info| info.value_type)),
+                evaluation_domain: source_info
+                    .map(|info| info.evaluation_domain)
+                    .or_else(|| ir_info.map(|info| info.evaluation_domain)),
                 ir_value: ir_values.and_then(|values| values.get(&source)).copied(),
             }
         })
@@ -525,6 +707,88 @@ fn constant_label(value_type: MaterialValueType) -> &'static str {
         MaterialValueType::Bool => "Boolean",
         MaterialValueType::Texture2D(_) => "Texture",
     }
+}
+
+fn append_graph_function_call(
+    compiler: &MaterialCompiler,
+    program: &mut MaterialProgram,
+    functions: &MaterialFunctionLibrary,
+    reference: MaterialFunctionRef,
+    output: MaterialFunctionOutputId,
+    source: Option<MaterialExpressionId>,
+) -> Result<MaterialExpressionId, MaterialGraphNodeCreationError> {
+    let function =
+        functions
+            .get(reference)
+            .ok_or(MaterialGraphNodeCreationError::FunctionUnavailable {
+                function: reference,
+            })?;
+    if !function
+        .outputs
+        .iter()
+        .any(|candidate| candidate.id == output)
+    {
+        return Err(MaterialGraphNodeCreationError::FunctionOutputUnavailable {
+            function: reference,
+            output,
+        });
+    }
+    let inputs = function.inputs.clone();
+    let source_type = source.and_then(|source| {
+        compiler
+            .compile_with_functions(program, functions)
+            .ok()
+            .and_then(|ir| {
+                ir.source_map
+                    .values
+                    .get(&source)
+                    .copied()
+                    .map(|id| (ir, id))
+            })
+            .and_then(|(ir, id)| ir.value(id).map(|value| value.value_type))
+    });
+    let source_input = source.and_then(|_| {
+        source_type.and_then(|source_type| {
+            inputs
+                .iter()
+                .find(|input| input.value_type == source_type)
+                .map(|input| input.id)
+        })
+    });
+    if let Some(source) = source
+        && source_input.is_none()
+    {
+        return Err(MaterialGraphNodeCreationError::IncompatibleSource {
+            kind: MaterialGraphCreateKind::FunctionCall {
+                function: reference,
+                output,
+            },
+            expression: source,
+        });
+    }
+
+    let mut arguments = BTreeMap::new();
+    for input in inputs {
+        let expression = if Some(input.id) == source_input {
+            source.expect("a selected function input requires a source")
+        } else {
+            let value = default_value(input.value_type, false).ok_or_else(|| {
+                MaterialGraphNodeCreationError::FunctionInputDefaultUnavailable {
+                    input: input.name.clone(),
+                }
+            })?;
+            append_graph_constant(program, value)
+        };
+        arguments.insert(input.id, expression);
+    }
+    Ok(append_graph_expression(
+        program,
+        MaterialExpressionKind::FunctionCall {
+            function: reference,
+            arguments,
+            output,
+        },
+    ))
 }
 
 fn append_graph_function(
@@ -817,7 +1081,11 @@ fn node_kind(kind: &MaterialExpressionKind) -> MaterialGraphNodeKind {
     MaterialGraphNodeKind::Function(function)
 }
 
-fn node_label(kind: &MaterialExpressionKind, program: &MaterialProgram) -> String {
+fn node_label(
+    kind: &MaterialExpressionKind,
+    program: &MaterialProgram,
+    functions: &MaterialFunctionLibrary,
+) -> String {
     match kind {
         MaterialExpressionKind::Constant(value) => format!("Constant · {value:?}"),
         MaterialExpressionKind::Input(input) => format!("{input:?}"),
@@ -828,9 +1096,10 @@ fn node_label(kind: &MaterialExpressionKind, program: &MaterialProgram) -> Strin
             .map(|parameter| parameter.name.clone())
             .unwrap_or_else(|| format!("Parameter {id}")),
         MaterialExpressionKind::FunctionInput(id) => format!("Function input {id}"),
-        MaterialExpressionKind::FunctionCall { function, .. } => {
-            format!("Function {}", function.id())
-        }
+        MaterialExpressionKind::FunctionCall { function, .. } => functions
+            .get(*function)
+            .map(|function| function.name.clone())
+            .unwrap_or_else(|| format!("Missing function {}", function.id())),
         MaterialExpressionKind::ExtractComponent { component, .. } => {
             format!("Extract {component:?}")
         }
@@ -842,6 +1111,43 @@ fn node_label(kind: &MaterialExpressionKind, program: &MaterialProgram) -> Strin
             }
         ),
     }
+}
+
+fn expression_ports(
+    kind: &MaterialExpressionKind,
+    functions: &MaterialFunctionLibrary,
+) -> Vec<(
+    String,
+    MaterialExpressionId,
+    Option<MaterialFunctionInputId>,
+)> {
+    if let MaterialExpressionKind::FunctionCall {
+        function,
+        arguments,
+        ..
+    } = kind
+    {
+        if let Some(function) = functions.get(*function) {
+            return function
+                .inputs
+                .iter()
+                .filter_map(|input| {
+                    arguments
+                        .get(&input.id)
+                        .copied()
+                        .map(|source| (input.name.clone(), source, Some(input.id)))
+                })
+                .collect();
+        }
+        return arguments
+            .iter()
+            .map(|(&input, &source)| (format!("Missing input {input}"), source, Some(input)))
+            .collect();
+    }
+    expression_inputs(kind)
+        .into_iter()
+        .map(|(name, source)| (name.to_owned(), source, None))
+        .collect()
 }
 
 fn expression_inputs(kind: &MaterialExpressionKind) -> Vec<(&'static str, MaterialExpressionId)> {

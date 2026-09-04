@@ -385,8 +385,8 @@ mod tests {
         assert_eq!(graph.outputs.len(), 2);
         assert!(graph.nodes.iter().any(|node| matches!(
             node.kind,
-            aestra_compiler::MaterialGraphNodeKind::Function(
-                aestra_compiler::MaterialGraphFunction::Fresnel
+            aestra_compiler::MaterialGraphNodeKind::FunctionCall(
+                aestra_core::material::MaterialFunctionRef::BuiltIn(_)
             )
         )));
 

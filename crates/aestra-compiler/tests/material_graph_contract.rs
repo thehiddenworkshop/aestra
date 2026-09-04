@@ -1,12 +1,12 @@
 use aestra_compiler::{
-    MaterialCompiler, MaterialGraphCreateKind, MaterialGraphEdgeTarget, MaterialGraphFunction,
-    MaterialGraphNodeKind, MaterialGraphOutputKind,
+    MaterialCompiler, MaterialFunctionLibrary, MaterialGraphCreateKind, MaterialGraphEdgeTarget,
+    MaterialGraphFunction, MaterialGraphNodeKind, MaterialGraphOutputKind,
 };
 use aestra_core::{
     MaterialExpressionId,
     material::{
-        MaterialExpression, MaterialExpressionKind, MaterialInput, MaterialProgram, MaterialValue,
-        MaterialValueType,
+        MaterialExpression, MaterialExpressionKind, MaterialFunction, MaterialFunctionRef,
+        MaterialInput, MaterialProgram, MaterialValue, MaterialValueType,
     },
 };
 
@@ -77,6 +77,78 @@ fn graph_projection_is_deterministic_typed_and_source_mapped() {
         projection,
         compiler.project_graph(&reordered, Some(&compiler.compile(&reordered).unwrap()))
     );
+}
+
+#[test]
+fn reusable_functions_are_catalogued_created_and_projected_with_typed_signature_ports() {
+    let project_function = MaterialFunction::from_ron(include_str!(
+        "../../../assets/materials/dissolve_edge.aestra.material-function.ron"
+    ))
+    .expect("bundled project function should parse");
+    let functions = MaterialFunctionLibrary::new([project_function.clone()]);
+    let program = MaterialProgram::additive_sprite("Function graph");
+    let compiler = MaterialCompiler;
+    let catalog = compiler.graph_node_catalog_with_functions(&program, &functions);
+
+    assert!(
+        catalog
+            .iter()
+            .any(|node| { node.label == "Fresnel Rim" && node.category == "Built-in Functions" })
+    );
+    let dissolve = catalog
+        .iter()
+        .find(|node| node.label == "Dissolve Edge" && node.category == "Project Functions")
+        .expect("project function should be exposed by the graph catalog");
+    let MaterialGraphCreateKind::FunctionCall { function, output } = dissolve.kind else {
+        panic!("project function catalog entry should create a call")
+    };
+    assert_eq!(function, MaterialFunctionRef::Project(project_function.id));
+
+    let plan = compiler
+        .plan_graph_node_creation_with_functions(
+            &program,
+            dissolve.kind,
+            Some(program.outputs.alpha),
+            &functions,
+        )
+        .expect("typed call should bind its compatible source and create defaults");
+    let ir = compiler
+        .compile_with_functions(&plan.replacement, &functions)
+        .unwrap();
+    let projection =
+        compiler.project_graph_with_functions(&plan.replacement, Some(&ir), &functions);
+    let node = projection
+        .nodes
+        .iter()
+        .find(|node| node.expression == plan.expression)
+        .unwrap();
+    assert_eq!(node.label, "Dissolve Edge");
+    assert_eq!(node.value_type, Some(MaterialValueType::Float));
+    assert_eq!(
+        node.inputs
+            .iter()
+            .map(|port| port.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Source", "Threshold", "Edge width", "Invert"]
+    );
+    assert!(node.inputs.iter().all(|port| port.function_input.is_some()));
+    assert!(projection.edges.iter().any(|edge| matches!(
+        edge.target,
+        MaterialGraphEdgeTarget::FunctionInput { expression, .. }
+            if expression == plan.expression
+    )));
+    assert!(matches!(
+        plan.replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == plan.expression)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::FunctionCall {
+            function: MaterialFunctionRef::Project(id),
+            output: call_output,
+            ..
+        }) if *id == project_function.id && *call_output == output
+    ));
 }
 
 #[test]

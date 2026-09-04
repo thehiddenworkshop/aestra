@@ -3,19 +3,33 @@
 use crate::{MaterialCompileError, MaterialCompiler, MaterialIrProgram};
 use aestra_core::{
     Diagnostic, DiagnosticCode, DiagnosticSeverity, MaterialExpressionId, MaterialFunctionId,
-    MaterialFunctionInputId, ValidationReport,
+    MaterialFunctionInputId, MaterialFunctionOutputId, ValidationReport,
     material::{
-        MaterialExpression, MaterialExpressionKind, MaterialFunction, MaterialFunctionRef,
-        MaterialProgram, MaterialValueType,
+        MaterialExpression, MaterialExpressionKind, MaterialFunction, MaterialFunctionInput,
+        MaterialFunctionOutput, MaterialFunctionRef, MaterialProgram, MaterialSchemaVersion,
+        MaterialValueType,
     },
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Complete typed function environment supplied to material compilation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct MaterialFunctionLibrary {
     built_ins: BTreeMap<MaterialFunctionId, MaterialFunction>,
     project: BTreeMap<MaterialFunctionId, MaterialFunction>,
+}
+
+impl Default for MaterialFunctionLibrary {
+    fn default() -> Self {
+        let mut library = Self {
+            built_ins: BTreeMap::new(),
+            project: BTreeMap::new(),
+        };
+        for function in built_in_material_functions() {
+            library.register_builtin(function);
+        }
+        library
+    }
 }
 
 impl MaterialFunctionLibrary {
@@ -48,6 +62,13 @@ impl MaterialFunctionLibrary {
 
     pub fn iter(&self) -> impl Iterator<Item = &MaterialFunction> {
         self.built_ins.values().chain(self.project.values())
+    }
+
+    /// Iterates the complete catalog while preserving the reference namespace used by calls.
+    pub fn iter_with_references(
+        &self,
+    ) -> impl Iterator<Item = (MaterialFunctionRef, &MaterialFunction)> {
+        self.entries()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -98,6 +119,70 @@ impl MaterialFunctionLibrary {
                     .map(|(&id, function)| (MaterialFunctionRef::Project(id), function)),
             )
     }
+}
+
+/// Canonical reusable functions shipped by the semantic compiler.
+pub fn built_in_material_functions() -> Vec<MaterialFunction> {
+    let function_id = MaterialFunctionId::from_u128(0xa3574a0000004000800000000000f001);
+    let normal_input = MaterialFunctionInputId::from_u128(0xa3574a0000004000800000000000f011);
+    let view_input = MaterialFunctionInputId::from_u128(0xa3574a0000004000800000000000f012);
+    let power_input = MaterialFunctionInputId::from_u128(0xa3574a0000004000800000000000f013);
+    let normal_expression = MaterialExpressionId::from_u128(0xa3574a0000004000800000000000f021);
+    let view_expression = MaterialExpressionId::from_u128(0xa3574a0000004000800000000000f022);
+    let power_expression = MaterialExpressionId::from_u128(0xa3574a0000004000800000000000f023);
+    let result_expression = MaterialExpressionId::from_u128(0xa3574a0000004000800000000000f024);
+    let output_id = MaterialFunctionOutputId::from_u128(0xa3574a0000004000800000000000f031);
+
+    vec![MaterialFunction {
+        id: function_id,
+        schema_version: MaterialSchemaVersion::CURRENT,
+        name: "Fresnel Rim".to_owned(),
+        inputs: vec![
+            MaterialFunctionInput {
+                id: normal_input,
+                name: "Normal".to_owned(),
+                value_type: MaterialValueType::Vec3,
+            },
+            MaterialFunctionInput {
+                id: view_input,
+                name: "View direction".to_owned(),
+                value_type: MaterialValueType::Vec3,
+            },
+            MaterialFunctionInput {
+                id: power_input,
+                name: "Power".to_owned(),
+                value_type: MaterialValueType::Float,
+            },
+        ],
+        outputs: vec![MaterialFunctionOutput {
+            id: output_id,
+            name: "Factor".to_owned(),
+            value_type: MaterialValueType::Float,
+            expression: result_expression,
+        }],
+        expressions: vec![
+            MaterialExpression {
+                id: normal_expression,
+                kind: MaterialExpressionKind::FunctionInput(normal_input),
+            },
+            MaterialExpression {
+                id: view_expression,
+                kind: MaterialExpressionKind::FunctionInput(view_input),
+            },
+            MaterialExpression {
+                id: power_expression,
+                kind: MaterialExpressionKind::FunctionInput(power_input),
+            },
+            MaterialExpression {
+                id: result_expression,
+                kind: MaterialExpressionKind::Fresnel {
+                    normal: normal_expression,
+                    view: view_expression,
+                    power: power_expression,
+                },
+            },
+        ],
+    }]
 }
 
 impl MaterialCompiler {
