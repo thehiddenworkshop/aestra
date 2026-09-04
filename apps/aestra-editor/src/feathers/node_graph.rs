@@ -1280,7 +1280,7 @@ fn graph_port_row_node(side: GraphSocketSide) -> Node {
         ),
         GraphSocketSide::Output => (
             FlexDirection::RowReverse,
-            JustifyContent::FlexEnd,
+            JustifyContent::FlexStart,
             PositionType::Absolute,
             Val::Px(5.0),
             Val::Px(0.0),
@@ -1452,6 +1452,6 @@ mod tests {
         assert_eq!(output.top, Val::Px(5.0));
         assert_eq!(output.right, Val::Px(0.0));
         assert_eq!(output.flex_direction, FlexDirection::RowReverse);
-        assert_eq!(output.justify_content, JustifyContent::FlexEnd);
+        assert_eq!(output.justify_content, JustifyContent::FlexStart);
     }
 }

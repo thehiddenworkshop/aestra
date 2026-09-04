@@ -71,12 +71,17 @@ impl Plugin for EditorMaterialGraphPlugin {
                     handle_material_graph_context_actions,
                     material_graph_keyboard_input,
                     handle_material_graph_actions,
-                    attach_material_graph_wire_materials,
                 ),
             )
             .add_systems(
                 PostUpdate,
-                update_material_graph_wires.after(bevy::transform::TransformSystems::Propagate),
+                (
+                    attach_material_graph_wire_materials,
+                    ApplyDeferred,
+                    update_material_graph_wires,
+                )
+                    .chain()
+                    .after(bevy::transform::TransformSystems::Propagate),
             );
     }
 }
@@ -535,11 +540,17 @@ fn select_material_graph_canvas(
         })
         .min_by(|left, right| left.0.total_cmp(&right.0))
         .map(|(_, connection)| connection);
+    let changed = selection.program != Some(marker.program)
+        || !selection.expressions.is_empty()
+        || selection.connection != selected_wire
+        || inspector.selected.is_some();
     selection.program = Some(marker.program);
     selection.expressions.clear();
     selection.connection = selected_wire;
     inspector.selected = None;
-    session.ui_revision += 1;
+    if changed {
+        session.ui_revision += 1;
+    }
     click.propagate(false);
 }
 
