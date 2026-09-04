@@ -2,8 +2,8 @@
 
 use crate::{MaterialAuthoringDocument, MaterialInsertionPoint};
 use aestra_compiler::{
-    MaterialCompiler, MaterialControlCatalog, MaterialGraphProjection, MaterialStackModifierKind,
-    MaterialStackPresetKind, MaterialStackProjection,
+    MaterialCompiler, MaterialControlCatalog, MaterialGraphProjection, MaterialPresetDescriptor,
+    MaterialStackModifierKind, MaterialStackProjection,
 };
 use aestra_core::{
     MaterialId, MaterialProgramId, ValidationReport,
@@ -27,9 +27,9 @@ pub struct MaterialOperationAvailability {
 }
 
 /// One compiler-approved preset and stable insertion edge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MaterialPresetAvailability {
-    pub preset: MaterialStackPresetKind,
+    pub preset: MaterialPresetDescriptor,
     pub placement: MaterialInsertionPoint,
 }
 
@@ -185,13 +185,19 @@ fn preset_availability(
     let MaterialStackProjection::Stack { entries } = projection else {
         return Vec::new();
     };
+    let catalog = compiler.material_preset_catalog();
     compiler
         .stack_preset_targets(program)
         .unwrap_or_default()
         .into_iter()
-        .map(|target| MaterialPresetAvailability {
-            preset: target.preset,
-            placement: stable_placement(entries, target.index),
+        .filter_map(|target| {
+            catalog
+                .get(target.preset)
+                .cloned()
+                .map(|preset| MaterialPresetAvailability {
+                    preset,
+                    placement: stable_placement(entries, target.index),
+                })
         })
         .collect()
 }

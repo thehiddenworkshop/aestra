@@ -2,7 +2,7 @@
 
 use crate::{MaterialCompileError, MaterialCompiler};
 use aestra_core::{
-    MaterialExpressionId,
+    MaterialExpressionId, MaterialPresetId,
     material::{
         MaterialExpression, MaterialExpressionKind, MaterialInput, MaterialProgram, MaterialValue,
         MaterialValueType,
@@ -147,51 +147,201 @@ pub enum MaterialExpressionWrapError {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MaterialStackPresetKind {
-    UvDrift,
-    SoftDissolve,
-    ContrastShape,
+pub const MATERIAL_PRESET_UV_DRIFT: MaterialPresetId =
+    MaterialPresetId::from_u128(0xA357_0000_0000_4000_8000_0000_0000_0001);
+pub const MATERIAL_PRESET_SOFT_DISSOLVE: MaterialPresetId =
+    MaterialPresetId::from_u128(0xA357_0000_0000_4000_8000_0000_0000_0002);
+pub const MATERIAL_PRESET_CONTRAST_SHAPE: MaterialPresetId =
+    MaterialPresetId::from_u128(0xA357_0000_0000_4000_8000_0000_0000_0003);
+pub const MATERIAL_PRESET_DISSOLVE: MaterialPresetId =
+    MaterialPresetId::from_u128(0xA357_0000_0000_4000_8000_0000_0000_0004);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum MaterialPresetCategory {
+    Motion,
+    Masking,
+    Shaping,
 }
 
-impl MaterialStackPresetKind {
-    pub const ALL: [Self; 3] = [Self::UvDrift, Self::SoftDissolve, Self::ContrastShape];
-
+impl MaterialPresetCategory {
     pub const fn display_name(self) -> &'static str {
         match self {
-            Self::UvDrift => "UV Drift",
-            Self::SoftDissolve => "Soft Dissolve",
-            Self::ContrastShape => "Contrast Shape",
+            Self::Motion => "Motion",
+            Self::Masking => "Masking",
+            Self::Shaping => "Shaping",
         }
     }
+}
 
-    pub const fn modifiers(self) -> &'static [MaterialStackModifierKind] {
-        match self {
-            Self::UvDrift => &[
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialPresetDefault {
+    pub step: usize,
+    pub property: MaterialStackProperty,
+    pub value: MaterialValue,
+}
+
+/// Compiler-owned description and semantic recipe for one reusable material preset.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialPresetDescriptor {
+    pub id: MaterialPresetId,
+    pub display_name: String,
+    pub description: String,
+    pub category: MaterialPresetCategory,
+    pub tags: Vec<String>,
+    pub modifiers: Vec<MaterialStackModifierKind>,
+    pub defaults: Vec<MaterialPresetDefault>,
+}
+
+/// Extensible catalog shared by compiler validation, tools, and editor presentation.
+#[derive(Debug, Clone, Default)]
+pub struct MaterialPresetCatalog {
+    presets: BTreeMap<MaterialPresetId, MaterialPresetDescriptor>,
+}
+
+impl MaterialPresetCatalog {
+    pub fn builtin() -> Self {
+        let mut catalog = Self::default();
+        for preset in builtin_material_presets() {
+            catalog.register(preset);
+        }
+        catalog
+    }
+
+    pub fn register(
+        &mut self,
+        preset: MaterialPresetDescriptor,
+    ) -> Option<MaterialPresetDescriptor> {
+        self.presets.insert(preset.id, preset)
+    }
+
+    pub fn get(&self, id: MaterialPresetId) -> Option<&MaterialPresetDescriptor> {
+        self.presets.get(&id)
+    }
+
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &MaterialPresetDescriptor> {
+        self.presets.values()
+    }
+}
+
+pub fn builtin_material_presets() -> Vec<MaterialPresetDescriptor> {
+    vec![
+        MaterialPresetDescriptor {
+            id: MATERIAL_PRESET_UV_DRIFT,
+            display_name: "UV Drift".into(),
+            description: "Adds directional UV motion with a subtle scale variation.".into(),
+            category: MaterialPresetCategory::Motion,
+            tags: vec!["animated".into(), "uv".into(), "drift".into()],
+            modifiers: vec![
                 MaterialStackModifierKind::PanUv,
                 MaterialStackModifierKind::ScaleUv,
             ],
-            Self::SoftDissolve => &[
+            defaults: vec![
+                MaterialPresetDefault {
+                    step: 0,
+                    property: MaterialStackProperty::Speed,
+                    value: MaterialValue::Vec2([0.15, 0.05]),
+                },
+                MaterialPresetDefault {
+                    step: 1,
+                    property: MaterialStackProperty::Scale,
+                    value: MaterialValue::Vec2([1.1, 1.1]),
+                },
+            ],
+        },
+        MaterialPresetDescriptor {
+            id: MATERIAL_PRESET_SOFT_DISSOLVE,
+            display_name: "Soft Dissolve".into(),
+            description: "Combines a threshold dissolve with soft scene intersection.".into(),
+            category: MaterialPresetCategory::Masking,
+            tags: vec!["dissolve".into(), "soft-particle".into()],
+            modifiers: vec![
                 MaterialStackModifierKind::Dissolve,
                 MaterialStackModifierKind::SoftParticle,
             ],
-            Self::ContrastShape => &[
+            defaults: vec![
+                MaterialPresetDefault {
+                    step: 0,
+                    property: MaterialStackProperty::Threshold,
+                    value: MaterialValue::Float(0.45),
+                },
+                MaterialPresetDefault {
+                    step: 0,
+                    property: MaterialStackProperty::EdgeWidth,
+                    value: MaterialValue::Float(0.08),
+                },
+                MaterialPresetDefault {
+                    step: 1,
+                    property: MaterialStackProperty::FadeDistance,
+                    value: MaterialValue::Float(0.35),
+                },
+            ],
+        },
+        MaterialPresetDescriptor {
+            id: MATERIAL_PRESET_CONTRAST_SHAPE,
+            display_name: "Contrast Shape".into(),
+            description: "Remaps a signal and applies a smooth contrast threshold.".into(),
+            category: MaterialPresetCategory::Shaping,
+            tags: vec!["contrast".into(), "mask".into(), "threshold".into()],
+            modifiers: vec![
                 MaterialStackModifierKind::Remap,
                 MaterialStackModifierKind::Smoothstep,
             ],
-        }
-    }
+            defaults: vec![
+                MaterialPresetDefault {
+                    step: 0,
+                    property: MaterialStackProperty::InputMinimum,
+                    value: MaterialValue::Float(0.1),
+                },
+                MaterialPresetDefault {
+                    step: 0,
+                    property: MaterialStackProperty::InputMaximum,
+                    value: MaterialValue::Float(0.9),
+                },
+                MaterialPresetDefault {
+                    step: 1,
+                    property: MaterialStackProperty::EdgeMinimum,
+                    value: MaterialValue::Float(0.2),
+                },
+                MaterialPresetDefault {
+                    step: 1,
+                    property: MaterialStackProperty::EdgeMaximum,
+                    value: MaterialValue::Float(0.8),
+                },
+            ],
+        },
+        MaterialPresetDescriptor {
+            id: MATERIAL_PRESET_DISSOLVE,
+            display_name: "Dissolve".into(),
+            description: "Adds an artist-adjustable threshold with a narrow transition edge."
+                .into(),
+            category: MaterialPresetCategory::Masking,
+            tags: vec!["dissolve".into(), "threshold".into(), "transition".into()],
+            modifiers: vec![MaterialStackModifierKind::Dissolve],
+            defaults: vec![
+                MaterialPresetDefault {
+                    step: 0,
+                    property: MaterialStackProperty::Threshold,
+                    value: MaterialValue::Float(0.5),
+                },
+                MaterialPresetDefault {
+                    step: 0,
+                    property: MaterialStackProperty::EdgeWidth,
+                    value: MaterialValue::Float(0.06),
+                },
+            ],
+        },
+    ]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialStackPresetTarget {
     pub index: usize,
-    pub preset: MaterialStackPresetKind,
+    pub preset: MaterialPresetId,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MaterialStackPresetPlan {
-    pub preset: MaterialStackPresetKind,
+    pub preset: MaterialPresetId,
     pub index: usize,
     pub expressions: Vec<MaterialExpressionId>,
     pub replacement: MaterialProgram,
@@ -306,9 +456,11 @@ pub enum MaterialStackEditError {
         "preset {preset:?} cannot be inserted at stack index {index} without changing graph meaning"
     )]
     IncompatiblePreset {
-        preset: MaterialStackPresetKind,
+        preset: MaterialPresetId,
         index: usize,
     },
+    #[error("material preset {preset} is not registered")]
+    UnknownPreset { preset: MaterialPresetId },
     #[error("material modifier {expression} cannot be removed without changing graph meaning")]
     IncompatibleRemoval { expression: MaterialExpressionId },
     #[error("material modifier {expression} cannot be {operation} without changing graph meaning")]
@@ -328,6 +480,10 @@ pub enum MaterialStackEditError {
 }
 
 impl MaterialCompiler {
+    pub fn material_preset_catalog(&self) -> MaterialPresetCatalog {
+        MaterialPresetCatalog::builtin()
+    }
+
     /// Creates one typed wrapper with useful defaults around `source` without changing a consumer.
     /// This remains valid for branched graphs; the authoring layer chooses and rewires one edge.
     pub fn plan_expression_wrap(
@@ -555,12 +711,25 @@ impl MaterialCompiler {
         &self,
         program: &MaterialProgram,
     ) -> Result<Vec<MaterialStackPresetTarget>, MaterialStackEditError> {
+        let catalog = self.material_preset_catalog();
+        self.stack_preset_targets_with_catalog(program, &catalog)
+    }
+
+    /// Reports compatible preset/edge pairs from an explicit extensible catalog.
+    pub fn stack_preset_targets_with_catalog(
+        &self,
+        program: &MaterialProgram,
+        catalog: &MaterialPresetCatalog,
+    ) -> Result<Vec<MaterialStackPresetTarget>, MaterialStackEditError> {
         let entries = editable_stack_entries(self.project_stack(program)?)?;
         let mut targets = Vec::new();
         for index in 0..=entries.len() {
-            for preset in MaterialStackPresetKind::ALL {
+            for preset in catalog.iter() {
                 if plan_stack_preset_inner(program, &entries, preset, index).is_some() {
-                    targets.push(MaterialStackPresetTarget { index, preset });
+                    targets.push(MaterialStackPresetTarget {
+                        index,
+                        preset: preset.id,
+                    });
                 }
             }
         }
@@ -571,15 +740,31 @@ impl MaterialCompiler {
     pub fn plan_stack_insert_preset(
         &self,
         program: &MaterialProgram,
-        preset: MaterialStackPresetKind,
+        preset: MaterialPresetId,
+        index: usize,
+    ) -> Result<MaterialStackPresetPlan, MaterialStackEditError> {
+        let catalog = self.material_preset_catalog();
+        self.plan_stack_insert_preset_with_catalog(program, &catalog, preset, index)
+    }
+
+    /// Inserts a preset resolved from an explicit extensible catalog.
+    pub fn plan_stack_insert_preset_with_catalog(
+        &self,
+        program: &MaterialProgram,
+        catalog: &MaterialPresetCatalog,
+        preset: MaterialPresetId,
         index: usize,
     ) -> Result<MaterialStackPresetPlan, MaterialStackEditError> {
         let entries = editable_stack_entries(self.project_stack(program)?)?;
         if index > entries.len() {
             return Err(MaterialStackEditError::TargetOutOfBounds { index });
         }
-        let (expressions, replacement) = plan_stack_preset_inner(program, &entries, preset, index)
-            .ok_or(MaterialStackEditError::IncompatiblePreset { preset, index })?;
+        let descriptor = catalog
+            .get(preset)
+            .ok_or(MaterialStackEditError::UnknownPreset { preset })?;
+        let (expressions, replacement) =
+            plan_stack_preset_inner(program, &entries, descriptor, index)
+                .ok_or(MaterialStackEditError::IncompatiblePreset { preset, index })?;
         Ok(MaterialStackPresetPlan {
             preset,
             index,
@@ -864,13 +1049,13 @@ fn editable_stack_entries(
 fn plan_stack_preset_inner(
     program: &MaterialProgram,
     entries: &[MaterialStackEntry],
-    preset: MaterialStackPresetKind,
+    preset: &MaterialPresetDescriptor,
     index: usize,
 ) -> Option<(Vec<MaterialExpressionId>, MaterialProgram)> {
     let mut replacement = program.clone();
     let mut projected = entries.to_vec();
-    let mut expressions = Vec::with_capacity(preset.modifiers().len());
-    for (offset, kind) in preset.modifiers().iter().copied().enumerate() {
+    let mut expressions = Vec::with_capacity(preset.modifiers.len());
+    for (offset, kind) in preset.modifiers.iter().copied().enumerate() {
         let insertion_index = index + offset;
         let (expression, next) =
             plan_stack_insert_inner(&replacement, &projected, kind, insertion_index)?;
@@ -897,76 +1082,12 @@ fn plan_stack_preset_inner(
 
 fn apply_preset_defaults(
     program: &mut MaterialProgram,
-    preset: MaterialStackPresetKind,
+    preset: &MaterialPresetDescriptor,
     expressions: &[MaterialExpressionId],
 ) -> Option<()> {
-    let set = |program: &mut MaterialProgram,
-               expression: MaterialExpressionId,
-               property: MaterialStackProperty,
-               value: MaterialValue| {
-        set_modifier_constant(program, expression, property, value)
-    };
-    match preset {
-        MaterialStackPresetKind::UvDrift => {
-            set(
-                program,
-                expressions[0],
-                MaterialStackProperty::Speed,
-                MaterialValue::Vec2([0.15, 0.05]),
-            )?;
-            set(
-                program,
-                expressions[1],
-                MaterialStackProperty::Scale,
-                MaterialValue::Vec2([1.1, 1.1]),
-            )?;
-        }
-        MaterialStackPresetKind::SoftDissolve => {
-            set(
-                program,
-                expressions[0],
-                MaterialStackProperty::Threshold,
-                MaterialValue::Float(0.45),
-            )?;
-            set(
-                program,
-                expressions[0],
-                MaterialStackProperty::EdgeWidth,
-                MaterialValue::Float(0.08),
-            )?;
-            set(
-                program,
-                expressions[1],
-                MaterialStackProperty::FadeDistance,
-                MaterialValue::Float(0.35),
-            )?;
-        }
-        MaterialStackPresetKind::ContrastShape => {
-            set(
-                program,
-                expressions[0],
-                MaterialStackProperty::InputMinimum,
-                MaterialValue::Float(0.1),
-            )?;
-            set(
-                program,
-                expressions[0],
-                MaterialStackProperty::InputMaximum,
-                MaterialValue::Float(0.9),
-            )?;
-            set(
-                program,
-                expressions[1],
-                MaterialStackProperty::EdgeMinimum,
-                MaterialValue::Float(0.2),
-            )?;
-            set(
-                program,
-                expressions[1],
-                MaterialStackProperty::EdgeMaximum,
-                MaterialValue::Float(0.8),
-            )?;
-        }
+    for default in &preset.defaults {
+        let expression = *expressions.get(default.step)?;
+        set_modifier_constant(program, expression, default.property, default.value.clone())?;
     }
     Some(())
 }

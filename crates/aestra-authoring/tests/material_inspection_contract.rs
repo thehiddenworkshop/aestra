@@ -5,6 +5,7 @@ use aestra_authoring::{
     MaterialInspectionError, MaterialInspectionTarget, MaterialInspector, MaterialOutputSocket,
     MaterialToolCommand,
 };
+use aestra_compiler::{MATERIAL_PRESET_DISSOLVE, MaterialPresetCategory};
 use aestra_core::{
     EffectAsset, Emitter, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId,
     material::{
@@ -109,6 +110,14 @@ fn material_inspection_is_serializable_deterministic_and_non_mutating() {
         !report.operations.is_empty(),
         "valid stack should advertise compiler-approved semantic operations"
     );
+    let dissolve = report
+        .presets
+        .iter()
+        .find(|availability| availability.preset.id == MATERIAL_PRESET_DISSOLVE)
+        .expect("inspection should expose compatible catalog presets with their metadata");
+    assert_eq!(dissolve.preset.display_name, "Dissolve");
+    assert_eq!(dissolve.preset.category, MaterialPresetCategory::Masking);
+    assert!(!dissolve.preset.description.is_empty());
     assert_eq!(
         MaterialInspector::inspect(&document, target).unwrap(),
         report,

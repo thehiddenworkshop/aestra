@@ -405,7 +405,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
   constants, rejects disconnected or unusable selections, persists a project-local function,
   replaces the selection with stable call nodes, preserves the replacement layout, and treats the
   function asset plus graph rewrite as one rollback-safe undo/redo operation.
-- [ ] **Material 16 — semantic preset library.**
+- [ ] **Material 16 — semantic preset library.** The first registry slice is implemented. Presets
+  now use stable semantic IDs and compiler-owned descriptors containing category, description,
+  search tags, an ordered modifier recipe, and editable defaults. UV Drift, Soft Dissolve, and
+  Contrast Shape have migrated from the closed hard-coded enum, and a configurable Dissolve preset
+  exercises the complete catalog → compatibility filtering → authoring transaction → categorized
+  editor option path. Inspection reports expose the same descriptor metadata to AI and CLI clients.
+  Project-local preset assets, richer graph recipes, previews, and the remaining initial preset
+  library are still required to complete this milestone.
 - [ ] **Material 17 — validated custom WESL escape hatch.**
 
 ### Phase F — next-generation tooling

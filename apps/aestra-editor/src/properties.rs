@@ -14,8 +14,8 @@ use aestra_authoring::{
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
     MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, MaterialStackEntry,
-    MaterialStackInsertTarget, MaterialStackMoveTarget, MaterialStackPresetKind,
-    MaterialStackPresetTarget, MaterialStackProjection, MaterialStackProperty, ModuleRegistry,
+    MaterialStackInsertTarget, MaterialStackMoveTarget, MaterialStackPresetTarget,
+    MaterialStackProjection, MaterialStackProperty, ModuleRegistry,
 };
 use aestra_core::material::{
     MaterialCullMode, MaterialDepthTest, MaterialParameterValue, MaterialRenderState,
@@ -24,8 +24,8 @@ use aestra_core::material::{
 use aestra_core::{
     ChoreographyEventId, ChoreographyEventKind, ChoreographyEventPayload, ColorKey, Curve,
     CurveKey, EffectAsset, EffectClip, EffectClipId, EffectParameter, Gradient, MarkerId,
-    MarkerTimeReference, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId,
-    ParameterId, ScalarRange, ValueType, Vec3Curve, Vec3Range,
+    MarkerTimeReference, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialPresetId,
+    MaterialProgramId, ParameterId, ScalarRange, ValueType, Vec3Curve, Vec3Range,
 };
 use bevy::{
     feathers::controls::ButtonVariant,
@@ -234,7 +234,7 @@ pub(crate) enum PropertiesAction {
     },
     InsertSemanticMaterialPreset {
         program: MaterialProgramId,
-        preset: MaterialStackPresetKind,
+        preset: MaterialPresetId,
         placement: MaterialInsertionPoint,
     },
     RemoveSemanticMaterialModifier {

@@ -8,11 +8,11 @@ use crate::{
 use aestra_compiler::{
     MaterialCompileError, MaterialCompiler, MaterialGraphCreateKind, MaterialGraphEdgeTarget,
     MaterialGraphNodeCreationError, MaterialGraphOutputKind, MaterialStackEditError,
-    MaterialStackModifierKind, MaterialStackPresetKind, MaterialStackProjection,
+    MaterialStackModifierKind, MaterialStackProjection,
 };
 use aestra_core::{
     MaterialExpressionId, MaterialFunctionId, MaterialFunctionInputId, MaterialFunctionOutputId,
-    MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
+    MaterialId, MaterialParameterId, MaterialPresetId, MaterialProgramId, ParameterId,
     material::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialFunction,
         MaterialFunctionInput, MaterialFunctionOutput, MaterialFunctionRef, MaterialParameterValue,
@@ -149,7 +149,7 @@ pub enum MaterialToolCommand {
     },
     ApplyMaterialPreset {
         program: MaterialProgramId,
-        preset: MaterialStackPresetKind,
+        preset: MaterialPresetId,
         placement: MaterialInsertionPoint,
     },
     /// Adds an emissive-style edge to the color output without exposing expression identities.
@@ -1016,20 +1016,25 @@ impl MaterialToolPlanner {
     fn plan_apply_material_preset(
         document: &MaterialAuthoringDocument,
         program_id: MaterialProgramId,
-        preset: MaterialStackPresetKind,
+        preset: MaterialPresetId,
         placement: MaterialInsertionPoint,
     ) -> Result<MaterialToolPlan, MaterialToolError> {
         let program = find_program(document, program_id)?;
         let target_index = resolve_insertion_point(program, placement)?;
-        let preset_plan =
-            MaterialCompiler.plan_stack_insert_preset(program, preset, target_index)?;
+        let compiler = MaterialCompiler;
+        let preset_plan = compiler.plan_stack_insert_preset(program, preset, target_index)?;
+        let preset_name = compiler
+            .material_preset_catalog()
+            .get(preset)
+            .map(|descriptor| descriptor.display_name.clone())
+            .unwrap_or_else(|| preset.to_string());
         let command = MaterialToolCommand::ApplyMaterialPreset {
             program: program_id,
             preset,
             placement,
         };
         let transaction = MaterialTransaction::single(
-            format!("Apply {} preset", preset.display_name()),
+            format!("Apply {preset_name} preset"),
             MaterialCommand::ReplaceMaterialProgram {
                 id: program_id,
                 program: preset_plan.replacement,

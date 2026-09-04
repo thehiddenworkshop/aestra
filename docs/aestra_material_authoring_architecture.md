@@ -2333,6 +2333,16 @@ A dissolve, hologram, magic noise, or shield interference algorithm can be reuse
 
 Create reusable high-level building blocks for artists and AI.
 
+### Implementation status
+
+The first catalog-backed slice is implemented. Built-in presets have stable semantic identities and
+compiler-owned descriptors with categories, descriptions, search tags, ordered semantic modifier
+recipes, and editable defaults. UV Drift, Soft Dissolve, and Contrast Shape have migrated from the
+closed preset enum, while Dissolve validates the complete path through compatibility discovery,
+transactional insertion, undo/redo, machine-readable inspection, and categorized editor options.
+Project-local preset assets, graph recipes beyond linear modifier chains, visual previews, and the
+rest of the initial library remain to complete the milestone.
+
 ### Initial presets
 
 ```text

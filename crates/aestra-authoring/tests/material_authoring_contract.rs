@@ -6,8 +6,9 @@ use aestra_authoring::{
     MaterialToolPlanner, MaterialTransaction,
 };
 use aestra_compiler::{
-    MaterialCompiler, MaterialGraphCreateKind, MaterialGraphFunction, MaterialStackModifierKind,
-    MaterialStackPresetKind, MaterialStackProjection,
+    MATERIAL_PRESET_SOFT_DISSOLVE, MATERIAL_PRESET_UV_DRIFT, MaterialCompiler,
+    MaterialGraphCreateKind, MaterialGraphFunction, MaterialStackModifierKind,
+    MaterialStackProjection,
 };
 use aestra_core::{
     AssetId, BlendMode, EffectAsset, EffectParameter, Emitter, MaterialExpressionId,
@@ -1944,15 +1945,16 @@ fn material_preset_tool_plans_a_valid_reversible_semantic_transaction() {
     document.programs.push(program);
     let before = document.clone();
 
-    let plan = MaterialToolPlanner::plan(
-        &document,
-        MaterialToolCommand::ApplyMaterialPreset {
-            program: program_id,
-            preset: MaterialStackPresetKind::UvDrift,
-            placement: MaterialInsertionPoint::Start,
-        },
-    )
-    .unwrap();
+    let command = MaterialToolCommand::ApplyMaterialPreset {
+        program: program_id,
+        preset: MATERIAL_PRESET_UV_DRIFT,
+        placement: MaterialInsertionPoint::Start,
+    };
+    assert_eq!(
+        ron::from_str::<MaterialToolCommand>(&ron::to_string(&command).unwrap()).unwrap(),
+        command
+    );
+    let plan = MaterialToolPlanner::plan(&document, command).unwrap();
 
     assert_eq!(document, before, "planning must not mutate its input");
     assert_eq!(plan.created_expressions.len(), 2);
@@ -1987,7 +1989,7 @@ fn material_preset_tool_rejects_incompatible_requests_without_mutation() {
         &document,
         MaterialToolCommand::ApplyMaterialPreset {
             program: program_id,
-            preset: MaterialStackPresetKind::SoftDissolve,
+            preset: MATERIAL_PRESET_SOFT_DISSOLVE,
             placement: MaterialInsertionPoint::Start,
         },
     )

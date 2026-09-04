@@ -70,3 +70,4 @@ semantic_id!(MaterialExpressionId);
 semantic_id!(MaterialFunctionId);
 semantic_id!(MaterialFunctionInputId);
 semantic_id!(MaterialFunctionOutputId);
+semantic_id!(MaterialPresetId);

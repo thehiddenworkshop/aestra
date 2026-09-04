@@ -1,8 +1,10 @@
 use aestra_compiler::{
-    MaterialCompiler, MaterialStackEditError, MaterialStackFallbackReason,
+    MATERIAL_PRESET_DISSOLVE, MATERIAL_PRESET_SOFT_DISSOLVE, MATERIAL_PRESET_UV_DRIFT,
+    MaterialCompiler, MaterialPresetCatalog, MaterialPresetCategory, MaterialPresetDefault,
+    MaterialPresetDescriptor, MaterialStackEditError, MaterialStackFallbackReason,
     MaterialStackInsertTarget, MaterialStackModifierKind, MaterialStackMoveError,
-    MaterialStackMoveTarget, MaterialStackPresetKind, MaterialStackPresetTarget,
-    MaterialStackProjection, MaterialStackProperty,
+    MaterialStackMoveTarget, MaterialStackPresetTarget, MaterialStackProjection,
+    MaterialStackProperty,
 };
 use aestra_core::material::{
     MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
@@ -16,7 +18,7 @@ fn texture_type() -> MaterialValueType {
         sampler: MaterialSamplerDescriptor::default(),
     })
 }
-use aestra_core::{AssetId, MaterialExpressionId, MaterialParameterId};
+use aestra_core::{AssetId, MaterialExpressionId, MaterialParameterId, MaterialPresetId};
 
 fn linear_stack_program() -> MaterialProgram {
     let uv = MaterialExpressionId::from_u128(0x5101);
@@ -472,11 +474,11 @@ fn compatible_preset_insertion_is_one_configured_stack_replacement() {
     let targets = MaterialCompiler.stack_preset_targets(&program).unwrap();
     assert!(targets.contains(&MaterialStackPresetTarget {
         index: 0,
-        preset: MaterialStackPresetKind::UvDrift,
+        preset: MATERIAL_PRESET_UV_DRIFT,
     }));
 
     let plan = MaterialCompiler
-        .plan_stack_insert_preset(&program, MaterialStackPresetKind::UvDrift, 0)
+        .plan_stack_insert_preset(&program, MATERIAL_PRESET_UV_DRIFT, 0)
         .unwrap();
     assert_eq!(plan.expressions.len(), 2);
     let MaterialStackProjection::Stack { entries } =
@@ -523,16 +525,93 @@ fn compatible_preset_insertion_is_one_configured_stack_replacement() {
 }
 
 #[test]
+fn builtin_preset_catalog_exposes_stable_searchable_semantic_recipes() {
+    let catalog = MaterialCompiler.material_preset_catalog();
+    assert_eq!(catalog.iter().len(), 4);
+    let dissolve = catalog.get(MATERIAL_PRESET_DISSOLVE).unwrap();
+    assert_eq!(dissolve.display_name, "Dissolve");
+    assert_eq!(dissolve.category, MaterialPresetCategory::Masking);
+    assert!(dissolve.tags.iter().any(|tag| tag == "threshold"));
+    assert_eq!(
+        dissolve.modifiers,
+        vec![MaterialStackModifierKind::Dissolve]
+    );
+    assert!(dissolve.defaults.iter().any(|default| {
+        default.property == MaterialStackProperty::Threshold
+            && default.value == MaterialValue::Float(0.5)
+    }));
+}
+
+#[test]
+fn dissolve_preset_is_compatibility_filtered_and_configured_by_the_catalog_recipe() {
+    let program = linear_stack_program();
+    let target = MaterialCompiler
+        .stack_preset_targets(&program)
+        .unwrap()
+        .into_iter()
+        .find(|target| target.preset == MATERIAL_PRESET_DISSOLVE)
+        .expect("the scalar mask chain accepts the dissolve preset");
+    let plan = MaterialCompiler
+        .plan_stack_insert_preset(&program, MATERIAL_PRESET_DISSOLVE, target.index)
+        .unwrap();
+    assert_eq!(plan.expressions.len(), 1);
+    let properties = MaterialCompiler
+        .stack_modifier_properties(&plan.replacement, plan.expressions[0])
+        .unwrap();
+    assert!(properties.iter().any(|property| {
+        property.property == MaterialStackProperty::Threshold
+            && property.value == MaterialValue::Float(0.5)
+    }));
+    assert!(properties.iter().any(|property| {
+        property.property == MaterialStackProperty::EdgeWidth
+            && property.value == MaterialValue::Float(0.06)
+    }));
+}
+
+#[test]
+fn explicit_preset_catalogs_accept_new_semantic_recipes_without_compiler_changes() {
+    let preset = MaterialPresetId::from_u128(0xA357_1000);
+    let mut catalog = MaterialPresetCatalog::default();
+    catalog.register(MaterialPresetDescriptor {
+        id: preset,
+        display_name: "Wide UV".into(),
+        description: "Scales UV coordinates horizontally.".into(),
+        category: MaterialPresetCategory::Shaping,
+        tags: vec!["uv".into(), "wide".into()],
+        modifiers: vec![MaterialStackModifierKind::ScaleUv],
+        defaults: vec![MaterialPresetDefault {
+            step: 0,
+            property: MaterialStackProperty::Scale,
+            value: MaterialValue::Vec2([2.0, 1.0]),
+        }],
+    });
+    let program = reorderable_uv_stack_program();
+    let target = MaterialCompiler
+        .stack_preset_targets_with_catalog(&program, &catalog)
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("the custom UV recipe should expose a compatible insertion edge");
+    assert_eq!(target.preset, preset);
+    let plan = MaterialCompiler
+        .plan_stack_insert_preset_with_catalog(&program, &catalog, preset, target.index)
+        .unwrap();
+    let properties = MaterialCompiler
+        .stack_modifier_properties(&plan.replacement, plan.expressions[0])
+        .unwrap();
+    assert!(properties.iter().any(|property| {
+        property.property == MaterialStackProperty::Scale
+            && property.value == MaterialValue::Vec2([2.0, 1.0])
+    }));
+}
+
+#[test]
 fn incompatible_preset_is_rejected_without_a_partial_replacement() {
     let program = reorderable_uv_stack_program();
     assert!(matches!(
-        MaterialCompiler.plan_stack_insert_preset(
-            &program,
-            MaterialStackPresetKind::SoftDissolve,
-            0,
-        ),
+        MaterialCompiler.plan_stack_insert_preset(&program, MATERIAL_PRESET_SOFT_DISSOLVE, 0,),
         Err(MaterialStackEditError::IncompatiblePreset {
-            preset: MaterialStackPresetKind::SoftDissolve,
+            preset: MATERIAL_PRESET_SOFT_DISSOLVE,
             index: 0,
         })
     ));

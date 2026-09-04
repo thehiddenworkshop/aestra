@@ -1255,22 +1255,28 @@ fn material_stack_preset_options(
     entries: &[MaterialStackEntry],
     targets: &[MaterialStackPresetTarget],
 ) -> Vec<ComboOption<PropertiesAction>> {
+    let catalog = MaterialCompiler.material_preset_catalog();
     targets
         .iter()
-        .map(|target| {
+        .filter_map(|target| {
+            let preset = catalog.get(target.preset)?;
             let position = target.index.checked_sub(1).map_or_else(
                 || "First".to_owned(),
                 |index| format!("After {}", entries[index].kind.display_name()),
             );
-            ComboOption {
-                label: format!("{} · {position}", target.preset.display_name()),
+            Some(ComboOption {
+                label: format!(
+                    "{} · {} · {position}",
+                    preset.category.display_name(),
+                    preset.display_name
+                ),
                 selected: false,
                 action: PropertiesAction::InsertSemanticMaterialPreset {
                     program,
                     preset: target.preset,
                     placement: material_stack_insertion_point(entries, target.index),
                 },
-            }
+            })
         })
         .collect()
 }
@@ -2528,11 +2534,11 @@ mod tests {
             &[
                 MaterialStackPresetTarget {
                     index: 0,
-                    preset: MaterialStackPresetKind::UvDrift,
+                    preset: aestra_compiler::MATERIAL_PRESET_UV_DRIFT,
                 },
                 MaterialStackPresetTarget {
                     index: 1,
-                    preset: MaterialStackPresetKind::SoftDissolve,
+                    preset: aestra_compiler::MATERIAL_PRESET_SOFT_DISSOLVE,
                 },
             ],
         );
@@ -2541,7 +2547,10 @@ mod tests {
                 .iter()
                 .map(|option| option.label.as_str())
                 .collect::<Vec<_>>(),
-            vec!["UV Drift · First", "Soft Dissolve · After Base Texture"]
+            vec![
+                "Motion · UV Drift · First",
+                "Masking · Soft Dissolve · After Base Texture"
+            ]
         );
         assert!(matches!(
             options[0].action,
