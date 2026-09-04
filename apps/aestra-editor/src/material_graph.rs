@@ -31,14 +31,14 @@ use aestra_authoring::{
 use aestra_compiler::{
     MaterialCompiler, MaterialGraphCreateKind, MaterialGraphEdgeTarget, MaterialGraphNode,
     MaterialGraphNodeDescriptor, MaterialGraphNodeKind, MaterialGraphOutput,
-    MaterialGraphOutputKind, MaterialGraphProjection,
+    MaterialGraphOutputKind, MaterialGraphProjection, MaterialPresetCatalog,
 };
 use aestra_core::{
-    MaterialExpressionId, MaterialFunctionId, MaterialId, MaterialProgramId,
+    MaterialExpressionId, MaterialFunctionId, MaterialId, MaterialPresetId, MaterialProgramId,
     material::{
-        MaterialExpressionDomain, MaterialExpressionKind, MaterialInput, MaterialInstance,
-        MaterialParameterValue, MaterialProgram, MaterialValue, MaterialValueType,
-        MaterialVectorComponent,
+        MaterialExpression, MaterialExpressionDomain, MaterialExpressionKind, MaterialInput,
+        MaterialInstance, MaterialOutputs, MaterialParameterValue, MaterialPresetDescriptor,
+        MaterialProgram, MaterialValue, MaterialValueType, MaterialVectorComponent,
     },
 };
 use aestra_project::{MaterialGraphNodeLayout, MaterialGraphViewportLayout, ProjectEditorLayout};
@@ -74,6 +74,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .init_resource::<MaterialGraphPaletteState>()
             .init_resource::<MaterialGraphSelectionState>()
             .init_resource::<MaterialGraphPreviewState>()
+            .init_resource::<MaterialPresetPreviewState>()
             .init_resource::<MaterialGraphLayoutPersistence>()
             .add_observer(begin_material_connection_drag)
             .add_observer(update_material_connection_drag)
@@ -103,6 +104,7 @@ impl Plugin for EditorMaterialGraphPlugin {
                     handle_material_graph_preview_actions,
                     sync_material_graph_default_number_inputs,
                     rasterize_material_graph_previews,
+                    rasterize_material_preset_previews,
                 ),
             )
             .add_systems(
@@ -240,6 +242,82 @@ enum MaterialGraphPreviewTarget {
 pub(crate) struct MaterialGraphPreviewState {
     visible: BTreeSet<(MaterialProgramId, MaterialGraphPreviewTarget)>,
     cache: BTreeMap<(MaterialProgramId, MaterialGraphPreviewTarget), MaterialGraphPreviewCache>,
+}
+
+#[derive(Debug, Clone)]
+enum MaterialPresetPreviewStatus {
+    Ready(Handle<Image>),
+    Incompatible,
+    Failed(String),
+}
+
+#[derive(Debug, Clone)]
+struct MaterialPresetPreviewCache {
+    fingerprint: u64,
+    status: MaterialPresetPreviewStatus,
+}
+
+/// Cached deterministic thumbnails for project and built-in material presets.
+///
+/// The cache is intentionally independent from [`EditorSession`]: generating or displaying a
+/// preset thumbnail can never mutate the active material or participate in undo history.
+#[derive(Resource, Debug, Default)]
+pub(crate) struct MaterialPresetPreviewState {
+    cache: BTreeMap<MaterialPresetId, MaterialPresetPreviewCache>,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct MaterialPresetPreviewRaster {
+    pub(crate) preset: MaterialPresetId,
+    pub(crate) status_label: Entity,
+}
+
+pub(crate) fn spawn_material_preset_preview(
+    parent: &mut ChildSpawnerCommands,
+    preset: MaterialPresetId,
+    size: f32,
+) -> Entity {
+    let mut status_label = Entity::PLACEHOLDER;
+    let mut preview = parent.spawn((
+        Node {
+            width: Val::Px(size),
+            height: Val::Px(size),
+            min_width: Val::Px(size),
+            min_height: Val::Px(size),
+            flex_shrink: 0.0,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            border: UiRect::all(Val::Px(1.0)),
+            border_radius: BorderRadius::all(Val::Px(3.0)),
+            overflow: Overflow::clip(),
+            ..default()
+        },
+        BorderColor::all(theme::BORDER),
+        BackgroundColor(theme::PANEL_DARK),
+        Pickable::IGNORE,
+    ));
+    let entity = preview.id();
+    preview.with_children(|preview| {
+        status_label = preview
+            .spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_FAINT),
+                Pickable::IGNORE,
+            ))
+            .id();
+    });
+    parent
+        .commands()
+        .entity(entity)
+        .insert(MaterialPresetPreviewRaster {
+            preset,
+            status_label,
+        });
+    entity
 }
 
 impl MaterialGraphPreviewState {
@@ -2201,6 +2279,197 @@ fn rasterize_material_graph_previews(
             .entity(entity)
             .insert(ImageNode::new(image).with_mode(NodeImageMode::Stretch));
     }
+}
+
+fn rasterize_material_preset_previews(
+    mut commands: Commands,
+    requests: Query<(Entity, Ref<MaterialPresetPreviewRaster>)>,
+    mut labels: Query<&mut Text>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut previews: ResMut<MaterialPresetPreviewState>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let catalog_changed = catalog.is_changed();
+    if !catalog_changed && !requests.iter().any(|(_, request)| request.is_added()) {
+        return;
+    }
+    let presets = catalog
+        .material_preset_catalog()
+        .unwrap_or_else(|_| MaterialCompiler.material_preset_catalog());
+    for (entity, request) in &requests {
+        if !catalog_changed && !request.is_added() {
+            continue;
+        }
+        let Some(preset) = presets.get(request.preset) else {
+            apply_material_preset_preview_status(
+                &mut commands,
+                &mut labels,
+                entity,
+                request.status_label,
+                MaterialPresetPreviewStatus::Failed("Preset is unavailable".into()),
+            );
+            continue;
+        };
+        let fingerprint = material_preset_fingerprint(preset);
+        let status = previews
+            .cache
+            .get(&request.preset)
+            .filter(|cached| cached.fingerprint == fingerprint)
+            .map(|cached| cached.status.clone())
+            .unwrap_or_else(|| {
+                let status = build_material_preset_preview(preset, &presets, &mut images);
+                previews.cache.insert(
+                    request.preset,
+                    MaterialPresetPreviewCache {
+                        fingerprint,
+                        status: status.clone(),
+                    },
+                );
+                status
+            });
+        apply_material_preset_preview_status(
+            &mut commands,
+            &mut labels,
+            entity,
+            request.status_label,
+            status,
+        );
+    }
+    previews
+        .cache
+        .retain(|preset, _| presets.get(*preset).is_some());
+}
+
+fn apply_material_preset_preview_status(
+    commands: &mut Commands,
+    labels: &mut Query<&mut Text>,
+    entity: Entity,
+    status_label: Entity,
+    status: MaterialPresetPreviewStatus,
+) {
+    let Ok(mut label) = labels.get_mut(status_label) else {
+        return;
+    };
+    match status {
+        MaterialPresetPreviewStatus::Ready(image) => {
+            label.0.clear();
+            commands.entity(entity).remove::<EditorTooltip>().insert((
+                ImageNode::new(image).with_mode(NodeImageMode::Stretch),
+                BackgroundColor(Color::NONE),
+            ));
+        }
+        MaterialPresetPreviewStatus::Incompatible => {
+            label.0 = "N/A".into();
+            commands
+                .entity(entity)
+                .remove::<EditorTooltip>()
+                .remove::<ImageNode>()
+                .insert(BackgroundColor(theme::PANEL_DARK));
+        }
+        MaterialPresetPreviewStatus::Failed(message) => {
+            label.0 = "!".into();
+            commands.entity(entity).remove::<ImageNode>().insert((
+                BackgroundColor(theme::PANEL_DARK),
+                EditorTooltip::titled("Preview failed", message),
+            ));
+        }
+    }
+}
+
+fn material_preset_fingerprint(preset: &MaterialPresetDescriptor) -> u64 {
+    let source =
+        ron::ser::to_string(&preset.recipe).unwrap_or_else(|_| format!("{:?}", preset.recipe));
+    source.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+fn build_material_preset_preview(
+    preset: &MaterialPresetDescriptor,
+    catalog: &MaterialPresetCatalog,
+    images: &mut Assets<Image>,
+) -> MaterialPresetPreviewStatus {
+    let program = material_preset_preview_program();
+    let Some(target) = MaterialCompiler
+        .stack_preset_targets_with_catalog(&program, catalog)
+        .ok()
+        .and_then(|targets| {
+            targets
+                .into_iter()
+                .filter(|target| target.preset == preset.id)
+                .max_by_key(|target| target.index)
+        })
+    else {
+        return MaterialPresetPreviewStatus::Incompatible;
+    };
+    let replacement = match MaterialCompiler.plan_stack_insert_preset_with_catalog(
+        &program,
+        catalog,
+        preset.id,
+        target.index,
+    ) {
+        Ok(plan) => plan.replacement,
+        Err(error) => return MaterialPresetPreviewStatus::Failed(error.to_string()),
+    };
+    let image = images.add(render_material_graph_preview(
+        &replacement,
+        None,
+        MaterialGraphPreviewTarget::Output,
+        None,
+    ));
+    MaterialPresetPreviewStatus::Ready(image)
+}
+
+fn material_preset_preview_program() -> MaterialProgram {
+    let color = MaterialExpressionId::from_u128(0xa357_1601);
+    let uv = MaterialExpressionId::from_u128(0xa357_1602);
+    let center = MaterialExpressionId::from_u128(0xa357_1603);
+    let radius = MaterialExpressionId::from_u128(0xa357_1604);
+    let softness = MaterialExpressionId::from_u128(0xa357_1605);
+    let invert = MaterialExpressionId::from_u128(0xa357_1606);
+    let mask = MaterialExpressionId::from_u128(0xa357_1607);
+    let mut program = MaterialProgram::additive_sprite("Material preset preview");
+    program.id = MaterialProgramId::from_u128(0xa357_1600);
+    program.expressions = vec![
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([
+                0.72, 0.78, 0.92, 1.0,
+            ])),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: center,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.5, 0.5])),
+        },
+        MaterialExpression {
+            id: radius,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.42)),
+        },
+        MaterialExpression {
+            id: softness,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.12)),
+        },
+        MaterialExpression {
+            id: invert,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: mask,
+            kind: MaterialExpressionKind::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            },
+        },
+    ];
+    program.outputs = MaterialOutputs { color, alpha: mask };
+    program
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -4810,6 +5079,58 @@ mod tests {
             (MATERIAL_PREVIEW_SIZE * MATERIAL_PREVIEW_SIZE * 4) as usize
         );
         assert!(pixels.windows(4).any(|pixel| pixel[0] != pixel[1]));
+    }
+
+    #[test]
+    fn every_registered_material_preset_produces_a_preview() {
+        let project_preset = MaterialPresetDescriptor::from_ron(include_str!(
+            "../../../assets/materials/hologram.aestra.material-preset.ron"
+        ))
+        .expect("bundled Hologram preset should parse");
+        let catalog = MaterialPresetCatalog::with_project_presets([project_preset])
+            .expect("built-in and project presets should merge");
+        let mut images = Assets::<Image>::default();
+
+        for preset in catalog.iter() {
+            let status = build_material_preset_preview(preset, &catalog, &mut images);
+            let MaterialPresetPreviewStatus::Ready(image) = status else {
+                panic!("{} should produce a preview", preset.display_name);
+            };
+            let preview = images
+                .get(&image)
+                .expect("generated preview should be cached as an image asset");
+            assert_eq!(preview.texture_descriptor.size.width, MATERIAL_PREVIEW_SIZE);
+            assert_eq!(
+                preview.texture_descriptor.size.height,
+                MATERIAL_PREVIEW_SIZE
+            );
+        }
+    }
+
+    #[test]
+    fn material_preset_preview_fingerprint_tracks_recipe_changes() {
+        let catalog = MaterialCompiler.material_preset_catalog();
+        let preset = catalog
+            .get(aestra_compiler::MATERIAL_PRESET_DISSOLVE)
+            .expect("Dissolve preset should be registered");
+        let mut changed_metadata = preset.clone();
+        changed_metadata.description.push_str(" Updated");
+        let mut changed_recipe = preset.clone();
+        let aestra_core::material::MaterialPresetRecipe::Stack { defaults, .. } =
+            &mut changed_recipe.recipe
+        else {
+            panic!("Dissolve should use a stack recipe");
+        };
+        defaults[0].value = MaterialValue::Float(0.123);
+
+        assert_eq!(
+            material_preset_fingerprint(preset),
+            material_preset_fingerprint(&changed_metadata)
+        );
+        assert_ne!(
+            material_preset_fingerprint(preset),
+            material_preset_fingerprint(&changed_recipe)
+        );
     }
 
     #[test]

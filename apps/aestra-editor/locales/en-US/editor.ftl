@@ -362,6 +362,7 @@ assets-render-assets = RENDER ASSETS
 assets-registered = { $count } REGISTERED
 assets-no-render-assets = No render assets in this effect.
 assets-materials = MATERIALS
+assets-material-presets = MATERIAL PRESETS
 assets-add-sprite-material = + Add Sprite Material
 assets-sprite = Sprite
 assets-flipbooks = FLIPBOOKS

@@ -362,6 +362,7 @@ assets-render-assets = RESSOURCES DE RENDU
 assets-registered = { $count } ENREGISTRÉS
 assets-no-render-assets = Cet effet ne contient aucune ressource de rendu.
 assets-materials = MATÉRIAUX
+assets-material-presets = PRÉRÉGLAGES DE MATÉRIAU
 assets-add-sprite-material = + Ajouter un matériau de sprite
 assets-sprite = Sprite
 assets-flipbooks = FLIPBOOKS

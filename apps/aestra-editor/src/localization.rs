@@ -276,6 +276,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "assets-registered",
     "assets-no-render-assets",
     "assets-materials",
+    "assets-material-presets",
     "assets-add-sprite-material",
     "assets-sprite",
     "assets-flipbooks",

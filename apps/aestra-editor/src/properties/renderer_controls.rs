@@ -1204,13 +1204,7 @@ fn spawn_semantic_material_stack(
                 &preset_catalog,
             );
             if !preset_options.is_empty() {
-                spawn_properties_combo_row(
-                    parent,
-                    "Preset",
-                    "Choose",
-                    &preset_options,
-                    Some("Insert a configured modifier chain as one undoable material edit."),
-                );
+                spawn_material_preset_combo_row(parent, &preset_options);
             }
             let insert_targets = MaterialCompiler
                 .stack_insert_targets(program)
@@ -1258,13 +1252,23 @@ fn spawn_semantic_material_stack(
     }
 }
 
+struct MaterialPresetOption {
+    label: String,
+    category: MaterialPresetCategory,
+    name: String,
+    description: String,
+    position: String,
+    preset: MaterialPresetId,
+    action: PropertiesAction,
+}
+
 fn material_stack_preset_options(
     program: MaterialProgramId,
     entries: &[MaterialStackEntry],
     targets: &[MaterialStackPresetTarget],
     catalog: &aestra_compiler::MaterialPresetCatalog,
-) -> Vec<ComboOption<PropertiesAction>> {
-    targets
+) -> Vec<MaterialPresetOption> {
+    let mut options = targets
         .iter()
         .filter_map(|target| {
             let preset = catalog.get(target.preset)?;
@@ -1272,13 +1276,17 @@ fn material_stack_preset_options(
                 || "First".to_owned(),
                 |index| format!("After {}", entries[index].kind.display_name()),
             );
-            Some(ComboOption {
+            Some(MaterialPresetOption {
                 label: format!(
                     "{} · {} · {position}",
                     preset.category.display_name(),
                     preset.display_name
                 ),
-                selected: false,
+                category: preset.category,
+                name: preset.display_name.clone(),
+                description: preset.description.clone(),
+                position,
+                preset: preset.id,
                 action: PropertiesAction::InsertSemanticMaterialPreset {
                     program,
                     preset: target.preset,
@@ -1286,7 +1294,164 @@ fn material_stack_preset_options(
                 },
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    options.sort_by(|left, right| {
+        (left.category, left.name.as_str(), left.position.as_str()).cmp(&(
+            right.category,
+            right.name.as_str(),
+            right.position.as_str(),
+        ))
+    });
+    options
+}
+
+fn spawn_material_preset_combo_row(
+    parent: &mut ChildSpawnerCommands,
+    options: &[MaterialPresetOption],
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(27.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+            EditorTooltip::description(
+                "Insert a previewed material recipe as one undoable semantic edit.",
+            ),
+        ))
+        .with_children(|row| {
+            spawn_property_label(row, "Preset");
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            row.spawn(Node {
+                width: Val::Px(150.0),
+                min_width: Val::Px(112.0),
+                ..default()
+            })
+            .with_children(|wrapper| {
+                wrapper
+                    .spawn_empty()
+                    .apply_scene(ui_shell::feathers_menu())
+                    .with_children(|menu| {
+                        menu.spawn_empty()
+                            .apply_scene(ui_shell::feathers_menu_button())
+                            .insert((
+                                AccessibleLabel("Material preset".into()),
+                                Node {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Px(28.0),
+                                    align_items: AlignItems::Center,
+                                    padding: UiRect::horizontal(Val::Px(8.0)),
+                                    ..default()
+                                },
+                            ))
+                            .with_children(|button| {
+                                button.spawn((
+                                    Text::new("Choose"),
+                                    ThemedText,
+                                    Pickable::IGNORE,
+                                    Node {
+                                        flex_grow: 1.0,
+                                        ..default()
+                                    },
+                                ));
+                                button
+                                    .spawn_empty()
+                                    .apply_scene(bevy::feathers::display::icon(
+                                        bevy::feathers::constants::icons::CHEVRON_DOWN,
+                                    ))
+                                    .insert(Pickable::IGNORE);
+                            });
+                        menu.spawn_empty()
+                            .apply_scene(ui_shell::feathers_menu_popup())
+                            .insert(OverrideClip)
+                            .with_children(|popup| {
+                                let mut category = None;
+                                for option in options {
+                                    if category != Some(option.category) {
+                                        category = Some(option.category);
+                                        popup.spawn((
+                                            Text::new(option.category.display_name()),
+                                            TextFont {
+                                                font_size: FontSize::Px(8.0),
+                                                ..default()
+                                            },
+                                            TextColor(theme::ACCENT),
+                                            Node {
+                                                padding: UiRect::axes(Val::Px(10.0), Val::Px(5.0)),
+                                                ..default()
+                                            },
+                                            Pickable::IGNORE,
+                                        ));
+                                    }
+                                    popup
+                                        .spawn_empty()
+                                        .apply_scene(ui_shell::feathers_menu_item())
+                                        .insert((
+                                            Interaction::None,
+                                            option.action,
+                                            FeathersActionButton,
+                                            AccessibleLabel(option.label.clone()),
+                                            Node {
+                                                min_width: Val::Px(292.0),
+                                                min_height: Val::Px(58.0),
+                                                padding: UiRect::all(Val::Px(6.0)),
+                                                align_items: AlignItems::Center,
+                                                column_gap: Val::Px(8.0),
+                                                ..default()
+                                            },
+                                            EditorTooltip::titled(
+                                                option.name.clone(),
+                                                option.description.clone(),
+                                            ),
+                                        ))
+                                        .with_children(|item| {
+                                            spawn_material_preset_preview(
+                                                item,
+                                                option.preset,
+                                                44.0,
+                                            );
+                                            item.spawn((
+                                                Node {
+                                                    min_width: Val::Px(0.0),
+                                                    flex_grow: 1.0,
+                                                    flex_direction: FlexDirection::Column,
+                                                    row_gap: Val::Px(3.0),
+                                                    ..default()
+                                                },
+                                                Pickable::IGNORE,
+                                            ))
+                                            .with_children(|labels| {
+                                                labels.spawn((
+                                                    Text::new(option.name.clone()),
+                                                    TextFont {
+                                                        font_size: FontSize::Px(10.0),
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme::TEXT),
+                                                    Pickable::IGNORE,
+                                                ));
+                                                labels.spawn((
+                                                    Text::new(option.position.clone()),
+                                                    TextFont {
+                                                        font_size: FontSize::Px(8.0),
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme::TEXT_FAINT),
+                                                    Pickable::IGNORE,
+                                                ));
+                                            });
+                                        });
+                                }
+                            });
+                    });
+            });
+        });
 }
 
 fn material_stack_insert_options(

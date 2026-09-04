@@ -13,9 +13,9 @@ use aestra_authoring::{
 };
 use aestra_compiler::{
     InputControl, InputEvaluationDomain, InputMetadata, InputSourceKind, MaterialCompiler,
-    MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, MaterialStackEntry,
-    MaterialStackInsertTarget, MaterialStackMoveTarget, MaterialStackPresetTarget,
-    MaterialStackProjection, MaterialStackProperty, ModuleRegistry,
+    MaterialControlDescriptor, MaterialControlKind, MaterialControlSource, MaterialPresetCategory,
+    MaterialStackEntry, MaterialStackInsertTarget, MaterialStackMoveTarget,
+    MaterialStackPresetTarget, MaterialStackProjection, MaterialStackProperty, ModuleRegistry,
 };
 use aestra_core::material::{
     MaterialCullMode, MaterialDepthTest, MaterialParameterValue, MaterialRenderState,

@@ -7,7 +7,8 @@ use crate::feathers::context_menu::{
 use crate::timeline::TimelineState;
 use crate::*;
 use aestra_compiler::{
-    EffectCompiler, MaterialFunctionLibrary, MaterialPresetCatalog, ProjectCompileError,
+    EffectCompiler, MaterialCompiler, MaterialFunctionLibrary, MaterialPresetCatalog,
+    MaterialPresetCategory, ProjectCompileError,
 };
 use aestra_core::material::{
     MaterialFunction, MaterialFunctionRef, MaterialProgram, MaterialProgramRef,
@@ -16,7 +17,7 @@ use aestra_core::{
     AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipId, EffectId, EffectParameter, Emitter, EmitterId,
     EmitterTransform, EventId, EventLink, FlipbookDefinition, GradientId, MaterialDefinition,
-    MaterialId, MaterialInput, ModuleParameters, ParameterId, RendererProperties,
+    MaterialId, MaterialInput, MaterialPresetId, ModuleParameters, ParameterId, RendererProperties,
     SpriteColorSource, ValidationReport, Value,
 };
 use aestra_project::{
@@ -97,6 +98,7 @@ impl Plugin for EditorLibraryPlugin {
                 Update,
                 (
                     sync_library_filtering,
+                    sync_material_preset_filtering,
                     restore_library_context_menu_focus,
                     queue_library_relation_overlay_rebuild,
                 )
@@ -737,6 +739,22 @@ impl LibraryState {
         query.is_empty()
             || entry.display_name.to_lowercase().contains(&query)
             || entry.path.to_string_lossy().to_lowercase().contains(&query)
+    }
+
+    fn matches_material_preset(&self, preset: &aestra_compiler::MaterialPresetDescriptor) -> bool {
+        if self.origin == LibraryOriginFilter::CurrentDocument
+            || !matches!(
+                self.kind,
+                LibraryKindFilter::All | LibraryKindFilter::Material
+            )
+        {
+            return false;
+        }
+        let query = self.query.trim().to_lowercase();
+        query.is_empty()
+            || preset.display_name.to_lowercase().contains(&query)
+            || preset.description.to_lowercase().contains(&query)
+            || preset.tags.iter().any(|tag| tag.contains(&query))
     }
 }
 
@@ -1734,6 +1752,20 @@ struct LibraryMaterialsSection;
 #[derive(Component)]
 struct LibraryFlipbooksSection;
 
+#[derive(Component)]
+struct LibraryMaterialPresetsSection;
+
+#[derive(Component)]
+struct LibraryMaterialPresetCount;
+
+#[derive(Component)]
+struct LibraryMaterialPresetRow {
+    preset: MaterialPresetId,
+}
+
+#[derive(Component)]
+struct LibraryMaterialPresetCategoryHeader(MaterialPresetCategory);
+
 fn queue_library_action_activation(
     activate: On<Activate>,
     actions: Query<(), (With<LibraryAction>, With<FeathersActionButton>)>,
@@ -2084,6 +2116,204 @@ fn sync_library_filtering(
     };
     for mut count in &mut counts {
         count.0.clone_from(&text);
+    }
+}
+
+fn sync_material_preset_filtering(
+    mut commands: Commands,
+    state: Res<LibraryState>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut rows: Query<(Entity, &LibraryMaterialPresetRow, &mut Node)>,
+    mut categories: Query<
+        (&LibraryMaterialPresetCategoryHeader, &mut Node),
+        (
+            Without<LibraryMaterialPresetRow>,
+            Without<LibraryMaterialPresetsSection>,
+        ),
+    >,
+    mut sections: Query<
+        &mut Node,
+        (
+            With<LibraryMaterialPresetsSection>,
+            Without<LibraryMaterialPresetRow>,
+            Without<LibraryMaterialPresetCategoryHeader>,
+        ),
+    >,
+    mut counts: Query<&mut Text, With<LibraryMaterialPresetCount>>,
+    localizer: Res<Localizer>,
+) {
+    if !state.is_changed() && !catalog.is_changed() {
+        return;
+    }
+    let presets = catalog
+        .material_preset_catalog()
+        .unwrap_or_else(|_| MaterialCompiler.material_preset_catalog());
+    let visible = presets
+        .iter()
+        .filter(|preset| state.matches_material_preset(preset))
+        .map(|preset| preset.id)
+        .collect::<BTreeSet<_>>();
+    for (entity, row, mut node) in &mut rows {
+        let shown = visible.contains(&row.preset);
+        node.display = if shown { Display::Flex } else { Display::None };
+        if shown {
+            commands.entity(entity).insert(ListItem);
+        } else {
+            commands.entity(entity).remove::<ListItem>();
+        }
+    }
+    for (header, mut node) in &mut categories {
+        let shown = presets
+            .iter()
+            .any(|preset| preset.category == header.0 && visible.contains(&preset.id));
+        node.display = if shown { Display::Flex } else { Display::None };
+    }
+    for mut section in &mut sections {
+        section.display = if visible.is_empty() {
+            Display::None
+        } else {
+            Display::Flex
+        };
+    }
+    let mut args = FluentArgs::new();
+    args.set("count", visible.len());
+    let text = localizer.text_with("assets-found", &args);
+    for mut count in &mut counts {
+        count.0.clone_from(&text);
+    }
+}
+
+fn spawn_material_presets(
+    panel: &mut ChildSpawnerCommands,
+    catalog: &ProjectEffectCatalog,
+    state: &LibraryState,
+    localizer: &Localizer,
+) {
+    let presets = catalog
+        .material_preset_catalog()
+        .unwrap_or_else(|_| MaterialCompiler.material_preset_catalog());
+    let visible_count = presets
+        .iter()
+        .filter(|preset| state.matches_material_preset(preset))
+        .count();
+    let mut args = FluentArgs::new();
+    args.set("count", visible_count);
+    let section = spawn_list_section_header(
+        panel,
+        &localizer.text("assets-material-presets"),
+        &localizer.text_with("assets-found", &args),
+    );
+    panel
+        .commands()
+        .entity(section.root)
+        .insert(LibraryMaterialPresetsSection);
+    panel
+        .commands()
+        .entity(section.meta)
+        .insert(LibraryMaterialPresetCount);
+
+    let mut grouped = presets.iter().collect::<Vec<_>>();
+    grouped.sort_by(|left, right| {
+        (left.category, left.display_name.as_str())
+            .cmp(&(right.category, right.display_name.as_str()))
+    });
+    let mut category = None;
+    for preset in grouped {
+        if category != Some(preset.category) {
+            category = Some(preset.category);
+            panel.spawn((
+                LibraryMaterialPresetCategoryHeader(preset.category),
+                Text::new(preset.category.display_name()),
+                TextFont {
+                    font_size: FontSize::Px(8.0),
+                    ..default()
+                },
+                TextColor(theme::ACCENT),
+                Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(9.0), Val::Px(5.0)),
+                    display: if presets.iter().any(|candidate| {
+                        candidate.category == preset.category
+                            && state.matches_material_preset(candidate)
+                    }) {
+                        Display::Flex
+                    } else {
+                        Display::None
+                    },
+                    ..default()
+                },
+            ));
+        }
+        let visible = state.matches_material_preset(preset);
+        let row_entity = {
+            let mut row = panel.spawn((
+                LibraryMaterialPresetRow { preset: preset.id },
+                Node {
+                    width: Val::Percent(100.0),
+                    min_height: Val::Px(62.0),
+                    min_width: Val::Px(0.0),
+                    padding: UiRect::axes(Val::Px(9.0), Val::Px(6.0)),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(9.0),
+                    display: if visible {
+                        Display::Flex
+                    } else {
+                        Display::None
+                    },
+                    ..default()
+                },
+                BackgroundColor(theme::PANEL_DARK),
+                AccessibleLabel(format!("{} material preset", preset.display_name)),
+                EditorTooltip::titled(preset.display_name.clone(), preset.description.clone())
+                    .with_footer("Material preset preview"),
+            ));
+            let row_entity = row.id();
+            row.with_children(|row| {
+                spawn_material_preset_preview(row, preset.id, 48.0);
+                row.spawn((
+                    Node {
+                        min_width: Val::Px(0.0),
+                        flex_grow: 1.0,
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(3.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .with_children(|labels| {
+                    labels.spawn((
+                        Text::new(preset.display_name.clone()),
+                        TextFont {
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_MUTED),
+                        TextLayout::no_wrap(),
+                        Pickable::IGNORE,
+                    ));
+                    labels.spawn((
+                        Text::new(preset.description.clone()),
+                        TextFont {
+                            font_size: FontSize::Px(8.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT_FAINT),
+                        TextLayout::no_wrap(),
+                        Node {
+                            width: Val::Percent(100.0),
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ));
+                });
+            });
+            row_entity
+        };
+        if visible {
+            panel.commands().entity(row_entity).insert(ListItem);
+        }
     }
 }
 
@@ -2559,6 +2789,7 @@ pub(crate) fn spawn_library(
                 },
                 |panel| {
                     spawn_project_effects(panel, catalog, state, localizer);
+                    spawn_material_presets(panel, catalog, state, localizer);
                     spawn_current_document_resources(panel, session, localizer);
                 },
             );
@@ -3873,6 +4104,29 @@ mod tests {
                 .get(aestra_compiler::MATERIAL_PRESET_DISSOLVE)
                 .is_some()
         );
+    }
+
+    #[test]
+    fn library_material_preset_filter_matches_metadata_and_respects_scope() {
+        let catalog = MaterialCompiler.material_preset_catalog();
+        let preset = catalog
+            .get(aestra_compiler::MATERIAL_PRESET_DISSOLVE)
+            .expect("Dissolve preset should be registered");
+        let mut state = LibraryState {
+            query: "threshold".into(),
+            ..default()
+        };
+
+        assert!(state.matches_material_preset(preset));
+        state.query = "definitely absent".into();
+        assert!(!state.matches_material_preset(preset));
+        state.query.clear();
+        state.kind = LibraryKindFilter::Texture;
+        assert!(!state.matches_material_preset(preset));
+        state.kind = LibraryKindFilter::Material;
+        assert!(state.matches_material_preset(preset));
+        state.origin = LibraryOriginFilter::CurrentDocument;
+        assert!(!state.matches_material_preset(preset));
     }
 
     #[test]

@@ -416,8 +416,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Hologram preset now exercises a genuinely branched Fresnel/particle-age graph through catalog
   loading → compatibility filtering → atomic graph materialization → transactional authoring →
   categorized editor presentation. Explicit catalogs are also available to machine-readable
-  inspection and tool planning. Preset previews and the remaining initial preset library are still
-  required to complete this milestone.
+  inspection and tool planning. A deterministic CPU preview pipeline now renders every compatible
+  preset in an isolated canonical material, caches images by preset ID and normalized recipe
+  fingerprint, and presents square previews with explicit incompatible/error fallbacks in both the
+  categorized Library browser and stack insertion menu. The remaining initial preset library is
+  still required to complete this milestone.
 - [ ] **Material 17 — validated custom WESL escape hatch.**
 
 ### Phase F — next-generation tooling
