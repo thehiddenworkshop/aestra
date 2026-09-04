@@ -18,7 +18,7 @@ use std::{
 use thiserror::Error;
 
 pub const CURRENT_MATERIAL_SCHEMA_VERSION: u32 = 1;
-pub const CURRENT_MATERIAL_PRESET_SCHEMA_VERSION: u32 = 1;
+pub const CURRENT_MATERIAL_PRESET_SCHEMA_VERSION: u32 = 2;
 
 /// Reflected parameter name used by the temporary legacy-sprite compatibility adapter.
 ///
@@ -107,6 +107,105 @@ pub enum MaterialStackModifierKind {
     DissolveEdge,
     DepthFade,
     SoftParticle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MaterialGraphFunction {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Lerp,
+    Clamp,
+    Remap,
+    Smoothstep,
+    Fresnel,
+    RadialMask,
+    Dissolve,
+    DissolveEdge,
+    DepthFade,
+    SoftParticle,
+    PanUv,
+    RotateUv,
+    ScaleUv,
+    SampleTexture,
+    ExtractComponent,
+}
+
+impl MaterialGraphFunction {
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::Add => "Add",
+            Self::Subtract => "Subtract",
+            Self::Multiply => "Multiply",
+            Self::Divide => "Divide",
+            Self::Lerp => "Lerp",
+            Self::Clamp => "Clamp",
+            Self::Remap => "Remap",
+            Self::Smoothstep => "Smoothstep",
+            Self::Fresnel => "Fresnel",
+            Self::RadialMask => "Radial Mask",
+            Self::Dissolve => "Dissolve",
+            Self::DissolveEdge => "Dissolve Edge",
+            Self::DepthFade => "Depth Fade",
+            Self::SoftParticle => "Soft Particle",
+            Self::PanUv => "UV Pan",
+            Self::RotateUv => "UV Rotate",
+            Self::ScaleUv => "UV Scale",
+            Self::SampleTexture => "Sample Texture",
+            Self::ExtractComponent => "Extract Component",
+        }
+    }
+
+    pub const fn category(self) -> &'static str {
+        match self {
+            Self::Add
+            | Self::Subtract
+            | Self::Multiply
+            | Self::Divide
+            | Self::Lerp
+            | Self::Clamp
+            | Self::Remap
+            | Self::Smoothstep
+            | Self::ExtractComponent => "Math",
+            Self::PanUv | Self::RotateUv | Self::ScaleUv => "UV",
+            Self::RadialMask | Self::Dissolve | Self::DissolveEdge => "Mask",
+            Self::DepthFade | Self::SoftParticle => "Depth",
+            Self::Fresnel | Self::SampleTexture => "Material",
+        }
+    }
+
+    pub const fn input_names(self) -> &'static [&'static str] {
+        match self {
+            Self::Add | Self::Subtract | Self::Multiply | Self::Divide => &["A", "B"],
+            Self::Lerp => &["Start", "End", "Factor"],
+            Self::Clamp => &["Value", "Minimum", "Maximum"],
+            Self::Remap => &[
+                "Value",
+                "SourceMinimum",
+                "SourceMaximum",
+                "TargetMinimum",
+                "TargetMaximum",
+            ],
+            Self::Smoothstep => &["LowerEdge", "UpperEdge", "Value"],
+            Self::Fresnel => &["Normal", "ViewDirection", "Power"],
+            Self::RadialMask => &["Uv", "Center", "Radius", "Softness", "Invert"],
+            Self::Dissolve | Self::DissolveEdge => &["Source", "Threshold", "EdgeWidth", "Invert"],
+            Self::DepthFade => &["SceneDepth", "PixelDepth", "FadeDistance", "Invert"],
+            Self::SoftParticle => &[
+                "Alpha",
+                "SceneDepth",
+                "PixelDepth",
+                "FadeDistance",
+                "Invert",
+            ],
+            Self::PanUv => &["Uv", "Speed", "Time"],
+            Self::RotateUv => &["Uv", "Center", "Angle"],
+            Self::ScaleUv => &["Uv", "Center", "Scale"],
+            Self::SampleTexture => &["Texture", "Uv"],
+            Self::ExtractComponent => &["Value"],
+        }
+    }
 }
 
 impl MaterialStackModifierKind {
@@ -273,6 +372,60 @@ pub struct MaterialPresetDefault {
     pub value: MaterialValue,
 }
 
+/// A reference used inside a graph preset recipe.
+///
+/// Node names are local to the recipe and are resolved in declaration order. The
+/// three external references let a recipe splice itself into an existing material
+/// without embedding project-specific expression IDs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MaterialPresetValueRef {
+    Source,
+    ProgramColor,
+    ProgramAlpha,
+    Node(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum MaterialPresetGraphNodeKind {
+    Constant(MaterialValue),
+    Input(MaterialInput),
+    Function(MaterialGraphFunction),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialPresetGraphNode {
+    pub name: String,
+    pub kind: MaterialPresetGraphNodeKind,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub inputs: BTreeMap<String, MaterialPresetValueRef>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum MaterialPresetProgramOutput {
+    Color,
+    Alpha,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialPresetGraphRecipe {
+    pub nodes: Vec<MaterialPresetGraphNode>,
+    /// Value inserted at the selected stack edge.
+    pub output: MaterialPresetValueRef,
+    /// Optional explicit overrides for the material's final outputs.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub program_outputs: BTreeMap<MaterialPresetProgramOutput, MaterialPresetValueRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum MaterialPresetRecipe {
+    Stack {
+        modifiers: Vec<MaterialStackModifierKind>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        defaults: Vec<MaterialPresetDefault>,
+    },
+    Graph(MaterialPresetGraphRecipe),
+}
+
 /// A portable, project-serializable semantic material recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MaterialPresetDescriptor {
@@ -282,8 +435,7 @@ pub struct MaterialPresetDescriptor {
     pub description: String,
     pub category: MaterialPresetCategory,
     pub tags: Vec<String>,
-    pub modifiers: Vec<MaterialStackModifierKind>,
-    pub defaults: Vec<MaterialPresetDefault>,
+    pub recipe: MaterialPresetRecipe,
 }
 
 impl MaterialPresetDescriptor {
@@ -322,9 +474,16 @@ impl MaterialPresetDescriptor {
             .collect();
         normalized.tags.sort();
         normalized.tags.dedup();
-        normalized
-            .defaults
-            .sort_by_key(|default| (default.step, default.property));
+        match &mut normalized.recipe {
+            MaterialPresetRecipe::Stack { defaults, .. } => {
+                defaults.sort_by_key(|default| (default.step, default.property));
+            }
+            MaterialPresetRecipe::Graph(recipe) => {
+                for node in &mut recipe.nodes {
+                    node.name = node.name.trim().to_owned();
+                }
+            }
+        }
         normalized
     }
 
@@ -350,43 +509,151 @@ impl MaterialPresetDescriptor {
                 "material preset description cannot be empty".into(),
             ));
         }
-        if self.modifiers.is_empty() {
+        match &self.recipe {
+            MaterialPresetRecipe::Stack {
+                modifiers,
+                defaults,
+            } => validate_stack_preset(modifiers, defaults),
+            MaterialPresetRecipe::Graph(recipe) => validate_graph_preset(recipe),
+        }
+    }
+}
+
+fn validate_stack_preset(
+    modifiers: &[MaterialStackModifierKind],
+    defaults: &[MaterialPresetDefault],
+) -> Result<(), MaterialPresetError> {
+    if modifiers.is_empty() {
+        return Err(MaterialPresetError::Validation(
+            "material preset recipe cannot be empty".into(),
+        ));
+    }
+    let mut assigned = BTreeSet::new();
+    for default in defaults {
+        let Some(modifier) = modifiers.get(default.step).copied() else {
+            return Err(MaterialPresetError::Validation(format!(
+                "material preset default step {} is outside its recipe",
+                default.step
+            )));
+        };
+        if !assigned.insert((default.step, default.property)) {
+            return Err(MaterialPresetError::Validation(format!(
+                "material preset assigns {} more than once at step {}",
+                default.property.display_name(),
+                default.step
+            )));
+        }
+        if !modifier.supports_property(default.property) {
+            return Err(MaterialPresetError::Validation(format!(
+                "{} does not expose {}",
+                modifier.display_name(),
+                default.property.display_name()
+            )));
+        }
+        if !default.property.value_type().accepts(&default.value) || !default.value.is_valid() {
+            return Err(MaterialPresetError::Validation(format!(
+                "{} requires a valid {:?} value",
+                default.property.display_name(),
+                default.property.value_type()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_graph_preset(recipe: &MaterialPresetGraphRecipe) -> Result<(), MaterialPresetError> {
+    if recipe.nodes.is_empty() {
+        return Err(MaterialPresetError::Validation(
+            "material graph preset recipe cannot be empty".into(),
+        ));
+    }
+    let mut declared = BTreeSet::new();
+    for node in &recipe.nodes {
+        let name = node.name.trim();
+        if name.is_empty() || name != node.name {
             return Err(MaterialPresetError::Validation(
-                "material preset recipe cannot be empty".into(),
+                "material graph preset node names must be non-empty and trimmed".into(),
             ));
         }
-        let mut assigned = BTreeSet::new();
-        for default in &self.defaults {
-            let Some(modifier) = self.modifiers.get(default.step).copied() else {
-                return Err(MaterialPresetError::Validation(format!(
-                    "material preset default step {} is outside its recipe",
-                    default.step
-                )));
-            };
-            if !assigned.insert((default.step, default.property)) {
-                return Err(MaterialPresetError::Validation(format!(
-                    "material preset assigns {} more than once at step {}",
-                    default.property.display_name(),
-                    default.step
-                )));
+        if declared.contains(name) {
+            return Err(MaterialPresetError::Validation(format!(
+                "material graph preset node '{name}' is declared more than once"
+            )));
+        }
+        match node.kind {
+            MaterialPresetGraphNodeKind::Constant(ref value) => {
+                if !node.inputs.is_empty() {
+                    return Err(MaterialPresetError::Validation(format!(
+                        "constant node '{name}' cannot declare inputs"
+                    )));
+                }
+                if !value.is_valid() {
+                    return Err(MaterialPresetError::Validation(format!(
+                        "constant node '{name}' requires a valid value"
+                    )));
+                }
             }
-            if !modifier.supports_property(default.property) {
-                return Err(MaterialPresetError::Validation(format!(
-                    "{} does not expose {}",
-                    modifier.display_name(),
-                    default.property.display_name()
-                )));
+            MaterialPresetGraphNodeKind::Input(_) => {
+                if !node.inputs.is_empty() {
+                    return Err(MaterialPresetError::Validation(format!(
+                        "input node '{name}' cannot declare inputs"
+                    )));
+                }
             }
-            if !default.property.value_type().accepts(&default.value) || !default.value.is_valid() {
-                return Err(MaterialPresetError::Validation(format!(
-                    "{} requires a valid {:?} value",
-                    default.property.display_name(),
-                    default.property.value_type()
-                )));
+            MaterialPresetGraphNodeKind::Function(function) => {
+                if matches!(
+                    function,
+                    MaterialGraphFunction::SampleTexture | MaterialGraphFunction::ExtractComponent
+                ) {
+                    return Err(MaterialPresetError::Validation(format!(
+                        "{} is not yet portable in graph preset recipes",
+                        function.display_name()
+                    )));
+                }
+                let expected = function
+                    .input_names()
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>();
+                let actual = node
+                    .inputs
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<BTreeSet<_>>();
+                if actual != expected {
+                    return Err(MaterialPresetError::Validation(format!(
+                        "{} node '{name}' requires inputs {}",
+                        function.display_name(),
+                        function.input_names().join(", ")
+                    )));
+                }
+                for value in node.inputs.values() {
+                    validate_preset_ref(value, &declared, name)?;
+                }
             }
         }
-        Ok(())
+        declared.insert(name.to_owned());
     }
+    validate_preset_ref(&recipe.output, &declared, "recipe output")?;
+    for (output, value) in &recipe.program_outputs {
+        validate_preset_ref(value, &declared, &format!("{output:?} output"))?;
+    }
+    Ok(())
+}
+
+fn validate_preset_ref(
+    value: &MaterialPresetValueRef,
+    declared: &BTreeSet<String>,
+    owner: &str,
+) -> Result<(), MaterialPresetError> {
+    if let MaterialPresetValueRef::Node(name) = value
+        && (name.trim() != name || !declared.contains(name))
+    {
+        return Err(MaterialPresetError::Validation(format!(
+            "material graph preset {owner} references node '{name}' before it is declared"
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

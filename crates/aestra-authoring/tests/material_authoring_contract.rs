@@ -8,8 +8,9 @@ use aestra_authoring::{
 use aestra_compiler::{
     MATERIAL_PRESET_SOFT_DISSOLVE, MATERIAL_PRESET_UV_DRIFT, MaterialCompiler,
     MaterialGraphCreateKind, MaterialGraphFunction, MaterialPresetCatalog, MaterialPresetCategory,
-    MaterialPresetDefault, MaterialPresetDescriptor, MaterialStackModifierKind,
-    MaterialStackProjection, MaterialStackProperty,
+    MaterialPresetDescriptor, MaterialPresetGraphNode, MaterialPresetGraphNodeKind,
+    MaterialPresetGraphRecipe, MaterialPresetRecipe, MaterialPresetValueRef,
+    MaterialStackModifierKind, MaterialStackProjection,
 };
 use aestra_core::{
     AssetId, BlendMode, EffectAsset, EffectParameter, Emitter, MaterialExpressionId,
@@ -2011,15 +2012,28 @@ fn material_preset_tool_applies_a_project_catalog_recipe_transactionally() {
         schema_version: MaterialPresetSchemaVersion::CURRENT,
         id: preset,
         display_name: "Hologram".into(),
-        description: "Adds a widened holographic UV band.".into(),
+        description: "Adds a graph-authored widened holographic UV band.".into(),
         category: MaterialPresetCategory::Shaping,
         tags: vec!["hologram".into()],
-        modifiers: vec![MaterialStackModifierKind::ScaleUv],
-        defaults: vec![MaterialPresetDefault {
-            step: 0,
-            property: MaterialStackProperty::Scale,
-            value: MaterialValue::Vec2([1.8, 1.0]),
-        }],
+        recipe: MaterialPresetRecipe::Graph(MaterialPresetGraphRecipe {
+            nodes: vec![
+                MaterialPresetGraphNode {
+                    name: "width".into(),
+                    kind: MaterialPresetGraphNodeKind::Constant(MaterialValue::Vec2([1.8, 1.0])),
+                    inputs: BTreeMap::new(),
+                },
+                MaterialPresetGraphNode {
+                    name: "scaled".into(),
+                    kind: MaterialPresetGraphNodeKind::Function(MaterialGraphFunction::Multiply),
+                    inputs: BTreeMap::from([
+                        ("A".into(), MaterialPresetValueRef::Source),
+                        ("B".into(), MaterialPresetValueRef::Node("width".into())),
+                    ]),
+                },
+            ],
+            output: MaterialPresetValueRef::Node("scaled".into()),
+            program_outputs: BTreeMap::new(),
+        }),
     }])
     .unwrap();
 
@@ -2034,17 +2048,19 @@ fn material_preset_tool_applies_a_project_catalog_recipe_transactionally() {
     )
     .unwrap();
 
-    assert_eq!(plan.created_expressions.len(), 1);
-    let properties = MaterialCompiler
-        .stack_modifier_properties(
-            plan.replacement_program(program_id).unwrap(),
-            plan.created_expressions[0],
-        )
-        .unwrap();
-    assert!(properties.iter().any(|property| {
-        property.property == MaterialStackProperty::Scale
-            && property.value == MaterialValue::Vec2([1.8, 1.0])
+    assert_eq!(plan.created_expressions.len(), 2);
+    let replacement = plan.replacement_program(program_id).unwrap().clone();
+    assert!(replacement.analyze().is_ok());
+    assert!(replacement.expressions.iter().any(|expression| {
+        expression.id == plan.created_expressions[1]
+            && matches!(expression.kind, MaterialExpressionKind::Multiply(_, _))
     }));
+
+    let before = document.clone();
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    assert!(history.undo(&mut document).unwrap().is_some());
+    assert_eq!(document, before);
 }
 
 #[test]

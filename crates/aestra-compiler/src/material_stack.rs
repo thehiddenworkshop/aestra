@@ -3,13 +3,15 @@
 use crate::{MaterialCompileError, MaterialCompiler};
 pub use aestra_core::material::{
     MaterialPresetCategory, MaterialPresetDefault, MaterialPresetDescriptor,
+    MaterialPresetGraphNode, MaterialPresetGraphNodeKind, MaterialPresetGraphRecipe,
+    MaterialPresetProgramOutput, MaterialPresetRecipe, MaterialPresetValueRef,
     MaterialStackModifierKind, MaterialStackProperty,
 };
 use aestra_core::{
     MaterialExpressionId, MaterialPresetId,
     material::{
-        MaterialExpression, MaterialExpressionKind, MaterialInput, MaterialPresetSchemaVersion,
-        MaterialProgram, MaterialValue, MaterialValueType,
+        MaterialExpression, MaterialExpressionKind, MaterialGraphFunction, MaterialInput,
+        MaterialPresetSchemaVersion, MaterialProgram, MaterialValue, MaterialValueType,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -180,22 +182,24 @@ pub fn builtin_material_presets() -> Vec<MaterialPresetDescriptor> {
             description: "Adds directional UV motion with a subtle scale variation.".into(),
             category: MaterialPresetCategory::Motion,
             tags: vec!["animated".into(), "uv".into(), "drift".into()],
-            modifiers: vec![
-                MaterialStackModifierKind::PanUv,
-                MaterialStackModifierKind::ScaleUv,
-            ],
-            defaults: vec![
-                MaterialPresetDefault {
-                    step: 0,
-                    property: MaterialStackProperty::Speed,
-                    value: MaterialValue::Vec2([0.15, 0.05]),
-                },
-                MaterialPresetDefault {
-                    step: 1,
-                    property: MaterialStackProperty::Scale,
-                    value: MaterialValue::Vec2([1.1, 1.1]),
-                },
-            ],
+            recipe: MaterialPresetRecipe::Stack {
+                modifiers: vec![
+                    MaterialStackModifierKind::PanUv,
+                    MaterialStackModifierKind::ScaleUv,
+                ],
+                defaults: vec![
+                    MaterialPresetDefault {
+                        step: 0,
+                        property: MaterialStackProperty::Speed,
+                        value: MaterialValue::Vec2([0.15, 0.05]),
+                    },
+                    MaterialPresetDefault {
+                        step: 1,
+                        property: MaterialStackProperty::Scale,
+                        value: MaterialValue::Vec2([1.1, 1.1]),
+                    },
+                ],
+            },
         },
         MaterialPresetDescriptor {
             schema_version: MaterialPresetSchemaVersion::CURRENT,
@@ -204,27 +208,29 @@ pub fn builtin_material_presets() -> Vec<MaterialPresetDescriptor> {
             description: "Combines a threshold dissolve with soft scene intersection.".into(),
             category: MaterialPresetCategory::Masking,
             tags: vec!["dissolve".into(), "soft-particle".into()],
-            modifiers: vec![
-                MaterialStackModifierKind::Dissolve,
-                MaterialStackModifierKind::SoftParticle,
-            ],
-            defaults: vec![
-                MaterialPresetDefault {
-                    step: 0,
-                    property: MaterialStackProperty::Threshold,
-                    value: MaterialValue::Float(0.45),
-                },
-                MaterialPresetDefault {
-                    step: 0,
-                    property: MaterialStackProperty::EdgeWidth,
-                    value: MaterialValue::Float(0.08),
-                },
-                MaterialPresetDefault {
-                    step: 1,
-                    property: MaterialStackProperty::FadeDistance,
-                    value: MaterialValue::Float(0.35),
-                },
-            ],
+            recipe: MaterialPresetRecipe::Stack {
+                modifiers: vec![
+                    MaterialStackModifierKind::Dissolve,
+                    MaterialStackModifierKind::SoftParticle,
+                ],
+                defaults: vec![
+                    MaterialPresetDefault {
+                        step: 0,
+                        property: MaterialStackProperty::Threshold,
+                        value: MaterialValue::Float(0.45),
+                    },
+                    MaterialPresetDefault {
+                        step: 0,
+                        property: MaterialStackProperty::EdgeWidth,
+                        value: MaterialValue::Float(0.08),
+                    },
+                    MaterialPresetDefault {
+                        step: 1,
+                        property: MaterialStackProperty::FadeDistance,
+                        value: MaterialValue::Float(0.35),
+                    },
+                ],
+            },
         },
         MaterialPresetDescriptor {
             schema_version: MaterialPresetSchemaVersion::CURRENT,
@@ -233,32 +239,34 @@ pub fn builtin_material_presets() -> Vec<MaterialPresetDescriptor> {
             description: "Remaps a signal and applies a smooth contrast threshold.".into(),
             category: MaterialPresetCategory::Shaping,
             tags: vec!["contrast".into(), "mask".into(), "threshold".into()],
-            modifiers: vec![
-                MaterialStackModifierKind::Remap,
-                MaterialStackModifierKind::Smoothstep,
-            ],
-            defaults: vec![
-                MaterialPresetDefault {
-                    step: 0,
-                    property: MaterialStackProperty::InputMinimum,
-                    value: MaterialValue::Float(0.1),
-                },
-                MaterialPresetDefault {
-                    step: 0,
-                    property: MaterialStackProperty::InputMaximum,
-                    value: MaterialValue::Float(0.9),
-                },
-                MaterialPresetDefault {
-                    step: 1,
-                    property: MaterialStackProperty::EdgeMinimum,
-                    value: MaterialValue::Float(0.2),
-                },
-                MaterialPresetDefault {
-                    step: 1,
-                    property: MaterialStackProperty::EdgeMaximum,
-                    value: MaterialValue::Float(0.8),
-                },
-            ],
+            recipe: MaterialPresetRecipe::Stack {
+                modifiers: vec![
+                    MaterialStackModifierKind::Remap,
+                    MaterialStackModifierKind::Smoothstep,
+                ],
+                defaults: vec![
+                    MaterialPresetDefault {
+                        step: 0,
+                        property: MaterialStackProperty::InputMinimum,
+                        value: MaterialValue::Float(0.1),
+                    },
+                    MaterialPresetDefault {
+                        step: 0,
+                        property: MaterialStackProperty::InputMaximum,
+                        value: MaterialValue::Float(0.9),
+                    },
+                    MaterialPresetDefault {
+                        step: 1,
+                        property: MaterialStackProperty::EdgeMinimum,
+                        value: MaterialValue::Float(0.2),
+                    },
+                    MaterialPresetDefault {
+                        step: 1,
+                        property: MaterialStackProperty::EdgeMaximum,
+                        value: MaterialValue::Float(0.8),
+                    },
+                ],
+            },
         },
         MaterialPresetDescriptor {
             schema_version: MaterialPresetSchemaVersion::CURRENT,
@@ -268,19 +276,21 @@ pub fn builtin_material_presets() -> Vec<MaterialPresetDescriptor> {
                 .into(),
             category: MaterialPresetCategory::Masking,
             tags: vec!["dissolve".into(), "threshold".into(), "transition".into()],
-            modifiers: vec![MaterialStackModifierKind::Dissolve],
-            defaults: vec![
-                MaterialPresetDefault {
-                    step: 0,
-                    property: MaterialStackProperty::Threshold,
-                    value: MaterialValue::Float(0.5),
-                },
-                MaterialPresetDefault {
-                    step: 0,
-                    property: MaterialStackProperty::EdgeWidth,
-                    value: MaterialValue::Float(0.06),
-                },
-            ],
+            recipe: MaterialPresetRecipe::Stack {
+                modifiers: vec![MaterialStackModifierKind::Dissolve],
+                defaults: vec![
+                    MaterialPresetDefault {
+                        step: 0,
+                        property: MaterialStackProperty::Threshold,
+                        value: MaterialValue::Float(0.5),
+                    },
+                    MaterialPresetDefault {
+                        step: 0,
+                        property: MaterialStackProperty::EdgeWidth,
+                        value: MaterialValue::Float(0.06),
+                    },
+                ],
+            },
         },
     ]
 }
@@ -959,10 +969,28 @@ fn plan_stack_preset_inner(
     preset: &MaterialPresetDescriptor,
     index: usize,
 ) -> Option<(Vec<MaterialExpressionId>, MaterialProgram)> {
+    match &preset.recipe {
+        MaterialPresetRecipe::Stack {
+            modifiers,
+            defaults,
+        } => plan_stack_recipe_inner(program, entries, modifiers, defaults, index),
+        MaterialPresetRecipe::Graph(recipe) => {
+            plan_graph_recipe_inner(program, entries, recipe, index)
+        }
+    }
+}
+
+fn plan_stack_recipe_inner(
+    program: &MaterialProgram,
+    entries: &[MaterialStackEntry],
+    modifiers: &[MaterialStackModifierKind],
+    defaults: &[MaterialPresetDefault],
+    index: usize,
+) -> Option<(Vec<MaterialExpressionId>, MaterialProgram)> {
     let mut replacement = program.clone();
     let mut projected = entries.to_vec();
-    let mut expressions = Vec::with_capacity(preset.modifiers.len());
-    for (offset, kind) in preset.modifiers.iter().copied().enumerate() {
+    let mut expressions = Vec::with_capacity(modifiers.len());
+    for (offset, kind) in modifiers.iter().copied().enumerate() {
         let insertion_index = index + offset;
         let (expression, next) =
             plan_stack_insert_inner(&replacement, &projected, kind, insertion_index)?;
@@ -971,7 +999,7 @@ fn plan_stack_preset_inner(
         projected =
             editable_stack_entries(MaterialCompiler.project_stack(&replacement).ok()?).ok()?;
     }
-    apply_preset_defaults(&mut replacement, preset, &expressions)?;
+    apply_preset_defaults(&mut replacement, defaults, &expressions)?;
     replacement.analyze().ok()?;
     let projected =
         editable_stack_entries(MaterialCompiler.project_stack(&replacement).ok()?).ok()?;
@@ -989,14 +1017,224 @@ fn plan_stack_preset_inner(
 
 fn apply_preset_defaults(
     program: &mut MaterialProgram,
-    preset: &MaterialPresetDescriptor,
+    defaults: &[MaterialPresetDefault],
     expressions: &[MaterialExpressionId],
 ) -> Option<()> {
-    for default in &preset.defaults {
+    for default in defaults {
         let expression = *expressions.get(default.step)?;
         set_modifier_constant(program, expression, default.property, default.value.clone())?;
     }
     Some(())
+}
+
+fn plan_graph_recipe_inner(
+    program: &MaterialProgram,
+    entries: &[MaterialStackEntry],
+    recipe: &MaterialPresetGraphRecipe,
+    index: usize,
+) -> Option<(Vec<MaterialExpressionId>, MaterialProgram)> {
+    if entries.is_empty() || index > entries.len() {
+        return None;
+    }
+    let existing = program
+        .expressions
+        .iter()
+        .map(|expression| (expression.id, &expression.kind))
+        .collect::<BTreeMap<_, _>>();
+    let source = if index == 0 {
+        primary_source(existing[&entries[0].expression])?
+    } else {
+        entries[index - 1].expression
+    };
+    let boundary = entries.get(index).map(|entry| entry.expression);
+    if boundary.is_some_and(|expression| primary_source(existing[&expression]) != Some(source)) {
+        return None;
+    }
+    let allowed_references = usize::from(boundary.is_some())
+        + usize::from(program.outputs.color == source)
+        + usize::from(program.outputs.alpha == source);
+    if allowed_references == 0 || expression_reference_count(program, source) != allowed_references
+    {
+        return None;
+    }
+
+    let original_color = program.outputs.color;
+    let original_alpha = program.outputs.alpha;
+    let mut replacement = program.clone();
+    let mut nodes = BTreeMap::new();
+    let mut created = Vec::with_capacity(recipe.nodes.len());
+    for node in &recipe.nodes {
+        let kind = match &node.kind {
+            MaterialPresetGraphNodeKind::Constant(value) => {
+                MaterialExpressionKind::Constant(value.clone())
+            }
+            MaterialPresetGraphNodeKind::Input(input) => MaterialExpressionKind::Input(*input),
+            MaterialPresetGraphNodeKind::Function(function) => graph_recipe_function(
+                *function,
+                &node.inputs,
+                &nodes,
+                source,
+                original_color,
+                original_alpha,
+            )?,
+        };
+        let expression = append_expression(&mut replacement, kind);
+        nodes.insert(node.name.clone(), expression);
+        created.push(expression);
+    }
+    let output = resolve_preset_value(
+        &recipe.output,
+        &nodes,
+        source,
+        original_color,
+        original_alpha,
+    )?;
+    if let Some(boundary) = boundary {
+        let boundary = replacement
+            .expressions
+            .iter_mut()
+            .find(|candidate| candidate.id == boundary)?;
+        if !set_primary_source(&mut boundary.kind, output) {
+            return None;
+        }
+    }
+    if replacement.outputs.color == source {
+        replacement.outputs.color = output;
+    }
+    if replacement.outputs.alpha == source {
+        replacement.outputs.alpha = output;
+    }
+    for (target, value) in &recipe.program_outputs {
+        let expression =
+            resolve_preset_value(value, &nodes, source, original_color, original_alpha)?;
+        match target {
+            MaterialPresetProgramOutput::Color => replacement.outputs.color = expression,
+            MaterialPresetProgramOutput::Alpha => replacement.outputs.alpha = expression,
+        }
+    }
+    replacement.analyze().ok()?;
+    Some((created, replacement))
+}
+
+fn resolve_preset_value(
+    value: &MaterialPresetValueRef,
+    nodes: &BTreeMap<String, MaterialExpressionId>,
+    source: MaterialExpressionId,
+    program_color: MaterialExpressionId,
+    program_alpha: MaterialExpressionId,
+) -> Option<MaterialExpressionId> {
+    match value {
+        MaterialPresetValueRef::Source => Some(source),
+        MaterialPresetValueRef::ProgramColor => Some(program_color),
+        MaterialPresetValueRef::ProgramAlpha => Some(program_alpha),
+        MaterialPresetValueRef::Node(name) => nodes.get(name).copied(),
+    }
+}
+
+fn graph_recipe_function(
+    function: MaterialGraphFunction,
+    inputs: &BTreeMap<String, MaterialPresetValueRef>,
+    nodes: &BTreeMap<String, MaterialExpressionId>,
+    source: MaterialExpressionId,
+    program_color: MaterialExpressionId,
+    program_alpha: MaterialExpressionId,
+) -> Option<MaterialExpressionKind> {
+    let input = |name: &str| {
+        resolve_preset_value(
+            inputs.get(name)?,
+            nodes,
+            source,
+            program_color,
+            program_alpha,
+        )
+    };
+    Some(match function {
+        MaterialGraphFunction::Add => MaterialExpressionKind::Add(input("A")?, input("B")?),
+        MaterialGraphFunction::Subtract => {
+            MaterialExpressionKind::Subtract(input("A")?, input("B")?)
+        }
+        MaterialGraphFunction::Multiply => {
+            MaterialExpressionKind::Multiply(input("A")?, input("B")?)
+        }
+        MaterialGraphFunction::Divide => MaterialExpressionKind::Divide(input("A")?, input("B")?),
+        MaterialGraphFunction::Lerp => MaterialExpressionKind::Lerp {
+            start: input("Start")?,
+            end: input("End")?,
+            factor: input("Factor")?,
+        },
+        MaterialGraphFunction::Clamp => MaterialExpressionKind::Clamp {
+            value: input("Value")?,
+            min: input("Minimum")?,
+            max: input("Maximum")?,
+        },
+        MaterialGraphFunction::Remap => MaterialExpressionKind::Remap {
+            value: input("Value")?,
+            input_min: input("SourceMinimum")?,
+            input_max: input("SourceMaximum")?,
+            output_min: input("TargetMinimum")?,
+            output_max: input("TargetMaximum")?,
+        },
+        MaterialGraphFunction::Smoothstep => MaterialExpressionKind::Smoothstep {
+            edge_min: input("LowerEdge")?,
+            edge_max: input("UpperEdge")?,
+            value: input("Value")?,
+        },
+        MaterialGraphFunction::Fresnel => MaterialExpressionKind::Fresnel {
+            normal: input("Normal")?,
+            view: input("ViewDirection")?,
+            power: input("Power")?,
+        },
+        MaterialGraphFunction::RadialMask => MaterialExpressionKind::RadialMask {
+            uv: input("Uv")?,
+            center: input("Center")?,
+            radius: input("Radius")?,
+            softness: input("Softness")?,
+            invert: input("Invert")?,
+        },
+        MaterialGraphFunction::Dissolve => MaterialExpressionKind::Dissolve {
+            source: input("Source")?,
+            threshold: input("Threshold")?,
+            edge_width: input("EdgeWidth")?,
+            invert: input("Invert")?,
+        },
+        MaterialGraphFunction::DissolveEdge => MaterialExpressionKind::DissolveEdge {
+            source: input("Source")?,
+            threshold: input("Threshold")?,
+            edge_width: input("EdgeWidth")?,
+            invert: input("Invert")?,
+        },
+        MaterialGraphFunction::DepthFade => MaterialExpressionKind::DepthFade {
+            scene_depth: input("SceneDepth")?,
+            pixel_depth: input("PixelDepth")?,
+            fade_distance: input("FadeDistance")?,
+            invert: input("Invert")?,
+        },
+        MaterialGraphFunction::SoftParticle => MaterialExpressionKind::SoftParticle {
+            alpha: input("Alpha")?,
+            scene_depth: input("SceneDepth")?,
+            pixel_depth: input("PixelDepth")?,
+            fade_distance: input("FadeDistance")?,
+            invert: input("Invert")?,
+        },
+        MaterialGraphFunction::PanUv => MaterialExpressionKind::PanUv {
+            uv: input("Uv")?,
+            speed: input("Speed")?,
+            time: input("Time")?,
+        },
+        MaterialGraphFunction::RotateUv => MaterialExpressionKind::RotateUv {
+            uv: input("Uv")?,
+            center: input("Center")?,
+            angle: input("Angle")?,
+        },
+        MaterialGraphFunction::ScaleUv => MaterialExpressionKind::ScaleUv {
+            uv: input("Uv")?,
+            center: input("Center")?,
+            scale: input("Scale")?,
+        },
+        MaterialGraphFunction::SampleTexture | MaterialGraphFunction::ExtractComponent => {
+            return None;
+        }
+    })
 }
 
 fn set_modifier_constant(

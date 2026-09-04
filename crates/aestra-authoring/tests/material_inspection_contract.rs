@@ -7,7 +7,8 @@ use aestra_authoring::{
 };
 use aestra_compiler::{
     MATERIAL_PRESET_DISSOLVE, MaterialPresetCatalog, MaterialPresetCategory, MaterialPresetDefault,
-    MaterialPresetDescriptor, MaterialStackModifierKind, MaterialStackProperty,
+    MaterialPresetDescriptor, MaterialPresetRecipe, MaterialStackModifierKind,
+    MaterialStackProperty,
 };
 use aestra_core::{
     EffectAsset, Emitter, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialPresetId,
@@ -145,12 +146,14 @@ fn material_api_inspects_and_plans_project_catalog_presets() {
         description: "Shapes a source signal into a holographic scan band.".into(),
         category: MaterialPresetCategory::Shaping,
         tags: vec!["hologram".into()],
-        modifiers: vec![MaterialStackModifierKind::Smoothstep],
-        defaults: vec![MaterialPresetDefault {
-            step: 0,
-            property: MaterialStackProperty::EdgeMinimum,
-            value: MaterialValue::Float(0.42),
-        }],
+        recipe: MaterialPresetRecipe::Stack {
+            modifiers: vec![MaterialStackModifierKind::Smoothstep],
+            defaults: vec![MaterialPresetDefault {
+                step: 0,
+                property: MaterialStackProperty::EdgeMinimum,
+                value: MaterialValue::Float(0.42),
+            }],
+        },
     }])
     .unwrap();
     let target = MaterialInspectionTarget::Program(program);

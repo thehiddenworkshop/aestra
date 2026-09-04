@@ -1,8 +1,8 @@
 (
-    schema_version: 1,
+    schema_version: 2,
     id: "a3574a00-0000-4000-8000-00000000a101",
     display_name: "Hologram",
-    description: "Shapes a source signal into a crisp scan band suitable for holographic materials.",
+    description: "Builds a view-dependent cyan hologram with a particle-age scan band.",
     category: Shaping,
     tags: [
         "hologram",
@@ -10,40 +10,62 @@
         "sci-fi",
         "threshold",
     ],
-    modifiers: [
-        Remap,
-        Smoothstep,
-    ],
-    defaults: [
-        (
-            step: 0,
-            property: InputMinimum,
-            value: Float(0.15),
-        ),
-        (
-            step: 0,
-            property: InputMaximum,
-            value: Float(0.85),
-        ),
-        (
-            step: 0,
-            property: OutputMinimum,
-            value: Float(0.0),
-        ),
-        (
-            step: 0,
-            property: OutputMaximum,
-            value: Float(1.0),
-        ),
-        (
-            step: 1,
-            property: EdgeMinimum,
-            value: Float(0.42),
-        ),
-        (
-            step: 1,
-            property: EdgeMaximum,
-            value: Float(0.58),
-        ),
-    ],
+    recipe: Graph((
+        nodes: [
+            (name: "normal", kind: Input(Normal)),
+            (name: "view", kind: Input(ViewDirection)),
+            (name: "fresnel_power", kind: Constant(Float(4.0))),
+            (
+                name: "fresnel",
+                kind: Function(Fresnel),
+                inputs: {
+                    "Normal": Node("normal"),
+                    "ViewDirection": Node("view"),
+                    "Power": Node("fresnel_power"),
+                },
+            ),
+            (name: "age", kind: Input(ParticleNormalizedAge)),
+            (name: "scan_min", kind: Constant(Float(0.42))),
+            (name: "scan_max", kind: Constant(Float(0.58))),
+            (
+                name: "scan",
+                kind: Function(Smoothstep),
+                inputs: {
+                    "LowerEdge": Node("scan_min"),
+                    "UpperEdge": Node("scan_max"),
+                    "Value": Node("age"),
+                },
+            ),
+            (
+                name: "edge_scan",
+                kind: Function(Multiply),
+                inputs: {
+                    "A": Node("fresnel"),
+                    "B": Node("scan"),
+                },
+            ),
+            (
+                name: "opacity",
+                kind: Function(Multiply),
+                inputs: {
+                    "A": Source,
+                    "B": Node("edge_scan"),
+                },
+            ),
+            (name: "cyan", kind: Constant(ColorSrgb((0.12, 0.72, 1.0, 1.0)))),
+            (
+                name: "tinted_color",
+                kind: Function(Multiply),
+                inputs: {
+                    "A": ProgramColor,
+                    "B": Node("cyan"),
+                },
+            ),
+        ],
+        output: Node("opacity"),
+        program_outputs: {
+            Color: Node("tinted_color"),
+            Alpha: Node("opacity"),
+        },
+    )),
 )

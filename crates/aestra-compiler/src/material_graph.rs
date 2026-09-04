@@ -4,6 +4,7 @@ use crate::{
     MaterialCompileError, MaterialCompiler, MaterialFunctionLibrary, MaterialIrProgram,
     MaterialIrValueId, MaterialStackModifierKind, material_stack::append_default_modifier,
 };
+pub use aestra_core::material::MaterialGraphFunction;
 use aestra_core::{
     MaterialExpressionId, MaterialFunctionInputId, MaterialFunctionOutputId, MaterialParameterId,
     MaterialProgramId, ValidationReport,
@@ -25,73 +26,6 @@ pub enum MaterialGraphNodeKind {
     FunctionCall(MaterialFunctionRef),
     Function(MaterialGraphFunction),
     ExtractComponent(MaterialVectorComponent),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MaterialGraphFunction {
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Lerp,
-    Clamp,
-    Remap,
-    Smoothstep,
-    Fresnel,
-    RadialMask,
-    Dissolve,
-    DissolveEdge,
-    DepthFade,
-    SoftParticle,
-    PanUv,
-    RotateUv,
-    ScaleUv,
-    SampleTexture,
-    ExtractComponent,
-}
-
-impl MaterialGraphFunction {
-    pub const fn display_name(self) -> &'static str {
-        match self {
-            Self::Add => "Add",
-            Self::Subtract => "Subtract",
-            Self::Multiply => "Multiply",
-            Self::Divide => "Divide",
-            Self::Lerp => "Lerp",
-            Self::Clamp => "Clamp",
-            Self::Remap => "Remap",
-            Self::Smoothstep => "Smoothstep",
-            Self::Fresnel => "Fresnel",
-            Self::RadialMask => "Radial Mask",
-            Self::Dissolve => "Dissolve",
-            Self::DissolveEdge => "Dissolve Edge",
-            Self::DepthFade => "Depth Fade",
-            Self::SoftParticle => "Soft Particle",
-            Self::PanUv => "UV Pan",
-            Self::RotateUv => "UV Rotate",
-            Self::ScaleUv => "UV Scale",
-            Self::SampleTexture => "Sample Texture",
-            Self::ExtractComponent => "Extract Component",
-        }
-    }
-
-    pub const fn category(self) -> &'static str {
-        match self {
-            Self::Add
-            | Self::Subtract
-            | Self::Multiply
-            | Self::Divide
-            | Self::Lerp
-            | Self::Clamp
-            | Self::Remap
-            | Self::Smoothstep
-            | Self::ExtractComponent => "Math",
-            Self::PanUv | Self::RotateUv | Self::ScaleUv => "UV",
-            Self::RadialMask | Self::Dissolve | Self::DissolveEdge => "Mask",
-            Self::DepthFade | Self::SoftParticle => "Depth",
-            Self::Fresnel | Self::SampleTexture => "Material",
-        }
-    }
 }
 
 /// A compiler-owned node kind that can be created by graph authoring clients.

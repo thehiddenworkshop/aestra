@@ -407,14 +407,17 @@ the current sprite-material path until the native-GPU compatibility gate approve
   function asset plus graph rewrite as one rollback-safe undo/redo operation.
 - [ ] **Material 16 — semantic preset library.** The registry and project-asset slices are
   implemented. Presets use stable semantic IDs and portable descriptors containing a schema
-  version, category, description, normalized search tags, an ordered modifier recipe, and editable
-  defaults. Project `.aestra.material-preset.ron` sources participate in the typed asset index,
+  version (currently v2), category, description, and normalized search tags. Recipes may be ordered modifier
+  stacks with editable defaults or typed, topologically ordered semantic graphs whose named local
+  nodes can splice the current source and override color/alpha outputs without storing expression
+  IDs. Project `.aestra.material-preset.ron` sources participate in the typed asset index,
   including validation, stable loading, duplicate-ID diagnostics, and deterministic merging with
   built-ins. UV Drift, Soft Dissolve, Contrast Shape, and Dissolve are built in; a project-local
-  Hologram preset exercises catalog loading → compatibility filtering → transactional authoring →
+  Hologram preset now exercises a genuinely branched Fresnel/particle-age graph through catalog
+  loading → compatibility filtering → atomic graph materialization → transactional authoring →
   categorized editor presentation. Explicit catalogs are also available to machine-readable
-  inspection and tool planning. Richer graph recipes, previews, and the remaining initial preset
-  library are still required to complete this milestone.
+  inspection and tool planning. Preset previews and the remaining initial preset library are still
+  required to complete this milestone.
 - [ ] **Material 17 — validated custom WESL escape hatch.**
 
 ### Phase F — next-generation tooling

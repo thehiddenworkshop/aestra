@@ -1,10 +1,10 @@
 use aestra_compiler::{
     MATERIAL_PRESET_DISSOLVE, MATERIAL_PRESET_SOFT_DISSOLVE, MATERIAL_PRESET_UV_DRIFT,
     MaterialCompiler, MaterialPresetCatalog, MaterialPresetCategory, MaterialPresetDefault,
-    MaterialPresetDescriptor, MaterialStackEditError, MaterialStackFallbackReason,
-    MaterialStackInsertTarget, MaterialStackModifierKind, MaterialStackMoveError,
-    MaterialStackMoveTarget, MaterialStackPresetTarget, MaterialStackProjection,
-    MaterialStackProperty,
+    MaterialPresetDescriptor, MaterialPresetRecipe, MaterialStackEditError,
+    MaterialStackFallbackReason, MaterialStackInsertTarget, MaterialStackModifierKind,
+    MaterialStackMoveError, MaterialStackMoveTarget, MaterialStackPresetTarget,
+    MaterialStackProjection, MaterialStackProperty,
 };
 use aestra_core::material::{
     MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
@@ -532,11 +532,15 @@ fn builtin_preset_catalog_exposes_stable_searchable_semantic_recipes() {
     assert_eq!(dissolve.display_name, "Dissolve");
     assert_eq!(dissolve.category, MaterialPresetCategory::Masking);
     assert!(dissolve.tags.iter().any(|tag| tag == "threshold"));
-    assert_eq!(
-        dissolve.modifiers,
-        vec![MaterialStackModifierKind::Dissolve]
-    );
-    assert!(dissolve.defaults.iter().any(|default| {
+    let MaterialPresetRecipe::Stack {
+        modifiers,
+        defaults,
+    } = &dissolve.recipe
+    else {
+        panic!("built-in dissolve should remain a stack recipe")
+    };
+    assert_eq!(modifiers, &[MaterialStackModifierKind::Dissolve]);
+    assert!(defaults.iter().any(|default| {
         default.property == MaterialStackProperty::Threshold
             && default.value == MaterialValue::Float(0.5)
     }));
@@ -579,12 +583,14 @@ fn explicit_preset_catalogs_accept_new_semantic_recipes_without_compiler_changes
         description: "Scales UV coordinates horizontally.".into(),
         category: MaterialPresetCategory::Shaping,
         tags: vec!["uv".into(), "wide".into()],
-        modifiers: vec![MaterialStackModifierKind::ScaleUv],
-        defaults: vec![MaterialPresetDefault {
-            step: 0,
-            property: MaterialStackProperty::Scale,
-            value: MaterialValue::Vec2([2.0, 1.0]),
-        }],
+        recipe: MaterialPresetRecipe::Stack {
+            modifiers: vec![MaterialStackModifierKind::ScaleUv],
+            defaults: vec![MaterialPresetDefault {
+                step: 0,
+                property: MaterialStackProperty::Scale,
+                value: MaterialValue::Vec2([2.0, 1.0]),
+            }],
+        },
     });
     let program = reorderable_uv_stack_program();
     let target = MaterialCompiler
@@ -603,6 +609,48 @@ fn explicit_preset_catalogs_accept_new_semantic_recipes_without_compiler_changes
     assert!(properties.iter().any(|property| {
         property.property == MaterialStackProperty::Scale
             && property.value == MaterialValue::Vec2([2.0, 1.0])
+    }));
+}
+
+#[test]
+fn project_graph_recipe_materializes_a_branched_hologram_atomically() {
+    let preset = MaterialPresetDescriptor::from_ron(include_str!(
+        "../../../assets/materials/hologram.aestra.material-preset.ron"
+    ))
+    .unwrap();
+    let preset_id = preset.id;
+    let mut catalog = MaterialPresetCatalog::default();
+    catalog.register(preset);
+    let program = linear_stack_program();
+    let original_expression_count = program.expressions.len();
+    let target = MaterialCompiler
+        .stack_preset_targets_with_catalog(&program, &catalog)
+        .unwrap()
+        .into_iter()
+        .find(|target| target.preset == preset_id)
+        .expect("the hologram graph should be compatible with the terminal alpha edge");
+
+    let plan = MaterialCompiler
+        .plan_stack_insert_preset_with_catalog(&program, &catalog, preset_id, target.index)
+        .unwrap();
+
+    assert_eq!(plan.expressions.len(), 12);
+    assert_eq!(
+        plan.replacement.expressions.len(),
+        original_expression_count + plan.expressions.len()
+    );
+    assert_ne!(plan.replacement.outputs.color, program.outputs.color);
+    assert_ne!(plan.replacement.outputs.alpha, program.outputs.alpha);
+    assert!(plan.replacement.analyze().is_ok());
+    assert!(matches!(
+        MaterialCompiler.project_stack(&plan.replacement).unwrap(),
+        MaterialStackProjection::Advanced { .. }
+    ));
+    assert!(plan.expressions.iter().all(|id| {
+        plan.replacement
+            .expressions
+            .iter()
+            .any(|expression| expression.id == *id)
     }));
 }
 

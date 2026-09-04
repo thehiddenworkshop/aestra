@@ -2,8 +2,8 @@ use aestra_core::{
     MaterialPresetId,
     material::{
         MaterialPresetCategory, MaterialPresetDefault, MaterialPresetDescriptor,
-        MaterialPresetSchemaVersion, MaterialStackModifierKind, MaterialStackProperty,
-        MaterialValue,
+        MaterialPresetRecipe, MaterialPresetSchemaVersion, MaterialStackModifierKind,
+        MaterialStackProperty, MaterialValue,
     },
 };
 use aestra_project::{
@@ -18,15 +18,17 @@ fn hologram_preset(id: MaterialPresetId) -> MaterialPresetDescriptor {
         description: "Shapes a source signal into a holographic scan band.".into(),
         category: MaterialPresetCategory::Shaping,
         tags: vec!["hologram".into(), "scan".into()],
-        modifiers: vec![
-            MaterialStackModifierKind::Remap,
-            MaterialStackModifierKind::Smoothstep,
-        ],
-        defaults: vec![MaterialPresetDefault {
-            step: 1,
-            property: MaterialStackProperty::EdgeMinimum,
-            value: MaterialValue::Float(0.42),
-        }],
+        recipe: MaterialPresetRecipe::Stack {
+            modifiers: vec![
+                MaterialStackModifierKind::Remap,
+                MaterialStackModifierKind::Smoothstep,
+            ],
+            defaults: vec![MaterialPresetDefault {
+                step: 1,
+                property: MaterialStackProperty::EdgeMinimum,
+                value: MaterialValue::Float(0.42),
+            }],
+        },
     }
 }
 
