@@ -11,6 +11,13 @@ use std::time::{Duration, Instant};
 
 pub(crate) const DEFAULT_TOOLTIP_DELAY: Duration = Duration::from_millis(650);
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum EditorTooltipSide {
+    #[default]
+    Left,
+    Right,
+}
+
 /// Resolved editor-facing tooltip content.
 ///
 /// Strings are localized by the call site before this component is inserted. Keeping localization
@@ -23,6 +30,7 @@ pub(crate) struct EditorTooltip {
     shortcut: Option<String>,
     footer: Option<String>,
     delay: Duration,
+    preferred_side: EditorTooltipSide,
 }
 
 impl EditorTooltip {
@@ -33,6 +41,7 @@ impl EditorTooltip {
             shortcut: None,
             footer: None,
             delay: DEFAULT_TOOLTIP_DELAY,
+            preferred_side: EditorTooltipSide::Left,
         }
     }
 
@@ -57,6 +66,11 @@ impl EditorTooltip {
     #[allow(dead_code)] // The default is currently consistent across every editor surface.
     pub(crate) fn with_delay(mut self, delay: Duration) -> Self {
         self.delay = delay;
+        self
+    }
+
+    pub(crate) fn with_preferred_side(mut self, side: EditorTooltipSide) -> Self {
+        self.preferred_side = side;
         self
     }
 
@@ -137,6 +151,7 @@ pub(crate) fn update_tooltip(
 
     let content = tooltip.clone();
     let accessible_label = content.accessible_label();
+    let positions = tooltip_positions(content.preferred_side);
     let mut popup = None;
     commands.entity(target).with_children(|target| {
         popup = Some(
@@ -144,23 +159,7 @@ pub(crate) fn update_tooltip(
                 .spawn((
                     TooltipPopup,
                     Popover {
-                        positions: vec![
-                            PopoverPlacement {
-                                side: PopoverSide::Left,
-                                align: PopoverAlign::Center,
-                                gap: 8.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Right,
-                                align: PopoverAlign::Center,
-                                gap: 8.0,
-                            },
-                            PopoverPlacement {
-                                side: PopoverSide::Bottom,
-                                align: PopoverAlign::Start,
-                                gap: 6.0,
-                            },
-                        ],
+                        positions,
                         window_margin: 10.0,
                     },
                     OverrideClip,
@@ -227,6 +226,35 @@ pub(crate) fn update_tooltip(
     state.popup = popup;
 }
 
+fn tooltip_positions(preferred_side: EditorTooltipSide) -> Vec<PopoverPlacement> {
+    let (preferred, opposite) = match preferred_side {
+        EditorTooltipSide::Left => (PopoverSide::Left, PopoverSide::Right),
+        EditorTooltipSide::Right => (PopoverSide::Right, PopoverSide::Left),
+    };
+    vec![
+        PopoverPlacement {
+            side: preferred,
+            align: PopoverAlign::Center,
+            gap: 10.0,
+        },
+        PopoverPlacement {
+            side: opposite,
+            align: PopoverAlign::Center,
+            gap: 10.0,
+        },
+        PopoverPlacement {
+            side: PopoverSide::Bottom,
+            align: PopoverAlign::Start,
+            gap: 8.0,
+        },
+        PopoverPlacement {
+            side: PopoverSide::Top,
+            align: PopoverAlign::Start,
+            gap: 8.0,
+        },
+    ]
+}
+
 fn tooltip_text(text: impl Into<String>, size: f32, color: Color) -> impl Bundle {
     (
         Text::new(text),
@@ -266,6 +294,7 @@ mod tests {
         assert_eq!(tooltip.shortcut.as_deref(), Some("F"));
         assert_eq!(tooltip.footer.as_deref(), Some("Hold Shift for precision"));
         assert_eq!(tooltip.delay, DEFAULT_TOOLTIP_DELAY);
+        assert_eq!(tooltip.preferred_side, EditorTooltipSide::Left);
     }
 
     #[test]
@@ -284,5 +313,23 @@ mod tests {
         let tooltip = EditorTooltip::description("Slow help").with_delay(delay);
 
         assert_eq!(tooltip.delay, delay);
+    }
+
+    #[test]
+    fn tooltip_side_controls_the_first_horizontal_placement() {
+        let positions = tooltip_positions(EditorTooltipSide::Right);
+
+        assert_eq!(positions[0].side, PopoverSide::Right);
+        assert_eq!(positions[1].side, PopoverSide::Left);
+        assert!(
+            positions
+                .iter()
+                .any(|placement| placement.side == PopoverSide::Bottom)
+        );
+        assert!(
+            positions
+                .iter()
+                .any(|placement| placement.side == PopoverSide::Top)
+        );
     }
 }

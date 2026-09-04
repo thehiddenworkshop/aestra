@@ -7,7 +7,7 @@ use super::{
     button::{FeathersActionButton, PendingFeathersActivation},
     icon::load_svg_icon,
     scenes,
-    tooltip::EditorTooltip,
+    tooltip::{EditorTooltip, EditorTooltipSide},
 };
 use crate::theme;
 use bevy::{
@@ -1324,7 +1324,7 @@ pub(crate) fn spawn_graph_port_with<B: Bundle>(
     marker: B,
     accessory: impl FnOnce(&mut ChildSpawnerCommands),
 ) -> Entity {
-    let mut row = parent.spawn(graph_port_row_node(props.side));
+    let mut row = parent.spawn((graph_port_row_node(props.side), Pickable::IGNORE));
     let mut socket_entity = Entity::PLACEHOLDER;
     row.with_children(|row| {
         socket_entity = row
@@ -1336,7 +1336,11 @@ pub(crate) fn spawn_graph_port_with<B: Bundle>(
                     "{}. {}",
                     props.tooltip_title, props.tooltip_description
                 )),
-                EditorTooltip::titled(props.tooltip_title, props.tooltip_description),
+                EditorTooltip::titled(props.tooltip_title, props.tooltip_description)
+                    .with_preferred_side(match props.side {
+                        GraphSocketSide::Input => EditorTooltipSide::Left,
+                        GraphSocketSide::Output => EditorTooltipSide::Right,
+                    }),
                 EntityCursor::System(SystemCursorIcon::Pointer),
                 Node {
                     width: Val::Px(SOCKET_HIT_SIZE),

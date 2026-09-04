@@ -3614,10 +3614,12 @@ fn spawn_expression_node(
                     body,
                     GraphPortProps {
                         label: Some(presentation.label.to_owned()),
-                        tooltip_title: format!("{} input", presentation.label),
+                        tooltip_title: material_slot_title(
+                            &format!("{} input", presentation.label),
+                            port.value_type,
+                        ),
                         tooltip_description: material_slot_description(
                             &presentation.description,
-                            port.value_type,
                             port.evaluation_domain,
                         ),
                         side: GraphSocketSide::Input,
@@ -3644,10 +3646,9 @@ fn spawn_expression_node(
                 body,
                 GraphPortProps {
                     label: None,
-                    tooltip_title: "Output".into(),
+                    tooltip_title: material_slot_title("Output", node.value_type),
                     tooltip_description: material_slot_description(
                         &format!("Value produced by the {} node.", node.label),
-                        node.value_type,
                         node.evaluation_domain,
                     ),
                     side: GraphSocketSide::Output,
@@ -3735,10 +3736,12 @@ fn spawn_output_node(
                     body,
                     GraphPortProps {
                         label: Some(label.into()),
-                        tooltip_title: format!("{label} input"),
+                        tooltip_title: material_slot_title(
+                            &format!("{label} input"),
+                            output.value_type,
+                        ),
                         tooltip_description: material_slot_description(
                             description,
-                            output.value_type,
                             output.evaluation_domain,
                         ),
                         side: GraphSocketSide::Input,
@@ -4034,14 +4037,16 @@ fn input_port_presentation(name: &str) -> MaterialInputPortPresentation {
 
 fn material_slot_description(
     description: &str,
-    value_type: Option<MaterialValueType>,
     domain: Option<MaterialExpressionDomain>,
 ) -> String {
     format!(
-        "{description}\nType: {}\nEvaluation: {}",
-        material_value_type_name(value_type),
+        "{description}\nEvaluation: {}",
         material_domain_name(domain)
     )
+}
+
+fn material_slot_title(label: &str, value_type: Option<MaterialValueType>) -> String {
+    format!("{label} [{}]", material_value_type_name(value_type))
 }
 
 fn material_value_type_name(value_type: Option<MaterialValueType>) -> &'static str {
@@ -4325,13 +4330,14 @@ mod tests {
 
     #[test]
     fn graph_slot_tooltips_report_type_and_evaluation_domain() {
+        let title = material_slot_title("Target minimum input", Some(MaterialValueType::Color));
         let description = material_slot_description(
             "Value produced by this node.",
-            Some(MaterialValueType::Color),
             Some(MaterialExpressionDomain::Fragment),
         );
 
-        assert!(description.contains("Type: Color"));
+        assert_eq!(title, "Target minimum input [Color]");
+        assert!(!description.contains("Type:"));
         assert!(description.contains("Evaluation: Fragment"));
     }
 
