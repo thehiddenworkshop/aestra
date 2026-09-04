@@ -20,6 +20,10 @@ use glam::{Mat4, Quat, UVec2, Vec2, Vec3, Vec4};
 use thiserror::Error;
 
 pub const MAX_CURVE_KEYS: usize = 8;
+/// Samples in the per-emitter inverse-emission table used to seed curve-driven
+/// spawn-time reconstruction (see `aestra_simulation.wesl`). More samples give the
+/// GPU a tighter starting bracket, so fewer refinement iterations are needed.
+pub const SPAWN_INVERSE_SAMPLES: usize = 32;
 pub const MAX_FLIPBOOK_FRAMES: usize = 64;
 pub const WORKGROUP_SIZE: u32 = 64;
 const INDIRECT_DRAW_WORDS: usize = 4;
@@ -109,6 +113,15 @@ pub struct GpuEmitter {
     pub size: GpuCurve,
     pub opacity: GpuCurve,
     pub color: GpuGradient,
+    /// Inverse-emission table for a curve-driven spawn rate: `spawn_inverse[k]` is the
+    /// spawn time (in `[0, source_duration]`) at which cumulative emission reaches the
+    /// fraction `k/(SPAWN_INVERSE_SAMPLES-1)` of `spawn_inverse_total`. Zeroed for
+    /// non-curve spawn rates, which do not need reconstruction.
+    pub spawn_inverse: [f32; SPAWN_INVERSE_SAMPLES],
+    /// Total emission over the emitter's source duration — the denominator for the
+    /// spawn-inverse fraction. Zero when the table is unused.
+    pub spawn_inverse_total: f32,
+    pub _spawn_inverse_padding: Vec3,
 }
 
 /// One authored presentation path for an emitter.
@@ -389,6 +402,11 @@ impl GpuEffectArtifact {
             ));
             let rotation = Quat::from_array(emitter.transform.rotation).normalize();
             let scale = Vec3::from_array(emitter.transform.scale);
+            let (spawn_inverse, spawn_inverse_total) = if emitter.enabled {
+                build_spawn_inverse(spawn_rate, emitter.source_duration)
+            } else {
+                ([0.0; SPAWN_INVERSE_SAMPLES], 0.0)
+            };
             let (spawn_rate, spawn_rate_source, spawn_rate_curve) = if emitter.enabled {
                 pack_scalar_source(spawn_rate)?
             } else {
@@ -443,6 +461,9 @@ impl GpuEffectArtifact {
                 size: pack_curve(appearance.size)?,
                 opacity: pack_curve(appearance.opacity)?,
                 color: pack_gradient(appearance.color)?,
+                spawn_inverse,
+                spawn_inverse_total,
+                _spawn_inverse_padding: Vec3::ZERO,
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }
@@ -680,6 +701,45 @@ fn maximum_absolute_scalar_source(source: ResolvedGpuScalarSource<'_>) -> f32 {
         ResolvedGpuScalarSource::RandomRange(range) => range.min.abs().max(range.max.abs()),
         ResolvedGpuScalarSource::Curve(curve, _) => maximum_absolute_curve(curve),
     }
+}
+
+/// Builds the inverse-emission table for a curve-driven (emitter-time) spawn rate,
+/// returning the table plus the total emission over `source_duration`. Other sources
+/// return zeros and the shader keeps its analytic constant-rate path. Each entry is
+/// the spawn time at an evenly spaced emission fraction, found by inverting the exact
+/// cumulative-emission function the GPU evaluates — so the shader only needs a few
+/// refinement steps to match the previous per-particle binary search.
+fn build_spawn_inverse(
+    source: ResolvedGpuScalarSource<'_>,
+    source_duration: f32,
+) -> ([f32; SPAWN_INVERSE_SAMPLES], f32) {
+    let ResolvedGpuScalarSource::Curve(curve, PropertyEvaluationDomain::EmitterTime) = source
+    else {
+        return ([0.0; SPAWN_INVERSE_SAMPLES], 0.0);
+    };
+    let duration = source_duration.max(f32::EPSILON);
+    let total = (duration * curve.integral(1.0)).max(0.0);
+    let mut table = [0.0; SPAWN_INVERSE_SAMPLES];
+    if total <= 0.0 {
+        return (table, 0.0);
+    }
+    let denominator = (SPAWN_INVERSE_SAMPLES - 1) as f32;
+    for (index, entry) in table.iter_mut().enumerate() {
+        let target = (index as f32 / denominator) * total;
+        let mut low = 0.0;
+        let mut high = duration;
+        for _ in 0..24 {
+            let middle = (low + high) * 0.5;
+            let emitted = (duration * curve.integral(middle / duration)).max(0.0);
+            if emitted < target {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        *entry = (low + high) * 0.5;
+    }
+    (table, total)
 }
 
 fn pack_scalar_source(

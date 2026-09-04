@@ -2,6 +2,7 @@
 // WGSL contract or register this portable source with their shader pipeline.
 
 const MAX_CURVE_KEYS: u32 = 8u;
+const SPAWN_INVERSE_SAMPLES: u32 = 32u;
 const TAU: f32 = 6.283185307179586;
 
 struct Curve {
@@ -66,6 +67,9 @@ struct Emitter {
     size: Curve,
     opacity: Curve,
     color: Gradient,
+    spawn_inverse: array<f32, 32>,
+    spawn_inverse_total: f32,
+    _spawn_inverse_padding: vec3<f32>,
 }
 
 struct Particle {
@@ -279,11 +283,26 @@ fn curve_spawn_time(emitter: Emitter, target_emission: f32, seed: u32) -> f32 {
     if target_emission <= 0.0 {
         return 0.0;
     }
+    // Seed a tight bracket from the precomputed inverse-emission table (built on the
+    // CPU by inverting the same cumulative-emission function), then refine. This
+    // replaces the old full-range 12-iteration binary search with a short refinement
+    // inside a narrow bracket, cutting the per-particle `emitted_until` evaluations.
     var low = 0.0;
     var high = emitter.source_duration;
+    if emitter.spawn_inverse_total > 0.0 {
+        let last = f32(SPAWN_INVERSE_SAMPLES - 1u);
+        let position = clamp(target_emission / emitter.spawn_inverse_total, 0.0, 1.0) * last;
+        let lower = u32(floor(position));
+        let upper = min(lower + 1u, SPAWN_INVERSE_SAMPLES - 1u);
+        low = emitter.spawn_inverse[lower];
+        high = emitter.spawn_inverse[upper];
+    }
+    // Eight refinements inside the table bracket exceed the old full-range 12-iteration
+    // accuracy (bracket width ~= source_duration / (SPAWN_INVERSE_SAMPLES - 1)), while
+    // evaluating `emitted_until` a third fewer times.
     var iteration = 0u;
     loop {
-        if iteration >= 12u {
+        if iteration >= 8u {
             break;
         }
         let middle = (low + high) * 0.5;
