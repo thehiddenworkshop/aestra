@@ -45,10 +45,6 @@
             ),
         ),
         (
-            id: "1fa69ede-17a9-40d7-b045-024b66cd299d",
-            kind: Constant(Float(0.0)),
-        ),
-        (
             id: "20d17bc3-64d4-4078-83c2-1c4e3e146b29",
             kind: Constant(Float(0.0)),
         ),
@@ -63,22 +59,6 @@
         (
             id: "772325b3-07cf-4ddd-a79d-d319d9f6a4f2",
             kind: Constant(Float(1.0)),
-        ),
-        (
-            id: "83f51ad7-f982-4be1-b531-8dee2c1d6dbd",
-            kind: Constant(Float(1.0)),
-        ),
-        (
-            id: "8e702c2a-504d-4806-9173-9bca3d4bfd54",
-            kind: Constant(Float(1.0)),
-        ),
-        (
-            id: "91be631f-dae1-46fa-bb95-404cb1df4575",
-            kind: Constant(Float(1.0)),
-        ),
-        (
-            id: "9aab6fad-a4fe-4d67-9db9-5e56b98b09ab",
-            kind: Constant(Float(0.5)),
         ),
         (
             id: "a3574a00-0000-4000-8000-000000009221",
@@ -149,10 +129,6 @@
             kind: Multiply("a3574a00-0000-4000-8000-00000000922e", "a3574a00-0000-4000-8000-000000009225"),
         ),
         (
-            id: "a3574a00-0000-4000-8000-000000009230",
-            kind: Constant(Float(0.42)),
-        ),
-        (
             id: "ab2b08ec-3442-4b4c-97fb-1fd8102c28a8",
             kind: Constant(Float(1.0)),
         ),
@@ -167,20 +143,8 @@
             ),
         ),
         (
-            id: "bfba68f5-5c15-4834-bc9e-2be6462467a2",
-            kind: Constant(Float(0.0)),
-        ),
-        (
-            id: "d3bfac75-9747-4fef-a1f9-a7991b981101",
-            kind: Constant(Bool(false)),
-        ),
-        (
-            id: "e5c2b99c-885c-40b0-a5e6-49d35add8604",
-            kind: Constant(Float(0.1)),
-        ),
-        (
             id: "e7dce44e-6e1e-49d4-b8b2-5749c1c28bc3",
-            kind: Constant(Float(1.37)),
+            kind: Constant(Float(11.944)),
         ),
     ],
     inline_constants: [

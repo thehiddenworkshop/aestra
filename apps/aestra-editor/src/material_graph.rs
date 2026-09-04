@@ -47,6 +47,7 @@ use bevy::{
     input_focus::{FocusCause, InputFocus},
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     text::EditableText,
+    ui::widget::TextScroll,
     ui_render::ui_material::MaterialNode,
     ui_widgets::Activate,
 };
@@ -75,6 +76,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .add_observer(open_material_graph_node_menu)
             .add_observer(select_material_graph_canvas)
             .add_observer(stop_material_graph_preview_toggle_click)
+            .add_observer(focus_material_graph_number_input)
             .add_observer(handle_material_graph_default_number_change)
             .add_observer(handle_material_graph_default_toggle_change)
             .add_observer(update_material_graph_palette_search)
@@ -1273,6 +1275,42 @@ fn material_graph_keyboard_input(
         &mut selection,
     );
     session.ui_revision += 1;
+}
+
+fn focus_material_graph_number_input(
+    mut press: On<Pointer<Press>>,
+    controls: Query<(), With<MaterialGraphDefaultNumberControl>>,
+    editable_text: Query<(), With<EditableText>>,
+    children: Query<&Children>,
+    parents: Query<&ChildOf>,
+    mut focus: ResMut<InputFocus>,
+) {
+    if press.button != PointerButton::Primary {
+        return;
+    }
+    let target = press.event_target();
+    let mut candidate = target;
+    for _ in 0..6 {
+        if controls.contains(candidate) {
+            let input = editable_text
+                .contains(target)
+                .then_some(target)
+                .or_else(|| {
+                    children
+                        .iter_descendants(candidate)
+                        .find(|descendant| editable_text.contains(*descendant))
+                });
+            if let Some(input) = input {
+                focus.set(input, FocusCause::Pressed);
+                press.propagate(false);
+            }
+            return;
+        }
+        let Ok(parent) = parents.get(candidate) else {
+            return;
+        };
+        candidate = parent.parent();
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2936,7 +2974,6 @@ fn spawn_header(
                     localizer.text("material-graph-add-node"),
                     MaterialGraphToolbarAction::AddNode(graph.program),
                 );
-                spawn_material_graph_toolbar_separator(header);
                 spawn_graph_frame_button(
                     header,
                     asset_server,
@@ -2951,7 +2988,6 @@ fn spawn_header(
                     localizer.text("material-graph-frame-selection"),
                     GraphFrameAction::new(key, GraphFrameTarget::Selection),
                 );
-                spawn_material_graph_toolbar_separator(header);
                 let all_previews_visible = graph_preview_targets(graph)
                     .all(|target| previews.is_visible(graph.program, target));
                 spawn_material_graph_toolbar_button(
@@ -3026,19 +3062,6 @@ fn spawn_material_graph_toolbar_button(
             Pickable::IGNORE,
         ));
     entity
-}
-
-fn spawn_material_graph_toolbar_separator(parent: &mut ChildSpawnerCommands) {
-    parent.spawn((
-        Node {
-            width: Val::Px(1.0),
-            height: Val::Px(16.0),
-            margin: UiRect::horizontal(Val::Px(3.0)),
-            ..default()
-        },
-        BackgroundColor(theme::BORDER),
-        Pickable::IGNORE,
-    ));
 }
 
 fn graph_preview_targets(
@@ -3309,9 +3332,17 @@ fn sync_material_graph_default_number_inputs(
     children: Query<&Children>,
     editable_text: Query<(), With<EditableText>>,
     mut nodes: Query<&mut Node>,
+    mut text_layouts: Query<&mut TextLayout>,
 ) {
     for (entity, control) in &controls {
-        constrain_graph_number_input(entity, &children, &editable_text, &mut nodes);
+        constrain_graph_number_input(
+            &mut commands,
+            entity,
+            &children,
+            &editable_text,
+            &mut nodes,
+            &mut text_layouts,
+        );
         if let Some(value) = material_graph_value_component(&control.value, control.component) {
             commands.trigger(UpdateNumberInput {
                 entity,
@@ -3322,10 +3353,12 @@ fn sync_material_graph_default_number_inputs(
 }
 
 fn constrain_graph_number_input(
+    commands: &mut Commands,
     entity: Entity,
     children: &Query<&Children>,
     editable_text: &Query<(), With<EditableText>>,
     nodes: &mut Query<&mut Node>,
+    text_layouts: &mut Query<&mut TextLayout>,
 ) {
     if let Ok(mut node) = nodes.get_mut(entity) {
         node.width = Val::Percent(100.0);
@@ -3345,6 +3378,13 @@ fn constrain_graph_number_input(
             node.flex_shrink = 1.0;
             node.overflow = Overflow::clip();
         }
+        if let Ok(mut layout) = text_layouts.get_mut(descendant) {
+            *layout = TextLayout::justify(Justify::Center);
+        }
+        // Bevy 0.19 derives an editable text node's private clip from its untransformed
+        // content size. That clip shears glyphs when a graph canvas is zoomed with UiTransform.
+        // The containing Feathers input and graph viewport already provide the desired clipping.
+        commands.entity(descendant).remove::<TextScroll>();
     }
 }
 
