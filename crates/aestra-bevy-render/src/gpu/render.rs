@@ -251,6 +251,7 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
         let fragment_shader = key
             .material
             .as_ref()
+            .filter(|_| key.render_mode == GpuRenderMode::Rendered)
             .map_or_else(|| self.shader.clone(), |material| material.shader.clone());
         let fragment_entry = if key.material.is_some() && key.render_mode == GpuRenderMode::Rendered
         {
@@ -269,7 +270,8 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             label: Some("aestra gpu sprite".into()),
             layout,
             vertex: VertexState {
-                shader: self.shader.clone(),
+                // Semantic modules contain both stages with one matching varying layout.
+                shader: fragment_shader.clone(),
                 entry_point: Some("vertex".into()),
                 buffers: Vec::new(),
                 ..default()

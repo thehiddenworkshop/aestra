@@ -50,39 +50,16 @@ struct RenderParams {
     _padding: vec2<u32>
 }
 
-struct VertexOutput {
-    @builtin(position)
+struct SpriteVertexData {
     clip_position: vec4<f32>,
-    @location(0)
     color: vec4<f32>,
-    @location(1)
     quad_position: vec2<f32>,
-    @location(2)
     softness: f32,
-    @location(3) @interpolate(flat)
     visible: u32,
-    @location(4)
     uv: vec2<f32>,
-    @location(5) @interpolate(flat)
     textured: u32,
-    @location(6)
-    material_uv0: vec2<f32>,
-    @location(7)
-    material_particle_color: vec4<f32>,
-    @location(8)
-    material_particle_opacity: f32,
-    @location(9)
-    material_effect_time: f32,
-    @location(10)
-    material_quad_position: vec2<f32>,
-    @location(11)
-    material_softness: f32,
-    @location(12) @interpolate(flat)
-    material_textured: u32,
-    @location(13) @interpolate(flat)
-    material_visible: u32,
-    @location(14)
-    material_particle_normalized_age: f32
+    effect_time: f32,
+    particle_normalized_age: f32
 }
 
 @group(0) @binding(0)
@@ -150,8 +127,7 @@ fn flipbook_frame(renderer: Renderer, particle: Particle) -> u32 {
     return selected;
 }
 
-@vertex
-fn vertex(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {
+fn aestra_sprite_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexData {
     let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
     let corner = corners[vertex_index];
     let particle_index = alive_indices[params.alive_offset + instance_index];
@@ -166,7 +142,7 @@ fn vertex(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) ins
     let camera_right = normalize(view.world_from_view[0].xyz);
     let camera_up = normalize(view.world_from_view[1].xyz);
     let world_position = world_center + vec4<f32>(camera_right * rotated.x * effect_scale_x + camera_up * rotated.y * effect_scale_y, 0.0);
-    var output: VertexOutput;
+    var output: SpriteVertexData;
     output.clip_position = view.clip_from_world * world_position;
     output.color = renderer.tint;
     if renderer.particle_color != 0u {
@@ -181,15 +157,39 @@ fn vertex(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) ins
     }
     output.uv = mix(uv_bounds.xy, uv_bounds.zw, corner * 0.5 + vec2<f32>(0.5));
     output.textured = renderer.textured;
-    output.material_uv0 = output.uv;
-    output.material_particle_color = output.color;
-    output.material_particle_opacity = output.color.a;
-    output.material_effect_time = globals.time;
-    output.material_quad_position = corner;
-    output.material_softness = renderer.softness;
-    output.material_textured = renderer.textured;
-    output.material_visible = output.visible;
-    output.material_particle_normalized_age = particle.normalized_age;
+    output.effect_time = globals.time;
+    output.particle_normalized_age = particle.normalized_age;
+    return output;
+}
+
+struct VertexOutput {
+    @builtin(position)
+    clip_position: vec4<f32>,
+    @location(0)
+    color: vec4<f32>,
+    @location(1)
+    quad_position: vec2<f32>,
+    @location(2)
+    softness: f32,
+    @location(3) @interpolate(flat)
+    visible: u32,
+    @location(4)
+    uv: vec2<f32>,
+    @location(5) @interpolate(flat)
+    textured: u32
+}
+
+@vertex
+fn vertex(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {
+    let sprite = aestra_sprite_vertex(vertex_index, instance_index);
+    var output: VertexOutput;
+    output.clip_position = sprite.clip_position;
+    output.color = sprite.color;
+    output.quad_position = sprite.quad_position;
+    output.softness = sprite.softness;
+    output.visible = sprite.visible;
+    output.uv = sprite.uv;
+    output.textured = sprite.textured;
     return output;
 }
 

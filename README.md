@@ -126,6 +126,10 @@ fingerprint. `Select` nodes accept either dynamic Boolean conditions or shader-s
 shader-static condition lowers only its chosen branch, so unused inputs, parameter bindings,
 texture samples, and custom calls never reach shader reflection. The branch- and feature-pruning
 counts are preserved alongside the other optimization metrics.
+Semantic sprite shaders derive a compact varying layout from optimized live inputs. Both stages
+use the same deterministic locations, keep required coverage/visibility fields, and share color
+alpha when particle color and opacity are both read. Layout identity participates in shader and
+pipeline caching; legacy and wireframe rendering use their separate compact interface.
 
 Run the native-GPU visual regression against the approved, effect-only reference:
 

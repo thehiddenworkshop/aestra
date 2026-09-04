@@ -15,7 +15,7 @@ use aestra_core::{
 use aestra_gpu::material::{
     MATERIAL_BIND_GROUP, MISSING_TEXTURE_FALLBACK_RGBA, MaterialBackendCapabilities,
     MaterialCapabilityIssueCode, MaterialColorTargetFormat, MaterialGpuError,
-    MaterialParameterBinding, MaterialPipelineVariant, MaterialShaderCompiler,
+    MaterialParameterBinding, MaterialPipelineVariant, MaterialShaderCompiler, MaterialVarying,
 };
 use aestra_gpu::shader::SPRITE_RENDER_WESL;
 use naga::{
@@ -25,6 +25,37 @@ use naga::{
 
 fn assert_portable_shader_targets(wgsl: &str) {
     let module = naga::front::wgsl::parse_str(wgsl).unwrap();
+    // Naga validates individual stages; also verify their complete interpolator contract.
+    let vertex = module
+        .entry_points
+        .iter()
+        .find(|entry| entry.stage == naga::ShaderStage::Vertex)
+        .unwrap();
+    let fragment = module
+        .entry_points
+        .iter()
+        .find(|entry| entry.stage == naga::ShaderStage::Fragment)
+        .unwrap();
+    let locations = |ty: naga::Handle<naga::Type>| {
+        let naga::TypeInner::Struct { members, .. } = &module.types[ty].inner else {
+            panic!("expected stage interface struct")
+        };
+        members
+            .iter()
+            .filter(|member| matches!(member.binding, Some(naga::Binding::Location { .. })))
+            .map(|member| {
+                (
+                    member.name.clone(),
+                    module.types[member.ty].inner.clone(),
+                    member.binding.clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        locations(vertex.function.result.as_ref().unwrap().ty),
+        locations(fragment.function.arguments[0].ty)
+    );
     let info = Validator::new(ValidationFlags::all(), Capabilities::all())
         .validate(&module)
         .unwrap();
@@ -50,6 +81,83 @@ fn sampler(address_u: MaterialAddressMode) -> MaterialSamplerDescriptor {
         address_u,
         address_v: MaterialAddressMode::Repeat,
     }
+}
+
+#[test]
+fn varying_layout_keeps_coverage_but_only_interpolates_live_material_inputs() {
+    use MaterialVarying::*;
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Minimal interface");
+    // Unreachable reads must not allocate interpolators.
+    program.expressions.push(MaterialExpression {
+        id: MaterialExpressionId::new(),
+        kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+    });
+    let minimal = compile(&program);
+    let fields = |compiled: &aestra_gpu::material::CompiledMaterialProgram| {
+        compiled
+            .varying_layout
+            .slots
+            .iter()
+            .enumerate()
+            .map(|(index, slot)| {
+                assert_eq!(slot.location, index as u32);
+                slot.varying
+            })
+            .collect::<Vec<_>>()
+    };
+    let coverage = vec![QuadPosition, Softness, Textured, Visible];
+    assert_eq!(fields(&minimal), coverage);
+    assert_eq!(minimal.varying_layout.component_count(), 5);
+    assert_portable_shader_targets(&minimal.shader.wgsl);
+
+    for (input, varying) in [
+        (MaterialInput::ParticleOpacity, ParticleOpacity),
+        (MaterialInput::EffectTime, EffectTime),
+        (MaterialInput::ParticleNormalizedAge, ParticleNormalizedAge),
+    ] {
+        let alpha = program.outputs.alpha;
+        program
+            .expressions
+            .iter_mut()
+            .find(|value| value.id == alpha)
+            .unwrap()
+            .kind = MaterialExpressionKind::Input(input);
+        let compiled = compile(&program);
+        let mut expected = coverage.clone();
+        expected.push(varying);
+        assert_eq!(fields(&compiled), expected);
+        assert_eq!(compiled.varying_layout.component_count(), 6);
+        assert_ne!(compiled.program_fingerprint, minimal.program_fingerprint);
+        let variant = MaterialPipelineVariant {
+            target_format: MaterialColorTargetFormat::Bgra8UnormSrgb,
+            sample_count: 1,
+            feature_bits: 0,
+        };
+        assert_ne!(
+            compiled.pipeline_key(program.render_state_policy.default, variant),
+            minimal.pipeline_key(program.render_state_policy.default, variant)
+        );
+        assert_portable_shader_targets(&compiled.shader.wgsl);
+    }
+
+    let flame = compile(&two_texture_flame_program());
+    assert_eq!(
+        fields(&flame),
+        vec![
+            QuadPosition,
+            Softness,
+            Textured,
+            Visible,
+            Uv0,
+            ParticleColor
+        ]
+    );
+    assert_eq!(flame.varying_layout.component_count(), 11);
+    assert!(flame.shader.wesl.contains("input.particle_color.a"));
+    assert!(!flame.shader.wesl.contains("input.particle_opacity"));
+    let mut reversed = two_texture_flame_program();
+    reversed.expressions.reverse();
+    assert_eq!(compile(&reversed).varying_layout, flame.varying_layout);
 }
 
 fn texture_descriptor(
@@ -369,12 +477,12 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     assert_eq!(MISSING_TEXTURE_FALLBACK_RGBA, [255, 0, 255, 255]);
     assert!(compiled.shader.wesl.contains("@group(2) @binding(1)"));
     assert!(compiled.shader.wesl.contains("textureSample"));
-    assert!(compiled.shader.wesl.contains("@location(6) uv0"));
+    assert!(compiled.shader.wesl.contains("@location(4) uv0"));
     assert!(
         compiled
             .shader
             .wesl
-            .contains("@location(13) @interpolate(flat) visible")
+            .contains("@location(3) @interpolate(flat) visible")
     );
     assert!(compiled.shader.wesl.contains("output.a, 0.0, 1.0"));
     assert!(compiled.shader.wgsl.contains("fn fragment_material"));
@@ -393,7 +501,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "80302ed02c818135a3c4d2b57c6f65eb85a2ecb159569821a0ddad6ae6844a9b"
+        "4fce42e0c24e3a0f030a22982d60898bece5dbd1581429afe533518ef43586cd"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -898,6 +1006,13 @@ fn static_select_prunes_texture_resources_and_scene_features_before_shader_lower
     assert!(compiled.resource_layout.textures.is_empty());
     assert!(compiled.resource_layout.samplers.is_empty());
     assert!(compiled.reflection.required_vertex_inputs.is_empty());
+    assert!(
+        !compiled
+            .varying_layout
+            .slots
+            .iter()
+            .any(|slot| slot.varying == MaterialVarying::Uv0)
+    );
     assert!(!compiled.shader.wesl.contains("textureSample("));
     assert!(matches!(
         compiled
@@ -953,6 +1068,13 @@ fn dynamic_select_emits_portable_shader_selection_and_keeps_both_features() {
     let compiled = compile(&program);
 
     assert!(compiled.shader.wesl.contains("select("));
+    assert!(
+        compiled
+            .varying_layout
+            .slots
+            .iter()
+            .any(|slot| slot.varying == MaterialVarying::EffectTime)
+    );
     assert_eq!(
         compiled.reflection.required_scene_inputs,
         vec![MaterialInput::EffectTime]
@@ -1433,14 +1555,13 @@ fn flipbook_frame_is_resolved_before_semantic_material_uv0() {
     let resolved_uv = SPRITE_RENDER_WESL
         .find("output.uv = mix(uv_bounds.xy, uv_bounds.zw")
         .expect("sprite vertex shader must resolve atlas coordinates");
-    let material_uv = SPRITE_RENDER_WESL
-        .find("output.material_uv0 = output.uv;")
-        .expect("semantic material ABI must receive renderer-resolved UV0");
-
     assert!(frame_selection < resolved_uv);
-    assert!(resolved_uv < material_uv);
 
     let compiled = compile(&two_texture_flame_program());
+    assert!(
+        compiled.shader.wesl.contains("output.uv0 = sprite.uv;"),
+        "semantic vertex stage must forward renderer-resolved UV0"
+    );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
         vec![MaterialInput::Uv0]

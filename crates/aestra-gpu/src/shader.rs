@@ -9,7 +9,12 @@ use crate::GpuEffectArtifact;
 pub const SIMULATION_MODULE: &str = "package::aestra_simulation";
 pub const SPRITE_RENDER_MODULE: &str = "package::aestra_sprite_render";
 pub const SIMULATION_WESL: &str = include_str!("shaders/aestra_simulation.wesl");
-pub const SPRITE_RENDER_WESL: &str = include_str!("shaders/aestra_sprite_render.wesl");
+pub const SPRITE_VERTEX_WESL: &str = include_str!("shaders/aestra_sprite_vertex.wesl");
+pub const SPRITE_RENDER_WESL: &str = concat!(
+    include_str!("shaders/aestra_sprite_vertex.wesl"),
+    "\n",
+    include_str!("shaders/aestra_sprite_render.wesl"),
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuShaderKind {

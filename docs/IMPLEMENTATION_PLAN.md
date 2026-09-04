@@ -476,7 +476,13 @@ the current sprite-material path until the native-GPU compatibility gate approve
   eliminated, and surviving invocation/output counts flow through effect compilation,
   backward-compatible artifacts, the Compiler Inspector, and preview reports. Nested sites are
   counted within shared expansions; eliminated also includes outputs removed by IR optimization.
-  Varying minimization and required particle-attribute pruning remain.
+  Varying minimization is complete: live IR inputs select a compact, deterministic interface
+  shared by generated vertex and fragment stages, while coverage/visibility fields remain.
+  Particle opacity reuses color alpha when both inputs are live. ABI/generator versions and
+  layout fingerprints protect shader/pipeline caches. Shared sprite geometry preserves flipbook
+  UVs, and legacy/wireframe entry points keep their own compact layout. Regression coverage
+  includes static pruning, matched stage interfaces, portable translation, and native pipeline
+  linking with single/multisampled depth. Required particle-attribute pruning remains.
 - [ ] **Material 20 — mesh and ribbon domains.**
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

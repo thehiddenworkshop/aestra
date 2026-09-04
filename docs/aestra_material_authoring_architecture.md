@@ -2520,7 +2520,14 @@ to surviving IR values or the eliminated-source set. Function statistics survive
 compilation and artifact round trips and appear in editor and preview reports: authored counts
 resolved call-output sites, including nested sites within shared expansions; live counts distinct
 invocation/output pairs in the optimized source map; eliminated is their difference. Varying
-minimization and required particle-attribute pruning remain planned.
+minimization now derives a compact interface from optimized live IR inputs. Vertex and fragment
+stages share one ordered location layout, retain sprite coverage/visibility fields, and reuse
+particle color alpha for opacity when both inputs are live. The layout participates in shader and
+pipeline fingerprints under the versioned material ABI. Shared sprite geometry resolves flipbook
+UVs before the semantic vertex stage forwards them; legacy/wireframe shaders use a separate
+compact interface. Tests check matching stage signatures, static pruning, portable translation,
+and native single/multisampled pipeline linking. Required particle-attribute pruning remains
+planned; the underlying particle storage layout is unchanged by varying minimization.
 
 ### Completion Criterion
 
