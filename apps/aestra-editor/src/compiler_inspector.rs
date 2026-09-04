@@ -163,6 +163,19 @@ pub(crate) fn spawn_compiler_inspector_workspace(
                         },
                         |content| {
                             spawn_compiled_layout(content, compiled, localizer);
+                            if let Some(instance) = &session.preview
+                                && let Ok(summary) =
+                                    aestra_bevy_render::gpu::estimate_particle_attributes(instance)
+                            {
+                                let mut args = FluentArgs::new();
+                                args.set("live", summary.live);
+                                args.set("omitted", summary.omitted);
+                                spawn_panel_label_value(
+                                    content,
+                                    &localizer.text("generated-gpu-attributes"),
+                                    &localizer.text_with("generated-gpu-attributes-summary", &args),
+                                );
+                            }
                             spawn_compiled_parameters(content, compiled, session, localizer);
                             for (emitter_index, emitter) in compiled.emitters.iter().enumerate() {
                                 spawn_compiled_emitter(

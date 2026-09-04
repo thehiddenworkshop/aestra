@@ -5,6 +5,7 @@
 //! windowing, ECS, shader loading, dispatch, or drawing integration.
 
 pub mod material;
+pub mod particle_attributes;
 pub mod shader;
 
 use aestra_core::{
@@ -16,7 +17,7 @@ use aestra_runtime::{
     MaterialColorPlan, RendererPlanKind, RuntimeValue, ScalarSource, VectorSource,
 };
 use encase::ShaderType;
-use glam::{Mat4, Quat, UVec2, Vec2, Vec3, Vec4};
+use glam::{Mat4, Quat, UVec2, UVec3, Vec2, Vec3, Vec4};
 use thiserror::Error;
 
 pub const MAX_CURVE_KEYS: usize = 8;
@@ -88,7 +89,8 @@ pub struct GpuEmitter {
     pub spread_radians: f32,
     pub drag: Vec2,
     pub drag_source: u32,
-    pub _drag_padding: u32,
+    /// Omitted presentation attributes; zero retains full-reference readback.
+    pub omitted_attributes: u32,
     pub drag_curve: GpuCurve,
     pub direction: Vec3,
     pub _direction_padding: f32,
@@ -140,7 +142,8 @@ pub struct GpuRenderer {
     pub playback_mode: u32,
     pub flipbook_flags: u32,
     pub frame_rate: f32,
-    pub _padding: Vec3,
+    /// x: omitted particle reads; y/z reserved. Reuses the former padding lane.
+    pub attribute_flags: UVec3,
     pub frames: [Vec4; MAX_FLIPBOOK_FRAMES],
 }
 
@@ -381,7 +384,7 @@ impl GpuEffectArtifact {
                         playback_mode,
                         flipbook_flags,
                         frame_rate,
-                        _padding: Vec3::ZERO,
+                        attribute_flags: UVec3::ZERO,
                         frames,
                     }
                 }));
@@ -436,7 +439,7 @@ impl GpuEffectArtifact {
                 spread_radians: init.spread_degrees.to_radians(),
                 drag,
                 drag_source,
-                _drag_padding: 0,
+                omitted_attributes: 0,
                 drag_curve,
                 direction: Vec3::from_array(init.direction).normalize_or_zero(),
                 _direction_padding: 0.0,

@@ -26,7 +26,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 3;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 16;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 17;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;

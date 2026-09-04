@@ -447,7 +447,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   even when thresholds fail. Preparation and capture failures remain machine-readable and return
   non-zero status. This keeps visual reasoning caller-owned while providing the deterministic
   edit/compile/render/analyze contract required by AI tools.
-- [ ] **Material 19 — advanced compiler optimization.** Deterministic common-subexpression
+- [x] **Material 19 — advanced compiler optimization.** Deterministic common-subexpression
   elimination is complete for pure constants, inputs, parameters, and semantic operations. Add
   and Multiply canonicalize operand order. Implicit-derivative texture sampling now carries an
   explicit merge-safety contract: samples with identical texture and UV operands share one IR and
@@ -482,7 +482,16 @@ the current sprite-material path until the native-GPU compatibility gate approve
   layout fingerprints protect shader/pipeline caches. Shared sprite geometry preserves flipbook
   UVs, and legacy/wireframe entry points keep their own compact layout. Regression coverage
   includes static pruning, matched stage interfaces, portable translation, and native pipeline
-  linking with single/multisampled depth. Required particle-attribute pruning remains.
+  linking with single/multisampled depth. Required particle-attribute pruning is complete for
+  native sprite presentation: optimized material inputs, legacy tint, flipbook time source, and
+  wireframe needs determine per-renderer reads and per-emitter unions. Simulation skips unused
+  gradient/opacity/geometry work and vertex shaders read only required particle members. Omission
+  masks reuse emitter/renderer padding; the particle storage ABI remains 64 bytes with explicit
+  defaults for omitted fields. Full artifact/readback paths retain CPU-reference data. Runtime
+  bindings and mode changes refresh requirements after successful preparation, including retained
+  bindings on failure. The Compiler Inspector displays a static rendered-mode estimate; native
+  conformance covers pruned fields across Once, Restart, and Continuous playback. Physical buffer
+  compaction and CPU-reference execution pruning are intentionally outside this optimization.
 - [ ] **Material 20 — mesh and ribbon domains.**
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

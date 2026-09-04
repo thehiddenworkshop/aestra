@@ -19,7 +19,7 @@ struct Renderer {
     playback_mode: u32,
     flipbook_flags: u32,
     frame_rate: f32,
-    _padding: vec3<f32>,
+    attribute_flags: vec3<u32>,
     frames: array<vec4<f32>, 64>
 }
 
@@ -96,7 +96,7 @@ fn hash01(index: u32, channel: u32) -> f32 {
     return f32(result) / 4294967295.0;
 }
 
-fn flipbook_frame(renderer: Renderer, particle: Particle) -> u32 {
+fn flipbook_frame(renderer: Renderer, normalized_age: f32, particle_index: u32) -> u32 {
     let count = max(renderer.frame_count, 1u);
     if count <= 1u {
         return 0u;
@@ -104,10 +104,10 @@ fn flipbook_frame(renderer: Renderer, particle: Particle) -> u32 {
     let effect_time = (renderer.flipbook_flags & 1u) != 0u;
     let random_start = (renderer.flipbook_flags & 2u) != 0u;
     let looping = (renderer.flipbook_flags & 4u) != 0u;
-    let seconds = select(clamp(particle.normalized_age, 0.0, 1.0) * f32(count) / renderer.frame_rate, max(globals.time, 0.0), effect_time);
+    let seconds = select(clamp(normalized_age, 0.0, 1.0) * f32(count) / renderer.frame_rate, max(globals.time, 0.0), effect_time);
     var frame = u32(floor(seconds * renderer.frame_rate));
     if random_start {
-        frame += u32(hash01(particle.particle_index, 9u) * f32(count));
+        frame += u32(hash01(particle_index, 9u) * f32(count));
     }
     var selected = min(frame, count - 1u);
     if looping {
@@ -131,8 +131,15 @@ fn aestra_sprite_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
     let corner = corners[vertex_index];
     let particle_index = alive_indices[params.alive_offset + instance_index];
-    let particle = particles[particle_index];
     let renderer = renderers[params.renderer_index];
+    var particle: Particle;
+    particle.position = particles[particle_index].position;
+    particle.size = particles[particle_index].size;
+    particle.rotation = particles[particle_index].rotation;
+    particle.emitter_index = particles[particle_index].emitter_index;
+    if (renderer.attribute_flags.x & 32u) == 0u {
+        particle.normalized_age = particles[particle_index].normalized_age;
+    }
     let sine = sin(particle.rotation);
     let cosine = cos(particle.rotation);
     let rotated = vec2<f32>(corner.x * cosine - corner.y * sine, corner.x * sine + corner.y * cosine) * particle.size * 0.5;
@@ -146,14 +153,23 @@ fn aestra_sprite_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     output.clip_position = view.clip_from_world * world_position;
     output.color = renderer.tint;
     if renderer.particle_color != 0u {
-        output.color *= particle.color;
+        if (renderer.attribute_flags.x & 8u) == 0u {
+            output.color = vec4<f32>(output.color.rgb * particles[particle_index].color.rgb, output.color.a);
+        }
+        if (renderer.attribute_flags.x & 16u) == 0u {
+            output.color.a *= particles[particle_index].color.a;
+        }
     }
     output.quad_position = corner;
     output.softness = renderer.softness;
     output.visible = select(0u, 1u, particle.emitter_index == renderer.emitter_index);
     var uv_bounds = vec4<f32>(renderer.uv_min, renderer.uv_max);
     if renderer.renderer_kind == 1u {
-        uv_bounds = renderer.frames[flipbook_frame(renderer, particle)];
+        var identity = 0u;
+        if (renderer.flipbook_flags & 2u) != 0u && renderer.frame_count > 1u {
+            identity = particles[particle_index].particle_index;
+        }
+        uv_bounds = renderer.frames[flipbook_frame(renderer, particle.normalized_age, identity)];
     }
     output.uv = mix(uv_bounds.xy, uv_bounds.zw, corner * 0.5 + vec2<f32>(0.5));
     output.textured = renderer.textured;

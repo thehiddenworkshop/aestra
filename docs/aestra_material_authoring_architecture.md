@@ -2526,8 +2526,20 @@ particle color alpha for opacity when both inputs are live. The layout participa
 pipeline fingerprints under the versioned material ABI. Shared sprite geometry resolves flipbook
 UVs before the semantic vertex stage forwards them; legacy/wireframe shaders use a separate
 compact interface. Tests check matching stage signatures, static pruning, portable translation,
-and native single/multisampled pipeline linking. Required particle-attribute pruning remains
-planned; the underlying particle storage layout is unchanged by varying minimization.
+and native single/multisampled pipeline linking.
+
+Required particle-attribute pruning is also implemented for native sprite presentation. Live
+material inputs and renderer dependencies (geometry, legacy tint, lifetime-driven flipbooks,
+wireframe color) determine each renderer's read mask. Their union controls each emitter's
+simulation work: unused gradient, opacity, size, rotation, or position calculations are skipped.
+Normalized age remains available internally for simulation but is stored/read only when needed
+by presentation. Masks occupy former emitter/renderer padding; the 64-byte particle ABI stays
+unchanged, with deterministic defaults for omitted fields. Bindings and render-mode changes
+refresh masks from the material that actually prepared, preserving retained bindings on failure.
+Full artifact/readback paths keep all fields for CPU-reference parity. The Compiler Inspector
+reports a static rendered-mode estimate, not timing or memory savings. Regression tests cover
+consumer unions, tint, flipbooks, wireframe, and native CPU/GPU agreement across playback modes.
+Physical particle-buffer compaction and CPU-reference instruction pruning are separate follow-ups.
 
 ### Completion Criterion
 

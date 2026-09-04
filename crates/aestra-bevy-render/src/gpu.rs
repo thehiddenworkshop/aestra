@@ -11,6 +11,10 @@ use crate::{
 };
 use aestra_core::MaterialId;
 use aestra_gpu::material::{CompiledMaterialProgram, MaterialProgramFingerprint};
+pub use aestra_gpu::particle_attributes::{
+    GpuParticleAttributeSummary, estimate_particle_attributes,
+};
+use aestra_gpu::particle_attributes::{GpuParticleAttributes, prune_particle_attributes};
 use aestra_gpu::shader::{SIMULATION_WESL, SPRITE_RENDER_WESL};
 pub use aestra_gpu::{
     GpuArtifactError, GpuCurve, GpuEffectArtifact, GpuEmitter, GpuGlobals, GpuGradient,
@@ -188,6 +192,7 @@ type PreparedGpuPlayers<'w, 's> = Query<
         &'static mut PresentedEffect,
         &'static GlobalTransform,
         &'static GpuEffectBuffers,
+        &'static EffectRuntimeStatus,
         Option<&'static RenderLayers>,
         Option<&'static Children>,
     ),
@@ -429,6 +434,25 @@ pub(crate) fn prepare_gpu_effects(
                 )
             })
             .collect::<Vec<_>>();
+        if runtime.active == ActiveBackend::Gpu {
+            let requirements = artifact
+                .renderers
+                .iter()
+                .zip(&renderer_draws)
+                .map(|(renderer, draw)| {
+                    GpuParticleAttributes::for_renderer(
+                        renderer,
+                        draw.7.as_ref().map(|binding| &binding.program.reflection),
+                        player.render_mode() == EffectRenderMode::Wireframe,
+                    )
+                })
+                .collect::<Vec<_>>();
+            prune_particle_attributes(
+                &mut artifact.emitters,
+                &mut artifact.renderers,
+                &requirements,
+            );
+        }
         let bounds = Aabb {
             center: Vec3A::ZERO,
             half_extents: Vec3A::from(artifact.bounds_half_extents),
@@ -704,21 +728,11 @@ fn update_gpu_inputs(
     mut draw_instances: Query<(&mut GpuDrawInstance, &mut RenderLayers), Without<PresentedEffect>>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::artifact_update").entered();
-    for (mut player, transform, gpu, render_layers, children) in &mut players {
+    for (mut player, transform, gpu, runtime, render_layers, children) in &mut players {
         player.refresh_automatic_material_bindings();
         // Only emitter and renderer inputs change per frame; use the dynamics
         // builder so we never reallocate the capacity-sized particle scratch buffer
         // here (its cost scales with capacity, not with what actually changed).
-        if let Ok(mut dynamics) = GpuEffectArtifact::dynamics_from_instance(&player.instance) {
-            apply_semantic_sprite_compatibility_to_renderers(&mut dynamics.renderers, &player);
-            let _upload = tracing::info_span!("aestra::gpu::buffer_upload").entered();
-            if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
-                buffer.set_data(dynamics.emitters);
-            }
-            if let Some(mut buffer) = buffers.get_mut(&gpu.renderers) {
-                buffer.set_data(dynamics.renderers);
-            }
-        }
         if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
             buffer.set_data(GpuGlobals {
                 time: player.simulation_time(),
@@ -766,6 +780,43 @@ fn update_gpu_inputs(
                     }
                     *draw_layers = render_layers.cloned().unwrap_or_default();
                 }
+            }
+        }
+        // Use the binding that actually prepared successfully, including retained bindings
+        // on preparation failure. Never prune CPU-presentation/readback data.
+        if let Ok(mut dynamics) = GpuEffectArtifact::dynamics_from_instance(&player.instance) {
+            apply_semantic_sprite_compatibility_to_renderers(&mut dynamics.renderers, &player);
+            if runtime.active == ActiveBackend::Gpu {
+                let mut requirements = vec![GpuParticleAttributes::ALL; dynamics.renderers.len()];
+                if let Some(children) = children {
+                    for child in children.iter() {
+                        if let Ok((draw, _)) = draw_instances.get(child)
+                            && let Some(renderer) =
+                                dynamics.renderers.get(draw.renderer_order as usize)
+                        {
+                            requirements[draw.renderer_order as usize] =
+                                GpuParticleAttributes::for_renderer(
+                                    renderer,
+                                    draw.semantic_material
+                                        .as_ref()
+                                        .map(|binding| &binding.program.reflection),
+                                    draw.render_mode == GpuRenderMode::Wireframe,
+                                );
+                        }
+                    }
+                }
+                prune_particle_attributes(
+                    &mut dynamics.emitters,
+                    &mut dynamics.renderers,
+                    &requirements,
+                );
+            }
+            let _upload = tracing::info_span!("aestra::gpu::buffer_upload").entered();
+            if let Some(mut buffer) = buffers.get_mut(&gpu.emitters) {
+                buffer.set_data(dynamics.emitters);
+            }
+            if let Some(mut buffer) = buffers.get_mut(&gpu.renderers) {
+                buffer.set_data(dynamics.renderers);
             }
         }
     }

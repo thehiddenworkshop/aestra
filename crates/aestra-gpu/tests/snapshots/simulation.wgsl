@@ -41,7 +41,7 @@ struct Emitter {
     spread_radians: f32,
     drag: vec2<f32>,
     drag_source: u32,
-    _drag_padding: u32,
+    omitted_attributes: u32,
     drag_curve: Curve,
     direction: vec3<f32>,
     _direction_padding: f32,
@@ -472,68 +472,86 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
     let normalized_age = age / lifetime;
-    let forward = normalize(emitter.direction);
-    let half_angle = min(abs(emitter.spread_radians) * 0.5, 3.141592653589793);
-    let cos_theta = 1.0 - hash01_seeded(particle_index, 1u, particle_seed) * (1.0 - cos(half_angle));
-    let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
-    let direction_angle = hash01_seeded(particle_index, 11u, particle_seed) * TAU;
-    var helper = vec3<f32>(0.0, 1.0, 0.0);
-    if abs(forward.y) >= 0.999 {
-        helper = vec3<f32>(1.0, 0.0, 0.0);
+    var position = vec3<f32>(0.0);
+    if (emitter.omitted_attributes & 1u) == 0u {
+        let forward = normalize(emitter.direction);
+        let half_angle = min(abs(emitter.spread_radians) * 0.5, 3.141592653589793);
+        let cos_theta = 1.0 - hash01_seeded(particle_index, 1u, particle_seed) * (1.0 - cos(half_angle));
+        let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
+        let direction_angle = hash01_seeded(particle_index, 11u, particle_seed) * TAU;
+        var helper = vec3<f32>(0.0, 1.0, 0.0);
+        if abs(forward.y) >= 0.999 {
+            helper = vec3<f32>(1.0, 0.0, 0.0);
+        }
+        let tangent = normalize(cross(helper, forward));
+        let bitangent = cross(forward, tangent);
+        let direction = forward * cos_theta + tangent * (sin_theta * cos(direction_angle)) + bitangent * (sin_theta * sin(direction_angle));
+        let speed = sample_range(emitter.speed, hash01_seeded(particle_index, 2u, particle_seed));
+        let shape_angle = hash01_seeded(particle_index, 5u, particle_seed) * TAU;
+        var origin = vec3<f32>(0.0);
+        if emitter.shape_kind == 1u {
+            let radius = emitter.shape_radius * sqrt(hash01_seeded(particle_index, 6u, particle_seed));
+            origin = vec3<f32>(cos(shape_angle) * radius, sin(shape_angle) * radius, 0.0);
+        }
+        else if emitter.shape_kind == 2u {
+            origin = vec3<f32>(cos(shape_angle) * emitter.shape_radius, sin(shape_angle) * emitter.shape_radius, 0.0);
+        }
+        else if emitter.shape_kind == 3u {
+            let y = hash01_seeded(particle_index, 6u, particle_seed) * 2.0 - 1.0;
+            let radial = sqrt(max(1.0 - y * y, 0.0));
+            let radius = emitter.shape_radius * pow(hash01_seeded(particle_index, 8u, particle_seed), 0.3333333333333333);
+            origin = vec3<f32>(cos(shape_angle) * radial, y, sin(shape_angle) * radial) * radius;
+        }
+        else if emitter.shape_kind == 4u {
+            let y = hash01_seeded(particle_index, 6u, particle_seed);
+            let radial = sqrt(max(1.0 - y * y, 0.0));
+            let radius = emitter.shape_radius * pow(hash01_seeded(particle_index, 8u, particle_seed), 0.3333333333333333);
+            origin = vec3<f32>(cos(shape_angle) * radial, y, sin(shape_angle) * radial) * radius;
+        }
+        else if emitter.shape_kind == 5u {
+            origin = vec3<f32>((hash01_seeded(particle_index, 5u, particle_seed) * 2.0 - 1.0) * emitter.shape_radius, (hash01_seeded(particle_index, 6u, particle_seed) * 2.0 - 1.0) * emitter.shape_depth, (hash01_seeded(particle_index, 7u, particle_seed) * 2.0 - 1.0) * emitter.shape_extent_z);
+        }
+        else if emitter.shape_kind == 6u {
+            let radius = emitter.shape_radius * sqrt(hash01_seeded(particle_index, 6u, particle_seed));
+            origin = vec3<f32>(cos(shape_angle) * radius, (hash01_seeded(particle_index, 7u, particle_seed) - 0.5) * emitter.shape_depth, sin(shape_angle) * radius);
+        }
+        else if emitter.shape_kind == 7u {
+            let y = hash01_seeded(particle_index, 6u, particle_seed) * emitter.shape_depth;
+            let radius = emitter.shape_radius * (y / max(emitter.shape_depth, 0.001)) * sqrt(hash01_seeded(particle_index, 7u, particle_seed));
+            origin = vec3<f32>(cos(shape_angle) * radius, y, sin(shape_angle) * radius);
+        }
+        let normalized_emitter_time = local_time / max(emitter.source_duration, 1.19e-7);
+        let drag = resolved_particle_scalar(emitter.drag, emitter.drag_source, emitter.drag_curve, particle_index, normalized_age, normalized_emitter_time, 12u, particle_seed);
+        let damping = exp(-max(drag, 0.0) * age);
+        var travel = speed * age;
+        if abs(drag) >= 0.0001 {
+            travel = speed * (1.0 - damping) / max(drag, 0.0001);
+        }
+        let turbulence_strength = resolved_particle_scalar(emitter.turbulence, emitter.turbulence_source, emitter.turbulence_curve, particle_index, normalized_age, normalized_emitter_time, 13u, particle_seed);
+        let gravity = resolved_particle_vector(emitter.gravity, emitter.gravity_source, emitter.gravity_max, emitter.gravity_curves, particle_index, normalized_age, normalized_emitter_time, 14u, particle_seed);
+        let turbulence = turbulence_strength * vec3<f32>(sin(age * 7.0 + hash01_seeded(particle_index, 3u, particle_seed) * TAU), sin(age * 6.3 + hash01_seeded(particle_index, 8u, particle_seed) * TAU), sin(age * 7.7 + hash01_seeded(particle_index, 10u, particle_seed) * TAU));
+        let local_position = origin + direction * travel + gravity * age * age * 0.5 + turbulence;
+        position = emitter.translation + rotate_by_quaternion(local_position * emitter.scale, emitter.rotation);
     }
-    let tangent = normalize(cross(helper, forward));
-    let bitangent = cross(forward, tangent);
-    let direction = forward * cos_theta + tangent * (sin_theta * cos(direction_angle)) + bitangent * (sin_theta * sin(direction_angle));
-    let speed = sample_range(emitter.speed, hash01_seeded(particle_index, 2u, particle_seed));
-    let shape_angle = hash01_seeded(particle_index, 5u, particle_seed) * TAU;
-    var origin = vec3<f32>(0.0);
-    if emitter.shape_kind == 1u {
-        let radius = emitter.shape_radius * sqrt(hash01_seeded(particle_index, 6u, particle_seed));
-        origin = vec3<f32>(cos(shape_angle) * radius, sin(shape_angle) * radius, 0.0);
+    var color = vec4<f32>(1.0);
+    if (emitter.omitted_attributes & 24u) != 24u {
+        let gradient = sample_gradient(emitter.color, normalized_age);
+        if (emitter.omitted_attributes & 8u) == 0u {
+            color = vec4<f32>(gradient.rgb, color.a);
+        }
+        if (emitter.omitted_attributes & 16u) == 0u {
+            color.a = gradient.a * sample_curve(emitter.opacity, normalized_age);
+        }
     }
-    else if emitter.shape_kind == 2u {
-        origin = vec3<f32>(cos(shape_angle) * emitter.shape_radius, sin(shape_angle) * emitter.shape_radius, 0.0);
+    var rotation = 0.0;
+    if (emitter.omitted_attributes & 4u) == 0u {
+        rotation = sample_range(emitter.angular_velocity, hash01_seeded(particle_index, 4u, particle_seed)) * age;
     }
-    else if emitter.shape_kind == 3u {
-        let y = hash01_seeded(particle_index, 6u, particle_seed) * 2.0 - 1.0;
-        let radial = sqrt(max(1.0 - y * y, 0.0));
-        let radius = emitter.shape_radius * pow(hash01_seeded(particle_index, 8u, particle_seed), 0.3333333333333333);
-        origin = vec3<f32>(cos(shape_angle) * radial, y, sin(shape_angle) * radial) * radius;
+    var size = 0.0;
+    if (emitter.omitted_attributes & 2u) == 0u {
+        size = sample_curve(emitter.size, normalized_age) * emitter.max_scale;
     }
-    else if emitter.shape_kind == 4u {
-        let y = hash01_seeded(particle_index, 6u, particle_seed);
-        let radial = sqrt(max(1.0 - y * y, 0.0));
-        let radius = emitter.shape_radius * pow(hash01_seeded(particle_index, 8u, particle_seed), 0.3333333333333333);
-        origin = vec3<f32>(cos(shape_angle) * radial, y, sin(shape_angle) * radial) * radius;
-    }
-    else if emitter.shape_kind == 5u {
-        origin = vec3<f32>((hash01_seeded(particle_index, 5u, particle_seed) * 2.0 - 1.0) * emitter.shape_radius, (hash01_seeded(particle_index, 6u, particle_seed) * 2.0 - 1.0) * emitter.shape_depth, (hash01_seeded(particle_index, 7u, particle_seed) * 2.0 - 1.0) * emitter.shape_extent_z);
-    }
-    else if emitter.shape_kind == 6u {
-        let radius = emitter.shape_radius * sqrt(hash01_seeded(particle_index, 6u, particle_seed));
-        origin = vec3<f32>(cos(shape_angle) * radius, (hash01_seeded(particle_index, 7u, particle_seed) - 0.5) * emitter.shape_depth, sin(shape_angle) * radius);
-    }
-    else if emitter.shape_kind == 7u {
-        let y = hash01_seeded(particle_index, 6u, particle_seed) * emitter.shape_depth;
-        let radius = emitter.shape_radius * (y / max(emitter.shape_depth, 0.001)) * sqrt(hash01_seeded(particle_index, 7u, particle_seed));
-        origin = vec3<f32>(cos(shape_angle) * radius, y, sin(shape_angle) * radius);
-    }
-    let normalized_emitter_time = local_time / max(emitter.source_duration, 1.19e-7);
-    let drag = resolved_particle_scalar(emitter.drag, emitter.drag_source, emitter.drag_curve, particle_index, normalized_age, normalized_emitter_time, 12u, particle_seed);
-    let damping = exp(-max(drag, 0.0) * age);
-    var travel = speed * age;
-    if abs(drag) >= 0.0001 {
-        travel = speed * (1.0 - damping) / max(drag, 0.0001);
-    }
-    let turbulence_strength = resolved_particle_scalar(emitter.turbulence, emitter.turbulence_source, emitter.turbulence_curve, particle_index, normalized_age, normalized_emitter_time, 13u, particle_seed);
-    let gravity = resolved_particle_vector(emitter.gravity, emitter.gravity_source, emitter.gravity_max, emitter.gravity_curves, particle_index, normalized_age, normalized_emitter_time, 14u, particle_seed);
-    let turbulence = turbulence_strength * vec3<f32>(sin(age * 7.0 + hash01_seeded(particle_index, 3u, particle_seed) * TAU), sin(age * 6.3 + hash01_seeded(particle_index, 8u, particle_seed) * TAU), sin(age * 7.7 + hash01_seeded(particle_index, 10u, particle_seed) * TAU));
-    let local_position = origin + direction * travel + gravity * age * age * 0.5 + turbulence;
-    let position = emitter.translation + rotate_by_quaternion(local_position * emitter.scale, emitter.rotation);
-    var color = sample_gradient(emitter.color, normalized_age);
-    color.a *= sample_curve(emitter.opacity, normalized_age);
-    let rotation = sample_range(emitter.angular_velocity, hash01_seeded(particle_index, 4u, particle_seed)) * age;
-    particles[slot] = Particle(color, position, sample_curve(emitter.size, normalized_age) * emitter.max_scale, rotation, normalized_age, emitter_index, 1u, particle_index + particle_cycle * max(emitter.max_particles, 1u), 0u, 0u, 0u);
+    particles[slot] = Particle(color, position, size, rotation, select(normalized_age, 0.0, (emitter.omitted_attributes & 32u) != 0u), emitter_index, 1u, particle_index + particle_cycle * max(emitter.max_particles, 1u), 0u, 0u, 0u);
     atomicAdd(&counters[0], 1u);
     let command = emitter_index * 4u;
     let compact_index = atomicAdd(&indirect[command + 1u], 1u);

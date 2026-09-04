@@ -138,6 +138,7 @@ fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_sources_a
         &CONTINUOUS_SOURCE_SAMPLE_TIMES,
     );
     assert_parameter_overrides_match_without_recompiling(&harness);
+    assert_pruned_attributes_match_cpu(&harness);
     assert_event_aware_playback_matches(&harness, EffectPlaybackMode::Once);
     assert_event_aware_playback_matches(&harness, EffectPlaybackMode::LoopRestart);
     assert_event_aware_playback_matches(&harness, EffectPlaybackMode::LoopContinuous);
@@ -276,6 +277,77 @@ fn assert_effect_matches_at_times(
 ) {
     let template = EffectInstance::with_seed(effect.clone(), TEST_SEED);
     assert_instance_matches_at_times(harness, &template, times);
+}
+
+fn assert_pruned_attributes_match_cpu(harness: &GpuHarness) {
+    use aestra_gpu::particle_attributes::GpuParticleAttributes as A;
+    for mode in [
+        EffectPlaybackMode::Once,
+        EffectPlaybackMode::LoopRestart,
+        EffectPlaybackMode::LoopContinuous,
+    ] {
+        let effect = conformance_effect(mode, true);
+        let mut instance = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+        let mut artifact = GpuEffectArtifact::from_instance(&instance).unwrap();
+        instance.advance(if mode == EffectPlaybackMode::Once {
+            0.9
+        } else {
+            2.9
+        });
+        let mut reference = Vec::new();
+        instance.evaluate(&mut reference);
+        assert!(!reference.is_empty());
+        for omitted in [
+            0,
+            A::COLOR,
+            A::OPACITY,
+            A::COLOR | A::OPACITY,
+            A::NORMALIZED_AGE,
+            56,
+            A::ALL.0,
+            0,
+        ] {
+            for emitter in &mut artifact.emitters {
+                emitter.omitted_attributes = omitted;
+            }
+            let mut expected = reference.clone();
+            for particle in &mut expected {
+                if omitted & A::POSITION != 0 {
+                    particle.position = [0.0; 3];
+                }
+                if omitted & A::SIZE != 0 {
+                    particle.size = 0.0;
+                }
+                if omitted & A::ROTATION != 0 {
+                    particle.rotation = 0.0;
+                }
+                if omitted & A::COLOR != 0 {
+                    particle.color[..3].fill(1.0);
+                }
+                if omitted & A::OPACITY != 0 {
+                    particle.color[3] = 1.0;
+                }
+                if omitted & A::NORMALIZED_AGE != 0 {
+                    particle.normalized_age = 0.0;
+                }
+            }
+            let gpu = harness
+                .simulate(
+                    &artifact,
+                    GpuGlobals {
+                        time: instance.time(),
+                        total_slots: artifact.total_slots,
+                        seed: fold_seed(TEST_SEED),
+                        emitter_count: artifact.emitters.len() as u32,
+                        duration: effect.duration,
+                        continuous: u32::from(mode.is_continuous()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            assert_particle_samples_match(mode, instance.time(), instance.time(), &expected, &gpu);
+        }
+    }
 }
 
 fn assert_instance_matches_at_times(

@@ -501,7 +501,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "4fce42e0c24e3a0f030a22982d60898bece5dbd1581429afe533518ef43586cd"
+        "afd5c696faf5cc0a2a56b324704c1b3c904e790205d060fa1a538a836de5bf6b"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -1550,7 +1550,7 @@ fn semantic_uv_transforms_generate_portable_texture_coordinates() {
 #[test]
 fn flipbook_frame_is_resolved_before_semantic_material_uv0() {
     let frame_selection = SPRITE_RENDER_WESL
-        .find("uv_bounds = renderer.frames[flipbook_frame(renderer, particle)];")
+        .find("uv_bounds = renderer.frames[flipbook_frame(renderer, particle.normalized_age, identity)];")
         .expect("sprite vertex shader must select the current flipbook frame");
     let resolved_uv = SPRITE_RENDER_WESL
         .find("output.uv = mix(uv_bounds.xy, uv_bounds.zw")

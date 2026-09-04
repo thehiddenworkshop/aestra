@@ -130,6 +130,12 @@ Semantic sprite shaders derive a compact varying layout from optimized live inpu
 use the same deterministic locations, keep required coverage/visibility fields, and share color
 alpha when particle color and opacity are both read. Layout identity participates in shader and
 pipeline caching; legacy and wireframe rendering use their separate compact interface.
+Native GPU presentation also unions live particle-attribute requirements across each emitter's
+renderers. Unused appearance calculations and vertex reads are skipped; geometry, lifetime-driven
+flipbook age, and wireframe color remain available where needed. The 64-byte particle storage ABI
+is unchanged, omitted fields receive deterministic defaults, and GPU-readback mode retains full
+CPU-reference data. The Compiler Inspector shows a rendered-mode attribute-count estimate;
+runtime material overrides and render modes may change the actual requirements.
 
 Run the native-GPU visual regression against the approved, effect-only reference:
 

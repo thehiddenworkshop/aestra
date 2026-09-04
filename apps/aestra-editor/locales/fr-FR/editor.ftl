@@ -617,6 +617,8 @@ generated-stage-particle-update = MISE À JOUR DES PARTICULES
 generated-wesl-backend = MOTEUR WESL
 generated-simulation = SIMULATION
 generated-wesl-description = Le plan de l’effet fournit des tampons typés à ces points d’entrée WESL ; Aestra ne stocke pas de WGSL généré.
+generated-gpu-attributes = Attributs GPU natifs (estimation)
+generated-gpu-attributes-summary = { $live } actifs · { $omitted } attributs d’émetteur omis · mode rendu ; les substitutions à l’exécution peuvent différer · disposition mémoire inchangée
 
 changes-none-pending = AUCUNE TRANSACTION EN ATTENTE
 changes-summary = { $transaction }  ·  { $count } MODIFICATIONS

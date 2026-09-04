@@ -617,6 +617,8 @@ generated-stage-particle-update = PARTICLE UPDATE
 generated-wesl-backend = WESL BACKEND
 generated-simulation = SIMULATION
 generated-wesl-description = The effect plan supplies typed buffers to these WESL entry points; Aestra does not store generated WGSL.
+generated-gpu-attributes = Native GPU attributes (estimate)
+generated-gpu-attributes-summary = { $live } live · { $omitted } omitted emitter attributes · rendered mode; runtime overrides may differ · storage layout unchanged
 
 changes-none-pending = NO TRANSACTION PENDING
 changes-summary = { $transaction }  ·  { $count } CHANGES
