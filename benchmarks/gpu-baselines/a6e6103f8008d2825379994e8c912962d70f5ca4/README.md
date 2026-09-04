@@ -37,9 +37,13 @@ simulation risks are **confirmed** by measurement; one is **refuted**.
 - **§2.3 emitter lookup — CONFIRMED.** b006 (64 emitters, ~100k alive) costs
   **0.965 ms vs b003's 0.362 ms** for the *same* particle count in 1 emitter —
   **2.7×**. Per-slot emitter-ownership resolution scales with emitter count.
-- **§2.4 loop pressure — CONFIRMED.** b007 (LP=32, continuous, ~4k alive) costs
-  0.096 ms; b004 (LP=1, ~5k alive) costs 0.001 ms — **~100× per particle**.
-  Reconstructing historical cycles is expensive and grows with lifetime/duration.
+- **§2.4 loop pressure — OVERSTATED (corrected).** This first read said b007 (LP=32)
+  0.096 ms vs b004 (LP=1) 0.001 ms was "~100× per particle" from historical-cycle
+  reconstruction. That was a **confound**: b004 dispatches ~7,800 workgroups vs b007's
+  ~64, so b004's cheapness was GPU latency-hiding, not loop pressure. Implementing the
+  O(1) cycle lookup (commit `fe7ab75`) moved b007 only 0.096 → 0.080 ms (~17%),
+  showing the cycle search was a minor share. Do not compare scenarios with very
+  different workgroup counts.
 - **§2.5 curve emission — CONFIRMED.** b008 (curve-driven spawn, ~2k alive) costs
   0.389 ms vs b007 (constant rate, ~4k alive) 0.096 ms — **~8× per particle** for
   half the count. Inverse-curve evaluation at spawn reconstruction is real.

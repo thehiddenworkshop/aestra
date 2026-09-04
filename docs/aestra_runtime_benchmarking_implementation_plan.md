@@ -194,16 +194,26 @@ A GPU-timestamp sweep (`aestra-viewer --gpu-bench`, archived under
 | --- | --- | --- |
 | §2.2 capacity-bound | **REFUTED** | b004 500k/5k-alive = 0.001 ms vs b003 100k/100k = 0.362 ms |
 | §2.3 emitter lookup | **CONFIRMED** | b006 64-emitter/100k = 0.965 ms = **2.7×** b003 (1 emitter, same count) |
-| §2.4 loop pressure | **CONFIRMED** | b007 LP=32/~4k = 0.096 ms = **~100×/particle** vs b004 |
+| §2.4 loop pressure | **overstated** | b007 LP=32 = 0.096 ms — but see correction below |
 | §2.5 curve emission | **CONFIRMED** | b008 curve/~2k = 0.389 ms = **~8×/particle** vs b007 constant rate |
+
+> **Correction (fe7ab75).** The "~100×/particle" attributed to loop pressure was a
+> **measurement confound**: the b004 baseline dispatches ~7,800 workgroups vs b007's
+> ~64, so b004's cheapness was mostly GPU-saturation latency-hiding, not loop pressure.
+> Implementing the O(1) cycle lookup (Phase 7 #1) moved b007 only 0.096 → 0.080 ms
+> (~17%), proving the cycle search was a *minor* share of the cost, not a ~100× cliff.
+> The dominant per-slot cost is the per-particle simulation itself, plus GPU
+> under-utilization at low workgroup counts. **Lesson: never compare across scenarios
+> with very different workgroup counts.**
 
 Implications:
 - The capacity-scaling optimizations (dead-slot dispatch elimination, packed slot
   ranges) are **not** justified for the GPU kernel — dead slots are already free.
   The real capacity cost was CPU-side artifact allocation, fixed in Phase 3.
-- The GPU bottlenecks that *are* real, by measured per-work severity: loop-pressure
-  reconstruction (§2.4) ≫ curve-driven emission (§2.5) > emitter lookup (§2.3).
-  These reorder Phase 7 (below).
+- Confirmed, still-open GPU bottleneck: curve-driven emission (§2.5, ~8×/particle,
+  isolated by b007-vs-b008 which share workgroup counts, so credible). Emitter
+  lookup (§2.3) bites only at high counts (64 ≈ 3×). Loop-pressure cycle search
+  (§2.4) is addressed and was minor.
 - Sweep completed (`a6e6103…/` manifest): emitter count 1/4/16/64 shows §2.3 bites
   only at high counts (64 ≈ 3–5×; 1–16 within noise); occupancy at fixed 10k alive
   across 10k/100k/1M capacity reconfirms §2.2 refutation (1M cap is *cheapest*).
@@ -212,15 +222,23 @@ Implications:
 
 ## Phase 7 — Optimize measured analytical bottlenecks (strategy M6)
 
-Ordered by the Phase 6 GPU measurements (biggest measured per-work penalty first):
-
-1. **Bound/cache historical-cycle reconstruction (§2.4)** — the ~100×/particle
-   cliff for continuous long-lifetime effects (b007). Cap or memoize the per-frame
-   cycle search.
+1. **Historical-cycle reconstruction (§2.4) — DONE (`fe7ab75`).** O(1) cycle lookup
+   for constant per-cycle emission replaces the O(lifetime/duration) walk. Measured
+   b007 0.096 → 0.080 ms (~17%); bit-identical output (prism_bloom visual regression
+   RMSE 0.0000). Smaller than expected — see the correction above. Correct and
+   zero-cost, so it stays, but it was not the big lever it appeared to be.
 2. **Precompute a curve→time lookup for emission (§2.5)** — replace the per-candidate
-   inverse-curve search with a prebuilt table (b008, ~8×/particle).
+   inverse-curve search (`curve_spawn_time` binary search) with a prebuilt table.
+   b008 (~8×/particle vs constant-rate b007, both continuous / same workgroup count,
+   so this comparison is *not* confounded). **Best-justified remaining target.**
 3. **Eliminate linear per-slot emitter search (§2.3)** — precomputed slot→emitter
-   ranges or per-emitter dispatch (b006, 2.7× at 64 emitters).
+   ranges or per-emitter dispatch. Lower priority: only ~3× at 64 emitters, flat below.
+
+Before optimizing further, **re-measure per-particle simulation cost with matched
+workgroup counts** — the confounded loop-pressure result shows cross-scenario GPU
+comparisons need equal dispatch sizes to be trustworthy. The per-particle sim
+(transcendental forces, gradient/curve sampling) appears to dominate and is the real
+throughput lever.
 
 Explicitly **not** pursued (measurement did not justify): dead-slot dispatch
 elimination and packed slot ranges for capacity (§2.2 refuted). Dead-list
