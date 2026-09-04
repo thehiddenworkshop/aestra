@@ -228,9 +228,15 @@ Implications:
    RMSE 0.0000). Smaller than expected — see the correction above. Correct and
    zero-cost, so it stays, but it was not the big lever it appeared to be.
 2. **Precompute a curve→time lookup for emission (§2.5)** — replace the per-candidate
-   inverse-curve search (`curve_spawn_time` binary search) with a prebuilt table.
-   b008 (~8×/particle vs constant-rate b007, both continuous / same workgroup count,
-   so this comparison is *not* confounded). **Best-justified remaining target.**
+   inverse-curve search (`curve_spawn_time`, 12-iteration binary search) with a
+   prebuilt table. **Confirmed clean (`curve_control.ron`):** at b008's *exact*
+   capacity (8192, 128 workgroups) a constant-rate control is 0.081 ms vs b008's
+   0.389 ms 8-key curve — **4.8×**, with matched workgroup count so no confound.
+   Verifiable: `gpu_conformance.rs` already covers curve-driven spawn (source 2)
+   GPU-vs-CPU across playback modes. **Best-justified remaining target.** Open design
+   choice: an N-sample inverse table (small memory, approximation, changes both
+   runtimes) vs an exact per-particle table (exact, O(max_particles) memory + CPU
+   cost unless cached behind Phase 4 dirty-state).
 3. **Eliminate linear per-slot emitter search (§2.3)** — precomputed slot→emitter
    ranges or per-emitter dispatch. Lower priority: only ~3× at 64 emitters, flat below.
 
