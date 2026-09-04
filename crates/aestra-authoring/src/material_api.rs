@@ -103,13 +103,18 @@ fn tool_error(error: MaterialToolError) -> MaterialApiError {
             ValidationReport::default(),
         ),
         MaterialToolError::InvalidFresnelSettings(_)
-        | MaterialToolError::EmptyExpressionSelection => (
+        | MaterialToolError::EmptyExpressionSelection
+        | MaterialToolError::EmptyFunctionName
+        | MaterialToolError::FunctionAlreadyExists(_)
+        | MaterialToolError::DisconnectedFunctionSelection
+        | MaterialToolError::FunctionSelectionHasNoOutput => (
             MaterialApiErrorCode::InvalidRequest,
             ValidationReport::default(),
         ),
         MaterialToolError::IncompatibleWrap { .. }
         | MaterialToolError::IncompatibleSource { .. }
         | MaterialToolError::GraphNode(_)
+        | MaterialToolError::FunctionBoundaryTypeUnavailable(_)
         | MaterialToolError::ExpressionCannotBeDeleted(_)
         | MaterialToolError::ConnectionCannotBeDisconnected(_) => (
             MaterialApiErrorCode::IncompatibleEdit,
@@ -126,6 +131,10 @@ fn tool_error(error: MaterialToolError) -> MaterialApiError {
         MaterialToolError::StackEdit(_) => (
             MaterialApiErrorCode::IncompatibleEdit,
             ValidationReport::default(),
+        ),
+        MaterialToolError::Compile(error) => (
+            MaterialApiErrorCode::ValidationFailed,
+            error.report().clone(),
         ),
         MaterialToolError::Transaction(error) => command_error(error),
     };

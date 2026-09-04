@@ -7,7 +7,9 @@ use crate::feathers::context_menu::{
 use crate::timeline::TimelineState;
 use crate::*;
 use aestra_compiler::{EffectCompiler, MaterialFunctionLibrary, ProjectCompileError};
-use aestra_core::material::{MaterialFunction, MaterialProgram, MaterialProgramRef};
+use aestra_core::material::{
+    MaterialFunction, MaterialFunctionRef, MaterialProgram, MaterialProgramRef,
+};
 use aestra_core::{
     AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipId, EffectId, EffectParameter, Emitter, EmitterId,
@@ -239,6 +241,41 @@ impl ProjectEffectCatalog {
 
     pub(crate) fn material_function_library(&self) -> Result<MaterialFunctionLibrary, String> {
         self.material_functions().map(MaterialFunctionLibrary::new)
+    }
+
+    pub(crate) fn create_material_function(
+        &mut self,
+        function: &MaterialFunction,
+    ) -> Result<(), String> {
+        self.index
+            .create_material_function_source(function)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn delete_material_function(
+        &mut self,
+        function: &MaterialFunction,
+    ) -> Result<(), String> {
+        self.index
+            .delete_material_function_source(MaterialFunctionRef::Project(function.id), function)
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn next_material_function_name(&self, base: &str) -> String {
+        let names = self
+            .index
+            .material_functions()
+            .iter()
+            .map(|entry| entry.display_name.as_str())
+            .collect::<BTreeSet<_>>();
+        if !names.contains(base) {
+            return base.to_owned();
+        }
+        (2..)
+            .map(|suffix| format!("{base} {suffix}"))
+            .find(|candidate| !names.contains(candidate.as_str()))
+            .expect("the finite project index cannot exhaust function names")
     }
 
     pub(crate) fn replace_material_program(

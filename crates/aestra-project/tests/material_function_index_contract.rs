@@ -6,7 +6,8 @@ use aestra_core::{
     },
 };
 use aestra_project::{
-    ProjectAssetId, ProjectAssetIndex, ProjectMaterialFunctionStatus, ResolveMaterialFunctionError,
+    ProjectAssetId, ProjectAssetIndex, ProjectMaterialFunctionOperationError,
+    ProjectMaterialFunctionStatus, ResolveMaterialFunctionError,
 };
 
 fn identity_function(id: MaterialFunctionId) -> MaterialFunction {
@@ -83,5 +84,36 @@ fn duplicate_material_function_ids_are_visible_but_not_resolvable() {
     assert!(matches!(
         index.resolve_material_function(reference),
         Err(ResolveMaterialFunctionError::Duplicate { ref sources, .. }) if sources.len() == 2
+    ));
+}
+
+#[test]
+fn material_function_sources_can_be_created_and_safely_deleted() {
+    let temporary = tempfile::tempdir().unwrap();
+    let function = identity_function(MaterialFunctionId::from_u128(0xD201));
+    let reference = MaterialFunctionRef::Project(function.id);
+    let mut index = ProjectAssetIndex::scan(temporary.path());
+
+    let entry = index.create_material_function_source(&function).unwrap();
+    assert_eq!(entry.reference, Some(reference));
+    assert!(
+        entry
+            .path
+            .ends_with("identity_float.aestra.material-function.ron")
+    );
+    assert_eq!(index.load_material_function(reference).unwrap(), function);
+
+    let mut changed = function.clone();
+    changed.name = "Changed externally".into();
+    assert!(matches!(
+        index.delete_material_function_source(reference, &changed),
+        Err(ProjectMaterialFunctionOperationError::SourceConflict { .. })
+    ));
+    index
+        .delete_material_function_source(reference, &function)
+        .unwrap();
+    assert!(matches!(
+        index.resolve_material_function(reference),
+        Err(ResolveMaterialFunctionError::Missing { .. })
     ));
 }

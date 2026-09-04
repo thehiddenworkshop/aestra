@@ -6,15 +6,17 @@ use crate::{
     material_authoring::{material_expression_input_source, rewire_expression},
 };
 use aestra_compiler::{
-    MaterialCompiler, MaterialGraphCreateKind, MaterialGraphEdgeTarget,
+    MaterialCompileError, MaterialCompiler, MaterialGraphCreateKind, MaterialGraphEdgeTarget,
     MaterialGraphNodeCreationError, MaterialGraphOutputKind, MaterialStackEditError,
     MaterialStackModifierKind, MaterialStackPresetKind, MaterialStackProjection,
 };
 use aestra_core::{
-    MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
+    MaterialExpressionId, MaterialFunctionId, MaterialFunctionInputId, MaterialFunctionOutputId,
+    MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
     material::{
-        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind,
-        MaterialParameterValue, MaterialProgram, MaterialValue, MaterialValueType,
+        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialFunction,
+        MaterialFunctionInput, MaterialFunctionOutput, MaterialFunctionRef, MaterialParameterValue,
+        MaterialProgram, MaterialSchemaVersion, MaterialValue, MaterialValueType,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -130,6 +132,12 @@ pub enum MaterialToolCommand {
         program: MaterialProgramId,
         expressions: Vec<MaterialExpressionId>,
     },
+    ExtractMaterialFunction {
+        program: MaterialProgramId,
+        function: MaterialFunctionId,
+        name: String,
+        expressions: Vec<MaterialExpressionId>,
+    },
     DisconnectMaterialConnection {
         program: MaterialProgramId,
         target: MaterialConnectionTarget,
@@ -176,6 +184,16 @@ impl MaterialToolPlan {
                 _ => None,
             })
     }
+
+    pub fn created_function(&self) -> Option<&MaterialFunction> {
+        self.transaction
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                MaterialCommand::AddMaterialFunction { function, .. } => Some(function),
+                _ => None,
+            })
+    }
 }
 
 #[derive(Debug, Error)]
@@ -206,6 +224,16 @@ pub enum MaterialToolError {
     DestinationExpressionNotFound(MaterialExpressionId),
     #[error("material expression selection is empty")]
     EmptyExpressionSelection,
+    #[error("material function name cannot be empty")]
+    EmptyFunctionName,
+    #[error("material function ID '{0}' already exists")]
+    FunctionAlreadyExists(MaterialFunctionId),
+    #[error("selected material expressions must form one connected subgraph")]
+    DisconnectedFunctionSelection,
+    #[error("selected material expressions do not produce a value outside the selection")]
+    FunctionSelectionHasNoOutput,
+    #[error("material function boundary expression '{0}' has no proven value type")]
+    FunctionBoundaryTypeUnavailable(MaterialExpressionId),
     #[error("material expression '{0}' cannot be deleted without invalidating a consumer")]
     ExpressionCannotBeDeleted(MaterialExpressionId),
     #[error("material connection {0:?} cannot be reset to a typed default")]
@@ -224,6 +252,8 @@ pub enum MaterialToolError {
     InvalidFresnelSettings(&'static str),
     #[error(transparent)]
     GraphNode(#[from] MaterialGraphNodeCreationError),
+    #[error(transparent)]
+    Compile(#[from] MaterialCompileError),
     #[error(transparent)]
     StackEdit(#[from] MaterialStackEditError),
     #[error(transparent)]
@@ -279,6 +309,14 @@ impl MaterialToolPlanner {
                 program,
                 expressions,
             } => Self::plan_delete_material_expressions(document, program, expressions),
+            MaterialToolCommand::ExtractMaterialFunction {
+                program,
+                function,
+                name,
+                expressions,
+            } => {
+                Self::plan_extract_material_function(document, program, function, name, expressions)
+            }
             MaterialToolCommand::DisconnectMaterialConnection { program, target } => {
                 Self::plan_disconnect_material_connection(document, program, target)
             }
@@ -664,6 +702,257 @@ impl MaterialToolPlanner {
         validate_plan(document, command, transaction, created_expressions)
     }
 
+    fn plan_extract_material_function(
+        document: &MaterialAuthoringDocument,
+        program_id: MaterialProgramId,
+        function_id: MaterialFunctionId,
+        name: String,
+        expressions: Vec<MaterialExpressionId>,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        let name = name.trim().to_owned();
+        if name.is_empty() {
+            return Err(MaterialToolError::EmptyFunctionName);
+        }
+        if document
+            .material_functions
+            .iter()
+            .any(|function| function.id == function_id)
+        {
+            return Err(MaterialToolError::FunctionAlreadyExists(function_id));
+        }
+        let program = find_program(document, program_id)?;
+        let mut selected = expressions.into_iter().collect::<BTreeSet<_>>();
+        if selected.is_empty() {
+            return Err(MaterialToolError::EmptyExpressionSelection);
+        }
+        for expression in &selected {
+            if !program
+                .expressions
+                .iter()
+                .any(|candidate| candidate.id == *expression)
+            {
+                return Err(MaterialToolError::SourceExpressionNotFound(*expression));
+            }
+        }
+
+        // Inline constants are implementation details of their owning node. Absorb them into the
+        // function instead of exposing surprising constant-valued signature ports.
+        loop {
+            let mut added = false;
+            let selected_snapshot = selected.clone();
+            for expression in program
+                .expressions
+                .iter()
+                .filter(|expression| selected_snapshot.contains(&expression.id))
+            {
+                for dependency in expression.kind.dependencies() {
+                    if program.inline_constants.contains(&dependency) && selected.insert(dependency)
+                    {
+                        added = true;
+                    }
+                }
+            }
+            if !added {
+                break;
+            }
+        }
+
+        let mut adjacency = selected
+            .iter()
+            .copied()
+            .map(|expression| (expression, BTreeSet::new()))
+            .collect::<BTreeMap<_, _>>();
+        for expression in program
+            .expressions
+            .iter()
+            .filter(|expression| selected.contains(&expression.id))
+        {
+            for dependency in expression
+                .kind
+                .dependencies()
+                .into_iter()
+                .filter(|dependency| selected.contains(dependency))
+            {
+                adjacency
+                    .get_mut(&expression.id)
+                    .expect("selected expression has adjacency")
+                    .insert(dependency);
+                adjacency
+                    .get_mut(&dependency)
+                    .expect("selected dependency has adjacency")
+                    .insert(expression.id);
+            }
+        }
+        let mut visited = BTreeSet::new();
+        let mut pending = vec![*selected.iter().next().expect("selection is not empty")];
+        while let Some(expression) = pending.pop() {
+            if visited.insert(expression) {
+                pending.extend(adjacency[&expression].iter().copied());
+            }
+        }
+        if visited.len() != selected.len() {
+            return Err(MaterialToolError::DisconnectedFunctionSelection);
+        }
+
+        let functions = document.material_function_library();
+        let compiler = MaterialCompiler;
+        let ir = compiler.compile_with_functions(program, &functions)?;
+        let projection = compiler.project_graph_with_functions(program, Some(&ir), &functions);
+        let boundary_inputs = program
+            .expressions
+            .iter()
+            .filter(|expression| selected.contains(&expression.id))
+            .flat_map(|expression| expression.kind.dependencies())
+            .filter(|source| !selected.contains(source))
+            .collect::<BTreeSet<_>>();
+        let boundary_edges = projection
+            .edges
+            .iter()
+            .filter(|edge| {
+                selected.contains(&edge.source) && !target_is_selected(&edge.target, &selected)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let boundary_outputs = boundary_edges
+            .iter()
+            .map(|edge| edge.source)
+            .collect::<BTreeSet<_>>();
+        if boundary_outputs.is_empty() {
+            return Err(MaterialToolError::FunctionSelectionHasNoOutput);
+        }
+
+        let node_labels = projection
+            .nodes
+            .iter()
+            .map(|node| (node.expression, node.label.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let expression_type = |expression: MaterialExpressionId| {
+            ir.source_map
+                .values
+                .get(&expression)
+                .and_then(|value| ir.value(*value))
+                .map(|value| value.value_type)
+                .or_else(|| {
+                    projection
+                        .nodes
+                        .iter()
+                        .find(|node| node.expression == expression)
+                        .and_then(|node| node.value_type)
+                })
+        };
+
+        let mut used_names = BTreeSet::new();
+        let mut input_bindings = BTreeMap::new();
+        let mut function_inputs = Vec::new();
+        let mut function_input_expressions = Vec::new();
+        let mut remap = BTreeMap::new();
+        for source in boundary_inputs {
+            let value_type = expression_type(source)
+                .ok_or(MaterialToolError::FunctionBoundaryTypeUnavailable(source))?;
+            let input_id = MaterialFunctionInputId::new();
+            let expression_id = MaterialExpressionId::new();
+            let base = node_labels
+                .get(&source)
+                .map(|label| concise_signature_name(label))
+                .unwrap_or_else(|| "Input".to_owned());
+            let input_name = unique_signature_name(base, &mut used_names);
+            function_inputs.push(MaterialFunctionInput {
+                id: input_id,
+                name: input_name,
+                value_type,
+            });
+            function_input_expressions.push(MaterialExpression {
+                id: expression_id,
+                kind: MaterialExpressionKind::FunctionInput(input_id),
+            });
+            input_bindings.insert(input_id, source);
+            remap.insert(source, expression_id);
+        }
+
+        let mut function_expressions = function_input_expressions;
+        for expression in program
+            .expressions
+            .iter()
+            .filter(|expression| selected.contains(&expression.id))
+        {
+            let mut expression = expression.clone();
+            remap_expression_sources(&mut expression.kind, &remap);
+            function_expressions.push(expression);
+        }
+
+        let mut used_output_names = BTreeSet::new();
+        let mut output_calls = BTreeMap::new();
+        let mut function_outputs = Vec::new();
+        let mut replacement = program.clone();
+        replacement
+            .expressions
+            .retain(|expression| !selected.contains(&expression.id));
+        replacement
+            .inline_constants
+            .retain(|expression| !selected.contains(expression));
+        for source in boundary_outputs {
+            let value_type = expression_type(source)
+                .ok_or(MaterialToolError::FunctionBoundaryTypeUnavailable(source))?;
+            let output_id = MaterialFunctionOutputId::new();
+            let base = node_labels
+                .get(&source)
+                .map(|label| concise_signature_name(label))
+                .unwrap_or_else(|| "Output".to_owned());
+            let output_name = unique_signature_name(base, &mut used_output_names);
+            function_outputs.push(MaterialFunctionOutput {
+                id: output_id,
+                name: output_name,
+                value_type,
+                expression: source,
+            });
+            let call = append_unique_expression(
+                &mut replacement,
+                MaterialExpressionKind::FunctionCall {
+                    function: MaterialFunctionRef::Project(function_id),
+                    arguments: input_bindings.clone(),
+                    output: output_id,
+                },
+            );
+            output_calls.insert(source, call);
+        }
+        for edge in boundary_edges {
+            let Some(target) = graph_connection_target(&edge.target) else {
+                continue;
+            };
+            apply_connection(&mut replacement, target, output_calls[&edge.source])?;
+        }
+
+        let function = MaterialFunction {
+            id: function_id,
+            schema_version: MaterialSchemaVersion::CURRENT,
+            name: name.clone(),
+            inputs: function_inputs,
+            outputs: function_outputs,
+            expressions: function_expressions,
+        };
+        let created_expressions = output_calls.values().copied().collect::<Vec<_>>();
+        let command = MaterialToolCommand::ExtractMaterialFunction {
+            program: program_id,
+            function: function_id,
+            name: name.clone(),
+            expressions: selected.iter().copied().collect(),
+        };
+        let transaction = MaterialTransaction::new(
+            format!("Extract material function {name}"),
+            vec![
+                MaterialCommand::AddMaterialFunction {
+                    function,
+                    index: document.material_functions.len(),
+                },
+                MaterialCommand::ReplaceMaterialProgram {
+                    id: program_id,
+                    program: replacement,
+                },
+            ],
+        );
+        validate_plan(document, command, transaction, created_expressions)
+    }
+
     fn plan_disconnect_material_connection(
         document: &MaterialAuthoringDocument,
         program_id: MaterialProgramId,
@@ -1043,10 +1332,13 @@ fn target_is_selected(
     target: &MaterialGraphEdgeTarget,
     selected: &BTreeSet<MaterialExpressionId>,
 ) -> bool {
-    matches!(
-        target,
-        MaterialGraphEdgeTarget::Input { expression, .. } if selected.contains(expression)
-    )
+    match target {
+        MaterialGraphEdgeTarget::Input { expression, .. }
+        | MaterialGraphEdgeTarget::FunctionInput { expression, .. } => {
+            selected.contains(expression)
+        }
+        MaterialGraphEdgeTarget::Output(_) => false,
+    }
 }
 
 fn surviving_bypass_source(
@@ -1268,6 +1560,35 @@ fn graph_node_name(kind: MaterialGraphCreateKind) -> String {
         MaterialGraphCreateKind::Function(function) => function.display_name().to_owned(),
         MaterialGraphCreateKind::ExtractComponent(component) => format!("Extract {component:?}"),
     }
+}
+
+fn concise_signature_name(label: &str) -> String {
+    let name = label
+        .split('·')
+        .next()
+        .unwrap_or(label)
+        .trim()
+        .trim_start_matches("Constant")
+        .trim()
+        .to_owned();
+    if name.is_empty() {
+        "Value".to_owned()
+    } else {
+        name
+    }
+}
+
+fn unique_signature_name(base: String, used: &mut BTreeSet<String>) -> String {
+    if used.insert(base.clone()) {
+        return base;
+    }
+    for suffix in 2.. {
+        let candidate = format!("{base} {suffix}");
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    unreachable!("an unused material function signature name always exists")
 }
 
 fn connection_source(

@@ -34,7 +34,7 @@ use aestra_compiler::{
     MaterialGraphOutputKind, MaterialGraphProjection,
 };
 use aestra_core::{
-    MaterialExpressionId, MaterialId, MaterialProgramId,
+    MaterialExpressionId, MaterialFunctionId, MaterialId, MaterialProgramId,
     material::{
         MaterialExpressionDomain, MaterialExpressionKind, MaterialInput, MaterialInstance,
         MaterialParameterValue, MaterialProgram, MaterialValue, MaterialValueType,
@@ -572,12 +572,14 @@ struct MaterialGraphPaletteEmptySearch;
 
 #[derive(Component, Debug, Clone, Copy)]
 enum MaterialGraphContextAction {
+    ExtractFunction(MaterialProgramId),
     Duplicate(MaterialProgramId),
     Delete(MaterialProgramId),
 }
 
 #[derive(Debug, Clone, Copy)]
 enum MaterialGraphSelectionEdit {
+    ExtractFunction,
     Duplicate,
     Delete,
     Disconnect,
@@ -1472,6 +1474,9 @@ fn handle_material_graph_context_actions(
             .remove::<PendingFeathersActivation>()
             .insert(Interaction::None);
         let (program, edit) = match *action {
+            MaterialGraphContextAction::ExtractFunction(program) => {
+                (program, MaterialGraphSelectionEdit::ExtractFunction)
+            }
             MaterialGraphContextAction::Duplicate(program) => {
                 (program, MaterialGraphSelectionEdit::Duplicate)
             }
@@ -1528,7 +1533,14 @@ fn material_graph_keyboard_input(
         return;
     }
     let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    let edit = if control && keys.just_pressed(KeyCode::KeyD) && !selection.expressions.is_empty() {
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let edit = if control
+        && shift
+        && keys.just_pressed(KeyCode::KeyE)
+        && !selection.expressions.is_empty()
+    {
+        Some(MaterialGraphSelectionEdit::ExtractFunction)
+    } else if control && keys.just_pressed(KeyCode::KeyD) && !selection.expressions.is_empty() {
         Some(MaterialGraphSelectionEdit::Duplicate)
     } else if keys.just_pressed(KeyCode::Delete) {
         if !selection.expressions.is_empty() {
@@ -1637,7 +1649,18 @@ fn apply_material_graph_selection_edit(
         })
         .map(|(action, node)| (action.expression, node.position()))
         .collect::<BTreeMap<_, _>>();
+    let extraction_center = (!positions.is_empty())
+        .then(|| positions.values().copied().sum::<Vec2>() / positions.len() as f32);
     let (label, command) = match edit {
+        MaterialGraphSelectionEdit::ExtractFunction => (
+            "Extract material function",
+            MaterialToolCommand::ExtractMaterialFunction {
+                program,
+                function: MaterialFunctionId::new(),
+                name: catalog.next_material_function_name("Extracted Function"),
+                expressions: expressions.clone(),
+            },
+        ),
         MaterialGraphSelectionEdit::Duplicate => (
             "Duplicate material graph nodes",
             MaterialToolCommand::DuplicateMaterialExpressions {
@@ -1670,6 +1693,41 @@ fn apply_material_graph_selection_edit(
             history_ledger.record_material_edit(session);
             let graph_key = material_graph_view_key(program);
             match edit {
+                MaterialGraphSelectionEdit::ExtractFunction => {
+                    for expression in &expressions {
+                        graph_memory.remove_node(
+                            &graph_key,
+                            &material_graph_expression_node_key(*expression),
+                        );
+                    }
+                    selection.expressions.clear();
+                    let center = extraction_center.unwrap_or(Vec2::ZERO);
+                    let call_count = plan.created_expressions.len();
+                    for (index, call) in plan.created_expressions.iter().copied().enumerate() {
+                        let vertical_offset =
+                            (index as f32 - (call_count.saturating_sub(1) as f32 * 0.5)) * 72.0;
+                        graph_memory.place_node(
+                            graph_key.clone(),
+                            material_graph_expression_node_key(call),
+                            center + Vec2::new(0.0, vertical_offset),
+                        );
+                        selection.expressions.insert(call);
+                    }
+                    selection.connection = None;
+                    inspector.selected = plan
+                        .created_expressions
+                        .last()
+                        .copied()
+                        .map(|expression| (program, expression));
+                    let function = plan
+                        .created_function()
+                        .expect("a successful extraction plan creates a function");
+                    session.status = format!(
+                        "Extracted {} node(s) as {}",
+                        expressions.len(),
+                        function.name
+                    );
+                }
                 MaterialGraphSelectionEdit::Duplicate => {
                     selection.expressions.clear();
                     for (source, duplicate) in ordered.iter().zip(&plan.created_expressions) {
@@ -1723,6 +1781,9 @@ fn apply_material_graph_selection_edit(
         }
         Err(error) => {
             session.status = match edit {
+                MaterialGraphSelectionEdit::ExtractFunction => {
+                    format!("Could not extract material function: {error}")
+                }
                 MaterialGraphSelectionEdit::Duplicate => {
                     format!("Could not duplicate material nodes: {error}")
                 }
@@ -1763,7 +1824,18 @@ fn apply_material_tool_command(
         .into_iter()
         .find(|candidate| candidate.id == program)
         .ok_or_else(|| format!("material tool plan removed program {program}"))?;
-    material_history.execute_replacement(session, catalog, label, current, replacement)?;
+    if let Some(function) = plan.created_function().cloned() {
+        material_history.execute_extraction(
+            session,
+            catalog,
+            label,
+            current,
+            replacement,
+            function,
+        )?;
+    } else {
+        material_history.execute_replacement(session, catalog, label, current, replacement)?;
+    }
     Ok(plan)
 }
 
@@ -3278,6 +3350,11 @@ fn spawn_material_graph_node_menu(
         MaterialGraphPaletteAnchor,
         (MaterialGraphNodeMenu, FeathersGraphNavigationBlocker),
         |menu| {
+            spawn_pointer_context_menu_item(
+                menu,
+                &localizer.text("material-graph-extract-function"),
+                MaterialGraphContextAction::ExtractFunction(open.program),
+            );
             spawn_pointer_context_menu_item(
                 menu,
                 &localizer.text("material-graph-duplicate-nodes"),
@@ -5077,6 +5154,62 @@ mod tests {
                 .iter()
                 .any(|expression| expression.id == wrapper)
         );
+        assert!(session.diagnostics.is_valid());
+    }
+
+    #[test]
+    fn graph_extraction_persists_a_function_and_recompiles_the_call() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("extract.aestra.material.ron");
+        let effect =
+            aestra_core::EffectAsset::from_ron(crate::MATERIAL_GRAPH_LAB_EFFECT_SOURCE).unwrap();
+        let program = aestra_core::material::MaterialProgram::from_ron(
+            crate::MATERIAL_GRAPH_LAB_PROGRAM_SOURCE,
+        )
+        .unwrap();
+        program.save_ron(&path).unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let compiled = catalog.compile_project(&effect).unwrap().root;
+        let mut session = test_support::session_with_timing_slack();
+        session.open_compiled_effect("material_graph_lab.aestra.ron", effect, compiled);
+        let mut history = MaterialProgramEditHistory::default();
+        let function = MaterialFunctionId::from_u128(0xE871);
+
+        let plan = apply_material_tool_command(
+            &mut session,
+            &mut catalog,
+            &mut history,
+            program.id,
+            "Extract material function",
+            MaterialToolCommand::ExtractMaterialFunction {
+                program: program.id,
+                function,
+                name: "Extracted Alpha".into(),
+                expressions: vec![program.outputs.alpha],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(plan.created_function().unwrap().id, function);
+        assert!(
+            catalog
+                .material_functions()
+                .unwrap()
+                .iter()
+                .any(|candidate| candidate.id == function)
+        );
+        let replacement = MaterialProgram::load_ron(&path).unwrap();
+        assert!(matches!(
+            replacement
+                .expressions
+                .iter()
+                .find(|expression| expression.id == replacement.outputs.alpha)
+                .map(|expression| &expression.kind),
+            Some(MaterialExpressionKind::FunctionCall {
+                function: aestra_core::material::MaterialFunctionRef::Project(id),
+                ..
+            }) if *id == function
+        ));
         assert!(session.diagnostics.is_valid());
     }
 }

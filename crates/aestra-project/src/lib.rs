@@ -836,6 +836,91 @@ impl ProjectAssetIndex {
             })
     }
 
+    /// Creates one project-local reusable material function.
+    pub fn create_material_function_source(
+        &mut self,
+        function: &MaterialFunction,
+    ) -> Result<ProjectMaterialFunctionEntry, ProjectMaterialFunctionOperationError> {
+        let name = function.name.trim();
+        let Some(stem) = effect_source_stem(name) else {
+            return Err(ProjectMaterialFunctionOperationError::InvalidName);
+        };
+        let reference = MaterialFunctionRef::Project(function.id);
+        if self
+            .material_functions
+            .iter()
+            .any(|entry| entry.reference.is_some_and(|item| item.id() == function.id))
+        {
+            return Err(ProjectMaterialFunctionOperationError::IdentityExists { reference });
+        }
+        let destination = self
+            .root
+            .join(format!("{stem}.aestra.material-function.ron"));
+        if destination.exists() {
+            return Err(ProjectMaterialFunctionOperationError::DestinationExists {
+                path: destination,
+            });
+        }
+        function.save_ron(&destination).map_err(|error| {
+            ProjectMaterialFunctionOperationError::Asset {
+                path: destination.clone(),
+                message: error.to_string(),
+            }
+        })?;
+
+        self.refresh();
+        match self.resolve_material_function(reference).cloned() {
+            Ok(entry) => Ok(entry),
+            Err(error) => {
+                let rollback = fs::remove_file(&destination)
+                    .err()
+                    .map(|error| format!("; removing the incomplete source also failed: {error}"))
+                    .unwrap_or_default();
+                self.refresh();
+                Err(ProjectMaterialFunctionOperationError::Refresh {
+                    reference,
+                    message: format!("{error}{rollback}"),
+                })
+            }
+        }
+    }
+
+    /// Deletes a material-function source only when it still matches the expected authored value.
+    pub fn delete_material_function_source(
+        &mut self,
+        reference: MaterialFunctionRef,
+        expected: &MaterialFunction,
+    ) -> Result<(), ProjectMaterialFunctionOperationError> {
+        let entry = self
+            .resolve_material_function(reference)
+            .cloned()
+            .map_err(|error| ProjectMaterialFunctionOperationError::Resolve {
+                reference,
+                message: error.to_string(),
+            })?;
+        let current = MaterialFunction::load_ron(&entry.path).map_err(|error| {
+            ProjectMaterialFunctionOperationError::Asset {
+                path: entry.path.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        if current != *expected {
+            return Err(ProjectMaterialFunctionOperationError::SourceConflict {
+                reference,
+                path: entry.path,
+            });
+        }
+        fs::remove_file(&entry.path).map_err(|error| {
+            ProjectMaterialFunctionOperationError::FileSystem {
+                operation: "delete",
+                path: entry.path,
+                message: error.to_string(),
+            }
+        })?;
+        self.refresh();
+        Ok(())
+    }
+
     /// Atomically replaces one material-program source after verifying that it still contains
     /// the exact program the caller edited.
     ///
@@ -1376,6 +1461,39 @@ pub enum ProjectMaterialProgramOperationError {
     )]
     Refresh {
         reference: MaterialProgramRef,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ProjectMaterialFunctionOperationError {
+    #[error("material function name must contain at least one letter or number")]
+    InvalidName,
+    #[error("material function {reference:?} already exists in the project")]
+    IdentityExists { reference: MaterialFunctionRef },
+    #[error("destination source already exists at {path}")]
+    DestinationExists { path: PathBuf },
+    #[error("material function {reference:?} could not be resolved: {message}")]
+    Resolve {
+        reference: MaterialFunctionRef,
+        message: String,
+    },
+    #[error("material function {reference:?} changed on disk at {path}; reload before editing")]
+    SourceConflict {
+        reference: MaterialFunctionRef,
+        path: PathBuf,
+    },
+    #[error("could not read or save material function source at {path}: {message}")]
+    Asset { path: PathBuf, message: String },
+    #[error("could not {operation} {path}: {message}")]
+    FileSystem {
+        operation: &'static str,
+        path: PathBuf,
+        message: String,
+    },
+    #[error("material function {reference:?} did not resolve after the asset operation: {message}")]
+    Refresh {
+        reference: MaterialFunctionRef,
         message: String,
     },
 }

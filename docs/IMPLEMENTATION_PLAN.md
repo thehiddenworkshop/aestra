@@ -390,7 +390,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
 
 ### Phase E — reuse and extensibility
 
-- [ ] **Material 15 — typed material functions.** The reusable authoring slice is implemented:
+- [x] **Material 15 — typed material functions.** The reusable authoring slice is implemented:
   canonical stable function/input/output identities, typed function signatures, function-input
   and function-call expressions, normalized RON assets, project-local discovery and resolution,
   exact call-signature validation, missing-reference and recursion diagnostics, deterministic
@@ -400,7 +400,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   projection exposes signature-named, typed call sockets; and the categorized node browser offers
   built-in and project-local functions with validated creation, rewiring, undo, and diagnostics.
   The bundled Material Graph Lab exercises a built-in call and ships a project-local Dissolve Edge
-  function. The validated `ExtractMaterialFunction` command remains to complete this milestone.
+  function. Connected graph selections can now be extracted from the context menu or with
+  `Ctrl+Shift+E`: the authoring planner infers typed boundary inputs and outputs, absorbs inline
+  constants, rejects disconnected or unusable selections, persists a project-local function,
+  replaces the selection with stable call nodes, preserves the replacement layout, and treats the
+  function asset plus graph rewrite as one rollback-safe undo/redo operation.
 - [ ] **Material 16 — semantic preset library.**
 - [ ] **Material 17 — validated custom WESL escape hatch.**
 

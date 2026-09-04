@@ -2294,7 +2294,12 @@ IR source map. Effect-project compilation stores the expanded call-free programs
 runtime and render backends. A canonical built-in catalog and project-local functions are available
 in the categorized graph browser; created call nodes derive their named, typed ports from the
 function signature and preserve stable socket identities through reconnect, delete, and undo.
-The validated `ExtractMaterialFunction` command remains to complete this milestone.
+Connected selections can now be extracted through the validated `ExtractMaterialFunction` tool.
+It infers typed boundary inputs and outputs, absorbs inline implementation constants, rejects
+disconnected or output-less selections, creates a normalized project-local function asset, and
+rewrites external consumers to stable function calls. The editor exposes the operation in the node
+context menu and with `Ctrl+Shift+E`; persistence, compilation, and asset creation are rollback-safe
+and participate in the shared material undo/redo history as one edit.
 
 ### Tasks
 

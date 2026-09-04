@@ -10,7 +10,10 @@ use crate::{
 use aestra_authoring::{
     MaterialAuthoringDocument, MaterialCommand, MaterialCommandExecutor, MaterialTransaction,
 };
-use aestra_core::{EffectId, material::MaterialProgram};
+use aestra_core::{
+    EffectId,
+    material::{MaterialFunction, MaterialProgram},
+};
 use bevy::{prelude::*, ui::InteractionDisabled, ui_widgets::Activate};
 use std::collections::VecDeque;
 
@@ -51,6 +54,7 @@ struct MaterialProgramHistoryEntry {
     label: String,
     before: MaterialProgram,
     after: MaterialProgram,
+    created_function: Option<MaterialFunction>,
 }
 
 #[derive(Resource, Debug, Default)]
@@ -74,6 +78,31 @@ impl MaterialProgramEditHistory {
             label,
             before,
             after,
+            created_function: None,
+        });
+        while self.undo.len() > MATERIAL_HISTORY_LIMIT {
+            self.undo.pop_front();
+        }
+        self.redo.clear();
+        Ok(())
+    }
+
+    pub(crate) fn execute_extraction(
+        &mut self,
+        session: &mut EditorSession,
+        catalog: &mut ProjectEffectCatalog,
+        label: impl Into<String>,
+        before: MaterialProgram,
+        after: MaterialProgram,
+        function: MaterialFunction,
+    ) -> Result<(), String> {
+        let label = label.into();
+        apply_material_function_extraction(session, catalog, &label, &before, &after, &function)?;
+        self.undo.push_back(MaterialProgramHistoryEntry {
+            label,
+            before,
+            after,
+            created_function: Some(function),
         });
         while self.undo.len() > MATERIAL_HISTORY_LIMIT {
             self.undo.pop_front();
@@ -90,13 +119,18 @@ impl MaterialProgramEditHistory {
         let Some(entry) = self.undo.pop_back() else {
             return Ok(None);
         };
-        match apply_material_program_replacement(
-            session,
-            catalog,
-            &format!("Undo {}", entry.label),
-            &entry.after,
-            &entry.before,
-        ) {
+        let result = if let Some(function) = &entry.created_function {
+            undo_material_function_extraction(session, catalog, &entry, function)
+        } else {
+            apply_material_program_replacement(
+                session,
+                catalog,
+                &format!("Undo {}", entry.label),
+                &entry.after,
+                &entry.before,
+            )
+        };
+        match result {
             Ok(()) => {
                 let label = entry.label.clone();
                 self.redo.push(entry);
@@ -117,13 +151,25 @@ impl MaterialProgramEditHistory {
         let Some(entry) = self.redo.pop() else {
             return Ok(None);
         };
-        match apply_material_program_replacement(
-            session,
-            catalog,
-            &format!("Redo {}", entry.label),
-            &entry.before,
-            &entry.after,
-        ) {
+        let result = if let Some(function) = &entry.created_function {
+            apply_material_function_extraction(
+                session,
+                catalog,
+                &format!("Redo {}", entry.label),
+                &entry.before,
+                &entry.after,
+                function,
+            )
+        } else {
+            apply_material_program_replacement(
+                session,
+                catalog,
+                &format!("Redo {}", entry.label),
+                &entry.before,
+                &entry.after,
+            )
+        };
+        match result {
             Ok(()) => {
                 let label = entry.label.clone();
                 self.undo.push_back(entry);
@@ -146,6 +192,59 @@ impl MaterialProgramEditHistory {
     }
 }
 
+fn apply_material_function_extraction(
+    session: &mut EditorSession,
+    catalog: &mut ProjectEffectCatalog,
+    label: &str,
+    before: &MaterialProgram,
+    after: &MaterialProgram,
+    function: &MaterialFunction,
+) -> Result<(), String> {
+    catalog.create_material_function(function)?;
+    if let Err(error) = apply_material_program_replacement(session, catalog, label, before, after) {
+        return Err(match catalog.delete_material_function(function) {
+            Ok(()) => error,
+            Err(rollback) => {
+                format!("{error}; removing the extracted function also failed: {rollback}")
+            }
+        });
+    }
+    Ok(())
+}
+
+fn undo_material_function_extraction(
+    session: &mut EditorSession,
+    catalog: &mut ProjectEffectCatalog,
+    entry: &MaterialProgramHistoryEntry,
+    function: &MaterialFunction,
+) -> Result<(), String> {
+    apply_material_program_replacement(
+        session,
+        catalog,
+        &format!("Undo {}", entry.label),
+        &entry.after,
+        &entry.before,
+    )?;
+    if let Err(error) = catalog.delete_material_function(function) {
+        return Err(
+            match apply_material_program_replacement(
+                session,
+                catalog,
+                &format!("Restore {} after failed undo", entry.label),
+                &entry.before,
+                &entry.after,
+            ) {
+                Ok(()) => error,
+                Err(rollback) => format!(
+                    "{error}; restoring the material after the failed function removal also failed: \
+                 {rollback}"
+                ),
+            },
+        );
+    }
+    Ok(())
+}
+
 fn apply_material_program_replacement(
     session: &mut EditorSession,
     catalog: &mut ProjectEffectCatalog,
@@ -154,7 +253,9 @@ fn apply_material_program_replacement(
     replacement: &MaterialProgram,
 ) -> Result<(), String> {
     let programs = catalog.material_programs_for_effect(&session.effect)?;
-    let mut document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
+    let functions = catalog.material_functions()?;
+    let mut document = MaterialAuthoringDocument::new(session.effect.clone(), programs)
+        .with_material_functions(functions);
     MaterialCommandExecutor::execute(
         &mut document,
         &MaterialTransaction::single(
@@ -715,5 +816,81 @@ mod tests {
             app.world().resource::<EditorSession>().effect.duration,
             changed_duration
         );
+    }
+
+    #[test]
+    fn extracted_function_asset_participates_in_material_undo_and_redo() {
+        use aestra_core::{
+            MaterialExpressionId, MaterialFunctionId, MaterialFunctionInputId,
+            MaterialFunctionOutputId,
+            material::{
+                MaterialExpression, MaterialExpressionKind, MaterialFunctionInput,
+                MaterialFunctionOutput, MaterialInstance, MaterialRenderState,
+                MaterialSchemaVersion, MaterialValueType,
+            },
+        };
+
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("history.aestra.material.ron");
+        let mut before = MaterialProgram::additive_sprite("History");
+        before.id = aestra_core::MaterialProgramId::from_u128(0x7700);
+        before.save_ron(&path).unwrap();
+        let before = MaterialProgram::load_ron(&path).unwrap();
+        let mut after = before.clone();
+        after.name = "History after extraction".into();
+        let input = MaterialFunctionInputId::from_u128(0x7702);
+        let expression = MaterialExpressionId::from_u128(0x7703);
+        let function = MaterialFunction {
+            id: MaterialFunctionId::from_u128(0x7701),
+            schema_version: MaterialSchemaVersion::CURRENT,
+            name: "Extracted Function".into(),
+            inputs: vec![MaterialFunctionInput {
+                id: input,
+                name: "Value".into(),
+                value_type: MaterialValueType::Float,
+            }],
+            outputs: vec![MaterialFunctionOutput {
+                id: MaterialFunctionOutputId::from_u128(0x7704),
+                name: "Value".into(),
+                value_type: MaterialValueType::Float,
+                expression,
+            }],
+            expressions: vec![MaterialExpression {
+                id: expression,
+                kind: MaterialExpressionKind::FunctionInput(input),
+            }],
+        };
+        let mut session = test_support::session_with_timing_slack();
+        session.effect.material_instances.push(MaterialInstance {
+            id: aestra_core::MaterialId::from_u128(0x7705),
+            program: aestra_core::material::MaterialProgramRef::Project(before.id),
+            values: default(),
+            render_state: MaterialRenderState::additive_sprite(),
+        });
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let mut history = MaterialProgramEditHistory::default();
+
+        history
+            .execute_extraction(
+                &mut session,
+                &mut catalog,
+                "Extract material function",
+                before.clone(),
+                after.clone(),
+                function.clone(),
+            )
+            .unwrap();
+        assert_eq!(
+            catalog.material_functions().unwrap(),
+            vec![function.clone()]
+        );
+
+        history.undo(&mut session, &mut catalog).unwrap();
+        assert!(catalog.material_functions().unwrap().is_empty());
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), before);
+
+        history.redo(&mut session, &mut catalog).unwrap();
+        assert_eq!(catalog.material_functions().unwrap(), vec![function]);
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), after);
     }
 }

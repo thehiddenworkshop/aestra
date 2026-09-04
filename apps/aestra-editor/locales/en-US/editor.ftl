@@ -67,6 +67,7 @@ material-graph-search-nodes = Search nodes
 material-graph-clear-search = Clear node search
 material-graph-no-compatible-nodes = No compatible nodes are available here.
 material-graph-no-matching-nodes = No nodes match this search.
+material-graph-extract-function = Extract as Function
 material-graph-duplicate-nodes = Duplicate
 material-graph-delete-nodes = Delete
 

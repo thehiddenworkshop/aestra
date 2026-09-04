@@ -67,6 +67,7 @@ material-graph-search-nodes = Rechercher des nœuds
 material-graph-clear-search = Effacer la recherche de nœuds
 material-graph-no-compatible-nodes = Aucun nœud compatible n’est disponible ici.
 material-graph-no-matching-nodes = Aucun nœud ne correspond à cette recherche.
+material-graph-extract-function = Extraire en fonction
 material-graph-duplicate-nodes = Dupliquer
 material-graph-delete-nodes = Supprimer
 

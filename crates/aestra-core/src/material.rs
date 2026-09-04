@@ -693,7 +693,8 @@ impl MaterialExpressionKind {
         }
     }
 
-    fn dependencies(&self) -> Vec<MaterialExpressionId> {
+    /// Returns every expression referenced by this expression in stable socket order.
+    pub fn dependencies(&self) -> Vec<MaterialExpressionId> {
         match self {
             Self::Constant(_) | Self::Input(_) | Self::Parameter(_) | Self::FunctionInput(_) => {
                 Vec::new()

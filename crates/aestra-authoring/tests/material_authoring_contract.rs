@@ -10,8 +10,9 @@ use aestra_compiler::{
     MaterialStackPresetKind, MaterialStackProjection,
 };
 use aestra_core::{
-    AssetId, BlendMode, EffectAsset, EffectParameter, Emitter, MaterialExpressionId, MaterialId,
-    MaterialParameterId, MaterialProgramId, ParameterId, RendererId, Value,
+    AssetId, BlendMode, EffectAsset, EffectParameter, Emitter, MaterialExpressionId,
+    MaterialFunctionId, MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
+    RendererId, Value,
     material::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialFunction,
         MaterialFunctionRef, MaterialInput, MaterialInstance, MaterialParameter,
@@ -2678,6 +2679,107 @@ fn project_function_call_creation_and_signature_rewiring_are_transactional() {
     ));
     history.undo(&mut document).unwrap().unwrap();
     assert_eq!(document, before_rewire);
+}
+
+#[test]
+fn connected_subgraph_extraction_creates_a_function_and_replaces_it_atomically() {
+    let mut document = authoring_document();
+    let mut program = MaterialProgram::additive_sprite("Extract function");
+    program.id = MaterialProgramId::from_u128(0x68f1);
+    let original_alpha = program.outputs.alpha;
+    let lower = MaterialExpressionId::from_u128(0x68f2);
+    let upper = MaterialExpressionId::from_u128(0x68f3);
+    let smoothstep = MaterialExpressionId::from_u128(0x68f4);
+    program.expressions.extend([
+        MaterialExpression {
+            id: lower,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.1)),
+        },
+        MaterialExpression {
+            id: upper,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.9)),
+        },
+        MaterialExpression {
+            id: smoothstep,
+            kind: MaterialExpressionKind::Smoothstep {
+                edge_min: lower,
+                edge_max: upper,
+                value: original_alpha,
+            },
+        },
+    ]);
+    program.inline_constants.extend([lower, upper]);
+    program.outputs.alpha = smoothstep;
+    document.programs.push(program);
+    let before = document.clone();
+    let function_id = MaterialFunctionId::from_u128(0x68f5);
+    let command = MaterialToolCommand::ExtractMaterialFunction {
+        program: MaterialProgramId::from_u128(0x68f1),
+        function: function_id,
+        name: "Soft Threshold".into(),
+        expressions: vec![smoothstep],
+    };
+
+    assert_eq!(
+        ron::from_str::<MaterialToolCommand>(&ron::to_string(&command).unwrap()).unwrap(),
+        command
+    );
+    let plan = MaterialToolPlanner::plan(&document, command).unwrap();
+    let function = plan.created_function().unwrap();
+    assert_eq!(function.name, "Soft Threshold");
+    assert_eq!(function.inputs.len(), 1);
+    assert_eq!(function.outputs.len(), 1);
+    assert!(function.expressions.iter().any(|expression| {
+        expression.id == smoothstep
+            && matches!(expression.kind, MaterialExpressionKind::Smoothstep { .. })
+    }));
+    let call = plan.created_expressions[0];
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    assert_eq!(document.material_functions[0].id, function_id);
+    assert_eq!(document.programs[0].outputs.alpha, call);
+    assert!(
+        !document.programs[0]
+            .expressions
+            .iter()
+            .any(|expression| expression.id == smoothstep)
+    );
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == call)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::FunctionCall {
+            function: MaterialFunctionRef::Project(id),
+            ..
+        }) if *id == function_id
+    ));
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
+fn extraction_rejects_disconnected_node_selections() {
+    let mut document = authoring_document();
+    let mut program = MaterialProgram::additive_sprite("Disconnected extraction");
+    program.id = MaterialProgramId::from_u128(0x68f6);
+    let expressions = vec![program.outputs.color, program.outputs.alpha];
+    document.programs.push(program);
+    let error = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ExtractMaterialFunction {
+            program: MaterialProgramId::from_u128(0x68f6),
+            function: MaterialFunctionId::from_u128(0x68f7),
+            name: "Invalid".into(),
+            expressions,
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        MaterialToolError::DisconnectedFunctionSelection
+    ));
 }
 
 #[test]

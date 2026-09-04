@@ -112,6 +112,7 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "material-graph-clear-search",
     "material-graph-no-compatible-nodes",
     "material-graph-no-matching-nodes",
+    "material-graph-extract-function",
     "material-graph-duplicate-nodes",
     "material-graph-delete-nodes",
     "dock-float-panel",

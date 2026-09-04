@@ -1,6 +1,6 @@
 use aestra_compiler::{MaterialCompiler, MaterialFunctionLibrary};
 use aestra_core::{
-    Diagnostic, DiagnosticCode, EffectAsset, EmitterId, MaterialExpressionId,
+    Diagnostic, DiagnosticCode, EffectAsset, EmitterId, MaterialExpressionId, MaterialFunctionId,
     MaterialFunctionInputId, MaterialId, MaterialParameterId, MaterialProgramId, RendererId,
     ValidationReport, Value,
     material::{
@@ -166,6 +166,13 @@ pub enum MaterialExpressionInput {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MaterialCommand {
+    AddMaterialFunction {
+        function: MaterialFunction,
+        index: usize,
+    },
+    RemoveMaterialFunction {
+        id: MaterialFunctionId,
+    },
     AddMaterialProgram {
         program: MaterialProgram,
         index: usize,
@@ -256,6 +263,7 @@ impl MaterialTransaction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum MaterialSemanticTarget {
     Program(MaterialProgramId),
+    Function(MaterialFunctionId),
     Instance(MaterialId),
     Expression(MaterialExpressionId),
     Renderer(RendererId),
@@ -285,6 +293,11 @@ pub struct MaterialDiff {
 impl MaterialDiff {
     pub fn between(before: &MaterialAuthoringDocument, after: &MaterialAuthoringDocument) -> Self {
         let mut changes = Vec::new();
+        diff_functions(
+            &mut changes,
+            &before.material_functions,
+            &after.material_functions,
+        );
         diff_programs(&mut changes, &before.programs, &after.programs);
         diff_instances(
             &mut changes,
@@ -473,6 +486,20 @@ fn apply_command(
     command: &MaterialCommand,
 ) -> Result<Vec<MaterialCommand>, MaterialCommandError> {
     let inverse = match command {
+        MaterialCommand::AddMaterialFunction { function, index } => {
+            checked_insert(
+                &mut document.material_functions,
+                *index,
+                function.clone(),
+                "material functions",
+            )?;
+            vec![MaterialCommand::RemoveMaterialFunction { id: function.id }]
+        }
+        MaterialCommand::RemoveMaterialFunction { id } => {
+            let index = function_index(document, *id)?;
+            let function = document.material_functions.remove(index);
+            vec![MaterialCommand::AddMaterialFunction { function, index }]
+        }
         MaterialCommand::AddMaterialProgram { program, index } => {
             checked_insert(
                 &mut document.programs,
@@ -840,6 +867,54 @@ pub(crate) fn material_expression_input_source(
     // Reuse the authoritative mutable socket map; the probe mutation is discarded.
     let mut probe = expression.clone();
     rewire_expression(&mut probe, input, MaterialExpressionId::from_u128(0))
+}
+
+fn diff_functions(
+    changes: &mut Vec<MaterialSemanticChange>,
+    before: &[MaterialFunction],
+    after: &[MaterialFunction],
+) {
+    let before = before
+        .iter()
+        .map(|item| (item.id, item))
+        .collect::<BTreeMap<_, _>>();
+    let after = after
+        .iter()
+        .map(|item| (item.id, item))
+        .collect::<BTreeMap<_, _>>();
+    for (id, function) in &before {
+        match after.get(id) {
+            None => push_change(
+                changes,
+                MaterialChangeKind::Removed,
+                MaterialSemanticTarget::Function(*id),
+                "material_document.material_functions",
+                Some(function.name.clone()),
+                None,
+            ),
+            Some(replacement) if *function != *replacement => push_change(
+                changes,
+                MaterialChangeKind::Modified,
+                MaterialSemanticTarget::Function(*id),
+                format!("material_document.material_functions[{id}]"),
+                Some(function.name.clone()),
+                Some(replacement.name.clone()),
+            ),
+            Some(_) => {}
+        }
+    }
+    for (id, function) in &after {
+        if !before.contains_key(id) {
+            push_change(
+                changes,
+                MaterialChangeKind::Added,
+                MaterialSemanticTarget::Function(*id),
+                "material_document.material_functions",
+                None,
+                Some(function.name.clone()),
+            );
+        }
+    }
 }
 
 fn diff_programs(
@@ -1211,6 +1286,17 @@ fn program_index(
         .iter()
         .position(|program| program.id == id)
         .ok_or_else(|| not_found("material program", id))
+}
+
+fn function_index(
+    document: &MaterialAuthoringDocument,
+    id: MaterialFunctionId,
+) -> Result<usize, MaterialCommandError> {
+    document
+        .material_functions
+        .iter()
+        .position(|function| function.id == id)
+        .ok_or_else(|| not_found("material function", id))
 }
 
 fn program_mut(
