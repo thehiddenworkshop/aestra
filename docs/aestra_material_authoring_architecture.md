@@ -2509,8 +2509,11 @@ the portable shader `select` operation. Branch- and feature-pruning counts survi
 appear in editor and machine-readable reports. Explicit-LOD sampling is now available through a
 typed `Sample Texture Level` graph node. Its declared texture, `Vec2` UV, and Float level lower to
 an explicit IR sampling contract; the level operand participates in CSE identity, survives
-artifact serialization, and emits portable `textureSampleLevel`. Gradient sampling, function
-deduplication, varying minimization, and required particle-attribute pruning remain planned.
+artifact serialization, and emits portable `textureSampleLevel`. Explicit-gradient sampling is
+now available through typed `Derivative X`, `Derivative Y`, and `Sample Texture Gradient` nodes.
+Their fragment-local `Vec2` gradients participate in CSE identity, survive artifact serialization,
+and emit portable `dpdx`, `dpdy`, and `textureSampleGrad`. Function deduplication, varying
+minimization, and required particle-attribute pruning remain planned.
 
 ### Completion Criterion
 

@@ -1363,6 +1363,8 @@ fn remap_expression_sources(
             remap(center);
             remap(scale);
         }
+        MaterialExpressionKind::DerivativeX { value }
+        | MaterialExpressionKind::DerivativeY { value } => remap(value),
         MaterialExpressionKind::SampleTexture { texture, uv } => {
             remap(texture);
             remap(uv);
@@ -1371,6 +1373,17 @@ fn remap_expression_sources(
             remap(texture);
             remap(uv);
             remap(level);
+        }
+        MaterialExpressionKind::SampleTextureGradient {
+            texture,
+            uv,
+            ddx,
+            ddy,
+        } => {
+            remap(texture);
+            remap(uv);
+            remap(ddx);
+            remap(ddy);
         }
         MaterialExpressionKind::ExtractComponent { value, .. } => remap(value),
     }

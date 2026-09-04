@@ -393,7 +393,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "59c7107e286ed7cb4fb1b4aed8218115196d11389f6537fa0907d8fa451e2988"
+        "80302ed02c818135a3c4d2b57c6f65eb85a2ecb159569821a0ddad6ae6844a9b"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -655,6 +655,71 @@ fn explicit_lod_texture_sampling_emits_portable_texture_sample_level() {
         1
     );
     assert!(!compiled.shader.wesl.contains("textureSample("));
+    assert_eq!(ir.optimizations.texture_samples_authored, 1);
+    assert_eq!(ir.optimizations.texture_samples_live, 1);
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
+fn gradient_texture_sampling_emits_portable_derivatives_and_texture_sample_grad() {
+    let texture_parameter = MaterialParameterId::from_u128(0xc531);
+    let texture = MaterialExpressionId::from_u128(0xc532);
+    let uv = MaterialExpressionId::from_u128(0xc533);
+    let ddx = MaterialExpressionId::from_u128(0xc534);
+    let ddy = MaterialExpressionId::from_u128(0xc535);
+    let sample = MaterialExpressionId::from_u128(0xc536);
+    let mut program =
+        aestra_core::material::MaterialProgram::additive_sprite("Texture sample gradient");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(texture_descriptor(
+            MaterialTextureColorSpace::SrgbColor,
+            MaterialAddressMode::Repeat,
+        )),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0xc537))),
+    });
+    program.expressions.extend([
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: ddx,
+            kind: MaterialExpressionKind::DerivativeX { value: uv },
+        },
+        MaterialExpression {
+            id: ddy,
+            kind: MaterialExpressionKind::DerivativeY { value: uv },
+        },
+        MaterialExpression {
+            id: sample,
+            kind: MaterialExpressionKind::SampleTextureGradient {
+                texture,
+                uv,
+                ddx,
+                ddy,
+            },
+        },
+    ]);
+    program.outputs.color = sample;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+
+    assert_eq!(compiled.shader.wesl.matches("dpdx(").count(), 1);
+    assert_eq!(compiled.shader.wesl.matches("dpdy(").count(), 1);
+    assert_eq!(
+        compiled.shader.wesl.matches("textureSampleGrad(").count(),
+        1
+    );
     assert_eq!(ir.optimizations.texture_samples_authored, 1);
     assert_eq!(ir.optimizations.texture_samples_live, 1);
     assert_portable_shader_targets(&compiled.shader.wgsl);

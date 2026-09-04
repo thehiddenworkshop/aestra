@@ -164,6 +164,8 @@ pub enum MaterialExpressionInput {
     Texture,
     Uv,
     Level,
+    Ddx,
+    Ddy,
     Source,
     SourceAlpha,
 }
@@ -859,6 +861,8 @@ pub(crate) fn rewire_expression(
         (MaterialExpressionKind::ScaleUv { uv, .. }, MaterialExpressionInput::Uv) => uv,
         (MaterialExpressionKind::ScaleUv { center, .. }, MaterialExpressionInput::Center) => center,
         (MaterialExpressionKind::ScaleUv { scale, .. }, MaterialExpressionInput::Scale) => scale,
+        (MaterialExpressionKind::DerivativeX { value }, MaterialExpressionInput::Value)
+        | (MaterialExpressionKind::DerivativeY { value }, MaterialExpressionInput::Value) => value,
         (
             MaterialExpressionKind::SampleTexture { texture, .. },
             MaterialExpressionInput::Texture,
@@ -873,6 +877,21 @@ pub(crate) fn rewire_expression(
             MaterialExpressionKind::SampleTextureLevel { level, .. },
             MaterialExpressionInput::Level,
         ) => level,
+        (
+            MaterialExpressionKind::SampleTextureGradient { texture, .. },
+            MaterialExpressionInput::Texture,
+        ) => texture,
+        (MaterialExpressionKind::SampleTextureGradient { uv, .. }, MaterialExpressionInput::Uv) => {
+            uv
+        }
+        (
+            MaterialExpressionKind::SampleTextureGradient { ddx, .. },
+            MaterialExpressionInput::Ddx,
+        ) => ddx,
+        (
+            MaterialExpressionKind::SampleTextureGradient { ddy, .. },
+            MaterialExpressionInput::Ddy,
+        ) => ddy,
         (
             MaterialExpressionKind::ExtractComponent { value, .. },
             MaterialExpressionInput::Source,

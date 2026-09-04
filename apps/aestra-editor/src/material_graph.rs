@@ -2765,6 +2765,11 @@ impl MaterialPreviewEvaluator<'_> {
                 let scale = preview_vec2(read(*scale)?)?;
                 Some(preview_vec2_value(center + (uv - center) * scale))
             }
+            MaterialExpressionKind::DerivativeX { value }
+            | MaterialExpressionKind::DerivativeY { value } => {
+                let (_, lanes) = read(*value)?.numeric()?;
+                Some(PreviewValue::Numeric([0.0; 4], lanes))
+            }
             MaterialExpressionKind::SampleTexture { texture, uv } => {
                 let _texture = read(*texture)?;
                 let uv = preview_vec2(read(*uv)?)?;
@@ -2775,6 +2780,18 @@ impl MaterialPreviewEvaluator<'_> {
                 let uv = preview_vec2(read(*uv)?)?;
                 let level = read(*level)?.numeric()?.0[0];
                 Some(preview_checker_sample(uv, level))
+            }
+            MaterialExpressionKind::SampleTextureGradient {
+                texture,
+                uv,
+                ddx,
+                ddy,
+            } => {
+                let _texture = read(*texture)?;
+                let uv = preview_vec2(read(*uv)?)?;
+                let _ddx = preview_vec2(read(*ddx)?)?;
+                let _ddy = preview_vec2(read(*ddy)?)?;
+                Some(preview_checker_sample(uv, 0.0))
             }
             MaterialExpressionKind::ExtractComponent { value, component } => {
                 let value = read(*value)?.numeric()?.0;
@@ -3237,10 +3254,18 @@ fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpression
         MaterialExpressionKind::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
         MaterialExpressionKind::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
         MaterialExpressionKind::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
+        MaterialExpressionKind::DerivativeX { value }
+        | MaterialExpressionKind::DerivativeY { value } => vec![*value],
         MaterialExpressionKind::SampleTexture { texture, uv } => vec![*texture, *uv],
         MaterialExpressionKind::SampleTextureLevel { texture, uv, level } => {
             vec![*texture, *uv, *level]
         }
+        MaterialExpressionKind::SampleTextureGradient {
+            texture,
+            uv,
+            ddx,
+            ddy,
+        } => vec![*texture, *uv, *ddx, *ddy],
         MaterialExpressionKind::ExtractComponent { value, .. } => vec![*value],
     }
 }
@@ -4742,6 +4767,8 @@ fn input_target(expression: MaterialExpressionId, name: &str) -> Option<Material
         "texture" => MaterialExpressionInput::Texture,
         "uv" => MaterialExpressionInput::Uv,
         "level" => MaterialExpressionInput::Level,
+        "ddx" => MaterialExpressionInput::Ddx,
+        "ddy" => MaterialExpressionInput::Ddy,
         "source" => MaterialExpressionInput::Source,
         "alpha" => MaterialExpressionInput::SourceAlpha,
         _ => return None,
@@ -4825,6 +4852,14 @@ fn input_port_presentation(name: &str) -> MaterialInputPortPresentation {
             "Texture coordinates evaluated by this node.",
         ),
         "level" => ("Mip level", "Explicit texture mip level used for sampling."),
+        "ddx" => (
+            "X gradient",
+            "Screen-space X derivative used to select and filter the texture mip.",
+        ),
+        "ddy" => (
+            "Y gradient",
+            "Screen-space Y derivative used to select and filter the texture mip.",
+        ),
         "source" => ("Source", "Source value evaluated by this node."),
         "alpha" => ("Alpha", "Opacity used to combine the values."),
         _ => (name, "Value consumed by this node."),

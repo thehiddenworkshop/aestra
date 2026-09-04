@@ -458,6 +458,79 @@ fn explicit_lod_texture_sampling_requires_a_float_level_and_declared_texture() {
 }
 
 #[test]
+fn gradient_texture_sampling_requires_vec2_derivatives_and_stays_fragment_local() {
+    let texture_parameter = MaterialParameterId::from_u128(0xA201);
+    let texture = MaterialExpressionId::from_u128(0xA202);
+    let uv = MaterialExpressionId::from_u128(0xA203);
+    let ddx = MaterialExpressionId::from_u128(0xA204);
+    let ddy = MaterialExpressionId::from_u128(0xA205);
+    let sample = MaterialExpressionId::from_u128(0xA206);
+    let mut program = MaterialProgram::additive_sprite("Gradient texture sample");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(texture_descriptor()),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0xA207))),
+    });
+    program.expressions.extend([
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: ddx,
+            kind: MaterialExpressionKind::DerivativeX { value: uv },
+        },
+        MaterialExpression {
+            id: ddy,
+            kind: MaterialExpressionKind::DerivativeY { value: uv },
+        },
+        MaterialExpression {
+            id: sample,
+            kind: MaterialExpressionKind::SampleTextureGradient {
+                texture,
+                uv,
+                ddx,
+                ddy,
+            },
+        },
+    ]);
+    program.outputs.color = sample;
+
+    let analysis = program.analyze().unwrap();
+    for expression in [ddx, ddy, sample] {
+        assert_eq!(
+            analysis.expressions[&expression].evaluation_domain,
+            MaterialExpressionDomain::Fragment
+        );
+    }
+    assert_eq!(
+        analysis.expressions[&ddx].value_type,
+        MaterialValueType::Vec2
+    );
+    assert_eq!(
+        analysis.expressions[&sample].value_type,
+        MaterialValueType::Color
+    );
+
+    program
+        .expressions
+        .iter_mut()
+        .find(|expression| expression.id == ddx)
+        .unwrap()
+        .kind = MaterialExpressionKind::Constant(MaterialValue::Float(1.0));
+    let report = program.validation_report();
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch && diagnostic.path.ends_with(".ddx")
+    }));
+}
+
+#[test]
 fn uv_transforms_round_trip_and_preserve_their_typed_semantic_sockets() {
     let uv = MaterialExpressionId::from_u128(0xAA01);
     let speed = MaterialExpressionId::from_u128(0xAA02);

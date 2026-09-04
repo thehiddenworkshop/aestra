@@ -942,8 +942,11 @@ fn modifier_property_targets(
         | MaterialExpressionKind::Lerp { .. }
         | MaterialExpressionKind::Clamp { .. }
         | MaterialExpressionKind::Select { .. }
+        | MaterialExpressionKind::DerivativeX { .. }
+        | MaterialExpressionKind::DerivativeY { .. }
         | MaterialExpressionKind::SampleTexture { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
+        | MaterialExpressionKind::SampleTextureGradient { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => Vec::new(),
     }
 }
@@ -1239,8 +1242,15 @@ fn graph_recipe_function(
             center: input("Center")?,
             scale: input("Scale")?,
         },
+        MaterialGraphFunction::DerivativeX => MaterialExpressionKind::DerivativeX {
+            value: input("Value")?,
+        },
+        MaterialGraphFunction::DerivativeY => MaterialExpressionKind::DerivativeY {
+            value: input("Value")?,
+        },
         MaterialGraphFunction::SampleTexture
         | MaterialGraphFunction::SampleTextureLevel
+        | MaterialGraphFunction::SampleTextureGradient
         | MaterialGraphFunction::ExtractComponent => {
             return None;
         }
@@ -1766,6 +1776,8 @@ fn primary_source(kind: &MaterialExpressionKind) -> Option<MaterialExpressionId>
         | MaterialExpressionKind::RotateUv { uv, .. }
         | MaterialExpressionKind::ScaleUv { uv, .. }
         | MaterialExpressionKind::SampleTexture { uv, .. } => Some(*uv),
+        MaterialExpressionKind::DerivativeX { value }
+        | MaterialExpressionKind::DerivativeY { value } => Some(*value),
         MaterialExpressionKind::Dissolve { source, .. }
         | MaterialExpressionKind::DissolveEdge { source, .. } => Some(*source),
         MaterialExpressionKind::SoftParticle { alpha, .. } => Some(*alpha),
@@ -1785,6 +1797,7 @@ fn primary_source(kind: &MaterialExpressionKind) -> Option<MaterialExpressionId>
         | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
+        | MaterialExpressionKind::SampleTextureGradient { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => None,
     }
 }
@@ -1798,6 +1811,8 @@ fn set_primary_source(kind: &mut MaterialExpressionKind, source: MaterialExpress
         | MaterialExpressionKind::RotateUv { uv, .. }
         | MaterialExpressionKind::ScaleUv { uv, .. }
         | MaterialExpressionKind::SampleTexture { uv, .. } => *uv = source,
+        MaterialExpressionKind::DerivativeX { value }
+        | MaterialExpressionKind::DerivativeY { value } => *value = source,
         MaterialExpressionKind::Dissolve { source: value, .. }
         | MaterialExpressionKind::DissolveEdge { source: value, .. } => *value = source,
         MaterialExpressionKind::SoftParticle { alpha, .. } => *alpha = source,
@@ -1817,6 +1832,7 @@ fn set_primary_source(kind: &mut MaterialExpressionKind, source: MaterialExpress
         | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
+        | MaterialExpressionKind::SampleTextureGradient { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return false,
     }
     true
@@ -1849,7 +1865,10 @@ fn modifier_kind(kind: &MaterialExpressionKind) -> Option<MaterialStackModifierK
         | MaterialExpressionKind::Lerp { .. }
         | MaterialExpressionKind::Clamp { .. }
         | MaterialExpressionKind::Select { .. }
+        | MaterialExpressionKind::DerivativeX { .. }
+        | MaterialExpressionKind::DerivativeY { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
+        | MaterialExpressionKind::SampleTextureGradient { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return None,
     })
 }
@@ -1962,10 +1981,18 @@ fn dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
         MaterialExpressionKind::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
         MaterialExpressionKind::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
         MaterialExpressionKind::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
+        MaterialExpressionKind::DerivativeX { value }
+        | MaterialExpressionKind::DerivativeY { value } => vec![*value],
         MaterialExpressionKind::SampleTexture { texture, uv } => vec![*texture, *uv],
         MaterialExpressionKind::SampleTextureLevel { texture, uv, level } => {
             vec![*texture, *uv, *level]
         }
+        MaterialExpressionKind::SampleTextureGradient {
+            texture,
+            uv,
+            ddx,
+            ddy,
+        } => vec![*texture, *uv, *ddx, *ddy],
         MaterialExpressionKind::ExtractComponent { value, .. } => vec![*value],
     }
 }

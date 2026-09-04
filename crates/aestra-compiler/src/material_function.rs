@@ -651,6 +651,12 @@ fn remap_kind(
             center: remap(*center)?,
             scale: remap(*scale)?,
         },
+        E::DerivativeX { value } => E::DerivativeX {
+            value: remap(*value)?,
+        },
+        E::DerivativeY { value } => E::DerivativeY {
+            value: remap(*value)?,
+        },
         E::SampleTexture { texture, uv } => E::SampleTexture {
             texture: remap(*texture)?,
             uv: remap(*uv)?,
@@ -659,6 +665,17 @@ fn remap_kind(
             texture: remap(*texture)?,
             uv: remap(*uv)?,
             level: remap(*level)?,
+        },
+        E::SampleTextureGradient {
+            texture,
+            uv,
+            ddx,
+            ddy,
+        } => E::SampleTextureGradient {
+            texture: remap(*texture)?,
+            uv: remap(*uv)?,
+            ddx: remap(*ddx)?,
+            ddy: remap(*ddy)?,
         },
         E::ExtractComponent { value, component } => E::ExtractComponent {
             value: remap(*value)?,

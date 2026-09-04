@@ -129,8 +129,11 @@ pub enum MaterialGraphFunction {
     PanUv,
     RotateUv,
     ScaleUv,
+    DerivativeX,
+    DerivativeY,
     SampleTexture,
     SampleTextureLevel,
+    SampleTextureGradient,
     ExtractComponent,
 }
 
@@ -155,8 +158,11 @@ impl MaterialGraphFunction {
             Self::PanUv => "UV Pan",
             Self::RotateUv => "UV Rotate",
             Self::ScaleUv => "UV Scale",
+            Self::DerivativeX => "Derivative X",
+            Self::DerivativeY => "Derivative Y",
             Self::SampleTexture => "Sample Texture",
             Self::SampleTextureLevel => "Sample Texture Level",
+            Self::SampleTextureGradient => "Sample Texture Gradient",
             Self::ExtractComponent => "Extract Component",
         }
     }
@@ -171,12 +177,17 @@ impl MaterialGraphFunction {
             | Self::Clamp
             | Self::Remap
             | Self::Smoothstep
+            | Self::DerivativeX
+            | Self::DerivativeY
             | Self::ExtractComponent => "Math",
             Self::Select => "Logic",
             Self::PanUv | Self::RotateUv | Self::ScaleUv => "UV",
             Self::RadialMask | Self::Dissolve | Self::DissolveEdge => "Mask",
             Self::DepthFade | Self::SoftParticle => "Depth",
-            Self::Fresnel | Self::SampleTexture | Self::SampleTextureLevel => "Material",
+            Self::Fresnel
+            | Self::SampleTexture
+            | Self::SampleTextureLevel
+            | Self::SampleTextureGradient => "Material",
         }
     }
 
@@ -208,8 +219,10 @@ impl MaterialGraphFunction {
             Self::PanUv => &["Uv", "Speed", "Time"],
             Self::RotateUv => &["Uv", "Center", "Angle"],
             Self::ScaleUv => &["Uv", "Center", "Scale"],
+            Self::DerivativeX | Self::DerivativeY => &["Value"],
             Self::SampleTexture => &["Texture", "Uv"],
             Self::SampleTextureLevel => &["Texture", "Uv", "Level"],
+            Self::SampleTextureGradient => &["Texture", "Uv", "Ddx", "Ddy"],
             Self::ExtractComponent => &["Value"],
         }
     }
@@ -612,6 +625,7 @@ fn validate_graph_preset(recipe: &MaterialPresetGraphRecipe) -> Result<(), Mater
                     function,
                     MaterialGraphFunction::SampleTexture
                         | MaterialGraphFunction::SampleTextureLevel
+                        | MaterialGraphFunction::SampleTextureGradient
                         | MaterialGraphFunction::ExtractComponent
                 ) {
                     return Err(MaterialPresetError::Validation(format!(
@@ -1265,6 +1279,14 @@ pub enum MaterialExpressionKind {
         center: MaterialExpressionId,
         scale: MaterialExpressionId,
     },
+    /// Screen-space partial derivative along the fragment quad's X axis.
+    DerivativeX {
+        value: MaterialExpressionId,
+    },
+    /// Screen-space partial derivative along the fragment quad's Y axis.
+    DerivativeY {
+        value: MaterialExpressionId,
+    },
     SampleTexture {
         texture: MaterialExpressionId,
         uv: MaterialExpressionId,
@@ -1275,6 +1297,13 @@ pub enum MaterialExpressionKind {
         texture: MaterialExpressionId,
         uv: MaterialExpressionId,
         level: MaterialExpressionId,
+    },
+    /// Samples a texture with explicit screen-space UV gradients.
+    SampleTextureGradient {
+        texture: MaterialExpressionId,
+        uv: MaterialExpressionId,
+        ddx: MaterialExpressionId,
+        ddy: MaterialExpressionId,
     },
     ExtractComponent {
         value: MaterialExpressionId,
@@ -1296,13 +1325,17 @@ impl MaterialExpressionKind {
     /// Operations without one unambiguous primary value are intentionally not bypassable.
     pub fn bypass_input(&self) -> Option<MaterialExpressionId> {
         match self {
-            Self::Remap { value, .. } | Self::Smoothstep { value, .. } => Some(*value),
+            Self::Remap { value, .. }
+            | Self::Smoothstep { value, .. }
+            | Self::DerivativeX { value }
+            | Self::DerivativeY { value } => Some(*value),
             Self::RadialMask { uv, .. }
             | Self::PanUv { uv, .. }
             | Self::RotateUv { uv, .. }
             | Self::ScaleUv { uv, .. }
             | Self::SampleTexture { uv, .. }
-            | Self::SampleTextureLevel { uv, .. } => Some(*uv),
+            | Self::SampleTextureLevel { uv, .. }
+            | Self::SampleTextureGradient { uv, .. } => Some(*uv),
             Self::Dissolve { source, .. } | Self::DissolveEdge { source, .. } => Some(*source),
             Self::SoftParticle { alpha, .. } => Some(*alpha),
             Self::Constant(_)
@@ -1398,8 +1431,15 @@ impl MaterialExpressionKind {
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
+            Self::DerivativeX { value } | Self::DerivativeY { value } => vec![*value],
             Self::SampleTexture { texture, uv } => vec![*texture, *uv],
             Self::SampleTextureLevel { texture, uv, level } => vec![*texture, *uv, *level],
+            Self::SampleTextureGradient {
+                texture,
+                uv,
+                ddx,
+                ddy,
+            } => vec![*texture, *uv, *ddx, *ddy],
             Self::ExtractComponent { value, .. } => vec![*value],
         }
     }
@@ -3034,6 +3074,28 @@ fn infer_expression(
                 _ => None,
             }
         }
+        MaterialExpressionKind::DerivativeX { value }
+        | MaterialExpressionKind::DerivativeY { value } => {
+            let value = dependency(*value);
+            value.and_then(|value| {
+                if !value.value_type.is_numeric() {
+                    material_type_error(
+                        report,
+                        format!("{path}.value"),
+                        format!(
+                            "screen-space derivatives require a numeric value but received {:?}",
+                            value.value_type
+                        ),
+                    );
+                    None
+                } else {
+                    Some(MaterialExpressionInfo {
+                        value_type: value.value_type,
+                        evaluation_domain: MaterialExpressionDomain::Fragment,
+                    })
+                }
+            })
+        }
         MaterialExpressionKind::SampleTexture { texture, uv } => {
             let texture_id = *texture;
             let texture = dependency(texture_id);
@@ -3170,6 +3232,81 @@ fn infer_expression(
                             .max(texture.evaluation_domain)
                             .max(uv.evaluation_domain)
                             .max(level.evaluation_domain),
+                    })
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::SampleTextureGradient {
+            texture,
+            uv,
+            ddx,
+            ddy,
+        } => {
+            let texture_id = *texture;
+            let texture = dependency(texture_id);
+            let uv = dependency(*uv);
+            let ddx = dependency(*ddx);
+            let ddy = dependency(*ddy);
+            match (texture, uv, ddx, ddy) {
+                (Some(texture), Some(uv), Some(ddx), Some(ddy)) => {
+                    let mut valid = true;
+                    if !matches!(texture.value_type, MaterialValueType::Texture2D(_)) {
+                        material_type_error(
+                            report,
+                            format!("{path}.texture"),
+                            format!(
+                                "SampleTextureGradient texture expects Texture2D but received {:?}",
+                                texture.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if texture.evaluation_domain > MaterialExpressionDomain::Instance {
+                        error(
+                            report,
+                            DiagnosticCode::EvaluationDomainMismatch,
+                            format!("{path}.texture"),
+                            "sampled texture resources must be available by the Instance domain",
+                        );
+                        valid = false;
+                    }
+                    for (socket, info) in [("uv", uv), ("ddx", ddx), ("ddy", ddy)] {
+                        if info.value_type != MaterialValueType::Vec2 {
+                            material_type_error(
+                                report,
+                                format!("{path}.{socket}"),
+                                format!(
+                                    "SampleTextureGradient {socket} expects Vec2 but received {:?}",
+                                    info.value_type
+                                ),
+                            );
+                            valid = false;
+                        }
+                    }
+                    if !matches!(
+                        expressions.get(&texture_id).map(|expression| &expression.kind),
+                        Some(MaterialExpressionKind::Parameter(parameter))
+                            if matches!(
+                                parameters.get(parameter).map(|parameter| parameter.value_type),
+                                Some(MaterialValueType::Texture2D(_))
+                            )
+                    ) {
+                        error(
+                            report,
+                            DiagnosticCode::MissingResourceDeclaration,
+                            format!("{path}.texture"),
+                            "sampled textures must come from a declared Texture2D material parameter",
+                        );
+                        valid = false;
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Color,
+                        evaluation_domain: MaterialExpressionDomain::Fragment
+                            .max(texture.evaluation_domain)
+                            .max(uv.evaluation_domain)
+                            .max(ddx.evaluation_domain)
+                            .max(ddy.evaluation_domain),
                     })
                 }
                 _ => None,

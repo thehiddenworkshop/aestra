@@ -459,14 +459,17 @@ the current sprite-material path until the native-GPU compatibility gate approve
   `Sample Texture Level` node, semantic validation requires a declared texture, `Vec2` UV, and
   Float level, IR and CSE identity include the level operand, and portable shaders emit
   `textureSampleLevel` with artifact round-trip coverage.
+  Explicit-gradient sampling is also complete end to end: typed `Derivative X`, `Derivative Y`,
+  and `Sample Texture Gradient` nodes validate fragment-local `Vec2` gradients, preserve both
+  gradient operands in IR and CSE identity, round-trip through artifacts, and emit portable
+  `dpdx`, `dpdy`, and `textureSampleGrad` shader operations.
   Shader-static parameter specialization is
   also complete at the IR boundary: typed program defaults replace static reads before dependent
   folding and CSE, while parameter metadata and fingerprint invalidation remain intact. Static
   `Select` branch pruning is now complete end to end: only the chosen branch is lowered, dead
   inputs, parameter bindings, texture samples, and custom calls are omitted from live reflection,
   and branch/feature counts flow through artifacts, the Compiler Inspector, and preview JSON.
-  Gradient sampling mode, function deduplication, varying minimization, and required
-  particle-attribute pruning remain.
+  Function deduplication, varying minimization, and required particle-attribute pruning remain.
 - [ ] **Material 20 — mesh and ribbon domains.**
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

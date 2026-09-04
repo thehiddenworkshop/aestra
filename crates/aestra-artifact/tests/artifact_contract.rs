@@ -38,6 +38,9 @@ fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
     assert!(text.contains("material_programs"));
     assert!(text.contains("material_instances"));
     assert!(text.contains("SampleTextureLevel"));
+    assert!(text.contains("SampleTextureGradient"));
+    assert!(text.contains("DerivativeX"));
+    assert!(text.contains("DerivativeY"));
 
     let reloaded = decode_effect(&bytes).unwrap();
     assert_eq!(reloaded, compiled);
@@ -222,6 +225,9 @@ fn compiled_fixture() -> aestra_runtime::CompiledEffect {
     let uv_expression = aestra_core::MaterialExpressionId::from_u128(0x115);
     let level_expression = aestra_core::MaterialExpressionId::from_u128(0x116);
     let sample_expression = aestra_core::MaterialExpressionId::from_u128(0x117);
+    let ddx_expression = aestra_core::MaterialExpressionId::from_u128(0x118);
+    let ddy_expression = aestra_core::MaterialExpressionId::from_u128(0x119);
+    let gradient_sample_expression = aestra_core::MaterialExpressionId::from_u128(0x11A);
     semantic_program.expressions.extend([
         MaterialExpression {
             id: texture_expression,
@@ -243,8 +249,29 @@ fn compiled_fixture() -> aestra_runtime::CompiledEffect {
                 level: level_expression,
             },
         },
+        MaterialExpression {
+            id: ddx_expression,
+            kind: MaterialExpressionKind::DerivativeX {
+                value: uv_expression,
+            },
+        },
+        MaterialExpression {
+            id: ddy_expression,
+            kind: MaterialExpressionKind::DerivativeY {
+                value: uv_expression,
+            },
+        },
+        MaterialExpression {
+            id: gradient_sample_expression,
+            kind: MaterialExpressionKind::SampleTextureGradient {
+                texture: texture_expression,
+                uv: uv_expression,
+                ddx: ddx_expression,
+                ddy: ddy_expression,
+            },
+        },
     ]);
-    semantic_program.outputs.color = sample_expression;
+    semantic_program.outputs.color = gradient_sample_expression;
     emitter.renderers[0].material = semantic_material;
     effect.material_instances.push(MaterialInstance {
         id: semantic_material,

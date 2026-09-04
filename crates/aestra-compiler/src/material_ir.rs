@@ -135,6 +135,12 @@ pub enum MaterialIrInstruction {
         center: MaterialIrValueId,
         scale: MaterialIrValueId,
     },
+    DerivativeX {
+        value: MaterialIrValueId,
+    },
+    DerivativeY {
+        value: MaterialIrValueId,
+    },
     SampleTexture {
         texture: MaterialIrValueId,
         uv: MaterialIrValueId,
@@ -160,17 +166,25 @@ pub enum MaterialTextureSamplingMode {
     ExplicitLod {
         level: MaterialIrValueId,
     },
+    ExplicitGradient {
+        ddx: MaterialIrValueId,
+        ddy: MaterialIrValueId,
+    },
 }
 
 impl MaterialTextureSamplingMode {
     const fn common_subexpression_safe(self) -> bool {
-        matches!(self, Self::ImplicitDerivatives | Self::ExplicitLod { .. })
+        matches!(
+            self,
+            Self::ImplicitDerivatives | Self::ExplicitLod { .. } | Self::ExplicitGradient { .. }
+        )
     }
 
-    const fn level(self) -> Option<MaterialIrValueId> {
+    fn append_operands(self, operands: &mut Vec<MaterialIrValueId>) {
         match self {
-            Self::ImplicitDerivatives => None,
-            Self::ExplicitLod { level } => Some(level),
+            Self::ImplicitDerivatives => {}
+            Self::ExplicitLod { level } => operands.push(level),
+            Self::ExplicitGradient { ddx, ddy } => operands.extend([ddx, ddy]),
         }
     }
 }
@@ -243,15 +257,14 @@ impl MaterialIrInstruction {
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
+            Self::DerivativeX { value } | Self::DerivativeY { value } => vec![*value],
             Self::SampleTexture {
                 texture,
                 uv,
                 sampling,
             } => {
                 let mut dependencies = vec![*texture, *uv];
-                if let Some(level) = sampling.level() {
-                    dependencies.push(level);
-                }
+                sampling.append_operands(&mut dependencies);
                 dependencies
             }
             Self::ExtractComponent { value, .. } => vec![*value],
@@ -400,6 +413,7 @@ impl MaterialIrInstruction {
                 remap(center);
                 remap(scale);
             }
+            Self::DerivativeX { value } | Self::DerivativeY { value } => remap(value),
             Self::SampleTexture {
                 texture,
                 uv,
@@ -409,6 +423,10 @@ impl MaterialIrInstruction {
                 remap(uv);
                 if let MaterialTextureSamplingMode::ExplicitLod { level } = sampling {
                     remap(level);
+                }
+                if let MaterialTextureSamplingMode::ExplicitGradient { ddx, ddy } = sampling {
+                    remap(ddx);
+                    remap(ddy);
                 }
             }
             Self::ExtractComponent { value, .. } => remap(value),
@@ -621,6 +639,7 @@ fn semantic_feature_stats(program: &MaterialProgram) -> SemanticFeatureStats {
                     expression.kind,
                     MaterialExpressionKind::SampleTexture { .. }
                         | MaterialExpressionKind::SampleTextureLevel { .. }
+                        | MaterialExpressionKind::SampleTextureGradient { .. }
                 )
         })
         .count();
@@ -655,7 +674,8 @@ fn semantic_feature_stats(program: &MaterialProgram) -> SemanticFeatureStats {
                 }
             }
             MaterialExpressionKind::SampleTexture { .. }
-            | MaterialExpressionKind::SampleTextureLevel { .. } => {
+            | MaterialExpressionKind::SampleTextureLevel { .. }
+            | MaterialExpressionKind::SampleTextureGradient { .. } => {
                 reachable_texture_samples += 1;
             }
             MaterialExpressionKind::CustomWeslCall { .. } => custom_calls += 1,
@@ -977,6 +997,14 @@ impl MaterialIrBuilder<'_> {
                 let scale = self.lower(scale);
                 MaterialIrInstruction::ScaleUv { uv, center, scale }
             }
+            MaterialExpressionKind::DerivativeX { value } => {
+                let value = self.lower(value);
+                MaterialIrInstruction::DerivativeX { value }
+            }
+            MaterialExpressionKind::DerivativeY { value } => {
+                let value = self.lower(value);
+                MaterialIrInstruction::DerivativeY { value }
+            }
             MaterialExpressionKind::SampleTexture { texture, uv } => {
                 let texture = self.lower(texture);
                 let uv = self.lower(uv);
@@ -994,6 +1022,22 @@ impl MaterialIrBuilder<'_> {
                     texture,
                     uv,
                     sampling: MaterialTextureSamplingMode::ExplicitLod { level },
+                }
+            }
+            MaterialExpressionKind::SampleTextureGradient {
+                texture,
+                uv,
+                ddx,
+                ddy,
+            } => {
+                let texture = self.lower(texture);
+                let uv = self.lower(uv);
+                let ddx = self.lower(ddx);
+                let ddy = self.lower(ddy);
+                MaterialIrInstruction::SampleTexture {
+                    texture,
+                    uv,
+                    sampling: MaterialTextureSamplingMode::ExplicitGradient { ddx, ddy },
                 }
             }
             MaterialExpressionKind::ExtractComponent { value, component } => {
@@ -1381,6 +1425,12 @@ impl MaterialIrInstructionKey {
                 vec![*uv, *center, *scale],
                 MaterialIrInstructionPayloadKey::None,
             ),
+            MaterialIrInstruction::DerivativeX { value } => {
+                (23, vec![*value], MaterialIrInstructionPayloadKey::None)
+            }
+            MaterialIrInstruction::DerivativeY { value } => {
+                (24, vec![*value], MaterialIrInstructionPayloadKey::None)
+            }
             MaterialIrInstruction::SampleTexture {
                 texture,
                 uv,
@@ -1389,9 +1439,7 @@ impl MaterialIrInstructionKey {
                 20,
                 {
                     let mut operands = vec![*texture, *uv];
-                    if let Some(level) = sampling.level() {
-                        operands.push(level);
-                    }
+                    sampling.append_operands(&mut operands);
                     operands
                 },
                 MaterialIrInstructionPayloadKey::TextureSampling(*sampling),

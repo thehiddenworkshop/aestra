@@ -344,3 +344,74 @@ fn graph_catalog_creates_typed_explicit_lod_texture_nodes() {
         Some(MaterialExpressionKind::SampleTextureLevel { .. })
     ));
 }
+
+#[test]
+fn graph_catalog_creates_gradient_sampling_with_derivative_inputs() {
+    let texture_parameter = MaterialParameterId::from_u128(0x6261);
+    let mut program = MaterialProgram::additive_sprite("Texture gradient graph");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(MaterialTextureDescriptor {
+            color_space: MaterialTextureColorSpace::SrgbColor,
+            sampler: MaterialSamplerDescriptor {
+                filter: MaterialFilterMode::Linear,
+                mip_filter: MaterialMipFilterMode::Linear,
+                address_u: MaterialAddressMode::Repeat,
+                address_v: MaterialAddressMode::Repeat,
+            },
+        }),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x6262))),
+    });
+    let compiler = MaterialCompiler;
+    let kind = MaterialGraphCreateKind::Function(MaterialGraphFunction::SampleTextureGradient);
+    assert!(compiler.graph_node_catalog(&program).iter().any(|node| {
+        node.kind == kind && node.label == "Sample Texture Gradient" && node.category == "Material"
+    }));
+
+    let plan = compiler
+        .plan_graph_node_creation(&program, kind, None)
+        .unwrap();
+    let projection = compiler.project_graph(&plan.replacement, None);
+    let node = projection
+        .nodes
+        .iter()
+        .find(|node| node.expression == plan.expression)
+        .unwrap();
+
+    assert_eq!(
+        node.inputs
+            .iter()
+            .map(|port| port.name.as_str())
+            .collect::<Vec<_>>(),
+        ["texture", "uv", "ddx", "ddy"]
+    );
+    assert_eq!(node.inputs[2].value_type, Some(MaterialValueType::Vec2));
+    assert_eq!(node.inputs[3].value_type, Some(MaterialValueType::Vec2));
+    let expression = plan
+        .replacement
+        .expressions
+        .iter()
+        .find(|expression| expression.id == plan.expression)
+        .unwrap();
+    let MaterialExpressionKind::SampleTextureGradient { ddx, ddy, .. } = expression.kind else {
+        panic!("expected gradient texture sample");
+    };
+    assert!(matches!(
+        plan.replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == ddx)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::DerivativeX { .. })
+    ));
+    assert!(matches!(
+        plan.replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == ddy)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::DerivativeY { .. })
+    ));
+}

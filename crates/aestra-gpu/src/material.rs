@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 2;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 14;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 15;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
@@ -909,6 +909,12 @@ fn instruction_expression(
             center = value_name(*center),
             scale = value_name(*scale),
         ),
+        MaterialIrInstruction::DerivativeX { value } => {
+            format!("dpdx({})", value_name(*value))
+        }
+        MaterialIrInstruction::DerivativeY { value } => {
+            format!("dpdy({})", value_name(*value))
+        }
         MaterialIrInstruction::SampleTexture {
             texture,
             uv,
@@ -938,6 +944,14 @@ fn instruction_expression(
                     slot.sampler_binding,
                     value_name(*uv),
                     value_name(*level)
+                ),
+                MaterialTextureSamplingMode::ExplicitGradient { ddx, ddy } => format!(
+                    "textureSampleGrad({}, material_sampler_{}, {}, {}, {})",
+                    texture_name(parameter),
+                    slot.sampler_binding,
+                    value_name(*uv),
+                    value_name(*ddx),
+                    value_name(*ddy)
                 ),
             }
         }
@@ -1489,9 +1503,14 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.byte(match sampling {
                 MaterialTextureSamplingMode::ImplicitDerivatives => 0,
                 MaterialTextureSamplingMode::ExplicitLod { .. } => 1,
+                MaterialTextureSamplingMode::ExplicitGradient { .. } => 2,
             });
             if let MaterialTextureSamplingMode::ExplicitLod { level } = sampling {
                 fingerprint.u32(level.0);
+            }
+            if let MaterialTextureSamplingMode::ExplicitGradient { ddx, ddy } = sampling {
+                fingerprint.u32(ddx.0);
+                fingerprint.u32(ddy.0);
             }
         }
         MaterialIrInstruction::ExtractComponent { value, component } => {
@@ -1521,6 +1540,14 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(uv.0);
             fingerprint.u32(center.0);
             fingerprint.u32(scale.0);
+        }
+        MaterialIrInstruction::DerivativeX { value } => {
+            fingerprint.byte(24);
+            fingerprint.u32(value.0);
+        }
+        MaterialIrInstruction::DerivativeY { value } => {
+            fingerprint.byte(25);
+            fingerprint.u32(value.0);
         }
     }
 }

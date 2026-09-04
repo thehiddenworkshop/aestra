@@ -1256,6 +1256,120 @@ fn explicit_lod_texture_samples_common_only_with_identical_levels() {
 }
 
 #[test]
+fn gradient_texture_samples_common_only_with_identical_gradient_operands() {
+    let texture_parameter = MaterialParameterId::from_u128(0x4261);
+    let texture = MaterialExpressionId::from_u128(0x4262);
+    let uv = MaterialExpressionId::from_u128(0x4263);
+    let first_ddx = MaterialExpressionId::from_u128(0x4264);
+    let first_ddy = MaterialExpressionId::from_u128(0x4265);
+    let second_ddx = MaterialExpressionId::from_u128(0x4266);
+    let first = MaterialExpressionId::from_u128(0x4267);
+    let duplicate = MaterialExpressionId::from_u128(0x4268);
+    let distinct = MaterialExpressionId::from_u128(0x4269);
+    let combined = MaterialExpressionId::from_u128(0x426A);
+    let color = MaterialExpressionId::from_u128(0x426B);
+    let mut program = MaterialProgram::additive_sprite("Gradient texture sample operands");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(texture_descriptor(
+            MaterialTextureColorSpace::SrgbColor,
+        )),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x426C))),
+    });
+    program.expressions.extend([
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: first_ddx,
+            kind: MaterialExpressionKind::DerivativeX { value: uv },
+        },
+        MaterialExpression {
+            id: first_ddy,
+            kind: MaterialExpressionKind::DerivativeY { value: uv },
+        },
+        MaterialExpression {
+            id: second_ddx,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.25, 0.0])),
+        },
+        MaterialExpression {
+            id: first,
+            kind: MaterialExpressionKind::SampleTextureGradient {
+                texture,
+                uv,
+                ddx: first_ddx,
+                ddy: first_ddy,
+            },
+        },
+        MaterialExpression {
+            id: duplicate,
+            kind: MaterialExpressionKind::SampleTextureGradient {
+                texture,
+                uv,
+                ddx: first_ddx,
+                ddy: first_ddy,
+            },
+        },
+        MaterialExpression {
+            id: distinct,
+            kind: MaterialExpressionKind::SampleTextureGradient {
+                texture,
+                uv,
+                ddx: second_ddx,
+                ddy: first_ddy,
+            },
+        },
+        MaterialExpression {
+            id: combined,
+            kind: MaterialExpressionKind::Add(first, duplicate),
+        },
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Add(combined, distinct),
+        },
+    ]);
+    program.outputs.color = color;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+
+    assert_eq!(
+        ir.source_map.values[&first],
+        ir.source_map.values[&duplicate]
+    );
+    assert_ne!(
+        ir.source_map.values[&first],
+        ir.source_map.values[&distinct]
+    );
+    assert_eq!(ir.optimizations.texture_samples_authored, 3);
+    assert_eq!(ir.optimizations.texture_samples_eliminated, 1);
+    assert_eq!(ir.optimizations.texture_samples_live, 2);
+    assert!(matches!(
+        ir.value(ir.source_map.values[&first]).unwrap().instruction,
+        MaterialIrInstruction::SampleTexture {
+            sampling: MaterialTextureSamplingMode::ExplicitGradient { .. },
+            ..
+        }
+    ));
+    assert!(
+        ir.values
+            .iter()
+            .any(|value| matches!(value.instruction, MaterialIrInstruction::DerivativeX { .. }))
+    );
+    assert!(
+        ir.values
+            .iter()
+            .any(|value| matches!(value.instruction, MaterialIrInstruction::DerivativeY { .. }))
+    );
+}
+
+#[test]
 fn texture_samples_with_distinct_uv_operands_remain_separate() {
     let texture_parameter = MaterialParameterId::from_u128(0x4211);
     let texture = MaterialExpressionId::from_u128(0x4212);
