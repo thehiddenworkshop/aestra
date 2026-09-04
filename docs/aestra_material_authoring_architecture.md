@@ -2340,11 +2340,11 @@ portable, schema-versioned descriptors with categories, descriptions, normalized
 ordered semantic modifier recipes, and editable defaults. Project-local
 `.aestra.material-preset.ron` assets are indexed beside programs and functions with validation,
 duplicate-ID diagnostics, stable reload checks, and deterministic merging with built-ins. UV Drift,
-Soft Dissolve, Contrast Shape, and Dissolve are built in, while a project-local Hologram asset
-validates the complete path through compatibility discovery, transactional insertion, undo/redo,
-machine-readable inspection/planning, and categorized editor options. Graph recipes beyond linear
-modifier chains, visual previews, and the rest of the initial library remain to complete the
-milestone.
+Soft Dissolve, Contrast Shape, and Dissolve are built in, while project-local graph recipes provide
+Additive Flame, Soft Smoke, Energy Beam, Magic Shield, Hologram, Ghost, Portal, and Impact Flash.
+The complete path is covered through compatibility discovery, transactional insertion, undo/redo,
+machine-readable inspection/planning, deterministic cached previews, portable shader compilation,
+and categorized editor presentation.
 
 ### Initial presets
 
@@ -2361,6 +2361,10 @@ Portal
 Trail
 Impact Flash
 ```
+
+The portable sprite pack ships every entry above except the two domain-dependent looks: Heat
+Distortion is gated on an explicit scene-color/refraction contract, and Trail belongs to the mesh
+and ribbon material domains. Neither is represented by a misleading sprite-only approximation.
 
 Presets should compose AST operations rather than copy opaque generated shader files.
 

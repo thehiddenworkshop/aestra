@@ -127,7 +127,10 @@ impl ProjectEffectCatalog {
         Self::scan_project(root, root)
     }
 
-    fn scan_project(project_root: impl AsRef<Path>, effect_root: impl AsRef<Path>) -> Self {
+    pub(crate) fn scan_project(
+        project_root: impl AsRef<Path>,
+        effect_root: impl AsRef<Path>,
+    ) -> Self {
         Self {
             index: ProjectAssetIndex::scan(project_root),
             effect_root: effect_root.as_ref().to_owned(),
@@ -4104,6 +4107,20 @@ mod tests {
                 .get(aestra_compiler::MATERIAL_PRESET_DISSOLVE)
                 .is_some()
         );
+        for name in [
+            "Additive Flame",
+            "Soft Smoke",
+            "Energy Beam",
+            "Magic Shield",
+            "Ghost",
+            "Portal",
+            "Impact Flash",
+        ] {
+            assert!(
+                presets.iter().any(|preset| preset.display_name == name),
+                "bundled preset {name} should be registered"
+            );
+        }
     }
 
     #[test]

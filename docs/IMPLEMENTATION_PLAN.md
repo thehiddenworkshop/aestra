@@ -405,7 +405,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   constants, rejects disconnected or unusable selections, persists a project-local function,
   replaces the selection with stable call nodes, preserves the replacement layout, and treats the
   function asset plus graph rewrite as one rollback-safe undo/redo operation.
-- [ ] **Material 16 — semantic preset library.** The registry and project-asset slices are
+- [x] **Material 16 — semantic preset library.** The registry and project-asset slices are
   implemented. Presets use stable semantic IDs and portable descriptors containing a schema
   version (currently v2), category, description, and normalized search tags. Recipes may be ordered modifier
   stacks with editable defaults or typed, topologically ordered semantic graphs whose named local
@@ -419,8 +419,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   inspection and tool planning. A deterministic CPU preview pipeline now renders every compatible
   preset in an isolated canonical material, caches images by preset ID and normalized recipe
   fingerprint, and presents square previews with explicit incompatible/error fallbacks in both the
-  categorized Library browser and stack insertion menu. The remaining initial preset library is
-  still required to complete this milestone.
+  categorized Library browser and stack insertion menu. The initial portable pack now includes
+  Additive Flame, Soft Smoke, Energy Beam, Magic Shield, Dissolve, Hologram, Ghost, Portal, and
+  Impact Flash. Every shipped recipe has preview, transactional undo/redo, compiler, and portable
+  GPU shader coverage. Heat Distortion remains gated on a future scene-color/refraction contract;
+  Trail belongs to the mesh/ribbon-domain work in Material 20 rather than pretending to be a
+  sprite-only material preset.
 - [ ] **Material 17 — validated custom WESL escape hatch.**
 
 ### Phase F — next-generation tooling

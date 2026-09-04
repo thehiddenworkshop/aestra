@@ -128,6 +128,35 @@ fn reorderable_material_program(id: MaterialProgramId) -> (MaterialProgram, Mate
     (program, pan)
 }
 
+fn preset_host_material_program(id: MaterialProgramId) -> MaterialProgram {
+    let mut program = MaterialProgram::additive_sprite("Preset transaction host");
+    program.id = id;
+    let alpha = program.outputs.alpha;
+    let lower = MaterialExpressionId::from_u128(0xa357_b101);
+    let upper = MaterialExpressionId::from_u128(0xa357_b102);
+    let shaped = MaterialExpressionId::from_u128(0xa357_b103);
+    program.expressions.extend([
+        MaterialExpression {
+            id: lower,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: upper,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: shaped,
+            kind: MaterialExpressionKind::Smoothstep {
+                edge_min: lower,
+                edge_max: upper,
+                value: alpha,
+            },
+        },
+    ]);
+    program.outputs.alpha = shaped;
+    program
+}
+
 #[test]
 fn program_and_expression_commands_are_transactional_and_reversible() {
     let mut document = authoring_document();
@@ -2061,6 +2090,56 @@ fn material_preset_tool_applies_a_project_catalog_recipe_transactionally() {
     history.execute(&mut document, plan.transaction).unwrap();
     assert!(history.undo(&mut document).unwrap().is_some());
     assert_eq!(document, before);
+}
+
+#[test]
+fn curated_project_material_presets_apply_and_undo_as_one_transaction() {
+    let presets = [
+        include_str!("../../../assets/materials/additive_flame.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/soft_smoke.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/energy_beam.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/magic_shield.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/hologram.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/ghost.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/portal.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/impact_flash.aestra.material-preset.ron"),
+    ]
+    .map(|source| MaterialPresetDescriptor::from_ron(source).unwrap());
+    let preset_ids = presets.each_ref().map(|preset| preset.id);
+    let catalog = MaterialPresetCatalog::with_project_presets(presets).unwrap();
+
+    for (index, preset) in preset_ids.into_iter().enumerate() {
+        let mut document = authoring_document();
+        let program_id = MaterialProgramId::from_u128(0xA357_B000 + index as u128);
+        document
+            .programs
+            .push(preset_host_material_program(program_id));
+        let before = document.clone();
+        let plan = MaterialToolPlanner::plan_with_preset_catalog(
+            &document,
+            MaterialToolCommand::ApplyMaterialPreset {
+                program: program_id,
+                preset,
+                placement: MaterialInsertionPoint::End,
+            },
+            &catalog,
+        )
+        .unwrap_or_else(|error| {
+            panic!(
+                "{} should produce one valid authoring transaction: {error}",
+                catalog.get(preset).unwrap().display_name
+            )
+        });
+        let replacement = plan.replacement_program(program_id).unwrap().clone();
+        let mut history = MaterialCommandHistory::default();
+
+        history.execute(&mut document, plan.transaction).unwrap();
+        assert_eq!(document.programs[0], replacement);
+        history.undo(&mut document).unwrap().unwrap();
+        assert_eq!(document, before);
+        history.redo(&mut document).unwrap().unwrap();
+        assert_eq!(document.programs[0], replacement);
+    }
 }
 
 #[test]

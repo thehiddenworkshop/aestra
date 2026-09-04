@@ -1,0 +1,25 @@
+(
+    schema_version: 2,
+    id: "a3574a00-0000-4000-8000-00000000a104",
+    display_name: "Energy Beam",
+    description: "Focuses the sprite into a bright cyan beam core with a soft elongated falloff.",
+    category: Shaping,
+    tags: ["energy", "beam", "laser", "sci-fi", "glow"],
+    recipe: Graph((
+        nodes: [
+            (name: "uv", kind: Input(Uv0)),
+            (name: "center", kind: Constant(Vec2((0.5, 0.5)))),
+            (name: "beam_scale", kind: Constant(Vec2((0.55, 2.6)))),
+            (name: "beam_uv", kind: Function(ScaleUv), inputs: {"Uv": Node("uv"), "Center": Node("center"), "Scale": Node("beam_scale")}),
+            (name: "radius", kind: Constant(Float(0.48))),
+            (name: "softness", kind: Constant(Float(0.2))),
+            (name: "invert", kind: Constant(Bool(false))),
+            (name: "core", kind: Function(RadialMask), inputs: {"Uv": Node("beam_uv"), "Center": Node("center"), "Radius": Node("radius"), "Softness": Node("softness"), "Invert": Node("invert")}),
+            (name: "opacity", kind: Function(Multiply), inputs: {"A": Source, "B": Node("core")}),
+            (name: "beam_tint", kind: Constant(ColorSrgb((0.08, 0.72, 1.0, 1.0)))),
+            (name: "color", kind: Function(Multiply), inputs: {"A": ProgramColor, "B": Node("beam_tint")}),
+        ],
+        output: Node("opacity"),
+        program_outputs: {Color: Node("color"), Alpha: Node("opacity")},
+    )),
+)

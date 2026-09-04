@@ -1,4 +1,4 @@
-use aestra_compiler::MaterialCompiler;
+use aestra_compiler::{MaterialCompiler, MaterialPresetCatalog, MaterialPresetDescriptor};
 use aestra_core::{
     AssetId, MaterialExpressionId, MaterialParameterId, MaterialProgramId,
     material::{
@@ -185,6 +185,70 @@ fn compile(
     MaterialShaderCompiler
         .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
         .unwrap()
+}
+
+fn preset_host_program() -> aestra_core::material::MaterialProgram {
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Preset host");
+    let alpha = program.outputs.alpha;
+    let lower = MaterialExpressionId::from_u128(0xa357_f001);
+    let upper = MaterialExpressionId::from_u128(0xa357_f002);
+    let shaped = MaterialExpressionId::from_u128(0xa357_f003);
+    program.expressions.extend([
+        MaterialExpression {
+            id: lower,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: upper,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: shaped,
+            kind: MaterialExpressionKind::Smoothstep {
+                edge_min: lower,
+                edge_max: upper,
+                value: alpha,
+            },
+        },
+    ]);
+    program.outputs.alpha = shaped;
+    program
+}
+
+#[test]
+fn curated_material_presets_generate_portable_gpu_shaders() {
+    let presets = [
+        include_str!("../../../assets/materials/additive_flame.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/soft_smoke.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/energy_beam.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/magic_shield.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/hologram.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/ghost.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/portal.aestra.material-preset.ron"),
+        include_str!("../../../assets/materials/impact_flash.aestra.material-preset.ron"),
+    ]
+    .map(|source| MaterialPresetDescriptor::from_ron(source).unwrap());
+    let preset_ids = presets.each_ref().map(|preset| preset.id);
+    let catalog = MaterialPresetCatalog::with_project_presets(presets).unwrap();
+    let host = preset_host_program();
+
+    for preset in preset_ids.map(|preset| catalog.get(preset).unwrap()) {
+        let target = MaterialCompiler
+            .stack_preset_targets_with_catalog(&host, &catalog)
+            .unwrap()
+            .into_iter()
+            .filter(|target| target.preset == preset.id)
+            .max_by_key(|target| target.index)
+            .unwrap_or_else(|| panic!("{} should be compatible", preset.display_name));
+        let replacement = MaterialCompiler
+            .plan_stack_insert_preset_with_catalog(&host, &catalog, preset.id, target.index)
+            .unwrap()
+            .replacement;
+        let compiled = compile(&replacement);
+
+        assert!(!compiled.shader.wesl.is_empty(), "{}", preset.display_name);
+        assert_portable_shader_targets(&compiled.shader.wgsl);
+    }
 }
 
 #[test]

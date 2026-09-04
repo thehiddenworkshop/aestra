@@ -5083,13 +5083,25 @@ mod tests {
 
     #[test]
     fn every_registered_material_preset_produces_a_preview() {
-        let project_preset = MaterialPresetDescriptor::from_ron(include_str!(
-            "../../../assets/materials/hologram.aestra.material-preset.ron"
-        ))
-        .expect("bundled Hologram preset should parse");
-        let catalog = MaterialPresetCatalog::with_project_presets([project_preset])
-            .expect("built-in and project presets should merge");
+        let asset_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let project_catalog =
+            ProjectEffectCatalog::scan_project(&asset_root, asset_root.join("effects"));
+        let catalog = project_catalog
+            .material_preset_catalog()
+            .expect("built-in and bundled project presets should merge");
         let mut images = Assets::<Image>::default();
+        let curated = [
+            "Additive Flame",
+            "Soft Smoke",
+            "Energy Beam",
+            "Magic Shield",
+            "Dissolve",
+            "Hologram",
+            "Ghost",
+            "Portal",
+            "Impact Flash",
+        ];
+        let mut curated_preview_hashes = BTreeSet::new();
 
         for preset in catalog.iter() {
             let status = build_material_preset_preview(preset, &catalog, &mut images);
@@ -5104,7 +5116,29 @@ mod tests {
                 preview.texture_descriptor.size.height,
                 MATERIAL_PREVIEW_SIZE
             );
+            if curated.contains(&preset.display_name.as_str()) {
+                let hash = preview
+                    .data
+                    .as_ref()
+                    .expect("preset preview should be CPU-backed")
+                    .iter()
+                    .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+                        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+                    });
+                curated_preview_hashes.insert(hash);
+            }
         }
+        for name in curated {
+            assert!(
+                catalog.iter().any(|preset| preset.display_name == name),
+                "curated preset {name} should be registered"
+            );
+        }
+        assert_eq!(
+            curated_preview_hashes.len(),
+            curated.len(),
+            "each curated material look should have a distinct preview"
+        );
     }
 
     #[test]
