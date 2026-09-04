@@ -7,8 +7,8 @@ use crate::{
 };
 use aestra_compiler::{
     MaterialCompileError, MaterialCompiler, MaterialGraphCreateKind, MaterialGraphEdgeTarget,
-    MaterialGraphNodeCreationError, MaterialGraphOutputKind, MaterialStackEditError,
-    MaterialStackModifierKind, MaterialStackProjection,
+    MaterialGraphNodeCreationError, MaterialGraphOutputKind, MaterialPresetCatalog,
+    MaterialStackEditError, MaterialStackModifierKind, MaterialStackProjection,
 };
 use aestra_core::{
     MaterialExpressionId, MaterialFunctionId, MaterialFunctionInputId, MaterialFunctionOutputId,
@@ -269,6 +269,18 @@ impl MaterialToolPlanner {
         document: &MaterialAuthoringDocument,
         command: MaterialToolCommand,
     ) -> Result<MaterialToolPlan, MaterialToolError> {
+        Self::plan_with_preset_catalog(
+            document,
+            command,
+            &MaterialCompiler.material_preset_catalog(),
+        )
+    }
+
+    pub fn plan_with_preset_catalog(
+        document: &MaterialAuthoringDocument,
+        command: MaterialToolCommand,
+        preset_catalog: &MaterialPresetCatalog,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
         match command {
             MaterialToolCommand::BindMaterialParameter {
                 instance,
@@ -329,7 +341,13 @@ impl MaterialToolPlanner {
                 program,
                 preset,
                 placement,
-            } => Self::plan_apply_material_preset(document, program, preset, placement),
+            } => Self::plan_apply_material_preset(
+                document,
+                preset_catalog,
+                program,
+                preset,
+                placement,
+            ),
             MaterialToolCommand::AddFresnelEdge {
                 program,
                 color,
@@ -1015,6 +1033,7 @@ impl MaterialToolPlanner {
 
     fn plan_apply_material_preset(
         document: &MaterialAuthoringDocument,
+        catalog: &MaterialPresetCatalog,
         program_id: MaterialProgramId,
         preset: MaterialPresetId,
         placement: MaterialInsertionPoint,
@@ -1022,9 +1041,13 @@ impl MaterialToolPlanner {
         let program = find_program(document, program_id)?;
         let target_index = resolve_insertion_point(program, placement)?;
         let compiler = MaterialCompiler;
-        let preset_plan = compiler.plan_stack_insert_preset(program, preset, target_index)?;
-        let preset_name = compiler
-            .material_preset_catalog()
+        let preset_plan = compiler.plan_stack_insert_preset_with_catalog(
+            program,
+            catalog,
+            preset,
+            target_index,
+        )?;
+        let preset_name = catalog
             .get(preset)
             .map(|descriptor| descriptor.display_name.clone())
             .unwrap_or_else(|| preset.to_string());

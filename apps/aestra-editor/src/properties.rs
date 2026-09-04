@@ -676,7 +676,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Moved material modifier",
-                            |_, current| {
+                            |_, current, _| {
                                 MaterialCompiler
                                     .plan_stack_move(current, expression, target_index)
                                     .map(|plan| plan.replacement)
@@ -696,7 +696,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Added material modifier",
-                            |document, _| {
+                            |document, _, _| {
                                 let command = MaterialToolCommand::InsertMaterialOperation {
                                     program,
                                     kind,
@@ -724,14 +724,17 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Applied material preset",
-                            |document, _| {
+                            |document, _, catalog| {
                                 let command = MaterialToolCommand::ApplyMaterialPreset {
                                     program,
                                     preset,
                                     placement,
                                 };
-                                let plan = MaterialToolPlanner::plan(document, command)
-                                    .map_err(|error| error.to_string())?;
+                                let presets = catalog.material_preset_catalog()?;
+                                let plan = MaterialToolPlanner::plan_with_preset_catalog(
+                                    document, command, &presets,
+                                )
+                                .map_err(|error| error.to_string())?;
                                 plan.replacement_program(program).cloned().ok_or_else(|| {
                                     format!(
                                         "material tool plan omitted replacement program {program}"
@@ -751,7 +754,7 @@ fn handle_properties_actions(
                             history_ledger.as_deref_mut(),
                             program,
                             "Removed material modifier",
-                            |_, current| {
+                            |_, current, _| {
                                 MaterialCompiler
                                     .plan_stack_remove(current, expression)
                                     .map(|plan| plan.replacement)
@@ -775,7 +778,7 @@ fn handle_properties_actions(
                             } else {
                                 "Disabled material modifier"
                             },
-                            |_, current| {
+                            |_, current, _| {
                                 MaterialCompiler
                                     .plan_stack_set_enabled(current, expression, enabled)
                                     .map(|plan| plan.replacement)
@@ -847,6 +850,7 @@ fn apply_material_program_edit(
     plan: impl FnOnce(
         &MaterialAuthoringDocument,
         &aestra_core::material::MaterialProgram,
+        &ProjectEffectCatalog,
     ) -> Result<aestra_core::material::MaterialProgram, String>,
 ) {
     let Some(catalog) = catalog else {
@@ -870,7 +874,7 @@ fn apply_material_program_edit(
                 .cloned()
                 .ok_or_else(|| format!("Material program {program} is unavailable"))?;
             let document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
-            let replacement = plan(&document, &current)?;
+            let replacement = plan(&document, &current, catalog)?;
             material_history.execute_replacement(session, catalog, label, current, replacement)
         });
     match result {

@@ -5,13 +5,17 @@ use aestra_authoring::{
     MaterialInspectionError, MaterialInspectionTarget, MaterialInspector, MaterialOutputSocket,
     MaterialToolCommand,
 };
-use aestra_compiler::{MATERIAL_PRESET_DISSOLVE, MaterialPresetCategory};
+use aestra_compiler::{
+    MATERIAL_PRESET_DISSOLVE, MaterialPresetCatalog, MaterialPresetCategory, MaterialPresetDefault,
+    MaterialPresetDescriptor, MaterialStackModifierKind, MaterialStackProperty,
+};
 use aestra_core::{
-    EffectAsset, Emitter, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId,
+    EffectAsset, Emitter, MaterialExpressionId, MaterialId, MaterialParameterId, MaterialPresetId,
+    MaterialProgramId,
     material::{
         MaterialExpression, MaterialExpressionKind, MaterialInstance, MaterialOutputs,
-        MaterialParameterValue, MaterialProgram, MaterialProgramRef, MaterialRenderState,
-        MaterialValue,
+        MaterialParameterValue, MaterialPresetSchemaVersion, MaterialProgram, MaterialProgramRef,
+        MaterialRenderState, MaterialValue,
     },
 };
 use std::collections::BTreeMap;
@@ -128,6 +132,55 @@ fn material_inspection_is_serializable_deterministic_and_non_mutating() {
         ron::from_str::<aestra_authoring::MaterialInspectionReport>(&encoded_report).unwrap(),
         report
     );
+}
+
+#[test]
+fn material_api_inspects_and_plans_project_catalog_presets() {
+    let (document, program, _) = inspection_document();
+    let preset = MaterialPresetId::from_u128(0xA357_A401);
+    let catalog = MaterialPresetCatalog::with_project_presets([MaterialPresetDescriptor {
+        schema_version: MaterialPresetSchemaVersion::CURRENT,
+        id: preset,
+        display_name: "Hologram".into(),
+        description: "Shapes a source signal into a holographic scan band.".into(),
+        category: MaterialPresetCategory::Shaping,
+        tags: vec!["hologram".into()],
+        modifiers: vec![MaterialStackModifierKind::Smoothstep],
+        defaults: vec![MaterialPresetDefault {
+            step: 0,
+            property: MaterialStackProperty::EdgeMinimum,
+            value: MaterialValue::Float(0.42),
+        }],
+    }])
+    .unwrap();
+    let target = MaterialInspectionTarget::Program(program);
+
+    let inspection = MaterialApi::handle_with_preset_catalog(
+        &document,
+        MaterialApiRequest::Inspect { target },
+        &catalog,
+    );
+    let MaterialApiResponse::Inspection(report) = inspection else {
+        panic!("project preset inspection should succeed");
+    };
+    let availability = report
+        .presets
+        .iter()
+        .find(|availability| availability.preset.id == preset)
+        .expect("project preset should be exposed through the machine-readable API");
+
+    let edit = MaterialApi::handle_with_preset_catalog(
+        &document,
+        MaterialApiRequest::PlanEdit {
+            command: MaterialToolCommand::ApplyMaterialPreset {
+                program,
+                preset,
+                placement: availability.placement,
+            },
+        },
+        &catalog,
+    );
+    assert!(matches!(edit, MaterialApiResponse::EditPlan(_)));
 }
 
 #[test]

@@ -12,10 +12,10 @@ pub use editor_layout::*;
 pub use aestra_core::EffectAssetRef;
 use aestra_core::{
     AssetError, EffectAsset, EffectClipId, EffectId, MaterialFunctionId, MaterialId,
-    MaterialProgramId,
+    MaterialPresetId, MaterialProgramId,
     material::{
-        MaterialFunction, MaterialFunctionError, MaterialFunctionRef, MaterialProgram,
-        MaterialProgramError, MaterialProgramRef,
+        MaterialFunction, MaterialFunctionError, MaterialFunctionRef, MaterialPresetDescriptor,
+        MaterialPresetError, MaterialProgram, MaterialProgramError, MaterialProgramRef,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,7 @@ pub enum ProjectAssetId {
     Effect(EffectId),
     MaterialProgram(MaterialProgramId),
     MaterialFunction(MaterialFunctionId),
+    MaterialPreset(MaterialPresetId),
 }
 
 impl From<EffectAssetRef> for ProjectAssetId {
@@ -52,6 +53,12 @@ impl From<MaterialProgramRef> for ProjectAssetId {
 impl From<MaterialFunctionRef> for ProjectAssetId {
     fn from(reference: MaterialFunctionRef) -> Self {
         Self::MaterialFunction(reference.id())
+    }
+}
+
+impl From<MaterialPresetId> for ProjectAssetId {
+    fn from(id: MaterialPresetId) -> Self {
+        Self::MaterialPreset(id)
     }
 }
 
@@ -153,6 +160,37 @@ pub struct ProjectMaterialFunctionEntry {
     pub status: ProjectMaterialFunctionStatus,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectMaterialPresetStatus {
+    Valid,
+    DuplicateId {
+        preset: MaterialPresetId,
+        sources: Vec<PathBuf>,
+    },
+    Invalid {
+        message: String,
+    },
+    Unsupported {
+        found: u32,
+        current: u32,
+    },
+}
+
+impl ProjectMaterialPresetStatus {
+    pub fn is_resolvable(&self) -> bool {
+        matches!(self, Self::Valid)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectMaterialPresetEntry {
+    pub id: ProjectSourceId,
+    pub preset: Option<MaterialPresetId>,
+    pub display_name: String,
+    pub path: PathBuf,
+    pub status: ProjectMaterialPresetStatus,
+}
+
 /// One authored effect-clip relationship in the project dependency graph.
 ///
 /// `depth` is one for a direct relationship and increases for every traversed effect. Keeping the
@@ -228,11 +266,13 @@ pub struct ProjectAssetIndex {
     effects: Vec<ProjectEffectEntry>,
     material_programs: Vec<ProjectMaterialProgramEntry>,
     material_functions: Vec<ProjectMaterialFunctionEntry>,
+    material_presets: Vec<ProjectMaterialPresetEntry>,
     availability: ProjectAssetIndexAvailability,
     diagnostics: Vec<ProjectAssetDiagnostic>,
     effect_sources: BTreeMap<EffectId, Vec<usize>>,
     material_program_sources: BTreeMap<MaterialProgramId, Vec<usize>>,
     material_function_sources: BTreeMap<MaterialFunctionId, Vec<usize>>,
+    material_preset_sources: BTreeMap<MaterialPresetId, Vec<usize>>,
 }
 
 impl ProjectAssetIndex {
@@ -252,11 +292,13 @@ impl ProjectAssetIndex {
                 effects: Vec::new(),
                 material_programs: Vec::new(),
                 material_functions: Vec::new(),
+                material_presets: Vec::new(),
                 availability: ProjectAssetIndexAvailability::Unavailable { root, message },
                 diagnostics,
                 effect_sources: BTreeMap::new(),
                 material_program_sources: BTreeMap::new(),
                 material_function_sources: BTreeMap::new(),
+                material_preset_sources: BTreeMap::new(),
             };
         }
         paths.sort();
@@ -264,9 +306,12 @@ impl ProjectAssetIndex {
 
         let mut material_paths = Vec::new();
         let mut function_paths = Vec::new();
+        let mut preset_paths = Vec::new();
         let mut effect_paths = Vec::new();
         for path in paths {
-            if is_material_function_source(&path) {
+            if is_material_preset_source(&path) {
+                preset_paths.push(path);
+            } else if is_material_function_source(&path) {
                 function_paths.push(path);
             } else if is_material_program_source(&path) {
                 material_paths.push(path);
@@ -286,11 +331,16 @@ impl ProjectAssetIndex {
             .into_iter()
             .map(|path| index_material_function_source(&root, path, &mut diagnostics))
             .collect();
+        let material_presets = preset_paths
+            .into_iter()
+            .map(|path| index_material_preset_source(&root, path, &mut diagnostics))
+            .collect();
         Self::from_parts(
             root,
             effects,
             material_programs,
             material_functions,
+            material_presets,
             ProjectAssetIndexAvailability::Ready,
             diagnostics,
         )
@@ -305,6 +355,7 @@ impl ProjectAssetIndex {
             entries,
             Vec::new(),
             Vec::new(),
+            Vec::new(),
             ProjectAssetIndexAvailability::Ready,
             Vec::new(),
         )
@@ -315,6 +366,7 @@ impl ProjectAssetIndex {
         mut effects: Vec<ProjectEffectEntry>,
         mut material_programs: Vec<ProjectMaterialProgramEntry>,
         mut material_functions: Vec<ProjectMaterialFunctionEntry>,
+        mut material_presets: Vec<ProjectMaterialPresetEntry>,
         availability: ProjectAssetIndexAvailability,
         mut diagnostics: Vec<ProjectAssetDiagnostic>,
     ) -> Self {
@@ -347,6 +399,17 @@ impl ProjectAssetIndex {
             }
         }
         material_functions.sort_by(|left, right| {
+            left.display_name
+                .to_lowercase()
+                .cmp(&right.display_name.to_lowercase())
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        for entry in &mut material_presets {
+            while !source_ids.insert(entry.id) {
+                entry.id.0 = entry.id.0.wrapping_add(1);
+            }
+        }
+        material_presets.sort_by(|left, right| {
             left.display_name
                 .to_lowercase()
                 .cmp(&right.display_name.to_lowercase())
@@ -455,16 +518,52 @@ impl ProjectAssetIndex {
             });
         }
 
+        let mut material_preset_sources = BTreeMap::<MaterialPresetId, Vec<usize>>::new();
+        for (index, entry) in material_presets.iter().enumerate() {
+            if let Some(preset) = entry.preset {
+                material_preset_sources
+                    .entry(preset)
+                    .or_default()
+                    .push(index);
+            }
+        }
+        for (preset, indexes) in &material_preset_sources {
+            if indexes.len() <= 1 {
+                continue;
+            }
+            let sources = indexes
+                .iter()
+                .map(|index| material_presets[*index].path.clone())
+                .collect::<Vec<_>>();
+            for index in indexes {
+                material_presets[*index].status = ProjectMaterialPresetStatus::DuplicateId {
+                    preset: *preset,
+                    sources: sources.clone(),
+                };
+            }
+            diagnostics.push(ProjectAssetDiagnostic {
+                code: ProjectAssetDiagnosticCode::DuplicateId,
+                path: None,
+                message: format!(
+                    "material preset ID {} is declared by {} project sources",
+                    preset,
+                    sources.len()
+                ),
+            });
+        }
+
         Self {
             root,
             effects,
             material_programs,
             material_functions,
+            material_presets,
             availability,
             diagnostics,
             effect_sources,
             material_program_sources,
             material_function_sources,
+            material_preset_sources,
         }
     }
 
@@ -484,6 +583,10 @@ impl ProjectAssetIndex {
         &self.material_functions
     }
 
+    pub fn material_presets(&self) -> &[ProjectMaterialPresetEntry] {
+        &self.material_presets
+    }
+
     pub fn entry(&self, id: ProjectSourceId) -> Option<&ProjectEffectEntry> {
         self.effects.iter().find(|entry| entry.id == id)
     }
@@ -500,6 +603,13 @@ impl ProjectAssetIndex {
         id: ProjectSourceId,
     ) -> Option<&ProjectMaterialFunctionEntry> {
         self.material_functions.iter().find(|entry| entry.id == id)
+    }
+
+    pub fn material_preset_entry(
+        &self,
+        id: ProjectSourceId,
+    ) -> Option<&ProjectMaterialPresetEntry> {
+        self.material_presets.iter().find(|entry| entry.id == id)
     }
 
     pub fn availability(&self) -> &ProjectAssetIndexAvailability {
@@ -615,6 +725,39 @@ impl ProjectAssetIndex {
         }
     }
 
+    pub fn resolve_material_preset(
+        &self,
+        preset: MaterialPresetId,
+    ) -> Result<&ProjectMaterialPresetEntry, ResolveMaterialPresetError> {
+        if let ProjectAssetIndexAvailability::Unavailable { root, message } = &self.availability {
+            return Err(ResolveMaterialPresetError::IndexUnavailable {
+                root: root.clone(),
+                message: message.clone(),
+            });
+        }
+        let Some(indexes) = self.material_preset_sources.get(&preset) else {
+            return Err(ResolveMaterialPresetError::Missing { preset });
+        };
+        if indexes.len() != 1 {
+            return Err(ResolveMaterialPresetError::Duplicate {
+                preset,
+                sources: indexes
+                    .iter()
+                    .map(|index| self.material_presets[*index].path.clone())
+                    .collect(),
+            });
+        }
+        let entry = &self.material_presets[indexes[0]];
+        if entry.status.is_resolvable() {
+            Ok(entry)
+        } else {
+            Err(ResolveMaterialPresetError::Unresolvable {
+                preset,
+                path: entry.path.clone(),
+            })
+        }
+    }
+
     /// Resolves and loads the latest source contents for one reusable effect reference.
     pub fn load_effect(
         &self,
@@ -693,6 +836,31 @@ impl ProjectAssetIndex {
         Ok(function)
     }
 
+    pub fn load_material_preset(
+        &self,
+        preset: MaterialPresetId,
+    ) -> Result<MaterialPresetDescriptor, ResolveMaterialPresetError> {
+        let entry = self.resolve_material_preset(preset)?;
+        let descriptor = MaterialPresetDescriptor::load_ron(&entry.path).map_err(|error| {
+            ResolveMaterialPresetError::SourceChanged {
+                preset,
+                path: entry.path.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        if descriptor.id != preset {
+            return Err(ResolveMaterialPresetError::SourceChanged {
+                preset,
+                path: entry.path.clone(),
+                message: format!(
+                    "indexed material preset ID {} was replaced by {}",
+                    preset, descriptor.id
+                ),
+            });
+        }
+        Ok(descriptor)
+    }
+
     /// Loads every uniquely identified project-local material function.
     pub fn load_material_functions(
         &self,
@@ -709,6 +877,24 @@ impl ProjectAssetIndex {
             functions.insert(function.id, function);
         }
         Ok(functions)
+    }
+
+    /// Loads every uniquely identified project-local material preset.
+    pub fn load_material_presets(
+        &self,
+    ) -> Result<BTreeMap<MaterialPresetId, MaterialPresetDescriptor>, ResolveMaterialPresetError>
+    {
+        let mut presets = BTreeMap::new();
+        for entry in &self.material_presets {
+            let Some(preset) = entry.preset else {
+                continue;
+            };
+            if presets.contains_key(&preset) {
+                continue;
+            }
+            presets.insert(preset, self.load_material_preset(preset)?);
+        }
+        Ok(presets)
     }
 
     /// Resolves the complete transitive dependency set for an authored root effect.
@@ -1654,6 +1840,30 @@ pub enum ResolveMaterialFunctionError {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ResolveMaterialPresetError {
+    #[error("project asset index at {root} is unavailable: {message}")]
+    IndexUnavailable { root: PathBuf, message: String },
+    #[error("material preset {preset} is missing from the project index")]
+    Missing { preset: MaterialPresetId },
+    #[error("material preset {preset} is declared by multiple sources: {sources:?}")]
+    Duplicate {
+        preset: MaterialPresetId,
+        sources: Vec<PathBuf>,
+    },
+    #[error("material preset {preset} at {path} is not resolvable")]
+    Unresolvable {
+        preset: MaterialPresetId,
+        path: PathBuf,
+    },
+    #[error("material preset {preset} changed after indexing at {path}: {message}")]
+    SourceChanged {
+        preset: MaterialPresetId,
+        path: PathBuf,
+        message: String,
+    },
+}
+
 /// A root effect plus every unique reusable effect it transitively references.
 #[derive(Debug, Clone)]
 pub struct ResolvedEffectProject {
@@ -1948,6 +2158,12 @@ fn is_material_function_source(path: &Path) -> bool {
         })
 }
 
+fn is_material_preset_source(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.to_lowercase().ends_with(".aestra.material-preset.ron"))
+}
+
 fn index_effect_source(
     root: &Path,
     path: PathBuf,
@@ -2083,6 +2299,62 @@ fn index_material_function_source(
                 display_name: fallback_name,
                 path,
                 status: ProjectMaterialFunctionStatus::Invalid { message },
+            }
+        }
+    }
+}
+
+fn index_material_preset_source(
+    root: &Path,
+    path: PathBuf,
+    diagnostics: &mut Vec<ProjectAssetDiagnostic>,
+) -> ProjectMaterialPresetEntry {
+    let id = source_id(root, &path);
+    let fallback_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Unnamed material preset")
+        .trim_end_matches(".ron")
+        .trim_end_matches(".material-preset")
+        .trim_end_matches(".aestra")
+        .replace(['_', '-'], " ");
+    match MaterialPresetDescriptor::load_ron(&path) {
+        Ok(preset) => ProjectMaterialPresetEntry {
+            id,
+            preset: Some(preset.id),
+            display_name: preset.display_name,
+            path,
+            status: ProjectMaterialPresetStatus::Valid,
+        },
+        Err(MaterialPresetError::UnsupportedFormat { found, current }) => {
+            diagnostics.push(ProjectAssetDiagnostic {
+                code: ProjectAssetDiagnosticCode::UnsupportedFormat,
+                path: Some(path.clone()),
+                message: format!(
+                    "material preset format version {found} is unsupported; expected {current}"
+                ),
+            });
+            ProjectMaterialPresetEntry {
+                id,
+                preset: None,
+                display_name: fallback_name,
+                path,
+                status: ProjectMaterialPresetStatus::Unsupported { found, current },
+            }
+        }
+        Err(error) => {
+            let message = error.to_string();
+            diagnostics.push(ProjectAssetDiagnostic {
+                code: ProjectAssetDiagnosticCode::InvalidAsset,
+                path: Some(path.clone()),
+                message: message.clone(),
+            });
+            ProjectMaterialPresetEntry {
+                id,
+                preset: None,
+                display_name: fallback_name,
+                path,
+                status: ProjectMaterialPresetStatus::Invalid { message },
             }
         }
     }

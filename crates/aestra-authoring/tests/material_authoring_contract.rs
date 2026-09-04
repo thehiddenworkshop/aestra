@@ -7,19 +7,20 @@ use aestra_authoring::{
 };
 use aestra_compiler::{
     MATERIAL_PRESET_SOFT_DISSOLVE, MATERIAL_PRESET_UV_DRIFT, MaterialCompiler,
-    MaterialGraphCreateKind, MaterialGraphFunction, MaterialStackModifierKind,
-    MaterialStackProjection,
+    MaterialGraphCreateKind, MaterialGraphFunction, MaterialPresetCatalog, MaterialPresetCategory,
+    MaterialPresetDefault, MaterialPresetDescriptor, MaterialStackModifierKind,
+    MaterialStackProjection, MaterialStackProperty,
 };
 use aestra_core::{
     AssetId, BlendMode, EffectAsset, EffectParameter, Emitter, MaterialExpressionId,
-    MaterialFunctionId, MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
-    RendererId, Value,
+    MaterialFunctionId, MaterialId, MaterialParameterId, MaterialPresetId, MaterialProgramId,
+    ParameterId, RendererId, Value,
     material::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialFunction,
         MaterialFunctionRef, MaterialInput, MaterialInstance, MaterialParameter,
-        MaterialParameterValue, MaterialProgram, MaterialProgramRef, MaterialRenderState,
-        MaterialSamplerDescriptor, MaterialTextureColorSpace, MaterialTextureDescriptor,
-        MaterialValue, MaterialValueType, MaterialVectorComponent,
+        MaterialParameterValue, MaterialPresetSchemaVersion, MaterialProgram, MaterialProgramRef,
+        MaterialRenderState, MaterialSamplerDescriptor, MaterialTextureColorSpace,
+        MaterialTextureDescriptor, MaterialValue, MaterialValueType, MaterialVectorComponent,
     },
 };
 use std::collections::BTreeMap;
@@ -1997,6 +1998,53 @@ fn material_preset_tool_rejects_incompatible_requests_without_mutation() {
 
     assert!(matches!(error, MaterialToolError::StackEdit(_)));
     assert_eq!(document, before);
+}
+
+#[test]
+fn material_preset_tool_applies_a_project_catalog_recipe_transactionally() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6150);
+    let (program, _) = reorderable_material_program(program_id);
+    document.programs.push(program);
+    let preset = MaterialPresetId::from_u128(0xA357_A301);
+    let catalog = MaterialPresetCatalog::with_project_presets([MaterialPresetDescriptor {
+        schema_version: MaterialPresetSchemaVersion::CURRENT,
+        id: preset,
+        display_name: "Hologram".into(),
+        description: "Adds a widened holographic UV band.".into(),
+        category: MaterialPresetCategory::Shaping,
+        tags: vec!["hologram".into()],
+        modifiers: vec![MaterialStackModifierKind::ScaleUv],
+        defaults: vec![MaterialPresetDefault {
+            step: 0,
+            property: MaterialStackProperty::Scale,
+            value: MaterialValue::Vec2([1.8, 1.0]),
+        }],
+    }])
+    .unwrap();
+
+    let plan = MaterialToolPlanner::plan_with_preset_catalog(
+        &document,
+        MaterialToolCommand::ApplyMaterialPreset {
+            program: program_id,
+            preset,
+            placement: MaterialInsertionPoint::Start,
+        },
+        &catalog,
+    )
+    .unwrap();
+
+    assert_eq!(plan.created_expressions.len(), 1);
+    let properties = MaterialCompiler
+        .stack_modifier_properties(
+            plan.replacement_program(program_id).unwrap(),
+            plan.created_expressions[0],
+        )
+        .unwrap();
+    assert!(properties.iter().any(|property| {
+        property.property == MaterialStackProperty::Scale
+            && property.value == MaterialValue::Vec2([1.8, 1.0])
+    }));
 }
 
 #[test]

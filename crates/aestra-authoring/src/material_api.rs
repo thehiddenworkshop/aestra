@@ -6,7 +6,7 @@ use crate::{
     MaterialInspectionTarget, MaterialInspector, MaterialToolCommand, MaterialToolError,
     MaterialToolPlan, MaterialToolPlanner,
 };
-use aestra_compiler::MaterialStackEditError;
+use aestra_compiler::{MaterialCompiler, MaterialPresetCatalog, MaterialStackEditError};
 use aestra_core::ValidationReport;
 use serde::{Deserialize, Serialize};
 
@@ -56,17 +56,33 @@ impl MaterialApi {
         document: &MaterialAuthoringDocument,
         request: MaterialApiRequest,
     ) -> MaterialApiResponse {
+        Self::handle_with_preset_catalog(
+            document,
+            request,
+            &MaterialCompiler.material_preset_catalog(),
+        )
+    }
+
+    /// Handles a request against an explicit built-in plus project preset catalog.
+    pub fn handle_with_preset_catalog(
+        document: &MaterialAuthoringDocument,
+        request: MaterialApiRequest,
+        preset_catalog: &MaterialPresetCatalog,
+    ) -> MaterialApiResponse {
         match request {
-            MaterialApiRequest::Inspect { target } => MaterialInspector::inspect(document, target)
-                .map_or_else(
-                    |error| MaterialApiResponse::Error(inspection_error(error)),
-                    |report| MaterialApiResponse::Inspection(Box::new(report)),
-                ),
+            MaterialApiRequest::Inspect { target } => {
+                MaterialInspector::inspect_with_preset_catalog(document, target, preset_catalog)
+                    .map_or_else(
+                        |error| MaterialApiResponse::Error(inspection_error(error)),
+                        |report| MaterialApiResponse::Inspection(Box::new(report)),
+                    )
+            }
             MaterialApiRequest::PlanEdit { command } => {
-                MaterialToolPlanner::plan(document, command).map_or_else(
-                    |error| MaterialApiResponse::Error(tool_error(error)),
-                    |plan| MaterialApiResponse::EditPlan(Box::new(plan)),
-                )
+                MaterialToolPlanner::plan_with_preset_catalog(document, command, preset_catalog)
+                    .map_or_else(
+                        |error| MaterialApiResponse::Error(tool_error(error)),
+                        |plan| MaterialApiResponse::EditPlan(Box::new(plan)),
+                    )
             }
             MaterialApiRequest::Compile { target } => {
                 MaterialCompilationReporter::compile(document, target).map_or_else(

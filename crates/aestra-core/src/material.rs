@@ -7,7 +7,7 @@
 use crate::{
     AssetId, BlendMode, Diagnostic, DiagnosticCode, DiagnosticSeverity, MaterialExpressionId,
     MaterialFunctionId, MaterialFunctionInputId, MaterialFunctionOutputId, MaterialId,
-    MaterialParameterId, MaterialProgramId, ParameterId, ValidationReport, Value,
+    MaterialParameterId, MaterialPresetId, MaterialProgramId, ParameterId, ValidationReport, Value,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -18,6 +18,7 @@ use std::{
 use thiserror::Error;
 
 pub const CURRENT_MATERIAL_SCHEMA_VERSION: u32 = 1;
+pub const CURRENT_MATERIAL_PRESET_SCHEMA_VERSION: u32 = 1;
 
 /// Reflected parameter name used by the temporary legacy-sprite compatibility adapter.
 ///
@@ -50,6 +51,20 @@ pub enum MaterialFunctionError {
     Validation(#[from] ValidationReport),
 }
 
+#[derive(Debug, Error)]
+pub enum MaterialPresetError {
+    #[error("could not read or write the material preset: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("could not parse the material preset: {0}")]
+    Parse(#[from] ron::error::SpannedError),
+    #[error("could not serialize the material preset: {0}")]
+    Serialize(#[from] ron::Error),
+    #[error("material preset format version {found} is unsupported; expected {current}")]
+    UnsupportedFormat { found: u32, current: u32 },
+    #[error("material preset validation failed: {0}")]
+    Validation(String),
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct MaterialSchemaVersion(pub u32);
@@ -61,6 +76,316 @@ impl MaterialSchemaVersion {
 impl Default for MaterialSchemaVersion {
     fn default() -> Self {
         Self::CURRENT
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct MaterialPresetSchemaVersion(pub u32);
+
+impl MaterialPresetSchemaVersion {
+    pub const CURRENT: Self = Self(CURRENT_MATERIAL_PRESET_SCHEMA_VERSION);
+}
+
+impl Default for MaterialPresetSchemaVersion {
+    fn default() -> Self {
+        Self::CURRENT
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MaterialStackModifierKind {
+    BaseTexture,
+    PanUv,
+    RotateUv,
+    ScaleUv,
+    Remap,
+    Smoothstep,
+    Fresnel,
+    RadialMask,
+    Dissolve,
+    DissolveEdge,
+    DepthFade,
+    SoftParticle,
+}
+
+impl MaterialStackModifierKind {
+    pub const INSERTABLE: [Self; 9] = [
+        Self::PanUv,
+        Self::RotateUv,
+        Self::ScaleUv,
+        Self::Remap,
+        Self::Smoothstep,
+        Self::RadialMask,
+        Self::Dissolve,
+        Self::DissolveEdge,
+        Self::SoftParticle,
+    ];
+
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::BaseTexture => "Base Texture",
+            Self::PanUv => "UV Pan",
+            Self::RotateUv => "UV Rotate",
+            Self::ScaleUv => "UV Scale",
+            Self::Remap => "Remap",
+            Self::Smoothstep => "Smoothstep",
+            Self::Fresnel => "Fresnel",
+            Self::RadialMask => "Radial Mask",
+            Self::Dissolve => "Dissolve",
+            Self::DissolveEdge => "Dissolve Edge",
+            Self::DepthFade => "Depth Fade",
+            Self::SoftParticle => "Soft Particle",
+        }
+    }
+
+    pub const fn supports_property(self, property: MaterialStackProperty) -> bool {
+        match self {
+            Self::PanUv => matches!(property, MaterialStackProperty::Speed),
+            Self::RotateUv => matches!(
+                property,
+                MaterialStackProperty::Center | MaterialStackProperty::Angle
+            ),
+            Self::ScaleUv => matches!(
+                property,
+                MaterialStackProperty::Center | MaterialStackProperty::Scale
+            ),
+            Self::Remap => matches!(
+                property,
+                MaterialStackProperty::InputMinimum
+                    | MaterialStackProperty::InputMaximum
+                    | MaterialStackProperty::OutputMinimum
+                    | MaterialStackProperty::OutputMaximum
+            ),
+            Self::Smoothstep => matches!(
+                property,
+                MaterialStackProperty::EdgeMinimum | MaterialStackProperty::EdgeMaximum
+            ),
+            Self::Fresnel => matches!(property, MaterialStackProperty::Power),
+            Self::RadialMask => matches!(
+                property,
+                MaterialStackProperty::Center
+                    | MaterialStackProperty::Radius
+                    | MaterialStackProperty::Softness
+                    | MaterialStackProperty::Invert
+            ),
+            Self::Dissolve | Self::DissolveEdge => matches!(
+                property,
+                MaterialStackProperty::Threshold
+                    | MaterialStackProperty::EdgeWidth
+                    | MaterialStackProperty::Invert
+            ),
+            Self::DepthFade | Self::SoftParticle => matches!(
+                property,
+                MaterialStackProperty::FadeDistance | MaterialStackProperty::Invert
+            ),
+            Self::BaseTexture => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum MaterialStackProperty {
+    Speed,
+    Center,
+    Angle,
+    Scale,
+    InputMinimum,
+    InputMaximum,
+    OutputMinimum,
+    OutputMaximum,
+    EdgeMinimum,
+    EdgeMaximum,
+    Power,
+    Radius,
+    Softness,
+    Threshold,
+    EdgeWidth,
+    FadeDistance,
+    Invert,
+}
+
+impl MaterialStackProperty {
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::Speed => "Speed",
+            Self::Center => "Center",
+            Self::Angle => "Angle",
+            Self::Scale => "Scale",
+            Self::InputMinimum => "Input Min",
+            Self::InputMaximum => "Input Max",
+            Self::OutputMinimum => "Output Min",
+            Self::OutputMaximum => "Output Max",
+            Self::EdgeMinimum => "Edge Min",
+            Self::EdgeMaximum => "Edge Max",
+            Self::Power => "Power",
+            Self::Radius => "Radius",
+            Self::Softness => "Softness",
+            Self::Threshold => "Threshold",
+            Self::EdgeWidth => "Edge Width",
+            Self::FadeDistance => "Fade Distance",
+            Self::Invert => "Invert",
+        }
+    }
+
+    pub const fn value_type(self) -> MaterialValueType {
+        match self {
+            Self::Speed | Self::Center | Self::Scale => MaterialValueType::Vec2,
+            Self::Invert => MaterialValueType::Bool,
+            Self::Angle
+            | Self::InputMinimum
+            | Self::InputMaximum
+            | Self::OutputMinimum
+            | Self::OutputMaximum
+            | Self::EdgeMinimum
+            | Self::EdgeMaximum
+            | Self::Power
+            | Self::Radius
+            | Self::Softness
+            | Self::Threshold
+            | Self::EdgeWidth
+            | Self::FadeDistance => MaterialValueType::Float,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum MaterialPresetCategory {
+    Motion,
+    Masking,
+    Shaping,
+}
+
+impl MaterialPresetCategory {
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::Motion => "Motion",
+            Self::Masking => "Masking",
+            Self::Shaping => "Shaping",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialPresetDefault {
+    pub step: usize,
+    pub property: MaterialStackProperty,
+    pub value: MaterialValue,
+}
+
+/// A portable, project-serializable semantic material recipe.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialPresetDescriptor {
+    pub schema_version: MaterialPresetSchemaVersion,
+    pub id: MaterialPresetId,
+    pub display_name: String,
+    pub description: String,
+    pub category: MaterialPresetCategory,
+    pub tags: Vec<String>,
+    pub modifiers: Vec<MaterialStackModifierKind>,
+    pub defaults: Vec<MaterialPresetDefault>,
+}
+
+impl MaterialPresetDescriptor {
+    pub fn from_ron(source: &str) -> Result<Self, MaterialPresetError> {
+        let preset: Self = ron::from_str(source)?;
+        preset.validate()?;
+        Ok(preset.normalized())
+    }
+
+    pub fn load_ron(path: impl AsRef<Path>) -> Result<Self, MaterialPresetError> {
+        Self::from_ron(&fs::read_to_string(path)?)
+    }
+
+    pub fn to_pretty_ron(&self) -> Result<String, MaterialPresetError> {
+        self.validate()?;
+        Ok(ron::ser::to_string_pretty(
+            &self.normalized(),
+            ron::ser::PrettyConfig::new().depth_limit(12),
+        )?)
+    }
+
+    pub fn save_ron(&self, path: impl AsRef<Path>) -> Result<(), MaterialPresetError> {
+        crate::model::atomic_write(path.as_ref(), self.to_pretty_ron()?.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn normalized(&self) -> Self {
+        let mut normalized = self.clone();
+        normalized.display_name = normalized.display_name.trim().to_owned();
+        normalized.description = normalized.description.trim().to_owned();
+        normalized.tags = normalized
+            .tags
+            .into_iter()
+            .map(|tag| tag.trim().to_lowercase())
+            .filter(|tag| !tag.is_empty())
+            .collect();
+        normalized.tags.sort();
+        normalized.tags.dedup();
+        normalized
+            .defaults
+            .sort_by_key(|default| (default.step, default.property));
+        normalized
+    }
+
+    pub fn validate(&self) -> Result<(), MaterialPresetError> {
+        if self.schema_version != MaterialPresetSchemaVersion::CURRENT {
+            return Err(MaterialPresetError::UnsupportedFormat {
+                found: self.schema_version.0,
+                current: CURRENT_MATERIAL_PRESET_SCHEMA_VERSION,
+            });
+        }
+        if self.id.is_nil() {
+            return Err(MaterialPresetError::Validation(
+                "material preset ID cannot be nil".into(),
+            ));
+        }
+        if self.display_name.trim().is_empty() {
+            return Err(MaterialPresetError::Validation(
+                "material preset name cannot be empty".into(),
+            ));
+        }
+        if self.description.trim().is_empty() {
+            return Err(MaterialPresetError::Validation(
+                "material preset description cannot be empty".into(),
+            ));
+        }
+        if self.modifiers.is_empty() {
+            return Err(MaterialPresetError::Validation(
+                "material preset recipe cannot be empty".into(),
+            ));
+        }
+        let mut assigned = BTreeSet::new();
+        for default in &self.defaults {
+            let Some(modifier) = self.modifiers.get(default.step).copied() else {
+                return Err(MaterialPresetError::Validation(format!(
+                    "material preset default step {} is outside its recipe",
+                    default.step
+                )));
+            };
+            if !assigned.insert((default.step, default.property)) {
+                return Err(MaterialPresetError::Validation(format!(
+                    "material preset assigns {} more than once at step {}",
+                    default.property.display_name(),
+                    default.step
+                )));
+            }
+            if !modifier.supports_property(default.property) {
+                return Err(MaterialPresetError::Validation(format!(
+                    "{} does not expose {}",
+                    modifier.display_name(),
+                    default.property.display_name()
+                )));
+            }
+            if !default.property.value_type().accepts(&default.value) || !default.value.is_valid() {
+                return Err(MaterialPresetError::Validation(format!(
+                    "{} requires a valid {:?} value",
+                    default.property.display_name(),
+                    default.property.value_type()
+                )));
+            }
+        }
+        Ok(())
     }
 }
 

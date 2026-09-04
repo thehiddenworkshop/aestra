@@ -227,7 +227,7 @@ pub(super) fn handle_material_stack_property_scalar_change(
         history_ledger.as_deref_mut(),
         control.program,
         "Edited material modifier",
-        |_, current| {
+        |_, current, _| {
             MaterialCompiler
                 .plan_stack_set_property(current, control.expression, control.property, value)
                 .map(|plan| plan.replacement)
@@ -266,7 +266,7 @@ pub(super) fn handle_material_stack_property_toggle_change(
         history_ledger.as_deref_mut(),
         control.program,
         "Edited material modifier",
-        |_, current| {
+        |_, current, _| {
             MaterialCompiler
                 .plan_stack_set_property(
                     current,
@@ -1165,7 +1165,7 @@ fn spawn_semantic_material_controls(
         .map_err(|error| error.to_string())?;
 
     spawn_properties_read_only_control(parent, "Material", &controls.name);
-    spawn_semantic_material_stack(parent, program, &stack, inspector);
+    spawn_semantic_material_stack(parent, program, &stack, inspector, catalog);
     for descriptor in &controls.parameters {
         spawn_semantic_material_parameter(parent, descriptor, instance.id, session, asset_server);
     }
@@ -1183,6 +1183,7 @@ fn spawn_semantic_material_stack(
     program: &aestra_core::material::MaterialProgram,
     projection: &MaterialStackProjection,
     inspector: &MaterialStackInspectorState,
+    project_catalog: &ProjectEffectCatalog,
 ) {
     match projection {
         MaterialStackProjection::Stack { entries } if entries.is_empty() => {
@@ -1190,11 +1191,18 @@ fn spawn_semantic_material_stack(
         }
         MaterialStackProjection::Stack { entries } => {
             spawn_properties_read_only_control(parent, "Material Stack", "Semantic modifiers");
+            let preset_catalog = project_catalog
+                .material_preset_catalog()
+                .unwrap_or_else(|_| MaterialCompiler.material_preset_catalog());
             let preset_targets = MaterialCompiler
-                .stack_preset_targets(program)
+                .stack_preset_targets_with_catalog(program, &preset_catalog)
                 .unwrap_or_default();
-            let preset_options =
-                material_stack_preset_options(program.id, entries, &preset_targets);
+            let preset_options = material_stack_preset_options(
+                program.id,
+                entries,
+                &preset_targets,
+                &preset_catalog,
+            );
             if !preset_options.is_empty() {
                 spawn_properties_combo_row(
                     parent,
@@ -1254,8 +1262,8 @@ fn material_stack_preset_options(
     program: MaterialProgramId,
     entries: &[MaterialStackEntry],
     targets: &[MaterialStackPresetTarget],
+    catalog: &aestra_compiler::MaterialPresetCatalog,
 ) -> Vec<ComboOption<PropertiesAction>> {
-    let catalog = MaterialCompiler.material_preset_catalog();
     targets
         .iter()
         .filter_map(|target| {
@@ -2528,6 +2536,7 @@ mod tests {
             kind: aestra_compiler::MaterialStackModifierKind::BaseTexture,
             enabled: true,
         }];
+        let catalog = MaterialCompiler.material_preset_catalog();
         let options = material_stack_preset_options(
             MaterialProgramId::from_u128(0x7121),
             &entries,
@@ -2541,6 +2550,7 @@ mod tests {
                     preset: aestra_compiler::MATERIAL_PRESET_SOFT_DISSOLVE,
                 },
             ],
+            &catalog,
         );
         assert_eq!(
             options

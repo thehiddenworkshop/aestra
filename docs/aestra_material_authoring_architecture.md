@@ -2335,13 +2335,16 @@ Create reusable high-level building blocks for artists and AI.
 
 ### Implementation status
 
-The first catalog-backed slice is implemented. Built-in presets have stable semantic identities and
-compiler-owned descriptors with categories, descriptions, search tags, ordered semantic modifier
-recipes, and editable defaults. UV Drift, Soft Dissolve, and Contrast Shape have migrated from the
-closed preset enum, while Dissolve validates the complete path through compatibility discovery,
-transactional insertion, undo/redo, machine-readable inspection, and categorized editor options.
-Project-local preset assets, graph recipes beyond linear modifier chains, visual previews, and the
-rest of the initial library remain to complete the milestone.
+The catalog and project-asset slices are implemented. Presets have stable semantic identities and
+portable, schema-versioned descriptors with categories, descriptions, normalized search tags,
+ordered semantic modifier recipes, and editable defaults. Project-local
+`.aestra.material-preset.ron` assets are indexed beside programs and functions with validation,
+duplicate-ID diagnostics, stable reload checks, and deterministic merging with built-ins. UV Drift,
+Soft Dissolve, Contrast Shape, and Dissolve are built in, while a project-local Hologram asset
+validates the complete path through compatibility discovery, transactional insertion, undo/redo,
+machine-readable inspection/planning, and categorized editor options. Graph recipes beyond linear
+modifier chains, visual previews, and the rest of the initial library remain to complete the
+milestone.
 
 ### Initial presets
 

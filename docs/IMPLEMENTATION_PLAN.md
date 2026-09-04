@@ -405,13 +405,15 @@ the current sprite-material path until the native-GPU compatibility gate approve
   constants, rejects disconnected or unusable selections, persists a project-local function,
   replaces the selection with stable call nodes, preserves the replacement layout, and treats the
   function asset plus graph rewrite as one rollback-safe undo/redo operation.
-- [ ] **Material 16 — semantic preset library.** The first registry slice is implemented. Presets
-  now use stable semantic IDs and compiler-owned descriptors containing category, description,
-  search tags, an ordered modifier recipe, and editable defaults. UV Drift, Soft Dissolve, and
-  Contrast Shape have migrated from the closed hard-coded enum, and a configurable Dissolve preset
-  exercises the complete catalog → compatibility filtering → authoring transaction → categorized
-  editor option path. Inspection reports expose the same descriptor metadata to AI and CLI clients.
-  Project-local preset assets, richer graph recipes, previews, and the remaining initial preset
+- [ ] **Material 16 — semantic preset library.** The registry and project-asset slices are
+  implemented. Presets use stable semantic IDs and portable descriptors containing a schema
+  version, category, description, normalized search tags, an ordered modifier recipe, and editable
+  defaults. Project `.aestra.material-preset.ron` sources participate in the typed asset index,
+  including validation, stable loading, duplicate-ID diagnostics, and deterministic merging with
+  built-ins. UV Drift, Soft Dissolve, Contrast Shape, and Dissolve are built in; a project-local
+  Hologram preset exercises catalog loading → compatibility filtering → transactional authoring →
+  categorized editor presentation. Explicit catalogs are also available to machine-readable
+  inspection and tool planning. Richer graph recipes, previews, and the remaining initial preset
   library are still required to complete this milestone.
 - [ ] **Material 17 — validated custom WESL escape hatch.**
 

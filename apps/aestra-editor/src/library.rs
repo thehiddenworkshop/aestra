@@ -6,7 +6,9 @@ use crate::feathers::context_menu::{
 };
 use crate::timeline::TimelineState;
 use crate::*;
-use aestra_compiler::{EffectCompiler, MaterialFunctionLibrary, ProjectCompileError};
+use aestra_compiler::{
+    EffectCompiler, MaterialFunctionLibrary, MaterialPresetCatalog, ProjectCompileError,
+};
 use aestra_core::material::{
     MaterialFunction, MaterialFunctionRef, MaterialProgram, MaterialProgramRef,
 };
@@ -241,6 +243,15 @@ impl ProjectEffectCatalog {
 
     pub(crate) fn material_function_library(&self) -> Result<MaterialFunctionLibrary, String> {
         self.material_functions().map(MaterialFunctionLibrary::new)
+    }
+
+    pub(crate) fn material_preset_catalog(&self) -> Result<MaterialPresetCatalog, String> {
+        let presets = self
+            .index
+            .load_material_presets()
+            .map_err(|error| error.to_string())?;
+        MaterialPresetCatalog::with_project_presets(presets.into_values())
+            .map_err(|error| error.to_string())
     }
 
     pub(crate) fn create_material_function(
@@ -3842,6 +3853,26 @@ mod tests {
         catalog
             .compile_project(&effect)
             .expect("its sibling material program should resolve from the project asset root");
+    }
+
+    #[test]
+    fn project_catalog_merges_bundled_material_presets_with_builtins() {
+        let asset_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let catalog = ProjectEffectCatalog::scan_project(&asset_root, asset_root.join("effects"));
+
+        let presets = catalog.material_preset_catalog().unwrap();
+        let hologram = presets
+            .iter()
+            .find(|preset| preset.display_name == "Hologram")
+            .expect("the bundled project preset should be registered");
+
+        assert_eq!(hologram.category.display_name(), "Shaping");
+        assert!(hologram.tags.iter().any(|tag| tag == "hologram"));
+        assert!(
+            presets
+                .get(aestra_compiler::MATERIAL_PRESET_DISSOLVE)
+                .is_some()
+        );
     }
 
     #[test]

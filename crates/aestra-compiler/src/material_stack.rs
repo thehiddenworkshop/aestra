@@ -1,63 +1,20 @@
 //! Engine-neutral projection of semantic material programs into an ordered modifier stack.
 
 use crate::{MaterialCompileError, MaterialCompiler};
+pub use aestra_core::material::{
+    MaterialPresetCategory, MaterialPresetDefault, MaterialPresetDescriptor,
+    MaterialStackModifierKind, MaterialStackProperty,
+};
 use aestra_core::{
     MaterialExpressionId, MaterialPresetId,
     material::{
-        MaterialExpression, MaterialExpressionKind, MaterialInput, MaterialProgram, MaterialValue,
-        MaterialValueType,
+        MaterialExpression, MaterialExpressionKind, MaterialInput, MaterialPresetSchemaVersion,
+        MaterialProgram, MaterialValue, MaterialValueType,
     },
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MaterialStackModifierKind {
-    BaseTexture,
-    PanUv,
-    RotateUv,
-    ScaleUv,
-    Remap,
-    Smoothstep,
-    Fresnel,
-    RadialMask,
-    Dissolve,
-    DissolveEdge,
-    DepthFade,
-    SoftParticle,
-}
-
-impl MaterialStackModifierKind {
-    pub const INSERTABLE: [Self; 9] = [
-        Self::PanUv,
-        Self::RotateUv,
-        Self::ScaleUv,
-        Self::Remap,
-        Self::Smoothstep,
-        Self::RadialMask,
-        Self::Dissolve,
-        Self::DissolveEdge,
-        Self::SoftParticle,
-    ];
-
-    pub const fn display_name(self) -> &'static str {
-        match self {
-            Self::BaseTexture => "Base Texture",
-            Self::PanUv => "UV Pan",
-            Self::RotateUv => "UV Rotate",
-            Self::ScaleUv => "UV Scale",
-            Self::Remap => "Remap",
-            Self::Smoothstep => "Smoothstep",
-            Self::Fresnel => "Fresnel",
-            Self::RadialMask => "Radial Mask",
-            Self::Dissolve => "Dissolve",
-            Self::DissolveEdge => "Dissolve Edge",
-            Self::DepthFade => "Depth Fade",
-            Self::SoftParticle => "Soft Particle",
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialStackEntry {
@@ -156,46 +113,16 @@ pub const MATERIAL_PRESET_CONTRAST_SHAPE: MaterialPresetId =
 pub const MATERIAL_PRESET_DISSOLVE: MaterialPresetId =
     MaterialPresetId::from_u128(0xA357_0000_0000_4000_8000_0000_0000_0004);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum MaterialPresetCategory {
-    Motion,
-    Masking,
-    Shaping,
-}
-
-impl MaterialPresetCategory {
-    pub const fn display_name(self) -> &'static str {
-        match self {
-            Self::Motion => "Motion",
-            Self::Masking => "Masking",
-            Self::Shaping => "Shaping",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MaterialPresetDefault {
-    pub step: usize,
-    pub property: MaterialStackProperty,
-    pub value: MaterialValue,
-}
-
-/// Compiler-owned description and semantic recipe for one reusable material preset.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MaterialPresetDescriptor {
-    pub id: MaterialPresetId,
-    pub display_name: String,
-    pub description: String,
-    pub category: MaterialPresetCategory,
-    pub tags: Vec<String>,
-    pub modifiers: Vec<MaterialStackModifierKind>,
-    pub defaults: Vec<MaterialPresetDefault>,
-}
-
 /// Extensible catalog shared by compiler validation, tools, and editor presentation.
 #[derive(Debug, Clone, Default)]
 pub struct MaterialPresetCatalog {
     presets: BTreeMap<MaterialPresetId, MaterialPresetDescriptor>,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum MaterialPresetCatalogError {
+    #[error("material preset ID {preset} is already registered")]
+    DuplicateId { preset: MaterialPresetId },
 }
 
 impl MaterialPresetCatalog {
@@ -214,6 +141,27 @@ impl MaterialPresetCatalog {
         self.presets.insert(preset.id, preset)
     }
 
+    pub fn try_register(
+        &mut self,
+        preset: MaterialPresetDescriptor,
+    ) -> Result<(), MaterialPresetCatalogError> {
+        if self.presets.contains_key(&preset.id) {
+            return Err(MaterialPresetCatalogError::DuplicateId { preset: preset.id });
+        }
+        self.presets.insert(preset.id, preset);
+        Ok(())
+    }
+
+    pub fn with_project_presets(
+        presets: impl IntoIterator<Item = MaterialPresetDescriptor>,
+    ) -> Result<Self, MaterialPresetCatalogError> {
+        let mut catalog = Self::builtin();
+        for preset in presets {
+            catalog.try_register(preset)?;
+        }
+        Ok(catalog)
+    }
+
     pub fn get(&self, id: MaterialPresetId) -> Option<&MaterialPresetDescriptor> {
         self.presets.get(&id)
     }
@@ -226,6 +174,7 @@ impl MaterialPresetCatalog {
 pub fn builtin_material_presets() -> Vec<MaterialPresetDescriptor> {
     vec![
         MaterialPresetDescriptor {
+            schema_version: MaterialPresetSchemaVersion::CURRENT,
             id: MATERIAL_PRESET_UV_DRIFT,
             display_name: "UV Drift".into(),
             description: "Adds directional UV motion with a subtle scale variation.".into(),
@@ -249,6 +198,7 @@ pub fn builtin_material_presets() -> Vec<MaterialPresetDescriptor> {
             ],
         },
         MaterialPresetDescriptor {
+            schema_version: MaterialPresetSchemaVersion::CURRENT,
             id: MATERIAL_PRESET_SOFT_DISSOLVE,
             display_name: "Soft Dissolve".into(),
             description: "Combines a threshold dissolve with soft scene intersection.".into(),
@@ -277,6 +227,7 @@ pub fn builtin_material_presets() -> Vec<MaterialPresetDescriptor> {
             ],
         },
         MaterialPresetDescriptor {
+            schema_version: MaterialPresetSchemaVersion::CURRENT,
             id: MATERIAL_PRESET_CONTRAST_SHAPE,
             display_name: "Contrast Shape".into(),
             description: "Remaps a signal and applies a smooth contrast threshold.".into(),
@@ -310,6 +261,7 @@ pub fn builtin_material_presets() -> Vec<MaterialPresetDescriptor> {
             ],
         },
         MaterialPresetDescriptor {
+            schema_version: MaterialPresetSchemaVersion::CURRENT,
             id: MATERIAL_PRESET_DISSOLVE,
             display_name: "Dissolve".into(),
             description: "Adds an artist-adjustable threshold with a narrow transition edge."
@@ -360,51 +312,6 @@ pub struct MaterialStackEnabledPlan {
     pub index: usize,
     pub enabled: bool,
     pub replacement: MaterialProgram,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MaterialStackProperty {
-    Speed,
-    Center,
-    Angle,
-    Scale,
-    InputMinimum,
-    InputMaximum,
-    OutputMinimum,
-    OutputMaximum,
-    EdgeMinimum,
-    EdgeMaximum,
-    Power,
-    Radius,
-    Softness,
-    Threshold,
-    EdgeWidth,
-    FadeDistance,
-    Invert,
-}
-
-impl MaterialStackProperty {
-    pub const fn display_name(self) -> &'static str {
-        match self {
-            Self::Speed => "Speed",
-            Self::Center => "Center",
-            Self::Angle => "Angle",
-            Self::Scale => "Scale",
-            Self::InputMinimum => "Input Min",
-            Self::InputMaximum => "Input Max",
-            Self::OutputMinimum => "Output Min",
-            Self::OutputMaximum => "Output Max",
-            Self::EdgeMinimum => "Edge Min",
-            Self::EdgeMaximum => "Edge Max",
-            Self::Power => "Power",
-            Self::Radius => "Radius",
-            Self::Softness => "Softness",
-            Self::Threshold => "Threshold",
-            Self::EdgeWidth => "Edge Width",
-            Self::FadeDistance => "Fade Distance",
-            Self::Invert => "Invert",
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

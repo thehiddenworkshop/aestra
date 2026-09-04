@@ -2,8 +2,8 @@
 
 use crate::{MaterialAuthoringDocument, MaterialInsertionPoint};
 use aestra_compiler::{
-    MaterialCompiler, MaterialControlCatalog, MaterialGraphProjection, MaterialPresetDescriptor,
-    MaterialStackModifierKind, MaterialStackProjection,
+    MaterialCompiler, MaterialControlCatalog, MaterialGraphProjection, MaterialPresetCatalog,
+    MaterialPresetDescriptor, MaterialStackModifierKind, MaterialStackProjection,
 };
 use aestra_core::{
     MaterialId, MaterialProgramId, ValidationReport,
@@ -76,6 +76,18 @@ impl MaterialInspector {
         document: &MaterialAuthoringDocument,
         target: MaterialInspectionTarget,
     ) -> Result<MaterialInspectionReport, MaterialInspectionError> {
+        Self::inspect_with_preset_catalog(
+            document,
+            target,
+            &MaterialCompiler.material_preset_catalog(),
+        )
+    }
+
+    pub fn inspect_with_preset_catalog(
+        document: &MaterialAuthoringDocument,
+        target: MaterialInspectionTarget,
+        preset_catalog: &MaterialPresetCatalog,
+    ) -> Result<MaterialInspectionReport, MaterialInspectionError> {
         let (program_index, instance_index) = match target {
             MaterialInspectionTarget::Program(program) => {
                 (find_program_index(document, program)?, None)
@@ -105,7 +117,7 @@ impl MaterialInspector {
             operation_availability(&compiler, program, projection)
         });
         let presets = stack.as_ref().map_or_else(Vec::new, |projection| {
-            preset_availability(&compiler, program, projection)
+            preset_availability(&compiler, program, projection, preset_catalog)
         });
         let controls = diagnostics
             .is_valid()
@@ -181,13 +193,13 @@ fn preset_availability(
     compiler: &MaterialCompiler,
     program: &MaterialProgram,
     projection: &MaterialStackProjection,
+    catalog: &MaterialPresetCatalog,
 ) -> Vec<MaterialPresetAvailability> {
     let MaterialStackProjection::Stack { entries } = projection else {
         return Vec::new();
     };
-    let catalog = compiler.material_preset_catalog();
     compiler
-        .stack_preset_targets(program)
+        .stack_preset_targets_with_catalog(program, catalog)
         .unwrap_or_default()
         .into_iter()
         .filter_map(|target| {

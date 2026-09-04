@@ -573,6 +573,7 @@ fn explicit_preset_catalogs_accept_new_semantic_recipes_without_compiler_changes
     let preset = MaterialPresetId::from_u128(0xA357_1000);
     let mut catalog = MaterialPresetCatalog::default();
     catalog.register(MaterialPresetDescriptor {
+        schema_version: aestra_core::material::MaterialPresetSchemaVersion::CURRENT,
         id: preset,
         display_name: "Wide UV".into(),
         description: "Scales UV coordinates horizontally.".into(),
