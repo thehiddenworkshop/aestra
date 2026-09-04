@@ -276,6 +276,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Plays any valid `.aestra.ron` effect without opening the editor.
 - Captures exact, evenly sampled 60 Hz frame indices across an effect lifetime.
 - Produces individual PNGs, a contact sheet, and a capture manifest for visual or AI review.
+- Accepts explicit frame/time samples and emits a versioned JSON report containing compiler
+  diagnostics, material fingerprints, backend decisions, and metrics for automated review loops.
 - Runs deterministic, effect-only GPU regression captures against approved references,
   with tolerant foreground metrics and amplified difference images.
 - Shares runtime behavior with games by using `AestraPlugin` directly.

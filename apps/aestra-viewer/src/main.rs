@@ -1,18 +1,20 @@
 mod gpu_bench;
+mod preview_report;
 mod visual_regression;
 
 use aestra_authoring::{MaterialAuthoringDocument, migrate_legacy_sprite_materials};
 use aestra_bevy::material::MaterialProgram;
 use aestra_bevy::{
     ActiveBackend, AestraPlugin, AestraRuntimeStatus, AestraSettings, DEFAULT_GPU_PARTICLE_BUDGET,
-    DEFAULT_PLAYBACK_TICK_RATE, EffectAsset, EffectCompiler, EffectPlayer, EffectRuntimeStatus,
-    GpuCapabilities, PlaybackClock, PresentationMode, PresentedEffect,
+    DEFAULT_PLAYBACK_TICK_RATE, EffectAsset, EffectCompiler, EffectPlayer, EffectProfiler,
+    EffectRuntimeStatus, GpuCapabilities, PlaybackClock, PresentationMode, PresentedEffect,
 };
 use bevy::{
     app::AppExit,
     asset::AssetPlugin,
     camera::{Viewport, visibility::RenderLayers},
     diagnostic::LogDiagnosticsPlugin,
+    ecs::system::SystemParam,
     prelude::*,
     render::diagnostic::RenderDiagnosticsPlugin,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
@@ -21,6 +23,10 @@ use bevy::{
 use image::{Rgba, RgbaImage, imageops};
 use std::{collections::BTreeMap, env, fs, path::PathBuf, sync::Arc};
 
+use preview_report::{
+    CompilerPreviewData, PreviewCaptureData, PreviewRuntimeData, write_preview_failure_report,
+    write_preview_report,
+};
 use visual_regression::compare_capture;
 
 const SAMPLE_SOURCE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
@@ -38,14 +44,32 @@ const OVERLAY_PROBE_SIZE: u32 = 144;
 fn main() {
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--diagnostics] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--diagnostics] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     let preview_seed = config.resolved_seed();
-    let capture = config
-        .capture_mode
-        .clone()
-        .map(|mode| CapturePlan::new(mode, config.capture_frames, preview_seed));
+    let prepared = prepare_viewer(&config).unwrap_or_else(|failure| {
+        report_preparation_failure(&config, &failure);
+        eprintln!("aestra-viewer: {}", failure.message);
+        std::process::exit(1);
+    });
+    let capture = config.capture_mode.clone().map(|mode| {
+        CapturePlan::new(
+            mode,
+            &config.capture_sampling,
+            preview_seed,
+            prepared.compiled.duration,
+        )
+        .unwrap_or_else(|message| {
+            let failure = PreparationFailure {
+                message,
+                diagnostics: prepared.compiler.diagnostics.clone(),
+            };
+            report_preparation_failure(&config, &failure);
+            eprintln!("aestra-viewer: {}", failure.message);
+            std::process::exit(2);
+        })
+    });
     let log_diagnostics = config.diagnostics;
     let gpu_bench_output = config.gpu_bench.clone();
     let gpu_bench_effect = config
@@ -61,6 +85,7 @@ fn main() {
             presentation: config.presentation,
             max_gpu_particles: config.max_gpu_particles,
         })
+        .insert_resource(prepared)
         .insert_resource(config)
         .add_plugins((
             DefaultPlugins
@@ -116,16 +141,34 @@ fn main() {
 }
 
 #[derive(Resource)]
+struct PreparedViewer {
+    compiled: Arc<aestra_bevy::CompiledEffect>,
+    compiler: CompilerPreviewData,
+}
+
+struct PreparationFailure {
+    message: String,
+    diagnostics: Vec<aestra_bevy::Diagnostic>,
+}
+
+#[derive(Resource)]
 struct ViewerConfig {
     effect_path: Option<PathBuf>,
     semantic_materials: bool,
     capture_mode: Option<CaptureMode>,
-    capture_frames: usize,
+    capture_sampling: CaptureSampling,
     presentation: PresentationMode,
     max_gpu_particles: u32,
     preview_seed: Option<u64>,
     diagnostics: bool,
     gpu_bench: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum CaptureSampling {
+    EvenlySpaced(usize),
+    ExplicitFrames(Vec<u64>),
+    ExplicitTimes(Vec<f32>),
 }
 
 #[derive(Clone)]
@@ -160,7 +203,8 @@ impl ViewerConfig {
         let mut effect_path = None;
         let mut semantic_materials = false;
         let mut capture_mode = None;
-        let mut capture_frames = 8usize;
+        let mut capture_sampling = CaptureSampling::EvenlySpaced(8);
+        let mut capture_sampling_was_set = false;
         let mut presentation = PresentationMode::Auto;
         let mut max_gpu_particles = DEFAULT_GPU_PARTICLE_BUDGET;
         let mut preview_seed = None;
@@ -231,14 +275,39 @@ impl ViewerConfig {
                     )?;
                 }
                 "--frames" => {
-                    capture_frames = args
+                    let frame_count = args
                         .next()
                         .ok_or("--frames requires a number")?
                         .parse::<usize>()
                         .map_err(|_| "--frames must be a positive integer")?;
-                    if capture_frames == 0 || capture_frames > 64 {
+                    if frame_count == 0 || frame_count > 64 {
                         return Err("--frames must be between 1 and 64".into());
                     }
+                    set_capture_sampling(
+                        &mut capture_sampling,
+                        &mut capture_sampling_was_set,
+                        CaptureSampling::EvenlySpaced(frame_count),
+                    )?;
+                }
+                "--sample-frames" => {
+                    let values = args
+                        .next()
+                        .ok_or("--sample-frames requires a comma-separated frame list")?;
+                    set_capture_sampling(
+                        &mut capture_sampling,
+                        &mut capture_sampling_was_set,
+                        CaptureSampling::ExplicitFrames(parse_sample_frames(&values)?),
+                    )?;
+                }
+                "--sample-times" => {
+                    let values = args
+                        .next()
+                        .ok_or("--sample-times requires a comma-separated seconds list")?;
+                    set_capture_sampling(
+                        &mut capture_sampling,
+                        &mut capture_sampling_was_set,
+                        CaptureSampling::ExplicitTimes(parse_sample_times(&values)?),
+                    )?;
                 }
                 "--backend" => {
                     presentation = match args
@@ -277,7 +346,7 @@ impl ViewerConfig {
             effect_path,
             semantic_materials,
             capture_mode,
-            capture_frames,
+            capture_sampling,
             presentation,
             max_gpu_particles,
             preview_seed,
@@ -301,6 +370,63 @@ impl ViewerConfig {
     }
 }
 
+fn set_capture_sampling(
+    target: &mut CaptureSampling,
+    was_set: &mut bool,
+    sampling: CaptureSampling,
+) -> Result<(), String> {
+    if *was_set {
+        return Err("--frames, --sample-frames, and --sample-times are mutually exclusive".into());
+    }
+    *target = sampling;
+    *was_set = true;
+    Ok(())
+}
+
+fn parse_sample_frames(value: &str) -> Result<Vec<u64>, String> {
+    parse_sample_list(value, "--sample-frames", |item| {
+        item.parse::<u64>()
+            .map_err(|_| "frame values must be non-negative integers".to_owned())
+    })
+}
+
+fn parse_sample_times(value: &str) -> Result<Vec<f32>, String> {
+    parse_sample_list(value, "--sample-times", |item| {
+        let seconds = item
+            .parse::<f32>()
+            .map_err(|_| "time values must be finite non-negative seconds".to_owned())?;
+        if !seconds.is_finite() || seconds < 0.0 {
+            return Err("time values must be finite non-negative seconds".to_owned());
+        }
+        Ok(seconds)
+    })
+}
+
+fn parse_sample_list<T: Copy + PartialOrd>(
+    value: &str,
+    option: &str,
+    parse: impl Fn(&str) -> Result<T, String>,
+) -> Result<Vec<T>, String> {
+    let values = value
+        .split(',')
+        .map(str::trim)
+        .map(|item| {
+            if item.is_empty() {
+                Err(format!("{option} contains an empty value"))
+            } else {
+                parse(item).map_err(|error| format!("{option}: {error}"))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if values.is_empty() || values.len() > 64 {
+        return Err(format!("{option} must contain between 1 and 64 values"));
+    }
+    if values.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(format!("{option} values must be strictly increasing"));
+    }
+    Ok(values)
+}
+
 fn parse_seed(value: &str) -> Result<u64, String> {
     value
         .strip_prefix("0x")
@@ -322,7 +448,7 @@ fn set_capture_mode(target: &mut Option<CaptureMode>, mode: CaptureMode) -> Resu
 #[derive(Resource)]
 struct CapturePlan {
     mode: CaptureMode,
-    frame_count: usize,
+    sample_frames: Vec<u64>,
     next_frame: usize,
     settle_frames: u8,
     positioned: bool,
@@ -333,10 +459,18 @@ struct CapturePlan {
 }
 
 impl CapturePlan {
-    fn new(mode: CaptureMode, frame_count: usize, seed: u64) -> Self {
-        Self {
+    fn new(
+        mode: CaptureMode,
+        sampling: &CaptureSampling,
+        seed: u64,
+        effect_duration: f32,
+    ) -> Result<Self, String> {
+        let maximum_frame = PlaybackClock::default().maximum_frame(effect_duration);
+        let sample_frames = resolve_sample_frames(sampling, maximum_frame)?;
+        let frame_count = sample_frames.len();
+        Ok(Self {
             mode,
-            frame_count,
+            sample_frames,
             next_frame: 0,
             // Let the window, glyph atlas, sprite pipelines, and particle pool reach the render
             // world before the first capture. Later samples only need a short seek settle.
@@ -346,14 +480,46 @@ impl CapturePlan {
             images: Vec::with_capacity(frame_count),
             seed,
             sampled_frames: Vec::with_capacity(frame_count),
-        }
+        })
     }
+
+    fn frame_count(&self) -> usize {
+        self.sample_frames.len()
+    }
+}
+
+fn resolve_sample_frames(
+    sampling: &CaptureSampling,
+    maximum_frame: u64,
+) -> Result<Vec<u64>, String> {
+    let frames = match sampling {
+        CaptureSampling::EvenlySpaced(frame_count) => (0..*frame_count)
+            .map(|index| capture_frame(maximum_frame, index, *frame_count))
+            .collect(),
+        CaptureSampling::ExplicitFrames(frames) => frames.clone(),
+        CaptureSampling::ExplicitTimes(times) => times
+            .iter()
+            .map(|seconds| (f64::from(*seconds) * f64::from(DEFAULT_PLAYBACK_TICK_RATE)).round())
+            .map(|frame| frame.clamp(0.0, u64::MAX as f64) as u64)
+            .collect(),
+    };
+    if frames.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(
+            "sample times resolve to duplicate or unordered simulation frames at 60 Hz".into(),
+        );
+    }
+    if let Some(frame) = frames.iter().find(|frame| **frame > maximum_frame) {
+        return Err(format!(
+            "sample frame {frame} exceeds the effect's final frame {maximum_frame}"
+        ));
+    }
+    Ok(frames)
 }
 
 #[derive(Component)]
 struct ViewerHud;
 
-fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
+fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFailure> {
     let mut effect = config
         .effect_path
         .as_ref()
@@ -361,14 +527,78 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
             || EffectAsset::from_ron(SAMPLE_SOURCE),
             EffectAsset::load_ron,
         )
-        .unwrap_or_else(|error| panic!("could not load viewer effect: {error}"));
+        .map_err(|error| PreparationFailure {
+            message: format!("could not load viewer effect: {error}"),
+            diagnostics: Vec::new(),
+        })?;
     let material_programs = if config.semantic_materials {
-        migrate_viewer_materials(&mut effect)
-            .unwrap_or_else(|error| panic!("could not migrate viewer materials: {error}"))
+        migrate_viewer_materials(&mut effect).map_err(|error| PreparationFailure {
+            message: format!("could not migrate viewer materials: {error}"),
+            diagnostics: Vec::new(),
+        })?
     } else {
         Vec::new()
     };
-    let effect_name = effect.name.clone();
+    let mut diagnostics = effect.validation_report().diagnostics;
+    diagnostics.extend(
+        material_programs
+            .iter()
+            .flat_map(|program| program.validation_report().diagnostics),
+    );
+    diagnostics.sort();
+    diagnostics.dedup();
+    let material_programs = material_programs
+        .into_iter()
+        .map(|program| (program.id, program))
+        .collect::<BTreeMap<_, _>>();
+    let compiled = EffectCompiler::default()
+        .compile_with_material_programs(&effect, &material_programs)
+        .map_err(|error| PreparationFailure {
+            message: format!("could not compile viewer effect: {error}"),
+            diagnostics: error.report().diagnostics.clone(),
+        })?;
+    let material_program_fingerprints = compiled
+        .material_programs
+        .iter()
+        .map(|program| {
+            aestra_bevy::compile_material_program(program)
+                .map(|compiled| {
+                    (
+                        program.id.to_string(),
+                        compiled.program_fingerprint.to_string(),
+                    )
+                })
+                .map_err(|error| PreparationFailure {
+                    message: format!(
+                        "could not compile semantic material program {}: {error}",
+                        program.id
+                    ),
+                    diagnostics: diagnostics.clone(),
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let compiler = CompilerPreviewData::new(&compiled, diagnostics, material_program_fingerprints);
+    Ok(PreparedViewer {
+        compiled: Arc::new(compiled),
+        compiler,
+    })
+}
+
+fn report_preparation_failure(config: &ViewerConfig, failure: &PreparationFailure) {
+    let Some(mode) = &config.capture_mode else {
+        return;
+    };
+    if let Err(error) = write_preview_failure_report(
+        mode.output_directory(),
+        &failure.message,
+        &failure.diagnostics,
+    ) {
+        eprintln!("aestra-viewer: could not write preview failure report: {error}");
+    }
+}
+
+fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<PreparedViewer>) {
+    let effect_name = prepared.compiled.name.clone();
     let regression_scene = config
         .capture_mode
         .as_ref()
@@ -378,14 +608,7 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>) {
         .as_ref()
         .is_some_and(CaptureMode::is_editor_viewport_smoke);
 
-    let material_programs = material_programs
-        .into_iter()
-        .map(|program| (program.id, program))
-        .collect::<BTreeMap<_, _>>();
-    let compiled = EffectCompiler::default()
-        .compile_with_material_programs(&effect, &material_programs)
-        .unwrap_or_else(|error| panic!("could not compile viewer effect: {error}"));
-    let mut player = EffectPlayer::from_compiled(Arc::new(compiled));
+    let mut player = EffectPlayer::from_compiled(Arc::clone(&prepared.compiled));
     player.set_seed(config.resolved_seed());
     let presentation = PresentedEffect::new(player.effect().clone());
     if editor_viewport_smoke {
@@ -577,7 +800,7 @@ fn drive_capture(
     let Some(mut capture) = capture else {
         return;
     };
-    if capture.pending || capture.next_frame >= capture.frame_count {
+    if capture.pending || capture.next_frame >= capture.frame_count() {
         return;
     }
     if capture.settle_frames > 0 {
@@ -587,8 +810,7 @@ fn drive_capture(
 
     if !capture.positioned {
         for mut player in &mut players {
-            let maximum = PlaybackClock::default().maximum_frame(player.effect().duration);
-            let sample_frame = capture_frame(maximum, capture.next_frame, capture.frame_count);
+            let sample_frame = capture.sample_frames[capture.next_frame];
             player.seek_frame(sample_frame);
             player.playing = false;
             capture.sampled_frames.push(sample_frame);
@@ -611,13 +833,19 @@ fn capture_frame(maximum_frame: u64, index: usize, frame_count: usize) -> u64 {
     ((numerator + denominator / 2) / denominator) as u64
 }
 
+#[derive(SystemParam)]
+struct CaptureReportContext<'w, 's> {
+    runtime: Res<'w, AestraRuntimeStatus>,
+    settings: Res<'w, AestraSettings>,
+    capabilities: Res<'w, GpuCapabilities>,
+    prepared: Res<'w, PreparedViewer>,
+    effects: Query<'w, 's, (&'static EffectRuntimeStatus, &'static EffectProfiler)>,
+}
+
 fn receive_capture(
     event: On<ScreenshotCaptured>,
     mut capture: ResMut<CapturePlan>,
-    runtime: Res<AestraRuntimeStatus>,
-    settings: Res<AestraSettings>,
-    capabilities: Res<GpuCapabilities>,
-    effects: Query<&EffectRuntimeStatus>,
+    report: CaptureReportContext,
     mut exit: MessageWriter<AppExit>,
 ) {
     let output_directory = capture.mode.output_directory().clone();
@@ -638,10 +866,47 @@ fn receive_capture(
     capture.pending = false;
     capture.settle_frames = 1;
 
-    if capture.next_frame == capture.frame_count {
-        let effect_runtime = effects.single().ok();
-        write_contact_sheet(&capture, &runtime, effect_runtime, &settings, &capabilities);
-        let result = finish_capture(&capture, &runtime, effect_runtime, &capabilities);
+    if capture.next_frame == capture.frame_count() {
+        let effect_status = report.effects.single().ok();
+        let effect_runtime = effect_status.map(|(runtime, _)| runtime);
+        write_contact_sheet(
+            &capture,
+            &report.runtime,
+            effect_runtime,
+            &report.settings,
+            &report.capabilities,
+        );
+        let capture_result = finish_capture(
+            &capture,
+            &report.runtime,
+            effect_runtime,
+            &report.capabilities,
+        );
+        let frame_count = capture.frame_count();
+        let columns = (frame_count as f32).sqrt().ceil() as u32;
+        let rows = (frame_count as u32).div_ceil(columns);
+        let report_result = write_preview_report(
+            capture.mode.output_directory(),
+            PreviewCaptureData {
+                sampled_frames: &capture.sampled_frames,
+                seed: capture.seed,
+                width: VIEW_WIDTH,
+                height: VIEW_HEIGHT,
+                columns,
+                rows,
+                tick_rate: DEFAULT_PLAYBACK_TICK_RATE,
+            },
+            &report.prepared.compiler,
+            PreviewRuntimeData {
+                runtime: &report.runtime,
+                effect_runtime,
+                settings: &report.settings,
+                capabilities: &report.capabilities,
+                profile: effect_status.map(|(_, profile)| &profile.0),
+            },
+            capture_result.as_ref().err().map(String::as_str),
+        );
+        let result = capture_result.and(report_result);
         exit.write(if result.is_ok() {
             AppExit::Success
         } else {
@@ -661,8 +926,9 @@ fn write_contact_sheet(
     settings: &AestraSettings,
     capabilities: &GpuCapabilities,
 ) {
-    let columns = (capture.frame_count as f32).sqrt().ceil() as u32;
-    let rows = (capture.frame_count as u32).div_ceil(columns);
+    let frame_count = capture.frame_count();
+    let columns = (frame_count as f32).sqrt().ceil() as u32;
+    let rows = (frame_count as u32).div_ceil(columns);
     let mut sheet = RgbaImage::from_pixel(
         VIEW_WIDTH * columns,
         VIEW_HEIGHT * rows,
@@ -683,7 +949,7 @@ fn write_contact_sheet(
     let reason = effect_runtime.map_or(runtime.reason.as_str(), |status| status.reason.as_str());
     let manifest = format!(
         "# Aestra visual capture\n\n- Frames: {}\n- Frame size: {} x {}\n- Contact sheet: {} columns x {} rows\n- Seed: `{:#018x}`\n- Sampling: exact {} Hz simulation frames {:?}\n- Requested backend: {:?}\n- Active backend: {}\n- Selection reason: {}\n- Adapter: {} ({}, {})\n- Driver: {}\n- Physical GPU particle capacity: {}\n- Configured GPU particle budget: {}\n- Effective GPU particle budget: {}\n",
-        capture.frame_count,
+        frame_count,
         VIEW_WIDTH,
         VIEW_HEIGHT,
         columns,
@@ -728,7 +994,7 @@ fn finish_capture(
                 reference.join("visual-reference.md"),
                 format!(
                     "# Aestra visual reference\n\n- Frames: {}\n- Frame size: {} x {}\n- Seed: `{:#018x}`\n- Scene: effect only, fixed camera and background\n- Sampling: exact {} Hz simulation frames {:?}\n- Backend: {}\n- Adapter: {} ({})\n",
-                    capture.frame_count,
+                    capture.frame_count(),
                     VIEW_WIDTH,
                     VIEW_HEIGHT,
                     capture.seed,
@@ -744,7 +1010,7 @@ fn finish_capture(
             Ok(())
         }
         CaptureMode::Compare { reference, output } => {
-            let report = compare_capture(reference, output, capture.frame_count)?;
+            let report = compare_capture(reference, output, capture.frame_count())?;
             println!(
                 "visual regression passed: {} frames, worst RMSE {:.4}",
                 report.frames.len(),
@@ -760,7 +1026,7 @@ fn finish_capture(
             validate_editor_viewport_smoke(&capture.images)?;
             println!(
                 "editor viewport GPU smoke passed: {} frames written to {}",
-                capture.frame_count,
+                capture.frame_count(),
                 output.display()
             );
             Ok(())
@@ -812,6 +1078,33 @@ mod tests {
             .map(|index| capture_frame(120, index, 4))
             .collect::<Vec<_>>();
         assert_eq!(frames, vec![15, 45, 75, 105]);
+    }
+
+    #[test]
+    fn explicit_capture_frames_are_preserved_exactly() {
+        let frames =
+            resolve_sample_frames(&CaptureSampling::ExplicitFrames(vec![0, 17, 120]), 120).unwrap();
+        assert_eq!(frames, vec![0, 17, 120]);
+    }
+
+    #[test]
+    fn capture_times_resolve_to_deterministic_simulation_frames() {
+        let frames =
+            resolve_sample_frames(&CaptureSampling::ExplicitTimes(vec![0.0, 0.5, 1.25]), 120)
+                .unwrap();
+        assert_eq!(frames, vec![0, 30, 75]);
+    }
+
+    #[test]
+    fn explicit_capture_sampling_rejects_ambiguous_or_out_of_range_frames() {
+        assert!(
+            resolve_sample_frames(&CaptureSampling::ExplicitTimes(vec![0.01, 0.02]), 120,).is_err()
+        );
+        assert!(
+            resolve_sample_frames(&CaptureSampling::ExplicitFrames(vec![0, 121]), 120).is_err()
+        );
+        assert!(parse_sample_frames("10,2").is_err());
+        assert!(parse_sample_times("0,nan").is_err());
     }
 
     #[test]

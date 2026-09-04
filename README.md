@@ -78,7 +78,23 @@ Capture evenly spaced, exact 60 Hz simulation frames plus a single AI-friendly c
 cargo run -p aestra-viewer -- --capture captures/prism-bloom --frames 9
 ```
 
-The capture directory receives numbered PNG frames, `contact-sheet.png`, and `capture-manifest.md`. The manifest records every sampled frame index and seed. In interactive mode, use Left/Right to step exact frames, `[`/`]` to change the seed, and `S` for a single screenshot. Pass `--seed <decimal-or-hex>` to reproduce a particular run.
+The capture directory receives numbered PNG frames, `contact-sheet.png`,
+`capture-manifest.md`, and a versioned `preview-report.json` for automation. Select
+specific simulation frames or times when a visual check needs important boundaries rather
+than evenly spaced samples:
+
+```powershell
+cargo run -p aestra-viewer -- --capture captures/prism-bloom --sample-frames 0,6,30,60
+cargo run -p aestra-viewer -- --capture captures/prism-bloom --sample-times 0,0.1,0.5,1
+```
+
+Explicit values must be strictly increasing, remain inside the effect lifetime, and resolve
+to distinct 60 Hz frames. The JSON report records artifact paths, exact frame/time pairs,
+compiler diagnostics and optimization counts, material-program fingerprints, runtime/backend
+selection, adapter limits, and measured or estimated effect metrics. Compilation and capture
+failures return a non-zero exit code and write a failed report whenever an output directory is
+available. In interactive mode, use Left/Right to step exact frames, `[`/`]` to change the seed,
+and `S` for a single screenshot. Pass `--seed <decimal-or-hex>` to reproduce a particular run.
 The manifest records the requested and selected backend, fallback reason, adapter,
 driver, physical capacity, and configured particle budget. Use `--backend
 auto|gpu|gpu-readback|cpu` to exercise a specific policy, or

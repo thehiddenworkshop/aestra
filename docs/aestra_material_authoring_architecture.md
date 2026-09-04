@@ -2423,6 +2423,17 @@ Experts can implement unsupported shader algorithms while retaining Aestra param
 
 ## Milestone 18 — AI Preview Feedback Loop
 
+### Implementation Status
+
+The deterministic preview contract is implemented as the first milestone slice. The standalone
+viewer accepts evenly spaced samples, explicit 60 Hz frame indices, or explicit times resolved to
+unique simulation frames. Every capture writes numbered PNGs, a contact sheet, the existing human
+manifest, and a versioned JSON report suitable for tools. That report includes exact frame/time
+pairs, compiler diagnostics and optimization counts, semantic material fingerprints, backend and
+compatibility decisions, adapter budgets, and measured/estimated runtime metrics with provenance.
+Preparation and capture failures return a non-zero status and write the same report envelope when
+an output directory is known. The edit/analyze/refine orchestrator remains outstanding.
+
 ### Goal
 
 Let AI evaluate its own visual modifications.
