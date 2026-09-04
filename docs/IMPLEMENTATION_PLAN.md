@@ -371,8 +371,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Nodes now support clear Ctrl/Shift multi-selection, contextual and keyboard duplication/deletion,
   stable-ID duplication with internal links preserved, and compiler-validated bypass deletion.
   Connections can be selected directly and Delete resets them to a typed default through the same
-  semantic history. Remaining node kinds and graph gestures are still required before this
-  milestone is complete.
+  semantic history. Socket dragging is bidirectional: dragging an input temporarily detaches its
+  existing wire for direct reconnection, while dropping either endpoint on empty space opens a
+  type-filtered palette. Input-originated creation wraps and reconnects the requested edge;
+  output-originated creation uses the semantic `CreateMaterialExpression` command to build a typed
+  downstream node without modifying unrelated consumers. Remaining node kinds and graph gestures
+  are still required before this milestone is complete.
 - [ ] **Material 14 — graph layout metadata.** Persist optional layout separately from semantics.
 
 ### Phase E — reuse and extensibility

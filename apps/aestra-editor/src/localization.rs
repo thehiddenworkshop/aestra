@@ -97,6 +97,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "material-graph-frame-selection",
     "material-graph-collapse-node",
     "material-graph-expand-node",
+    "material-graph-show-preview",
+    "material-graph-hide-preview",
     "material-graph-empty",
     "material-graph-empty-description",
     "material-graph-valid",

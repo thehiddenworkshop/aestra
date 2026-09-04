@@ -108,6 +108,7 @@ fn tool_error(error: MaterialToolError) -> MaterialApiError {
             ValidationReport::default(),
         ),
         MaterialToolError::IncompatibleWrap { .. }
+        | MaterialToolError::IncompatibleSource { .. }
         | MaterialToolError::ExpressionCannotBeDeleted(_)
         | MaterialToolError::ConnectionCannotBeDisconnected(_) => (
             MaterialApiErrorCode::IncompatibleEdit,

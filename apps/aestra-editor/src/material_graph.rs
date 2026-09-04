@@ -9,10 +9,13 @@ use crate::{
         },
         icon::load_svg_icon,
         node_graph::{
-            FeathersGraphNode, FeathersGraphViewport, FeathersGraphWireLayer, GraphFrameAction,
-            GraphFrameTarget, GraphNodeProps, GraphPortProps, GraphSocketSide, GraphViewportMemory,
-            GraphViewportProps, GraphWireMaterial, NODE_HEADER_HEIGHT, NODE_WIDTH, PORT_ROW_HEIGHT,
-            spawn_graph_frame_button, spawn_graph_node, spawn_graph_port, spawn_graph_viewport,
+            FeathersGraphNode, FeathersGraphNodePreviewToggle, FeathersGraphViewport,
+            FeathersGraphWireLayer, GraphFrameAction, GraphFrameTarget,
+            GraphNodePreviewToggleProps, GraphNodeProps, GraphPortProps, GraphSocketSide,
+            GraphViewportMemory, GraphViewportProps, GraphWireMaterial, NODE_HEADER_HEIGHT,
+            NODE_WIDTH, PORT_ROW_HEIGHT, spawn_graph_frame_button, spawn_graph_node,
+            spawn_graph_node_preview, spawn_graph_node_preview_toggle, spawn_graph_port,
+            spawn_graph_viewport,
         },
         panel::spawn_panel_empty_state,
     },
@@ -29,11 +32,18 @@ use aestra_compiler::{
     MaterialGraphOutputKind, MaterialGraphProjection, MaterialStackModifierKind,
 };
 use aestra_core::{
-    MaterialExpressionId, MaterialProgramId,
-    material::{MaterialExpressionDomain, MaterialValueType},
+    MaterialExpressionId, MaterialId, MaterialProgramId,
+    material::{
+        MaterialExpressionDomain, MaterialExpressionKind, MaterialInput, MaterialInstance,
+        MaterialParameterValue, MaterialProgram, MaterialValue, MaterialValueType,
+        MaterialVectorComponent,
+    },
 };
 use bevy::{
+    asset::RenderAssetUsages,
+    image::ImageSampler,
     input_focus::{FocusCause, InputFocus},
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     ui_render::ui_material::MaterialNode,
     ui_widgets::Activate,
 };
@@ -51,6 +61,7 @@ impl Plugin for EditorMaterialGraphPlugin {
         app.init_resource::<MaterialGraphGesture>()
             .init_resource::<MaterialGraphPaletteState>()
             .init_resource::<MaterialGraphSelectionState>()
+            .init_resource::<MaterialGraphPreviewState>()
             .add_observer(begin_material_connection_drag)
             .add_observer(update_material_connection_drag)
             .add_observer(finish_material_connection_drag)
@@ -59,6 +70,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .add_observer(open_material_graph_palette)
             .add_observer(open_material_graph_node_menu)
             .add_observer(select_material_graph_canvas)
+            .add_observer(stop_material_graph_preview_toggle_click)
             .add_observer(update_material_graph_palette_search)
             .add_observer(queue_material_graph_menu_action_activation)
             .add_systems(
@@ -71,6 +83,8 @@ impl Plugin for EditorMaterialGraphPlugin {
                     handle_material_graph_context_actions,
                     material_graph_keyboard_input,
                     handle_material_graph_actions,
+                    handle_material_graph_preview_actions,
+                    rasterize_material_graph_previews,
                 ),
             )
             .add_systems(
@@ -95,6 +109,7 @@ fn queue_material_graph_menu_action_activation(
             Or<(
                 With<MaterialGraphPaletteAction>,
                 With<MaterialGraphContextAction>,
+                With<MaterialGraphPreviewToggle>,
             )>,
         ),
     >,
@@ -127,6 +142,13 @@ struct MaterialGraphPaletteOpen {
     menu_position: Vec2,
     graph_position: Vec2,
     graph_key: String,
+    connection: Option<MaterialGraphPaletteConnection>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum MaterialGraphPaletteConnection {
+    FromOutput(MaterialExpressionId),
+    FromInput(MaterialConnectionTarget),
 }
 
 #[derive(Debug, Clone)]
@@ -180,6 +202,55 @@ impl MaterialGraphSelectionState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum MaterialGraphPreviewTarget {
+    Expression(MaterialExpressionId),
+    Output,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct MaterialGraphPreviewState {
+    visible: BTreeSet<(MaterialProgramId, MaterialGraphPreviewTarget)>,
+    cache: BTreeMap<(MaterialProgramId, MaterialGraphPreviewTarget), MaterialGraphPreviewCache>,
+}
+
+impl MaterialGraphPreviewState {
+    fn is_visible(&self, program: MaterialProgramId, target: MaterialGraphPreviewTarget) -> bool {
+        self.visible.contains(&(program, target))
+    }
+
+    fn toggle(&mut self, program: MaterialProgramId, target: MaterialGraphPreviewTarget) -> bool {
+        let key = (program, target);
+        if self.visible.remove(&key) {
+            false
+        } else {
+            self.visible.insert(key);
+            true
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MaterialGraphPreviewCache {
+    instance: MaterialId,
+    document_revision: u64,
+    image: Handle<Image>,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct MaterialGraphPreviewToggle {
+    program: MaterialProgramId,
+    target: MaterialGraphPreviewTarget,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct MaterialGraphPreviewRaster {
+    program: MaterialProgramId,
+    instance: MaterialId,
+    target: MaterialGraphPreviewTarget,
+    value_type: Option<MaterialValueType>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MaterialGraphConnection {
     program: MaterialProgramId,
@@ -226,6 +297,7 @@ struct MaterialGraphPaletteAction {
 enum MaterialGraphPaletteEdit {
     Insert(MaterialInsertionPoint),
     Wrap(MaterialConnectionTarget),
+    CreateFromSource(MaterialExpressionId),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -279,9 +351,9 @@ enum MaterialGraphGesture {
     Idle,
     Connecting {
         program: MaterialProgramId,
-        source: MaterialExpressionId,
+        origin: MaterialGraphSocketKind,
         cursor: Vec2,
-        snap_target: Option<MaterialConnectionTarget>,
+        snap: Option<MaterialGraphSocketKind>,
     },
 }
 
@@ -393,6 +465,7 @@ fn open_material_graph_palette(
                 menu_position,
                 graph_position: viewport.unproject_viewport_point(menu_position),
                 graph_key: material_graph_view_key(marker.program),
+                connection: None,
             });
             palette.node_menu = None;
             palette.query.clear();
@@ -554,6 +627,46 @@ fn select_material_graph_canvas(
     click.propagate(false);
 }
 
+fn stop_material_graph_preview_toggle_click(
+    mut click: On<Pointer<Click>>,
+    toggles: Query<(), With<MaterialGraphPreviewToggle>>,
+) {
+    if click.button == PointerButton::Primary && toggles.contains(click.event_target()) {
+        click.propagate(false);
+    }
+}
+
+fn handle_material_graph_preview_actions(
+    mut commands: Commands,
+    actions: Query<
+        (
+            Entity,
+            &Interaction,
+            &MaterialGraphPreviewToggle,
+            Option<&PendingFeathersActivation>,
+        ),
+        (
+            Changed<Interaction>,
+            With<FeathersActionButton>,
+            With<FeathersGraphNodePreviewToggle>,
+        ),
+    >,
+    mut previews: ResMut<MaterialGraphPreviewState>,
+    mut session: ResMut<EditorSession>,
+) {
+    for (entity, interaction, toggle, pending) in &actions {
+        if *interaction != Interaction::Pressed || pending.is_none() {
+            continue;
+        }
+        commands
+            .entity(entity)
+            .remove::<PendingFeathersActivation>()
+            .insert(Interaction::None);
+        previews.toggle(toggle.program, toggle.target);
+        session.ui_revision += 1;
+    }
+}
+
 fn open_material_graph_palette_from_keyboard(
     keys: Res<ButtonInput<KeyCode>>,
     viewports: Query<(
@@ -583,6 +696,7 @@ fn open_material_graph_palette_from_keyboard(
         menu_position,
         graph_position: viewport.unproject_viewport_point(menu_position),
         graph_key: material_graph_view_key(marker.program),
+        connection: None,
     });
     palette.node_menu = None;
     palette.query.clear();
@@ -656,15 +770,12 @@ fn begin_material_connection_drag(
     let Ok((socket, computed)) = sockets.get(event.event_target()) else {
         return;
     };
-    let MaterialGraphSocketKind::ExpressionOutput(source) = socket.kind else {
-        return;
-    };
     let cursor = event.pointer_location.position / computed.inverse_scale_factor;
     *gesture = MaterialGraphGesture::Connecting {
         program: socket.program,
-        source,
+        origin: socket.kind,
         cursor,
-        snap_target: None,
+        snap: None,
     };
     if let Some((viewport, _)) = viewports
         .iter()
@@ -715,7 +826,14 @@ fn finish_material_connection_drag(
     mut event: On<Pointer<DragEnd>>,
     sockets: Query<(), With<MaterialGraphSocket>>,
     ghosts: Query<Entity, With<MaterialGraphGhostWire>>,
+    viewports: Query<(
+        &MaterialGraphViewport,
+        &FeathersGraphViewport,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
     mut gesture: ResMut<MaterialGraphGesture>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
     mut session: ResMut<EditorSession>,
     mut catalog: ResMut<ProjectEffectCatalog>,
     mut material_history: ResMut<MaterialProgramEditHistory>,
@@ -728,8 +846,8 @@ fn finish_material_connection_drag(
     let previous = std::mem::replace(&mut *gesture, MaterialGraphGesture::Idle);
     let MaterialGraphGesture::Connecting {
         program,
-        source,
-        snap_target,
+        origin,
+        snap,
         ..
     } = previous
     else {
@@ -740,7 +858,7 @@ fn finish_material_connection_drag(
             entity.despawn();
         }
     }
-    if let Some(target) = snap_target {
+    if let Some((source, target)) = snap.and_then(|snap| connection_endpoints(origin, snap)) {
         apply_material_connection(
             &mut session,
             &mut catalog,
@@ -750,8 +868,48 @@ fn finish_material_connection_drag(
             source,
             target,
         );
+    } else if let Some((_, viewport, computed, transform)) = viewports
+        .iter()
+        .find(|(marker, _, _, _)| marker.program == program)
+    {
+        let menu_position =
+            pointer_position_in_node(event.pointer_location.position, computed, transform);
+        palette.open = Some(MaterialGraphPaletteOpen {
+            program,
+            menu_position,
+            graph_position: viewport.unproject_viewport_point(menu_position),
+            graph_key: material_graph_view_key(program),
+            connection: Some(match origin {
+                MaterialGraphSocketKind::ExpressionOutput(source) => {
+                    MaterialGraphPaletteConnection::FromOutput(source)
+                }
+                MaterialGraphSocketKind::ConnectionInput(target) => {
+                    MaterialGraphPaletteConnection::FromInput(target)
+                }
+            }),
+        });
+        palette.node_menu = None;
+        palette.query.clear();
+        session.ui_revision += 1;
     }
     event.propagate(false);
+}
+
+fn connection_endpoints(
+    first: MaterialGraphSocketKind,
+    second: MaterialGraphSocketKind,
+) -> Option<(MaterialExpressionId, MaterialConnectionTarget)> {
+    match (first, second) {
+        (
+            MaterialGraphSocketKind::ExpressionOutput(source),
+            MaterialGraphSocketKind::ConnectionInput(target),
+        )
+        | (
+            MaterialGraphSocketKind::ConnectionInput(target),
+            MaterialGraphSocketKind::ExpressionOutput(source),
+        ) => Some((source, target)),
+        _ => None,
+    }
 }
 
 fn stop_material_socket_click(
@@ -772,6 +930,11 @@ fn apply_material_connection(
     source: MaterialExpressionId,
     target: MaterialConnectionTarget,
 ) {
+    if current_material_connection_source(session, catalog, program, target) == Some(source) {
+        session.status = "Material connection unchanged".into();
+        session.ui_revision += 1;
+        return;
+    }
     let result = apply_material_tool_command(
         session,
         catalog,
@@ -792,6 +955,22 @@ fn apply_material_connection(
         Err(error) => session.status = format!("Material connection failed: {error}"),
     }
     session.ui_revision += 1;
+}
+
+fn current_material_connection_source(
+    session: &EditorSession,
+    catalog: &ProjectEffectCatalog,
+    program: MaterialProgramId,
+    target: MaterialConnectionTarget,
+) -> Option<MaterialExpressionId> {
+    let programs = catalog.material_programs_for_effect(&session.effect).ok()?;
+    let program = programs.iter().find(|candidate| candidate.id == program)?;
+    MaterialCompiler
+        .project_graph(program, None)
+        .edges
+        .into_iter()
+        .find(|edge| edge_target(&edge.target) == Some(target))
+        .map(|edge| edge.source)
 }
 
 fn handle_material_graph_palette_actions(
@@ -835,6 +1014,13 @@ fn handle_material_graph_palette_actions(
                 target,
                 kind: action.kind,
             },
+            MaterialGraphPaletteEdit::CreateFromSource(source) => {
+                MaterialToolCommand::CreateMaterialExpression {
+                    program: action.program,
+                    source,
+                    kind: action.kind,
+                }
+            }
         };
         let result = apply_material_tool_command(
             &mut session,
@@ -1210,6 +1396,13 @@ fn update_material_graph_wires(
         });
     }
 
+    let detached_target = match &*gesture {
+        MaterialGraphGesture::Connecting {
+            origin: MaterialGraphSocketKind::ConnectionInput(target),
+            ..
+        } => Some(*target),
+        _ => None,
+    };
     for (wire, material) in &wires {
         let Some(start_graph) = socket_graph_position(
             &socket_positions,
@@ -1239,34 +1432,39 @@ fn update_material_graph_wires(
                 source: wire.source,
                 target: wire.target,
             });
+        let detached = detached_target == Some(wire.target);
         update_wire_material(
             &mut materials,
             &material.0,
             start,
             end,
-            if selected {
+            if detached {
+                Vec4::ZERO
+            } else if selected {
                 Vec4::new(0.70, 0.50, 1.0, 1.0)
             } else {
                 wire.color
             },
-            if selected { 4.0 } else { 2.0 },
+            if detached {
+                0.0
+            } else if selected {
+                4.0
+            } else {
+                2.0
+            },
         );
     }
 
     let MaterialGraphGesture::Connecting {
         program,
-        source,
+        origin,
         cursor,
-        snap_target,
+        snap,
     } = &mut *gesture
     else {
         return;
     };
-    let Some(start_graph) = socket_graph_position(
-        &socket_positions,
-        *program,
-        MaterialGraphSocketKind::ExpressionOutput(*source),
-    ) else {
+    let Some(origin_graph) = socket_graph_position(&socket_positions, *program, *origin) else {
         return;
     };
 
@@ -1274,14 +1472,14 @@ fn update_material_graph_wires(
         .material_programs_for_effect(&session.effect)
         .ok()
         .map(|programs| MaterialAuthoringDocument::new(session.effect.clone(), programs));
-    let mut nearest: Option<(f32, MaterialConnectionTarget, Vec2)> = None;
+    let mut nearest: Option<(f32, MaterialGraphSocketKind, Vec2)> = None;
     for socket in &socket_positions {
-        let MaterialGraphSocketKind::ConnectionInput(target) = socket.kind else {
-            continue;
-        };
         if socket.program != *program {
             continue;
         }
+        let Some((source, target)) = connection_endpoints(*origin, socket.kind) else {
+            continue;
+        };
         let distance = socket.world.distance(*cursor);
         if distance > SNAP_RADIUS
             || nearest
@@ -1295,33 +1493,37 @@ fn update_material_graph_wires(
                 document,
                 MaterialToolCommand::ConnectMaterialExpression {
                     program: *program,
-                    source: *source,
+                    source,
                     target,
                 },
             )
             .is_ok()
         });
         if valid {
-            nearest = Some((distance, target, socket.graph));
+            nearest = Some((distance, socket.kind, socket.graph));
         }
     }
-    *snap_target = nearest.map(|(_, target, _)| target);
+    *snap = nearest.map(|(_, endpoint, _)| endpoint);
     let Some((_, viewport, computed, transform)) = viewports
         .iter()
         .find(|(marker, _, _, _)| marker.program == *program)
     else {
         return;
     };
-    let start = viewport.project_graph_point(start_graph);
-    let end = nearest.map_or_else(
-        || viewport_local_position(computed, transform, *cursor),
-        |(_, _, graph)| viewport.project_graph_point(graph),
-    );
+    let origin_position = viewport.project_graph_point(origin_graph);
+    let cursor = viewport_local_position(computed, transform, *cursor);
+    let snapped = nearest.map(|(_, _, graph)| viewport.project_graph_point(graph));
+    let (start, end) = match *origin {
+        MaterialGraphSocketKind::ExpressionOutput(_) => {
+            (origin_position, snapped.unwrap_or(cursor))
+        }
+        MaterialGraphSocketKind::ConnectionInput(_) => (snapped.unwrap_or(cursor), origin_position),
+    };
     for (ghost, material) in &ghosts {
         if ghost.program != *program {
             continue;
         }
-        let color = if snap_target.is_some() {
+        let color = if snap.is_some() {
             Vec4::new(0.45, 1.0, 0.72, 1.0)
         } else {
             Vec4::new(0.76, 0.70, 0.92, 0.72)
@@ -1439,12 +1641,808 @@ fn update_wire_material(
     }
 }
 
+const MATERIAL_PREVIEW_WIDTH: u32 = 208;
+const MATERIAL_PREVIEW_HEIGHT: u32 = 82;
+
+fn rasterize_material_graph_previews(
+    mut commands: Commands,
+    requests: Query<(Entity, &MaterialGraphPreviewRaster), Added<MaterialGraphPreviewRaster>>,
+    session: Res<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
+    mut previews: ResMut<MaterialGraphPreviewState>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if requests.is_empty() {
+        return;
+    }
+    let Ok(programs) = catalog.material_programs_for_effect(&session.effect) else {
+        return;
+    };
+    for (entity, request) in &requests {
+        let key = (request.program, request.target);
+        if let Some(cached) = previews.cache.get(&key)
+            && cached.instance == request.instance
+            && cached.document_revision == session.document_revision()
+        {
+            commands
+                .entity(entity)
+                .insert(ImageNode::new(cached.image.clone()).with_mode(NodeImageMode::Stretch));
+            continue;
+        }
+        let Some(program) = programs
+            .iter()
+            .find(|program| program.id == request.program)
+        else {
+            continue;
+        };
+        let instance = session
+            .effect
+            .material_instances
+            .iter()
+            .find(|instance| instance.id == request.instance);
+        let image = images.add(render_material_graph_preview(
+            program,
+            instance,
+            request.target,
+            request.value_type,
+        ));
+        previews.cache.insert(
+            key,
+            MaterialGraphPreviewCache {
+                instance: request.instance,
+                document_revision: session.document_revision(),
+                image: image.clone(),
+            },
+        );
+        commands
+            .entity(entity)
+            .insert(ImageNode::new(image).with_mode(NodeImageMode::Stretch));
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PreviewValue {
+    Numeric([f32; 4], usize),
+    Bool(bool),
+    Texture,
+}
+
+impl PreviewValue {
+    fn scalar(value: f32) -> Self {
+        Self::Numeric([value, value, value, value], 1)
+    }
+
+    fn numeric(self) -> Option<([f32; 4], usize)> {
+        match self {
+            Self::Numeric(value, lanes) => Some((value, lanes)),
+            Self::Bool(value) => Some(([if value { 1.0 } else { 0.0 }; 4], 1)),
+            Self::Texture => None,
+        }
+    }
+
+    fn boolean(self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(value),
+            Self::Numeric(value, _) => Some(value[0] >= 0.5),
+            Self::Texture => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MaterialPreviewContext {
+    uv: Vec2,
+    normal: Vec3,
+}
+
+struct MaterialPreviewEvaluator<'a> {
+    program: &'a MaterialProgram,
+    instance: Option<&'a MaterialInstance>,
+}
+
+impl MaterialPreviewEvaluator<'_> {
+    fn evaluate(
+        &self,
+        expression: MaterialExpressionId,
+        context: MaterialPreviewContext,
+    ) -> Option<PreviewValue> {
+        self.evaluate_inner(
+            expression,
+            context,
+            &mut BTreeMap::new(),
+            &mut BTreeSet::new(),
+        )
+    }
+
+    fn evaluate_inner(
+        &self,
+        expression: MaterialExpressionId,
+        context: MaterialPreviewContext,
+        memo: &mut BTreeMap<MaterialExpressionId, PreviewValue>,
+        visiting: &mut BTreeSet<MaterialExpressionId>,
+    ) -> Option<PreviewValue> {
+        if let Some(value) = memo.get(&expression) {
+            return Some(*value);
+        }
+        if !visiting.insert(expression) {
+            return None;
+        }
+        let expression_value = self
+            .program
+            .expressions
+            .iter()
+            .find(|candidate| candidate.id == expression)?;
+        if self.program.disabled_expressions.contains(&expression)
+            && let Some(source) = expression_value.kind.bypass_input()
+        {
+            visiting.remove(&expression);
+            return self.evaluate_inner(source, context, memo, visiting);
+        }
+        let mut read = |source| self.evaluate_inner(source, context, memo, visiting);
+        let value = match &expression_value.kind {
+            MaterialExpressionKind::Constant(value) => preview_value(value),
+            MaterialExpressionKind::Input(input) => Some(preview_input(*input, context)),
+            MaterialExpressionKind::Parameter(parameter) => self.parameter(*parameter),
+            MaterialExpressionKind::Add(left, right) => {
+                preview_binary(read(*left)?, read(*right)?, |left, right| left + right)
+            }
+            MaterialExpressionKind::Subtract(left, right) => {
+                preview_binary(read(*left)?, read(*right)?, |left, right| left - right)
+            }
+            MaterialExpressionKind::Multiply(left, right) => {
+                preview_binary(read(*left)?, read(*right)?, |left, right| left * right)
+            }
+            MaterialExpressionKind::Divide(left, right) => {
+                preview_binary(read(*left)?, read(*right)?, |left, right| {
+                    if right.abs() <= f32::EPSILON {
+                        0.0
+                    } else {
+                        left / right
+                    }
+                })
+            }
+            MaterialExpressionKind::Lerp { start, end, factor } => {
+                let factor = read(*factor)?.numeric()?.0;
+                preview_ternary_numeric(read(*start)?, read(*end)?, |start, end, index| {
+                    start + (end - start) * factor[index]
+                })
+            }
+            MaterialExpressionKind::Clamp { value, min, max } => {
+                let min = read(*min)?.numeric()?.0;
+                let max = read(*max)?.numeric()?.0;
+                preview_unary_numeric(read(*value)?, |value, index| {
+                    value.clamp(min[index].min(max[index]), min[index].max(max[index]))
+                })
+            }
+            MaterialExpressionKind::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            } => {
+                let input_min = read(*input_min)?.numeric()?.0;
+                let input_max = read(*input_max)?.numeric()?.0;
+                let output_min = read(*output_min)?.numeric()?.0;
+                let output_max = read(*output_max)?.numeric()?.0;
+                preview_unary_numeric(read(*value)?, |value, index| {
+                    let denominator = input_max[index] - input_min[index];
+                    if denominator.abs() <= f32::EPSILON {
+                        output_min[index]
+                    } else {
+                        let t = (value - input_min[index]) / denominator;
+                        output_min[index] + (output_max[index] - output_min[index]) * t
+                    }
+                })
+            }
+            MaterialExpressionKind::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            } => {
+                let edge_min = read(*edge_min)?.numeric()?.0;
+                let edge_max = read(*edge_max)?.numeric()?.0;
+                preview_unary_numeric(read(*value)?, |value, index| {
+                    let denominator = edge_max[index] - edge_min[index];
+                    if denominator.abs() <= f32::EPSILON {
+                        if value >= edge_min[index] { 1.0 } else { 0.0 }
+                    } else {
+                        let t = ((value - edge_min[index]) / denominator).clamp(0.0, 1.0);
+                        t * t * (3.0 - 2.0 * t)
+                    }
+                })
+            }
+            MaterialExpressionKind::Fresnel {
+                normal,
+                view,
+                power,
+            } => {
+                let normal = preview_vec3(read(*normal)?)?.normalize_or_zero();
+                let view = preview_vec3(read(*view)?)?.normalize_or_zero();
+                let power = read(*power)?.numeric()?.0[0].max(0.0);
+                Some(PreviewValue::scalar(
+                    (1.0 - normal.dot(view).clamp(0.0, 1.0)).powf(power),
+                ))
+            }
+            MaterialExpressionKind::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            } => {
+                let uv = preview_vec2(read(*uv)?)?;
+                let center = preview_vec2(read(*center)?)?;
+                let radius = read(*radius)?.numeric()?.0[0].max(0.0);
+                let softness = read(*softness)?.numeric()?.0[0].max(0.0);
+                let invert = read(*invert)?.boolean()?;
+                let distance = uv.distance(center);
+                let mask = if softness <= f32::EPSILON {
+                    if distance <= radius { 1.0 } else { 0.0 }
+                } else {
+                    let t = ((radius - distance) / softness).clamp(0.0, 1.0);
+                    t * t * (3.0 - 2.0 * t)
+                };
+                Some(PreviewValue::scalar(if invert { 1.0 - mask } else { mask }))
+            }
+            MaterialExpressionKind::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => {
+                let source = read(*source)?.numeric()?.0[0];
+                let threshold = read(*threshold)?.numeric()?.0[0];
+                let edge = read(*edge_width)?.numeric()?.0[0].max(0.0);
+                let invert = read(*invert)?.boolean()?;
+                let mask = if edge <= f32::EPSILON {
+                    if source >= threshold { 1.0 } else { 0.0 }
+                } else {
+                    ((source - threshold) / edge + 0.5).clamp(0.0, 1.0)
+                };
+                Some(PreviewValue::scalar(if invert { 1.0 - mask } else { mask }))
+            }
+            MaterialExpressionKind::DissolveEdge {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => {
+                let source = read(*source)?.numeric()?.0[0];
+                let threshold = read(*threshold)?.numeric()?.0[0];
+                let edge = read(*edge_width)?.numeric()?.0[0].max(0.0);
+                let invert = read(*invert)?.boolean()?;
+                let distance = if invert {
+                    threshold - source
+                } else {
+                    source - threshold
+                };
+                Some(PreviewValue::scalar(if edge <= f32::EPSILON {
+                    0.0
+                } else {
+                    (1.0 - distance.abs() / edge).clamp(0.0, 1.0)
+                }))
+            }
+            MaterialExpressionKind::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => Some(PreviewValue::scalar(preview_depth_fade(
+                read(*scene_depth)?,
+                read(*pixel_depth)?,
+                read(*fade_distance)?,
+                read(*invert)?,
+            )?)),
+            MaterialExpressionKind::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => {
+                let alpha = read(*alpha)?.numeric()?.0[0];
+                Some(PreviewValue::scalar(
+                    alpha
+                        * preview_depth_fade(
+                            read(*scene_depth)?,
+                            read(*pixel_depth)?,
+                            read(*fade_distance)?,
+                            read(*invert)?,
+                        )?,
+                ))
+            }
+            MaterialExpressionKind::PanUv { uv, speed, time } => {
+                let uv = preview_vec2(read(*uv)?)?;
+                let speed = preview_vec2(read(*speed)?)?;
+                let time = read(*time)?.numeric()?.0[0];
+                Some(preview_vec2_value(uv + speed * time))
+            }
+            MaterialExpressionKind::RotateUv { uv, center, angle } => {
+                let uv = preview_vec2(read(*uv)?)?;
+                let center = preview_vec2(read(*center)?)?;
+                let angle = read(*angle)?.numeric()?.0[0];
+                let (sin, cos) = angle.sin_cos();
+                let offset = uv - center;
+                Some(preview_vec2_value(
+                    center
+                        + Vec2::new(
+                            offset.x * cos - offset.y * sin,
+                            offset.x * sin + offset.y * cos,
+                        ),
+                ))
+            }
+            MaterialExpressionKind::ScaleUv { uv, center, scale } => {
+                let uv = preview_vec2(read(*uv)?)?;
+                let center = preview_vec2(read(*center)?)?;
+                let scale = preview_vec2(read(*scale)?)?;
+                Some(preview_vec2_value(center + (uv - center) * scale))
+            }
+            MaterialExpressionKind::SampleTexture { texture, uv } => {
+                let _texture = read(*texture)?;
+                let uv = preview_vec2(read(*uv)?)?;
+                Some(preview_checker_sample(uv))
+            }
+            MaterialExpressionKind::ExtractComponent { value, component } => {
+                let value = read(*value)?.numeric()?.0;
+                let index = match component {
+                    MaterialVectorComponent::X => 0,
+                    MaterialVectorComponent::Y => 1,
+                    MaterialVectorComponent::Z => 2,
+                    MaterialVectorComponent::W => 3,
+                };
+                Some(PreviewValue::scalar(value[index]))
+            }
+        }?;
+        visiting.remove(&expression);
+        memo.insert(expression, value);
+        Some(value)
+    }
+
+    fn parameter(&self, parameter: aestra_core::MaterialParameterId) -> Option<PreviewValue> {
+        let definition = self
+            .program
+            .parameters
+            .iter()
+            .find(|candidate| candidate.id == parameter)?;
+        let authored = self
+            .instance
+            .and_then(|instance| instance.values.get(&parameter));
+        match authored {
+            Some(MaterialParameterValue::Constant(value)) => preview_value(value),
+            Some(MaterialParameterValue::RandomRange { min, max, .. }) => {
+                preview_binary(preview_value(min)?, preview_value(max)?, |min, max| {
+                    (min + max) * 0.5
+                })
+            }
+            Some(MaterialParameterValue::EffectParameter(_))
+            | Some(MaterialParameterValue::EmitterParameter(_))
+            | None => definition.default.as_ref().and_then(preview_value),
+        }
+    }
+}
+
+fn preview_value(value: &MaterialValue) -> Option<PreviewValue> {
+    Some(match value {
+        MaterialValue::Float(value) => PreviewValue::scalar(*value),
+        MaterialValue::Vec2(value) => PreviewValue::Numeric([value[0], value[1], 0.0, 1.0], 2),
+        MaterialValue::Vec3(value) => PreviewValue::Numeric([value[0], value[1], value[2], 1.0], 3),
+        MaterialValue::Vec4(value) => PreviewValue::Numeric(*value, 4),
+        MaterialValue::ColorSrgb(value) => PreviewValue::Numeric(
+            [
+                srgb_to_linear(value[0]),
+                srgb_to_linear(value[1]),
+                srgb_to_linear(value[2]),
+                value[3],
+            ],
+            4,
+        ),
+        MaterialValue::Texture2D(_) => PreviewValue::Texture,
+        MaterialValue::Bool(value) => PreviewValue::Bool(*value),
+    })
+}
+
+fn preview_input(input: MaterialInput, context: MaterialPreviewContext) -> PreviewValue {
+    match input {
+        MaterialInput::Uv0 | MaterialInput::Uv1 | MaterialInput::ScreenUv => {
+            preview_vec2_value(context.uv)
+        }
+        MaterialInput::Normal
+        | MaterialInput::Tangent
+        | MaterialInput::CameraDirection
+        | MaterialInput::ViewDirection => PreviewValue::Numeric(
+            if input == MaterialInput::ViewDirection {
+                [0.0, 0.0, 1.0, 1.0]
+            } else {
+                [context.normal.x, context.normal.y, context.normal.z, 1.0]
+            },
+            3,
+        ),
+        MaterialInput::LocalPosition | MaterialInput::WorldPosition => PreviewValue::Numeric(
+            [context.uv.x * 2.0 - 1.0, context.uv.y * 2.0 - 1.0, 0.0, 1.0],
+            3,
+        ),
+        MaterialInput::ParticleColor => PreviewValue::Numeric(
+            [
+                context.uv.x,
+                0.25 + context.uv.y * 0.55,
+                1.0 - context.uv.x,
+                1.0,
+            ],
+            4,
+        ),
+        MaterialInput::ParticleVelocity => PreviewValue::Numeric([1.0, 0.35, 0.0, 1.0], 3),
+        MaterialInput::CameraPosition => PreviewValue::Numeric([0.0, 0.0, 3.0, 1.0], 3),
+        MaterialInput::ParticleOpacity => PreviewValue::scalar(1.0),
+        MaterialInput::ParticleNormalizedAge
+        | MaterialInput::EffectNormalizedTime
+        | MaterialInput::EmitterNormalizedTime => PreviewValue::scalar(context.uv.x),
+        MaterialInput::SceneDepth => PreviewValue::scalar(1.0 + context.uv.x),
+        MaterialInput::PixelDepth => PreviewValue::scalar(1.0),
+        MaterialInput::ParticleRandom => PreviewValue::scalar(
+            ((context.uv.x * 91.7).sin() * (context.uv.y * 43.1).cos() * 43758.547)
+                .fract()
+                .abs(),
+        ),
+        MaterialInput::ParticleAge | MaterialInput::EffectTime | MaterialInput::EmitterTime => {
+            PreviewValue::scalar(1.0)
+        }
+        MaterialInput::ParticleLifetime => PreviewValue::scalar(2.0),
+        MaterialInput::ParticleSpeed => PreviewValue::scalar(1.0),
+        MaterialInput::ParticleId => PreviewValue::scalar((context.uv.x * 8.0).floor()),
+        MaterialInput::ParticleSize => PreviewValue::scalar(1.0),
+        MaterialInput::ParticleRotation => PreviewValue::scalar(0.0),
+    }
+}
+
+fn preview_binary(
+    left: PreviewValue,
+    right: PreviewValue,
+    operation: impl Fn(f32, f32) -> f32,
+) -> Option<PreviewValue> {
+    let (left, left_lanes) = left.numeric()?;
+    let (right, right_lanes) = right.numeric()?;
+    let lanes = left_lanes.max(right_lanes);
+    Some(PreviewValue::Numeric(
+        std::array::from_fn(|index| {
+            operation(
+                left[index.min(left_lanes - 1)],
+                right[index.min(right_lanes - 1)],
+            )
+        }),
+        lanes,
+    ))
+}
+
+fn preview_unary_numeric(
+    value: PreviewValue,
+    operation: impl Fn(f32, usize) -> f32,
+) -> Option<PreviewValue> {
+    let (value, lanes) = value.numeric()?;
+    Some(PreviewValue::Numeric(
+        std::array::from_fn(|index| operation(value[index.min(lanes - 1)], index)),
+        lanes,
+    ))
+}
+
+fn preview_ternary_numeric(
+    left: PreviewValue,
+    right: PreviewValue,
+    operation: impl Fn(f32, f32, usize) -> f32,
+) -> Option<PreviewValue> {
+    let (left, left_lanes) = left.numeric()?;
+    let (right, right_lanes) = right.numeric()?;
+    let lanes = left_lanes.max(right_lanes);
+    Some(PreviewValue::Numeric(
+        std::array::from_fn(|index| {
+            operation(
+                left[index.min(left_lanes - 1)],
+                right[index.min(right_lanes - 1)],
+                index,
+            )
+        }),
+        lanes,
+    ))
+}
+
+fn preview_vec2(value: PreviewValue) -> Option<Vec2> {
+    let (value, lanes) = value.numeric()?;
+    Some(Vec2::new(value[0], value[if lanes > 1 { 1 } else { 0 }]))
+}
+
+fn preview_vec3(value: PreviewValue) -> Option<Vec3> {
+    let (value, lanes) = value.numeric()?;
+    Some(Vec3::new(
+        value[0],
+        value[if lanes > 1 { 1 } else { 0 }],
+        value[if lanes > 2 { 2 } else { 0 }],
+    ))
+}
+
+fn preview_vec2_value(value: Vec2) -> PreviewValue {
+    PreviewValue::Numeric([value.x, value.y, 0.0, 1.0], 2)
+}
+
+fn preview_checker_sample(uv: Vec2) -> PreviewValue {
+    let cell = ((uv.x * 8.0).floor() as i32 + (uv.y * 8.0).floor() as i32) & 1;
+    let color = if cell == 0 {
+        [0.08, 0.20, 0.42, 1.0]
+    } else {
+        [0.88, 0.32, 0.08, 1.0]
+    };
+    PreviewValue::Numeric(color, 4)
+}
+
+fn preview_depth_fade(
+    scene_depth: PreviewValue,
+    pixel_depth: PreviewValue,
+    fade_distance: PreviewValue,
+    invert: PreviewValue,
+) -> Option<f32> {
+    let scene = scene_depth.numeric()?.0[0];
+    let pixel = pixel_depth.numeric()?.0[0];
+    let distance = fade_distance.numeric()?.0[0];
+    let fade = if distance <= f32::EPSILON {
+        if scene >= pixel { 1.0 } else { 0.0 }
+    } else {
+        ((scene - pixel) / distance).clamp(0.0, 1.0)
+    };
+    Some(if invert.boolean()? { 1.0 - fade } else { fade })
+}
+
+fn render_material_graph_preview(
+    program: &MaterialProgram,
+    instance: Option<&MaterialInstance>,
+    target: MaterialGraphPreviewTarget,
+    value_type: Option<MaterialValueType>,
+) -> Image {
+    let evaluator = MaterialPreviewEvaluator { program, instance };
+    let uses_sphere = preview_uses_surface_normal(program, target);
+    let mut rgba =
+        Vec::with_capacity((MATERIAL_PREVIEW_WIDTH * MATERIAL_PREVIEW_HEIGHT * 4) as usize);
+    for y in 0..MATERIAL_PREVIEW_HEIGHT {
+        for x in 0..MATERIAL_PREVIEW_WIDTH {
+            let uv = Vec2::new(
+                (x as f32 + 0.5) / MATERIAL_PREVIEW_WIDTH as f32,
+                1.0 - (y as f32 + 0.5) / MATERIAL_PREVIEW_HEIGHT as f32,
+            );
+            let sphere = uv * 2.0 - Vec2::ONE;
+            let radius_squared = sphere.length_squared();
+            let inside = !uses_sphere || radius_squared <= 1.0;
+            let normal = if radius_squared <= 1.0 {
+                Vec3::new(sphere.x, sphere.y, (1.0 - radius_squared).sqrt())
+            } else {
+                Vec3::Z
+            };
+            let context = MaterialPreviewContext { uv, normal };
+            let sample = if inside {
+                match target {
+                    MaterialGraphPreviewTarget::Expression(expression) => evaluator
+                        .evaluate(expression, context)
+                        .and_then(|value| preview_rgba(value, value_type)),
+                    MaterialGraphPreviewTarget::Output => {
+                        preview_output_rgba(&evaluator, program, context)
+                    }
+                }
+            } else {
+                None
+            };
+            let checker = if ((x / 10) + (y / 10)) & 1 == 0 {
+                0.10
+            } else {
+                0.16
+            };
+            let color = sample.unwrap_or([checker, checker, checker, 1.0]);
+            let alpha = color[3].clamp(0.0, 1.0);
+            let composite = std::array::from_fn::<_, 3, _>(|channel| {
+                color[channel].clamp(0.0, 1.0) * alpha + checker * (1.0 - alpha)
+            });
+            rgba.extend_from_slice(&[
+                (composite[0] * 255.0).round() as u8,
+                (composite[1] * 255.0).round() as u8,
+                (composite[2] * 255.0).round() as u8,
+                255,
+            ]);
+        }
+    }
+    let mut image = Image::new(
+        Extent3d {
+            width: MATERIAL_PREVIEW_WIDTH,
+            height: MATERIAL_PREVIEW_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::linear();
+    image
+}
+
+fn preview_rgba(value: PreviewValue, value_type: Option<MaterialValueType>) -> Option<[f32; 4]> {
+    match value {
+        PreviewValue::Bool(value) => {
+            let value = if value { 1.0 } else { 0.0 };
+            Some([value, value, value, 1.0])
+        }
+        PreviewValue::Texture => None,
+        PreviewValue::Numeric(value, lanes) => {
+            let linear = match value_type {
+                Some(MaterialValueType::Float) | Some(MaterialValueType::Bool) => {
+                    [value[0], value[0], value[0], 1.0]
+                }
+                Some(MaterialValueType::Vec2) => [value[0], value[1], 0.0, 1.0],
+                Some(MaterialValueType::Vec3) | Some(MaterialValueType::Color) => {
+                    [value[0], value[1], value[2], 1.0]
+                }
+                Some(MaterialValueType::Vec4) => value,
+                Some(MaterialValueType::Texture2D(_)) | None => match lanes {
+                    1 => [value[0], value[0], value[0], 1.0],
+                    2 => [value[0], value[1], 0.0, 1.0],
+                    3 => [value[0], value[1], value[2], 1.0],
+                    _ => value,
+                },
+            };
+            Some([
+                linear_to_srgb(linear[0]),
+                linear_to_srgb(linear[1]),
+                linear_to_srgb(linear[2]),
+                linear[3],
+            ])
+        }
+    }
+}
+
+fn srgb_to_linear(value: f32) -> f32 {
+    if value <= 0.04045 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn linear_to_srgb(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    if value <= 0.003_130_8 {
+        value * 12.92
+    } else {
+        1.055 * value.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+fn preview_uses_surface_normal(
+    program: &MaterialProgram,
+    target: MaterialGraphPreviewTarget,
+) -> bool {
+    fn visits_normal(
+        program: &MaterialProgram,
+        expression: MaterialExpressionId,
+        visited: &mut BTreeSet<MaterialExpressionId>,
+    ) -> bool {
+        if !visited.insert(expression) {
+            return false;
+        }
+        let Some(expression) = program
+            .expressions
+            .iter()
+            .find(|candidate| candidate.id == expression)
+        else {
+            return false;
+        };
+        if matches!(
+            expression.kind,
+            MaterialExpressionKind::Input(MaterialInput::Normal | MaterialInput::ViewDirection)
+                | MaterialExpressionKind::Fresnel { .. }
+        ) {
+            return true;
+        }
+        preview_dependencies(&expression.kind)
+            .into_iter()
+            .any(|dependency| visits_normal(program, dependency, visited))
+    }
+
+    match target {
+        MaterialGraphPreviewTarget::Expression(expression) => {
+            visits_normal(program, expression, &mut BTreeSet::new())
+        }
+        MaterialGraphPreviewTarget::Output => {
+            visits_normal(program, program.outputs.color, &mut BTreeSet::new())
+                || visits_normal(program, program.outputs.alpha, &mut BTreeSet::new())
+        }
+    }
+}
+
+fn preview_output_rgba(
+    evaluator: &MaterialPreviewEvaluator<'_>,
+    program: &MaterialProgram,
+    context: MaterialPreviewContext,
+) -> Option<[f32; 4]> {
+    let color = evaluator.evaluate(program.outputs.color, context)?;
+    let mut rgba = preview_rgba(color, Some(MaterialValueType::Color))?;
+    rgba[3] = evaluator
+        .evaluate(program.outputs.alpha, context)?
+        .numeric()?
+        .0[0]
+        .clamp(0.0, 1.0);
+    Some(rgba)
+}
+
+fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
+    match kind {
+        MaterialExpressionKind::Constant(_)
+        | MaterialExpressionKind::Input(_)
+        | MaterialExpressionKind::Parameter(_) => Vec::new(),
+        MaterialExpressionKind::Add(left, right)
+        | MaterialExpressionKind::Subtract(left, right)
+        | MaterialExpressionKind::Multiply(left, right)
+        | MaterialExpressionKind::Divide(left, right) => vec![*left, *right],
+        MaterialExpressionKind::Lerp { start, end, factor } => vec![*start, *end, *factor],
+        MaterialExpressionKind::Clamp { value, min, max } => vec![*value, *min, *max],
+        MaterialExpressionKind::Remap {
+            value,
+            input_min,
+            input_max,
+            output_min,
+            output_max,
+        } => vec![*value, *input_min, *input_max, *output_min, *output_max],
+        MaterialExpressionKind::Smoothstep {
+            edge_min,
+            edge_max,
+            value,
+        } => vec![*edge_min, *edge_max, *value],
+        MaterialExpressionKind::Fresnel {
+            normal,
+            view,
+            power,
+        } => vec![*normal, *view, *power],
+        MaterialExpressionKind::RadialMask {
+            uv,
+            center,
+            radius,
+            softness,
+            invert,
+        } => vec![*uv, *center, *radius, *softness, *invert],
+        MaterialExpressionKind::Dissolve {
+            source,
+            threshold,
+            edge_width,
+            invert,
+        }
+        | MaterialExpressionKind::DissolveEdge {
+            source,
+            threshold,
+            edge_width,
+            invert,
+        } => vec![*source, *threshold, *edge_width, *invert],
+        MaterialExpressionKind::DepthFade {
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => vec![*scene_depth, *pixel_depth, *fade_distance, *invert],
+        MaterialExpressionKind::SoftParticle {
+            alpha,
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => vec![*alpha, *scene_depth, *pixel_depth, *fade_distance, *invert],
+        MaterialExpressionKind::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
+        MaterialExpressionKind::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
+        MaterialExpressionKind::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
+        MaterialExpressionKind::SampleTexture { texture, uv } => vec![*texture, *uv],
+        MaterialExpressionKind::ExtractComponent { value, .. } => vec![*value],
+    }
+}
+
 pub(crate) fn spawn_material_graph_workspace(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
     palette: &MaterialGraphPaletteState,
     selection: &MaterialGraphSelectionState,
+    previews: &MaterialGraphPreviewState,
     graph_memory: &GraphViewportMemory,
     localizer: &Localizer,
     asset_server: &AssetServer,
@@ -1460,8 +2458,16 @@ pub(crate) fn spawn_material_graph_workspace(
         })
         .with_children(|panel| {
             let projection = selected_projection(session, catalog);
-            spawn_header(panel, projection.as_ref().ok(), localizer, asset_server);
-            let Ok((_program_name, projection)) = projection else {
+            spawn_header(
+                panel,
+                projection
+                    .as_ref()
+                    .ok()
+                    .map(|(name, graph, _)| (name.as_str(), graph)),
+                localizer,
+                asset_server,
+            );
+            let Ok((_program_name, projection, instance)) = projection else {
                 spawn_panel_empty_state(
                     panel,
                     &localizer.text("material-graph-empty"),
@@ -1470,12 +2476,13 @@ pub(crate) fn spawn_material_graph_workspace(
                 );
                 return;
             };
-            let layout = layout_graph(&projection);
+            let layout = layout_graph(&projection, previews);
             let graph_key = material_graph_view_key(projection.program);
             let selection_bounds = selected_graph_node_bounds(
                 &layout,
                 &projection,
                 selection,
+                previews,
                 graph_memory,
                 &graph_key,
             );
@@ -1501,6 +2508,8 @@ pub(crate) fn spawn_material_graph_workspace(
                             node,
                             position,
                             selection,
+                            previews,
+                            instance,
                             localizer,
                             asset_server,
                             &graph_key,
@@ -1510,6 +2519,8 @@ pub(crate) fn spawn_material_graph_workspace(
                         canvas,
                         projection.program,
                         &projection.outputs,
+                        previews,
+                        instance,
                         layout.output,
                         localizer,
                         asset_server,
@@ -1535,6 +2546,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     &projection,
                     &layout,
                     open.graph_position.x,
+                    open.connection,
                 );
                 panel.commands().entity(viewport).with_children(|viewport| {
                     spawn_material_graph_palette(
@@ -1565,6 +2577,7 @@ fn material_graph_palette_options(
     projection: &MaterialGraphProjection,
     layout: &MaterialGraphLayout,
     graph_x: f32,
+    connection: Option<MaterialGraphPaletteConnection>,
 ) -> Vec<MaterialGraphPaletteOption> {
     let Ok(programs) = catalog.material_programs_for_effect(&session.effect) else {
         return Vec::new();
@@ -1582,6 +2595,7 @@ fn material_graph_palette_options(
         &report.operations,
         layout,
         graph_x,
+        connection,
     )
 }
 
@@ -1592,7 +2606,36 @@ fn select_palette_operations(
     operations: &[MaterialOperationAvailability],
     layout: &MaterialGraphLayout,
     graph_x: f32,
+    connection: Option<MaterialGraphPaletteConnection>,
 ) -> Vec<MaterialGraphPaletteOption> {
+    if let Some(connection) = connection {
+        return MaterialStackModifierKind::INSERTABLE
+            .into_iter()
+            .filter_map(|kind| {
+                let (command, edit) = match connection {
+                    MaterialGraphPaletteConnection::FromOutput(source) => (
+                        MaterialToolCommand::CreateMaterialExpression {
+                            program,
+                            source,
+                            kind,
+                        },
+                        MaterialGraphPaletteEdit::CreateFromSource(source),
+                    ),
+                    MaterialGraphPaletteConnection::FromInput(target) => (
+                        MaterialToolCommand::WrapMaterialExpression {
+                            program,
+                            target,
+                            kind,
+                        },
+                        MaterialGraphPaletteEdit::Wrap(target),
+                    ),
+                };
+                MaterialToolPlanner::plan(document, command)
+                    .is_ok()
+                    .then_some(MaterialGraphPaletteOption { kind, edit })
+            })
+            .collect();
+    }
     MaterialStackModifierKind::INSERTABLE
         .into_iter()
         .filter_map(|kind| {
@@ -1795,7 +2838,7 @@ fn material_graph_node_category(kind: MaterialStackModifierKind) -> &'static str
 fn selected_projection(
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
-) -> Result<(String, MaterialGraphProjection), String> {
+) -> Result<(String, MaterialGraphProjection, MaterialId), String> {
     let selected_renderer = match session.selection.primary {
         SemanticTarget::Renderer(id) => session
             .effect
@@ -1838,12 +2881,13 @@ fn selected_projection(
     Ok((
         program.name.clone(),
         compiler.project_graph(program, ir.as_ref()),
+        instance.id,
     ))
 }
 
 fn spawn_header(
     parent: &mut ChildSpawnerCommands,
-    projection: Option<&(String, MaterialGraphProjection)>,
+    projection: Option<(&str, &MaterialGraphProjection)>,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -1912,6 +2956,7 @@ fn selected_graph_node_bounds(
     layout: &MaterialGraphLayout,
     graph: &MaterialGraphProjection,
     selection: &MaterialGraphSelectionState,
+    previews: &MaterialGraphPreviewState,
     graph_memory: &GraphViewportMemory,
     graph_key: &str,
 ) -> Option<Rect> {
@@ -1932,7 +2977,14 @@ fn selected_graph_node_bounds(
                 position
                     + Vec2::new(
                         NODE_WIDTH,
-                        node_height(node.inputs.len(), node.disabled || !node.reachable),
+                        node_height(
+                            node.inputs.len(),
+                            node.disabled || !node.reachable,
+                            previews.is_visible(
+                                graph.program,
+                                MaterialGraphPreviewTarget::Expression(node.expression),
+                            ),
+                        ),
                     ),
             ))
         })
@@ -1972,6 +3024,8 @@ fn spawn_expression_node(
     node: &MaterialGraphNode,
     position: Vec2,
     selection: &MaterialGraphSelectionState,
+    previews: &MaterialGraphPreviewState,
+    instance: MaterialId,
     localizer: &Localizer,
     asset_server: &AssetServer,
     graph_key: &str,
@@ -1979,7 +3033,9 @@ fn spawn_expression_node(
     let selected =
         selection.program == Some(program) && selection.expressions.contains(&node.expression);
     let subtitle = type_domain(node.value_type, node.evaluation_domain);
-    spawn_graph_node(
+    let target = MaterialGraphPreviewTarget::Expression(node.expression);
+    let preview_visible = previews.is_visible(program, target);
+    let graph_node = spawn_graph_node(
         parent,
         GraphNodeProps {
             graph_key: graph_key.to_owned(),
@@ -2068,20 +3124,45 @@ fn spawn_expression_node(
                     },
                 ),
             );
+            if preview_visible {
+                spawn_graph_node_preview(
+                    body,
+                    MaterialGraphPreviewRaster {
+                        program,
+                        instance,
+                        target,
+                        value_type: node.value_type,
+                    },
+                );
+            }
         },
     );
+    parent
+        .commands()
+        .entity(graph_node)
+        .with_children(|graph_node| {
+            spawn_graph_node_preview_toggle(
+                graph_node,
+                preview_toggle_props(preview_visible, localizer, asset_server),
+                MaterialGraphPreviewToggle { program, target },
+            );
+        });
 }
 
 fn spawn_output_node(
     parent: &mut ChildSpawnerCommands,
     program: MaterialProgramId,
     outputs: &[MaterialGraphOutput],
+    previews: &MaterialGraphPreviewState,
+    instance: MaterialId,
     position: Vec2,
     localizer: &Localizer,
     asset_server: &AssetServer,
     graph_key: &str,
 ) {
-    spawn_graph_node(
+    let target = MaterialGraphPreviewTarget::Output;
+    let preview_visible = previews.is_visible(program, target);
+    let graph_node = spawn_graph_node(
         parent,
         GraphNodeProps {
             graph_key: graph_key.to_owned(),
@@ -2122,11 +3203,49 @@ fn spawn_output_node(
                     ),
                 );
             }
+            if preview_visible {
+                spawn_graph_node_preview(
+                    body,
+                    MaterialGraphPreviewRaster {
+                        program,
+                        instance,
+                        target,
+                        value_type: Some(MaterialValueType::Color),
+                    },
+                );
+            }
         },
     );
+    parent
+        .commands()
+        .entity(graph_node)
+        .with_children(|graph_node| {
+            spawn_graph_node_preview_toggle(
+                graph_node,
+                preview_toggle_props(preview_visible, localizer, asset_server),
+                MaterialGraphPreviewToggle { program, target },
+            );
+        });
 }
 
-fn layout_graph(graph: &MaterialGraphProjection) -> MaterialGraphLayout {
+fn preview_toggle_props(
+    visible: bool,
+    localizer: &Localizer,
+    asset_server: &AssetServer,
+) -> GraphNodePreviewToggleProps {
+    GraphNodePreviewToggleProps {
+        visible,
+        show_icon: load_svg_icon(asset_server, "icons/show.svg"),
+        hide_icon: load_svg_icon(asset_server, "icons/hide.svg"),
+        show_label: localizer.text("material-graph-show-preview"),
+        hide_label: localizer.text("material-graph-hide-preview"),
+    }
+}
+
+fn layout_graph(
+    graph: &MaterialGraphProjection,
+    previews: &MaterialGraphPreviewState,
+) -> MaterialGraphLayout {
     let inputs = graph
         .nodes
         .iter()
@@ -2160,7 +3279,14 @@ fn layout_graph(graph: &MaterialGraphProjection) -> MaterialGraphLayout {
                 node.expression,
                 Vec2::new(CANVAS_PADDING + depth as f32 * COLUMN_WIDTH, y),
             );
-            y += node_height(node.inputs.len(), node.disabled || !node.reachable) + NODE_GAP;
+            y += node_height(
+                node.inputs.len(),
+                node.disabled || !node.reachable,
+                previews.is_visible(
+                    graph.program,
+                    MaterialGraphPreviewTarget::Expression(node.expression),
+                ),
+            ) + NODE_GAP;
         }
         maximum_y = maximum_y.max(y);
     }
@@ -2170,7 +3296,13 @@ fn layout_graph(graph: &MaterialGraphProjection) -> MaterialGraphLayout {
         CANVAS_PADDING + 88.0,
     );
     let width = output.x + NODE_WIDTH + CANVAS_PADDING;
-    let height = maximum_y.max(output.y + 130.0) + CANVAS_PADDING;
+    let output_height = 130.0
+        + if previews.is_visible(graph.program, MaterialGraphPreviewTarget::Output) {
+            90.0
+        } else {
+            0.0
+        };
+    let height = maximum_y.max(output.y + output_height) + CANVAS_PADDING;
     MaterialGraphLayout {
         nodes: positions,
         output,
@@ -2203,8 +3335,10 @@ fn expression_depth(
     depth
 }
 
-fn node_height(input_count: usize, has_state: bool) -> f32 {
-    40.0 + input_count.max(1) as f32 * PORT_ROW_HEIGHT + if has_state { 18.0 } else { 0.0 }
+fn node_height(input_count: usize, has_state: bool, has_preview: bool) -> f32 {
+    40.0 + input_count.max(1) as f32 * PORT_ROW_HEIGHT
+        + if has_state { 18.0 } else { 0.0 }
+        + if has_preview { 90.0 } else { 0.0 }
 }
 
 fn input_target(expression: MaterialExpressionId, name: &str) -> Option<MaterialConnectionTarget> {
@@ -2346,6 +3480,17 @@ mod tests {
                 Interaction::None,
             ))
             .id();
+        let preview_action = app
+            .world_mut()
+            .spawn((
+                MaterialGraphPreviewToggle {
+                    program: MaterialProgramId::new(),
+                    target: MaterialGraphPreviewTarget::Output,
+                },
+                FeathersActionButton,
+                Interaction::None,
+            ))
+            .id();
 
         app.world_mut().trigger(Activate {
             entity: context_action,
@@ -2353,13 +3498,67 @@ mod tests {
         app.world_mut().trigger(Activate {
             entity: palette_action,
         });
+        app.world_mut().trigger(Activate {
+            entity: preview_action,
+        });
         app.update();
 
-        for entity in [context_action, palette_action] {
+        for entity in [context_action, palette_action, preview_action] {
             let action = app.world().entity(entity);
             assert!(action.contains::<PendingFeathersActivation>());
             assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
         }
+    }
+
+    #[test]
+    fn material_graph_preview_visibility_is_remembered_per_node() {
+        let program = MaterialProgramId::new();
+        let first = MaterialGraphPreviewTarget::Expression(MaterialExpressionId::new());
+        let second = MaterialGraphPreviewTarget::Expression(MaterialExpressionId::new());
+        let mut previews = MaterialGraphPreviewState::default();
+
+        assert!(!previews.is_visible(program, first));
+        assert!(previews.toggle(program, first));
+        assert!(previews.is_visible(program, first));
+        assert!(!previews.is_visible(program, second));
+        assert!(!previews.toggle(program, first));
+        assert!(!previews.is_visible(program, first));
+    }
+
+    #[test]
+    fn material_graph_preview_raster_has_expected_size_and_visible_content() {
+        let program = MaterialProgram::from_ron(crate::MATERIAL_GRAPH_LAB_PROGRAM_SOURCE)
+            .expect("material graph lab program should parse");
+        let image = render_material_graph_preview(
+            &program,
+            None,
+            MaterialGraphPreviewTarget::Output,
+            Some(MaterialValueType::Color),
+        );
+
+        assert_eq!(image.texture_descriptor.size.width, MATERIAL_PREVIEW_WIDTH);
+        assert_eq!(
+            image.texture_descriptor.size.height,
+            MATERIAL_PREVIEW_HEIGHT
+        );
+        let pixels = image.data.as_ref().expect("preview should be CPU-backed");
+        assert_eq!(
+            pixels.len(),
+            (MATERIAL_PREVIEW_WIDTH * MATERIAL_PREVIEW_HEIGHT * 4) as usize
+        );
+        assert!(pixels.windows(4).any(|pixel| pixel[0] != pixel[1]));
+    }
+
+    #[test]
+    fn material_graph_preview_expands_only_its_node_height() {
+        assert_eq!(
+            node_height(3, false, true) - node_height(3, false, false),
+            90.0
+        );
+        assert_eq!(
+            node_height(3, true, false) - node_height(3, false, false),
+            18.0
+        );
     }
 
     #[test]
@@ -2437,7 +3636,7 @@ mod tests {
         let compiler = MaterialCompiler;
         let ir = compiler.compile(&program).unwrap();
         let projection = compiler.project_graph(&program, Some(&ir));
-        let layout = layout_graph(&projection);
+        let layout = layout_graph(&projection, &MaterialGraphPreviewState::default());
 
         let options = select_palette_operations(
             &document,
@@ -2446,6 +3645,7 @@ mod tests {
             &[],
             &layout,
             layout.output.x,
+            None,
         );
 
         assert!(!options.is_empty());
@@ -2470,6 +3670,51 @@ mod tests {
                 .is_ok()
             );
         }
+
+        let source = program.outputs.color;
+        let from_output = select_palette_operations(
+            &document,
+            program.id,
+            &projection,
+            &[],
+            &layout,
+            layout.output.x,
+            Some(MaterialGraphPaletteConnection::FromOutput(source)),
+        );
+        assert!(!from_output.is_empty());
+        assert!(from_output.iter().all(|option| matches!(
+            option.edit,
+            MaterialGraphPaletteEdit::CreateFromSource(candidate) if candidate == source
+        )));
+
+        let target = MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Color);
+        let from_input = select_palette_operations(
+            &document,
+            program.id,
+            &projection,
+            &[],
+            &layout,
+            layout.output.x,
+            Some(MaterialGraphPaletteConnection::FromInput(target)),
+        );
+        assert!(!from_input.is_empty());
+        assert!(from_input.iter().all(|option| matches!(
+            option.edit,
+            MaterialGraphPaletteEdit::Wrap(candidate) if candidate == target
+        )));
+    }
+
+    #[test]
+    fn connection_endpoints_accept_either_drag_direction() {
+        let source = MaterialExpressionId::new();
+        let target = MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Color);
+        let output = MaterialGraphSocketKind::ExpressionOutput(source);
+        let input = MaterialGraphSocketKind::ConnectionInput(target);
+
+        assert_eq!(connection_endpoints(output, input), Some((source, target)));
+        assert_eq!(connection_endpoints(input, output), Some((source, target)));
+        assert_eq!(connection_endpoints(output, output), None);
+        assert_eq!(connection_endpoints(input, input), None);
     }
 
     #[test]

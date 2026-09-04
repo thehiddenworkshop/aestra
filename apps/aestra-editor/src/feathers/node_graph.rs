@@ -223,6 +223,21 @@ pub(crate) struct GraphNodeProps {
     pub(crate) expand_label: String,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct GraphNodePreviewToggleProps {
+    pub(crate) visible: bool,
+    pub(crate) show_icon: Handle<SvgFile>,
+    pub(crate) hide_icon: Handle<SvgFile>,
+    pub(crate) show_label: String,
+    pub(crate) hide_label: String,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct FeathersGraphNodePreviewToggle;
+
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct FeathersGraphNodePreview;
+
 #[derive(Component, Debug, Clone)]
 pub(crate) struct FeathersGraphNode {
     graph_key: String,
@@ -1215,6 +1230,76 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
         .with_children(|children| body(entity, children));
     });
     entity
+}
+
+pub(crate) fn spawn_graph_node_preview_toggle<B: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    props: GraphNodePreviewToggleProps,
+    marker: B,
+) -> Entity {
+    let (icon, label) = if props.visible {
+        (props.hide_icon, props.hide_label)
+    } else {
+        (props.show_icon, props.show_label)
+    };
+    let mut toggle = parent.spawn_empty();
+    toggle.apply_scene(scenes::feathers_tool_button());
+    toggle
+        .insert((
+            Button,
+            FeathersActionButton,
+            FeathersGraphNodePreviewToggle,
+            marker,
+            AccessibleLabel(label.clone()),
+            EditorTooltip::description(label),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(4.0),
+                right: Val::Px(34.0),
+                width: Val::Px(22.0),
+                height: Val::Px(22.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+        ))
+        .with_child((
+            Node {
+                width: Val::Px(12.0),
+                height: Val::Px(12.0),
+                ..default()
+            },
+            UiSvg(icon),
+            SvgColor(theme::TEXT),
+            Pickable::IGNORE,
+        ));
+    toggle.id()
+}
+
+pub(crate) fn spawn_graph_node_preview<B: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    marker: B,
+) -> Entity {
+    parent
+        .spawn((
+            FeathersGraphNodePreview,
+            marker,
+            Node {
+                width: Val::Auto,
+                height: Val::Px(82.0),
+                min_height: Val::Px(82.0),
+                margin: UiRect::new(Val::Px(7.0), Val::Px(7.0), Val::Px(5.0), Val::Px(3.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(theme::VIEWPORT),
+            BorderColor::all(theme::BORDER),
+            Pickable::IGNORE,
+        ))
+        .id()
 }
 
 pub(crate) fn spawn_graph_port<B: Bundle>(

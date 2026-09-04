@@ -47,11 +47,13 @@ panel-profiler = PROFILER
 panel-changes = CHANGES
 panel-settings = SETTINGS
 
-material-graph-edit-hint = DRAG AN OUTPUT SOCKET TO A COMPATIBLE INPUT · RIGHT-CLICK OR TAB TO ADD
+material-graph-edit-hint = DRAG EITHER SOCKET TO RECONNECT · DROP ON EMPTY SPACE TO ADD · RIGHT-CLICK OR TAB TO ADD
 material-graph-frame-all = Frame all nodes (Home)
 material-graph-frame-selection = Frame selected node (F)
 material-graph-collapse-node = Collapse node
 material-graph-expand-node = Expand node
+material-graph-show-preview = Show node preview
+material-graph-hide-preview = Hide node preview
 material-graph-empty = No semantic material selected
 material-graph-empty-description = Select an emitter or renderer that uses a project material program.
 material-graph-valid = VALID

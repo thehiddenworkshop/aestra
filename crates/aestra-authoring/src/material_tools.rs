@@ -105,6 +105,11 @@ pub enum MaterialToolCommand {
         target: MaterialConnectionTarget,
         kind: MaterialStackModifierKind,
     },
+    CreateMaterialExpression {
+        program: MaterialProgramId,
+        source: MaterialExpressionId,
+        kind: MaterialStackModifierKind,
+    },
     ConnectMaterialExpression {
         program: MaterialProgramId,
         source: MaterialExpressionId,
@@ -185,6 +190,11 @@ pub enum MaterialToolError {
     InsertionAnchorNotFound(MaterialExpressionId),
     #[error("source material expression '{0}' was not found")]
     SourceExpressionNotFound(MaterialExpressionId),
+    #[error("{kind:?} cannot consume source material expression {expression}")]
+    IncompatibleSource {
+        kind: MaterialStackModifierKind,
+        expression: MaterialExpressionId,
+    },
     #[error("destination material expression '{0}' was not found")]
     DestinationExpressionNotFound(MaterialExpressionId),
     #[error("material expression selection is empty")]
@@ -236,6 +246,11 @@ impl MaterialToolPlanner {
                 target,
                 kind,
             } => Self::plan_wrap_material_expression(document, program, target, kind),
+            MaterialToolCommand::CreateMaterialExpression {
+                program,
+                source,
+                kind,
+            } => Self::plan_create_material_expression(document, program, source, kind),
             MaterialToolCommand::ConnectMaterialExpression {
                 program,
                 source,
@@ -407,6 +422,31 @@ impl MaterialToolPlanner {
             wrap_transaction_commands(program, &wrap.replacement, target, wrap.expression),
         );
         validate_plan(document, command, transaction, vec![wrap.expression])
+    }
+
+    fn plan_create_material_expression(
+        document: &MaterialAuthoringDocument,
+        program_id: MaterialProgramId,
+        source: MaterialExpressionId,
+        kind: MaterialStackModifierKind,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        let program = find_program(document, program_id)?;
+        let created = MaterialCompiler
+            .plan_expression_wrap(program, kind, source)
+            .map_err(|_| MaterialToolError::IncompatibleSource {
+                kind,
+                expression: source,
+            })?;
+        let command = MaterialToolCommand::CreateMaterialExpression {
+            program: program_id,
+            source,
+            kind,
+        };
+        let transaction = MaterialTransaction::new(
+            format!("Create {} material expression", kind.display_name()),
+            append_expression_commands(program, &created.replacement),
+        );
+        validate_plan(document, command, transaction, vec![created.expression])
     }
 
     fn plan_connect_material_expression(
@@ -1059,7 +1099,16 @@ fn wrap_transaction_commands(
     target: MaterialConnectionTarget,
     wrapper: MaterialExpressionId,
 ) -> Vec<MaterialCommand> {
-    let mut commands = after.expressions[before.expressions.len()..]
+    let mut commands = append_expression_commands(before, after);
+    commands.push(connection_command(before.id, target, wrapper));
+    commands
+}
+
+fn append_expression_commands(
+    before: &MaterialProgram,
+    after: &MaterialProgram,
+) -> Vec<MaterialCommand> {
+    after.expressions[before.expressions.len()..]
         .iter()
         .cloned()
         .enumerate()
@@ -1070,9 +1119,7 @@ fn wrap_transaction_commands(
                 index: before.expressions.len() + offset,
             },
         )
-        .collect::<Vec<_>>();
-    commands.push(connection_command(before.id, target, wrapper));
-    commands
+        .collect()
 }
 
 fn apply_connection(

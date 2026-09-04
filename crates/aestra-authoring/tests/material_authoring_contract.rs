@@ -2491,6 +2491,62 @@ fn material_wrap_tool_wraps_an_exact_program_output() {
 }
 
 #[test]
+fn material_create_expression_tool_builds_a_typed_downstream_node_without_rewiring() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6850);
+    let (program, _) = reorderable_material_program(program_id);
+    let source = program.outputs.color;
+    let original_outputs = program.outputs;
+    document.programs.push(program);
+    let before = document.clone();
+    let command = MaterialToolCommand::CreateMaterialExpression {
+        program: program_id,
+        source,
+        kind: MaterialStackModifierKind::Remap,
+    };
+
+    let encoded = ron::to_string(&command).unwrap();
+    assert_eq!(
+        ron::from_str::<MaterialToolCommand>(&encoded).unwrap(),
+        command
+    );
+    let plan = MaterialToolPlanner::plan(&document, command).unwrap();
+    assert_eq!(document, before, "planning must not mutate its input");
+    assert_eq!(plan.created_expressions.len(), 1);
+    assert!(
+        !plan
+            .transaction
+            .commands
+            .iter()
+            .any(|command| matches!(command, MaterialCommand::ReplaceMaterialProgram { .. }))
+    );
+
+    let created = plan.created_expressions[0];
+    let mut history = MaterialCommandHistory::default();
+    history.execute(&mut document, plan.transaction).unwrap();
+    let replacement = &document.programs[0];
+    assert_eq!(replacement.outputs, original_outputs);
+    assert!(matches!(
+        replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == created)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Remap { value, .. } if value == source
+    ));
+    assert!(
+        replacement
+            .validation_report()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == aestra_core::DiagnosticCode::UnreachableExpression)
+    );
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}
+
+#[test]
 fn material_wrap_tool_handles_fanout_and_rejects_incompatible_or_stale_targets_atomically() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x6900);
