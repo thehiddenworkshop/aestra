@@ -16,7 +16,7 @@ use aestra_core::{
     },
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt,
     hash::{Hash, Hasher},
 };
@@ -91,8 +91,16 @@ impl MaterialResourceLayout {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaterialParameterBinding {
     ShaderStatic,
-    Uniform { binding: u32, offset: u32 },
-    Texture { binding: u32, sampler_binding: u32 },
+    /// Authored metadata retained for a parameter removed from the optimized shader.
+    Inactive,
+    Uniform {
+        binding: u32,
+        offset: u32,
+    },
+    Texture {
+        binding: u32,
+        sampler_binding: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -348,11 +356,20 @@ impl MaterialShaderCompiler {
 }
 
 fn build_resource_layout(ir: &MaterialIrProgram) -> MaterialResourceLayout {
+    let live_parameters = ir
+        .values
+        .iter()
+        .filter_map(|value| match value.instruction {
+            MaterialIrInstruction::Parameter(parameter) => Some(parameter),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
     let uniform_parameters = ir
         .parameters
         .iter()
         .filter(|parameter| {
-            parameter.evaluation_domain != MaterialEvaluationDomain::ShaderStatic
+            live_parameters.contains(&parameter.source)
+                && parameter.evaluation_domain != MaterialEvaluationDomain::ShaderStatic
                 && !matches!(parameter.value_type, MaterialValueType::Texture2D(_))
         })
         .collect::<Vec<_>>();
@@ -360,7 +377,11 @@ fn build_resource_layout(ir: &MaterialIrProgram) -> MaterialResourceLayout {
         .parameters
         .iter()
         .filter_map(|parameter| match parameter.value_type {
-            MaterialValueType::Texture2D(descriptor) => Some((parameter.source, descriptor)),
+            MaterialValueType::Texture2D(descriptor)
+                if live_parameters.contains(&parameter.source) =>
+            {
+                Some((parameter.source, descriptor))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -554,13 +575,12 @@ fn build_reflection(
                     binding: texture.binding,
                     sampler_binding: texture.sampler_binding,
                 }
-            } else {
-                let slot = layout
-                    .uniforms
-                    .slots
-                    .iter()
-                    .find(|slot| slot.parameter == parameter.source)
-                    .ok_or(MaterialGpuError::MissingParameter(parameter.source))?;
+            } else if let Some(slot) = layout
+                .uniforms
+                .slots
+                .iter()
+                .find(|slot| slot.parameter == parameter.source)
+            {
                 MaterialParameterBinding::Uniform {
                     binding: layout
                         .uniforms
@@ -568,6 +588,8 @@ fn build_reflection(
                         .expect("uniform slots require a uniform binding"),
                     offset: slot.offset,
                 }
+            } else {
+                MaterialParameterBinding::Inactive
             };
             Ok(MaterialParameterReflection {
                 id: parameter.source,
@@ -790,6 +812,16 @@ fn instruction_expression(
             value_name(*value),
             value_name(*min),
             value_name(*max)
+        ),
+        MaterialIrInstruction::Select {
+            condition,
+            if_false,
+            if_true,
+        } => format!(
+            "select({}, {}, {})",
+            value_name(*if_false),
+            value_name(*if_true),
+            value_name(*condition)
         ),
         MaterialIrInstruction::Remap {
             value: remap_value,
@@ -1324,6 +1356,16 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(value.0);
             fingerprint.u32(min.0);
             fingerprint.u32(max.0);
+        }
+        MaterialIrInstruction::Select {
+            condition,
+            if_false,
+            if_true,
+        } => {
+            fingerprint.byte(23);
+            fingerprint.u32(condition.0);
+            fingerprint.u32(if_false.0);
+            fingerprint.u32(if_true.0);
         }
         MaterialIrInstruction::Remap {
             value,

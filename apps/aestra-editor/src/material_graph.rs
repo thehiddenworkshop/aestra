@@ -2589,6 +2589,18 @@ impl MaterialPreviewEvaluator<'_> {
                     value.clamp(min[index].min(max[index]), min[index].max(max[index]))
                 })
             }
+            MaterialExpressionKind::Select {
+                condition,
+                if_false,
+                if_true,
+            } => {
+                let selected = if read(*condition)?.boolean()? {
+                    *if_true
+                } else {
+                    *if_false
+                };
+                read(selected)
+            }
             MaterialExpressionKind::Remap {
                 value,
                 input_min,
@@ -3161,6 +3173,11 @@ fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpression
         | MaterialExpressionKind::Divide(left, right) => vec![*left, *right],
         MaterialExpressionKind::Lerp { start, end, factor } => vec![*start, *end, *factor],
         MaterialExpressionKind::Clamp { value, min, max } => vec![*value, *min, *max],
+        MaterialExpressionKind::Select {
+            condition,
+            if_false,
+            if_true,
+        } => vec![*condition, *if_false, *if_true],
         MaterialExpressionKind::Remap {
             value,
             input_min,

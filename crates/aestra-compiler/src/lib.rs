@@ -388,24 +388,36 @@ impl EffectCompiler {
         let mut discovered_attributes = BTreeSet::new();
         let mut emitters = Vec::with_capacity(asset.emitters.len());
         let mut optimizations = OptimizationStats::default();
-        let (material_common_subexpressions, material_specialized_parameter_reads) = asset
+        let (
+            material_common_subexpressions,
+            material_specialized_parameter_reads,
+            material_pruned_static_branches,
+            material_pruned_features,
+        ) = asset
             .material_instances
             .iter()
             .map(|instance| instance.program.id())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .filter_map(|id| material_programs.get(&id))
-            .try_fold((0, 0), |(common, specialized), program| {
-                MaterialCompiler.compile_expanded(program).map(|ir| {
-                    (
-                        common + ir.optimizations.common_subexpressions,
-                        specialized + ir.optimizations.specialized_parameter_reads,
-                    )
-                })
-            })
+            .try_fold(
+                (0, 0, 0, 0),
+                |(common, specialized, branches, features), program| {
+                    MaterialCompiler.compile_expanded(program).map(|ir| {
+                        (
+                            common + ir.optimizations.common_subexpressions,
+                            specialized + ir.optimizations.specialized_parameter_reads,
+                            branches + ir.optimizations.pruned_static_branches,
+                            features + ir.optimizations.pruned_features,
+                        )
+                    })
+                },
+            )
             .map_err(|error| CompileError::Validation(error.report().clone()))?;
         optimizations.material_common_subexpressions = material_common_subexpressions;
         optimizations.material_specialized_parameter_reads = material_specialized_parameter_reads;
+        optimizations.material_pruned_static_branches = material_pruned_static_branches;
+        optimizations.material_pruned_features = material_pruned_features;
         let materials = asset
             .materials
             .iter()

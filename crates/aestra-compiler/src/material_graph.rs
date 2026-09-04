@@ -124,13 +124,14 @@ const MATERIAL_INPUTS: [MaterialInput; 27] = [
     MaterialInput::PixelDepth,
 ];
 
-const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 18] = [
+const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 19] = [
     MaterialGraphFunction::Add,
     MaterialGraphFunction::Subtract,
     MaterialGraphFunction::Multiply,
     MaterialGraphFunction::Divide,
     MaterialGraphFunction::Lerp,
     MaterialGraphFunction::Clamp,
+    MaterialGraphFunction::Select,
     MaterialGraphFunction::Remap,
     MaterialGraphFunction::Smoothstep,
     MaterialGraphFunction::Fresnel,
@@ -786,6 +787,31 @@ fn append_graph_function(
             );
             MaterialExpressionKind::Clamp { value, min, max }
         }
+        MaterialGraphFunction::Select => {
+            if matches!(source_type, Some(MaterialValueType::Texture2D(_))) {
+                return Err(MaterialGraphNodeCreationError::IncompatibleSource {
+                    kind: MaterialGraphCreateKind::Function(function),
+                    expression: source.expect("source type requires a source"),
+                });
+            }
+            let value_type = source_type.unwrap_or(MaterialValueType::Float);
+            let if_false = source.unwrap_or_else(|| {
+                append_graph_constant(
+                    program,
+                    default_value(value_type, false).unwrap_or(MaterialValue::Float(0.0)),
+                )
+            });
+            let if_true = append_graph_constant(
+                program,
+                default_value(value_type, true).unwrap_or(MaterialValue::Float(1.0)),
+            );
+            let condition = append_graph_constant(program, MaterialValue::Bool(false));
+            MaterialExpressionKind::Select {
+                condition,
+                if_false,
+                if_true,
+            }
+        }
         MaterialGraphFunction::Fresnel => {
             let normal = source.unwrap_or_else(|| {
                 append_graph_expression(
@@ -893,6 +919,7 @@ fn graph_function_modifier(function: MaterialGraphFunction) -> Option<MaterialSt
         | MaterialGraphFunction::Divide
         | MaterialGraphFunction::Lerp
         | MaterialGraphFunction::Clamp
+        | MaterialGraphFunction::Select
         | MaterialGraphFunction::Fresnel
         | MaterialGraphFunction::DepthFade
         | MaterialGraphFunction::SampleTexture
@@ -1001,6 +1028,7 @@ fn node_kind(kind: &MaterialExpressionKind) -> MaterialGraphNodeKind {
         E::Divide(..) => MaterialGraphFunction::Divide,
         E::Lerp { .. } => MaterialGraphFunction::Lerp,
         E::Clamp { .. } => MaterialGraphFunction::Clamp,
+        E::Select { .. } => MaterialGraphFunction::Select,
         E::Remap { .. } => MaterialGraphFunction::Remap,
         E::Smoothstep { .. } => MaterialGraphFunction::Smoothstep,
         E::Fresnel { .. } => MaterialGraphFunction::Fresnel,
@@ -1111,6 +1139,15 @@ fn expression_inputs(kind: &MaterialExpressionKind) -> Vec<(&'static str, Materi
             vec![("start", *start), ("end", *end), ("factor", *factor)]
         }
         E::Clamp { value, min, max } => vec![("value", *value), ("min", *min), ("max", *max)],
+        E::Select {
+            condition,
+            if_false,
+            if_true,
+        } => vec![
+            ("condition", *condition),
+            ("false", *if_false),
+            ("true", *if_true),
+        ],
         E::Remap {
             value,
             input_min,

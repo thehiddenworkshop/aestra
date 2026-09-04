@@ -553,6 +553,10 @@ pub struct OptimizationStats {
     pub material_common_subexpressions: usize,
     /// Shader-static semantic-material reads replaced before backend code generation.
     pub material_specialized_parameter_reads: usize,
+    /// Semantic-material Select branches discarded from a shader-static condition.
+    pub material_pruned_static_branches: usize,
+    /// Dynamic inputs, parameters, samples, and calls removed from live material shaders.
+    pub material_pruned_features: usize,
 }
 
 /// Immutable, engine-independent output of the Aestra compiler.

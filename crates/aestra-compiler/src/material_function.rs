@@ -537,6 +537,15 @@ fn remap_kind(
             min: remap(*min)?,
             max: remap(*max)?,
         },
+        E::Select {
+            condition,
+            if_false,
+            if_true,
+        } => E::Select {
+            condition: remap(*condition)?,
+            if_false: remap(*if_false)?,
+            if_true: remap(*if_true)?,
+        },
         E::Remap {
             value,
             input_min,

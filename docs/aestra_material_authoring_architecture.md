@@ -2499,7 +2499,13 @@ Counts are exposed by compiled effects and survive artifact round trips, editor 
 machine-readable preview reports. Shader-static parameter reads are now specialized to their typed
 defaults during IR lowering rather than only during backend emission. This enables dependent
 constant folding and CSE while retaining authored parameter reflection and deterministic shader
-fingerprint invalidation. The remaining items above are still planned.
+fingerprint invalidation. The semantic graph and portable shader pipeline now also support
+`Select`. When its condition folds to a shader-static Boolean, only the selected branch is lowered;
+unused dynamic inputs, parameter resources, texture samples, and custom calls are absent from the
+live shader layout while authored parameter metadata remains inspectable. Dynamic conditions emit
+the portable shader `select` operation. Branch- and feature-pruning counts survive artifacts and
+appear in editor and machine-readable reports. Broader texture analysis, function deduplication,
+varying minimization, and required particle-attribute pruning remain planned.
 
 ### Completion Criterion
 

@@ -108,7 +108,10 @@ is preserved in compiled artifacts, the Compiler Inspector, and `preview-report.
 Shader-static parameter reads are also replaced by their typed defaults during IR lowering, so
 dependent expressions can fold before backend resource reflection; the authored parameter
 metadata remains available for inspection and specialization changes still alter the shader
-fingerprint.
+fingerprint. `Select` nodes accept either dynamic Boolean conditions or shader-static ones. A
+shader-static condition lowers only its chosen branch, so unused inputs, parameter bindings,
+texture samples, and custom calls never reach shader reflection. The branch- and feature-pruning
+counts are preserved alongside the other optimization metrics.
 
 Run the native-GPU visual regression against the approved, effect-only reference:
 

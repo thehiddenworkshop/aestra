@@ -117,6 +117,7 @@ pub enum MaterialGraphFunction {
     Divide,
     Lerp,
     Clamp,
+    Select,
     Remap,
     Smoothstep,
     Fresnel,
@@ -141,6 +142,7 @@ impl MaterialGraphFunction {
             Self::Divide => "Divide",
             Self::Lerp => "Lerp",
             Self::Clamp => "Clamp",
+            Self::Select => "Select",
             Self::Remap => "Remap",
             Self::Smoothstep => "Smoothstep",
             Self::Fresnel => "Fresnel",
@@ -168,6 +170,7 @@ impl MaterialGraphFunction {
             | Self::Remap
             | Self::Smoothstep
             | Self::ExtractComponent => "Math",
+            Self::Select => "Logic",
             Self::PanUv | Self::RotateUv | Self::ScaleUv => "UV",
             Self::RadialMask | Self::Dissolve | Self::DissolveEdge => "Mask",
             Self::DepthFade | Self::SoftParticle => "Depth",
@@ -180,6 +183,7 @@ impl MaterialGraphFunction {
             Self::Add | Self::Subtract | Self::Multiply | Self::Divide => &["A", "B"],
             Self::Lerp => &["Start", "End", "Factor"],
             Self::Clamp => &["Value", "Minimum", "Maximum"],
+            Self::Select => &["Condition", "False", "True"],
             Self::Remap => &[
                 "Value",
                 "SourceMinimum",
@@ -1178,6 +1182,13 @@ pub enum MaterialExpressionKind {
         min: MaterialExpressionId,
         max: MaterialExpressionId,
     },
+    /// Selects one of two values. A shader-static condition permits the compiler to discard the
+    /// unreachable branch before resource and input reflection.
+    Select {
+        condition: MaterialExpressionId,
+        if_false: MaterialExpressionId,
+        if_true: MaterialExpressionId,
+    },
     Remap {
         value: MaterialExpressionId,
         input_min: MaterialExpressionId,
@@ -1293,6 +1304,7 @@ impl MaterialExpressionKind {
             | Self::Divide(_, _)
             | Self::Lerp { .. }
             | Self::Clamp { .. }
+            | Self::Select { .. }
             | Self::Fresnel { .. }
             | Self::DepthFade { .. }
             | Self::ExtractComponent { .. } => None,
@@ -1316,6 +1328,11 @@ impl MaterialExpressionKind {
             | Self::Divide(left, right) => vec![*left, *right],
             Self::Lerp { start, end, factor } => vec![*start, *end, *factor],
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
+            Self::Select {
+                condition,
+                if_false,
+                if_true,
+            } => vec![*condition, *if_false, *if_true],
             Self::Remap {
                 value,
                 input_min,
@@ -2485,6 +2502,52 @@ fn infer_expression(
                                 .max(max.evaluation_domain),
                         })
                     }
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::Select {
+            condition,
+            if_false,
+            if_true,
+        } => {
+            let condition = dependency(*condition);
+            let if_false = dependency(*if_false);
+            let if_true = dependency(*if_true);
+            match (condition, if_false, if_true) {
+                (Some(condition), Some(if_false), Some(if_true)) => {
+                    let mut valid = true;
+                    if condition.value_type != MaterialValueType::Bool {
+                        material_type_error(
+                            report,
+                            format!("{path}.condition"),
+                            format!(
+                                "Select condition expects Bool but received {:?}",
+                                condition.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if if_false.value_type != if_true.value_type
+                        || matches!(if_false.value_type, MaterialValueType::Texture2D(_))
+                    {
+                        material_type_error(
+                            report,
+                            &path,
+                            format!(
+                                "Select branches must share one non-resource type; received {:?} and {:?}",
+                                if_false.value_type, if_true.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: if_false.value_type,
+                        evaluation_domain: condition
+                            .evaluation_domain
+                            .max(if_false.evaluation_domain)
+                            .max(if_true.evaluation_domain),
+                    })
                 }
                 _ => None,
             }

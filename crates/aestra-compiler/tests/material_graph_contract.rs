@@ -195,6 +195,10 @@ fn graph_node_catalog_and_factory_cover_primitives_and_math_without_rewiring() {
     assert!(catalog.iter().any(|node| {
         node.kind == MaterialGraphCreateKind::Function(MaterialGraphFunction::Add)
     }));
+    assert!(catalog.iter().any(|node| {
+        node.kind == MaterialGraphCreateKind::Function(MaterialGraphFunction::Select)
+            && node.category == "Logic"
+    }));
 
     let source = program.outputs.alpha;
     let plan = compiler
@@ -254,4 +258,34 @@ fn graph_node_catalog_and_factory_cover_primitives_and_math_without_rewiring() {
             .any(|node| node.expression == explicit.expression)
     );
     assert!(compiler.compile(&plan.replacement).is_ok());
+
+    let select = compiler
+        .plan_graph_node_creation(
+            &program,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::Select),
+            Some(source),
+        )
+        .unwrap();
+    let projection = compiler.project_graph(&select.replacement, None);
+    let node = projection
+        .nodes
+        .iter()
+        .find(|node| node.expression == select.expression)
+        .unwrap();
+    assert_eq!(
+        node.inputs
+            .iter()
+            .map(|port| port.name.as_str())
+            .collect::<Vec<_>>(),
+        ["condition", "false", "true"]
+    );
+    assert!(matches!(
+        select
+            .replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == select.expression)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::Select { if_false, .. }) if *if_false == source
+    ));
 }

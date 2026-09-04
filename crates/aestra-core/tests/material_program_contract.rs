@@ -14,6 +14,50 @@ use aestra_core::{
 use std::collections::BTreeMap;
 
 #[test]
+fn select_requires_a_boolean_condition_and_matching_non_resource_branches() {
+    let condition = MaterialExpressionId::from_u128(0x50_001);
+    let if_false = MaterialExpressionId::from_u128(0x50_002);
+    let if_true = MaterialExpressionId::from_u128(0x50_003);
+    let select = MaterialExpressionId::from_u128(0x50_004);
+    let mut program = MaterialProgram::additive_sprite("Invalid select");
+    program.expressions.extend([
+        MaterialExpression {
+            id: condition,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: if_false,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.0)),
+        },
+        MaterialExpression {
+            id: if_true,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([1.0; 2])),
+        },
+        MaterialExpression {
+            id: select,
+            kind: MaterialExpressionKind::Select {
+                condition,
+                if_false,
+                if_true,
+            },
+        },
+    ]);
+    program.outputs.alpha = select;
+
+    let report = program.analyze().unwrap_err();
+
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".condition")
+            && diagnostic.message.contains("expects Bool")
+    }));
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.message.contains("Select branches")
+    }));
+}
+
+#[test]
 fn semantic_material_program_and_instance_round_trip_with_stable_ids() {
     let parameter = MaterialParameterId::from_u128(0x100);
     let mut program = MaterialProgram::additive_sprite("Magic Flame");

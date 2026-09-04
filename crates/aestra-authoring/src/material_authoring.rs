@@ -136,6 +136,9 @@ pub enum MaterialExpressionInput {
     Value,
     Minimum,
     Maximum,
+    Condition,
+    IfFalse,
+    IfTrue,
     InputMinimum,
     InputMaximum,
     OutputMinimum,
@@ -730,6 +733,15 @@ pub(crate) fn rewire_expression(
         (MaterialExpressionKind::Clamp { value, .. }, MaterialExpressionInput::Value) => value,
         (MaterialExpressionKind::Clamp { min, .. }, MaterialExpressionInput::Minimum) => min,
         (MaterialExpressionKind::Clamp { max, .. }, MaterialExpressionInput::Maximum) => max,
+        (MaterialExpressionKind::Select { condition, .. }, MaterialExpressionInput::Condition) => {
+            condition
+        }
+        (MaterialExpressionKind::Select { if_false, .. }, MaterialExpressionInput::IfFalse) => {
+            if_false
+        }
+        (MaterialExpressionKind::Select { if_true, .. }, MaterialExpressionInput::IfTrue) => {
+            if_true
+        }
         (MaterialExpressionKind::Remap { value, .. }, MaterialExpressionInput::Value) => value,
         (
             MaterialExpressionKind::Remap { input_min, .. },

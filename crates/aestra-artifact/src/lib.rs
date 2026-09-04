@@ -385,6 +385,10 @@ struct OptimizationStatsV1 {
     material_common_subexpressions: u64,
     #[serde(default)]
     material_specialized_parameter_reads: u64,
+    #[serde(default)]
+    material_pruned_static_branches: u64,
+    #[serde(default)]
+    material_pruned_features: u64,
 }
 
 impl TryFrom<&CompiledEffect> for EffectV1 {
@@ -1763,6 +1767,14 @@ impl OptimizationStatsV1 {
                 stats.material_specialized_parameter_reads,
                 "effect.optimizations.material_specialized_parameter_reads",
             )?,
+            material_pruned_static_branches: encode_u64(
+                stats.material_pruned_static_branches,
+                "effect.optimizations.material_pruned_static_branches",
+            )?,
+            material_pruned_features: encode_u64(
+                stats.material_pruned_features,
+                "effect.optimizations.material_pruned_features",
+            )?,
         })
     }
 
@@ -1787,6 +1799,14 @@ impl OptimizationStatsV1 {
             material_specialized_parameter_reads: decode_usize(
                 self.material_specialized_parameter_reads,
                 "effect.optimizations.material_specialized_parameter_reads",
+            )?,
+            material_pruned_static_branches: decode_usize(
+                self.material_pruned_static_branches,
+                "effect.optimizations.material_pruned_static_branches",
+            )?,
+            material_pruned_features: decode_usize(
+                self.material_pruned_features,
+                "effect.optimizations.material_pruned_features",
             )?,
         })
     }

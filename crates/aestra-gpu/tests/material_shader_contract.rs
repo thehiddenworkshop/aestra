@@ -644,6 +644,146 @@ fn shader_static_values_rebuild_shader_but_render_state_only_changes_pipeline_ke
 }
 
 #[test]
+fn static_select_prunes_texture_resources_and_scene_features_before_shader_lowering() {
+    let condition_parameter = MaterialParameterId::from_u128(0x5100);
+    let texture_parameter = MaterialParameterId::from_u128(0x5101);
+    let condition = MaterialExpressionId::from_u128(0x5102);
+    let fallback = MaterialExpressionId::from_u128(0x5103);
+    let texture = MaterialExpressionId::from_u128(0x5104);
+    let uv = MaterialExpressionId::from_u128(0x5105);
+    let sampled = MaterialExpressionId::from_u128(0x5106);
+    let selected = MaterialExpressionId::from_u128(0x5107);
+    let descriptor = texture_descriptor(
+        MaterialTextureColorSpace::SrgbColor,
+        MaterialAddressMode::ClampToEdge,
+    );
+    let mut program =
+        aestra_core::material::MaterialProgram::additive_sprite("Static resource pruning");
+    program.parameters = vec![
+        MaterialParameter {
+            id: condition_parameter,
+            name: "use texture".into(),
+            value_type: MaterialValueType::Bool,
+            evaluation_domain: MaterialEvaluationDomain::ShaderStatic,
+            default: Some(MaterialValue::Bool(false)),
+        },
+        MaterialParameter {
+            id: texture_parameter,
+            name: "optional texture".into(),
+            value_type: MaterialValueType::Texture2D(descriptor),
+            evaluation_domain: MaterialEvaluationDomain::Instance,
+            default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x5108))),
+        },
+    ];
+    program.expressions.extend([
+        MaterialExpression {
+            id: condition,
+            kind: MaterialExpressionKind::Parameter(condition_parameter),
+        },
+        MaterialExpression {
+            id: fallback,
+            kind: MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([1.0; 4])),
+        },
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: sampled,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv },
+        },
+        MaterialExpression {
+            id: selected,
+            kind: MaterialExpressionKind::Select {
+                condition,
+                if_false: fallback,
+                if_true: sampled,
+            },
+        },
+    ]);
+    program.outputs.color = selected;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+
+    assert_eq!(ir.optimizations.pruned_static_branches, 1);
+    assert_eq!(ir.optimizations.pruned_features, 3);
+    assert!(compiled.resource_layout.textures.is_empty());
+    assert!(compiled.resource_layout.samplers.is_empty());
+    assert!(compiled.reflection.required_vertex_inputs.is_empty());
+    assert!(!compiled.shader.wesl.contains("textureSample("));
+    assert!(matches!(
+        compiled
+            .reflection
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == texture_parameter)
+            .unwrap()
+            .binding,
+        MaterialParameterBinding::Inactive
+    ));
+}
+
+#[test]
+fn dynamic_select_emits_portable_shader_selection_and_keeps_both_features() {
+    let condition_parameter = MaterialParameterId::from_u128(0x5110);
+    let condition = MaterialExpressionId::from_u128(0x5111);
+    let fallback = MaterialExpressionId::from_u128(0x5112);
+    let effect_time = MaterialExpressionId::from_u128(0x5113);
+    let selected = MaterialExpressionId::from_u128(0x5114);
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Dynamic selection");
+    program.parameters = vec![MaterialParameter {
+        id: condition_parameter,
+        name: "use effect time".into(),
+        value_type: MaterialValueType::Bool,
+        evaluation_domain: MaterialEvaluationDomain::Effect,
+        default: Some(MaterialValue::Bool(false)),
+    }];
+    program.expressions.extend([
+        MaterialExpression {
+            id: condition,
+            kind: MaterialExpressionKind::Parameter(condition_parameter),
+        },
+        MaterialExpression {
+            id: fallback,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: effect_time,
+            kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: selected,
+            kind: MaterialExpressionKind::Select {
+                condition,
+                if_false: fallback,
+                if_true: effect_time,
+            },
+        },
+    ]);
+    program.outputs.alpha = selected;
+
+    let compiled = compile(&program);
+
+    assert!(compiled.shader.wesl.contains("select("));
+    assert_eq!(
+        compiled.reflection.required_scene_inputs,
+        vec![MaterialInput::EffectTime]
+    );
+    assert!(matches!(
+        compiled.reflection.parameters[0].binding,
+        MaterialParameterBinding::Uniform { .. }
+    ));
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
 fn backend_limits_fail_with_structured_capability_issues() {
     let ir = MaterialCompiler
         .compile(&two_texture_flame_program())

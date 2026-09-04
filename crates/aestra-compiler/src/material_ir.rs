@@ -66,6 +66,11 @@ pub enum MaterialIrInstruction {
         min: MaterialIrValueId,
         max: MaterialIrValueId,
     },
+    Select {
+        condition: MaterialIrValueId,
+        if_false: MaterialIrValueId,
+        if_true: MaterialIrValueId,
+    },
     Remap {
         value: MaterialIrValueId,
         input_min: MaterialIrValueId,
@@ -151,6 +156,11 @@ impl MaterialIrInstruction {
             | Self::Divide(left, right) => vec![*left, *right],
             Self::Lerp { start, end, factor } => vec![*start, *end, *factor],
             Self::Clamp { value, min, max } => vec![*value, *min, *max],
+            Self::Select {
+                condition,
+                if_false,
+                if_true,
+            } => vec![*condition, *if_false, *if_true],
             Self::Remap {
                 value,
                 input_min,
@@ -235,6 +245,15 @@ impl MaterialIrInstruction {
                 remap(value);
                 remap(min);
                 remap(max);
+            }
+            Self::Select {
+                condition,
+                if_false,
+                if_true,
+            } => {
+                remap(condition);
+                remap(if_false);
+                remap(if_true);
             }
             Self::Remap {
                 value,
@@ -386,6 +405,10 @@ pub struct MaterialIrOptimizationStats {
     pub trivial_simplifications: usize,
     /// Shader-static parameter reads replaced by their typed program defaults.
     pub specialized_parameter_reads: usize,
+    /// Select expressions whose unreachable branch was discarded at compile time.
+    pub pruned_static_branches: usize,
+    /// Dynamic inputs, parameter reads, texture samples, and custom calls removed from the live IR.
+    pub pruned_features: usize,
     /// Pure expressions that reuse an already-lowered IR value.
     pub common_subexpressions: usize,
     pub eliminated_values: usize,
@@ -443,6 +466,7 @@ impl MaterialCompiler {
         program: &MaterialProgram,
     ) -> Result<MaterialIrProgram, MaterialCompileError> {
         let normalized = program.normalized();
+        let semantic_features = semantic_feature_count(&normalized);
         let analysis = normalized
             .analyze()
             .map_err(MaterialCompileError::Validation)?;
@@ -480,8 +504,9 @@ impl MaterialCompiler {
             .extend(unreachable.iter().copied());
         builder.optimizations.eliminated_expressions += unreachable.len();
 
-        let (values, outputs, source_map, optimizations) =
+        let (values, outputs, source_map, mut optimizations) =
             builder.finish(MaterialIrOutputs { color, alpha });
+        optimizations.pruned_features = semantic_features.saturating_sub(ir_feature_count(&values));
         let parameters = normalized
             .parameters
             .iter()
@@ -505,6 +530,77 @@ impl MaterialCompiler {
             optimizations,
         })
     }
+}
+
+fn semantic_feature_count(program: &MaterialProgram) -> usize {
+    let expressions = program
+        .expressions
+        .iter()
+        .map(|expression| (expression.id, &expression.kind))
+        .collect::<BTreeMap<_, _>>();
+    let parameters = program
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.id, parameter))
+        .collect::<BTreeMap<_, _>>();
+    let mut pending = vec![program.outputs.color, program.outputs.alpha];
+    let mut visited = BTreeSet::new();
+    let mut inputs = BTreeSet::new();
+    let mut dynamic_parameters = BTreeSet::new();
+    let mut texture_samples = 0usize;
+    let mut custom_calls = 0usize;
+    while let Some(expression) = pending.pop() {
+        if !visited.insert(expression) {
+            continue;
+        }
+        let Some(kind) = expressions.get(&expression).copied() else {
+            continue;
+        };
+        if program.disabled_expressions.contains(&expression) {
+            if let Some(source) = kind.bypass_input() {
+                pending.push(source);
+            }
+            continue;
+        }
+        match kind {
+            MaterialExpressionKind::Input(input) => {
+                inputs.insert(material_input_key(*input));
+            }
+            MaterialExpressionKind::Parameter(parameter) => {
+                if parameters.get(parameter).is_some_and(|definition| {
+                    definition.evaluation_domain != MaterialEvaluationDomain::ShaderStatic
+                }) {
+                    dynamic_parameters.insert(*parameter);
+                }
+            }
+            MaterialExpressionKind::SampleTexture { .. } => texture_samples += 1,
+            MaterialExpressionKind::CustomWeslCall { .. } => custom_calls += 1,
+            _ => {}
+        }
+        pending.extend(kind.dependencies());
+    }
+    inputs.len() + dynamic_parameters.len() + texture_samples + custom_calls
+}
+
+fn ir_feature_count(values: &[MaterialIrValue]) -> usize {
+    let mut inputs = BTreeSet::new();
+    let mut parameters = BTreeSet::new();
+    let mut texture_samples = 0usize;
+    let mut custom_calls = 0usize;
+    for value in values {
+        match &value.instruction {
+            MaterialIrInstruction::Input(input) => {
+                inputs.insert(material_input_key(*input));
+            }
+            MaterialIrInstruction::Parameter(parameter) => {
+                parameters.insert(*parameter);
+            }
+            MaterialIrInstruction::SampleTexture { .. } => texture_samples += 1,
+            MaterialIrInstruction::CustomWeslCall { .. } => custom_calls += 1,
+            _ => {}
+        }
+    }
+    inputs.len() + parameters.len() + texture_samples + custom_calls
 }
 
 struct MaterialIrBuilder<'a> {
@@ -644,6 +740,27 @@ impl MaterialIrBuilder<'_> {
                     MaterialIrInstruction::Constant(constant)
                 } else {
                     MaterialIrInstruction::Clamp { value, min, max }
+                }
+            }
+            MaterialExpressionKind::Select {
+                condition,
+                if_false,
+                if_true,
+            } => {
+                let condition = self.lower(condition);
+                if let Some(MaterialIrConstant::Bool(selected_true)) = self.constant(condition) {
+                    let selected = if *selected_true { if_true } else { if_false };
+                    let alias = self.lower(selected);
+                    self.source_map.values.insert(expression, alias);
+                    self.source_map.eliminated.insert(expression);
+                    self.optimizations.pruned_static_branches += 1;
+                    self.optimizations.eliminated_expressions += 1;
+                    return alias;
+                }
+                MaterialIrInstruction::Select {
+                    condition,
+                    if_false: self.lower(if_false),
+                    if_true: self.lower(if_true),
                 }
             }
             MaterialExpressionKind::Remap {
@@ -1044,6 +1161,15 @@ impl MaterialIrInstructionKey {
             MaterialIrInstruction::Clamp { value, min, max } => (
                 8,
                 vec![*value, *min, *max],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Select {
+                condition,
+                if_false,
+                if_true,
+            } => (
+                22,
+                vec![*condition, *if_false, *if_true],
                 MaterialIrInstructionPayloadKey::None,
             ),
             MaterialIrInstruction::Remap {

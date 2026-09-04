@@ -54,6 +54,10 @@ impl CompilerPreviewData {
                 material_specialized_parameter_reads: effect
                     .optimizations
                     .material_specialized_parameter_reads,
+                material_pruned_static_branches: effect
+                    .optimizations
+                    .material_pruned_static_branches,
+                material_pruned_features: effect.optimizations.material_pruned_features,
             },
             material_program_fingerprints: material_program_fingerprints
                 .into_iter()
@@ -291,6 +295,8 @@ struct PreviewOptimizations {
     eliminated_attributes: usize,
     material_common_subexpressions: usize,
     material_specialized_parameter_reads: usize,
+    material_pruned_static_branches: usize,
+    material_pruned_features: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -605,6 +611,8 @@ mod tests {
         let mut compiled = EffectCompiler::default().compile(&effect).unwrap();
         compiled.optimizations.material_common_subexpressions = 3;
         compiled.optimizations.material_specialized_parameter_reads = 5;
+        compiled.optimizations.material_pruned_static_branches = 7;
+        compiled.optimizations.material_pruned_features = 11;
         let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
         let profile = EffectProfile::from_compiled(&compiled);
 
@@ -647,6 +655,14 @@ mod tests {
         assert_eq!(
             value["compiler"]["optimizations"]["material_specialized_parameter_reads"],
             5
+        );
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_pruned_static_branches"],
+            7
+        );
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_pruned_features"],
+            11
         );
     }
 

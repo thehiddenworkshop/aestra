@@ -1254,6 +1254,15 @@ fn remap_expression_sources(
             remap(min);
             remap(max);
         }
+        MaterialExpressionKind::Select {
+            condition,
+            if_false,
+            if_true,
+        } => {
+            remap(condition);
+            remap(if_false);
+            remap(if_true);
+        }
         MaterialExpressionKind::Remap {
             value,
             input_min,
@@ -1422,6 +1431,9 @@ fn graph_connection_target(target: &MaterialGraphEdgeTarget) -> Option<MaterialC
                 "value" => MaterialExpressionInput::Value,
                 "min" => MaterialExpressionInput::Minimum,
                 "max" => MaterialExpressionInput::Maximum,
+                "condition" => MaterialExpressionInput::Condition,
+                "false" => MaterialExpressionInput::IfFalse,
+                "true" => MaterialExpressionInput::IfTrue,
                 "input_min" => MaterialExpressionInput::InputMinimum,
                 "input_max" => MaterialExpressionInput::InputMaximum,
                 "output_min" => MaterialExpressionInput::OutputMinimum,

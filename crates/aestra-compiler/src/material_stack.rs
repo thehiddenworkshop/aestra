@@ -941,6 +941,7 @@ fn modifier_property_targets(
         | MaterialExpressionKind::Divide(_, _)
         | MaterialExpressionKind::Lerp { .. }
         | MaterialExpressionKind::Clamp { .. }
+        | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::SampleTexture { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => Vec::new(),
     }
@@ -1167,6 +1168,11 @@ fn graph_recipe_function(
             value: input("Value")?,
             min: input("Minimum")?,
             max: input("Maximum")?,
+        },
+        MaterialGraphFunction::Select => MaterialExpressionKind::Select {
+            condition: input("Condition")?,
+            if_false: input("False")?,
+            if_true: input("True")?,
         },
         MaterialGraphFunction::Remap => MaterialExpressionKind::Remap {
             value: input("Value")?,
@@ -1772,6 +1778,7 @@ fn primary_source(kind: &MaterialExpressionKind) -> Option<MaterialExpressionId>
         | MaterialExpressionKind::Divide(_, _)
         | MaterialExpressionKind::Lerp { .. }
         | MaterialExpressionKind::Clamp { .. }
+        | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => None,
@@ -1802,6 +1809,7 @@ fn set_primary_source(kind: &mut MaterialExpressionKind, source: MaterialExpress
         | MaterialExpressionKind::Divide(_, _)
         | MaterialExpressionKind::Lerp { .. }
         | MaterialExpressionKind::Clamp { .. }
+        | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return false,
@@ -1835,6 +1843,7 @@ fn modifier_kind(kind: &MaterialExpressionKind) -> Option<MaterialStackModifierK
         | MaterialExpressionKind::Divide(_, _)
         | MaterialExpressionKind::Lerp { .. }
         | MaterialExpressionKind::Clamp { .. }
+        | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return None,
     })
 }
@@ -1890,6 +1899,11 @@ fn dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
         | MaterialExpressionKind::Divide(left, right) => vec![*left, *right],
         MaterialExpressionKind::Lerp { start, end, factor } => vec![*start, *end, *factor],
         MaterialExpressionKind::Clamp { value, min, max } => vec![*value, *min, *max],
+        MaterialExpressionKind::Select {
+            condition,
+            if_false,
+            if_true,
+        } => vec![*condition, *if_false, *if_true],
         MaterialExpressionKind::Remap {
             value,
             input_min,

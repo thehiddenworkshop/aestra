@@ -850,6 +850,115 @@ fn smoothstep_semantic_sockets_are_rewireable_and_undoable() {
 }
 
 #[test]
+fn select_semantic_sockets_are_rewireable_and_undoable() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x1480);
+    let condition = MaterialExpressionId::from_u128(0x1481);
+    let alternate_condition = MaterialExpressionId::from_u128(0x1482);
+    let if_false = MaterialExpressionId::from_u128(0x1483);
+    let if_true = MaterialExpressionId::from_u128(0x1484);
+    let alternate = MaterialExpressionId::from_u128(0x1485);
+    let select = MaterialExpressionId::from_u128(0x1486);
+    let mut program = MaterialProgram::additive_sprite("Authorable select");
+    program.id = program_id;
+    program.expressions.extend([
+        MaterialExpression {
+            id: condition,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(false)),
+        },
+        MaterialExpression {
+            id: alternate_condition,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Bool(true)),
+        },
+        MaterialExpression {
+            id: if_false,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.25)),
+        },
+        MaterialExpression {
+            id: if_true,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(0.75)),
+        },
+        MaterialExpression {
+            id: alternate,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+        MaterialExpression {
+            id: select,
+            kind: MaterialExpressionKind::Select {
+                condition,
+                if_false,
+                if_true,
+            },
+        },
+    ]);
+    program.outputs.alpha = select;
+    document.programs.push(program);
+    let mut history = MaterialCommandHistory::default();
+
+    history
+        .execute(
+            &mut document,
+            MaterialTransaction::new(
+                "Rewire select",
+                vec![
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: select,
+                        input: MaterialExpressionInput::Condition,
+                        source: alternate_condition,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: select,
+                        input: MaterialExpressionInput::IfFalse,
+                        source: alternate,
+                    },
+                    MaterialCommand::RewireMaterialExpressionInput {
+                        program: program_id,
+                        expression: select,
+                        input: MaterialExpressionInput::IfTrue,
+                        source: if_false,
+                    },
+                ],
+            ),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == select)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Select {
+            condition: rewired_condition,
+            if_false: rewired_false,
+            if_true: rewired_true,
+        } if rewired_condition == alternate_condition
+            && rewired_false == alternate
+            && rewired_true == if_false
+    ));
+
+    history.undo(&mut document).unwrap().unwrap();
+    assert!(matches!(
+        document.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == select)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Select {
+            condition: original_condition,
+            if_false: original_false,
+            if_true: original_true,
+        } if original_condition == condition
+            && original_false == if_false
+            && original_true == if_true
+    ));
+}
+
+#[test]
 fn radial_mask_semantic_sockets_are_rewireable_and_undoable() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x1500);

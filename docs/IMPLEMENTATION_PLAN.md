@@ -454,9 +454,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   mapping, and the optimization count flows through compiled effects, backward-compatible
   artifacts, the Compiler Inspector, and preview JSON. Shader-static parameter specialization is
   also complete at the IR boundary: typed program defaults replace static reads before dependent
-  folding and CSE, while parameter metadata and fingerprint invalidation remain intact. Static-
-  branch and feature pruning, texture analysis, function deduplication, varying minimization, and
-  required particle-attribute pruning remain.
+  folding and CSE, while parameter metadata and fingerprint invalidation remain intact. Static
+  `Select` branch pruning is now complete end to end: only the chosen branch is lowered, dead
+  inputs, parameter bindings, texture samples, and custom calls are omitted from live reflection,
+  and branch/feature counts flow through artifacts, the Compiler Inspector, and preview JSON.
+  Broader texture analysis, function deduplication, varying minimization, and required
+  particle-attribute pruning remain.
 - [ ] **Material 20 — mesh and ribbon domains.**
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

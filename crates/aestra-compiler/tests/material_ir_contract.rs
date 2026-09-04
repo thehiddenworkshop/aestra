@@ -972,6 +972,113 @@ fn shader_static_parameters_specialize_early_and_enable_dependent_folding() {
 }
 
 #[test]
+fn shader_static_select_prunes_the_unreachable_branch_and_its_features() {
+    let parameter = MaterialParameterId::from_u128(0x4160);
+    let condition = MaterialExpressionId::from_u128(0x4161);
+    let fallback = MaterialExpressionId::from_u128(0x4162);
+    let scene_depth = MaterialExpressionId::from_u128(0x4163);
+    let select = MaterialExpressionId::from_u128(0x4164);
+    let mut program = MaterialProgram::additive_sprite("Static feature pruning");
+    program.parameters = vec![MaterialParameter {
+        id: parameter,
+        name: "use scene depth".into(),
+        value_type: MaterialValueType::Bool,
+        evaluation_domain: MaterialEvaluationDomain::ShaderStatic,
+        default: Some(MaterialValue::Bool(false)),
+    }];
+    program.expressions.extend([
+        MaterialExpression {
+            id: condition,
+            kind: MaterialExpressionKind::Parameter(parameter),
+        },
+        MaterialExpression {
+            id: fallback,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: scene_depth,
+            kind: MaterialExpressionKind::Input(MaterialInput::SceneDepth),
+        },
+        MaterialExpression {
+            id: select,
+            kind: MaterialExpressionKind::Select {
+                condition,
+                if_false: fallback,
+                if_true: scene_depth,
+            },
+        },
+    ]);
+    program.outputs.alpha = select;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+
+    assert_eq!(ir.optimizations.specialized_parameter_reads, 1);
+    assert_eq!(ir.optimizations.pruned_static_branches, 1);
+    assert_eq!(ir.optimizations.pruned_features, 1);
+    assert_eq!(ir.source_map.values[&select], ir.outputs.alpha);
+    assert!(ir.source_map.eliminated.contains(&select));
+    assert!(ir.source_map.eliminated.contains(&scene_depth));
+    assert!(!ir.values.iter().any(|value| matches!(
+        value.instruction,
+        MaterialIrInstruction::Input(MaterialInput::SceneDepth)
+            | MaterialIrInstruction::Select { .. }
+    )));
+}
+
+#[test]
+fn dynamic_select_keeps_both_branches_in_the_ir() {
+    let parameter = MaterialParameterId::from_u128(0x4170);
+    let condition = MaterialExpressionId::from_u128(0x4171);
+    let fallback = MaterialExpressionId::from_u128(0x4172);
+    let effect_time = MaterialExpressionId::from_u128(0x4173);
+    let select = MaterialExpressionId::from_u128(0x4174);
+    let mut program = MaterialProgram::additive_sprite("Dynamic select");
+    program.parameters = vec![MaterialParameter {
+        id: parameter,
+        name: "use effect time".into(),
+        value_type: MaterialValueType::Bool,
+        evaluation_domain: MaterialEvaluationDomain::Effect,
+        default: Some(MaterialValue::Bool(false)),
+    }];
+    program.expressions.extend([
+        MaterialExpression {
+            id: condition,
+            kind: MaterialExpressionKind::Parameter(parameter),
+        },
+        MaterialExpression {
+            id: fallback,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: effect_time,
+            kind: MaterialExpressionKind::Input(MaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: select,
+            kind: MaterialExpressionKind::Select {
+                condition,
+                if_false: fallback,
+                if_true: effect_time,
+            },
+        },
+    ]);
+    program.outputs.alpha = select;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+
+    assert_eq!(ir.optimizations.pruned_static_branches, 0);
+    assert_eq!(ir.optimizations.pruned_features, 0);
+    assert!(matches!(
+        ir.value(ir.outputs.alpha).unwrap().instruction,
+        MaterialIrInstruction::Select { .. }
+    ));
+    assert!(ir.values.iter().any(|value| matches!(
+        value.instruction,
+        MaterialIrInstruction::Input(MaterialInput::EffectTime)
+    )));
+}
+
+#[test]
 fn texture_samples_are_not_commoned_without_a_resource_purity_contract() {
     let texture_parameter = MaterialParameterId::from_u128(0x4201);
     let texture = MaterialExpressionId::from_u128(0x4202);

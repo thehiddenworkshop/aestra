@@ -324,6 +324,11 @@ fn spawn_compiled_layout(
                     "specialized",
                     compiled.optimizations.material_specialized_parameter_reads,
                 );
+                args.set(
+                    "branches",
+                    compiled.optimizations.material_pruned_static_branches,
+                );
+                args.set("features", compiled.optimizations.material_pruned_features);
                 localizer.text_with("generated-optimization-summary", &args)
             });
         },

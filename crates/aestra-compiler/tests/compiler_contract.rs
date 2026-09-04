@@ -1288,6 +1288,7 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
     };
     let material_parameter = MaterialParameterId::from_u128(0xD002);
     let static_tint_parameter = MaterialParameterId::from_u128(0xD005);
+    let static_branch_parameter = MaterialParameterId::from_u128(0xD006);
     let mut program = MaterialProgram::additive_sprite("Compiled semantic material");
     program.id = MaterialProgramId::from_u128(0xD003);
     program.parameters.push(MaterialParameter {
@@ -1304,11 +1305,22 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
         evaluation_domain: MaterialEvaluationDomain::ShaderStatic,
         default: Some(MaterialValue::ColorSrgb([0.25, 0.5, 1.0, 1.0])),
     });
+    program.parameters.push(MaterialParameter {
+        id: static_branch_parameter,
+        name: "Use effect time".into(),
+        value_type: MaterialValueType::Bool,
+        evaluation_domain: MaterialEvaluationDomain::ShaderStatic,
+        default: Some(MaterialValue::Bool(false)),
+    });
     let particle_color = aestra_core::MaterialExpressionId::from_u128(0xD010);
     let tint = aestra_core::MaterialExpressionId::from_u128(0xD011);
     let first_product = aestra_core::MaterialExpressionId::from_u128(0xD012);
     let second_product = aestra_core::MaterialExpressionId::from_u128(0xD013);
     let combined = aestra_core::MaterialExpressionId::from_u128(0xD014);
+    let branch_condition = aestra_core::MaterialExpressionId::from_u128(0xD015);
+    let effect_time = aestra_core::MaterialExpressionId::from_u128(0xD016);
+    let selected_alpha = aestra_core::MaterialExpressionId::from_u128(0xD017);
+    let particle_opacity = program.outputs.alpha;
     program.expressions.extend([
         MaterialExpression {
             id: particle_color,
@@ -1330,8 +1342,25 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
             id: combined,
             kind: MaterialExpressionKind::Add(first_product, second_product),
         },
+        MaterialExpression {
+            id: branch_condition,
+            kind: MaterialExpressionKind::Parameter(static_branch_parameter),
+        },
+        MaterialExpression {
+            id: effect_time,
+            kind: MaterialExpressionKind::Input(SemanticMaterialInput::EffectTime),
+        },
+        MaterialExpression {
+            id: selected_alpha,
+            kind: MaterialExpressionKind::Select {
+                condition: branch_condition,
+                if_false: particle_opacity,
+                if_true: effect_time,
+            },
+        },
     ]);
     program.outputs.color = combined;
+    program.outputs.alpha = selected_alpha;
     program
         .save_ron(temporary.path().join("semantic.aestra.material.ron"))
         .unwrap();
@@ -1364,8 +1393,13 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
             .root
             .optimizations
             .material_specialized_parameter_reads,
+        2
+    );
+    assert_eq!(
+        project.root.optimizations.material_pruned_static_branches,
         1
     );
+    assert_eq!(project.root.optimizations.material_pruned_features, 1);
     assert_eq!(
         project.root.parameter_slots.get(&effect_parameter.id),
         Some(&aestra_runtime::ParameterSlot(0))
