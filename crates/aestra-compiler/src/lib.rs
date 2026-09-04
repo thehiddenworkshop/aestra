@@ -1,10 +1,12 @@
 //! Module discovery, compiler validation, optimization, and typed lowering.
 
+mod material_function;
 mod material_graph;
 mod material_ir;
 mod material_reflection;
 mod material_stack;
 
+pub use material_function::*;
 pub use material_graph::*;
 pub use material_ir::*;
 pub use material_reflection::*;
@@ -226,17 +228,27 @@ impl EffectCompiler {
     ) -> Result<CompiledEffectProject, ProjectCompileError> {
         let resolved = index.resolve_effect_project(root)?;
         self.validate_project_parameter_overrides(&resolved)?;
+        let function_library =
+            MaterialFunctionLibrary::new(resolved.material_functions.values().cloned());
         let compiled_root = Arc::new(
-            self.compile_with_material_programs(&resolved.root, &resolved.material_programs)
-                .map_err(|source| ProjectCompileError::Effect {
-                    effect: resolved.root.id,
-                    source,
-                })?,
+            self.compile_with_material_programs_and_functions(
+                &resolved.root,
+                &resolved.material_programs,
+                &function_library,
+            )
+            .map_err(|source| ProjectCompileError::Effect {
+                effect: resolved.root.id,
+                source,
+            })?,
         );
         let mut dependencies = BTreeMap::new();
         for (&id, effect) in &resolved.dependencies {
             let compiled = self
-                .compile_with_material_programs(effect, &resolved.material_programs)
+                .compile_with_material_programs_and_functions(
+                    effect,
+                    &resolved.material_programs,
+                    &function_library,
+                )
                 .map_err(|source| ProjectCompileError::Effect { effect: id, source })?;
             dependencies.insert(id, Arc::new(compiled));
         }
@@ -258,8 +270,36 @@ impl EffectCompiler {
         asset: &EffectAsset,
         material_programs: &BTreeMap<MaterialProgramId, MaterialProgram>,
     ) -> Result<CompiledEffect, CompileError> {
+        self.compile_with_material_programs_and_functions(
+            asset,
+            material_programs,
+            &MaterialFunctionLibrary::default(),
+        )
+    }
+
+    pub fn compile_with_material_programs_and_functions(
+        &self,
+        asset: &EffectAsset,
+        material_programs: &BTreeMap<MaterialProgramId, MaterialProgram>,
+        functions: &MaterialFunctionLibrary,
+    ) -> Result<CompiledEffect, CompileError> {
         let mut report = asset.validation_report();
         self.validate_compiler_contracts(asset, &mut report);
+        let mut expanded_programs = BTreeMap::new();
+        for (&id, program) in material_programs {
+            match MaterialCompiler.inline_functions(program, functions) {
+                Ok(program) => {
+                    expanded_programs.insert(id, program);
+                }
+                Err(error) => {
+                    for mut diagnostic in error.report().diagnostics.clone() {
+                        diagnostic.path = format!("material_programs[{id}].{}", diagnostic.path);
+                        push_unique(&mut report, diagnostic);
+                    }
+                }
+            }
+        }
+        let material_programs = &expanded_programs;
         for (index, instance) in asset.material_instances.iter().enumerate() {
             let Some(program) = material_programs.get(&instance.program.id()) else {
                 push_unique(

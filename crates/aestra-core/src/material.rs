@@ -6,7 +6,8 @@
 
 use crate::{
     AssetId, BlendMode, Diagnostic, DiagnosticCode, DiagnosticSeverity, MaterialExpressionId,
-    MaterialId, MaterialParameterId, MaterialProgramId, ParameterId, ValidationReport, Value,
+    MaterialFunctionId, MaterialFunctionInputId, MaterialFunctionOutputId, MaterialId,
+    MaterialParameterId, MaterialProgramId, ParameterId, ValidationReport, Value,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -37,6 +38,18 @@ pub enum MaterialProgramError {
     Validation(#[from] ValidationReport),
 }
 
+#[derive(Debug, Error)]
+pub enum MaterialFunctionError {
+    #[error("could not read or write the material function: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("could not parse the material function: {0}")]
+    Parse(#[from] ron::error::SpannedError),
+    #[error("could not serialize the material function: {0}")]
+    Serialize(#[from] ron::Error),
+    #[error("material function validation failed: {0}")]
+    Validation(#[from] ValidationReport),
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct MaterialSchemaVersion(pub u32);
@@ -55,6 +68,20 @@ impl Default for MaterialSchemaVersion {
 pub enum MaterialProgramRef {
     BuiltIn(MaterialProgramId),
     Project(MaterialProgramId),
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MaterialFunctionRef {
+    BuiltIn(MaterialFunctionId),
+    Project(MaterialFunctionId),
+}
+
+impl MaterialFunctionRef {
+    pub const fn id(self) -> MaterialFunctionId {
+        match self {
+            Self::BuiltIn(id) | Self::Project(id) => id,
+        }
+    }
 }
 
 impl MaterialProgramRef {
@@ -524,6 +551,14 @@ pub enum MaterialExpressionKind {
     Constant(MaterialValue),
     Input(MaterialInput),
     Parameter(MaterialParameterId),
+    /// One typed input in a reusable material-function body.
+    FunctionInput(MaterialFunctionInputId),
+    /// One output selected from a reusable material function.
+    FunctionCall {
+        function: MaterialFunctionRef,
+        arguments: BTreeMap<MaterialFunctionInputId, MaterialExpressionId>,
+        output: MaterialFunctionOutputId,
+    },
     Add(MaterialExpressionId, MaterialExpressionId),
     Subtract(MaterialExpressionId, MaterialExpressionId),
     Multiply(MaterialExpressionId, MaterialExpressionId),
@@ -644,6 +679,8 @@ impl MaterialExpressionKind {
             Self::Constant(_)
             | Self::Input(_)
             | Self::Parameter(_)
+            | Self::FunctionInput(_)
+            | Self::FunctionCall { .. }
             | Self::Add(_, _)
             | Self::Subtract(_, _)
             | Self::Multiply(_, _)
@@ -658,7 +695,10 @@ impl MaterialExpressionKind {
 
     fn dependencies(&self) -> Vec<MaterialExpressionId> {
         match self {
-            Self::Constant(_) | Self::Input(_) | Self::Parameter(_) => Vec::new(),
+            Self::Constant(_) | Self::Input(_) | Self::Parameter(_) | Self::FunctionInput(_) => {
+                Vec::new()
+            }
+            Self::FunctionCall { arguments, .. } => arguments.values().copied().collect(),
             Self::Add(left, right)
             | Self::Subtract(left, right)
             | Self::Multiply(left, right)
@@ -727,6 +767,312 @@ impl MaterialExpressionKind {
 pub struct MaterialExpression {
     pub id: MaterialExpressionId,
     pub kind: MaterialExpressionKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MaterialFunctionInput {
+    pub id: MaterialFunctionInputId,
+    pub name: String,
+    pub value_type: MaterialValueType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MaterialFunctionOutput {
+    pub id: MaterialFunctionOutputId,
+    pub name: String,
+    pub value_type: MaterialValueType,
+    pub expression: MaterialExpressionId,
+}
+
+/// Reusable typed semantic material logic.
+///
+/// Function bodies share the normal material expression language. Their external values are
+/// represented by [`MaterialExpressionKind::FunctionInput`] nodes and their declared outputs
+/// select expressions in the body. Calls are resolved and inlined by the compiler, keeping the
+/// renderer IR independent from authoring-level asset boundaries.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MaterialFunction {
+    pub id: MaterialFunctionId,
+    pub schema_version: MaterialSchemaVersion,
+    pub name: String,
+    pub inputs: Vec<MaterialFunctionInput>,
+    pub outputs: Vec<MaterialFunctionOutput>,
+    pub expressions: Vec<MaterialExpression>,
+}
+
+impl MaterialFunction {
+    pub fn normalized(&self) -> Self {
+        let mut normalized = self.clone();
+        normalized.inputs.sort_by_key(|input| input.id);
+        normalized.outputs.sort_by_key(|output| output.id);
+        normalized
+            .expressions
+            .sort_by_key(|expression| expression.id);
+        normalized
+    }
+
+    pub fn from_ron(source: &str) -> Result<Self, MaterialFunctionError> {
+        let function: Self = ron::from_str(source)?;
+        function.validate_structure().into_result()?;
+        Ok(function.normalized())
+    }
+
+    pub fn load_ron(path: impl AsRef<Path>) -> Result<Self, MaterialFunctionError> {
+        Self::from_ron(&fs::read_to_string(path)?)
+    }
+
+    pub fn to_pretty_ron(&self) -> Result<String, MaterialFunctionError> {
+        self.validate_structure().into_result()?;
+        Ok(ron::ser::to_string_pretty(
+            &self.normalized(),
+            ron::ser::PrettyConfig::new().depth_limit(16),
+        )?)
+    }
+
+    pub fn save_ron(&self, path: impl AsRef<Path>) -> Result<(), MaterialFunctionError> {
+        crate::model::atomic_write(path.as_ref(), self.to_pretty_ron()?.as_bytes())?;
+        Ok(())
+    }
+
+    /// Validates identity and the self-contained function graph.
+    ///
+    /// Cross-function references and call signatures are intentionally validated by the compiler
+    /// against a complete function library.
+    pub fn validate_structure(&self) -> ValidationReport {
+        let mut report = ValidationReport::default();
+        if self.id.is_nil() {
+            error(
+                &mut report,
+                DiagnosticCode::NilId,
+                "material_function.id",
+                "material function ID cannot be nil",
+            );
+        }
+        if self.schema_version != MaterialSchemaVersion::CURRENT {
+            error(
+                &mut report,
+                DiagnosticCode::UnsupportedFormat,
+                "material_function.schema_version",
+                format!(
+                    "material schema version {} is unsupported; expected {}",
+                    self.schema_version.0, CURRENT_MATERIAL_SCHEMA_VERSION
+                ),
+            );
+        }
+        if self.name.trim().is_empty() {
+            error(
+                &mut report,
+                DiagnosticCode::InvalidValue,
+                "material_function.name",
+                "material function name cannot be empty",
+            );
+        }
+
+        let mut inputs = BTreeSet::new();
+        let mut input_names = BTreeSet::new();
+        for (index, input) in self.inputs.iter().enumerate() {
+            let path = format!("material_function.inputs[{index}]");
+            if input.id.is_nil() {
+                error(
+                    &mut report,
+                    DiagnosticCode::NilId,
+                    format!("{path}.id"),
+                    "material function input ID cannot be nil",
+                );
+            } else if !inputs.insert(input.id) {
+                error(
+                    &mut report,
+                    DiagnosticCode::DuplicateId,
+                    format!("{path}.id"),
+                    "material function input ID must be unique",
+                );
+            }
+            let name = input.name.trim().to_lowercase();
+            if name.is_empty() {
+                error(
+                    &mut report,
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.name"),
+                    "material function input name cannot be empty",
+                );
+            } else if !input_names.insert(name) {
+                error(
+                    &mut report,
+                    DiagnosticCode::DuplicateId,
+                    format!("{path}.name"),
+                    "material function input name must be unique",
+                );
+            }
+        }
+
+        let mut expressions = BTreeMap::new();
+        for (index, expression) in self.expressions.iter().enumerate() {
+            let path = format!("material_function.expressions[{index}]");
+            if expression.id.is_nil() {
+                error(
+                    &mut report,
+                    DiagnosticCode::NilId,
+                    format!("{path}.id"),
+                    "material function expression ID cannot be nil",
+                );
+            } else if expressions.insert(expression.id, expression).is_some() {
+                error(
+                    &mut report,
+                    DiagnosticCode::DuplicateId,
+                    format!("{path}.id"),
+                    "material function expression ID must be unique",
+                );
+            }
+            match &expression.kind {
+                MaterialExpressionKind::Constant(value) if !value.is_valid() => error(
+                    &mut report,
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.kind"),
+                    "material constants must contain finite values and valid assets",
+                ),
+                MaterialExpressionKind::Parameter(_) => error(
+                    &mut report,
+                    DiagnosticCode::InvalidReference,
+                    format!("{path}.kind"),
+                    "material functions cannot reference program parameters",
+                ),
+                MaterialExpressionKind::FunctionInput(input) if !inputs.contains(input) => error(
+                    &mut report,
+                    DiagnosticCode::InvalidReference,
+                    format!("{path}.kind"),
+                    format!("material function references unknown input {input}"),
+                ),
+                MaterialExpressionKind::FunctionCall {
+                    function,
+                    arguments,
+                    output,
+                } => validate_function_call_identity(
+                    &mut report,
+                    &format!("{path}.kind"),
+                    *function,
+                    arguments,
+                    *output,
+                ),
+                _ => {}
+            }
+        }
+
+        for (index, expression) in self.expressions.iter().enumerate() {
+            for dependency in expression.kind.dependencies() {
+                if !expressions.contains_key(&dependency) {
+                    error(
+                        &mut report,
+                        DiagnosticCode::InvalidReference,
+                        format!("material_function.expressions[{index}].kind"),
+                        format!("material expression references missing expression {dependency}"),
+                    );
+                }
+            }
+        }
+        let mut visit_state = BTreeMap::new();
+        for expression in &self.expressions {
+            detect_cycle(expression.id, &expressions, &mut visit_state, &mut report);
+        }
+
+        let mut outputs = BTreeSet::new();
+        let mut output_names = BTreeSet::new();
+        let mut reachable = BTreeSet::new();
+        for (index, output) in self.outputs.iter().enumerate() {
+            let path = format!("material_function.outputs[{index}]");
+            if output.id.is_nil() {
+                error(
+                    &mut report,
+                    DiagnosticCode::NilId,
+                    format!("{path}.id"),
+                    "material function output ID cannot be nil",
+                );
+            } else if !outputs.insert(output.id) {
+                error(
+                    &mut report,
+                    DiagnosticCode::DuplicateId,
+                    format!("{path}.id"),
+                    "material function output ID must be unique",
+                );
+            }
+            let name = output.name.trim().to_lowercase();
+            if name.is_empty() {
+                error(
+                    &mut report,
+                    DiagnosticCode::InvalidValue,
+                    format!("{path}.name"),
+                    "material function output name cannot be empty",
+                );
+            } else if !output_names.insert(name) {
+                error(
+                    &mut report,
+                    DiagnosticCode::DuplicateId,
+                    format!("{path}.name"),
+                    "material function output name must be unique",
+                );
+            }
+            validate_output(
+                &mut report,
+                &expressions,
+                output.expression,
+                &format!("{path}.expression"),
+            );
+            collect_reachable(output.expression, &expressions, &mut reachable);
+        }
+        if self.outputs.is_empty() {
+            error(
+                &mut report,
+                DiagnosticCode::InvalidValue,
+                "material_function.outputs",
+                "material function must declare at least one output",
+            );
+        }
+        for (index, expression) in self.expressions.iter().enumerate() {
+            if !reachable.contains(&expression.id) {
+                report.push(Diagnostic {
+                    severity: DiagnosticSeverity::Warning,
+                    code: DiagnosticCode::UnreachableExpression,
+                    path: format!("material_function.expressions[{index}]"),
+                    message: "material function expression is unreachable from its outputs".into(),
+                });
+            }
+        }
+        report
+    }
+}
+
+fn validate_function_call_identity(
+    report: &mut ValidationReport,
+    path: &str,
+    function: MaterialFunctionRef,
+    arguments: &BTreeMap<MaterialFunctionInputId, MaterialExpressionId>,
+    output: MaterialFunctionOutputId,
+) {
+    if function.id().is_nil() {
+        error(
+            report,
+            DiagnosticCode::NilId,
+            format!("{path}.function"),
+            "material function reference cannot be nil",
+        );
+    }
+    if output.is_nil() {
+        error(
+            report,
+            DiagnosticCode::NilId,
+            format!("{path}.output"),
+            "material function output reference cannot be nil",
+        );
+    }
+    for input in arguments.keys() {
+        if input.is_nil() {
+            error(
+                report,
+                DiagnosticCode::NilId,
+                format!("{path}.arguments"),
+                "material function argument input cannot be nil",
+            );
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -862,15 +1208,22 @@ impl MaterialProgram {
     /// Returns deterministic structural and semantic diagnostics without
     /// requiring a renderer backend.
     pub fn validation_report(&self) -> ValidationReport {
+        self.analyze_with_diagnostics().1
+    }
+
+    /// Infers all expressions it can while retaining diagnostics for invalid subgraphs.
+    ///
+    /// Projectional editors and function-call validation use this form so one invalid edge does
+    /// not hide useful type information for the rest of the graph.
+    pub fn analyze_with_diagnostics(&self) -> (MaterialProgramAnalysis, ValidationReport) {
         let mut report = self.validate_structure();
-        self.analyze_semantics(&mut report);
-        report
+        let analysis = self.analyze_semantics(&mut report);
+        (analysis, report)
     }
 
     /// Infers the type and evaluation domain of every valid expression.
     pub fn analyze(&self) -> Result<MaterialProgramAnalysis, ValidationReport> {
-        let mut report = self.validate_structure();
-        let analysis = self.analyze_semantics(&mut report);
+        let (analysis, report) = self.analyze_with_diagnostics();
         if report.is_valid() {
             Ok(analysis)
         } else {
@@ -1001,6 +1354,28 @@ impl MaterialProgram {
                     DiagnosticCode::UnknownParameter,
                     format!("{path}.kind"),
                     "material expression references an unknown parameter",
+                );
+            }
+            if matches!(&expression.kind, MaterialExpressionKind::FunctionInput(_)) {
+                error(
+                    &mut report,
+                    DiagnosticCode::InvalidReference,
+                    format!("{path}.kind"),
+                    "function-input expressions are only valid inside a material function",
+                );
+            }
+            if let MaterialExpressionKind::FunctionCall {
+                function,
+                arguments,
+                output,
+            } = &expression.kind
+            {
+                validate_function_call_identity(
+                    &mut report,
+                    &format!("{path}.kind"),
+                    *function,
+                    arguments,
+                    *output,
                 );
             }
         }
@@ -1211,6 +1586,10 @@ fn infer_expression(
                     evaluation_domain: parameter.evaluation_domain.into(),
                 })
         }
+        // Function calls require a complete library to determine their output type. The compiler
+        // performs that resolution before invoking the ordinary program analyzer.
+        MaterialExpressionKind::FunctionCall { .. } => None,
+        MaterialExpressionKind::FunctionInput(_) => None,
         MaterialExpressionKind::Add(left, right)
         | MaterialExpressionKind::Subtract(left, right) => {
             let left = dependency(*left);

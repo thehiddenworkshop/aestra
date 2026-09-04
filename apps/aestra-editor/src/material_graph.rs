@@ -2169,6 +2169,8 @@ impl MaterialPreviewEvaluator<'_> {
             MaterialExpressionKind::Constant(value) => preview_value(value),
             MaterialExpressionKind::Input(input) => Some(preview_input(*input, context)),
             MaterialExpressionKind::Parameter(parameter) => self.parameter(*parameter),
+            MaterialExpressionKind::FunctionInput(_)
+            | MaterialExpressionKind::FunctionCall { .. } => None,
             MaterialExpressionKind::Add(left, right) => {
                 preview_binary(read(*left)?, read(*right)?, |left, right| left + right)
             }
@@ -2757,7 +2759,11 @@ fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpression
     match kind {
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
-        | MaterialExpressionKind::Parameter(_) => Vec::new(),
+        | MaterialExpressionKind::Parameter(_)
+        | MaterialExpressionKind::FunctionInput(_) => Vec::new(),
+        MaterialExpressionKind::FunctionCall { arguments, .. } => {
+            arguments.values().copied().collect()
+        }
         MaterialExpressionKind::Add(left, right)
         | MaterialExpressionKind::Subtract(left, right)
         | MaterialExpressionKind::Multiply(left, right)

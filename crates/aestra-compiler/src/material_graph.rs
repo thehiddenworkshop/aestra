@@ -5,10 +5,11 @@ use crate::{
     MaterialStackModifierKind, material_stack::append_default_modifier,
 };
 use aestra_core::{
-    MaterialExpressionId, MaterialParameterId, MaterialProgramId, ValidationReport,
+    MaterialExpressionId, MaterialFunctionInputId, MaterialParameterId, MaterialProgramId,
+    ValidationReport,
     material::{
-        MaterialExpression, MaterialExpressionDomain, MaterialExpressionKind, MaterialInput,
-        MaterialProgram, MaterialValue, MaterialValueType, MaterialVectorComponent,
+        MaterialExpression, MaterialExpressionDomain, MaterialExpressionKind, MaterialFunctionRef,
+        MaterialInput, MaterialProgram, MaterialValue, MaterialValueType, MaterialVectorComponent,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,8 @@ pub enum MaterialGraphNodeKind {
     Constant,
     Input(MaterialInput),
     Parameter(MaterialParameterId),
+    FunctionInput(MaterialFunctionInputId),
+    FunctionCall(MaterialFunctionRef),
     Function(MaterialGraphFunction),
     ExtractComponent(MaterialVectorComponent),
 }
@@ -787,6 +790,10 @@ fn node_kind(kind: &MaterialExpressionKind) -> MaterialGraphNodeKind {
         E::Constant(_) => return MaterialGraphNodeKind::Constant,
         E::Input(input) => return MaterialGraphNodeKind::Input(*input),
         E::Parameter(parameter) => return MaterialGraphNodeKind::Parameter(*parameter),
+        E::FunctionInput(input) => return MaterialGraphNodeKind::FunctionInput(*input),
+        E::FunctionCall { function, .. } => {
+            return MaterialGraphNodeKind::FunctionCall(*function);
+        }
         E::Add(..) => MaterialGraphFunction::Add,
         E::Subtract(..) => MaterialGraphFunction::Subtract,
         E::Multiply(..) => MaterialGraphFunction::Multiply,
@@ -820,6 +827,10 @@ fn node_label(kind: &MaterialExpressionKind, program: &MaterialProgram) -> Strin
             .find(|parameter| parameter.id == *id)
             .map(|parameter| parameter.name.clone())
             .unwrap_or_else(|| format!("Parameter {id}")),
+        MaterialExpressionKind::FunctionInput(id) => format!("Function input {id}"),
+        MaterialExpressionKind::FunctionCall { function, .. } => {
+            format!("Function {}", function.id())
+        }
         MaterialExpressionKind::ExtractComponent { component, .. } => {
             format!("Extract {component:?}")
         }
@@ -836,7 +847,12 @@ fn node_label(kind: &MaterialExpressionKind, program: &MaterialProgram) -> Strin
 fn expression_inputs(kind: &MaterialExpressionKind) -> Vec<(&'static str, MaterialExpressionId)> {
     use MaterialExpressionKind as E;
     match kind {
-        E::Constant(_) | E::Input(_) | E::Parameter(_) => Vec::new(),
+        E::Constant(_) | E::Input(_) | E::Parameter(_) | E::FunctionInput(_) => Vec::new(),
+        E::FunctionCall { arguments, .. } => arguments
+            .values()
+            .copied()
+            .map(|expression| ("argument", expression))
+            .collect(),
         E::Add(left, right)
         | E::Subtract(left, right)
         | E::Multiply(left, right)

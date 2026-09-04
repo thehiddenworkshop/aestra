@@ -903,7 +903,13 @@ fn remap_expression_sources(
     match kind {
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
-        | MaterialExpressionKind::Parameter(_) => {}
+        | MaterialExpressionKind::Parameter(_)
+        | MaterialExpressionKind::FunctionInput(_) => {}
+        MaterialExpressionKind::FunctionCall { arguments, .. } => {
+            for source in arguments.values_mut() {
+                remap(source);
+            }
+        }
         MaterialExpressionKind::Add(left, right)
         | MaterialExpressionKind::Subtract(left, right)
         | MaterialExpressionKind::Multiply(left, right)

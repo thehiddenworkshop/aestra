@@ -418,6 +418,13 @@ impl MaterialCompiler {
         &self,
         program: &MaterialProgram,
     ) -> Result<MaterialIrProgram, MaterialCompileError> {
+        self.compile_with_functions(program, &crate::MaterialFunctionLibrary::default())
+    }
+
+    pub(crate) fn compile_expanded(
+        &self,
+        program: &MaterialProgram,
+    ) -> Result<MaterialIrProgram, MaterialCompileError> {
         let normalized = program.normalized();
         let analysis = normalized
             .analyze()
@@ -509,6 +516,10 @@ impl MaterialIrBuilder<'_> {
             MaterialExpressionKind::Input(input) => MaterialIrInstruction::Input(input),
             MaterialExpressionKind::Parameter(parameter) => {
                 MaterialIrInstruction::Parameter(parameter)
+            }
+            MaterialExpressionKind::FunctionInput(_)
+            | MaterialExpressionKind::FunctionCall { .. } => {
+                unreachable!("validated material functions must be inlined before IR lowering")
             }
             MaterialExpressionKind::Add(left, right) => {
                 let left = self.lower(left);

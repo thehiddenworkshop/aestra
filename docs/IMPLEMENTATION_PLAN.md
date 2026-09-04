@@ -390,8 +390,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
 
 ### Phase E — reuse and extensibility
 
-- [ ] **Material 15 — typed material functions.** Add `ExtractMaterialFunction` only after the
-  canonical function/input/output/call representation exists.
+- [ ] **Material 15 — typed material functions.** The semantic foundation is implemented:
+  canonical stable function/input/output identities, typed function signatures, function-input
+  and function-call expressions, normalized RON assets, project-local discovery and resolution,
+  exact call-signature validation, missing-reference and recursion diagnostics, deterministic
+  compiler inlining, and source-map aliases for authored calls. Project effect compilation erases
+  function boundaries before handing semantic programs to the runtime, so render backends remain
+  isolated from authoring assets. Remaining work is built-in function registration, function-aware
+  graph projection/palette UX, and the validated `ExtractMaterialFunction` command.
 - [ ] **Material 16 — semantic preset library.**
 - [ ] **Material 17 — validated custom WESL escape hatch.**
 

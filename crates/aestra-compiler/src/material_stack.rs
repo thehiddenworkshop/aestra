@@ -830,6 +830,8 @@ fn modifier_property_targets(
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
         | MaterialExpressionKind::Parameter(_)
+        | MaterialExpressionKind::FunctionInput(_)
+        | MaterialExpressionKind::FunctionCall { .. }
         | MaterialExpressionKind::Add(_, _)
         | MaterialExpressionKind::Subtract(_, _)
         | MaterialExpressionKind::Multiply(_, _)
@@ -1494,6 +1496,8 @@ fn primary_source(kind: &MaterialExpressionKind) -> Option<MaterialExpressionId>
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
         | MaterialExpressionKind::Parameter(_)
+        | MaterialExpressionKind::FunctionInput(_)
+        | MaterialExpressionKind::FunctionCall { .. }
         | MaterialExpressionKind::Add(_, _)
         | MaterialExpressionKind::Subtract(_, _)
         | MaterialExpressionKind::Multiply(_, _)
@@ -1521,6 +1525,8 @@ fn set_primary_source(kind: &mut MaterialExpressionKind, source: MaterialExpress
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
         | MaterialExpressionKind::Parameter(_)
+        | MaterialExpressionKind::FunctionInput(_)
+        | MaterialExpressionKind::FunctionCall { .. }
         | MaterialExpressionKind::Add(_, _)
         | MaterialExpressionKind::Subtract(_, _)
         | MaterialExpressionKind::Multiply(_, _)
@@ -1551,6 +1557,8 @@ fn modifier_kind(kind: &MaterialExpressionKind) -> Option<MaterialStackModifierK
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
         | MaterialExpressionKind::Parameter(_)
+        | MaterialExpressionKind::FunctionInput(_)
+        | MaterialExpressionKind::FunctionCall { .. }
         | MaterialExpressionKind::Add(_, _)
         | MaterialExpressionKind::Subtract(_, _)
         | MaterialExpressionKind::Multiply(_, _)
@@ -1597,7 +1605,11 @@ fn dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
     match kind {
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
-        | MaterialExpressionKind::Parameter(_) => Vec::new(),
+        | MaterialExpressionKind::Parameter(_)
+        | MaterialExpressionKind::FunctionInput(_) => Vec::new(),
+        MaterialExpressionKind::FunctionCall { arguments, .. } => {
+            arguments.values().copied().collect()
+        }
         MaterialExpressionKind::Add(left, right)
         | MaterialExpressionKind::Subtract(left, right)
         | MaterialExpressionKind::Multiply(left, right)
