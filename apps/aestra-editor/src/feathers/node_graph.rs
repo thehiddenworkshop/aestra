@@ -224,7 +224,6 @@ pub(crate) struct GraphNodeProps {
     pub(crate) graph_key: String,
     pub(crate) node_key: String,
     pub(crate) title: String,
-    pub(crate) subtitle: String,
     pub(crate) position: Vec2,
     pub(crate) selected: bool,
     pub(crate) muted: bool,
@@ -304,7 +303,9 @@ struct GraphCollapseIcon {
 
 #[derive(Debug, Clone)]
 pub(crate) struct GraphPortProps {
-    pub(crate) label: String,
+    pub(crate) label: Option<String>,
+    pub(crate) tooltip_title: String,
+    pub(crate) tooltip_description: String,
     pub(crate) side: GraphSocketSide,
     pub(crate) color: Color,
 }
@@ -1183,14 +1184,6 @@ pub(crate) fn spawn_graph_node<B: Bundle>(
                 flex_grow: 1.0,
                 ..default()
             });
-            header.spawn((
-                Text::new(props.subtitle),
-                TextFont {
-                    font_size: FontSize::Px(8.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_FAINT),
-            ));
             let mut disclosure = header.spawn_empty();
             disclosure.apply_scene(scenes::feathers_tool_button());
             disclosure
@@ -1339,7 +1332,12 @@ pub(crate) fn spawn_graph_port_with<B: Bundle>(
                 Button,
                 marker,
                 FeathersGraphSocket { color: props.color },
-                EntityCursor::System(SystemCursorIcon::Crosshair),
+                AccessibleLabel(format!(
+                    "{}. {}",
+                    props.tooltip_title, props.tooltip_description
+                )),
+                EditorTooltip::titled(props.tooltip_title, props.tooltip_description),
+                EntityCursor::System(SystemCursorIcon::Pointer),
                 Node {
                     width: Val::Px(SOCKET_HIT_SIZE),
                     height: Val::Px(SOCKET_HIT_SIZE),
@@ -1365,15 +1363,17 @@ pub(crate) fn spawn_graph_port_with<B: Bundle>(
                 Pickable::IGNORE,
             ))
             .id();
-        row.spawn((
-            Text::new(props.label),
-            TextFont {
-                font_size: FontSize::Px(9.0),
-                ..default()
-            },
-            TextColor(theme::TEXT_MUTED),
-            Pickable::IGNORE,
-        ));
+        if let Some(label) = props.label {
+            row.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT_MUTED),
+                Pickable::IGNORE,
+            ));
+        }
         accessory(row);
     });
     socket_entity
