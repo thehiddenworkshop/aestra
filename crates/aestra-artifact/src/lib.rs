@@ -389,6 +389,12 @@ struct OptimizationStatsV1 {
     material_pruned_static_branches: u64,
     #[serde(default)]
     material_pruned_features: u64,
+    #[serde(default)]
+    material_texture_samples_authored: u64,
+    #[serde(default)]
+    material_texture_samples_eliminated: u64,
+    #[serde(default)]
+    material_texture_samples_live: u64,
 }
 
 impl TryFrom<&CompiledEffect> for EffectV1 {
@@ -1775,6 +1781,18 @@ impl OptimizationStatsV1 {
                 stats.material_pruned_features,
                 "effect.optimizations.material_pruned_features",
             )?,
+            material_texture_samples_authored: encode_u64(
+                stats.material_texture_samples_authored,
+                "effect.optimizations.material_texture_samples_authored",
+            )?,
+            material_texture_samples_eliminated: encode_u64(
+                stats.material_texture_samples_eliminated,
+                "effect.optimizations.material_texture_samples_eliminated",
+            )?,
+            material_texture_samples_live: encode_u64(
+                stats.material_texture_samples_live,
+                "effect.optimizations.material_texture_samples_live",
+            )?,
         })
     }
 
@@ -1807,6 +1825,18 @@ impl OptimizationStatsV1 {
             material_pruned_features: decode_usize(
                 self.material_pruned_features,
                 "effect.optimizations.material_pruned_features",
+            )?,
+            material_texture_samples_authored: decode_usize(
+                self.material_texture_samples_authored,
+                "effect.optimizations.material_texture_samples_authored",
+            )?,
+            material_texture_samples_eliminated: decode_usize(
+                self.material_texture_samples_eliminated,
+                "effect.optimizations.material_texture_samples_eliminated",
+            )?,
+            material_texture_samples_live: decode_usize(
+                self.material_texture_samples_live,
+                "effect.optimizations.material_texture_samples_live",
             )?,
         })
     }

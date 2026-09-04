@@ -58,6 +58,13 @@ impl CompilerPreviewData {
                     .optimizations
                     .material_pruned_static_branches,
                 material_pruned_features: effect.optimizations.material_pruned_features,
+                material_texture_samples_authored: effect
+                    .optimizations
+                    .material_texture_samples_authored,
+                material_texture_samples_eliminated: effect
+                    .optimizations
+                    .material_texture_samples_eliminated,
+                material_texture_samples_live: effect.optimizations.material_texture_samples_live,
             },
             material_program_fingerprints: material_program_fingerprints
                 .into_iter()
@@ -297,6 +304,9 @@ struct PreviewOptimizations {
     material_specialized_parameter_reads: usize,
     material_pruned_static_branches: usize,
     material_pruned_features: usize,
+    material_texture_samples_authored: usize,
+    material_texture_samples_eliminated: usize,
+    material_texture_samples_live: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -613,6 +623,9 @@ mod tests {
         compiled.optimizations.material_specialized_parameter_reads = 5;
         compiled.optimizations.material_pruned_static_branches = 7;
         compiled.optimizations.material_pruned_features = 11;
+        compiled.optimizations.material_texture_samples_authored = 13;
+        compiled.optimizations.material_texture_samples_eliminated = 5;
+        compiled.optimizations.material_texture_samples_live = 8;
         let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
         let profile = EffectProfile::from_compiled(&compiled);
 
@@ -663,6 +676,18 @@ mod tests {
         assert_eq!(
             value["compiler"]["optimizations"]["material_pruned_features"],
             11
+        );
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_texture_samples_authored"],
+            13
+        );
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_texture_samples_eliminated"],
+            5
+        );
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_texture_samples_live"],
+            8
         );
     }
 

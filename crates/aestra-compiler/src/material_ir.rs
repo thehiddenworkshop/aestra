@@ -138,11 +138,31 @@ pub enum MaterialIrInstruction {
     SampleTexture {
         texture: MaterialIrValueId,
         uv: MaterialIrValueId,
+        #[serde(default)]
+        sampling: MaterialTextureSamplingMode,
     },
     ExtractComponent {
         value: MaterialIrValueId,
         component: MaterialVectorComponent,
     },
+}
+
+/// Texture-coordinate evaluation contract carried into backend-neutral material IR.
+///
+/// Implicit derivatives are common-subexpression safe because material IR is straight-line SSA:
+/// identical resource and UV operands are evaluated once within the same fragment invocation.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+pub enum MaterialTextureSamplingMode {
+    #[default]
+    ImplicitDerivatives,
+}
+
+impl MaterialTextureSamplingMode {
+    const fn common_subexpression_safe(self) -> bool {
+        matches!(self, Self::ImplicitDerivatives)
+    }
 }
 
 impl MaterialIrInstruction {
@@ -213,7 +233,7 @@ impl MaterialIrInstruction {
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
-            Self::SampleTexture { texture, uv } => vec![*texture, *uv],
+            Self::SampleTexture { texture, uv, .. } => vec![*texture, *uv],
             Self::ExtractComponent { value, .. } => vec![*value],
         }
     }
@@ -360,7 +380,7 @@ impl MaterialIrInstruction {
                 remap(center);
                 remap(scale);
             }
-            Self::SampleTexture { texture, uv } => {
+            Self::SampleTexture { texture, uv, .. } => {
                 remap(texture);
                 remap(uv);
             }
@@ -409,6 +429,15 @@ pub struct MaterialIrOptimizationStats {
     pub pruned_static_branches: usize,
     /// Dynamic inputs, parameter reads, texture samples, and custom calls removed from the live IR.
     pub pruned_features: usize,
+    /// Enabled semantic texture samples before specialization, CSE, and dead-value removal.
+    #[serde(default)]
+    pub texture_samples_authored: usize,
+    /// Reachable texture samples removed by specialization, CSE, or dead-value removal.
+    #[serde(default)]
+    pub texture_samples_eliminated: usize,
+    /// Texture samples that remain in the optimized material IR.
+    #[serde(default)]
+    pub texture_samples_live: usize,
     /// Pure expressions that reuse an already-lowered IR value.
     pub common_subexpressions: usize,
     pub eliminated_values: usize,
@@ -466,7 +495,7 @@ impl MaterialCompiler {
         program: &MaterialProgram,
     ) -> Result<MaterialIrProgram, MaterialCompileError> {
         let normalized = program.normalized();
-        let semantic_features = semantic_feature_count(&normalized);
+        let semantic_features = semantic_feature_stats(&normalized);
         let analysis = normalized
             .analyze()
             .map_err(MaterialCompileError::Validation)?;
@@ -506,7 +535,14 @@ impl MaterialCompiler {
 
         let (values, outputs, source_map, mut optimizations) =
             builder.finish(MaterialIrOutputs { color, alpha });
-        optimizations.pruned_features = semantic_features.saturating_sub(ir_feature_count(&values));
+        optimizations.pruned_features = semantic_features
+            .total
+            .saturating_sub(ir_feature_count(&values));
+        optimizations.texture_samples_authored = semantic_features.texture_samples;
+        optimizations.texture_samples_live = ir_texture_sample_count(&values);
+        optimizations.texture_samples_eliminated = optimizations
+            .texture_samples_authored
+            .saturating_sub(optimizations.texture_samples_live);
         let parameters = normalized
             .parameters
             .iter()
@@ -532,7 +568,13 @@ impl MaterialCompiler {
     }
 }
 
-fn semantic_feature_count(program: &MaterialProgram) -> usize {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct SemanticFeatureStats {
+    total: usize,
+    texture_samples: usize,
+}
+
+fn semantic_feature_stats(program: &MaterialProgram) -> SemanticFeatureStats {
     let expressions = program
         .expressions
         .iter()
@@ -543,11 +585,22 @@ fn semantic_feature_count(program: &MaterialProgram) -> usize {
         .iter()
         .map(|parameter| (parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
+    let authored_texture_samples = program
+        .expressions
+        .iter()
+        .filter(|expression| {
+            !program.disabled_expressions.contains(&expression.id)
+                && matches!(
+                    expression.kind,
+                    MaterialExpressionKind::SampleTexture { .. }
+                )
+        })
+        .count();
     let mut pending = vec![program.outputs.color, program.outputs.alpha];
     let mut visited = BTreeSet::new();
     let mut inputs = BTreeSet::new();
     let mut dynamic_parameters = BTreeSet::new();
-    let mut texture_samples = 0usize;
+    let mut reachable_texture_samples = 0usize;
     let mut custom_calls = 0usize;
     while let Some(expression) = pending.pop() {
         if !visited.insert(expression) {
@@ -573,13 +626,16 @@ fn semantic_feature_count(program: &MaterialProgram) -> usize {
                     dynamic_parameters.insert(*parameter);
                 }
             }
-            MaterialExpressionKind::SampleTexture { .. } => texture_samples += 1,
+            MaterialExpressionKind::SampleTexture { .. } => reachable_texture_samples += 1,
             MaterialExpressionKind::CustomWeslCall { .. } => custom_calls += 1,
             _ => {}
         }
         pending.extend(kind.dependencies());
     }
-    inputs.len() + dynamic_parameters.len() + texture_samples + custom_calls
+    SemanticFeatureStats {
+        total: inputs.len() + dynamic_parameters.len() + reachable_texture_samples + custom_calls,
+        texture_samples: authored_texture_samples,
+    }
 }
 
 fn ir_feature_count(values: &[MaterialIrValue]) -> usize {
@@ -601,6 +657,18 @@ fn ir_feature_count(values: &[MaterialIrValue]) -> usize {
         }
     }
     inputs.len() + parameters.len() + texture_samples + custom_calls
+}
+
+fn ir_texture_sample_count(values: &[MaterialIrValue]) -> usize {
+    values
+        .iter()
+        .filter(|value| {
+            matches!(
+                value.instruction,
+                MaterialIrInstruction::SampleTexture { .. }
+            )
+        })
+        .count()
 }
 
 struct MaterialIrBuilder<'a> {
@@ -881,7 +949,11 @@ impl MaterialIrBuilder<'_> {
             MaterialExpressionKind::SampleTexture { texture, uv } => {
                 let texture = self.lower(texture);
                 let uv = self.lower(uv);
-                MaterialIrInstruction::SampleTexture { texture, uv }
+                MaterialIrInstruction::SampleTexture {
+                    texture,
+                    uv,
+                    sampling: MaterialTextureSamplingMode::ImplicitDerivatives,
+                }
             }
             MaterialExpressionKind::ExtractComponent { value, component } => {
                 let value = self.lower(value);
@@ -1268,7 +1340,15 @@ impl MaterialIrInstructionKey {
                 vec![*uv, *center, *scale],
                 MaterialIrInstructionPayloadKey::None,
             ),
-            // Texture sampling remains conservative until resource operations carry purity data.
+            MaterialIrInstruction::SampleTexture {
+                texture,
+                uv,
+                sampling,
+            } if sampling.common_subexpression_safe() => (
+                20,
+                vec![*texture, *uv],
+                MaterialIrInstructionPayloadKey::TextureSampling(*sampling),
+            ),
             MaterialIrInstruction::SampleTexture { .. } => return None,
             MaterialIrInstruction::ExtractComponent { value, component } => (
                 21,
@@ -1294,6 +1374,7 @@ enum MaterialIrInstructionPayloadKey {
     Input(u8),
     Parameter(MaterialParameterId),
     Component(u8),
+    TextureSampling(MaterialTextureSamplingMode),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

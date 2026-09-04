@@ -1,6 +1,7 @@
 use aestra_compiler::{
     MaterialCompileError, MaterialCompiler, MaterialIrConstant, MaterialIrInstruction,
     MaterialIrValueId, MaterialStackModifierKind, MaterialStackProjection,
+    MaterialTextureSamplingMode,
 };
 use aestra_core::{
     AssetId, DiagnosticCode, MaterialExpressionId, MaterialParameterId, MaterialProgramId,
@@ -150,6 +151,9 @@ fn valid_two_texture_flame_lowers_to_typed_backend_neutral_ir() {
 
     assert_eq!(ir.source, program.id);
     assert_eq!(ir.parameters.len(), 4);
+    assert_eq!(ir.optimizations.texture_samples_authored, 2);
+    assert_eq!(ir.optimizations.texture_samples_eliminated, 0);
+    assert_eq!(ir.optimizations.texture_samples_live, 2);
     assert_eq!(
         ir.values
             .iter()
@@ -1079,7 +1083,7 @@ fn dynamic_select_keeps_both_branches_in_the_ir() {
 }
 
 #[test]
-fn texture_samples_are_not_commoned_without_a_resource_purity_contract() {
+fn identical_implicit_derivative_texture_samples_are_commoned_safely() {
     let texture_parameter = MaterialParameterId::from_u128(0x4201);
     let texture = MaterialExpressionId::from_u128(0x4202);
     let uv = MaterialExpressionId::from_u128(0x4203);
@@ -1088,7 +1092,7 @@ fn texture_samples_are_not_commoned_without_a_resource_purity_contract() {
     let color = MaterialExpressionId::from_u128(0x4206);
     let alpha = MaterialExpressionId::from_u128(0x4207);
     let descriptor = texture_descriptor(MaterialTextureColorSpace::SrgbColor);
-    let mut program = MaterialProgram::additive_sprite("Conservative texture samples");
+    let mut program = MaterialProgram::additive_sprite("Common texture samples");
     program.parameters = vec![MaterialParameter {
         id: texture_parameter,
         name: "texture".into(),
@@ -1127,8 +1131,15 @@ fn texture_samples_are_not_commoned_without_a_resource_purity_contract() {
 
     let ir = MaterialCompiler.compile(&program).unwrap();
 
-    assert_eq!(ir.optimizations.common_subexpressions, 0);
-    assert_ne!(ir.source_map.values[&first], ir.source_map.values[&second]);
+    assert_eq!(ir.optimizations.common_subexpressions, 1);
+    assert_eq!(ir.optimizations.texture_samples_authored, 2);
+    assert_eq!(ir.optimizations.texture_samples_eliminated, 1);
+    assert_eq!(ir.optimizations.texture_samples_live, 1);
+    assert_eq!(ir.source_map.values[&first], ir.source_map.values[&second]);
+    assert_eq!(
+        ir.source_map.expressions[&ir.source_map.values[&first]],
+        [first, second]
+    );
     assert_eq!(
         ir.values
             .iter()
@@ -1137,8 +1148,84 @@ fn texture_samples_are_not_commoned_without_a_resource_purity_contract() {
                 MaterialIrInstruction::SampleTexture { .. }
             ))
             .count(),
-        2
+        1
     );
+    assert!(matches!(
+        ir.value(ir.source_map.values[&first]).unwrap().instruction,
+        MaterialIrInstruction::SampleTexture {
+            sampling: MaterialTextureSamplingMode::ImplicitDerivatives,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn texture_samples_with_distinct_uv_operands_remain_separate() {
+    let texture_parameter = MaterialParameterId::from_u128(0x4211);
+    let texture = MaterialExpressionId::from_u128(0x4212);
+    let first_uv = MaterialExpressionId::from_u128(0x4213);
+    let second_uv = MaterialExpressionId::from_u128(0x4214);
+    let first = MaterialExpressionId::from_u128(0x4215);
+    let second = MaterialExpressionId::from_u128(0x4216);
+    let color = MaterialExpressionId::from_u128(0x4217);
+    let unused = MaterialExpressionId::from_u128(0x4219);
+    let descriptor = texture_descriptor(MaterialTextureColorSpace::SrgbColor);
+    let mut program = MaterialProgram::additive_sprite("Distinct texture coordinates");
+    program.parameters = vec![MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(descriptor),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x4218))),
+    }];
+    program.expressions.extend([
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: first_uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: second_uv,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Vec2([0.25, 0.75])),
+        },
+        MaterialExpression {
+            id: first,
+            kind: MaterialExpressionKind::SampleTexture {
+                texture,
+                uv: first_uv,
+            },
+        },
+        MaterialExpression {
+            id: second,
+            kind: MaterialExpressionKind::SampleTexture {
+                texture,
+                uv: second_uv,
+            },
+        },
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Add(first, second),
+        },
+        MaterialExpression {
+            id: unused,
+            kind: MaterialExpressionKind::SampleTexture {
+                texture,
+                uv: first_uv,
+            },
+        },
+    ]);
+    program.outputs.color = color;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+
+    assert_ne!(ir.source_map.values[&first], ir.source_map.values[&second]);
+    assert_eq!(ir.optimizations.texture_samples_authored, 3);
+    assert_eq!(ir.optimizations.texture_samples_eliminated, 1);
+    assert_eq!(ir.optimizations.texture_samples_live, 2);
+    assert!(ir.source_map.eliminated.contains(&unused));
 }
 
 #[test]

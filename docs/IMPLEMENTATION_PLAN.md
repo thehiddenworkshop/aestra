@@ -449,17 +449,20 @@ the current sprite-material path until the native-GPU compatibility gate approve
   edit/compile/render/analyze contract required by AI tools.
 - [ ] **Material 19 — advanced compiler optimization.** Deterministic common-subexpression
   elimination is complete for pure constants, inputs, parameters, and semantic operations. Add
-  and Multiply canonicalize operand order; texture sampling and custom WESL calls remain excluded
+  and Multiply canonicalize operand order. Implicit-derivative texture sampling now carries an
+  explicit merge-safety contract: samples with identical texture and UV operands share one IR and
+  shader operation, while different operands remain distinct. Custom WESL calls remain excluded
   until they carry explicit purity contracts. Aliased semantic expressions retain complete source
-  mapping, and the optimization count flows through compiled effects, backward-compatible
-  artifacts, the Compiler Inspector, and preview JSON. Shader-static parameter specialization is
+  mapping, and optimization plus authored/eliminated/live texture-sample counts flow through
+  compiled effects, backward-compatible artifacts, the Compiler Inspector, and preview JSON.
+  Shader-static parameter specialization is
   also complete at the IR boundary: typed program defaults replace static reads before dependent
   folding and CSE, while parameter metadata and fingerprint invalidation remain intact. Static
   `Select` branch pruning is now complete end to end: only the chosen branch is lowered, dead
   inputs, parameter bindings, texture samples, and custom calls are omitted from live reflection,
   and branch/feature counts flow through artifacts, the Compiler Inspector, and preview JSON.
-  Broader texture analysis, function deduplication, varying minimization, and required
-  particle-attribute pruning remain.
+  Explicit-LOD and gradient sampling modes, function deduplication, varying minimization, and
+  required particle-attribute pruning remain.
 - [ ] **Material 20 — mesh and ribbon domains.**
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

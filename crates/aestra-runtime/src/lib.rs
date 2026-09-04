@@ -557,6 +557,12 @@ pub struct OptimizationStats {
     pub material_pruned_static_branches: usize,
     /// Dynamic inputs, parameters, samples, and calls removed from live material shaders.
     pub material_pruned_features: usize,
+    /// Enabled semantic texture samples before material optimization.
+    pub material_texture_samples_authored: usize,
+    /// Texture samples removed by specialization, commoning, or dead-value elimination.
+    pub material_texture_samples_eliminated: usize,
+    /// Texture samples remaining in optimized material shaders.
+    pub material_texture_samples_live: usize,
 }
 
 /// Immutable, engine-independent output of the Aestra compiler.

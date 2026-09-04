@@ -26,6 +26,9 @@ fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
     compiled.optimizations.material_specialized_parameter_reads = 11;
     compiled.optimizations.material_pruned_static_branches = 13;
     compiled.optimizations.material_pruned_features = 17;
+    compiled.optimizations.material_texture_samples_authored = 19;
+    compiled.optimizations.material_texture_samples_eliminated = 7;
+    compiled.optimizations.material_texture_samples_live = 12;
     let bytes = encode_effect(&compiled).unwrap();
     let text = std::str::from_utf8(&bytes).unwrap();
     assert!(text.contains(ARTIFACT_MAGIC));
@@ -86,12 +89,18 @@ fn current_artifacts_without_material_optimizer_statistics_decode_with_zero_defa
     compiled.optimizations.material_specialized_parameter_reads = 11;
     compiled.optimizations.material_pruned_static_branches = 13;
     compiled.optimizations.material_pruned_features = 17;
+    compiled.optimizations.material_texture_samples_authored = 19;
+    compiled.optimizations.material_texture_samples_eliminated = 7;
+    compiled.optimizations.material_texture_samples_live = 12;
     let text = String::from_utf8(encode_effect(&compiled).unwrap()).unwrap();
     let legacy = text
         .replacen(",material_common_subexpressions:7", "", 1)
         .replacen(",material_specialized_parameter_reads:11", "", 1)
         .replacen(",material_pruned_static_branches:13", "", 1)
-        .replacen(",material_pruned_features:17", "", 1);
+        .replacen(",material_pruned_features:17", "", 1)
+        .replacen(",material_texture_samples_authored:19", "", 1)
+        .replacen(",material_texture_samples_eliminated:7", "", 1)
+        .replacen(",material_texture_samples_live:12", "", 1);
     assert_ne!(legacy, text);
 
     let decoded = decode_effect(legacy.as_bytes()).unwrap();
@@ -103,6 +112,9 @@ fn current_artifacts_without_material_optimizer_statistics_decode_with_zero_defa
     );
     assert_eq!(decoded.optimizations.material_pruned_static_branches, 0);
     assert_eq!(decoded.optimizations.material_pruned_features, 0);
+    assert_eq!(decoded.optimizations.material_texture_samples_authored, 0);
+    assert_eq!(decoded.optimizations.material_texture_samples_eliminated, 0);
+    assert_eq!(decoded.optimizations.material_texture_samples_live, 0);
 }
 
 #[test]

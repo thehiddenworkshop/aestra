@@ -329,6 +329,18 @@ fn spawn_compiled_layout(
                     compiled.optimizations.material_pruned_static_branches,
                 );
                 args.set("features", compiled.optimizations.material_pruned_features);
+                args.set(
+                    "samples_authored",
+                    compiled.optimizations.material_texture_samples_authored,
+                );
+                args.set(
+                    "samples_eliminated",
+                    compiled.optimizations.material_texture_samples_eliminated,
+                );
+                args.set(
+                    "samples_live",
+                    compiled.optimizations.material_texture_samples_live,
+                );
                 localizer.text_with("generated-optimization-summary", &args)
             });
         },

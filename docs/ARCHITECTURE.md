@@ -352,6 +352,7 @@ outdated or future format.
 - [x] deterministic semantic-material common-subexpression elimination with source-map aliases
 - [x] IR-level shader-static parameter specialization before folding and resource reflection
 - [x] shader-static `Select` branch pruning with live input, parameter, and texture reflection
+- [x] merge-safe implicit-derivative texture-sample analysis and commoning
 - [x] cursor-centered timeline zooming, panning, adaptive rulers, and configurable snapping
 - [x] module stack for spawn, initialize, update, and renderer stages
 - [x] typed event-link authoring between emitter layers

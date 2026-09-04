@@ -393,7 +393,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "e89c989a714ed9dcebca265921ad0551c751caf74dcb220e8f4364dd4cd3aec5"
+        "0db98b9d5ad32b17625cd2b46781437001b1116611466322bddc93c1bf7ac596"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -545,6 +545,64 @@ fn commoned_material_expressions_emit_one_portable_shader_value() {
         compiled.source_map.ir.expressions[&common_value],
         [first, second]
     );
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
+fn identical_texture_samples_emit_one_portable_shader_operation() {
+    let texture_parameter = MaterialParameterId::from_u128(0xc511);
+    let texture = MaterialExpressionId::from_u128(0xc512);
+    let uv = MaterialExpressionId::from_u128(0xc513);
+    let first = MaterialExpressionId::from_u128(0xc514);
+    let second = MaterialExpressionId::from_u128(0xc515);
+    let color = MaterialExpressionId::from_u128(0xc516);
+    let mut program = aestra_core::material::MaterialProgram::additive_sprite("Texture sample CSE");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(texture_descriptor(
+            MaterialTextureColorSpace::SrgbColor,
+            MaterialAddressMode::Repeat,
+        )),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0xc517))),
+    });
+    program.expressions.extend([
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: first,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv },
+        },
+        MaterialExpression {
+            id: second,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv },
+        },
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Add(first, second),
+        },
+    ]);
+    program.outputs.color = color;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+
+    assert_eq!(ir.source_map.values[&first], ir.source_map.values[&second]);
+    assert_eq!(ir.optimizations.texture_samples_authored, 2);
+    assert_eq!(ir.optimizations.texture_samples_eliminated, 1);
+    assert_eq!(ir.optimizations.texture_samples_live, 1);
+    assert_eq!(compiled.shader.wesl.matches("textureSample(").count(), 1);
+    assert_eq!(compiled.resource_layout.textures.len(), 1);
+    assert_eq!(compiled.resource_layout.samplers.len(), 1);
     assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 
@@ -708,12 +766,16 @@ fn static_select_prunes_texture_resources_and_scene_features_before_shader_lower
     program.outputs.color = selected;
 
     let ir = MaterialCompiler.compile(&program).unwrap();
-    let compiled = MaterialShaderCompiler
-        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
-        .unwrap();
+    let mut capabilities = MaterialBackendCapabilities::portable_minimum();
+    capabilities.max_sampled_textures_per_shader_stage = 0;
+    capabilities.max_samplers_per_shader_stage = 0;
+    let compiled = MaterialShaderCompiler.compile(&ir, &capabilities).unwrap();
 
     assert_eq!(ir.optimizations.pruned_static_branches, 1);
     assert_eq!(ir.optimizations.pruned_features, 3);
+    assert_eq!(ir.optimizations.texture_samples_authored, 1);
+    assert_eq!(ir.optimizations.texture_samples_eliminated, 1);
+    assert_eq!(ir.optimizations.texture_samples_live, 0);
     assert!(compiled.resource_layout.textures.is_empty());
     assert!(compiled.resource_layout.samplers.is_empty());
     assert!(compiled.reflection.required_vertex_inputs.is_empty());

@@ -4,7 +4,7 @@ use crate::shader::{CompiledWesl, GpuShaderError, compile_wesl};
 pub use aestra_compiler::MaterialIrConstant;
 use aestra_compiler::{
     MaterialIrInstruction, MaterialIrProgram, MaterialIrSourceMap, MaterialIrValue,
-    MaterialIrValueId, reflect_material_inputs,
+    MaterialIrValueId, MaterialTextureSamplingMode, reflect_material_inputs,
 };
 use aestra_core::{
     MaterialExpressionId, MaterialParameterId, MaterialProgramId,
@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 2;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 12;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 13;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
@@ -909,7 +909,11 @@ fn instruction_expression(
             center = value_name(*center),
             scale = value_name(*scale),
         ),
-        MaterialIrInstruction::SampleTexture { texture, uv } => {
+        MaterialIrInstruction::SampleTexture {
+            texture,
+            uv,
+            sampling,
+        } => {
             let texture_value = ir
                 .value(*texture)
                 .ok_or(MaterialGpuError::InvalidTextureSource(*texture))?;
@@ -921,12 +925,14 @@ fn instruction_expression(
                 .iter()
                 .find(|slot| slot.parameter == parameter)
                 .ok_or(MaterialGpuError::MissingParameter(parameter))?;
-            format!(
-                "textureSample({}, material_sampler_{}, {})",
-                texture_name(parameter),
-                slot.sampler_binding,
-                value_name(*uv)
-            )
+            match sampling {
+                MaterialTextureSamplingMode::ImplicitDerivatives => format!(
+                    "textureSample({}, material_sampler_{}, {})",
+                    texture_name(parameter),
+                    slot.sampler_binding,
+                    value_name(*uv)
+                ),
+            }
         }
         MaterialIrInstruction::ExtractComponent { value, component } => {
             format!("{}.{}", value_name(*value), component_name(*component))
@@ -1465,10 +1471,17 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(edge_width.0);
             fingerprint.u32(invert.0);
         }
-        MaterialIrInstruction::SampleTexture { texture, uv } => {
+        MaterialIrInstruction::SampleTexture {
+            texture,
+            uv,
+            sampling,
+        } => {
             fingerprint.byte(9);
             fingerprint.u32(texture.0);
             fingerprint.u32(uv.0);
+            fingerprint.byte(match sampling {
+                MaterialTextureSamplingMode::ImplicitDerivatives => 0,
+            });
         }
         MaterialIrInstruction::ExtractComponent { value, component } => {
             fingerprint.byte(10);

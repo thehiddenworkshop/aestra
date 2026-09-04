@@ -12,6 +12,7 @@ use aestra_core::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind,
         MaterialInput as SemanticMaterialInput, MaterialInstance, MaterialParameter,
         MaterialParameterValue, MaterialProgram, MaterialProgramRef, MaterialRenderState,
+        MaterialSamplerDescriptor, MaterialTextureColorSpace, MaterialTextureDescriptor,
         MaterialValue, MaterialValueType,
     },
 };
@@ -1289,6 +1290,7 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
     let material_parameter = MaterialParameterId::from_u128(0xD002);
     let static_tint_parameter = MaterialParameterId::from_u128(0xD005);
     let static_branch_parameter = MaterialParameterId::from_u128(0xD006);
+    let texture_parameter = MaterialParameterId::from_u128(0xD007);
     let mut program = MaterialProgram::additive_sprite("Compiled semantic material");
     program.id = MaterialProgramId::from_u128(0xD003);
     program.parameters.push(MaterialParameter {
@@ -1312,6 +1314,18 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
         evaluation_domain: MaterialEvaluationDomain::ShaderStatic,
         default: Some(MaterialValue::Bool(false)),
     });
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "Texture".into(),
+        value_type: MaterialValueType::Texture2D(MaterialTextureDescriptor {
+            color_space: MaterialTextureColorSpace::SrgbColor,
+            sampler: MaterialSamplerDescriptor::default(),
+        }),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(aestra_core::AssetId::from_u128(
+            0xD008,
+        ))),
+    });
     let particle_color = aestra_core::MaterialExpressionId::from_u128(0xD010);
     let tint = aestra_core::MaterialExpressionId::from_u128(0xD011);
     let first_product = aestra_core::MaterialExpressionId::from_u128(0xD012);
@@ -1320,6 +1334,12 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
     let branch_condition = aestra_core::MaterialExpressionId::from_u128(0xD015);
     let effect_time = aestra_core::MaterialExpressionId::from_u128(0xD016);
     let selected_alpha = aestra_core::MaterialExpressionId::from_u128(0xD017);
+    let texture = aestra_core::MaterialExpressionId::from_u128(0xD018);
+    let uv = aestra_core::MaterialExpressionId::from_u128(0xD019);
+    let first_sample = aestra_core::MaterialExpressionId::from_u128(0xD01A);
+    let second_sample = aestra_core::MaterialExpressionId::from_u128(0xD01B);
+    let sample_sum = aestra_core::MaterialExpressionId::from_u128(0xD01C);
+    let final_color = aestra_core::MaterialExpressionId::from_u128(0xD01D);
     let particle_opacity = program.outputs.alpha;
     program.expressions.extend([
         MaterialExpression {
@@ -1358,8 +1378,32 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
                 if_true: effect_time,
             },
         },
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(SemanticMaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: first_sample,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv },
+        },
+        MaterialExpression {
+            id: second_sample,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv },
+        },
+        MaterialExpression {
+            id: sample_sum,
+            kind: MaterialExpressionKind::Add(first_sample, second_sample),
+        },
+        MaterialExpression {
+            id: final_color,
+            kind: MaterialExpressionKind::Multiply(combined, sample_sum),
+        },
     ]);
-    program.outputs.color = combined;
+    program.outputs.color = final_color;
     program.outputs.alpha = selected_alpha;
     program
         .save_ron(temporary.path().join("semantic.aestra.material.ron"))
@@ -1387,7 +1431,7 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
 
     assert_eq!(project.root.material_programs, [program.normalized()]);
     assert_eq!(project.root.material_instances, root.material_instances);
-    assert_eq!(project.root.optimizations.material_common_subexpressions, 1);
+    assert_eq!(project.root.optimizations.material_common_subexpressions, 2);
     assert_eq!(
         project
             .root
@@ -1399,7 +1443,19 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
         project.root.optimizations.material_pruned_static_branches,
         1
     );
-    assert_eq!(project.root.optimizations.material_pruned_features, 1);
+    assert_eq!(project.root.optimizations.material_pruned_features, 2);
+    assert_eq!(
+        project.root.optimizations.material_texture_samples_authored,
+        2
+    );
+    assert_eq!(
+        project
+            .root
+            .optimizations
+            .material_texture_samples_eliminated,
+        1
+    );
+    assert_eq!(project.root.optimizations.material_texture_samples_live, 1);
     assert_eq!(
         project.root.parameter_slots.get(&effect_parameter.id),
         Some(&aestra_runtime::ParameterSlot(0))

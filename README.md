@@ -102,9 +102,11 @@ auto|gpu|gpu-readback|cpu` to exercise a specific policy, or
 
 Semantic material lowering performs deterministic common-subexpression elimination for pure
 constants, inputs, parameters, and operations. Commutative Add and Multiply inputs are
-canonicalized, while texture samples and custom WESL calls remain deliberately separate until
-their resource and purity contracts can prove that merging is safe. The merged-expression count
-is preserved in compiled artifacts, the Compiler Inspector, and `preview-report.json`.
+canonicalized. Implicit-derivative texture samples carry an explicit IR sampling contract and are
+merged only when their texture and UV operands are identical; custom WESL calls remain separate
+until they carry their own purity contract. The merged-expression count is preserved in compiled
+artifacts, the Compiler Inspector, and `preview-report.json`, together with authored, eliminated,
+and live texture-sample counts.
 Shader-static parameter reads are also replaced by their typed defaults during IR lowering, so
 dependent expressions can fold before backend resource reflection; the authored parameter
 metadata remains available for inspection and specialization changes still alter the shader

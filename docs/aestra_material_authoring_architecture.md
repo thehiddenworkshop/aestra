@@ -2493,10 +2493,12 @@ Keep generated shaders efficient as material complexity increases.
 
 Current implementation status: the first slice is complete. Backend-neutral material IR now
 merges common pure expressions deterministically, including operand-order canonicalization for
-Add and Multiply, without losing the many-to-one semantic source map. Resource texture samples
-and custom WESL calls are intentionally not merged until their purity contracts are explicit.
-Counts are exposed by compiled effects and survive artifact round trips, editor inspection, and
-machine-readable preview reports. Shader-static parameter reads are now specialized to their typed
+Add and Multiply, without losing the many-to-one semantic source map. Implicit-derivative texture
+samples now carry an explicit IR sampling contract and are commoned only when both the texture and
+UV operands match; distinct operands remain separate, and custom WESL calls remain unmerged until
+their purity contracts are explicit. General optimization counts plus authored, eliminated, and
+live texture-sample counts survive artifact round trips, editor inspection, and machine-readable
+preview reports. Shader-static parameter reads are now specialized to their typed
 defaults during IR lowering rather than only during backend emission. This enables dependent
 constant folding and CSE while retaining authored parameter reflection and deterministic shader
 fingerprint invalidation. The semantic graph and portable shader pipeline now also support
@@ -2504,8 +2506,8 @@ fingerprint invalidation. The semantic graph and portable shader pipeline now al
 unused dynamic inputs, parameter resources, texture samples, and custom calls are absent from the
 live shader layout while authored parameter metadata remains inspectable. Dynamic conditions emit
 the portable shader `select` operation. Branch- and feature-pruning counts survive artifacts and
-appear in editor and machine-readable reports. Broader texture analysis, function deduplication,
-varying minimization, and required particle-attribute pruning remain planned.
+appear in editor and machine-readable reports. Explicit-LOD and gradient sampling modes, function
+deduplication, varying minimization, and required particle-attribute pruning remain planned.
 
 ### Completion Criterion
 
