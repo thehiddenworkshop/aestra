@@ -4,7 +4,8 @@ use crate::{
     feathers::{
         context_menu::{
             pointer_position_in_node, should_dismiss_pointer_context_menu,
-            spawn_pointer_context_menu_custom_item, spawn_pointer_context_menu_sized,
+            spawn_pointer_context_menu_custom_item, spawn_pointer_context_menu_item,
+            spawn_pointer_context_menu_sized,
         },
         icon::load_svg_icon,
         node_graph::{
@@ -48,12 +49,15 @@ impl Plugin for EditorMaterialGraphPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MaterialGraphGesture>()
             .init_resource::<MaterialGraphPaletteState>()
+            .init_resource::<MaterialGraphSelectionState>()
             .add_observer(begin_material_connection_drag)
             .add_observer(update_material_connection_drag)
             .add_observer(finish_material_connection_drag)
             .add_observer(stop_material_socket_click)
             .add_observer(select_material_graph_node)
             .add_observer(open_material_graph_palette)
+            .add_observer(open_material_graph_node_menu)
+            .add_observer(select_material_graph_canvas)
             .add_observer(update_material_graph_palette_search)
             .add_systems(
                 Update,
@@ -62,6 +66,8 @@ impl Plugin for EditorMaterialGraphPlugin {
                     dismiss_material_graph_palette,
                     focus_material_graph_palette_search,
                     handle_material_graph_palette_actions,
+                    handle_material_graph_context_actions,
+                    material_graph_keyboard_input,
                     handle_material_graph_actions,
                     attach_material_graph_wire_materials,
                 ),
@@ -83,7 +89,7 @@ struct MaterialGraphAction {
 struct MaterialGraphCanvas;
 
 #[derive(Component, Debug, Clone, Copy)]
-struct MaterialGraphViewport {
+pub(crate) struct MaterialGraphViewport {
     program: MaterialProgramId,
 }
 
@@ -95,20 +101,88 @@ struct MaterialGraphPaletteOpen {
     graph_key: String,
 }
 
+#[derive(Debug, Clone)]
+struct MaterialGraphNodeMenuOpen {
+    program: MaterialProgramId,
+    menu_position: Vec2,
+}
+
 #[derive(Resource, Debug, Default)]
 pub(crate) struct MaterialGraphPaletteState {
     open: Option<MaterialGraphPaletteOpen>,
+    node_menu: Option<MaterialGraphNodeMenuOpen>,
     query: String,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct MaterialGraphSelectionState {
+    program: Option<MaterialProgramId>,
+    expressions: BTreeSet<MaterialExpressionId>,
+    connection: Option<MaterialGraphConnection>,
+}
+
+impl MaterialGraphSelectionState {
+    fn select_expression(
+        &mut self,
+        program: MaterialProgramId,
+        expression: MaterialExpressionId,
+        control: bool,
+        shift: bool,
+    ) -> Option<MaterialExpressionId> {
+        if self.program != Some(program) {
+            self.program = Some(program);
+            self.expressions.clear();
+            self.connection = None;
+        }
+        if control {
+            if !self.expressions.insert(expression) {
+                self.expressions.remove(&expression);
+            }
+        } else if shift {
+            self.expressions.insert(expression);
+        } else {
+            self.expressions.clear();
+            self.expressions.insert(expression);
+        }
+        self.connection = None;
+        self.expressions
+            .contains(&expression)
+            .then_some(expression)
+            .or_else(|| self.expressions.iter().next_back().copied())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MaterialGraphConnection {
+    program: MaterialProgramId,
+    source: MaterialExpressionId,
+    target: MaterialConnectionTarget,
 }
 
 #[derive(Component)]
 struct MaterialGraphPalette;
 
 #[derive(Component)]
+struct MaterialGraphNodeMenu;
+
+#[derive(Component)]
 struct MaterialGraphPaletteAnchor;
 
 #[derive(Component)]
 struct MaterialGraphPaletteSearch;
+
+#[derive(Component, Debug, Clone, Copy)]
+enum MaterialGraphContextAction {
+    Duplicate(MaterialProgramId),
+    Delete(MaterialProgramId),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum MaterialGraphSelectionEdit {
+    Duplicate,
+    Delete,
+    Disconnect,
+}
 
 #[derive(Component, Debug, Clone)]
 struct MaterialGraphPaletteAction {
@@ -195,13 +269,15 @@ fn handle_material_graph_actions(
         (&Interaction, &MaterialGraphAction, &mut BackgroundColor),
         (Changed<Interaction>, With<Button>),
     >,
-    inspector: Res<MaterialStackInspectorState>,
+    selection: Res<MaterialGraphSelectionState>,
 ) {
     for (interaction, action, mut background) in &mut actions {
         match *interaction {
             Interaction::Hovered => background.0 = theme::BUTTON_HOVER,
             Interaction::None => {
-                background.0 = if inspector.selected == Some((action.program, action.expression)) {
+                background.0 = if selection.program == Some(action.program)
+                    && selection.expressions.contains(&action.expression)
+                {
                     theme::SELECTION
                 } else {
                     theme::PANEL
@@ -221,6 +297,7 @@ fn select_material_graph_node(
     parents: Query<&ChildOf>,
     sockets: Query<(), With<MaterialGraphSocket>>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut selection: ResMut<MaterialGraphSelectionState>,
     mut inspector: ResMut<MaterialStackInspectorState>,
     mut session: ResMut<EditorSession>,
     mut layout: ResMut<WorkspaceLayout>,
@@ -248,10 +325,12 @@ fn select_material_graph_node(
         click.propagate(false);
         return;
     }
-    if inspector.selected != Some((action.program, action.expression)) {
-        inspector.selected = Some((action.program, action.expression));
-        session.ui_revision += 1;
-    }
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    inspector.selected = selection
+        .select_expression(action.program, action.expression, control, shift)
+        .map(|expression| (action.program, expression));
+    session.ui_revision += 1;
     reveal_dock_panel(&mut layout, &mut session, DockPanel::Properties);
     click.propagate(false);
 }
@@ -287,6 +366,7 @@ fn open_material_graph_palette(
                 graph_position: viewport.unproject_viewport_point(menu_position),
                 graph_key: material_graph_view_key(marker.program),
             });
+            palette.node_menu = None;
             palette.query.clear();
             session.ui_revision += 1;
             click.propagate(false);
@@ -297,6 +377,147 @@ fn open_material_graph_palette(
         };
         entity = parent.parent();
     }
+}
+
+fn open_material_graph_node_menu(
+    mut click: On<Pointer<Click>>,
+    actions: Query<&MaterialGraphAction>,
+    viewports: Query<(&MaterialGraphViewport, &ComputedNode, &UiGlobalTransform)>,
+    parents: Query<&ChildOf>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
+    mut selection: ResMut<MaterialGraphSelectionState>,
+    mut inspector: ResMut<MaterialStackInspectorState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    let mut entity = click.event_target();
+    let action = loop {
+        if let Ok(action) = actions.get(entity) {
+            break *action;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    let mut ancestor = entity;
+    let (viewport, computed, transform) = loop {
+        if let Ok(viewport) = viewports.get(ancestor) {
+            break viewport;
+        }
+        let Ok(parent) = parents.get(ancestor) else {
+            return;
+        };
+        ancestor = parent.parent();
+    };
+    if viewport.program != action.program {
+        return;
+    }
+    if selection.program != Some(action.program)
+        || !selection.expressions.contains(&action.expression)
+    {
+        selection.program = Some(action.program);
+        selection.expressions.clear();
+        selection.expressions.insert(action.expression);
+        selection.connection = None;
+    }
+    inspector.selected = Some((action.program, action.expression));
+    palette.open = None;
+    palette.query.clear();
+    palette.node_menu = Some(MaterialGraphNodeMenuOpen {
+        program: action.program,
+        menu_position: pointer_position_in_node(
+            click.pointer_location.position,
+            computed,
+            transform,
+        ),
+    });
+    session.ui_revision += 1;
+    click.propagate(false);
+}
+
+fn select_material_graph_canvas(
+    mut click: On<Pointer<Click>>,
+    viewports: Query<(
+        &MaterialGraphViewport,
+        &FeathersGraphViewport,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
+    graph_nodes: Query<(&FeathersGraphNode, &ComputedNode, &UiGlobalTransform)>,
+    sockets: Query<(
+        &MaterialGraphSocket,
+        &UiGlobalTransform,
+        &MaterialGraphSocketAnchor,
+    )>,
+    wires: Query<&MaterialGraphWire>,
+    parents: Query<&ChildOf>,
+    controls: Query<
+        (),
+        Or<(
+            With<FeathersGraphNode>,
+            With<MaterialGraphPalette>,
+            With<MaterialGraphNodeMenu>,
+        )>,
+    >,
+    mut selection: ResMut<MaterialGraphSelectionState>,
+    mut inspector: ResMut<MaterialStackInspectorState>,
+    mut session: ResMut<EditorSession>,
+) {
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let mut entity = click.event_target();
+    let (marker, viewport, computed, transform) = loop {
+        if controls.contains(entity) {
+            return;
+        }
+        if let Ok(viewport) = viewports.get(entity) {
+            break viewport;
+        }
+        let Ok(parent) = parents.get(entity) else {
+            return;
+        };
+        entity = parent.parent();
+    };
+    let cursor = pointer_position_in_node(click.pointer_location.position, computed, transform);
+    let socket_positions = collect_socket_positions(&sockets, &graph_nodes);
+    let selected_wire = wires
+        .iter()
+        .filter(|wire| wire.program == marker.program)
+        .filter_map(|wire| {
+            let start = socket_graph_position(
+                &socket_positions,
+                wire.program,
+                MaterialGraphSocketKind::ExpressionOutput(wire.source),
+            )?;
+            let end = socket_graph_position(
+                &socket_positions,
+                wire.program,
+                MaterialGraphSocketKind::ConnectionInput(wire.target),
+            )?;
+            let start = viewport.project_graph_point(start);
+            let end = viewport.project_graph_point(end);
+            let distance = distance_to_graph_wire(cursor, start, end);
+            (distance <= 9.0).then_some((
+                distance,
+                MaterialGraphConnection {
+                    program: wire.program,
+                    source: wire.source,
+                    target: wire.target,
+                },
+            ))
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .map(|(_, connection)| connection);
+    selection.program = Some(marker.program);
+    selection.expressions.clear();
+    selection.connection = selected_wire;
+    inspector.selected = None;
+    session.ui_revision += 1;
+    click.propagate(false);
 }
 
 fn open_material_graph_palette_from_keyboard(
@@ -329,6 +550,7 @@ fn open_material_graph_palette_from_keyboard(
         graph_position: viewport.unproject_viewport_point(menu_position),
         graph_key: material_graph_view_key(marker.program),
     });
+    palette.node_menu = None;
     palette.query.clear();
     session.ui_revision += 1;
 }
@@ -336,17 +558,21 @@ fn open_material_graph_palette_from_keyboard(
 fn dismiss_material_graph_palette(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
-    surfaces: Query<&RelativeCursorPosition, With<MaterialGraphPalette>>,
+    surfaces: Query<
+        &RelativeCursorPosition,
+        Or<(With<MaterialGraphPalette>, With<MaterialGraphNodeMenu>)>,
+    >,
     mut palette: ResMut<MaterialGraphPaletteState>,
     mut session: ResMut<EditorSession>,
 ) {
     if should_dismiss_pointer_context_menu(
-        palette.open.is_some(),
+        palette.open.is_some() || palette.node_menu.is_some(),
         buttons.just_pressed(MouseButton::Left),
         keys.just_pressed(KeyCode::Escape),
         surfaces.iter().any(RelativeCursorPosition::cursor_over),
     ) {
         palette.open = None;
+        palette.node_menu = None;
         palette.query.clear();
         session.ui_revision += 1;
     }
@@ -552,6 +778,7 @@ fn handle_material_graph_palette_actions(
     mut graph_memory: ResMut<GraphViewportMemory>,
     mut inspector: ResMut<MaterialStackInspectorState>,
     mut palette: ResMut<MaterialGraphPaletteState>,
+    mut selection: ResMut<MaterialGraphSelectionState>,
 ) {
     for (entity, interaction, action, pending) in &actions {
         if *interaction != Interaction::Pressed || pending.is_none() {
@@ -597,6 +824,10 @@ fn handle_material_graph_palette_actions(
                 }
                 if let Some(expression) = plan.created_expressions.last().copied() {
                     inspector.selected = Some((action.program, expression));
+                    selection.program = Some(action.program);
+                    selection.expressions.clear();
+                    selection.expressions.insert(expression);
+                    selection.connection = None;
                 }
                 session.status = format!("Added {} node", action.kind.display_name());
             }
@@ -605,6 +836,267 @@ fn handle_material_graph_palette_actions(
         palette.open = None;
         palette.query.clear();
         session.ui_revision += 1;
+    }
+}
+
+fn handle_material_graph_context_actions(
+    mut commands: Commands,
+    actions: Query<
+        (
+            Entity,
+            &Interaction,
+            &MaterialGraphContextAction,
+            Option<&PendingFeathersActivation>,
+        ),
+        (Changed<Interaction>, With<FeathersActionButton>),
+    >,
+    graph_nodes: Query<(&MaterialGraphAction, &FeathersGraphNode)>,
+    mut session: ResMut<EditorSession>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
+    mut material_history: ResMut<MaterialProgramEditHistory>,
+    mut history_ledger: ResMut<EditorHistoryLedger>,
+    mut graph_memory: ResMut<GraphViewportMemory>,
+    mut inspector: ResMut<MaterialStackInspectorState>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
+    mut selection: ResMut<MaterialGraphSelectionState>,
+) {
+    for (entity, interaction, action, pending) in &actions {
+        if *interaction != Interaction::Pressed || pending.is_none() {
+            continue;
+        }
+        commands
+            .entity(entity)
+            .remove::<PendingFeathersActivation>()
+            .insert(Interaction::None);
+        let (program, edit) = match *action {
+            MaterialGraphContextAction::Duplicate(program) => {
+                (program, MaterialGraphSelectionEdit::Duplicate)
+            }
+            MaterialGraphContextAction::Delete(program) => {
+                (program, MaterialGraphSelectionEdit::Delete)
+            }
+        };
+        apply_material_graph_selection_edit(
+            edit,
+            program,
+            &graph_nodes,
+            &mut session,
+            &mut catalog,
+            &mut material_history,
+            &mut history_ledger,
+            &mut graph_memory,
+            &mut inspector,
+            &mut selection,
+        );
+        palette.node_menu = None;
+        session.ui_revision += 1;
+    }
+}
+
+fn material_graph_keyboard_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    viewports: Query<(&MaterialGraphViewport, &RelativeCursorPosition)>,
+    graph_nodes: Query<(&MaterialGraphAction, &FeathersGraphNode)>,
+    focus: Option<Res<InputFocus>>,
+    editable_text: Query<(), With<EditableText>>,
+    palette: Res<MaterialGraphPaletteState>,
+    mut session: ResMut<EditorSession>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
+    mut material_history: ResMut<MaterialProgramEditHistory>,
+    mut history_ledger: ResMut<EditorHistoryLedger>,
+    mut graph_memory: ResMut<GraphViewportMemory>,
+    mut inspector: ResMut<MaterialStackInspectorState>,
+    mut selection: ResMut<MaterialGraphSelectionState>,
+) {
+    let editing_text = focus
+        .as_ref()
+        .and_then(|focus| focus.get())
+        .is_some_and(|entity| editable_text.contains(entity));
+    if editing_text || palette.open.is_some() || palette.node_menu.is_some() {
+        return;
+    }
+    let Some(program) = viewports
+        .iter()
+        .find_map(|(viewport, cursor)| cursor.cursor_over().then_some(viewport.program))
+    else {
+        return;
+    };
+    if selection.program != Some(program) {
+        return;
+    }
+    let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let edit = if control && keys.just_pressed(KeyCode::KeyD) && !selection.expressions.is_empty() {
+        Some(MaterialGraphSelectionEdit::Duplicate)
+    } else if keys.just_pressed(KeyCode::Delete) {
+        if !selection.expressions.is_empty() {
+            Some(MaterialGraphSelectionEdit::Delete)
+        } else if selection.connection.is_some() {
+            Some(MaterialGraphSelectionEdit::Disconnect)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let Some(edit) = edit else {
+        return;
+    };
+    apply_material_graph_selection_edit(
+        edit,
+        program,
+        &graph_nodes,
+        &mut session,
+        &mut catalog,
+        &mut material_history,
+        &mut history_ledger,
+        &mut graph_memory,
+        &mut inspector,
+        &mut selection,
+    );
+    session.ui_revision += 1;
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_material_graph_selection_edit(
+    edit: MaterialGraphSelectionEdit,
+    program: MaterialProgramId,
+    graph_nodes: &Query<(&MaterialGraphAction, &FeathersGraphNode)>,
+    session: &mut EditorSession,
+    catalog: &mut ProjectEffectCatalog,
+    material_history: &mut MaterialProgramEditHistory,
+    history_ledger: &mut EditorHistoryLedger,
+    graph_memory: &mut GraphViewportMemory,
+    inspector: &mut MaterialStackInspectorState,
+    selection: &mut MaterialGraphSelectionState,
+) {
+    if selection.program != Some(program) {
+        return;
+    }
+    let expressions = selection.expressions.iter().copied().collect::<Vec<_>>();
+    let connection = selection.connection;
+    let ordered = catalog
+        .material_programs_for_effect(&session.effect)
+        .ok()
+        .and_then(|programs| {
+            programs
+                .iter()
+                .find(|candidate| candidate.id == program)
+                .map(|program| {
+                    program
+                        .expressions
+                        .iter()
+                        .filter(|expression| selection.expressions.contains(&expression.id))
+                        .map(|expression| expression.id)
+                        .collect::<Vec<_>>()
+                })
+        })
+        .unwrap_or_default();
+    let positions = graph_nodes
+        .iter()
+        .filter(|(action, _)| {
+            action.program == program && selection.expressions.contains(&action.expression)
+        })
+        .map(|(action, node)| (action.expression, node.position()))
+        .collect::<BTreeMap<_, _>>();
+    let (label, command) = match edit {
+        MaterialGraphSelectionEdit::Duplicate => (
+            "Duplicate material graph nodes",
+            MaterialToolCommand::DuplicateMaterialExpressions {
+                program,
+                expressions: expressions.clone(),
+            },
+        ),
+        MaterialGraphSelectionEdit::Delete => (
+            "Delete material graph nodes",
+            MaterialToolCommand::DeleteMaterialExpressions {
+                program,
+                expressions: expressions.clone(),
+            },
+        ),
+        MaterialGraphSelectionEdit::Disconnect => {
+            let Some(connection) = connection else {
+                return;
+            };
+            (
+                "Reset material graph connection",
+                MaterialToolCommand::DisconnectMaterialConnection {
+                    program,
+                    target: connection.target,
+                },
+            )
+        }
+    };
+    match apply_material_tool_command(
+        &session.effect,
+        catalog,
+        material_history,
+        program,
+        label,
+        command,
+    ) {
+        Ok(plan) => {
+            history_ledger.record_material_edit(session);
+            let graph_key = material_graph_view_key(program);
+            match edit {
+                MaterialGraphSelectionEdit::Duplicate => {
+                    selection.expressions.clear();
+                    for (source, duplicate) in ordered.iter().zip(&plan.created_expressions) {
+                        let position = positions
+                            .get(source)
+                            .copied()
+                            .or_else(|| {
+                                graph_memory
+                                    .node_position(&graph_key, &format!("expression:{source}"))
+                            })
+                            .unwrap_or(Vec2::ZERO)
+                            + Vec2::splat(24.0);
+                        graph_memory.place_node(
+                            graph_key.clone(),
+                            format!("expression:{duplicate}"),
+                            position,
+                        );
+                        selection.expressions.insert(*duplicate);
+                    }
+                    selection.connection = None;
+                    inspector.selected = plan
+                        .created_expressions
+                        .last()
+                        .copied()
+                        .map(|expression| (program, expression));
+                    session.status = format!(
+                        "Duplicated {} material node(s)",
+                        plan.created_expressions.len()
+                    );
+                }
+                MaterialGraphSelectionEdit::Delete => {
+                    for expression in &expressions {
+                        graph_memory.remove_node(&graph_key, &format!("expression:{expression}"));
+                    }
+                    selection.expressions.clear();
+                    selection.connection = None;
+                    inspector.selected = None;
+                    session.status = format!("Deleted {} material node(s)", expressions.len());
+                }
+                MaterialGraphSelectionEdit::Disconnect => {
+                    selection.connection = None;
+                    inspector.selected = None;
+                    session.status = "Reset material connection to its typed default".into();
+                }
+            }
+        }
+        Err(error) => {
+            session.status = match edit {
+                MaterialGraphSelectionEdit::Duplicate => {
+                    format!("Could not duplicate material nodes: {error}")
+                }
+                MaterialGraphSelectionEdit::Delete => {
+                    format!("Could not delete material nodes: {error}")
+                }
+                MaterialGraphSelectionEdit::Disconnect => {
+                    format!("Could not reset material connection: {error}")
+                }
+            };
+        }
     }
 }
 
@@ -664,6 +1156,7 @@ fn update_material_graph_wires(
     )>,
     session: Res<EditorSession>,
     catalog: Res<ProjectEffectCatalog>,
+    selection: Res<MaterialGraphSelectionState>,
     mut gesture: ResMut<MaterialGraphGesture>,
 ) {
     // Socket offsets are graph-local and invariant under pan and zoom. Cache them after layout,
@@ -709,7 +1202,24 @@ fn update_material_graph_wires(
         };
         let start = viewport.project_graph_point(start_graph);
         let end = viewport.project_graph_point(end_graph);
-        update_wire_material(&mut materials, &material.0, start, end, wire.color, 2.0);
+        let selected = selection.connection
+            == Some(MaterialGraphConnection {
+                program: wire.program,
+                source: wire.source,
+                target: wire.target,
+            });
+        update_wire_material(
+            &mut materials,
+            &material.0,
+            start,
+            end,
+            if selected {
+                Vec4::new(0.70, 0.50, 1.0, 1.0)
+            } else {
+                wire.color
+            },
+            if selected { 4.0 } else { 2.0 },
+        );
     }
 
     let MaterialGraphGesture::Connecting {
@@ -810,6 +1320,61 @@ fn socket_graph_position(
         .map(|socket| socket.graph)
 }
 
+fn collect_socket_positions(
+    sockets: &Query<(
+        &MaterialGraphSocket,
+        &UiGlobalTransform,
+        &MaterialGraphSocketAnchor,
+    )>,
+    graph_nodes: &Query<(&FeathersGraphNode, &ComputedNode, &UiGlobalTransform)>,
+) -> Vec<MaterialGraphSocketPosition> {
+    sockets
+        .iter()
+        .filter_map(|(socket, transform, anchor)| {
+            let (node, computed, node_transform) = graph_nodes.get(anchor.node).ok()?;
+            let (_, _, world) = transform.to_scale_angle_translation();
+            let offset = anchor
+                .offset
+                .unwrap_or_else(|| viewport_local_position(computed, node_transform, world));
+            Some(MaterialGraphSocketPosition {
+                program: socket.program,
+                kind: socket.kind,
+                graph: node.position() + offset,
+                world,
+            })
+        })
+        .collect()
+}
+
+fn distance_to_graph_wire(point: Vec2, start: Vec2, end: Vec2) -> f32 {
+    let control = (end.x - start.x).abs().mul_add(0.5, 54.0).min(220.0);
+    let control_start = start + Vec2::new(control, 0.0);
+    let control_end = end - Vec2::new(control, 0.0);
+    let mut distance = f32::INFINITY;
+    let mut previous = start;
+    for index in 1..=32 {
+        let t = index as f32 / 32.0;
+        let inverse = 1.0 - t;
+        let sample = start * inverse.powi(3)
+            + control_start * (3.0 * inverse.powi(2) * t)
+            + control_end * (3.0 * inverse * t.powi(2))
+            + end * t.powi(3);
+        distance = distance.min(distance_to_segment(point, previous, sample));
+        previous = sample;
+    }
+    distance
+}
+
+fn distance_to_segment(point: Vec2, start: Vec2, end: Vec2) -> f32 {
+    let segment = end - start;
+    let length_squared = segment.length_squared();
+    if length_squared <= f32::EPSILON {
+        return point.distance(start);
+    }
+    let t = ((point - start).dot(segment) / length_squared).clamp(0.0, 1.0);
+    point.distance(start + segment * t)
+}
+
 fn set_wire_points(material: &mut GraphWireMaterial, start: Vec2, end: Vec2) {
     let control = (end.x - start.x).abs().mul_add(0.5, 54.0).min(220.0);
     material.start = start;
@@ -847,8 +1412,9 @@ pub(crate) fn spawn_material_graph_workspace(
     parent: &mut ChildSpawnerCommands,
     session: &EditorSession,
     catalog: &ProjectEffectCatalog,
-    inspector: &MaterialStackInspectorState,
     palette: &MaterialGraphPaletteState,
+    selection: &MaterialGraphSelectionState,
+    graph_memory: &GraphViewportMemory,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -875,7 +1441,13 @@ pub(crate) fn spawn_material_graph_workspace(
             };
             let layout = layout_graph(&projection);
             let graph_key = material_graph_view_key(projection.program);
-            let selection_bounds = selected_graph_node_bounds(&layout, &projection, inspector);
+            let selection_bounds = selected_graph_node_bounds(
+                &layout,
+                &projection,
+                selection,
+                graph_memory,
+                &graph_key,
+            );
             let viewport = spawn_graph_viewport(
                 panel,
                 GraphViewportProps {
@@ -897,7 +1469,7 @@ pub(crate) fn spawn_material_graph_workspace(
                             projection.program,
                             node,
                             position,
-                            inspector,
+                            selection,
                             localizer,
                             asset_server,
                             &graph_key,
@@ -941,6 +1513,15 @@ pub(crate) fn spawn_material_graph_workspace(
                         &palette.query,
                         localizer,
                     );
+                });
+            }
+            if let Some(open) = palette
+                .node_menu
+                .as_ref()
+                .filter(|open| open.program == projection.program)
+            {
+                panel.commands().entity(viewport).with_children(|viewport| {
+                    spawn_material_graph_node_menu(viewport, open, localizer);
                 });
             }
         });
@@ -1138,6 +1719,32 @@ fn spawn_material_graph_palette(
     );
 }
 
+fn spawn_material_graph_node_menu(
+    parent: &mut ChildSpawnerCommands,
+    open: &MaterialGraphNodeMenuOpen,
+    localizer: &Localizer,
+) {
+    spawn_pointer_context_menu_sized(
+        parent,
+        open.menu_position,
+        190.0,
+        MaterialGraphPaletteAnchor,
+        MaterialGraphNodeMenu,
+        |menu| {
+            spawn_pointer_context_menu_item(
+                menu,
+                &localizer.text("material-graph-duplicate-nodes"),
+                MaterialGraphContextAction::Duplicate(open.program),
+            );
+            spawn_pointer_context_menu_item(
+                menu,
+                &localizer.text("material-graph-delete-nodes"),
+                MaterialGraphContextAction::Delete(open.program),
+            );
+        },
+    );
+}
+
 fn material_graph_node_category(kind: MaterialStackModifierKind) -> &'static str {
     match kind {
         MaterialStackModifierKind::PanUv
@@ -1273,25 +1880,34 @@ fn material_graph_view_key(program: MaterialProgramId) -> String {
 fn selected_graph_node_bounds(
     layout: &MaterialGraphLayout,
     graph: &MaterialGraphProjection,
-    inspector: &MaterialStackInspectorState,
+    selection: &MaterialGraphSelectionState,
+    graph_memory: &GraphViewportMemory,
+    graph_key: &str,
 ) -> Option<Rect> {
-    let (program, expression) = inspector.selected?;
-    if program != graph.program {
+    if selection.program != Some(graph.program) || selection.expressions.is_empty() {
         return None;
     }
-    let node = graph
+    graph
         .nodes
         .iter()
-        .find(|node| node.expression == expression)?;
-    let position = *layout.nodes.get(&expression)?;
-    Some(Rect::from_corners(
-        position,
-        position
-            + Vec2::new(
-                NODE_WIDTH,
-                node_height(node.inputs.len(), node.disabled || !node.reachable),
-            ),
-    ))
+        .filter(|node| selection.expressions.contains(&node.expression))
+        .filter_map(|node| {
+            let node_key = format!("expression:{}", node.expression);
+            let position = graph_memory
+                .node_position(graph_key, &node_key)
+                .or_else(|| layout.nodes.get(&node.expression).copied())?;
+            Some(Rect::from_corners(
+                position,
+                position
+                    + Vec2::new(
+                        NODE_WIDTH,
+                        node_height(node.inputs.len(), node.disabled || !node.reachable),
+                    ),
+            ))
+        })
+        .reduce(|bounds, node| {
+            Rect::from_corners(bounds.min.min(node.min), bounds.max.max(node.max))
+        })
 }
 
 fn spawn_graph_wires(parent: &mut ChildSpawnerCommands, graph: &MaterialGraphProjection) {
@@ -1324,12 +1940,13 @@ fn spawn_expression_node(
     program: MaterialProgramId,
     node: &MaterialGraphNode,
     position: Vec2,
-    inspector: &MaterialStackInspectorState,
+    selection: &MaterialGraphSelectionState,
     localizer: &Localizer,
     asset_server: &AssetServer,
     graph_key: &str,
 ) {
-    let selected = inspector.selected == Some((program, node.expression));
+    let selected =
+        selection.program == Some(program) && selection.expressions.contains(&node.expression);
     let subtitle = type_domain(node.value_type, node.evaluation_domain);
     spawn_graph_node(
         parent,
@@ -1776,5 +2393,39 @@ mod tests {
                 .is_ok()
             );
         }
+    }
+
+    #[test]
+    fn graph_selection_supports_replace_add_and_toggle() {
+        let program = MaterialProgramId::new();
+        let first = MaterialExpressionId::new();
+        let second = MaterialExpressionId::new();
+        let mut selection = MaterialGraphSelectionState::default();
+
+        assert_eq!(
+            selection.select_expression(program, first, false, false),
+            Some(first)
+        );
+        assert_eq!(
+            selection.select_expression(program, second, false, true),
+            Some(second)
+        );
+        assert_eq!(selection.expressions, BTreeSet::from([first, second]));
+        assert_eq!(
+            selection.select_expression(program, first, true, false),
+            Some(second)
+        );
+        assert_eq!(selection.expressions, BTreeSet::from([second]));
+        selection.select_expression(program, second, true, false);
+        assert!(selection.expressions.is_empty());
+    }
+
+    #[test]
+    fn graph_wire_hit_distance_follows_the_rendered_bezier() {
+        let start = Vec2::new(20.0, 40.0);
+        let end = Vec2::new(360.0, 180.0);
+        assert!(distance_to_graph_wire(start, start, end) < 0.001);
+        assert!(distance_to_graph_wire(end, start, end) < 0.001);
+        assert!(distance_to_graph_wire(Vec2::new(180.0, 430.0), start, end) > 100.0);
     }
 }

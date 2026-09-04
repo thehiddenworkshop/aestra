@@ -10,6 +10,7 @@ use crate::feathers::context_menu::{
 use crate::feathers::icon::load_svg_icon;
 use crate::feathers::scroll::{spawn_horizontal_scrollbar, spawn_vertical_scrollbar};
 use crate::library::{ProjectEffectCatalog, ProjectEffectRow};
+use crate::material_graph::MaterialGraphViewport;
 use crate::{
     ComboOption, CurvesState, DockPanel, DocumentAction, EditorModuleRegistry, EditorNativeControl,
     EditorTooltip, FeathersActionButton, KeyboardNavigableList, KeyboardNavigableListRow,
@@ -685,6 +686,7 @@ fn choreography_keyboard_input(
     state: Res<TimelineState>,
     timelines: Query<(), With<TimelineCanvas>>,
     automation_graphs: Query<(&TimelineAutomationLaneGraph, &RelativeCursorPosition)>,
+    material_graphs: Query<&RelativeCursorPosition, With<MaterialGraphViewport>>,
     focus: Option<Res<InputFocus>>,
     editable_text: Query<(), With<EditableText>>,
 ) {
@@ -692,7 +694,13 @@ fn choreography_keyboard_input(
         .as_ref()
         .and_then(|focus| focus.get())
         .is_some_and(|entity| editable_text.contains(entity));
-    if palette.open || timelines.is_empty() || editing_text {
+    if palette.open
+        || timelines.is_empty()
+        || editing_text
+        || material_graphs
+            .iter()
+            .any(RelativeCursorPosition::cursor_over)
+    {
         return;
     }
     let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);

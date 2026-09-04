@@ -6,17 +6,18 @@ use crate::{
     material_authoring::{material_expression_input_source, rewire_expression},
 };
 use aestra_compiler::{
-    MaterialCompiler, MaterialStackEditError, MaterialStackModifierKind, MaterialStackPresetKind,
-    MaterialStackProjection,
+    MaterialCompiler, MaterialGraphEdgeTarget, MaterialGraphOutputKind, MaterialStackEditError,
+    MaterialStackModifierKind, MaterialStackPresetKind, MaterialStackProjection,
 };
 use aestra_core::{
     MaterialExpressionId, MaterialId, MaterialParameterId, MaterialProgramId, ParameterId,
     material::{
         MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind,
-        MaterialParameterValue, MaterialProgram, MaterialValue,
+        MaterialParameterValue, MaterialProgram, MaterialValue, MaterialValueType,
     },
 };
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 /// Stable placement for an inserted material operation or preset.
@@ -109,6 +110,18 @@ pub enum MaterialToolCommand {
         source: MaterialExpressionId,
         target: MaterialConnectionTarget,
     },
+    DuplicateMaterialExpressions {
+        program: MaterialProgramId,
+        expressions: Vec<MaterialExpressionId>,
+    },
+    DeleteMaterialExpressions {
+        program: MaterialProgramId,
+        expressions: Vec<MaterialExpressionId>,
+    },
+    DisconnectMaterialConnection {
+        program: MaterialProgramId,
+        target: MaterialConnectionTarget,
+    },
     InsertMaterialOperation {
         program: MaterialProgramId,
         kind: MaterialStackModifierKind,
@@ -174,6 +187,12 @@ pub enum MaterialToolError {
     SourceExpressionNotFound(MaterialExpressionId),
     #[error("destination material expression '{0}' was not found")]
     DestinationExpressionNotFound(MaterialExpressionId),
+    #[error("material expression selection is empty")]
+    EmptyExpressionSelection,
+    #[error("material expression '{0}' cannot be deleted without invalidating a consumer")]
+    ExpressionCannotBeDeleted(MaterialExpressionId),
+    #[error("material connection {0:?} cannot be reset to a typed default")]
+    ConnectionCannotBeDisconnected(MaterialConnectionTarget),
     #[error("{kind:?} cannot wrap {target:?} without changing graph meaning")]
     IncompatibleWrap {
         kind: MaterialStackModifierKind,
@@ -222,6 +241,17 @@ impl MaterialToolPlanner {
                 source,
                 target,
             } => Self::plan_connect_material_expression(document, program, source, target),
+            MaterialToolCommand::DuplicateMaterialExpressions {
+                program,
+                expressions,
+            } => Self::plan_duplicate_material_expressions(document, program, expressions),
+            MaterialToolCommand::DeleteMaterialExpressions {
+                program,
+                expressions,
+            } => Self::plan_delete_material_expressions(document, program, expressions),
+            MaterialToolCommand::DisconnectMaterialConnection { program, target } => {
+                Self::plan_disconnect_material_connection(document, program, target)
+            }
             MaterialToolCommand::InsertMaterialOperation {
                 program,
                 kind,
@@ -404,6 +434,153 @@ impl MaterialToolPlanner {
         validate_plan(document, command, transaction, Vec::new())
     }
 
+    fn plan_duplicate_material_expressions(
+        document: &MaterialAuthoringDocument,
+        program_id: MaterialProgramId,
+        expressions: Vec<MaterialExpressionId>,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        let program = find_program(document, program_id)?;
+        let selected = expressions.iter().copied().collect::<BTreeSet<_>>();
+        if selected.is_empty() {
+            return Err(MaterialToolError::EmptyExpressionSelection);
+        }
+        for expression in &selected {
+            if !program
+                .expressions
+                .iter()
+                .any(|candidate| candidate.id == *expression)
+            {
+                return Err(MaterialToolError::SourceExpressionNotFound(*expression));
+            }
+        }
+
+        let ordered = program
+            .expressions
+            .iter()
+            .filter(|expression| selected.contains(&expression.id))
+            .collect::<Vec<_>>();
+        let mut replacement = program.clone();
+        let mut remapped = BTreeMap::new();
+        for expression in &ordered {
+            let duplicate = next_expression_id(&replacement, remapped.values().copied());
+            remapped.insert(expression.id, duplicate);
+        }
+        let mut created_expressions = Vec::with_capacity(ordered.len());
+        for expression in ordered {
+            let id = remapped[&expression.id];
+            let mut kind = expression.kind.clone();
+            remap_expression_sources(&mut kind, &remapped);
+            replacement
+                .expressions
+                .push(MaterialExpression { id, kind });
+            created_expressions.push(id);
+        }
+
+        let command = MaterialToolCommand::DuplicateMaterialExpressions {
+            program: program_id,
+            expressions,
+        };
+        let transaction = MaterialTransaction::single(
+            "Duplicate material expressions",
+            MaterialCommand::ReplaceMaterialProgram {
+                id: program_id,
+                program: replacement,
+            },
+        );
+        validate_plan(document, command, transaction, created_expressions)
+    }
+
+    fn plan_delete_material_expressions(
+        document: &MaterialAuthoringDocument,
+        program_id: MaterialProgramId,
+        expressions: Vec<MaterialExpressionId>,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        let program = find_program(document, program_id)?;
+        let selected = expressions.iter().copied().collect::<BTreeSet<_>>();
+        if selected.is_empty() {
+            return Err(MaterialToolError::EmptyExpressionSelection);
+        }
+        for expression in &selected {
+            if !program
+                .expressions
+                .iter()
+                .any(|candidate| candidate.id == *expression)
+            {
+                return Err(MaterialToolError::DestinationExpressionNotFound(
+                    *expression,
+                ));
+            }
+        }
+
+        let projection = MaterialCompiler.project_graph(program, None);
+        let mut replacement = program.clone();
+        for edge in &projection.edges {
+            if !selected.contains(&edge.source) || target_is_selected(&edge.target, &selected) {
+                continue;
+            }
+            let Some(target) = graph_connection_target(&edge.target) else {
+                continue;
+            };
+            let Some(source) =
+                surviving_bypass_source(program, &selected, edge.source, &mut BTreeSet::new())
+            else {
+                return Err(MaterialToolError::ExpressionCannotBeDeleted(edge.source));
+            };
+            apply_connection(&mut replacement, target, source)?;
+        }
+        replacement
+            .expressions
+            .retain(|expression| !selected.contains(&expression.id));
+
+        let command = MaterialToolCommand::DeleteMaterialExpressions {
+            program: program_id,
+            expressions,
+        };
+        let transaction = MaterialTransaction::single(
+            "Delete material expressions",
+            MaterialCommand::ReplaceMaterialProgram {
+                id: program_id,
+                program: replacement,
+            },
+        );
+        validate_plan(document, command, transaction, Vec::new())
+    }
+
+    fn plan_disconnect_material_connection(
+        document: &MaterialAuthoringDocument,
+        program_id: MaterialProgramId,
+        target: MaterialConnectionTarget,
+    ) -> Result<MaterialToolPlan, MaterialToolError> {
+        let program = find_program(document, program_id)?;
+        connection_source(program, target)?;
+        let projection = MaterialCompiler.project_graph(program, None);
+        let value_type = projection.edges.iter().find_map(|edge| {
+            (graph_connection_target(&edge.target) == Some(target))
+                .then_some(edge.value_type)
+                .flatten()
+        });
+        let value = value_type
+            .and_then(default_material_value)
+            .ok_or(MaterialToolError::ConnectionCannotBeDisconnected(target))?;
+        let mut replacement = program.clone();
+        let expression =
+            append_unique_expression(&mut replacement, MaterialExpressionKind::Constant(value));
+        apply_connection(&mut replacement, target, expression)?;
+
+        let command = MaterialToolCommand::DisconnectMaterialConnection {
+            program: program_id,
+            target,
+        };
+        let transaction = MaterialTransaction::single(
+            "Reset material connection",
+            MaterialCommand::ReplaceMaterialProgram {
+                id: program_id,
+                program: replacement,
+            },
+        );
+        validate_plan(document, command, transaction, vec![expression])
+    }
+
     fn plan_insert_material_operation(
         document: &MaterialAuthoringDocument,
         program_id: MaterialProgramId,
@@ -579,6 +756,261 @@ fn append_unique_expression(
     }
     program.expressions.push(MaterialExpression { id, kind });
     id
+}
+
+fn next_expression_id(
+    program: &MaterialProgram,
+    reserved: impl IntoIterator<Item = MaterialExpressionId>,
+) -> MaterialExpressionId {
+    let reserved = reserved.into_iter().collect::<BTreeSet<_>>();
+    loop {
+        let id = MaterialExpressionId::new();
+        if !reserved.contains(&id)
+            && !program
+                .expressions
+                .iter()
+                .any(|expression| expression.id == id)
+        {
+            return id;
+        }
+    }
+}
+
+fn remap_expression_sources(
+    kind: &mut MaterialExpressionKind,
+    remapped: &BTreeMap<MaterialExpressionId, MaterialExpressionId>,
+) {
+    let remap = |source: &mut MaterialExpressionId| {
+        if let Some(replacement) = remapped.get(source) {
+            *source = *replacement;
+        }
+    };
+    match kind {
+        MaterialExpressionKind::Constant(_)
+        | MaterialExpressionKind::Input(_)
+        | MaterialExpressionKind::Parameter(_) => {}
+        MaterialExpressionKind::Add(left, right)
+        | MaterialExpressionKind::Subtract(left, right)
+        | MaterialExpressionKind::Multiply(left, right)
+        | MaterialExpressionKind::Divide(left, right) => {
+            remap(left);
+            remap(right);
+        }
+        MaterialExpressionKind::Lerp { start, end, factor } => {
+            remap(start);
+            remap(end);
+            remap(factor);
+        }
+        MaterialExpressionKind::Clamp { value, min, max } => {
+            remap(value);
+            remap(min);
+            remap(max);
+        }
+        MaterialExpressionKind::Remap {
+            value,
+            input_min,
+            input_max,
+            output_min,
+            output_max,
+        } => {
+            remap(value);
+            remap(input_min);
+            remap(input_max);
+            remap(output_min);
+            remap(output_max);
+        }
+        MaterialExpressionKind::Smoothstep {
+            edge_min,
+            edge_max,
+            value,
+        } => {
+            remap(edge_min);
+            remap(edge_max);
+            remap(value);
+        }
+        MaterialExpressionKind::Fresnel {
+            normal,
+            view,
+            power,
+        } => {
+            remap(normal);
+            remap(view);
+            remap(power);
+        }
+        MaterialExpressionKind::RadialMask {
+            uv,
+            center,
+            radius,
+            softness,
+            invert,
+        } => {
+            remap(uv);
+            remap(center);
+            remap(radius);
+            remap(softness);
+            remap(invert);
+        }
+        MaterialExpressionKind::Dissolve {
+            source,
+            threshold,
+            edge_width,
+            invert,
+        }
+        | MaterialExpressionKind::DissolveEdge {
+            source,
+            threshold,
+            edge_width,
+            invert,
+        } => {
+            remap(source);
+            remap(threshold);
+            remap(edge_width);
+            remap(invert);
+        }
+        MaterialExpressionKind::DepthFade {
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => {
+            remap(scene_depth);
+            remap(pixel_depth);
+            remap(fade_distance);
+            remap(invert);
+        }
+        MaterialExpressionKind::SoftParticle {
+            alpha,
+            scene_depth,
+            pixel_depth,
+            fade_distance,
+            invert,
+        } => {
+            remap(alpha);
+            remap(scene_depth);
+            remap(pixel_depth);
+            remap(fade_distance);
+            remap(invert);
+        }
+        MaterialExpressionKind::PanUv { uv, speed, time } => {
+            remap(uv);
+            remap(speed);
+            remap(time);
+        }
+        MaterialExpressionKind::RotateUv { uv, center, angle } => {
+            remap(uv);
+            remap(center);
+            remap(angle);
+        }
+        MaterialExpressionKind::ScaleUv { uv, center, scale } => {
+            remap(uv);
+            remap(center);
+            remap(scale);
+        }
+        MaterialExpressionKind::SampleTexture { texture, uv } => {
+            remap(texture);
+            remap(uv);
+        }
+        MaterialExpressionKind::ExtractComponent { value, .. } => remap(value),
+    }
+}
+
+fn target_is_selected(
+    target: &MaterialGraphEdgeTarget,
+    selected: &BTreeSet<MaterialExpressionId>,
+) -> bool {
+    matches!(
+        target,
+        MaterialGraphEdgeTarget::Input { expression, .. } if selected.contains(expression)
+    )
+}
+
+fn surviving_bypass_source(
+    program: &MaterialProgram,
+    selected: &BTreeSet<MaterialExpressionId>,
+    expression: MaterialExpressionId,
+    visiting: &mut BTreeSet<MaterialExpressionId>,
+) -> Option<MaterialExpressionId> {
+    if !selected.contains(&expression) {
+        return Some(expression);
+    }
+    if !visiting.insert(expression) {
+        return None;
+    }
+    let source = program
+        .expressions
+        .iter()
+        .find(|candidate| candidate.id == expression)?
+        .kind
+        .bypass_input()?;
+    let result = surviving_bypass_source(program, selected, source, visiting);
+    visiting.remove(&expression);
+    result
+}
+
+fn graph_connection_target(target: &MaterialGraphEdgeTarget) -> Option<MaterialConnectionTarget> {
+    match target {
+        MaterialGraphEdgeTarget::Output(MaterialGraphOutputKind::Color) => Some(
+            MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Color),
+        ),
+        MaterialGraphEdgeTarget::Output(MaterialGraphOutputKind::Alpha) => Some(
+            MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha),
+        ),
+        MaterialGraphEdgeTarget::Input { expression, port } => {
+            let input = match port.as_str() {
+                "left" => MaterialExpressionInput::Left,
+                "right" => MaterialExpressionInput::Right,
+                "start" => MaterialExpressionInput::Start,
+                "end" => MaterialExpressionInput::End,
+                "factor" => MaterialExpressionInput::Factor,
+                "value" => MaterialExpressionInput::Value,
+                "min" => MaterialExpressionInput::Minimum,
+                "max" => MaterialExpressionInput::Maximum,
+                "input_min" => MaterialExpressionInput::InputMinimum,
+                "input_max" => MaterialExpressionInput::InputMaximum,
+                "output_min" => MaterialExpressionInput::OutputMinimum,
+                "output_max" => MaterialExpressionInput::OutputMaximum,
+                "edge_min" => MaterialExpressionInput::EdgeMinimum,
+                "edge_max" => MaterialExpressionInput::EdgeMaximum,
+                "normal" => MaterialExpressionInput::Normal,
+                "view" => MaterialExpressionInput::View,
+                "power" => MaterialExpressionInput::Power,
+                "radius" => MaterialExpressionInput::Radius,
+                "softness" => MaterialExpressionInput::Softness,
+                "threshold" => MaterialExpressionInput::Threshold,
+                "edge_width" => MaterialExpressionInput::EdgeWidth,
+                "scene_depth" => MaterialExpressionInput::SceneDepth,
+                "pixel_depth" => MaterialExpressionInput::PixelDepth,
+                "fade_distance" => MaterialExpressionInput::FadeDistance,
+                "invert" => MaterialExpressionInput::Invert,
+                "speed" => MaterialExpressionInput::Speed,
+                "time" => MaterialExpressionInput::Time,
+                "center" => MaterialExpressionInput::Center,
+                "angle" => MaterialExpressionInput::Angle,
+                "scale" => MaterialExpressionInput::Scale,
+                "texture" => MaterialExpressionInput::Texture,
+                "uv" => MaterialExpressionInput::Uv,
+                "source" => MaterialExpressionInput::Source,
+                "alpha" => MaterialExpressionInput::SourceAlpha,
+                _ => return None,
+            };
+            Some(MaterialConnectionTarget::ExpressionInput {
+                expression: *expression,
+                input,
+            })
+        }
+    }
+}
+
+fn default_material_value(value_type: MaterialValueType) -> Option<MaterialValue> {
+    match value_type {
+        MaterialValueType::Float => Some(MaterialValue::Float(0.0)),
+        MaterialValueType::Vec2 => Some(MaterialValue::Vec2([0.0; 2])),
+        MaterialValueType::Vec3 => Some(MaterialValue::Vec3([0.0; 3])),
+        MaterialValueType::Vec4 => Some(MaterialValue::Vec4([0.0; 4])),
+        MaterialValueType::Color => Some(MaterialValue::ColorSrgb([0.0, 0.0, 0.0, 1.0])),
+        MaterialValueType::Bool => Some(MaterialValue::Bool(false)),
+        MaterialValueType::Texture2D(_) => None,
+    }
 }
 
 fn wrap_changes_only_requested_edge(

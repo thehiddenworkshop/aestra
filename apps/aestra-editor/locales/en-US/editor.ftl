@@ -62,6 +62,8 @@ material-graph-outputs = MATERIAL OUTPUTS
 material-graph-search-nodes = Search nodes
 material-graph-clear-search = Clear node search
 material-graph-no-compatible-nodes = No compatible nodes are available here.
+material-graph-duplicate-nodes = Duplicate
+material-graph-delete-nodes = Delete
 
 viewport-frame-effect = Frame Effect
 viewport-frame-effect-description = Center the viewport camera on the effect.

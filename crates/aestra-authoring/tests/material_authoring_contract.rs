@@ -2558,3 +2558,133 @@ fn material_wrap_tool_handles_fanout_and_rejects_incompatible_or_stale_targets_a
     );
     assert_eq!(document, before);
 }
+
+#[test]
+fn material_graph_duplicate_preserves_internal_selection_connections() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6a00);
+    let (program, pan) = reorderable_material_program(program_id);
+    let rotate = MaterialExpressionId::from_u128(0x1186);
+    document.programs.push(program);
+
+    let plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::DuplicateMaterialExpressions {
+            program: program_id,
+            expressions: vec![rotate, pan],
+        },
+    )
+    .unwrap();
+    assert_eq!(plan.created_expressions.len(), 2);
+    let duplicate_pan = plan.created_expressions[0];
+    let duplicate_rotate = plan.created_expressions[1];
+    let mut preview = document.clone();
+    MaterialCommandExecutor::execute(&mut preview, &plan.transaction).unwrap();
+    assert!(matches!(
+        preview.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == duplicate_rotate)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RotateUv { uv, .. } if uv == duplicate_pan
+    ));
+    assert!(MaterialCompiler.compile(&preview.programs[0]).is_ok());
+}
+
+#[test]
+fn material_graph_delete_bypasses_safe_nodes_and_rejects_required_generators() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6a10);
+    let (program, _) = reorderable_material_program(program_id);
+    let pan = MaterialExpressionId::from_u128(0x1183);
+    let angle = MaterialExpressionId::from_u128(0x1185);
+    let rotate = MaterialExpressionId::from_u128(0x1186);
+    let sample = MaterialExpressionId::from_u128(0x1189);
+    document.programs.push(program);
+
+    let plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::DeleteMaterialExpressions {
+            program: program_id,
+            expressions: vec![rotate],
+        },
+    )
+    .unwrap();
+    let mut preview = document.clone();
+    MaterialCommandExecutor::execute(&mut preview, &plan.transaction).unwrap();
+    assert!(
+        !preview.programs[0]
+            .expressions
+            .iter()
+            .any(|expression| expression.id == rotate)
+    );
+    assert!(matches!(
+        preview.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == sample)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::SampleTexture { uv, .. } if uv == pan
+    ));
+
+    let error = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::DeleteMaterialExpressions {
+            program: program_id,
+            expressions: vec![angle],
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        MaterialToolError::ExpressionCannotBeDeleted(expression) if expression == angle
+    ));
+}
+
+#[test]
+fn material_graph_disconnect_replaces_the_edge_with_a_typed_default() {
+    let mut document = authoring_document();
+    let program_id = MaterialProgramId::from_u128(0x6a20);
+    let (program, _) = reorderable_material_program(program_id);
+    let angle = MaterialExpressionId::from_u128(0x1185);
+    let rotate = MaterialExpressionId::from_u128(0x1186);
+    document.programs.push(program);
+    let target = MaterialConnectionTarget::ExpressionInput {
+        expression: rotate,
+        input: MaterialExpressionInput::Angle,
+    };
+
+    let plan = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::DisconnectMaterialConnection {
+            program: program_id,
+            target,
+        },
+    )
+    .unwrap();
+    assert_eq!(plan.created_expressions.len(), 1);
+    let default = plan.created_expressions[0];
+    let mut preview = document.clone();
+    MaterialCommandExecutor::execute(&mut preview, &plan.transaction).unwrap();
+    assert_ne!(default, angle);
+    assert!(matches!(
+        preview.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == default)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Constant(MaterialValue::Float(0.0))
+    ));
+    assert!(matches!(
+        preview.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == rotate)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RotateUv { angle, .. } if angle == default
+    ));
+}

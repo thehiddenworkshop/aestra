@@ -368,8 +368,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   frame-selection commands. Right-click or Tab now opens a searchable, pointer-anchored Add Node
   palette populated from compiler-approved semantic operations; it inserts or wraps at the nearest
   valid graph edge, participates in material undo/redo, and places/selects the resulting expression.
-  Node deletion/duplication, explicit connection selection, and the remaining semantic graph
-  gestures are still required before this milestone is complete.
+  Nodes now support clear Ctrl/Shift multi-selection, contextual and keyboard duplication/deletion,
+  stable-ID duplication with internal links preserved, and compiler-validated bypass deletion.
+  Connections can be selected directly and Delete resets them to a typed default through the same
+  semantic history. Remaining node kinds and graph gestures are still required before this
+  milestone is complete.
 - [ ] **Material 14 — graph layout metadata.** Persist optional layout separately from semantics.
 
 ### Phase E — reuse and extensibility

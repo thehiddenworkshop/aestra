@@ -102,11 +102,14 @@ fn tool_error(error: MaterialToolError) -> MaterialApiError {
             MaterialApiErrorCode::NotExposed,
             ValidationReport::default(),
         ),
-        MaterialToolError::InvalidFresnelSettings(_) => (
+        MaterialToolError::InvalidFresnelSettings(_)
+        | MaterialToolError::EmptyExpressionSelection => (
             MaterialApiErrorCode::InvalidRequest,
             ValidationReport::default(),
         ),
-        MaterialToolError::IncompatibleWrap { .. } => (
+        MaterialToolError::IncompatibleWrap { .. }
+        | MaterialToolError::ExpressionCannotBeDeleted(_)
+        | MaterialToolError::ConnectionCannotBeDisconnected(_) => (
             MaterialApiErrorCode::IncompatibleEdit,
             ValidationReport::default(),
         ),

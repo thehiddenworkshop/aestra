@@ -160,6 +160,12 @@ pub(crate) struct GraphViewportMemory {
 }
 
 impl GraphViewportMemory {
+    pub(crate) fn node_position(&self, graph_key: &str, node_key: &str) -> Option<Vec2> {
+        self.nodes
+            .get(&(graph_key.to_owned(), node_key.to_owned()))
+            .map(|node| node.position)
+    }
+
     pub(crate) fn place_node(
         &mut self,
         graph_key: impl Into<String>,
@@ -173,6 +179,11 @@ impl GraphViewportMemory {
                 collapsed: false,
             },
         );
+    }
+
+    pub(crate) fn remove_node(&mut self, graph_key: &str, node_key: &str) {
+        self.nodes
+            .remove(&(graph_key.to_owned(), node_key.to_owned()));
     }
 }
 

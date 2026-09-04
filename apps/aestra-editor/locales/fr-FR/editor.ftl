@@ -62,6 +62,8 @@ material-graph-outputs = SORTIES DU MATÉRIAU
 material-graph-search-nodes = Rechercher des nœuds
 material-graph-clear-search = Effacer la recherche de nœuds
 material-graph-no-compatible-nodes = Aucun nœud compatible n’est disponible ici.
+material-graph-duplicate-nodes = Dupliquer
+material-graph-delete-nodes = Supprimer
 
 viewport-frame-effect = Centrer l’effet
 viewport-frame-effect-description = Centrer la caméra de l’aperçu sur l’effet.

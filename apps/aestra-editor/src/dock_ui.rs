@@ -7,6 +7,7 @@ use crate::docking::{
     DockTreeHost, DockingAction, NativeFloatingCamera, NativeFloatingUi, NativeFloatingWindow,
     ResizeState, SplitterGrip, StagedNativeFloatingUi, WorkspaceLayout,
 };
+use crate::feathers::node_graph::GraphViewportMemory;
 use crate::timeline::TimelineState;
 use crate::*;
 use bevy::{
@@ -28,6 +29,8 @@ struct PanelSources<'a> {
     repair: &'a EffectClipRepairState,
     material_stack_inspector: &'a MaterialStackInspectorState,
     material_graph_palette: &'a MaterialGraphPaletteState,
+    material_graph_selection: &'a MaterialGraphSelectionState,
+    graph_viewport_memory: &'a GraphViewportMemory,
     diagnostics_panel: &'a DiagnosticsPanelState,
     profiler: &'a ProfilerState,
     settings: &'a EditorSettings,
@@ -47,6 +50,8 @@ pub(crate) struct DockUiResources<'w> {
     repair: Res<'w, EffectClipRepairState>,
     material_stack_inspector: Res<'w, MaterialStackInspectorState>,
     material_graph_palette: Res<'w, MaterialGraphPaletteState>,
+    material_graph_selection: Res<'w, MaterialGraphSelectionState>,
+    graph_viewport_memory: Res<'w, GraphViewportMemory>,
     diagnostics_panel: Res<'w, DiagnosticsPanelState>,
     profiler: Res<'w, ProfilerState>,
     settings: Res<'w, EditorSettings>,
@@ -72,6 +77,8 @@ impl<'w> DockUiResources<'w> {
             repair: &self.repair,
             material_stack_inspector: &self.material_stack_inspector,
             material_graph_palette: &self.material_graph_palette,
+            material_graph_selection: &self.material_graph_selection,
+            graph_viewport_memory: &self.graph_viewport_memory,
             diagnostics_panel: &self.diagnostics_panel,
             profiler: &self.profiler,
             settings: &self.settings,
@@ -462,8 +469,9 @@ fn spawn_panel_content(
             parent,
             sources.session,
             sources.catalog,
-            sources.material_stack_inspector,
             sources.material_graph_palette,
+            sources.material_graph_selection,
+            sources.graph_viewport_memory,
             sources.localizer,
             sources.asset_server,
         ),
