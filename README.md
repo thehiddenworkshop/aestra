@@ -107,6 +107,8 @@ merged only when their texture and UV operands are identical; custom WESL calls 
 until they carry their own purity contract. The merged-expression count is preserved in compiled
 artifacts, the Compiler Inspector, and `preview-report.json`, together with authored, eliminated,
 and live texture-sample counts.
+Explicit-LOD sampling is available through the typed `Sample Texture Level` graph node. Its Float
+level participates in CSE identity and lowers portably to `textureSampleLevel`.
 Shader-static parameter reads are also replaced by their typed defaults during IR lowering, so
 dependent expressions can fold before backend resource reflection; the authored parameter
 metadata remains available for inspection and specialization changes still alter the shader

@@ -157,11 +157,21 @@ pub enum MaterialIrInstruction {
 pub enum MaterialTextureSamplingMode {
     #[default]
     ImplicitDerivatives,
+    ExplicitLod {
+        level: MaterialIrValueId,
+    },
 }
 
 impl MaterialTextureSamplingMode {
     const fn common_subexpression_safe(self) -> bool {
-        matches!(self, Self::ImplicitDerivatives)
+        matches!(self, Self::ImplicitDerivatives | Self::ExplicitLod { .. })
+    }
+
+    const fn level(self) -> Option<MaterialIrValueId> {
+        match self {
+            Self::ImplicitDerivatives => None,
+            Self::ExplicitLod { level } => Some(level),
+        }
     }
 }
 
@@ -233,7 +243,17 @@ impl MaterialIrInstruction {
             Self::PanUv { uv, speed, time } => vec![*uv, *speed, *time],
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
-            Self::SampleTexture { texture, uv, .. } => vec![*texture, *uv],
+            Self::SampleTexture {
+                texture,
+                uv,
+                sampling,
+            } => {
+                let mut dependencies = vec![*texture, *uv];
+                if let Some(level) = sampling.level() {
+                    dependencies.push(level);
+                }
+                dependencies
+            }
             Self::ExtractComponent { value, .. } => vec![*value],
         }
     }
@@ -380,9 +400,16 @@ impl MaterialIrInstruction {
                 remap(center);
                 remap(scale);
             }
-            Self::SampleTexture { texture, uv, .. } => {
+            Self::SampleTexture {
+                texture,
+                uv,
+                sampling,
+            } => {
                 remap(texture);
                 remap(uv);
+                if let MaterialTextureSamplingMode::ExplicitLod { level } = sampling {
+                    remap(level);
+                }
             }
             Self::ExtractComponent { value, .. } => remap(value),
         }
@@ -593,6 +620,7 @@ fn semantic_feature_stats(program: &MaterialProgram) -> SemanticFeatureStats {
                 && matches!(
                     expression.kind,
                     MaterialExpressionKind::SampleTexture { .. }
+                        | MaterialExpressionKind::SampleTextureLevel { .. }
                 )
         })
         .count();
@@ -626,7 +654,10 @@ fn semantic_feature_stats(program: &MaterialProgram) -> SemanticFeatureStats {
                     dynamic_parameters.insert(*parameter);
                 }
             }
-            MaterialExpressionKind::SampleTexture { .. } => reachable_texture_samples += 1,
+            MaterialExpressionKind::SampleTexture { .. }
+            | MaterialExpressionKind::SampleTextureLevel { .. } => {
+                reachable_texture_samples += 1;
+            }
             MaterialExpressionKind::CustomWeslCall { .. } => custom_calls += 1,
             _ => {}
         }
@@ -953,6 +984,16 @@ impl MaterialIrBuilder<'_> {
                     texture,
                     uv,
                     sampling: MaterialTextureSamplingMode::ImplicitDerivatives,
+                }
+            }
+            MaterialExpressionKind::SampleTextureLevel { texture, uv, level } => {
+                let texture = self.lower(texture);
+                let uv = self.lower(uv);
+                let level = self.lower(level);
+                MaterialIrInstruction::SampleTexture {
+                    texture,
+                    uv,
+                    sampling: MaterialTextureSamplingMode::ExplicitLod { level },
                 }
             }
             MaterialExpressionKind::ExtractComponent { value, component } => {
@@ -1346,7 +1387,13 @@ impl MaterialIrInstructionKey {
                 sampling,
             } if sampling.common_subexpression_safe() => (
                 20,
-                vec![*texture, *uv],
+                {
+                    let mut operands = vec![*texture, *uv];
+                    if let Some(level) = sampling.level() {
+                        operands.push(level);
+                    }
+                    operands
+                },
                 MaterialIrInstructionPayloadKey::TextureSampling(*sampling),
             ),
             MaterialIrInstruction::SampleTexture { .. } => return None,

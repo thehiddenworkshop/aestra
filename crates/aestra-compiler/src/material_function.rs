@@ -655,6 +655,11 @@ fn remap_kind(
             texture: remap(*texture)?,
             uv: remap(*uv)?,
         },
+        E::SampleTextureLevel { texture, uv, level } => E::SampleTextureLevel {
+            texture: remap(*texture)?,
+            uv: remap(*uv)?,
+            level: remap(*level)?,
+        },
         E::ExtractComponent { value, component } => E::ExtractComponent {
             value: remap(*value)?,
             component: *component,

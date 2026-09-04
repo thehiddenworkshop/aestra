@@ -400,6 +400,64 @@ fn material_analysis_infers_typed_sockets_and_evaluation_domains() {
 }
 
 #[test]
+fn explicit_lod_texture_sampling_requires_a_float_level_and_declared_texture() {
+    let texture_parameter = MaterialParameterId::from_u128(0xA101);
+    let texture = MaterialExpressionId::from_u128(0xA102);
+    let uv = MaterialExpressionId::from_u128(0xA103);
+    let level = MaterialExpressionId::from_u128(0xA104);
+    let sample = MaterialExpressionId::from_u128(0xA105);
+    let mut program = MaterialProgram::additive_sprite("Explicit texture level");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(texture_descriptor()),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0xA106))),
+    });
+    program.expressions.extend([
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: level,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(2.0)),
+        },
+        MaterialExpression {
+            id: sample,
+            kind: MaterialExpressionKind::SampleTextureLevel { texture, uv, level },
+        },
+    ]);
+    program.outputs.color = sample;
+
+    let analysis = program.analyze().unwrap();
+    assert_eq!(
+        analysis.expressions[&sample].value_type,
+        MaterialValueType::Color
+    );
+    assert_eq!(
+        analysis.expressions[&sample].evaluation_domain,
+        MaterialExpressionDomain::Fragment
+    );
+
+    program
+        .expressions
+        .iter_mut()
+        .find(|expression| expression.id == level)
+        .unwrap()
+        .kind = MaterialExpressionKind::Constant(MaterialValue::Vec2([2.0; 2]));
+    let report = program.validation_report();
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::MaterialTypeMismatch
+            && diagnostic.path.ends_with(".level")
+    }));
+}
+
+#[test]
 fn uv_transforms_round_trip_and_preserve_their_typed_semantic_sockets() {
     let uv = MaterialExpressionId::from_u128(0xAA01);
     let speed = MaterialExpressionId::from_u128(0xAA02);

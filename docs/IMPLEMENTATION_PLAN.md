@@ -455,14 +455,18 @@ the current sprite-material path until the native-GPU compatibility gate approve
   until they carry explicit purity contracts. Aliased semantic expressions retain complete source
   mapping, and optimization plus authored/eliminated/live texture-sample counts flow through
   compiled effects, backward-compatible artifacts, the Compiler Inspector, and preview JSON.
+  Explicit-LOD sampling is complete end to end: the shared graph catalog exposes a typed
+  `Sample Texture Level` node, semantic validation requires a declared texture, `Vec2` UV, and
+  Float level, IR and CSE identity include the level operand, and portable shaders emit
+  `textureSampleLevel` with artifact round-trip coverage.
   Shader-static parameter specialization is
   also complete at the IR boundary: typed program defaults replace static reads before dependent
   folding and CSE, while parameter metadata and fingerprint invalidation remain intact. Static
   `Select` branch pruning is now complete end to end: only the chosen branch is lowered, dead
   inputs, parameter bindings, texture samples, and custom calls are omitted from live reflection,
   and branch/feature counts flow through artifacts, the Compiler Inspector, and preview JSON.
-  Explicit-LOD and gradient sampling modes, function deduplication, varying minimization, and
-  required particle-attribute pruning remain.
+  Gradient sampling mode, function deduplication, varying minimization, and required
+  particle-attribute pruning remain.
 - [ ] **Material 20 — mesh and ribbon domains.**
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

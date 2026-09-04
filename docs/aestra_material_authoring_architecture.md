@@ -2506,7 +2506,10 @@ fingerprint invalidation. The semantic graph and portable shader pipeline now al
 unused dynamic inputs, parameter resources, texture samples, and custom calls are absent from the
 live shader layout while authored parameter metadata remains inspectable. Dynamic conditions emit
 the portable shader `select` operation. Branch- and feature-pruning counts survive artifacts and
-appear in editor and machine-readable reports. Explicit-LOD and gradient sampling modes, function
+appear in editor and machine-readable reports. Explicit-LOD sampling is now available through a
+typed `Sample Texture Level` graph node. Its declared texture, `Vec2` UV, and Float level lower to
+an explicit IR sampling contract; the level operand participates in CSE identity, survives
+artifact serialization, and emits portable `textureSampleLevel`. Gradient sampling, function
 deduplication, varying minimization, and required particle-attribute pruning remain planned.
 
 ### Completion Criterion

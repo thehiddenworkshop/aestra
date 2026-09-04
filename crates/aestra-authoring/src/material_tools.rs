@@ -1367,6 +1367,11 @@ fn remap_expression_sources(
             remap(texture);
             remap(uv);
         }
+        MaterialExpressionKind::SampleTextureLevel { texture, uv, level } => {
+            remap(texture);
+            remap(uv);
+            remap(level);
+        }
         MaterialExpressionKind::ExtractComponent { value, .. } => remap(value),
     }
 }

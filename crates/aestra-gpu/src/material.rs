@@ -23,7 +23,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 2;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 13;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 14;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
@@ -932,6 +932,13 @@ fn instruction_expression(
                     slot.sampler_binding,
                     value_name(*uv)
                 ),
+                MaterialTextureSamplingMode::ExplicitLod { level } => format!(
+                    "textureSampleLevel({}, material_sampler_{}, {}, {})",
+                    texture_name(parameter),
+                    slot.sampler_binding,
+                    value_name(*uv),
+                    value_name(*level)
+                ),
             }
         }
         MaterialIrInstruction::ExtractComponent { value, component } => {
@@ -1481,7 +1488,11 @@ fn hash_instruction(fingerprint: &mut FingerprintBuilder, instruction: &Material
             fingerprint.u32(uv.0);
             fingerprint.byte(match sampling {
                 MaterialTextureSamplingMode::ImplicitDerivatives => 0,
+                MaterialTextureSamplingMode::ExplicitLod { .. } => 1,
             });
+            if let MaterialTextureSamplingMode::ExplicitLod { level } = sampling {
+                fingerprint.u32(level.0);
+            }
         }
         MaterialIrInstruction::ExtractComponent { value, component } => {
             fingerprint.byte(10);

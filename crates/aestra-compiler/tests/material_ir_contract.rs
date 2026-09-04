@@ -1160,6 +1160,102 @@ fn identical_implicit_derivative_texture_samples_are_commoned_safely() {
 }
 
 #[test]
+fn explicit_lod_texture_samples_common_only_with_identical_levels() {
+    let texture_parameter = MaterialParameterId::from_u128(0x4251);
+    let texture = MaterialExpressionId::from_u128(0x4252);
+    let uv = MaterialExpressionId::from_u128(0x4253);
+    let first_level = MaterialExpressionId::from_u128(0x4254);
+    let second_level = MaterialExpressionId::from_u128(0x4255);
+    let first = MaterialExpressionId::from_u128(0x4256);
+    let duplicate = MaterialExpressionId::from_u128(0x4257);
+    let distinct = MaterialExpressionId::from_u128(0x4258);
+    let combined = MaterialExpressionId::from_u128(0x4259);
+    let color = MaterialExpressionId::from_u128(0x425A);
+    let mut program = MaterialProgram::additive_sprite("Explicit texture sample levels");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(texture_descriptor(
+            MaterialTextureColorSpace::SrgbColor,
+        )),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x425B))),
+    });
+    program.expressions.extend([
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: first_level,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: second_level,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(2.0)),
+        },
+        MaterialExpression {
+            id: first,
+            kind: MaterialExpressionKind::SampleTextureLevel {
+                texture,
+                uv,
+                level: first_level,
+            },
+        },
+        MaterialExpression {
+            id: duplicate,
+            kind: MaterialExpressionKind::SampleTextureLevel {
+                texture,
+                uv,
+                level: first_level,
+            },
+        },
+        MaterialExpression {
+            id: distinct,
+            kind: MaterialExpressionKind::SampleTextureLevel {
+                texture,
+                uv,
+                level: second_level,
+            },
+        },
+        MaterialExpression {
+            id: combined,
+            kind: MaterialExpressionKind::Add(first, duplicate),
+        },
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Add(combined, distinct),
+        },
+    ]);
+    program.outputs.color = color;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+
+    assert_eq!(
+        ir.source_map.values[&first],
+        ir.source_map.values[&duplicate]
+    );
+    assert_ne!(
+        ir.source_map.values[&first],
+        ir.source_map.values[&distinct]
+    );
+    assert_eq!(ir.optimizations.texture_samples_authored, 3);
+    assert_eq!(ir.optimizations.texture_samples_eliminated, 1);
+    assert_eq!(ir.optimizations.texture_samples_live, 2);
+    assert!(matches!(
+        ir.value(ir.source_map.values[&first]).unwrap().instruction,
+        MaterialIrInstruction::SampleTexture {
+            sampling: MaterialTextureSamplingMode::ExplicitLod { .. },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn texture_samples_with_distinct_uv_operands_remain_separate() {
     let texture_parameter = MaterialParameterId::from_u128(0x4211);
     let texture = MaterialExpressionId::from_u128(0x4212);

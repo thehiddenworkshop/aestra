@@ -130,6 +130,7 @@ pub enum MaterialGraphFunction {
     RotateUv,
     ScaleUv,
     SampleTexture,
+    SampleTextureLevel,
     ExtractComponent,
 }
 
@@ -155,6 +156,7 @@ impl MaterialGraphFunction {
             Self::RotateUv => "UV Rotate",
             Self::ScaleUv => "UV Scale",
             Self::SampleTexture => "Sample Texture",
+            Self::SampleTextureLevel => "Sample Texture Level",
             Self::ExtractComponent => "Extract Component",
         }
     }
@@ -174,7 +176,7 @@ impl MaterialGraphFunction {
             Self::PanUv | Self::RotateUv | Self::ScaleUv => "UV",
             Self::RadialMask | Self::Dissolve | Self::DissolveEdge => "Mask",
             Self::DepthFade | Self::SoftParticle => "Depth",
-            Self::Fresnel | Self::SampleTexture => "Material",
+            Self::Fresnel | Self::SampleTexture | Self::SampleTextureLevel => "Material",
         }
     }
 
@@ -207,6 +209,7 @@ impl MaterialGraphFunction {
             Self::RotateUv => &["Uv", "Center", "Angle"],
             Self::ScaleUv => &["Uv", "Center", "Scale"],
             Self::SampleTexture => &["Texture", "Uv"],
+            Self::SampleTextureLevel => &["Texture", "Uv", "Level"],
             Self::ExtractComponent => &["Value"],
         }
     }
@@ -607,7 +610,9 @@ fn validate_graph_preset(recipe: &MaterialPresetGraphRecipe) -> Result<(), Mater
             MaterialPresetGraphNodeKind::Function(function) => {
                 if matches!(
                     function,
-                    MaterialGraphFunction::SampleTexture | MaterialGraphFunction::ExtractComponent
+                    MaterialGraphFunction::SampleTexture
+                        | MaterialGraphFunction::SampleTextureLevel
+                        | MaterialGraphFunction::ExtractComponent
                 ) {
                     return Err(MaterialPresetError::Validation(format!(
                         "{} is not yet portable in graph preset recipes",
@@ -1264,6 +1269,13 @@ pub enum MaterialExpressionKind {
         texture: MaterialExpressionId,
         uv: MaterialExpressionId,
     },
+    /// Samples a texture at an explicit mip level. Unlike implicit sampling, this remains valid
+    /// when derivatives are unavailable and makes the level part of expression identity.
+    SampleTextureLevel {
+        texture: MaterialExpressionId,
+        uv: MaterialExpressionId,
+        level: MaterialExpressionId,
+    },
     ExtractComponent {
         value: MaterialExpressionId,
         component: MaterialVectorComponent,
@@ -1289,7 +1301,8 @@ impl MaterialExpressionKind {
             | Self::PanUv { uv, .. }
             | Self::RotateUv { uv, .. }
             | Self::ScaleUv { uv, .. }
-            | Self::SampleTexture { uv, .. } => Some(*uv),
+            | Self::SampleTexture { uv, .. }
+            | Self::SampleTextureLevel { uv, .. } => Some(*uv),
             Self::Dissolve { source, .. } | Self::DissolveEdge { source, .. } => Some(*source),
             Self::SoftParticle { alpha, .. } => Some(*alpha),
             Self::Constant(_)
@@ -1386,6 +1399,7 @@ impl MaterialExpressionKind {
             Self::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
             Self::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
             Self::SampleTexture { texture, uv } => vec![*texture, *uv],
+            Self::SampleTextureLevel { texture, uv, level } => vec![*texture, *uv, *level],
             Self::ExtractComponent { value, .. } => vec![*value],
         }
     }
@@ -3079,6 +3093,83 @@ fn infer_expression(
                         evaluation_domain: MaterialExpressionDomain::Fragment
                             .max(texture.evaluation_domain)
                             .max(uv.evaluation_domain),
+                    })
+                }
+                _ => None,
+            }
+        }
+        MaterialExpressionKind::SampleTextureLevel { texture, uv, level } => {
+            let texture_id = *texture;
+            let texture = dependency(texture_id);
+            let uv = dependency(*uv);
+            let level = dependency(*level);
+            match (texture, uv, level) {
+                (Some(texture), Some(uv), Some(level)) => {
+                    let mut valid = true;
+                    if !matches!(texture.value_type, MaterialValueType::Texture2D(_)) {
+                        material_type_error(
+                            report,
+                            format!("{path}.texture"),
+                            format!(
+                                "SampleTextureLevel texture expects Texture2D but received {:?}",
+                                texture.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if texture.evaluation_domain > MaterialExpressionDomain::Instance {
+                        error(
+                            report,
+                            DiagnosticCode::EvaluationDomainMismatch,
+                            format!("{path}.texture"),
+                            "sampled texture resources must be available by the Instance domain",
+                        );
+                        valid = false;
+                    }
+                    if uv.value_type != MaterialValueType::Vec2 {
+                        material_type_error(
+                            report,
+                            format!("{path}.uv"),
+                            format!(
+                                "SampleTextureLevel UV expects Vec2 but received {:?}",
+                                uv.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if level.value_type != MaterialValueType::Float {
+                        material_type_error(
+                            report,
+                            format!("{path}.level"),
+                            format!(
+                                "SampleTextureLevel level expects Float but received {:?}",
+                                level.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                    if !matches!(
+                        expressions.get(&texture_id).map(|expression| &expression.kind),
+                        Some(MaterialExpressionKind::Parameter(parameter))
+                            if matches!(
+                                parameters.get(parameter).map(|parameter| parameter.value_type),
+                                Some(MaterialValueType::Texture2D(_))
+                            )
+                    ) {
+                        error(
+                            report,
+                            DiagnosticCode::MissingResourceDeclaration,
+                            format!("{path}.texture"),
+                            "sampled textures must come from a declared Texture2D material parameter",
+                        );
+                        valid = false;
+                    }
+                    valid.then_some(MaterialExpressionInfo {
+                        value_type: MaterialValueType::Color,
+                        evaluation_domain: MaterialExpressionDomain::Fragment
+                            .max(texture.evaluation_domain)
+                            .max(uv.evaluation_domain)
+                            .max(level.evaluation_domain),
                     })
                 }
                 _ => None,

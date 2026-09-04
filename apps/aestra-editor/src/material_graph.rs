@@ -2768,7 +2768,13 @@ impl MaterialPreviewEvaluator<'_> {
             MaterialExpressionKind::SampleTexture { texture, uv } => {
                 let _texture = read(*texture)?;
                 let uv = preview_vec2(read(*uv)?)?;
-                Some(preview_checker_sample(uv))
+                Some(preview_checker_sample(uv, 0.0))
+            }
+            MaterialExpressionKind::SampleTextureLevel { texture, uv, level } => {
+                let _texture = read(*texture)?;
+                let uv = preview_vec2(read(*uv)?)?;
+                let level = read(*level)?.numeric()?.0[0];
+                Some(preview_checker_sample(uv, level))
             }
             MaterialExpressionKind::ExtractComponent { value, component } => {
                 let value = read(*value)?.numeric()?.0;
@@ -2950,8 +2956,9 @@ fn preview_vec2_value(value: Vec2) -> PreviewValue {
     PreviewValue::Numeric([value.x, value.y, 0.0, 1.0], 2)
 }
 
-fn preview_checker_sample(uv: Vec2) -> PreviewValue {
-    let cell = ((uv.x * 8.0).floor() as i32 + (uv.y * 8.0).floor() as i32) & 1;
+fn preview_checker_sample(uv: Vec2, level: f32) -> PreviewValue {
+    let frequency = 8.0 / 2.0_f32.powf(level.max(0.0));
+    let cell = ((uv.x * frequency).floor() as i32 + (uv.y * frequency).floor() as i32) & 1;
     let color = if cell == 0 {
         [0.08, 0.20, 0.42, 1.0]
     } else {
@@ -3231,6 +3238,9 @@ fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpression
         MaterialExpressionKind::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
         MaterialExpressionKind::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
         MaterialExpressionKind::SampleTexture { texture, uv } => vec![*texture, *uv],
+        MaterialExpressionKind::SampleTextureLevel { texture, uv, level } => {
+            vec![*texture, *uv, *level]
+        }
         MaterialExpressionKind::ExtractComponent { value, .. } => vec![*value],
     }
 }
@@ -4731,6 +4741,7 @@ fn input_target(expression: MaterialExpressionId, name: &str) -> Option<Material
         "scale" => MaterialExpressionInput::Scale,
         "texture" => MaterialExpressionInput::Texture,
         "uv" => MaterialExpressionInput::Uv,
+        "level" => MaterialExpressionInput::Level,
         "source" => MaterialExpressionInput::Source,
         "alpha" => MaterialExpressionInput::SourceAlpha,
         _ => return None,
@@ -4813,6 +4824,7 @@ fn input_port_presentation(name: &str) -> MaterialInputPortPresentation {
             "UV coordinates",
             "Texture coordinates evaluated by this node.",
         ),
+        "level" => ("Mip level", "Explicit texture mip level used for sampling."),
         "source" => ("Source", "Source value evaluated by this node."),
         "alpha" => ("Alpha", "Opacity used to combine the values."),
         _ => (name, "Value consumed by this node."),

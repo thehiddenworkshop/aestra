@@ -3,10 +3,12 @@ use aestra_compiler::{
     MaterialGraphFunction, MaterialGraphNodeKind, MaterialGraphOutputKind,
 };
 use aestra_core::{
-    MaterialExpressionId,
+    AssetId, MaterialExpressionId, MaterialParameterId,
     material::{
-        MaterialExpression, MaterialExpressionKind, MaterialFunction, MaterialFunctionRef,
-        MaterialInput, MaterialProgram, MaterialValue, MaterialValueType,
+        MaterialAddressMode, MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind,
+        MaterialFilterMode, MaterialFunction, MaterialFunctionRef, MaterialInput,
+        MaterialMipFilterMode, MaterialParameter, MaterialProgram, MaterialSamplerDescriptor,
+        MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
     },
 };
 
@@ -287,5 +289,58 @@ fn graph_node_catalog_and_factory_cover_primitives_and_math_without_rewiring() {
             .find(|expression| expression.id == select.expression)
             .map(|expression| &expression.kind),
         Some(MaterialExpressionKind::Select { if_false, .. }) if *if_false == source
+    ));
+}
+
+#[test]
+fn graph_catalog_creates_typed_explicit_lod_texture_nodes() {
+    let texture_parameter = MaterialParameterId::from_u128(0x6251);
+    let mut program = MaterialProgram::additive_sprite("Texture level graph");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(MaterialTextureDescriptor {
+            color_space: MaterialTextureColorSpace::SrgbColor,
+            sampler: MaterialSamplerDescriptor {
+                filter: MaterialFilterMode::Linear,
+                mip_filter: MaterialMipFilterMode::Linear,
+                address_u: MaterialAddressMode::Repeat,
+                address_v: MaterialAddressMode::Repeat,
+            },
+        }),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x6252))),
+    });
+    let compiler = MaterialCompiler;
+    let kind = MaterialGraphCreateKind::Function(MaterialGraphFunction::SampleTextureLevel);
+    assert!(compiler.graph_node_catalog(&program).iter().any(|node| {
+        node.kind == kind && node.label == "Sample Texture Level" && node.category == "Material"
+    }));
+
+    let plan = compiler
+        .plan_graph_node_creation(&program, kind, None)
+        .unwrap();
+    let projection = compiler.project_graph(&plan.replacement, None);
+    let node = projection
+        .nodes
+        .iter()
+        .find(|node| node.expression == plan.expression)
+        .unwrap();
+
+    assert_eq!(
+        node.inputs
+            .iter()
+            .map(|port| port.name.as_str())
+            .collect::<Vec<_>>(),
+        ["texture", "uv", "level"]
+    );
+    assert_eq!(node.inputs[2].value_type, Some(MaterialValueType::Float));
+    assert!(matches!(
+        plan.replacement
+            .expressions
+            .iter()
+            .find(|expression| expression.id == plan.expression)
+            .map(|expression| &expression.kind),
+        Some(MaterialExpressionKind::SampleTextureLevel { .. })
     ));
 }

@@ -124,7 +124,7 @@ const MATERIAL_INPUTS: [MaterialInput; 27] = [
     MaterialInput::PixelDepth,
 ];
 
-const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 19] = [
+const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 20] = [
     MaterialGraphFunction::Add,
     MaterialGraphFunction::Subtract,
     MaterialGraphFunction::Multiply,
@@ -144,6 +144,7 @@ const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 19] = [
     MaterialGraphFunction::RotateUv,
     MaterialGraphFunction::ScaleUv,
     MaterialGraphFunction::SampleTexture,
+    MaterialGraphFunction::SampleTextureLevel,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -878,6 +879,34 @@ fn append_graph_function(
             };
             MaterialExpressionKind::SampleTexture { texture, uv }
         }
+        MaterialGraphFunction::SampleTextureLevel => {
+            let parameter = program
+                .parameters
+                .iter()
+                .find(|parameter| matches!(parameter.value_type, MaterialValueType::Texture2D(_)))
+                .map(|parameter| parameter.id)
+                .ok_or(MaterialGraphNodeCreationError::TextureParameterMissing)?;
+            let (texture, uv) = match source_type {
+                Some(MaterialValueType::Texture2D(_)) => (
+                    source.expect("source type requires a source"),
+                    append_graph_expression(
+                        program,
+                        MaterialExpressionKind::Input(MaterialInput::Uv0),
+                    ),
+                ),
+                _ => (
+                    append_graph_expression(program, MaterialExpressionKind::Parameter(parameter)),
+                    source.unwrap_or_else(|| {
+                        append_graph_expression(
+                            program,
+                            MaterialExpressionKind::Input(MaterialInput::Uv0),
+                        )
+                    }),
+                ),
+            };
+            let level = append_graph_constant(program, MaterialValue::Float(0.0));
+            MaterialExpressionKind::SampleTextureLevel { texture, uv, level }
+        }
         MaterialGraphFunction::ExtractComponent => {
             let value = source.unwrap_or_else(|| {
                 append_graph_constant(program, MaterialValue::Vec4([0.0, 0.0, 0.0, 1.0]))
@@ -923,6 +952,7 @@ fn graph_function_modifier(function: MaterialGraphFunction) -> Option<MaterialSt
         | MaterialGraphFunction::Fresnel
         | MaterialGraphFunction::DepthFade
         | MaterialGraphFunction::SampleTexture
+        | MaterialGraphFunction::SampleTextureLevel
         | MaterialGraphFunction::ExtractComponent => return None,
     })
 }
@@ -1041,6 +1071,7 @@ fn node_kind(kind: &MaterialExpressionKind) -> MaterialGraphNodeKind {
         E::RotateUv { .. } => MaterialGraphFunction::RotateUv,
         E::ScaleUv { .. } => MaterialGraphFunction::ScaleUv,
         E::SampleTexture { .. } => MaterialGraphFunction::SampleTexture,
+        E::SampleTextureLevel { .. } => MaterialGraphFunction::SampleTextureLevel,
         E::ExtractComponent { .. } => MaterialGraphFunction::ExtractComponent,
     };
     MaterialGraphNodeKind::Function(function)
@@ -1237,6 +1268,9 @@ fn expression_inputs(kind: &MaterialExpressionKind) -> Vec<(&'static str, Materi
             vec![("uv", *uv), ("center", *center), ("scale", *scale)]
         }
         E::SampleTexture { texture, uv } => vec![("texture", *texture), ("uv", *uv)],
+        E::SampleTextureLevel { texture, uv, level } => {
+            vec![("texture", *texture), ("uv", *uv), ("level", *level)]
+        }
         E::ExtractComponent { value, .. } => vec![("value", *value)],
     }
 }

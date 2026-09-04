@@ -943,6 +943,7 @@ fn modifier_property_targets(
         | MaterialExpressionKind::Clamp { .. }
         | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::SampleTexture { .. }
+        | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => Vec::new(),
     }
 }
@@ -1238,7 +1239,9 @@ fn graph_recipe_function(
             center: input("Center")?,
             scale: input("Scale")?,
         },
-        MaterialGraphFunction::SampleTexture | MaterialGraphFunction::ExtractComponent => {
+        MaterialGraphFunction::SampleTexture
+        | MaterialGraphFunction::SampleTextureLevel
+        | MaterialGraphFunction::ExtractComponent => {
             return None;
         }
     })
@@ -1781,6 +1784,7 @@ fn primary_source(kind: &MaterialExpressionKind) -> Option<MaterialExpressionId>
         | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::DepthFade { .. }
+        | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => None,
     }
 }
@@ -1812,6 +1816,7 @@ fn set_primary_source(kind: &mut MaterialExpressionKind, source: MaterialExpress
         | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::Fresnel { .. }
         | MaterialExpressionKind::DepthFade { .. }
+        | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return false,
     }
     true
@@ -1844,6 +1849,7 @@ fn modifier_kind(kind: &MaterialExpressionKind) -> Option<MaterialStackModifierK
         | MaterialExpressionKind::Lerp { .. }
         | MaterialExpressionKind::Clamp { .. }
         | MaterialExpressionKind::Select { .. }
+        | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return None,
     })
 }
@@ -1957,6 +1963,9 @@ fn dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
         MaterialExpressionKind::RotateUv { uv, center, angle } => vec![*uv, *center, *angle],
         MaterialExpressionKind::ScaleUv { uv, center, scale } => vec![*uv, *center, *scale],
         MaterialExpressionKind::SampleTexture { texture, uv } => vec![*texture, *uv],
+        MaterialExpressionKind::SampleTextureLevel { texture, uv, level } => {
+            vec![*texture, *uv, *level]
+        }
         MaterialExpressionKind::ExtractComponent { value, .. } => vec![*value],
     }
 }

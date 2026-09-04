@@ -8,8 +8,10 @@ use aestra_core::{
     EffectPlaybackMode, Emitter, MaterialId, MaterialParameterId, MaterialProgramId,
     ModuleParameters, ParameterId, RendererId, UvRect, Value,
     material::{
-        MaterialEvaluationDomain, MaterialInstance, MaterialParameter, MaterialParameterValue,
-        MaterialProgram, MaterialProgramRef, MaterialRenderState, MaterialValue, MaterialValueType,
+        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind, MaterialInput,
+        MaterialInstance, MaterialParameter, MaterialParameterValue, MaterialProgram,
+        MaterialProgramRef, MaterialRenderState, MaterialSamplerDescriptor,
+        MaterialTextureColorSpace, MaterialTextureDescriptor, MaterialValue, MaterialValueType,
     },
 };
 use aestra_gpu::GpuEffectArtifact;
@@ -35,6 +37,7 @@ fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
     assert!(text.contains(&format!("format_version:{CURRENT_ARTIFACT_VERSION}")));
     assert!(text.contains("material_programs"));
     assert!(text.contains("material_instances"));
+    assert!(text.contains("SampleTextureLevel"));
 
     let reloaded = decode_effect(&bytes).unwrap();
     assert_eq!(reloaded, compiled);
@@ -194,6 +197,8 @@ fn compiled_fixture() -> aestra_runtime::CompiledEffect {
     }
     let semantic_material = MaterialId::from_u128(0x110);
     let semantic_parameter = MaterialParameterId::from_u128(0x111);
+    let semantic_texture_parameter = MaterialParameterId::from_u128(0x113);
+    let texture = AssetId::from_u128(0x106);
     let mut semantic_program = MaterialProgram::additive_sprite("Artifact semantic material");
     semantic_program.id = MaterialProgramId::from_u128(0x112);
     semantic_program.parameters.push(MaterialParameter {
@@ -203,6 +208,43 @@ fn compiled_fixture() -> aestra_runtime::CompiledEffect {
         evaluation_domain: MaterialEvaluationDomain::Effect,
         default: Some(MaterialValue::Float(1.0)),
     });
+    semantic_program.parameters.push(MaterialParameter {
+        id: semantic_texture_parameter,
+        name: "Texture".into(),
+        value_type: MaterialValueType::Texture2D(MaterialTextureDescriptor {
+            color_space: MaterialTextureColorSpace::SrgbColor,
+            sampler: MaterialSamplerDescriptor::default(),
+        }),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(texture)),
+    });
+    let texture_expression = aestra_core::MaterialExpressionId::from_u128(0x114);
+    let uv_expression = aestra_core::MaterialExpressionId::from_u128(0x115);
+    let level_expression = aestra_core::MaterialExpressionId::from_u128(0x116);
+    let sample_expression = aestra_core::MaterialExpressionId::from_u128(0x117);
+    semantic_program.expressions.extend([
+        MaterialExpression {
+            id: texture_expression,
+            kind: MaterialExpressionKind::Parameter(semantic_texture_parameter),
+        },
+        MaterialExpression {
+            id: uv_expression,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: level_expression,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        },
+        MaterialExpression {
+            id: sample_expression,
+            kind: MaterialExpressionKind::SampleTextureLevel {
+                texture: texture_expression,
+                uv: uv_expression,
+                level: level_expression,
+            },
+        },
+    ]);
+    semantic_program.outputs.color = sample_expression;
     emitter.renderers[0].material = semantic_material;
     effect.material_instances.push(MaterialInstance {
         id: semantic_material,
@@ -244,7 +286,6 @@ fn compiled_fixture() -> aestra_runtime::CompiledEffect {
         value: RuntimeValue::Scalar(11.0),
     }];
 
-    let texture = AssetId::from_u128(0x106);
     let flipbook = AssetId::from_u128(0x107);
     let material = MaterialId::from_u128(0x108);
     compiled.assets = vec![

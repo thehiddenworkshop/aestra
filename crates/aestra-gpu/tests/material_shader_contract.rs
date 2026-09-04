@@ -393,7 +393,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "0db98b9d5ad32b17625cd2b46781437001b1116611466322bddc93c1bf7ac596"
+        "59c7107e286ed7cb4fb1b4aed8218115196d11389f6537fa0907d8fa451e2988"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,
@@ -603,6 +603,60 @@ fn identical_texture_samples_emit_one_portable_shader_operation() {
     assert_eq!(compiled.shader.wesl.matches("textureSample(").count(), 1);
     assert_eq!(compiled.resource_layout.textures.len(), 1);
     assert_eq!(compiled.resource_layout.samplers.len(), 1);
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
+fn explicit_lod_texture_sampling_emits_portable_texture_sample_level() {
+    let texture_parameter = MaterialParameterId::from_u128(0xc521);
+    let texture = MaterialExpressionId::from_u128(0xc522);
+    let uv = MaterialExpressionId::from_u128(0xc523);
+    let level = MaterialExpressionId::from_u128(0xc524);
+    let sample = MaterialExpressionId::from_u128(0xc525);
+    let mut program =
+        aestra_core::material::MaterialProgram::additive_sprite("Texture sample level");
+    program.parameters.push(MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(texture_descriptor(
+            MaterialTextureColorSpace::SrgbColor,
+            MaterialAddressMode::Repeat,
+        )),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0xc526))),
+    });
+    program.expressions.extend([
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: level,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(2.0)),
+        },
+        MaterialExpression {
+            id: sample,
+            kind: MaterialExpressionKind::SampleTextureLevel { texture, uv, level },
+        },
+    ]);
+    program.outputs.color = sample;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+
+    assert_eq!(
+        compiled.shader.wesl.matches("textureSampleLevel(").count(),
+        1
+    );
+    assert!(!compiled.shader.wesl.contains("textureSample("));
+    assert_eq!(ir.optimizations.texture_samples_authored, 1);
+    assert_eq!(ir.optimizations.texture_samples_live, 1);
     assert_portable_shader_targets(&compiled.shader.wgsl);
 }
 
