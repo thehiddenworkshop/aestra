@@ -871,13 +871,7 @@ fn apply_material_program_edit(
                 .ok_or_else(|| format!("Material program {program} is unavailable"))?;
             let document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
             let replacement = plan(&document, &current)?;
-            material_history.execute_replacement(
-                &session.effect,
-                catalog,
-                label,
-                current,
-                replacement,
-            )
+            material_history.execute_replacement(session, catalog, label, current, replacement)
         });
     match result {
         Ok(()) => {
@@ -4597,7 +4591,6 @@ fn decorate_numeric_scrub_inputs(
                 With<EmitterNumberControl>,
                 With<EffectClipNumberControl>,
                 With<EffectClipParameterNumberControl>,
-                With<RendererNumberControl>,
                 With<StartReferenceOffsetControl>,
                 With<ChoreographyEventNumberControl>,
             )>,
@@ -4625,7 +4618,6 @@ fn begin_numeric_scrub(
     emitter_controls: Query<&EmitterNumberControl>,
     effect_clip_controls: Query<&EffectClipNumberControl>,
     effect_clip_parameter_controls: Query<&EffectClipParameterNumberControl>,
-    renderer_controls: Query<&RendererNumberControl>,
     start_reference_controls: Query<&StartReferenceOffsetControl>,
     choreography_event_controls: Query<&ChoreographyEventNumberControl>,
     parents: Query<&ChildOf>,
@@ -4644,7 +4636,6 @@ fn begin_numeric_scrub(
         &emitter_controls,
         &effect_clip_controls,
         &effect_clip_parameter_controls,
-        &renderer_controls,
         &start_reference_controls,
         &choreography_event_controls,
     ) else {
@@ -4765,7 +4756,6 @@ fn resolve_numeric_scrub_target(
     emitter_controls: &Query<&EmitterNumberControl>,
     effect_clip_controls: &Query<&EffectClipNumberControl>,
     effect_clip_parameter_controls: &Query<&EffectClipParameterNumberControl>,
-    renderer_controls: &Query<&RendererNumberControl>,
     start_reference_controls: &Query<&StartReferenceOffsetControl>,
     choreography_event_controls: &Query<&ChoreographyEventNumberControl>,
 ) -> Option<(Entity, NumericScrubTarget)> {
@@ -4784,9 +4774,6 @@ fn resolve_numeric_scrub_target(
             && let Some(control) = effect_clip_parameter_scrub_control(control)
         {
             return Some((candidate, NumericScrubTarget::EffectClipParameter(control)));
-        }
-        if let Ok(control) = renderer_controls.get(candidate) {
-            return Some((candidate, NumericScrubTarget::Renderer(*control)));
         }
         if let Ok(control) = start_reference_controls.get(candidate) {
             return Some((

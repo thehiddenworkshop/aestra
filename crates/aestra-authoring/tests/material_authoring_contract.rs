@@ -2593,7 +2593,7 @@ fn material_graph_duplicate_preserves_internal_selection_connections() {
 }
 
 #[test]
-fn material_graph_delete_bypasses_safe_nodes_and_rejects_required_generators() {
+fn material_graph_delete_bypasses_safe_nodes_and_defaults_required_inputs() {
     let mut document = authoring_document();
     let program_id = MaterialProgramId::from_u128(0x6a10);
     let (program, _) = reorderable_material_program(program_id);
@@ -2629,17 +2629,35 @@ fn material_graph_delete_bypasses_safe_nodes_and_rejects_required_generators() {
         MaterialExpressionKind::SampleTexture { uv, .. } if uv == pan
     ));
 
-    let error = MaterialToolPlanner::plan(
+    let plan = MaterialToolPlanner::plan(
         &document,
         MaterialToolCommand::DeleteMaterialExpressions {
             program: program_id,
             expressions: vec![angle],
         },
     )
-    .unwrap_err();
+    .unwrap();
+    assert_eq!(plan.created_expressions.len(), 1);
+    let default = plan.created_expressions[0];
+    let mut preview = document.clone();
+    MaterialCommandExecutor::execute(&mut preview, &plan.transaction).unwrap();
     assert!(matches!(
-        error,
-        MaterialToolError::ExpressionCannotBeDeleted(expression) if expression == angle
+        preview.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == default)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::Constant(MaterialValue::Float(0.0))
+    ));
+    assert!(matches!(
+        preview.programs[0]
+            .expressions
+            .iter()
+            .find(|expression| expression.id == rotate)
+            .unwrap()
+            .kind,
+        MaterialExpressionKind::RotateUv { angle, .. } if angle == default
     ));
 }
 

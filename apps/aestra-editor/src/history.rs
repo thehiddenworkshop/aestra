@@ -62,14 +62,14 @@ pub(crate) struct MaterialProgramEditHistory {
 impl MaterialProgramEditHistory {
     pub(crate) fn execute_replacement(
         &mut self,
-        effect: &aestra_core::EffectAsset,
+        session: &mut EditorSession,
         catalog: &mut ProjectEffectCatalog,
         label: impl Into<String>,
         before: MaterialProgram,
         after: MaterialProgram,
     ) -> Result<(), String> {
         let label = label.into();
-        apply_material_program_replacement(effect, catalog, &label, &before, &after)?;
+        apply_material_program_replacement(session, catalog, &label, &before, &after)?;
         self.undo.push_back(MaterialProgramHistoryEntry {
             label,
             before,
@@ -84,14 +84,14 @@ impl MaterialProgramEditHistory {
 
     fn undo(
         &mut self,
-        effect: &aestra_core::EffectAsset,
+        session: &mut EditorSession,
         catalog: &mut ProjectEffectCatalog,
     ) -> Result<Option<String>, String> {
         let Some(entry) = self.undo.pop_back() else {
             return Ok(None);
         };
         match apply_material_program_replacement(
-            effect,
+            session,
             catalog,
             &format!("Undo {}", entry.label),
             &entry.after,
@@ -111,14 +111,14 @@ impl MaterialProgramEditHistory {
 
     fn redo(
         &mut self,
-        effect: &aestra_core::EffectAsset,
+        session: &mut EditorSession,
         catalog: &mut ProjectEffectCatalog,
     ) -> Result<Option<String>, String> {
         let Some(entry) = self.redo.pop() else {
             return Ok(None);
         };
         match apply_material_program_replacement(
-            effect,
+            session,
             catalog,
             &format!("Redo {}", entry.label),
             &entry.before,
@@ -147,14 +147,14 @@ impl MaterialProgramEditHistory {
 }
 
 fn apply_material_program_replacement(
-    effect: &aestra_core::EffectAsset,
+    session: &mut EditorSession,
     catalog: &mut ProjectEffectCatalog,
     label: &str,
     expected: &MaterialProgram,
     replacement: &MaterialProgram,
 ) -> Result<(), String> {
-    let programs = catalog.material_programs_for_effect(effect)?;
-    let mut document = MaterialAuthoringDocument::new(effect.clone(), programs);
+    let programs = catalog.material_programs_for_effect(&session.effect)?;
+    let mut document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
     MaterialCommandExecutor::execute(
         &mut document,
         &MaterialTransaction::single(
@@ -171,7 +171,41 @@ fn apply_material_program_replacement(
         .into_iter()
         .find(|program| program.id == expected.id)
         .ok_or_else(|| format!("material program {} disappeared", expected.id))?;
-    catalog.replace_material_program(expected, &replacement)
+    catalog.replace_material_program(expected, &replacement)?;
+    let compiled = match catalog.compile_project(&session.effect) {
+        Ok(project) => project.root,
+        Err(error) => {
+            return Err(rollback_material_program_replacement(
+                catalog,
+                &replacement,
+                expected,
+                error,
+            ));
+        }
+    };
+    if let Err(error) = session.install_compiled_project_root(compiled) {
+        return Err(rollback_material_program_replacement(
+            catalog,
+            &replacement,
+            expected,
+            error.to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn rollback_material_program_replacement(
+    catalog: &mut ProjectEffectCatalog,
+    current: &MaterialProgram,
+    previous: &MaterialProgram,
+    error: String,
+) -> String {
+    match catalog.replace_material_program(current, previous) {
+        Ok(()) => error,
+        Err(rollback) => {
+            format!("{error}; restoring the previous material also failed: {rollback}")
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -367,7 +401,7 @@ fn execute_history_action(
             })
         }
         (HistoryAction::Undo, HistoryDomain::MaterialProgram) => {
-            match material_history.undo(&session.effect, &mut catalog) {
+            match material_history.undo(&mut session, &mut catalog) {
                 Ok(Some(label)) => {
                     session.status = format!("Undid {label}");
                     session.ui_revision += 1;
@@ -382,7 +416,7 @@ fn execute_history_action(
             }
         }
         (HistoryAction::Redo, HistoryDomain::MaterialProgram) => {
-            match material_history.redo(&session.effect, &mut catalog) {
+            match material_history.redo(&mut session, &mut catalog) {
                 Ok(Some(label)) => {
                     session.status = format!("Redid {label}");
                     session.ui_revision += 1;
@@ -606,13 +640,24 @@ mod tests {
         let mut ledger = EditorHistoryLedger::default();
         material_history
             .execute_replacement(
-                &session.effect,
+                &mut session,
                 &mut catalog,
                 "Move material modifier",
                 original.clone(),
                 replacement.clone(),
             )
             .unwrap();
+        assert_eq!(
+            session
+                .preview
+                .as_ref()
+                .unwrap()
+                .effect()
+                .material_program(original.id)
+                .unwrap()
+                .name,
+            replacement.name
+        );
         ledger.record_material_edit(&mut session);
         session.adjust_effect_duration(0.25);
         let changed_duration = session.effect.duration;
@@ -635,10 +680,34 @@ mod tests {
         app.world_mut().trigger(HistoryAction::Undo);
         app.update();
         assert_eq!(MaterialProgram::load_ron(&path).unwrap(), original);
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .preview
+                .as_ref()
+                .unwrap()
+                .effect()
+                .material_program(original.id)
+                .unwrap()
+                .name,
+            original.name
+        );
 
         app.world_mut().trigger(HistoryAction::Redo);
         app.update();
         assert_eq!(MaterialProgram::load_ron(&path).unwrap(), replacement);
+        assert_eq!(
+            app.world()
+                .resource::<EditorSession>()
+                .preview
+                .as_ref()
+                .unwrap()
+                .effect()
+                .material_program(original.id)
+                .unwrap()
+                .name,
+            replacement.name
+        );
 
         app.world_mut().trigger(HistoryAction::Redo);
         app.update();

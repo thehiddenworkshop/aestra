@@ -8,14 +8,14 @@
             blend: Additive,
             depth_test: LessEqual,
             depth_write: false,
-            cull_mode: None,
+            cull_mode: r#None,
         ),
         allowed: [
             (
                 blend: Additive,
                 depth_test: LessEqual,
                 depth_write: false,
-                cull_mode: None,
+                cull_mode: r#None,
             ),
         ],
     ),
@@ -36,6 +36,42 @@
         ),
     ],
     expressions: [
+        (
+            id: "07f9549c-71eb-49a9-9716-ae4d879ec03c",
+            kind: Smoothstep(
+                edge_min: "21566720-9427-4a56-b27e-12d59e5143ca",
+                edge_max: "772325b3-07cf-4ddd-a79d-d319d9f6a4f2",
+                value: "a3574a00-0000-4000-8000-00000000922d",
+            ),
+        ),
+        (
+            id: "1fa69ede-17a9-40d7-b045-024b66cd299d",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "20d17bc3-64d4-4078-83c2-1c4e3e146b29",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "21566720-9427-4a56-b27e-12d59e5143ca",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "225210d0-a26b-438d-aed1-ac3d20592937",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "772325b3-07cf-4ddd-a79d-d319d9f6a4f2",
+            kind: Constant(Float(1.0)),
+        ),
+        (
+            id: "8e702c2a-504d-4806-9173-9bca3d4bfd54",
+            kind: Constant(Float(1.0)),
+        ),
+        (
+            id: "91be631f-dae1-46fa-bb95-404cb1df4575",
+            kind: Constant(Float(1.0)),
+        ),
         (
             id: "a3574a00-0000-4000-8000-000000009221",
             kind: Input(ParticleColor),
@@ -82,10 +118,7 @@
         ),
         (
             id: "a3574a00-0000-4000-8000-00000000922a",
-            kind: Multiply(
-                "a3574a00-0000-4000-8000-000000009225",
-                "a3574a00-0000-4000-8000-000000009229",
-            ),
+            kind: Multiply("a3574a00-0000-4000-8000-000000009225", "a3574a00-0000-4000-8000-000000009229"),
         ),
         (
             id: "a3574a00-0000-4000-8000-00000000922b",
@@ -93,17 +126,11 @@
         ),
         (
             id: "a3574a00-0000-4000-8000-00000000922c",
-            kind: Multiply(
-                "a3574a00-0000-4000-8000-00000000922b",
-                "a3574a00-0000-4000-8000-00000000922a",
-            ),
+            kind: Multiply("b4901046-b90c-47c0-b0df-c1aab9fa522a", "a3574a00-0000-4000-8000-00000000922a"),
         ),
         (
             id: "a3574a00-0000-4000-8000-00000000922d",
-            kind: Add(
-                "a3574a00-0000-4000-8000-000000009221",
-                "a3574a00-0000-4000-8000-00000000922c",
-            ),
+            kind: Add("a3574a00-0000-4000-8000-000000009221", "a3574a00-0000-4000-8000-00000000922c"),
         ),
         (
             id: "a3574a00-0000-4000-8000-00000000922e",
@@ -111,18 +138,37 @@
         ),
         (
             id: "a3574a00-0000-4000-8000-00000000922f",
-            kind: Multiply(
-                "a3574a00-0000-4000-8000-00000000922e",
-                "a3574a00-0000-4000-8000-000000009225",
-            ),
+            kind: Multiply("a3574a00-0000-4000-8000-00000000922e", "a3574a00-0000-4000-8000-000000009225"),
         ),
         (
             id: "a3574a00-0000-4000-8000-000000009230",
             kind: Constant(Float(0.42)),
         ),
+        (
+            id: "ab2b08ec-3442-4b4c-97fb-1fd8102c28a8",
+            kind: Constant(Float(1.0)),
+        ),
+        (
+            id: "b4901046-b90c-47c0-b0df-c1aab9fa522a",
+            kind: Remap(
+                value: "a3574a00-0000-4000-8000-00000000922b",
+                input_min: "20d17bc3-64d4-4078-83c2-1c4e3e146b29",
+                input_max: "e7dce44e-6e1e-49d4-b8b2-5749c1c28bc3",
+                output_min: "225210d0-a26b-438d-aed1-ac3d20592937",
+                output_max: "ab2b08ec-3442-4b4c-97fb-1fd8102c28a8",
+            ),
+        ),
+        (
+            id: "bfba68f5-5c15-4834-bc9e-2be6462467a2",
+            kind: Constant(Float(0.0)),
+        ),
+        (
+            id: "e7dce44e-6e1e-49d4-b8b2-5749c1c28bc3",
+            kind: Constant(Float(1.0)),
+        ),
     ],
     outputs: (
-        color: "a3574a00-0000-4000-8000-00000000922d",
+        color: "07f9549c-71eb-49a9-9716-ae4d879ec03c",
         alpha: "a3574a00-0000-4000-8000-00000000922f",
     ),
 )

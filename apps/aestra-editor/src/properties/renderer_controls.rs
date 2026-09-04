@@ -866,15 +866,23 @@ pub(super) fn handle_renderer_scalar_change(
     controls: Query<&RendererNumberControl>,
     mut session: ResMut<EditorSession>,
 ) {
-    if !change.is_final || !change.value.is_finite() {
+    if !change.value.is_finite() {
         return;
     }
     let Ok(control) = controls.get(change.source) else {
         return;
     };
+    if !change.is_final {
+        if let Some(command) = renderer_numeric_scrub_command(&session, *control, change.value) {
+            session
+                .preview_interaction(EffectTransaction::single("Preview renderer value", command));
+        }
+        return;
+    }
     if renderer_number_input_value(&session, *control)
         .is_some_and(|current| (change.value - current).abs() <= f32::EPSILON)
     {
+        session.restore_interaction_preview();
         return;
     }
     match *control {
@@ -970,9 +978,10 @@ fn spawn_renderer_scalar_control(
     control: RendererNumberControl,
     session: &EditorSession,
 ) {
+    let scrubbable = renderer_scrubbable_number(session, control);
     let bounded_slider = renderer_number_input_value(session, control).and_then(|value| {
         let (min, max, step) = match control {
-            RendererNumberControl::Uv(_, _) => (0.0, 1.0, 0.01),
+            RendererNumberControl::Uv(_, _) => (0.0, 1.0, renderer_number_step(control)),
             RendererNumberControl::FlipbookFrameRate(_) => (1.0, 120.0, 1.0),
             RendererNumberControl::Softness(_) => return None,
         };
@@ -1002,7 +1011,7 @@ fn spawn_renderer_scalar_control(
                             RendererSliderControl(control),
                             AccessibleLabel(title.to_owned()),
                         ),
-                        (control, AccessibleLabel(title.to_owned())),
+                        (control, scrubbable, AccessibleLabel(title.to_owned())),
                     );
                 });
             } else {
@@ -1018,13 +1027,51 @@ fn spawn_renderer_scalar_control(
                     input
                         .spawn_empty()
                         .apply_scene(ui_shell::feathers_scalar_input())
-                        .insert((control, AccessibleLabel(title.to_owned())));
+                        .insert((control, scrubbable, AccessibleLabel(title.to_owned())));
                 });
             }
             if let Some(unit) = unit {
                 row.spawn_empty().apply_scene(label_dim(unit.to_owned()));
             }
         });
+}
+
+fn renderer_scrubbable_number(
+    session: &EditorSession,
+    control: RendererNumberControl,
+) -> crate::feathers::number_input::ScrubbableNumber {
+    use crate::feathers::number_input::ScrubbableNumber;
+
+    let value = renderer_number_input_value(session, control).unwrap_or(match control {
+        RendererNumberControl::FlipbookFrameRate(_) => 1.0,
+        RendererNumberControl::Softness(_) | RendererNumberControl::Uv(_, _) => 0.0,
+    });
+    let (min, max) = match control {
+        RendererNumberControl::Softness(_) => (0.0, f32::MAX),
+        RendererNumberControl::Uv(renderer, 0) => (
+            0.0,
+            renderer_number_input_value(session, RendererNumberControl::Uv(renderer, 2))
+                .unwrap_or(1.0),
+        ),
+        RendererNumberControl::Uv(renderer, 1) => (
+            0.0,
+            renderer_number_input_value(session, RendererNumberControl::Uv(renderer, 3))
+                .unwrap_or(1.0),
+        ),
+        RendererNumberControl::Uv(renderer, 2) => (
+            renderer_number_input_value(session, RendererNumberControl::Uv(renderer, 0))
+                .unwrap_or(0.0),
+            1.0,
+        ),
+        RendererNumberControl::Uv(renderer, 3) => (
+            renderer_number_input_value(session, RendererNumberControl::Uv(renderer, 1))
+                .unwrap_or(0.0),
+            1.0,
+        ),
+        RendererNumberControl::Uv(_, _) => (0.0, 1.0),
+        RendererNumberControl::FlipbookFrameRate(_) => (1.0, 120.0),
+    };
+    ScrubbableNumber::new(value, min, max, renderer_number_step(control))
 }
 
 fn spawn_renderer_toggle_control(
@@ -2290,6 +2337,23 @@ mod tests {
         assert_eq!(
             renderer_number_step(RendererNumberControl::FlipbookFrameRate(id)),
             1.0
+        );
+    }
+
+    #[test]
+    fn sprite_renderer_softness_uses_the_shared_scrubbable_number_contract() {
+        let session = test_support::session_with_timing_slack();
+        let renderer = session.selected_layer().renderers[0].id;
+
+        let input = renderer_scrubbable_number(&session, RendererNumberControl::Softness(renderer));
+
+        assert_eq!(input.min, 0.0);
+        assert_eq!(input.max, f32::MAX);
+        assert_eq!(input.step, 0.1);
+        assert_eq!(
+            input.value,
+            renderer_number_input_value(&session, RendererNumberControl::Softness(renderer))
+                .unwrap()
         );
     }
 

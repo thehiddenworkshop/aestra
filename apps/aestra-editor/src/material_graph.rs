@@ -19,8 +19,8 @@ use crate::{
     *,
 };
 use aestra_authoring::{
-    MaterialAuthoringDocument, MaterialConnectionTarget, MaterialExpressionInput,
-    MaterialInsertionPoint, MaterialInspectionTarget, MaterialInspector,
+    MaterialAuthoringDocument, MaterialCommandExecutor, MaterialConnectionTarget,
+    MaterialExpressionInput, MaterialInsertionPoint, MaterialInspectionTarget, MaterialInspector,
     MaterialOperationAvailability, MaterialOutputSocket, MaterialToolCommand, MaterialToolPlan,
     MaterialToolPlanner,
 };
@@ -35,6 +35,7 @@ use aestra_core::{
 use bevy::{
     input_focus::{FocusCause, InputFocus},
     ui_render::ui_material::MaterialNode,
+    ui_widgets::Activate,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -59,6 +60,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .add_observer(open_material_graph_node_menu)
             .add_observer(select_material_graph_canvas)
             .add_observer(update_material_graph_palette_search)
+            .add_observer(queue_material_graph_menu_action_activation)
             .add_systems(
                 Update,
                 (
@@ -76,6 +78,27 @@ impl Plugin for EditorMaterialGraphPlugin {
                 PostUpdate,
                 update_material_graph_wires.after(bevy::transform::TransformSystems::Propagate),
             );
+    }
+}
+
+fn queue_material_graph_menu_action_activation(
+    activate: On<Activate>,
+    actions: Query<
+        (),
+        (
+            With<FeathersActionButton>,
+            Or<(
+                With<MaterialGraphPaletteAction>,
+                With<MaterialGraphContextAction>,
+            )>,
+        ),
+    >,
+    mut commands: Commands,
+) {
+    if actions.contains(activate.entity) {
+        commands
+            .entity(activate.entity)
+            .insert((PendingFeathersActivation, Interaction::Pressed));
     }
 }
 
@@ -739,7 +762,7 @@ fn apply_material_connection(
     target: MaterialConnectionTarget,
 ) {
     let result = apply_material_tool_command(
-        &session.effect,
+        session,
         catalog,
         material_history,
         program,
@@ -803,7 +826,7 @@ fn handle_material_graph_palette_actions(
             },
         };
         let result = apply_material_tool_command(
-            &session.effect,
+            &mut session,
             &mut catalog,
             &mut material_history,
             action.program,
@@ -1026,14 +1049,7 @@ fn apply_material_graph_selection_edit(
             )
         }
     };
-    match apply_material_tool_command(
-        &session.effect,
-        catalog,
-        material_history,
-        program,
-        label,
-        command,
-    ) {
+    match apply_material_tool_command(session, catalog, material_history, program, label, command) {
         Ok(plan) => {
             history_ledger.record_material_edit(session);
             let graph_key = material_graph_view_key(program);
@@ -1101,26 +1117,30 @@ fn apply_material_graph_selection_edit(
 }
 
 fn apply_material_tool_command(
-    effect: &aestra_core::EffectAsset,
+    session: &mut EditorSession,
     catalog: &mut ProjectEffectCatalog,
     material_history: &mut MaterialProgramEditHistory,
     program: MaterialProgramId,
     label: &str,
     command: MaterialToolCommand,
 ) -> Result<MaterialToolPlan, String> {
-    let programs = catalog.material_programs_for_effect(effect)?;
+    let programs = catalog.material_programs_for_effect(&session.effect)?;
     let current = programs
         .iter()
         .find(|candidate| candidate.id == program)
         .cloned()
         .ok_or_else(|| format!("Material program {program} is unavailable"))?;
-    let document = MaterialAuthoringDocument::new(effect.clone(), programs);
+    let document = MaterialAuthoringDocument::new(session.effect.clone(), programs);
     let plan = MaterialToolPlanner::plan(&document, command).map_err(|error| error.to_string())?;
-    let replacement = plan
-        .replacement_program(program)
-        .cloned()
-        .ok_or_else(|| format!("material tool plan omitted replacement program {program}"))?;
-    material_history.execute_replacement(effect, catalog, label, current, replacement)?;
+    let mut preview = document;
+    MaterialCommandExecutor::execute(&mut preview, &plan.transaction)
+        .map_err(|error| error.to_string())?;
+    let replacement = preview
+        .programs
+        .into_iter()
+        .find(|candidate| candidate.id == program)
+        .ok_or_else(|| format!("material tool plan removed program {program}"))?;
+    material_history.execute_replacement(session, catalog, label, current, replacement)?;
     Ok(plan)
 }
 
@@ -2268,6 +2288,7 @@ fn wire_color(value_type: Option<MaterialValueType>) -> Vec4 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support;
 
     #[test]
     fn material_graph_canvas_bundle_spawns_without_duplicate_components() {
@@ -2283,6 +2304,51 @@ mod tests {
 
         assert!(world.get::<Node>(entity).is_some());
         assert!(world.get::<MaterialGraphCanvas>(entity).is_some());
+    }
+
+    #[test]
+    fn feathers_activation_queues_material_graph_menu_actions() {
+        let mut app = App::new();
+        app.add_observer(queue_material_graph_menu_action_activation);
+        let context_action = app
+            .world_mut()
+            .spawn((
+                MaterialGraphContextAction::Delete(MaterialProgramId::new()),
+                FeathersActionButton,
+                Interaction::None,
+            ))
+            .id();
+        let palette_action = app
+            .world_mut()
+            .spawn((
+                MaterialGraphPaletteAction {
+                    program: MaterialProgramId::new(),
+                    kind: MaterialStackModifierKind::Remap,
+                    edit: MaterialGraphPaletteEdit::Wrap(MaterialConnectionTarget::ProgramOutput(
+                        MaterialOutputSocket::Color,
+                    )),
+                    graph_position: Vec2::ZERO,
+                    graph_key: "test".into(),
+                    searchable: "remap".into(),
+                },
+                FeathersActionButton,
+                Interaction::None,
+            ))
+            .id();
+
+        app.world_mut().trigger(Activate {
+            entity: context_action,
+        });
+        app.world_mut().trigger(Activate {
+            entity: palette_action,
+        });
+        app.update();
+
+        for entity in [context_action, palette_action] {
+            let action = app.world().entity(entity);
+            assert!(action.contains::<PendingFeathersActivation>());
+            assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
+        }
     }
 
     #[test]
@@ -2427,5 +2493,76 @@ mod tests {
         assert!(distance_to_graph_wire(start, start, end) < 0.001);
         assert!(distance_to_graph_wire(end, start, end) < 0.001);
         assert!(distance_to_graph_wire(Vec2::new(180.0, 430.0), start, end) > 100.0);
+    }
+
+    #[test]
+    fn graph_add_and_delete_recompile_the_project_preview() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("graph.aestra.material.ron");
+        let effect =
+            aestra_core::EffectAsset::from_ron(crate::MATERIAL_GRAPH_LAB_EFFECT_SOURCE).unwrap();
+        let program = aestra_core::material::MaterialProgram::from_ron(
+            crate::MATERIAL_GRAPH_LAB_PROGRAM_SOURCE,
+        )
+        .unwrap();
+        program.save_ron(&path).unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let compiled = catalog.compile_project(&effect).unwrap().root;
+        let mut session = test_support::session_with_timing_slack();
+        session.open_compiled_effect("material_graph_lab.aestra.ron", effect, compiled);
+        let mut history = MaterialProgramEditHistory::default();
+
+        let added = apply_material_tool_command(
+            &mut session,
+            &mut catalog,
+            &mut history,
+            program.id,
+            "Add graph node",
+            MaterialToolCommand::WrapMaterialExpression {
+                program: program.id,
+                target: MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Color),
+                kind: MaterialStackModifierKind::Remap,
+            },
+        )
+        .unwrap();
+        let wrapper = *added.created_expressions.last().unwrap();
+        assert!(
+            session
+                .preview
+                .as_ref()
+                .unwrap()
+                .effect()
+                .material_program(program.id)
+                .unwrap()
+                .expressions
+                .iter()
+                .any(|expression| expression.id == wrapper)
+        );
+
+        apply_material_tool_command(
+            &mut session,
+            &mut catalog,
+            &mut history,
+            program.id,
+            "Delete graph node",
+            MaterialToolCommand::DeleteMaterialExpressions {
+                program: program.id,
+                expressions: vec![wrapper],
+            },
+        )
+        .unwrap();
+        assert!(
+            !session
+                .preview
+                .as_ref()
+                .unwrap()
+                .effect()
+                .material_program(program.id)
+                .unwrap()
+                .expressions
+                .iter()
+                .any(|expression| expression.id == wrapper)
+        );
+        assert!(session.diagnostics.is_valid());
     }
 }

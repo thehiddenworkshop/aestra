@@ -514,6 +514,7 @@ impl MaterialToolPlanner {
 
         let projection = MaterialCompiler.project_graph(program, None);
         let mut replacement = program.clone();
+        let mut created_expressions = Vec::new();
         for edge in &projection.edges {
             if !selected.contains(&edge.source) || target_is_selected(&edge.target, &selected) {
                 continue;
@@ -521,10 +522,25 @@ impl MaterialToolPlanner {
             let Some(target) = graph_connection_target(&edge.target) else {
                 continue;
             };
-            let Some(source) =
-                surviving_bypass_source(program, &selected, edge.source, &mut BTreeSet::new())
-            else {
-                return Err(MaterialToolError::ExpressionCannotBeDeleted(edge.source));
+            let source = match surviving_bypass_source(
+                program,
+                &selected,
+                edge.source,
+                &mut BTreeSet::new(),
+            ) {
+                Some(source) => source,
+                None => {
+                    let value = edge
+                        .value_type
+                        .and_then(default_material_value)
+                        .ok_or(MaterialToolError::ExpressionCannotBeDeleted(edge.source))?;
+                    let expression = append_unique_expression(
+                        &mut replacement,
+                        MaterialExpressionKind::Constant(value),
+                    );
+                    created_expressions.push(expression);
+                    expression
+                }
             };
             apply_connection(&mut replacement, target, source)?;
         }
@@ -543,7 +559,7 @@ impl MaterialToolPlanner {
                 program: replacement,
             },
         );
-        validate_plan(document, command, transaction, Vec::new())
+        validate_plan(document, command, transaction, created_expressions)
     }
 
     fn plan_disconnect_material_connection(

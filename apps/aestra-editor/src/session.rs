@@ -19,6 +19,7 @@ use aestra_runtime::{
 };
 use bevy::prelude::Resource;
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -464,6 +465,33 @@ impl EditorSession {
         self.install_open_document(path.as_ref(), effect, preview);
     }
 
+    /// Installs a freshly compiled project root after an external semantic material edit.
+    ///
+    /// Material programs live outside the effect asset, so changing one does not pass through the
+    /// normal effect command history. Keeping the session preview in sync here prevents the next
+    /// ordinary effect edit from trying to compile a project material as a standalone effect.
+    pub(crate) fn install_compiled_project_root(
+        &mut self,
+        compiled: Arc<CompiledEffect>,
+    ) -> Result<(), CompileError> {
+        debug_assert_eq!(compiled.source, self.effect.id);
+        let preview = if self.solo_emitter.is_none() {
+            EffectInstance::with_seed(compiled, self.preview_seed)
+        } else {
+            compile_preview_with_solo_and_material_programs(
+                &self.effect,
+                self.preview_seed,
+                self.solo_emitter,
+                &compiled.material_programs,
+            )?
+        };
+        self.invalidate_effect_checkpoints();
+        self.preview = Some(preview);
+        self.samples.clear();
+        self.diagnostics = self.effect.validation_report();
+        Ok(())
+    }
+
     fn install_open_document(&mut self, path: &Path, effect: EffectAsset, preview: EffectInstance) {
         self.saved_effect = Some(effect.clone());
         self.effect = effect;
@@ -694,9 +722,13 @@ impl EditorSession {
             Ok(preview) => preview,
             Err(_) => return false,
         };
-        let Ok(runtime_preview) =
-            compile_preview_with_solo(preview.candidate(), self.preview_seed, self.solo_emitter)
-        else {
+        let material_programs = self.preview_material_programs();
+        let Ok(runtime_preview) = compile_preview_with_solo_and_material_programs(
+            preview.candidate(),
+            self.preview_seed,
+            self.solo_emitter,
+            &material_programs,
+        ) else {
             return false;
         };
         self.preview = Some(runtime_preview);
@@ -718,10 +750,12 @@ impl EditorSession {
                 return false;
             }
         };
-        let (diagnostics, can_apply) = match compile_preview_with_solo(
+        let material_programs = self.preview_material_programs();
+        let (diagnostics, can_apply) = match compile_preview_with_solo_and_material_programs(
             preview.candidate(),
             self.preview_seed,
             self.solo_emitter,
+            &material_programs,
         ) {
             Ok(runtime_preview) => {
                 self.preview = Some(runtime_preview);
@@ -730,9 +764,13 @@ impl EditorSession {
                 (preview.candidate().validation_report(), true)
             }
             Err(error) => {
-                self.preview =
-                    compile_preview_with_solo(&self.effect, self.preview_seed, self.solo_emitter)
-                        .ok();
+                self.preview = compile_preview_with_solo_and_material_programs(
+                    &self.effect,
+                    self.preview_seed,
+                    self.solo_emitter,
+                    &material_programs,
+                )
+                .ok();
                 (error.report().clone(), false)
             }
         };
@@ -2063,7 +2101,13 @@ impl EditorSession {
         }) {
             self.solo_emitter = None;
         }
-        match compile_preview_with_solo(&self.effect, self.preview_seed, self.solo_emitter) {
+        let material_programs = self.preview_material_programs();
+        match compile_preview_with_solo_and_material_programs(
+            &self.effect,
+            self.preview_seed,
+            self.solo_emitter,
+            &material_programs,
+        ) {
             Ok(preview) => {
                 self.preview = Some(preview);
                 self.diagnostics = self.effect.validation_report();
@@ -2076,6 +2120,13 @@ impl EditorSession {
         }
     }
 
+    fn preview_material_programs(&self) -> Vec<MaterialProgram> {
+        self.preview
+            .as_ref()
+            .map(|preview| preview.effect().material_programs.clone())
+            .unwrap_or_default()
+    }
+
     fn update_dirty_state(&mut self) {
         self.dirty = self
             .saved_effect
@@ -2085,17 +2136,24 @@ impl EditorSession {
 }
 
 fn compile_preview(effect: &EffectAsset, seed: u64) -> Result<EffectInstance, CompileError> {
-    let compiled = EffectCompiler::default().compile(effect)?;
-    Ok(EffectInstance::with_seed(Arc::new(compiled), seed))
+    compile_preview_with_solo_and_material_programs(effect, seed, None, &[])
 }
 
-fn compile_preview_with_solo(
+fn compile_preview_with_solo_and_material_programs(
     effect: &EffectAsset,
     seed: u64,
     solo_emitter: Option<EmitterId>,
+    material_programs: &[MaterialProgram],
 ) -> Result<EffectInstance, CompileError> {
+    let material_programs = material_programs
+        .iter()
+        .cloned()
+        .map(|program| (program.id, program))
+        .collect::<BTreeMap<_, _>>();
     let Some(solo_emitter) = solo_emitter else {
-        return compile_preview(effect, seed);
+        let compiled =
+            EffectCompiler::default().compile_with_material_programs(effect, &material_programs)?;
+        return Ok(EffectInstance::with_seed(Arc::new(compiled), seed));
     };
     let mut preview_effect = effect.clone();
     for emitter in &mut preview_effect.emitters {
@@ -2104,7 +2162,9 @@ fn compile_preview_with_solo(
     // Effect clips are top-level tracks alongside local emitters. Soloing a local emitter must
     // therefore suppress referenced effects as well as the other local emitters.
     preview_effect.effect_clips.clear();
-    compile_preview(&preview_effect, seed)
+    let compiled = EffectCompiler::default()
+        .compile_with_material_programs(&preview_effect, &material_programs)?;
+    Ok(EffectInstance::with_seed(Arc::new(compiled), seed))
 }
 
 fn direct_seek_plan(frame: u64) -> SeekPlan {
@@ -2193,6 +2253,45 @@ mod tests {
         session.redo();
         assert_eq!(session.effect.emitters[0].spawn_rate(), 77.0);
         assert_eq!(preview_spawn_rate(&session), 77.0);
+    }
+
+    #[test]
+    fn ordinary_effect_edits_keep_project_materials_available_to_preview_compilation() {
+        let effect = EffectAsset::from_ron(crate::MATERIAL_GRAPH_LAB_EFFECT_SOURCE).unwrap();
+        let program = MaterialProgram::from_ron(crate::MATERIAL_GRAPH_LAB_PROGRAM_SOURCE).unwrap();
+        let compiled = EffectCompiler::default()
+            .compile_with_material_programs(
+                &effect,
+                &BTreeMap::from([(program.id, program.clone())]),
+            )
+            .unwrap();
+        let mut session = test_support::session_with_timing_slack();
+        session.open_compiled_effect(
+            "assets/effects/material_graph_lab.aestra.ron",
+            effect,
+            Arc::new(compiled),
+        );
+        let emitter = session.selected_layer().id;
+        let mut transform = session.selected_layer().transform;
+        transform.translation[1] = 7.0;
+
+        let command = EffectCommand::SetEmitterTransform {
+            id: emitter,
+            transform,
+        };
+        assert!(session.preview_interaction(EffectTransaction::single(
+            "Preview semantic material emitter move",
+            command.clone(),
+        )));
+        session.restore_interaction_preview();
+        assert!(session.execute("Moved semantic material emitter", command, true,));
+
+        let preview = session
+            .preview
+            .as_ref()
+            .expect("preview should remain valid");
+        assert!(preview.effect().material_program(program.id).is_some());
+        assert!(session.diagnostics.is_valid());
     }
 
     #[test]
