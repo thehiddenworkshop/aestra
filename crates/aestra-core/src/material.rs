@@ -747,6 +747,9 @@ pub struct MaterialProgram {
     /// Semantic operations retained in the authored graph but bypassed during compilation.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled_expressions: Vec<MaterialExpressionId>,
+    /// Compiler-generated constants presented as editable values on their consuming input socket.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inline_constants: Vec<MaterialExpressionId>,
     pub outputs: MaterialOutputs,
 }
 
@@ -795,6 +798,7 @@ impl MaterialProgram {
                 },
             ],
             disabled_expressions: Vec::new(),
+            inline_constants: Vec::new(),
             outputs: MaterialOutputs { color, alpha },
         }
     }
@@ -807,6 +811,19 @@ impl MaterialProgram {
             .sort_by_key(|expression| expression.id);
         normalized.disabled_expressions.sort();
         normalized.disabled_expressions.dedup();
+        let constants = normalized
+            .expressions
+            .iter()
+            .filter_map(|expression| {
+                matches!(&expression.kind, MaterialExpressionKind::Constant(_))
+                    .then_some(expression.id)
+            })
+            .collect::<BTreeSet<_>>();
+        normalized.inline_constants.sort();
+        normalized.inline_constants.dedup();
+        normalized
+            .inline_constants
+            .retain(|expression| constants.contains(expression));
         normalized
             .render_state_policy
             .allowed

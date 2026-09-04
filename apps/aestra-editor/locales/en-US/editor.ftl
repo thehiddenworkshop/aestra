@@ -47,9 +47,11 @@ panel-profiler = PROFILER
 panel-changes = CHANGES
 panel-settings = SETTINGS
 
-material-graph-edit-hint = DRAG EITHER SOCKET TO RECONNECT · DROP ON EMPTY SPACE TO ADD · RIGHT-CLICK OR TAB TO ADD
+material-graph-add-node = Add node (Tab)
 material-graph-frame-all = Frame all nodes (Home)
 material-graph-frame-selection = Frame selected node (F)
+material-graph-show-all-previews = Show all node previews
+material-graph-hide-all-previews = Hide all node previews
 material-graph-collapse-node = Collapse node
 material-graph-expand-node = Expand node
 material-graph-show-preview = Show node preview

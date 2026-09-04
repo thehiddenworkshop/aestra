@@ -142,5 +142,44 @@ fn graph_node_catalog_and_factory_cover_primitives_and_math_without_rewiring() {
             .map(|expression| &expression.kind),
         Some(MaterialExpressionKind::Add(left, _)) if *left == source
     ));
+    let inline = plan
+        .replacement
+        .expressions
+        .iter()
+        .find(|candidate| {
+            plan.replacement.inline_constants.contains(&candidate.id)
+                && matches!(&candidate.kind, MaterialExpressionKind::Constant(_))
+        })
+        .expect("generated function default should be marked inline")
+        .id;
+    let projection = compiler.project_graph(&plan.replacement, None);
+    assert!(
+        projection
+            .nodes
+            .iter()
+            .all(|node| node.expression != inline)
+    );
+    assert!(projection.edges.iter().all(|edge| edge.source != inline));
+
+    let explicit = compiler
+        .plan_graph_node_creation(
+            &plan.replacement,
+            MaterialGraphCreateKind::Constant(MaterialValueType::Float),
+            None,
+        )
+        .unwrap();
+    assert!(
+        !explicit
+            .replacement
+            .inline_constants
+            .contains(&explicit.expression)
+    );
+    assert!(
+        compiler
+            .project_graph(&explicit.replacement, None)
+            .nodes
+            .iter()
+            .any(|node| node.expression == explicit.expression)
+    );
     assert!(compiler.compile(&plan.replacement).is_ok());
 }

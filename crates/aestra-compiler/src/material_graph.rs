@@ -372,6 +372,17 @@ impl MaterialCompiler {
                 )
             }
         };
+        if !matches!(kind, MaterialGraphCreateKind::Constant(_)) {
+            let inline_constants = replacement.expressions[first_created..]
+                .iter()
+                .filter_map(|candidate| {
+                    (candidate.id != expression
+                        && matches!(&candidate.kind, MaterialExpressionKind::Constant(_)))
+                    .then_some(candidate.id)
+                })
+                .collect::<Vec<_>>();
+            replacement.inline_constants.extend(inline_constants);
+        }
         self.compile(&replacement)?;
         let created_expressions = replacement.expressions[first_created..]
             .iter()
@@ -412,9 +423,15 @@ impl MaterialCompiler {
             .filter(|ir| ir.source == program.id)
             .map(|ir| &ir.source_map.values);
 
+        let inline_constants = program
+            .inline_constants
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
         let nodes = program
             .expressions
             .iter()
+            .filter(|expression| !inline_constants.contains(&expression.id))
             .map(|expression| {
                 let inputs = expression_inputs(&expression.kind)
                     .into_iter()
@@ -448,15 +465,18 @@ impl MaterialCompiler {
         let mut edges = nodes
             .iter()
             .flat_map(|node| {
-                node.inputs.iter().map(|port| MaterialGraphEdge {
-                    source: port.source,
-                    target: MaterialGraphEdgeTarget::Input {
-                        expression: node.expression,
-                        port: port.name.clone(),
-                    },
-                    value_type: port.value_type,
-                    evaluation_domain: port.evaluation_domain,
-                })
+                node.inputs
+                    .iter()
+                    .filter(|port| !inline_constants.contains(&port.source))
+                    .map(|port| MaterialGraphEdge {
+                        source: port.source,
+                        target: MaterialGraphEdgeTarget::Input {
+                            expression: node.expression,
+                            port: port.name.clone(),
+                        },
+                        value_type: port.value_type,
+                        evaluation_domain: port.evaluation_domain,
+                    })
             })
             .collect::<Vec<_>>();
         let outputs = [

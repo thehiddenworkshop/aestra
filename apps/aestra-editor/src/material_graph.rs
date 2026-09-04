@@ -13,12 +13,13 @@ use crate::{
             FeathersGraphWireLayer, GraphFrameAction, GraphFrameTarget,
             GraphNodePreviewToggleProps, GraphNodeProps, GraphPortProps, GraphSocketSide,
             GraphViewportMemory, GraphViewportProps, GraphWireMaterial, NODE_HEADER_HEIGHT,
-            NODE_WIDTH, PORT_ROW_HEIGHT, spawn_graph_frame_button, spawn_graph_node,
-            spawn_graph_node_preview, spawn_graph_node_preview_toggle, spawn_graph_port,
-            spawn_graph_port_with, spawn_graph_viewport,
+            NODE_PREVIEW_SIZE, NODE_WIDTH, PORT_ROW_HEIGHT, spawn_graph_frame_button,
+            spawn_graph_node, spawn_graph_node_preview, spawn_graph_node_preview_toggle,
+            spawn_graph_port, spawn_graph_port_with, spawn_graph_viewport,
         },
         number_input::ScrubbableNumber,
         panel::spawn_panel_empty_state,
+        scenes,
     },
     *,
 };
@@ -45,9 +46,11 @@ use bevy::{
     image::ImageSampler,
     input_focus::{FocusCause, InputFocus},
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+    text::EditableText,
     ui_render::ui_material::MaterialNode,
     ui_widgets::Activate,
 };
+use bevy_resvg::prelude::{SvgColor, UiSvg};
 use std::collections::{BTreeMap, BTreeSet};
 
 const COLUMN_WIDTH: f32 = 282.0;
@@ -86,6 +89,7 @@ impl Plugin for EditorMaterialGraphPlugin {
                     handle_material_graph_context_actions,
                     material_graph_keyboard_input,
                     handle_material_graph_actions,
+                    handle_material_graph_toolbar_actions,
                     handle_material_graph_preview_actions,
                     sync_material_graph_default_number_inputs,
                     rasterize_material_graph_previews,
@@ -114,6 +118,7 @@ fn queue_material_graph_menu_action_activation(
                 With<MaterialGraphPaletteAction>,
                 With<MaterialGraphContextAction>,
                 With<MaterialGraphPreviewToggle>,
+                With<MaterialGraphToolbarAction>,
             )>,
         ),
     >,
@@ -232,6 +237,22 @@ impl MaterialGraphPreviewState {
             true
         }
     }
+
+    fn set_visible(
+        &mut self,
+        program: MaterialProgramId,
+        targets: impl IntoIterator<Item = MaterialGraphPreviewTarget>,
+        visible: bool,
+    ) {
+        for target in targets {
+            let key = (program, target);
+            if visible {
+                self.visible.insert(key);
+            } else {
+                self.visible.remove(&key);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -245,6 +266,12 @@ struct MaterialGraphPreviewCache {
 struct MaterialGraphPreviewToggle {
     program: MaterialProgramId,
     target: MaterialGraphPreviewTarget,
+}
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+enum MaterialGraphToolbarAction {
+    AddNode(MaterialProgramId),
+    ToggleAllPreviews(MaterialProgramId),
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -685,6 +712,71 @@ fn handle_material_graph_preview_actions(
             .remove::<PendingFeathersActivation>()
             .insert(Interaction::None);
         previews.toggle(toggle.program, toggle.target);
+        session.ui_revision += 1;
+    }
+}
+
+fn handle_material_graph_toolbar_actions(
+    mut commands: Commands,
+    actions: Query<
+        (
+            Entity,
+            &Interaction,
+            &MaterialGraphToolbarAction,
+            Option<&PendingFeathersActivation>,
+        ),
+        (Changed<Interaction>, With<FeathersActionButton>),
+    >,
+    viewports: Query<(
+        &MaterialGraphViewport,
+        &FeathersGraphViewport,
+        &ComputedNode,
+    )>,
+    graph_nodes: Query<&MaterialGraphAction>,
+    mut palette: ResMut<MaterialGraphPaletteState>,
+    mut previews: ResMut<MaterialGraphPreviewState>,
+    mut session: ResMut<EditorSession>,
+) {
+    for (entity, interaction, action, pending) in &actions {
+        if *interaction != Interaction::Pressed || pending.is_none() {
+            continue;
+        }
+        commands
+            .entity(entity)
+            .remove::<PendingFeathersActivation>()
+            .insert(Interaction::None);
+        match *action {
+            MaterialGraphToolbarAction::AddNode(program) => {
+                let Some((_, viewport, computed)) = viewports
+                    .iter()
+                    .find(|(marker, _, _)| marker.program == program)
+                else {
+                    continue;
+                };
+                let menu_position = computed.size() * 0.5;
+                palette.open = Some(MaterialGraphPaletteOpen {
+                    program,
+                    menu_position,
+                    graph_position: viewport.unproject_viewport_point(menu_position),
+                    graph_key: material_graph_view_key(program),
+                    connection: None,
+                });
+                palette.node_menu = None;
+                palette.query.clear();
+            }
+            MaterialGraphToolbarAction::ToggleAllPreviews(program) => {
+                let targets = graph_nodes
+                    .iter()
+                    .filter(|node| node.program == program)
+                    .map(|node| MaterialGraphPreviewTarget::Expression(node.expression))
+                    .chain(std::iter::once(MaterialGraphPreviewTarget::Output))
+                    .collect::<Vec<_>>();
+                let show = targets
+                    .iter()
+                    .any(|target| !previews.is_visible(program, *target));
+                previews.set_visible(program, targets, show);
+            }
+        }
         session.ui_revision += 1;
     }
 }
@@ -1648,8 +1740,8 @@ fn update_wire_material(
     }
 }
 
-const MATERIAL_PREVIEW_WIDTH: u32 = 208;
-const MATERIAL_PREVIEW_HEIGHT: u32 = 82;
+const MATERIAL_PREVIEW_SIZE: u32 = NODE_PREVIEW_SIZE as u32;
+const MATERIAL_PREVIEW_LAYOUT_HEIGHT: f32 = NODE_PREVIEW_SIZE + 8.0;
 
 fn rasterize_material_graph_previews(
     mut commands: Commands,
@@ -2205,13 +2297,12 @@ fn render_material_graph_preview(
 ) -> Image {
     let evaluator = MaterialPreviewEvaluator { program, instance };
     let uses_sphere = preview_uses_surface_normal(program, target);
-    let mut rgba =
-        Vec::with_capacity((MATERIAL_PREVIEW_WIDTH * MATERIAL_PREVIEW_HEIGHT * 4) as usize);
-    for y in 0..MATERIAL_PREVIEW_HEIGHT {
-        for x in 0..MATERIAL_PREVIEW_WIDTH {
+    let mut rgba = Vec::with_capacity((MATERIAL_PREVIEW_SIZE * MATERIAL_PREVIEW_SIZE * 4) as usize);
+    for y in 0..MATERIAL_PREVIEW_SIZE {
+        for x in 0..MATERIAL_PREVIEW_SIZE {
             let uv = Vec2::new(
-                (x as f32 + 0.5) / MATERIAL_PREVIEW_WIDTH as f32,
-                1.0 - (y as f32 + 0.5) / MATERIAL_PREVIEW_HEIGHT as f32,
+                (x as f32 + 0.5) / MATERIAL_PREVIEW_SIZE as f32,
+                1.0 - (y as f32 + 0.5) / MATERIAL_PREVIEW_SIZE as f32,
             );
             let sphere = uv * 2.0 - Vec2::ONE;
             let radius_squared = sphere.length_squared();
@@ -2254,8 +2345,8 @@ fn render_material_graph_preview(
     }
     let mut image = Image::new(
         Extent3d {
-            width: MATERIAL_PREVIEW_WIDTH,
-            height: MATERIAL_PREVIEW_HEIGHT,
+            width: MATERIAL_PREVIEW_SIZE,
+            height: MATERIAL_PREVIEW_SIZE,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -2471,6 +2562,7 @@ pub(crate) fn spawn_material_graph_workspace(
                     .as_ref()
                     .ok()
                     .map(|(name, graph, _, _)| (name.as_str(), graph)),
+                previews,
                 localizer,
                 asset_server,
             );
@@ -2818,6 +2910,7 @@ fn selected_projection(
 fn spawn_header(
     parent: &mut ChildSpawnerCommands,
     projection: Option<(&str, &MaterialGraphProjection)>,
+    previews: &MaterialGraphPreviewState,
     localizer: &Localizer,
     asset_server: &AssetServer,
 ) {
@@ -2827,27 +2920,23 @@ fn spawn_header(
                 width: Val::Percent(100.0),
                 height: Val::Px(38.0),
                 align_items: AlignItems::Center,
-                padding: UiRect::horizontal(Val::Px(14.0)),
-                column_gap: Val::Px(10.0),
+                padding: UiRect::horizontal(Val::Px(8.0)),
+                column_gap: Val::Px(4.0),
                 ..default()
             },
             BackgroundColor(theme::PANEL_LIGHT),
         ))
         .with_children(|header| {
-            header.spawn((
-                Text::new(localizer.text("material-graph-edit-hint")),
-                TextFont {
-                    font_size: FontSize::Px(10.0),
-                    ..default()
-                },
-                TextColor(theme::TEXT_MUTED),
-            ));
-            header.spawn(Node {
-                flex_grow: 1.0,
-                ..default()
-            });
             if let Some((name, graph)) = projection {
                 let key = material_graph_view_key(graph.program);
+                spawn_material_graph_toolbar_button(
+                    header,
+                    asset_server,
+                    "icons/plus.svg",
+                    localizer.text("material-graph-add-node"),
+                    MaterialGraphToolbarAction::AddNode(graph.program),
+                );
+                spawn_material_graph_toolbar_separator(header);
                 spawn_graph_frame_button(
                     header,
                     asset_server,
@@ -2862,6 +2951,28 @@ fn spawn_header(
                     localizer.text("material-graph-frame-selection"),
                     GraphFrameAction::new(key, GraphFrameTarget::Selection),
                 );
+                spawn_material_graph_toolbar_separator(header);
+                let all_previews_visible = graph_preview_targets(graph)
+                    .all(|target| previews.is_visible(graph.program, target));
+                spawn_material_graph_toolbar_button(
+                    header,
+                    asset_server,
+                    if all_previews_visible {
+                        "icons/hide.svg"
+                    } else {
+                        "icons/show.svg"
+                    },
+                    localizer.text(if all_previews_visible {
+                        "material-graph-hide-all-previews"
+                    } else {
+                        "material-graph-show-all-previews"
+                    }),
+                    MaterialGraphToolbarAction::ToggleAllPreviews(graph.program),
+                );
+                header.spawn(Node {
+                    flex_grow: 1.0,
+                    ..default()
+                });
                 header.spawn((
                     Text::new(format!(
                         "{name}  ·  {} NODES  ·  {} LINKS",
@@ -2876,6 +2987,68 @@ fn spawn_header(
                 ));
             }
         });
+}
+
+fn spawn_material_graph_toolbar_button(
+    parent: &mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    icon_path: &'static str,
+    label: String,
+    action: MaterialGraphToolbarAction,
+) -> Entity {
+    let mut button = parent.spawn_empty();
+    button.apply_scene(scenes::feathers_tool_button());
+    let entity = button.id();
+    button
+        .insert((
+            action,
+            FeathersActionButton,
+            AccessibleLabel(label.clone()),
+            EditorTooltip::description(label),
+            Node {
+                width: Val::Px(28.0),
+                height: Val::Px(24.0),
+                flex_shrink: 0.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(3.0)),
+                ..default()
+            },
+        ))
+        .with_child((
+            Node {
+                width: Val::Px(15.0),
+                height: Val::Px(15.0),
+                ..default()
+            },
+            UiSvg(load_svg_icon(asset_server, icon_path)),
+            SvgColor(Color::WHITE),
+            Pickable::IGNORE,
+        ));
+    entity
+}
+
+fn spawn_material_graph_toolbar_separator(parent: &mut ChildSpawnerCommands) {
+    parent.spawn((
+        Node {
+            width: Val::Px(1.0),
+            height: Val::Px(16.0),
+            margin: UiRect::horizontal(Val::Px(3.0)),
+            ..default()
+        },
+        BackgroundColor(theme::BORDER),
+        Pickable::IGNORE,
+    ));
+}
+
+fn graph_preview_targets(
+    graph: &MaterialGraphProjection,
+) -> impl Iterator<Item = MaterialGraphPreviewTarget> + '_ {
+    graph
+        .nodes
+        .iter()
+        .map(|node| MaterialGraphPreviewTarget::Expression(node.expression))
+        .chain(std::iter::once(MaterialGraphPreviewTarget::Output))
 }
 
 fn material_graph_view_key(program: MaterialProgramId) -> String {
@@ -2952,15 +3125,7 @@ fn inline_material_graph_default(
     program: &MaterialProgram,
     source: MaterialExpressionId,
 ) -> Option<&MaterialValue> {
-    let references = program
-        .expressions
-        .iter()
-        .flat_map(|expression| preview_dependencies(&expression.kind))
-        .filter(|candidate| *candidate == source)
-        .count()
-        + usize::from(program.outputs.color == source)
-        + usize::from(program.outputs.alpha == source);
-    if references != 1 {
+    if !program.inline_constants.contains(&source) {
         return None;
     }
     program
@@ -3141,13 +3306,44 @@ fn sync_material_graph_default_number_inputs(
         (Entity, &MaterialGraphDefaultNumberControl),
         Added<MaterialGraphDefaultNumberControl>,
     >,
+    children: Query<&Children>,
+    editable_text: Query<(), With<EditableText>>,
+    mut nodes: Query<&mut Node>,
 ) {
     for (entity, control) in &controls {
+        constrain_graph_number_input(entity, &children, &editable_text, &mut nodes);
         if let Some(value) = material_graph_value_component(&control.value, control.component) {
             commands.trigger(UpdateNumberInput {
                 entity,
                 value: NumberInputValue::F32(value),
             });
+        }
+    }
+}
+
+fn constrain_graph_number_input(
+    entity: Entity,
+    children: &Query<&Children>,
+    editable_text: &Query<(), With<EditableText>>,
+    nodes: &mut Query<&mut Node>,
+) {
+    if let Ok(mut node) = nodes.get_mut(entity) {
+        node.width = Val::Percent(100.0);
+        node.min_width = Val::Px(0.0);
+        node.max_width = Val::Percent(100.0);
+        node.flex_shrink = 1.0;
+        node.overflow = Overflow::clip();
+    }
+    for descendant in children.iter_descendants(entity) {
+        if !editable_text.contains(descendant) {
+            continue;
+        }
+        if let Ok(mut node) = nodes.get_mut(descendant) {
+            node.width = Val::Percent(100.0);
+            node.min_width = Val::Px(0.0);
+            node.max_width = Val::Percent(100.0);
+            node.flex_shrink = 1.0;
+            node.overflow = Overflow::clip();
         }
     }
 }
@@ -3587,7 +3783,7 @@ fn layout_graph(
     let width = output.x + NODE_WIDTH + CANVAS_PADDING;
     let output_height = 130.0
         + if previews.is_visible(graph.program, MaterialGraphPreviewTarget::Output) {
-            90.0
+            MATERIAL_PREVIEW_LAYOUT_HEIGHT
         } else {
             0.0
         };
@@ -3641,7 +3837,11 @@ fn expression_depth(
 fn node_height(input_count: usize, has_state: bool, has_preview: bool) -> f32 {
     40.0 + input_count.max(1) as f32 * PORT_ROW_HEIGHT
         + if has_state { 18.0 } else { 0.0 }
-        + if has_preview { 90.0 } else { 0.0 }
+        + if has_preview {
+            MATERIAL_PREVIEW_LAYOUT_HEIGHT
+        } else {
+            0.0
+        }
 }
 
 fn input_target(expression: MaterialExpressionId, name: &str) -> Option<MaterialConnectionTarget> {
@@ -3798,6 +3998,14 @@ mod tests {
                 Interaction::None,
             ))
             .id();
+        let toolbar_action = app
+            .world_mut()
+            .spawn((
+                MaterialGraphToolbarAction::AddNode(MaterialProgramId::new()),
+                FeathersActionButton,
+                Interaction::None,
+            ))
+            .id();
 
         app.world_mut().trigger(Activate {
             entity: context_action,
@@ -3808,9 +4016,17 @@ mod tests {
         app.world_mut().trigger(Activate {
             entity: preview_action,
         });
+        app.world_mut().trigger(Activate {
+            entity: toolbar_action,
+        });
         app.update();
 
-        for entity in [context_action, palette_action, preview_action] {
+        for entity in [
+            context_action,
+            palette_action,
+            preview_action,
+            toolbar_action,
+        ] {
             let action = app.world().entity(entity);
             assert!(action.contains::<PendingFeathersActivation>());
             assert_eq!(action.get::<Interaction>(), Some(&Interaction::Pressed));
@@ -3833,6 +4049,30 @@ mod tests {
     }
 
     #[test]
+    fn material_graph_preview_visibility_can_be_changed_for_the_whole_graph() {
+        let program = MaterialProgramId::new();
+        let first = MaterialGraphPreviewTarget::Expression(MaterialExpressionId::new());
+        let second = MaterialGraphPreviewTarget::Expression(MaterialExpressionId::new());
+        let output = MaterialGraphPreviewTarget::Output;
+        let targets = [first, second, output];
+        let mut previews = MaterialGraphPreviewState::default();
+
+        previews.set_visible(program, targets, true);
+        assert!(
+            targets
+                .into_iter()
+                .all(|target| previews.is_visible(program, target))
+        );
+
+        previews.set_visible(program, targets, false);
+        assert!(
+            targets
+                .into_iter()
+                .all(|target| !previews.is_visible(program, target))
+        );
+    }
+
+    #[test]
     fn material_graph_preview_raster_has_expected_size_and_visible_content() {
         let program = MaterialProgram::from_ron(crate::MATERIAL_GRAPH_LAB_PROGRAM_SOURCE)
             .expect("material graph lab program should parse");
@@ -3843,15 +4083,12 @@ mod tests {
             Some(MaterialValueType::Color),
         );
 
-        assert_eq!(image.texture_descriptor.size.width, MATERIAL_PREVIEW_WIDTH);
-        assert_eq!(
-            image.texture_descriptor.size.height,
-            MATERIAL_PREVIEW_HEIGHT
-        );
+        assert_eq!(image.texture_descriptor.size.width, MATERIAL_PREVIEW_SIZE);
+        assert_eq!(image.texture_descriptor.size.height, MATERIAL_PREVIEW_SIZE);
         let pixels = image.data.as_ref().expect("preview should be CPU-backed");
         assert_eq!(
             pixels.len(),
-            (MATERIAL_PREVIEW_WIDTH * MATERIAL_PREVIEW_HEIGHT * 4) as usize
+            (MATERIAL_PREVIEW_SIZE * MATERIAL_PREVIEW_SIZE * 4) as usize
         );
         assert!(pixels.windows(4).any(|pixel| pixel[0] != pixel[1]));
     }
@@ -3860,7 +4097,7 @@ mod tests {
     fn material_graph_preview_expands_only_its_node_height() {
         assert_eq!(
             node_height(3, false, true) - node_height(3, false, false),
-            90.0
+            MATERIAL_PREVIEW_LAYOUT_HEIGHT
         );
         assert_eq!(
             node_height(3, true, false) - node_height(3, false, false),
@@ -3910,6 +4147,18 @@ mod tests {
             assert!(input_target(expression, name).is_some(), "missing {name}");
         }
         assert!(input_target(expression, "unknown").is_none());
+    }
+
+    #[test]
+    fn only_annotated_generated_constants_render_as_inline_defaults() {
+        let mut program = MaterialProgram::additive_sprite("Inline defaults");
+        let inline = program.outputs.alpha;
+        let explicit = program.outputs.color;
+
+        program.inline_constants.push(inline);
+
+        assert!(inline_material_graph_default(&program, inline).is_some());
+        assert!(inline_material_graph_default(&program, explicit).is_none());
     }
 
     #[test]

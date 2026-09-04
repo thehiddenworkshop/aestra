@@ -35,6 +35,7 @@ use std::collections::HashMap;
 pub(crate) const NODE_WIDTH: f32 = 224.0;
 pub(crate) const NODE_HEADER_HEIGHT: f32 = 30.0;
 pub(crate) const PORT_ROW_HEIGHT: f32 = 24.0;
+pub(crate) const NODE_PREVIEW_SIZE: f32 = 208.0;
 pub(crate) const SOCKET_HIT_SIZE: f32 = 20.0;
 const SOCKET_SIZE: f32 = 10.0;
 const MIN_ZOOM: f32 = 0.25;
@@ -512,7 +513,7 @@ pub(crate) fn spawn_graph_frame_button(
                 ..default()
             },
             UiSvg(load_svg_icon(asset_server, icon_path)),
-            SvgColor(theme::TEXT),
+            SvgColor(Color::WHITE),
             Pickable::IGNORE,
         ));
     entity
@@ -1296,9 +1297,12 @@ pub(crate) fn spawn_graph_node_preview<B: Bundle>(
             FeathersGraphNodePreview,
             marker,
             Node {
-                width: Val::Auto,
-                height: Val::Px(82.0),
-                min_height: Val::Px(82.0),
+                width: Val::Px(NODE_PREVIEW_SIZE),
+                height: Val::Px(NODE_PREVIEW_SIZE),
+                min_width: Val::Px(NODE_PREVIEW_SIZE),
+                min_height: Val::Px(NODE_PREVIEW_SIZE),
+                flex_shrink: 0.0,
+                align_self: AlignSelf::Center,
                 margin: UiRect::new(Val::Px(7.0), Val::Px(7.0), Val::Px(5.0), Val::Px(3.0)),
                 border: UiRect::all(Val::Px(1.0)),
                 border_radius: BorderRadius::all(Val::Px(3.0)),

@@ -2578,6 +2578,10 @@ fn material_graph_node_tool_creates_connects_and_undoes_one_semantic_edit() {
             ..
         }
     )));
+    assert!(plan.transaction.commands.iter().any(|command| matches!(
+        command,
+        MaterialCommand::SetMaterialExpressionInline { inline: true, .. }
+    )));
 
     let created = plan.created_expressions[0];
     let mut history = MaterialCommandHistory::default();
@@ -2591,6 +2595,16 @@ fn material_graph_node_tool_creates_connects_and_undoes_one_semantic_edit() {
             .map(|expression| &expression.kind),
         Some(MaterialExpressionKind::Multiply(left, _)) if *left == source
     ));
+    let inline = match document.programs[0]
+        .expressions
+        .iter()
+        .find(|expression| expression.id == created)
+        .map(|expression| &expression.kind)
+    {
+        Some(MaterialExpressionKind::Multiply(_, right)) => *right,
+        _ => unreachable!("created expression was asserted as multiply"),
+    };
+    assert!(document.programs[0].inline_constants.contains(&inline));
     history.undo(&mut document).unwrap().unwrap();
     assert_eq!(document, before);
 }

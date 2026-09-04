@@ -47,9 +47,11 @@ panel-profiler = PROFILEUR
 panel-changes = MODIFICATIONS
 panel-settings = PARAMÈTRES
 
-material-graph-edit-hint = GLISSEZ UNE PRISE POUR RECONNECTER · DÉPOSEZ DANS LE VIDE POUR AJOUTER · CLIC DROIT OU TAB POUR AJOUTER
+material-graph-add-node = Ajouter un nœud (Tab)
 material-graph-frame-all = Cadrer tous les nœuds (Début)
 material-graph-frame-selection = Cadrer le nœud sélectionné (F)
+material-graph-show-all-previews = Afficher tous les aperçus de nœuds
+material-graph-hide-all-previews = Masquer tous les aperçus de nœuds
 material-graph-collapse-node = Réduire le nœud
 material-graph-expand-node = Développer le nœud
 material-graph-show-preview = Afficher l’aperçu du nœud

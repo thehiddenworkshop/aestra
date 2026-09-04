@@ -486,6 +486,18 @@ impl MaterialToolPlanner {
             target,
         };
         let mut commands = append_expression_commands(program, &created.replacement);
+        commands.extend(
+            created
+                .replacement
+                .inline_constants
+                .iter()
+                .filter(|expression| !program.inline_constants.contains(expression))
+                .map(|expression| MaterialCommand::SetMaterialExpressionInline {
+                    program: program_id,
+                    expression: *expression,
+                    inline: true,
+                }),
+        );
         if let Some(target) = target {
             commands.push(connection_command(program_id, target, created.expression));
         }

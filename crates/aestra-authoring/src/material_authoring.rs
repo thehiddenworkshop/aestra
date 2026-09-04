@@ -188,6 +188,11 @@ pub enum MaterialCommand {
         expression: MaterialExpressionId,
         replacement: MaterialExpression,
     },
+    SetMaterialExpressionInline {
+        program: MaterialProgramId,
+        expression: MaterialExpressionId,
+        inline: bool,
+    },
     RewireMaterialExpressionInput {
         program: MaterialProgramId,
         expression: MaterialExpressionId,
@@ -562,11 +567,23 @@ fn apply_command(
             let program = program_mut(document, *program)?;
             let index = expression_index(program, *expression)?;
             let expression = program.expressions.remove(index);
-            vec![MaterialCommand::AddMaterialExpression {
+            let was_inline = program.inline_constants.contains(&expression.id);
+            program
+                .inline_constants
+                .retain(|candidate| *candidate != expression.id);
+            let mut inverse = vec![MaterialCommand::AddMaterialExpression {
                 program: program.id,
-                expression,
+                expression: expression.clone(),
                 index,
-            }]
+            }];
+            if was_inline {
+                inverse.push(MaterialCommand::SetMaterialExpressionInline {
+                    program: program.id,
+                    expression: expression.id,
+                    inline: true,
+                });
+            }
+            inverse
         }
         MaterialCommand::ReplaceMaterialExpression {
             program,
@@ -581,6 +598,27 @@ fn apply_command(
                 program: program.id,
                 expression: *expression,
                 replacement: previous,
+            }]
+        }
+        MaterialCommand::SetMaterialExpressionInline {
+            program,
+            expression,
+            inline,
+        } => {
+            let program = program_mut(document, *program)?;
+            expression_index(program, *expression)?;
+            let previous = program.inline_constants.contains(expression);
+            if *inline && !previous {
+                program.inline_constants.push(*expression);
+            } else if !*inline && previous {
+                program
+                    .inline_constants
+                    .retain(|candidate| candidate != expression);
+            }
+            vec![MaterialCommand::SetMaterialExpressionInline {
+                program: program.id,
+                expression: *expression,
+                inline: previous,
             }]
         }
         MaterialCommand::RewireMaterialExpressionInput {
