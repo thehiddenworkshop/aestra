@@ -438,14 +438,32 @@ fn play_effects(
                 event,
             });
         }
-        if let Some(elapsed) = presented.cpu_evaluation_time() {
-            profiler.0.record_cpu_frame(elapsed, presented.samples());
-        } else {
-            profiler.0.record_particle_frame(presented.samples());
-        }
-        profiler
-            .0
-            .record_submitted_frame(player.effect(), presented.samples());
+        record_presented_profile(
+            &mut profiler.0,
+            player.effect(),
+            presented.samples(),
+            presented.cpu_evaluation_time(),
+            runtime.active,
+        );
+    }
+}
+
+fn record_presented_profile(
+    profile: &mut EffectProfile,
+    effect: &CompiledEffect,
+    samples: &[ParticleSample],
+    cpu_evaluation_time: Option<std::time::Duration>,
+    backend: ActiveBackend,
+) {
+    if let Some(elapsed) = cpu_evaluation_time {
+        profile.record_cpu_frame(elapsed, samples);
+        profile.record_submitted_frame(effect, samples);
+    } else if matches!(
+        backend,
+        ActiveBackend::GpuReadback | ActiveBackend::CpuReference
+    ) {
+        profile.record_particle_frame(samples);
+        profile.record_submitted_frame(effect, samples);
     }
 }
 
@@ -537,6 +555,20 @@ mod tests {
         ));
         assert_eq!(profile.draw_calls, ProfileValue::Estimated(2));
         assert!(profile.platform_warnings.is_empty());
+    }
+
+    #[test]
+    fn native_gpu_profile_does_not_report_empty_readback_as_measured_zero() {
+        let mut effect = EffectAsset::new("Native GPU profile", 2.0);
+        effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+        let compiled = EffectCompiler::default().compile(&effect).unwrap();
+        let mut profile = EffectProfile::from_compiled(&compiled);
+
+        record_presented_profile(&mut profile, &compiled, &[], None, ActiveBackend::Gpu);
+
+        assert_eq!(profile.alive_particles, ProfileValue::Unavailable);
+        assert_eq!(profile.submitted_instances, ProfileValue::Unavailable);
+        assert_eq!(profile.peak_particles, ProfileValue::Unavailable);
     }
 
     #[test]

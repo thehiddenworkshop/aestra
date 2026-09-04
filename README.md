@@ -125,8 +125,10 @@ cargo run -p aestra-viewer -- --effect assets/effects/ember_sigil.aestra.ron --v
 
 The command exits with an error when a frame exceeds the tolerant foreground RMSE,
 coverage, changed-pixel, or centroid limits. It writes amplified `diff-*.png` images
-and `regression-report.md` to the output directory. After intentionally approving a
-visual change, regenerate the reference with:
+and `regression-report.md` to the output directory. The versioned JSON report retains the
+thresholds, every frame metric, the worst-frame summary, and artifact paths on both passing and
+failing comparisons, so an automated caller can analyze a rejected candidate before refining it.
+After intentionally approving a visual change, regenerate the reference with:
 
 ```powershell
 cargo run -p aestra-viewer -- --approve-visual-reference apps/aestra-viewer/tests/references/prism_bloom --frames 8

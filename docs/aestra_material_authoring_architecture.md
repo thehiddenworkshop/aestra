@@ -2425,14 +2425,18 @@ Experts can implement unsupported shader algorithms while retaining Aestra param
 
 ### Implementation Status
 
-The deterministic preview contract is implemented as the first milestone slice. The standalone
+The deterministic preview feedback contract is implemented. The standalone
 viewer accepts evenly spaced samples, explicit 60 Hz frame indices, or explicit times resolved to
 unique simulation frames. Every capture writes numbered PNGs, a contact sheet, the existing human
 manifest, and a versioned JSON report suitable for tools. That report includes exact frame/time
 pairs, compiler diagnostics and optimization counts, semantic material fingerprints, backend and
 compatibility decisions, adapter budgets, and measured/estimated runtime metrics with provenance.
 Preparation and capture failures return a non-zero status and write the same report envelope when
-an output directory is known. The edit/analyze/refine orchestrator remains outstanding.
+an output directory is known. Visual comparisons add their thresholds, per-frame RMSE, changed
+fraction, coverage, centroid drift, worst-frame summary, and diff-image paths to that envelope even
+when a threshold fails. AI callers can therefore apply semantic commands, render a deterministic
+candidate, inspect images and quantitative deltas, and refine without coupling a model provider to
+the renderer.
 
 ### Goal
 

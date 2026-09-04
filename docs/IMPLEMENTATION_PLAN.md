@@ -437,14 +437,16 @@ the current sprite-material path until the native-GPU compatibility gate approve
 
 ### Phase F — next-generation tooling
 
-- [ ] **Material 18 — AI visual feedback loop.** The first automation-facing slice is complete:
-  `aestra-viewer` accepts explicit frame indices or times in addition to evenly spaced sampling,
-  preserves deterministic 60 Hz seeks, and writes a versioned `preview-report.json` beside its
-  individual frames and contact sheet. The report exposes compiler diagnostics and optimization
-  counts, semantic material fingerprints, exact frame/time pairs, backend selection and
-  compatibility, adapter budgets, and measured/estimated effect metrics with provenance. Failed
-  compilation and capture runs produce machine-readable failure reports and non-zero exit status.
-  The remaining work is the visual-analysis/refinement orchestrator that consumes this contract.
+- [x] **Material 18 — AI visual feedback loop.** `aestra-viewer` accepts explicit frame indices or
+  times in addition to evenly spaced sampling, preserves deterministic 60 Hz seeks, and writes a
+  versioned `preview-report.json` beside its individual frames and contact sheet. The report
+  exposes compiler diagnostics and optimization counts, semantic material fingerprints, exact
+  frame/time pairs, backend selection and compatibility, adapter budgets, and measured/estimated
+  effect metrics with provenance. Visual tests retain per-frame RMSE, differing fraction,
+  coverage, centroid drift, thresholds, worst-frame summaries, and diff paths in the same report
+  even when thresholds fail. Preparation and capture failures remain machine-readable and return
+  non-zero status. This keeps visual reasoning caller-owned while providing the deterministic
+  edit/compile/render/analyze contract required by AI tools.
 - [ ] **Material 19 — advanced compiler optimization.**
 - [ ] **Material 20 — mesh and ribbon domains.**
 

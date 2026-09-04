@@ -27,7 +27,7 @@ use preview_report::{
     CompilerPreviewData, PreviewCaptureData, PreviewRuntimeData, write_preview_failure_report,
     write_preview_report,
 };
-use visual_regression::compare_capture;
+use visual_regression::{ComparisonReport, compare_capture};
 
 const SAMPLE_SOURCE: &str = include_str!("../../../assets/effects/prism_bloom.aestra.ron");
 const VIEW_WIDTH: u32 = 960;
@@ -876,7 +876,7 @@ fn receive_capture(
             &report.settings,
             &report.capabilities,
         );
-        let capture_result = finish_capture(
+        let completion = finish_capture(
             &capture,
             &report.runtime,
             effect_runtime,
@@ -904,9 +904,10 @@ fn receive_capture(
                 capabilities: &report.capabilities,
                 profile: effect_status.map(|(_, profile)| &profile.0),
             },
-            capture_result.as_ref().err().map(String::as_str),
+            completion.comparison.as_ref(),
+            completion.result.as_ref().err().map(String::as_str),
         );
-        let result = capture_result.and(report_result);
+        let result = completion.result.and(report_result);
         exit.write(if result.is_ok() {
             AppExit::Success
         } else {
@@ -972,25 +973,39 @@ fn write_contact_sheet(
         .expect("capture manifest should be writable");
 }
 
+struct CaptureCompletion {
+    result: Result<(), String>,
+    comparison: Option<ComparisonReport>,
+}
+
+impl CaptureCompletion {
+    fn result(result: Result<(), String>) -> Self {
+        Self {
+            result,
+            comparison: None,
+        }
+    }
+}
+
 fn finish_capture(
     capture: &CapturePlan,
     runtime: &AestraRuntimeStatus,
     effect_runtime: Option<&EffectRuntimeStatus>,
     capabilities: &GpuCapabilities,
-) -> Result<(), String> {
+) -> CaptureCompletion {
     let active = effect_runtime.map_or(runtime.active, |status| status.active);
     if capture.mode.is_regression() && active != ActiveBackend::Gpu {
-        return Err(format!(
+        return CaptureCompletion::result(Err(format!(
             "visual regression requires the native GPU backend, but {active} was selected"
-        ));
+        )));
     }
-    match &capture.mode {
+    let result = match &capture.mode {
         CaptureMode::Standard { output } => {
             println!("capture written to {}", output.display());
             Ok(())
         }
         CaptureMode::Approve { reference } => {
-            fs::write(
+            let result = fs::write(
                 reference.join("visual-reference.md"),
                 format!(
                     "# Aestra visual reference\n\n- Frames: {}\n- Frame size: {} x {}\n- Seed: `{:#018x}`\n- Scene: effect only, fixed camera and background\n- Sampling: exact {} Hz simulation frames {:?}\n- Backend: {}\n- Adapter: {} ({})\n",
@@ -1005,33 +1020,51 @@ fn finish_capture(
                     capabilities.backend,
                 ),
             )
-            .map_err(|error| format!("could not write visual reference metadata: {error}"))?;
-            println!("visual reference approved at {}", reference.display());
-            Ok(())
+            .map_err(|error| format!("could not write visual reference metadata: {error}"));
+            if result.is_ok() {
+                println!("visual reference approved at {}", reference.display());
+            }
+            result
         }
         CaptureMode::Compare { reference, output } => {
-            let report = compare_capture(reference, output, capture.frame_count())?;
-            println!(
-                "visual regression passed: {} frames, worst RMSE {:.4}",
-                report.frames.len(),
-                report
-                    .frames
-                    .iter()
-                    .map(|frame| frame.foreground_rmse)
-                    .fold(0.0, f32::max)
-            );
-            Ok(())
+            return match compare_capture(reference, output, capture.frame_count()) {
+                Ok(report) => {
+                    let result = match report.failure_message(output) {
+                        Some(error) => Err(error),
+                        None => {
+                            println!(
+                                "visual regression passed: {} frames, worst RMSE {:.4}",
+                                report.frames.len(),
+                                report
+                                    .frames
+                                    .iter()
+                                    .map(|frame| frame.foreground_rmse)
+                                    .fold(0.0, f32::max)
+                            );
+                            Ok(())
+                        }
+                    };
+                    CaptureCompletion {
+                        result,
+                        comparison: Some(report),
+                    }
+                }
+                Err(error) => CaptureCompletion::result(Err(error)),
+            };
         }
         CaptureMode::EditorViewportSmoke { output } => {
-            validate_editor_viewport_smoke(&capture.images)?;
-            println!(
-                "editor viewport GPU smoke passed: {} frames written to {}",
-                capture.frame_count(),
-                output.display()
-            );
-            Ok(())
+            let result = validate_editor_viewport_smoke(&capture.images);
+            if result.is_ok() {
+                println!(
+                    "editor viewport GPU smoke passed: {} frames written to {}",
+                    capture.frame_count(),
+                    output.display()
+                );
+            }
+            result
         }
-    }
+    };
+    CaptureCompletion::result(result)
 }
 
 fn validate_editor_viewport_smoke(images: &[RgbaImage]) -> Result<(), String> {

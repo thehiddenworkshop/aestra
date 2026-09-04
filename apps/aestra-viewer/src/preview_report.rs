@@ -5,6 +5,11 @@ use aestra_bevy::{
 use serde::Serialize;
 use std::{fs, path::Path};
 
+use crate::visual_regression::{
+    ANALYSIS_SCALE, ComparisonReport, MAX_CENTROID_DRIFT, MAX_COVERAGE_RATIO,
+    MAX_DIFFERING_FRACTION, MAX_FOREGROUND_RMSE, MIN_COVERAGE_RATIO,
+};
+
 pub const PREVIEW_REPORT_FILE: &str = "preview-report.json";
 const PREVIEW_REPORT_SCHEMA_VERSION: u32 = 1;
 
@@ -80,6 +85,7 @@ pub fn write_preview_report(
     capture: PreviewCaptureData<'_>,
     compiler: &CompilerPreviewData,
     runtime: PreviewRuntimeData<'_>,
+    comparison: Option<&ComparisonReport>,
     capture_error: Option<&str>,
 ) -> Result<(), String> {
     fs::create_dir_all(output_directory)
@@ -147,6 +153,7 @@ pub fn write_preview_report(
             optimizations: Some(compiler.optimizations.clone()),
             material_program_fingerprints: compiler.material_program_fingerprints.clone(),
         },
+        comparison: comparison.map(|report| PreviewComparison::new(report, capture.sampled_frames)),
         runtime: Some(PreviewRuntime {
             requested_backend: format!("{:?}", runtime.runtime.requested),
             active_backend: active_backend.to_string(),
@@ -190,6 +197,7 @@ pub fn write_preview_failure_report(
             optimizations: None,
             material_program_fingerprints: Vec::new(),
         },
+        comparison: None,
         runtime: None,
         metrics: None,
     };
@@ -223,6 +231,8 @@ struct PreviewReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     capture: Option<PreviewCapture>,
     compiler: PreviewCompiler,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comparison: Option<PreviewComparison>,
     #[serde(skip_serializing_if = "Option::is_none")]
     runtime: Option<PreviewRuntime>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -281,6 +291,141 @@ struct PreviewOptimizations {
 struct MaterialProgramFingerprint {
     program_id: String,
     fingerprint: String,
+}
+
+#[derive(Serialize)]
+struct PreviewComparison {
+    passed: bool,
+    analysis_scale: u32,
+    reference_directory: String,
+    thresholds: PreviewComparisonThresholds,
+    summary: PreviewComparisonSummary,
+    frames: Vec<PreviewFrameComparison>,
+}
+
+impl PreviewComparison {
+    fn new(report: &ComparisonReport, sampled_frames: &[u64]) -> Self {
+        let passed_frames = report.frames.iter().filter(|frame| frame.passed).count();
+        let failed_frames = report.failed_frame_count();
+        Self {
+            passed: report.passed(),
+            analysis_scale: ANALYSIS_SCALE,
+            reference_directory: report.reference_directory.display().to_string(),
+            thresholds: PreviewComparisonThresholds {
+                maximum_foreground_rmse: MAX_FOREGROUND_RMSE,
+                maximum_differing_fraction: MAX_DIFFERING_FRACTION,
+                minimum_coverage_ratio: MIN_COVERAGE_RATIO,
+                maximum_coverage_ratio: MAX_COVERAGE_RATIO,
+                maximum_centroid_drift_pixels: MAX_CENTROID_DRIFT,
+            },
+            summary: PreviewComparisonSummary {
+                total_frames: report.frames.len(),
+                passed_frames,
+                failed_frames,
+                worst_frame_index: report.worst_frame().map(|frame| frame.index),
+                maximum_foreground_rmse: finite_max(
+                    report.frames.iter().map(|frame| frame.foreground_rmse),
+                ),
+                maximum_differing_fraction: finite_max(
+                    report.frames.iter().map(|frame| frame.differing_fraction),
+                ),
+                minimum_coverage_ratio: finite_min(
+                    report.frames.iter().map(|frame| frame.coverage_ratio),
+                ),
+                maximum_coverage_ratio: finite_max(
+                    report.frames.iter().map(|frame| frame.coverage_ratio),
+                ),
+                maximum_centroid_drift_pixels: finite_max(
+                    report.frames.iter().map(|frame| frame.centroid_drift),
+                ),
+            },
+            frames: report
+                .frames
+                .iter()
+                .map(|frame| PreviewFrameComparison {
+                    index: frame.index,
+                    simulation_frame: sampled_frames.get(frame.index).copied(),
+                    passed: frame.passed,
+                    foreground_rmse: finite(frame.foreground_rmse),
+                    differing_fraction: finite(frame.differing_fraction),
+                    coverage_ratio: finite(frame.coverage_ratio),
+                    centroid_drift_pixels: finite(frame.centroid_drift),
+                    reference_image: report
+                        .reference_directory
+                        .join(format!("frame-{:03}.png", frame.index))
+                        .display()
+                        .to_string(),
+                    candidate_image: format!("frame-{:03}.png", frame.index),
+                    difference_image: format!("diff-{:03}.png", frame.index),
+                })
+                .collect(),
+        }
+    }
+}
+
+fn finite(value: f32) -> Option<f32> {
+    value.is_finite().then_some(value)
+}
+
+fn finite_max(values: impl IntoIterator<Item = f32>) -> Option<f32> {
+    values
+        .into_iter()
+        .filter(|value| value.is_finite())
+        .max_by(f32::total_cmp)
+}
+
+fn finite_min(values: impl IntoIterator<Item = f32>) -> Option<f32> {
+    values
+        .into_iter()
+        .filter(|value| value.is_finite())
+        .min_by(f32::total_cmp)
+}
+
+#[derive(Serialize)]
+struct PreviewComparisonThresholds {
+    maximum_foreground_rmse: f32,
+    maximum_differing_fraction: f32,
+    minimum_coverage_ratio: f32,
+    maximum_coverage_ratio: f32,
+    maximum_centroid_drift_pixels: f32,
+}
+
+#[derive(Serialize)]
+struct PreviewComparisonSummary {
+    total_frames: usize,
+    passed_frames: usize,
+    failed_frames: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    worst_frame_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    maximum_foreground_rmse: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    maximum_differing_fraction: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    minimum_coverage_ratio: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    maximum_coverage_ratio: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    maximum_centroid_drift_pixels: Option<f32>,
+}
+
+#[derive(Serialize)]
+struct PreviewFrameComparison {
+    index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    simulation_frame: Option<u64>,
+    passed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    foreground_rmse: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    differing_fraction: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage_ratio: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    centroid_drift_pixels: Option<f32>,
+    reference_image: String,
+    candidate_image: String,
+    difference_image: String,
 }
 
 #[derive(Serialize)]
@@ -475,6 +620,7 @@ mod tests {
                 profile: Some(&profile),
             },
             None,
+            None,
         )
         .unwrap();
 
@@ -486,5 +632,70 @@ mod tests {
         assert_eq!(value["capture"]["frames"][1]["time_seconds"], 0.5);
         assert_eq!(value["capture"]["frames"][2]["image"], "frame-002.png");
         assert_eq!(value["metrics"]["emitter_count"]["source"], "measured");
+    }
+
+    #[test]
+    fn failed_visual_comparison_remains_available_in_the_json_report() {
+        use crate::visual_regression::compare_capture;
+        use image::{Rgba, RgbaImage};
+
+        let reference_directory = tempfile::tempdir().unwrap();
+        let output_directory = tempfile::tempdir().unwrap();
+        let mut reference = RgbaImage::from_pixel(64, 64, Rgba([3, 4, 9, 255]));
+        for y in 24..40 {
+            for x in 24..40 {
+                reference.put_pixel(x, y, Rgba([180, 90, 240, 255]));
+            }
+        }
+        reference
+            .save(reference_directory.path().join("frame-000.png"))
+            .unwrap();
+        RgbaImage::from_pixel(64, 64, Rgba([3, 4, 9, 255]))
+            .save(output_directory.path().join("frame-000.png"))
+            .unwrap();
+        let comparison =
+            compare_capture(reference_directory.path(), output_directory.path(), 1).unwrap();
+
+        let mut effect = EffectAsset::new("Preview", 1.0);
+        effect.emitters.push(Emitter::basic_sprite("Sparks", 1.0));
+        let compiled = EffectCompiler::default().compile(&effect).unwrap();
+        let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
+        write_preview_report(
+            output_directory.path(),
+            PreviewCaptureData {
+                sampled_frames: &[30],
+                seed: 42,
+                width: 64,
+                height: 64,
+                columns: 1,
+                rows: 1,
+                tick_rate: 60,
+            },
+            &compiler,
+            PreviewRuntimeData {
+                runtime: &AestraRuntimeStatus::default(),
+                effect_runtime: None,
+                settings: &AestraSettings::default(),
+                capabilities: &GpuCapabilities::default(),
+                profile: None,
+            },
+            Some(&comparison),
+            Some("visual regression failed"),
+        )
+        .unwrap();
+
+        let value: serde_json::Value = serde_json::from_slice(
+            &fs::read(output_directory.path().join(PREVIEW_REPORT_FILE)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(value["status"], "failed");
+        assert_eq!(value["comparison"]["passed"], false);
+        assert_eq!(value["comparison"]["summary"]["failed_frames"], 1);
+        assert_eq!(value["comparison"]["summary"]["worst_frame_index"], 0);
+        assert_eq!(value["comparison"]["frames"][0]["simulation_frame"], 30);
+        assert_eq!(
+            value["comparison"]["frames"][0]["difference_image"],
+            "diff-000.png"
+        );
     }
 }

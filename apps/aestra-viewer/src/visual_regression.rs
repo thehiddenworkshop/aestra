@@ -1,20 +1,24 @@
 use image::{Rgba, RgbaImage, imageops};
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-const ANALYSIS_SCALE: u32 = 4;
+pub(crate) const ANALYSIS_SCALE: u32 = 4;
 const FOREGROUND_THRESHOLD: f32 = 4.0;
-const MAX_FOREGROUND_RMSE: f32 = 0.15;
-const MAX_DIFFERING_FRACTION: f32 = 0.55;
-const MIN_COVERAGE_RATIO: f32 = 0.55;
-const MAX_COVERAGE_RATIO: f32 = 1.80;
-const MAX_CENTROID_DRIFT: f32 = 24.0;
+pub(crate) const MAX_FOREGROUND_RMSE: f32 = 0.15;
+pub(crate) const MAX_DIFFERING_FRACTION: f32 = 0.55;
+pub(crate) const MIN_COVERAGE_RATIO: f32 = 0.55;
+pub(crate) const MAX_COVERAGE_RATIO: f32 = 1.80;
+pub(crate) const MAX_CENTROID_DRIFT: f32 = 24.0;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ComparisonReport {
+    pub(crate) reference_directory: PathBuf,
     pub(crate) frames: Vec<FrameMetrics>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct FrameMetrics {
     pub(crate) index: usize,
     pub(crate) foreground_rmse: f32,
@@ -47,21 +51,46 @@ pub(crate) fn compare_capture(
         frames.push(metrics);
     }
 
-    let report = ComparisonReport { frames };
+    let report = ComparisonReport {
+        reference_directory: reference_directory.to_path_buf(),
+        frames,
+    };
     let report_path = actual_directory.join("regression-report.md");
     fs::write(&report_path, report.to_markdown())
         .map_err(|error| format!("could not write {}: {error}", report_path.display()))?;
-    let failures = report.frames.iter().filter(|frame| !frame.passed).count();
-    if failures > 0 {
-        return Err(format!(
-            "visual regression failed for {failures}/{frame_count} frames; see {}",
-            report_path.display()
-        ));
-    }
     Ok(report)
 }
 
 impl ComparisonReport {
+    pub(crate) fn passed(&self) -> bool {
+        self.frames.iter().all(|frame| frame.passed)
+    }
+
+    pub(crate) fn failed_frame_count(&self) -> usize {
+        self.frames.iter().filter(|frame| !frame.passed).count()
+    }
+
+    pub(crate) fn failure_message(&self, output_directory: &Path) -> Option<String> {
+        let failures = self.failed_frame_count();
+        (failures > 0).then(|| {
+            format!(
+                "visual regression failed for {failures}/{} frames; see {}",
+                self.frames.len(),
+                output_directory.join("regression-report.md").display()
+            )
+        })
+    }
+
+    pub(crate) fn worst_frame(&self) -> Option<&FrameMetrics> {
+        self.frames.iter().reduce(|worst, candidate| {
+            if comparison_severity(candidate) > comparison_severity(worst) {
+                candidate
+            } else {
+                worst
+            }
+        })
+    }
+
     fn to_markdown(&self) -> String {
         let mut output = format!(
             "# Aestra visual regression\n\n- Result: **{}**\n- Analysis: {}x downsampled foreground comparison\n- Limits: RMSE <= {:.2}, differing fraction <= {:.2}, coverage {:.2}..={:.2}, centroid drift <= {:.1}px\n\n| Frame | Result | RMSE | Differing | Coverage | Centroid drift | Diff |\n| ---: | :---: | ---: | ---: | ---: | ---: | :--- |\n",
@@ -91,6 +120,22 @@ impl ComparisonReport {
         }
         output
     }
+}
+
+fn comparison_severity(frame: &FrameMetrics) -> f32 {
+    let coverage_severity = if frame.coverage_ratio < MIN_COVERAGE_RATIO {
+        MIN_COVERAGE_RATIO / frame.coverage_ratio.max(f32::EPSILON)
+    } else {
+        frame.coverage_ratio / MAX_COVERAGE_RATIO
+    };
+    [
+        frame.foreground_rmse / MAX_FOREGROUND_RMSE,
+        frame.differing_fraction / MAX_DIFFERING_FRACTION,
+        coverage_severity,
+        frame.centroid_drift / MAX_CENTROID_DRIFT,
+    ]
+    .into_iter()
+    .fold(0.0, f32::max)
 }
 
 fn compare_images(
@@ -278,5 +323,31 @@ mod tests {
             pixel[0] = pixel[0].saturating_add(3);
         }
         assert!(compare_images(0, &reference, &actual).unwrap().passed);
+    }
+
+    #[test]
+    fn failed_capture_comparison_still_returns_metrics_and_writes_the_human_report() {
+        let reference_directory = tempfile::tempdir().unwrap();
+        let actual_directory = tempfile::tempdir().unwrap();
+        sample_effect()
+            .save(reference_directory.path().join("frame-000.png"))
+            .unwrap();
+        RgbaImage::from_pixel(64, 64, Rgba([3, 4, 9, 255]))
+            .save(actual_directory.path().join("frame-000.png"))
+            .unwrap();
+
+        let report =
+            compare_capture(reference_directory.path(), actual_directory.path(), 1).unwrap();
+
+        assert!(!report.passed());
+        assert_eq!(report.failed_frame_count(), 1);
+        assert_eq!(report.worst_frame().unwrap().index, 0);
+        assert!(actual_directory.path().join("diff-000.png").is_file());
+        assert!(
+            actual_directory
+                .path()
+                .join("regression-report.md")
+                .is_file()
+        );
     }
 }

@@ -278,6 +278,8 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
 - Produces individual PNGs, a contact sheet, and a capture manifest for visual or AI review.
 - Accepts explicit frame/time samples and emits a versioned JSON report containing compiler
   diagnostics, material fingerprints, backend decisions, and metrics for automated review loops.
+- Preserves visual-comparison thresholds, per-frame deltas, worst-frame summaries, and diff paths
+  in that report on both passing and rejected candidates.
 - Runs deterministic, effect-only GPU regression captures against approved references,
   with tolerant foreground metrics and amplified difference images.
 - Shares runtime behavior with games by using `AestraPlugin` directly.
