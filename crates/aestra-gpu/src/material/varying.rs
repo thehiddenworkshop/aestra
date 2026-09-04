@@ -1,10 +1,14 @@
 //! One deterministic interface used by both stages of a semantic sprite pipeline.
 
 use aestra_compiler::{MaterialIrInstruction, MaterialIrProgram};
-use aestra_core::material::MaterialInput;
+use aestra_core::material::{MaterialDomain, MaterialInput};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaterialVarying {
+    Normal,
+    WorldPosition,
+    LocalPosition,
+    ViewDirection,
     QuadPosition,
     Softness,
     Textured,
@@ -20,6 +24,10 @@ impl MaterialVarying {
     // Name, WGSL type, interpolation attribute, shared vertex-data expression.
     fn fields(self) -> (&'static str, &'static str, &'static str, &'static str) {
         match self {
+            Self::Normal => ("normal", "vec3<f32>", "", "mesh.normal"),
+            Self::WorldPosition => ("world_position", "vec3<f32>", "", "mesh.world_position"),
+            Self::LocalPosition => ("local_position", "vec3<f32>", "", "mesh.local_position"),
+            Self::ViewDirection => ("view_direction", "vec3<f32>", "", "mesh.view_direction"),
             Self::QuadPosition => ("quad_position", "vec2<f32>", "", "sprite.quad_position"),
             Self::Softness => ("softness", "f32", "", "sprite.softness"),
             Self::Textured => ("textured", "u32", "@interpolate(flat) ", "sprite.textured"),
@@ -41,6 +49,7 @@ impl MaterialVarying {
         match self {
             Self::QuadPosition | Self::Uv0 => 2,
             Self::ParticleColor => 4,
+            Self::Normal | Self::WorldPosition | Self::LocalPosition | Self::ViewDirection => 3,
             _ => 1,
         }
     }
@@ -54,6 +63,7 @@ pub struct MaterialVaryingSlot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MaterialVaryingLayout {
+    pub domain: MaterialDomain,
     pub slots: Vec<MaterialVaryingSlot>,
 }
 
@@ -71,6 +81,19 @@ impl MaterialVaryingLayout {
             MaterialVarying::Textured,
             MaterialVarying::Visible,
         ];
+        if ir.domain == MaterialDomain::Mesh {
+            varyings = vec![MaterialVarying::Visible];
+            for (input, varying) in [
+                (MaterialInput::Normal, MaterialVarying::Normal),
+                (MaterialInput::WorldPosition, MaterialVarying::WorldPosition),
+                (MaterialInput::LocalPosition, MaterialVarying::LocalPosition),
+                (MaterialInput::ViewDirection, MaterialVarying::ViewDirection),
+            ] {
+                if reads(input) {
+                    varyings.push(varying);
+                }
+            }
+        }
         for (input, varying) in [
             (MaterialInput::Uv0, MaterialVarying::Uv0),
             (MaterialInput::ParticleColor, MaterialVarying::ParticleColor),
@@ -91,6 +114,7 @@ impl MaterialVaryingLayout {
             }
         }
         Self {
+            domain: ir.domain,
             slots: varyings
                 .into_iter()
                 .enumerate()
@@ -130,11 +154,25 @@ impl MaterialVaryingLayout {
 
     pub(super) fn vertex_wesl(&self) -> String {
         let mut source = String::from(crate::shader::SPRITE_VERTEX_WESL);
+        if self.domain == MaterialDomain::Mesh {
+            source = source.replace(
+                "alive_offset: u32,\n    _padding: vec2<u32>,",
+                "alive_offset: u32,\n    _padding: vec2<u32>,\n    mesh_from_local: mat4x4<f32>,",
+            );
+            source.push_str(include_str!("../shaders/aestra_mesh_vertex.wesl"));
+        }
         source.push_str(
             "\nstruct MaterialVertexOutput {\n    @builtin(position) clip_position: vec4<f32>,\n",
         );
         source.push_str(&self.declarations());
         source.push_str("}\n\n@vertex\nfn vertex(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> MaterialVertexOutput {\n    let sprite = aestra_sprite_vertex(vertex_index, instance_index);\n    var output: MaterialVertexOutput;\n    output.clip_position = sprite.clip_position;\n");
+        if self.domain == MaterialDomain::Mesh {
+            source = source.replace(
+                "@builtin(vertex_index) vertex_index: u32, @builtin(instance_index)",
+                "vertex_input: MeshVertexInput, @builtin(instance_index)",
+            );
+            source = source.replace("let sprite = aestra_sprite_vertex(vertex_index, instance_index);", "let mesh = aestra_mesh_vertex(vertex_input, instance_index);\n    let sprite = mesh.particle;");
+        }
         for slot in &self.slots {
             let (name, _, _, expression) = slot.varying.fields();
             source.push_str(&format!("    output.{name} = {expression};\n"));

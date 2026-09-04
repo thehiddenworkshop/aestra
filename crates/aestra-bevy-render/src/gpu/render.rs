@@ -19,10 +19,12 @@ use bevy::{
         system::{SystemParamItem, lifetimeless::*},
     },
     math::FloatOrd,
+    mesh::MeshVertexBufferLayoutRef,
     pbr::{MeshPipeline, MeshPipelineKey, MeshPipelineSystems, SetMeshViewBindGroup, ViewKeyCache},
     prelude::*,
     render::{
         Render, RenderStartup, RenderSystems,
+        mesh::{RenderMesh, RenderMeshBufferInfo, allocator::MeshAllocator},
         render_asset::RenderAssets,
         render_phase::{
             AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
@@ -31,8 +33,8 @@ use bevy::{
         render_resource::{
             BindGroup, BindGroupEntries, BindGroupEntry, BindGroupLayoutDescriptor,
             BindGroupLayoutEntries, BindingResource, BlendComponent, BlendFactor, BlendOperation,
-            BlendState, BufferInitDescriptor, BufferUsages, ColorTargetState, ColorWrites,
-            CompareFunction, DepthBiasState, DepthStencilState, Face, FragmentState,
+            BlendState, Buffer, BufferInitDescriptor, BufferUsages, ColorTargetState, ColorWrites,
+            CompareFunction, DepthBiasState, DepthStencilState, Face, FragmentState, IndexFormat,
             MultisampleState, PipelineCache, PrimitiveState, PrimitiveTopology,
             RenderPipelineDescriptor, Sampler, SamplerBindingType, ShaderStages, ShaderType,
             SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState,
@@ -43,7 +45,7 @@ use bevy::{
             },
             encase::UniformBuffer,
         },
-        renderer::RenderDevice,
+        renderer::{RenderDevice, RenderQueue},
         storage::GpuShaderBuffer,
         sync_world::MainEntity,
         texture::GpuImage,
@@ -63,6 +65,12 @@ pub(super) fn install(render_app: &mut SubApp) {
         .add_render_command::<Transparent3d, DrawSemanticDepthGpuSprites3d>()
         .init_resource::<SpecializedRenderPipelines<GpuSpritePipeline>>()
         .add_systems(
+            Render,
+            prepare_mesh_draws
+                .after(RenderSystems::PrepareMeshes)
+                .before(RenderSystems::Queue),
+        )
+        .add_systems(
             RenderStartup,
             init_render_pipeline
                 .after(init_mesh_2d_pipeline)
@@ -81,6 +89,7 @@ pub(super) fn install(render_app: &mut SubApp) {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct GpuSpritePipelineKey {
+    mesh_layout: Option<MeshVertexBufferLayoutRef>,
     view: GpuSpriteViewKey,
     blend: GpuBlend,
     render_mode: GpuRenderMode,
@@ -273,7 +282,21 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 // Semantic modules contain both stages with one matching varying layout.
                 shader: fragment_shader.clone(),
                 entry_point: Some("vertex".into()),
-                buffers: Vec::new(),
+                buffers: key
+                    .mesh_layout
+                    .as_ref()
+                    .map(|layout| {
+                        layout
+                            .0
+                            .get_layout(&[
+                                Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+                                Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
+                                Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
+                            ])
+                            .expect("mesh attributes validated before queueing")
+                    })
+                    .into_iter()
+                    .collect(),
                 ..default()
             },
             fragment: Some(FragmentState {
@@ -323,6 +346,94 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             },
             ..default()
         }
+    }
+}
+
+/// Renderer-local geometry command; only its instance count comes from simulation.
+#[derive(Component)]
+pub(super) struct PreparedMeshDraw {
+    pub(super) indirect: Buffer,
+    vertex: Buffer,
+    index: Option<(Buffer, IndexFormat)>,
+    layout: MeshVertexBufferLayoutRef,
+}
+
+fn prepare_mesh_draws(
+    mut commands: Commands,
+    device: Res<RenderDevice>,
+    queue: Res<RenderQueue>,
+    meshes: Res<RenderAssets<RenderMesh>>,
+    allocator: Res<MeshAllocator>,
+    draws: Query<(Entity, &GpuDrawInstance, Option<&PreparedMeshDraw>)>,
+) {
+    for (entity, draw, previous) in &draws {
+        let Some(handle) = &draw.mesh else {
+            continue;
+        };
+        let Some(mesh) = meshes.get(handle) else {
+            commands.entity(entity).remove::<PreparedMeshDraw>();
+            continue;
+        };
+        if mesh.primitive_topology() != PrimitiveTopology::TriangleList
+            || mesh
+                .layout
+                .0
+                .get_layout(&[
+                    Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+                    Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
+                    Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
+                ])
+                .is_err()
+        {
+            bevy::log::warn_once!(
+                "Aestra mesh particles require TriangleList geometry with position, normal and UV0 attributes"
+            );
+            commands.entity(entity).remove::<PreparedMeshDraw>();
+            continue;
+        }
+        let Some(vertices) = allocator.mesh_vertex_slice(&handle.id()) else {
+            commands.entity(entity).remove::<PreparedMeshDraw>();
+            continue;
+        };
+        let (words, index) = match mesh.buffer_info {
+            RenderMeshBufferInfo::Indexed {
+                count,
+                index_format,
+            } => {
+                let Some(indices) = allocator.mesh_index_slice(&handle.id()) else {
+                    commands.entity(entity).remove::<PreparedMeshDraw>();
+                    continue;
+                };
+                (
+                    [count, 0, indices.range.start, vertices.range.start, 0],
+                    Some((indices.buffer.clone(), index_format)),
+                )
+            }
+            RenderMeshBufferInfo::NonIndexed => (
+                [vertices.range.len() as u32, 0, vertices.range.start, 0, 0],
+                None,
+            ),
+        };
+        let bytes = words
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<_>>();
+        let indirect = if let Some(previous) = previous {
+            queue.write_buffer(&previous.indirect, 0, &bytes);
+            previous.indirect.clone()
+        } else {
+            device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("aestra mesh indirect"),
+                contents: &bytes,
+                usage: BufferUsages::INDIRECT | BufferUsages::COPY_DST,
+            })
+        };
+        commands.entity(entity).insert(PreparedMeshDraw {
+            indirect,
+            vertex: vertices.buffer.clone(),
+            index,
+            layout: mesh.layout.clone(),
+        });
     }
 }
 
@@ -504,7 +615,7 @@ fn queue_gpu_sprites(
     pipeline: Res<GpuSpritePipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<GpuSpritePipeline>>,
     pipeline_cache: Res<PipelineCache>,
-    effects: Query<&GpuDrawInstance>,
+    effects: Query<(&GpuDrawInstance, Option<&PreparedMeshDraw>)>,
     mut phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
     views: Query<(&RenderVisibleEntities, &ExtractedView, &Msaa)>,
 ) {
@@ -522,9 +633,16 @@ fn queue_gpu_sprites(
         let mesh_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples())
             | Mesh2dPipelineKey::from_target_format(view.target_format);
         for (render_entity, main_entity) in visible_entities.iter_visible() {
-            let Ok(effect) = effects.get(*render_entity) else {
+            let Ok((effect, mesh)) = effects.get(*render_entity) else {
                 continue;
             };
+            if effect.mesh.is_some()
+                && (mesh.is_none()
+                    || effect.semantic_material.is_none()
+                    || effect.render_mode != GpuRenderMode::Rendered)
+            {
+                continue;
+            }
             let material = semantic_pipeline_key(
                 effect.semantic_material.as_ref(),
                 view.target_format,
@@ -544,6 +662,7 @@ fn queue_gpu_sprites(
                 &pipeline_cache,
                 &pipeline,
                 GpuSpritePipelineKey {
+                    mesh_layout: mesh.map(|mesh| mesh.layout.clone()),
                     view: GpuSpriteViewKey::TwoD(mesh_key),
                     blend: effect.blend,
                     render_mode: effect.render_mode,
@@ -564,7 +683,7 @@ fn queue_gpu_sprites(
                 batch_range: 0..1,
                 extracted_index: usize::MAX,
                 extra_index: PhaseItemExtraIndex::None,
-                indexed: false,
+                indexed: mesh.is_some_and(|mesh| mesh.index.is_some()),
             });
         }
     }
@@ -578,7 +697,7 @@ fn queue_gpu_sprites_3d(
         Res<PipelineCache>,
         Res<ViewKeyCache>,
     ),
-    effects: Query<&GpuDrawInstance>,
+    effects: Query<(&GpuDrawInstance, Option<&PreparedMeshDraw>)>,
     mut phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
     views: Query<(&RenderVisibleEntities, &ExtractedView)>,
 ) {
@@ -595,9 +714,16 @@ fn queue_gpu_sprites_3d(
             continue;
         };
         for (render_entity, main_entity) in visible_gpu_draws(visible_entities) {
-            let Ok(effect) = effects.get(render_entity) else {
+            let Ok((effect, mesh)) = effects.get(render_entity) else {
                 continue;
             };
+            if effect.mesh.is_some()
+                && (mesh.is_none()
+                    || effect.semantic_material.is_none()
+                    || effect.render_mode != GpuRenderMode::Rendered)
+            {
+                continue;
+            }
             let material = semantic_pipeline_key(
                 effect.semantic_material.as_ref(),
                 view.target_format,
@@ -611,6 +737,7 @@ fn queue_gpu_sprites_3d(
                 &pipeline_cache,
                 &pipeline,
                 GpuSpritePipelineKey {
+                    mesh_layout: mesh.map(|mesh| mesh.layout.clone()),
                     view: GpuSpriteViewKey::ThreeD(mesh_key),
                     blend: effect.blend,
                     render_mode: effect.render_mode,
@@ -635,7 +762,7 @@ fn queue_gpu_sprites_3d(
                 distance: 0.0,
                 batch_range: 0..1,
                 extra_index: PhaseItemExtraIndex::None,
-                indexed: false,
+                indexed: mesh.is_some_and(|mesh| mesh.index.is_some()),
             });
         }
     }
@@ -805,7 +932,7 @@ struct DrawGpuSpritesIndirect;
 impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
     type Param = SRes<RenderAssets<GpuShaderBuffer>>;
     type ViewQuery = ();
-    type ItemQuery = Read<GpuDrawInstance>;
+    type ItemQuery = (Read<GpuDrawInstance>, Option<Read<PreparedMeshDraw>>);
 
     fn render<'w>(
         _item: &P,
@@ -814,9 +941,22 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         buffers: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let Some(effect) = effect else {
+        let Some((effect, mesh)) = effect else {
             return RenderCommandResult::Skip;
         };
+        if let Some(mesh) = mesh {
+            pass.set_vertex_buffer(0, mesh.vertex.slice(..));
+            if let Some((index, format)) = &mesh.index {
+                pass.set_index_buffer(index.slice(..), *format);
+                pass.draw_indexed_indirect(&mesh.indirect, 0);
+            } else {
+                pass.draw_indirect(&mesh.indirect, 0);
+            }
+            return RenderCommandResult::Success;
+        }
+        if effect.mesh.is_some() {
+            return RenderCommandResult::Skip;
+        }
         let Some(indirect) = buffers.into_inner().get(&effect.indirect) else {
             return RenderCommandResult::Skip;
         };

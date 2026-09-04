@@ -134,6 +134,10 @@ pub(crate) fn present_cpu_effects(
                 continue;
             };
             let (texture, uv) = match &renderer.kind {
+                RendererPlanKind::Mesh { .. } => {
+                    *visibility = Visibility::Hidden;
+                    continue;
+                }
                 RendererPlanKind::Sprite => (material.texture, material.uv),
                 RendererPlanKind::Flipbook {
                     flipbook,

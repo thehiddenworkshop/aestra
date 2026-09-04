@@ -460,6 +460,9 @@ pub struct RendererPlan {
 #[derive(Debug, Clone, PartialEq)]
 pub enum RendererPlanKind {
     Sprite,
+    Mesh {
+        asset: AssetId,
+    },
     Flipbook {
         flipbook: AssetId,
         time_source: FlipbookTimeSource,

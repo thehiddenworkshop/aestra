@@ -1,0 +1,20 @@
+(
+    id: "a3574a00-0000-4000-8000-00000000a201",
+    schema_version: 1,
+    name: "Mesh Material Lab",
+    domain: Mesh,
+    render_state_policy: (
+        default: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: Back),
+        allowed: [(blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: Back)],
+    ),
+    parameters: [],
+    expressions: [
+        (id: "a3574a00-0000-4000-8000-00000000a221", kind: Input(Normal)),
+        (id: "a3574a00-0000-4000-8000-00000000a222", kind: Constant(Vec3((0.5, 0.5, 0.5)))),
+        (id: "a3574a00-0000-4000-8000-00000000a223", kind: Multiply("a3574a00-0000-4000-8000-00000000a221", "a3574a00-0000-4000-8000-00000000a222")),
+        (id: "a3574a00-0000-4000-8000-00000000a224", kind: Add("a3574a00-0000-4000-8000-00000000a223", "a3574a00-0000-4000-8000-00000000a222")),
+        (id: "a3574a00-0000-4000-8000-00000000a227", kind: Input(ParticleOpacity)),
+    ],
+    inline_constants: ["a3574a00-0000-4000-8000-00000000a222"],
+    outputs: (color: "a3574a00-0000-4000-8000-00000000a224", alpha: "a3574a00-0000-4000-8000-00000000a227"),
+)

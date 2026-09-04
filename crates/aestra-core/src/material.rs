@@ -3476,7 +3476,10 @@ fn validate_material_output_type(
 }
 
 fn validate_material_domain(program: &MaterialProgram, report: &mut ValidationReport) {
-    if program.domain != MaterialDomain::Sprite {
+    if !matches!(
+        program.domain,
+        MaterialDomain::Sprite | MaterialDomain::Mesh
+    ) {
         error(
             report,
             DiagnosticCode::UnsupportedMaterialDomain,

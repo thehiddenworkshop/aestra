@@ -2553,6 +2553,16 @@ Generated materials have performance reasonably comparable to hand-authored equi
 
 Extend the architecture beyond sprites.
 
+First implemented slice: Mesh-domain unlit Color/Alpha materials on native GPU particle meshes.
+The runtime carries a Mesh asset reference; the Bevy renderer loads indexed or non-indexed glTF
+TriangleList geometry with position, normal and UV0 attributes. The shared compiler supplies real
+UV0, Normal, LocalPosition (the existing semantic vertex position), WorldPosition and ViewDirection
+inputs. Normals use an inverse-transpose-equivalent transform, including nonuniform and mirrored
+scale. Per-renderer indirect commands copy alive counts from simulation without CPU readback.
+Mesh Material Lab exercises this path. Mesh bounds are conservatively uncullable until a follow-up
+combines geometry bounds with particle bounds. CPU/readback mesh presentation, mesh wireframe,
+vertex deformation, tangents, UV1, ribbons and PBR are not included in this first slice.
+
 ### Add inputs
 
 ```text

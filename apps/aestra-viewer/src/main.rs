@@ -531,13 +531,20 @@ fn prepare_viewer(config: &ViewerConfig) -> Result<PreparedViewer, PreparationFa
             message: format!("could not load viewer effect: {error}"),
             diagnostics: Vec::new(),
         })?;
+    let material_programs = load_viewer_material_programs(&effect, config.effect_path.as_deref())
+        .map_err(|message| PreparationFailure {
+        message,
+        diagnostics: Vec::new(),
+    })?;
     let material_programs = if config.semantic_materials {
-        migrate_viewer_materials(&mut effect).map_err(|error| PreparationFailure {
-            message: format!("could not migrate viewer materials: {error}"),
-            diagnostics: Vec::new(),
+        migrate_viewer_materials(&mut effect, material_programs).map_err(|error| {
+            PreparationFailure {
+                message: format!("could not migrate viewer materials: {error}"),
+                diagnostics: Vec::new(),
+            }
         })?
     } else {
-        Vec::new()
+        material_programs
     };
     let mut diagnostics = effect.validation_report().diagnostics;
     diagnostics.extend(
@@ -669,8 +676,40 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<Prepar
     ));
 }
 
-fn migrate_viewer_materials(effect: &mut EffectAsset) -> Result<Vec<MaterialProgram>, String> {
-    let mut document = MaterialAuthoringDocument::new(effect.clone(), Vec::new());
+fn load_viewer_material_programs(
+    effect: &EffectAsset,
+    path: Option<&std::path::Path>,
+) -> Result<Vec<MaterialProgram>, String> {
+    if effect.material_instances.is_empty() {
+        return Ok(Vec::new());
+    }
+    let default_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let parent = path
+        .and_then(std::path::Path::parent)
+        .unwrap_or(&default_root);
+    let root = if parent.file_name().is_some_and(|name| name == "effects") {
+        parent.parent().unwrap_or(parent)
+    } else {
+        parent
+    };
+    let index = aestra_project::ProjectAssetIndex::scan(root);
+    effect
+        .material_instances
+        .iter()
+        .map(|instance| {
+            let entry = index
+                .resolve_material_program(instance.program)
+                .map_err(|error| error.to_string())?;
+            MaterialProgram::load_ron(&entry.path).map_err(|error| error.to_string())
+        })
+        .collect()
+}
+
+fn migrate_viewer_materials(
+    effect: &mut EffectAsset,
+    programs: Vec<MaterialProgram>,
+) -> Result<Vec<MaterialProgram>, String> {
+    let mut document = MaterialAuthoringDocument::new(effect.clone(), programs);
     migrate_legacy_sprite_materials(&mut document).map_err(|error| error.to_string())?;
     *effect = document.effect;
     Ok(document.programs)
@@ -1159,10 +1198,35 @@ mod tests {
     }
 
     #[test]
+    fn viewer_resolves_existing_mesh_materials_before_legacy_migration() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/effects/mesh_material_lab.aestra.ron");
+        let mut effect = EffectAsset::load_ron(&path).unwrap();
+        let programs = load_viewer_material_programs(&effect, Some(&path)).unwrap();
+        assert_eq!(programs.len(), 1);
+        let programs = migrate_viewer_materials(&mut effect, programs).unwrap();
+        let compiled = EffectCompiler::default()
+            .compile_with_material_programs(
+                &effect,
+                &programs
+                    .into_iter()
+                    .map(|program| (program.id, program))
+                    .collect(),
+            )
+            .unwrap();
+        assert!(
+            compiled
+                .requirements
+                .renderers
+                .contains(&aestra_bevy::RendererCapability::MeshParticles)
+        );
+    }
+
+    #[test]
     fn semantic_viewer_mode_builds_live_bindings_without_rewriting_the_source() {
         let original = EffectAsset::from_ron(SAMPLE_SOURCE).unwrap();
         let mut migrated = original.clone();
-        let programs = migrate_viewer_materials(&mut migrated).unwrap();
+        let programs = migrate_viewer_materials(&mut migrated, Vec::new()).unwrap();
         let programs = programs
             .into_iter()
             .map(|program| (program.id, program))

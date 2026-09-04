@@ -43,6 +43,34 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
     ] {
         assert_pipeline(&device, &legacy.wgsl, fragment, 1);
     }
+    let mut mesh_program = MaterialProgram::from_ron(include_str!(
+        "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    // Exercise geometry position, normal, UV and view direction interfaces in native pipelines.
+    for input in [
+        MaterialInput::Normal,
+        MaterialInput::LocalPosition,
+        MaterialInput::WorldPosition,
+        MaterialInput::ViewDirection,
+    ] {
+        mesh_program
+            .expressions
+            .iter_mut()
+            .find(|expression| expression.id == mesh_program.outputs.color)
+            .unwrap()
+            .kind = MaterialExpressionKind::Input(input);
+        let ir = MaterialCompiler.compile(&mesh_program).unwrap();
+        let compiled = MaterialShaderCompiler
+            .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+            .unwrap();
+        assert_pipeline(
+            &device,
+            &compiled.shader.wgsl,
+            MATERIAL_FRAGMENT_ENTRY_POINT,
+            1,
+        );
+    }
     for input in [
         None,
         Some(MaterialInput::ParticleOpacity),
@@ -91,6 +119,12 @@ fn assert_pipeline(device: &wgpu::Device, wgsl: &str, fragment: &str, samples: u
         label: Some("Aestra sprite stage-link contract"),
         source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(wgsl)),
     });
+    let mesh_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+    let mesh_layout = [wgpu::VertexBufferLayout {
+        array_stride: 32,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &mesh_attributes,
+    }];
     let _pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(fragment),
         layout: None,
@@ -98,7 +132,11 @@ fn assert_pipeline(device: &wgpu::Device, wgsl: &str, fragment: &str, samples: u
             module: &shader,
             entry_point: Some("vertex"),
             compilation_options: Default::default(),
-            buffers: &[],
+            buffers: if wgsl.contains("struct MeshVertexInput") {
+                &mesh_layout
+            } else {
+                &[]
+            },
         },
         primitive: Default::default(),
         depth_stencil: None,

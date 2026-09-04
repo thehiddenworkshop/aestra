@@ -276,6 +276,9 @@ struct RendererPlanV1 {
 #[derive(Debug, Serialize, Deserialize)]
 enum RendererPlanKindV1 {
     Sprite,
+    Mesh {
+        asset: AssetId,
+    },
     Flipbook {
         flipbook: AssetId,
         time_source: FlipbookTimeSource,
@@ -356,7 +359,10 @@ struct RequirementsV1 {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+// Names are part of the serialized artifact contract.
+#[allow(clippy::enum_variant_names)]
 enum RendererCapabilityV1 {
+    MeshParticles,
     SpriteParticles,
     FlipbookParticles,
 }
@@ -1393,6 +1399,7 @@ impl From<&RendererPlan> for RendererPlanV1 {
             material: renderer.material,
             kind: match renderer.kind {
                 RendererPlanKind::Sprite => RendererPlanKindV1::Sprite,
+                RendererPlanKind::Mesh { asset } => RendererPlanKindV1::Mesh { asset },
                 RendererPlanKind::Flipbook {
                     flipbook,
                     time_source,
@@ -1416,6 +1423,7 @@ impl From<RendererPlanV1> for RendererPlan {
             material: renderer.material,
             kind: match renderer.kind {
                 RendererPlanKindV1::Sprite => RendererPlanKind::Sprite,
+                RendererPlanKindV1::Mesh { asset } => RendererPlanKind::Mesh { asset },
                 RendererPlanKindV1::Flipbook {
                     flipbook,
                     time_source,
@@ -1693,6 +1701,7 @@ impl RequirementsV1 {
 impl From<RendererCapability> for RendererCapabilityV1 {
     fn from(capability: RendererCapability) -> Self {
         match capability {
+            RendererCapability::MeshParticles => Self::MeshParticles,
             RendererCapability::SpriteParticles => Self::SpriteParticles,
             RendererCapability::FlipbookParticles => Self::FlipbookParticles,
         }
@@ -1702,6 +1711,7 @@ impl From<RendererCapability> for RendererCapabilityV1 {
 impl From<RendererCapabilityV1> for RendererCapability {
     fn from(capability: RendererCapabilityV1) -> Self {
         match capability {
+            RendererCapabilityV1::MeshParticles => Self::MeshParticles,
             RendererCapabilityV1::SpriteParticles => Self::SpriteParticles,
             RendererCapabilityV1::FlipbookParticles => Self::FlipbookParticles,
         }

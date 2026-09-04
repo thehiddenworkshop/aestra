@@ -5,11 +5,13 @@ use std::{collections::BTreeSet, fmt};
 pub enum RendererCapability {
     SpriteParticles,
     FlipbookParticles,
+    MeshParticles,
 }
 
 impl fmt::Display for RendererCapability {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::MeshParticles => "mesh particles",
             Self::SpriteParticles => "sprite particles",
             Self::FlipbookParticles => "flipbook particles",
         })
@@ -134,6 +136,17 @@ impl EffectRequirements {
         capabilities: &BackendCapabilities,
         target: CompatibilityTarget,
     ) -> CompatibilityReport {
+        if target != CompatibilityTarget::NativeGpu
+            && self.renderers.contains(&RendererCapability::MeshParticles)
+        {
+            return CompatibilityReport::from_issues(
+                target,
+                [CompatibilityIssue::new(
+                    CompatibilityIssueCode::RendererUnsupported,
+                    "mesh particles require native GPU presentation",
+                )],
+            );
+        }
         if target == CompatibilityTarget::CpuReference {
             return CompatibilityReport::compatible(target);
         }

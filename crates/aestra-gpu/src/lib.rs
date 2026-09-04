@@ -153,6 +153,8 @@ pub struct GpuRenderParams {
     pub renderer_index: u32,
     pub alive_offset: u32,
     pub _padding: UVec2,
+    /// Emitter rotation and relative scale; particle size already includes maximum emitter scale.
+    pub mesh_from_local: Mat4,
 }
 
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
@@ -324,6 +326,7 @@ impl GpuEffectArtifact {
                         texture,
                     ) = match &renderer.kind {
                         RendererPlanKind::Sprite => (0, 1, 0, 0, 0.0, material_texture),
+                        RendererPlanKind::Mesh { .. } => (2, 1, 0, 0, 0.0, material_texture),
                         RendererPlanKind::Flipbook {
                             flipbook,
                             time_source,

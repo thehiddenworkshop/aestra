@@ -74,6 +74,54 @@ fn assert_portable_shader_targets(wgsl: &str) {
     assert!(reflection.entry_point_names.iter().all(Result::is_ok));
 }
 
+#[test]
+fn mesh_material_inputs_use_real_geometry_and_no_billboard_coverage() {
+    use aestra_core::material::{MaterialDomain, MaterialProgram};
+    for input in [
+        MaterialInput::Normal,
+        MaterialInput::WorldPosition,
+        MaterialInput::LocalPosition,
+        MaterialInput::ViewDirection,
+    ] {
+        let mut program = MaterialProgram::additive_sprite("Mesh interface");
+        program.domain = MaterialDomain::Mesh;
+        program
+            .expressions
+            .iter_mut()
+            .find(|expression| expression.id == program.outputs.color)
+            .unwrap()
+            .kind = MaterialExpressionKind::Input(input);
+        let compiled = compile(&program);
+        assert_portable_shader_targets(&compiled.shader.wgsl);
+        assert_eq!(compiled.varying_layout.domain, MaterialDomain::Mesh);
+        assert!(
+            !compiled
+                .varying_layout
+                .slots
+                .iter()
+                .any(|slot| slot.varying == MaterialVarying::QuadPosition)
+        );
+        assert!(compiled.shader.wgsl.contains("mesh_from_local"));
+        assert!(!compiled.shader.wgsl.contains("let coverage"));
+    }
+    let mut textured = two_texture_flame_program();
+    textured.domain = MaterialDomain::Mesh;
+    let compiled = compile(&textured);
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+    assert!(
+        compiled
+            .varying_layout
+            .slots
+            .iter()
+            .any(|slot| slot.varying == MaterialVarying::Uv0)
+    );
+    let program = MaterialProgram::from_ron(include_str!(
+        "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    assert_portable_shader_targets(&compile(&program).shader.wgsl);
+}
+
 fn sampler(address_u: MaterialAddressMode) -> MaterialSamplerDescriptor {
     MaterialSamplerDescriptor {
         filter: MaterialFilterMode::Linear,
@@ -501,7 +549,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "afd5c696faf5cc0a2a56b324704c1b3c904e790205d060fa1a538a836de5bf6b"
+        "736112089e39658f463d6fe498aff44a84ed7b138db5b6c797f9d3b670e253a6"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,

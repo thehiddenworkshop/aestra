@@ -90,6 +90,7 @@ pub(crate) struct GpuEffectBuffers {
 #[require(Transform, Visibility, VisibilityClass)]
 #[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
 struct GpuDrawInstance {
+    mesh: Option<Handle<Mesh>>,
     renderers: Handle<ShaderBuffer>,
     particles: Handle<ShaderBuffer>,
     alive: Handle<ShaderBuffer>,
@@ -385,6 +386,7 @@ pub(crate) fn prepare_gpu_effects(
                     .ok()
                     .flatten();
                 let texture = match &plan.kind {
+                    RendererPlanKind::Mesh { .. } => None,
                     RendererPlanKind::Sprite => material.and_then(|material| material.texture),
                     RendererPlanKind::Flipbook { flipbook, .. } => player
                         .effect()
@@ -431,6 +433,19 @@ pub(crate) fn prepare_gpu_effects(
                     fallback_texture,
                     plan.material,
                     semantic_material,
+                    match plan.kind {
+                        RendererPlanKind::Mesh { asset } => player
+                            .effect()
+                            .assets
+                            .iter()
+                            .find(|entry| entry.source == asset)
+                            .map(|entry| {
+                                material_resources
+                                    .asset_server
+                                    .load::<Mesh>(entry.path.clone())
+                            }),
+                        _ => None,
+                    },
                 )
             })
             .collect::<Vec<_>>();
@@ -518,15 +533,21 @@ pub(crate) fn prepare_gpu_effects(
                         fallback_texture,
                         material,
                         semantic_material,
+                        mesh,
                     ) in renderer_draws
                     {
                         let render_params = buffers.add(ShaderBuffer::from(GpuRenderParams {
                             renderer_index,
                             alive_offset,
                             _padding: UVec2::ZERO,
+                            mesh_from_local: mesh_from_emitter(
+                                player.effect().emitters[emitter_index as usize].transform,
+                            ),
                         }));
-                        parent.spawn((
+                        let is_mesh = mesh.is_some();
+                        let mut draw = parent.spawn((
                             GpuDrawInstance {
+                                mesh,
                                 renderers: renderers.clone(),
                                 particles: particles.clone(),
                                 alive: alive.clone(),
@@ -549,6 +570,11 @@ pub(crate) fn prepare_gpu_effects(
                             Transform::default(),
                             Visibility::Inherited,
                         ));
+                        // Until asset bounds are integrated with particle bounds, never cull a mesh
+                        // using the billboard-only estimate.
+                        if is_mesh {
+                            draw.insert(bevy::camera::visibility::NoFrustumCulling);
+                        }
                     }
                 }
                 ActiveBackend::GpuReadback => {
@@ -1016,6 +1042,8 @@ fn run_simulation(
     pipeline_cache: Res<PipelineCache>,
     pipeline: Res<SimulationPipeline>,
     effects: Query<(&GpuEffectBuffers, &GpuBindGroup)>,
+    mesh_draws: Query<(&GpuDrawInstance, &render::PreparedMeshDraw)>,
+    buffers: Res<RenderAssets<GpuShaderBuffer>>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
     let (Some(reset), Some(simulate)) = (
@@ -1044,7 +1072,29 @@ fn run_simulation(
         pass.set_pipeline(simulate);
         pass.dispatch_workgroups(effect.workgroups, 1, 1);
     }
+    // Copy only instance counts after simulation; mesh commands retain their own geometry ranges.
+    // This avoids CPU readback and preserves the existing per-emitter simulation ABI.
+    for (draw, mesh) in &mesh_draws {
+        if let Some(indirect) = buffers.get(&draw.indirect) {
+            render_context.command_encoder().copy_buffer_to_buffer(
+                &indirect.buffer,
+                draw.indirect_offset + 4,
+                &mesh.indirect,
+                4,
+                4,
+            );
+        }
+    }
     gpu_span.end(render_context.command_encoder());
+}
+
+fn mesh_from_emitter(transform: aestra_core::EmitterTransform) -> Mat4 {
+    let scale = Vec3::from_array(transform.scale);
+    Mat4::from_scale_rotation_translation(
+        scale / scale.abs().max_element().max(0.000001),
+        Quat::from_array(transform.rotation),
+        Vec3::ZERO,
+    )
 }
 
 fn gpu_render_mode(mode: EffectRenderMode) -> GpuRenderMode {

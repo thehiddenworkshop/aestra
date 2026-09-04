@@ -493,6 +493,15 @@ the current sprite-material path until the native-GPU compatibility gate approve
   conformance covers pruned fields across Once, Restart, and Continuous playback. Physical buffer
   compaction and CPU-reference execution pruning are intentionally outside this optimization.
 - [ ] **Material 20 — mesh and ribbon domains.**
+  First slice: unlit instanced native-GPU meshes. Mesh renderer plans and asset references survive
+  artifact round trips; compiler validation enforces Mesh-domain semantic materials. Indexed and
+  non-indexed TriangleList geometry uses Bevy-loaded position/normal/UV buffers; per-mesh indirect
+  commands copy simulation instance counts on the GPU. Material inputs include real UV0, normals,
+  local/world positions and view direction, without sprite coverage. The Mesh Material Lab effect
+  uses an embedded-buffer glTF cube and normal-color material. This slice requires native GPU;
+  meshes without position/normal/UV0 or triangle topology are rejected by presentation. Mesh
+  frustum culling is conservatively disabled pending geometry-aware particle bounds. Mesh wireframe,
+  vertex deformation, tangent/UV1 inputs, ribbons/trails and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

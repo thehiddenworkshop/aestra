@@ -26,7 +26,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 3;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 17;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 18;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
@@ -552,7 +552,12 @@ fn build_reflection(
                 | MaterialInput::EffectTime
                 | MaterialInput::SceneDepth
                 | MaterialInput::PixelDepth
-        ) {
+        ) && !(ir.domain == MaterialDomain::Mesh
+            && matches!(
+                input,
+                MaterialInput::WorldPosition | MaterialInput::LocalPosition
+            ))
+        {
             let expressions = ir
                 .values
                 .iter()
@@ -747,6 +752,10 @@ fn generate_wesl(
         value_name(ir.outputs.alpha)
     ));
     source.push_str("}\n\n");
+    if ir.domain == MaterialDomain::Mesh {
+        source.push_str(&format!("@fragment\nfn {MATERIAL_FRAGMENT_ENTRY_POINT}(input: MaterialFragmentInput) -> @location(0) vec4<f32> {{\n    if input.visible == 0u {{ discard; }}\n    let output = aestra_evaluate_material(input);\n    return vec4<f32>(output.rgb, clamp(output.a, 0.0, 1.0));\n}}\n"));
+        return Ok((source, lines));
+    }
     source.push_str(&format!(
         "@fragment\nfn {MATERIAL_FRAGMENT_ENTRY_POINT}(input: MaterialFragmentInput) -> @location(0) vec4<f32> {{\n    if input.visible == 0u {{\n        discard;\n    }}\n    let output = aestra_evaluate_material(input);\n    let feather = clamp(input.softness, 0.001, 1.0);\n    let distance = select(length(input.quad_position), max(abs(input.quad_position.x), abs(input.quad_position.y)), input.textured != 0u);\n    let coverage = 1.0 - smoothstep(1.0 - feather, 1.0, distance);\n    return vec4<f32>(output.rgb, clamp(output.a, 0.0, 1.0) * coverage);\n}}\n"
     ));
@@ -1204,6 +1213,18 @@ fn input_expression(
     varyings: &MaterialVaryingLayout,
 ) -> Option<&'static str> {
     match input {
+        MaterialInput::Normal if varyings.domain == MaterialDomain::Mesh => {
+            Some("normalize(input.normal)")
+        }
+        MaterialInput::ViewDirection if varyings.domain == MaterialDomain::Mesh => {
+            Some("normalize(input.view_direction)")
+        }
+        MaterialInput::WorldPosition if varyings.domain == MaterialDomain::Mesh => {
+            Some("input.world_position")
+        }
+        MaterialInput::LocalPosition if varyings.domain == MaterialDomain::Mesh => {
+            Some("input.local_position")
+        }
         MaterialInput::Uv0 => Some("input.uv0"),
         MaterialInput::Normal => Some(
             "normalize(vec3<f32>(input.quad_position, sqrt(max(0.0, 1.0 - dot(input.quad_position, input.quad_position)))))",

@@ -248,6 +248,7 @@ version = "0.1.0"
 dependencies = [
  "aestra-authoring",
  "aestra-bevy",
+ "aestra-project",
  "bevy",
  "image",
  "serde",

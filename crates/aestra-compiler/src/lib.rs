@@ -20,7 +20,7 @@ use aestra_core::{
     ColorKey, Curve, CurveId, CurveKey, Diagnostic, DiagnosticCode, EffectAsset, EffectParameter,
     EmitterShape, Gradient, GradientId, MODULE_APPEARANCE, MODULE_EMISSION, MODULE_INITIALIZE,
     MODULE_MOTION, MODULE_SHAPE, MaterialInput, MaterialProgramId, MaterialProperties,
-    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK,
+    ModuleInstance, ModuleParameters, ModuleTypeId, ParameterId, RENDERER_FLIPBOOK, RENDERER_MESH,
     RENDERER_SPRITE, RendererProperties, ScalarRange, SpriteColorSource, StageKind,
     ValidationReport, Value,
     material::{MaterialParameterValue, MaterialProgram},
@@ -333,6 +333,55 @@ impl EffectCompiler {
             return Err(CompileError::Validation(report));
         }
 
+        for (emitter_index, emitter) in asset.emitters.iter().enumerate() {
+            for (renderer_index, renderer) in emitter
+                .renderers
+                .iter()
+                .enumerate()
+                .filter(|(_, renderer)| renderer.enabled)
+            {
+                let path = format!("effect.emitters[{emitter_index}].renderers[{renderer_index}]");
+                if let RendererProperties::Mesh { asset: mesh } = renderer.properties
+                    && !asset
+                        .assets
+                        .iter()
+                        .any(|asset| asset.id == mesh && asset.kind == aestra_core::AssetKind::Mesh)
+                {
+                    report.push(Diagnostic::error(
+                        DiagnosticCode::InvalidReference,
+                        format!("{path}.properties.asset"),
+                        "mesh renderer requires a registered Mesh asset",
+                    ));
+                }
+                if let Some(instance) = asset
+                    .material_instances
+                    .iter()
+                    .find(|instance| instance.id == renderer.material)
+                    && let Some(program) = material_programs.get(&instance.program.id())
+                {
+                    let expected = if matches!(renderer.properties, RendererProperties::Mesh { .. })
+                    {
+                        aestra_core::material::MaterialDomain::Mesh
+                    } else {
+                        aestra_core::material::MaterialDomain::Sprite
+                    };
+                    if program.domain != expected {
+                        report.push(Diagnostic::error(
+                            DiagnosticCode::UnsupportedMaterialDomain,
+                            format!("{path}.material"),
+                            format!(
+                                "renderer requires a {expected:?} material, received {:?}",
+                                program.domain
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+        if !report.is_valid() {
+            return Err(CompileError::Validation(report));
+        }
+
         let parameter_lookup = asset
             .parameters
             .iter()
@@ -513,6 +562,11 @@ impl EffectCompiler {
                             playback: *playback,
                             random_start: *random_start,
                         },
+                    },
+                    RendererProperties::Mesh { asset } => RendererPlan {
+                        source: renderer.id,
+                        material: renderer.material,
+                        kind: RendererPlanKind::Mesh { asset: *asset },
                     },
                     _ => unreachable!("compiler validation rejects unsupported renderers"),
                 })
@@ -805,6 +859,7 @@ impl EffectCompiler {
                     (&renderer.properties, renderer.renderer_type.0.as_str()),
                     (RendererProperties::Sprite, RENDERER_SPRITE)
                         | (RendererProperties::Flipbook { .. }, RENDERER_FLIPBOOK)
+                        | (RendererProperties::Mesh { .. }, RENDERER_MESH)
                 );
                 if renderer.enabled && !supported {
                     push_unique(
@@ -998,6 +1053,7 @@ fn derive_effect_requirements(emitters: &[CompiledEmitter]) -> EffectRequirement
     for renderer in enabled.flat_map(|emitter| &emitter.renderers) {
         renderers.insert(match renderer.kind {
             RendererPlanKind::Sprite => RendererCapability::SpriteParticles,
+            RendererPlanKind::Mesh { .. } => RendererCapability::MeshParticles,
             RendererPlanKind::Flipbook { .. } => RendererCapability::FlipbookParticles,
         });
     }

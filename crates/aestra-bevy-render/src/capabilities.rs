@@ -96,6 +96,7 @@ impl GpuCapabilities {
             renderers: BTreeSet::from([
                 RendererCapability::SpriteParticles,
                 RendererCapability::FlipbookParticles,
+                RendererCapability::MeshParticles,
             ]),
         }
     }

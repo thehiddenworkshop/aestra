@@ -22,6 +22,30 @@ use aestra_runtime::{
 };
 
 #[test]
+fn mesh_renderer_and_material_domain_survive_artifact_round_trip() {
+    let effect = EffectAsset::from_ron(include_str!(
+        "../../../assets/effects/mesh_material_lab.aestra.ron"
+    ))
+    .unwrap();
+    let program = MaterialProgram::from_ron(include_str!(
+        "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    let compiled = EffectCompiler::default()
+        .compile_with_material_programs(
+            &effect,
+            &std::collections::BTreeMap::from([(program.id, program)]),
+        )
+        .unwrap();
+    let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(restored, compiled);
+    assert!(matches!(
+        restored.emitters[0].renderers[0].kind,
+        RendererPlanKind::Mesh { .. }
+    ));
+}
+
+#[test]
 fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
     let mut compiled = compiled_fixture();
     compiled.optimizations.material_function_calls_authored = 9;
