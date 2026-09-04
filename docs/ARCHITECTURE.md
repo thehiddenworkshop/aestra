@@ -351,7 +351,7 @@ outdated or future format.
 - [x] typed, marker-relative choreography events with timeline and Bevy dispatch
 - [x] emitter regions with split, merge, trim, multi-selection, and source-time preservation
 - [x] Timeline automation lanes sharing curve/gradient keys with the Curves workspace
-- [x] read-only typed node-graph projection for dataflow-heavy material authoring
+- [x] editable typed material node graph with project-local editor-only layout metadata
 - [x] atomic debounced autosave and startup crash recovery
 - [x] typed, confirmed, backup-preserving asset migrations
 - [x] versioned persistent editor settings and a dockable Settings workspace

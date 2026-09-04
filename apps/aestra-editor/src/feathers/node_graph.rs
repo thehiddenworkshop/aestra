@@ -152,13 +152,13 @@ struct FeathersGraphGrid {
     viewport: Entity,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct GraphView {
     pan: Vec2,
     zoom: f32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct GraphNodeView {
     position: Vec2,
     collapsed: bool,
@@ -171,10 +171,40 @@ pub(crate) struct GraphViewportMemory {
 }
 
 impl GraphViewportMemory {
+    pub(crate) fn view(&self, graph_key: &str) -> Option<(Vec2, f32)> {
+        self.views.get(graph_key).map(|view| (view.pan, view.zoom))
+    }
+
+    pub(crate) fn set_view(&mut self, graph_key: impl Into<String>, pan: Vec2, zoom: f32) {
+        self.views.insert(graph_key.into(), GraphView { pan, zoom });
+    }
+
     pub(crate) fn node_position(&self, graph_key: &str, node_key: &str) -> Option<Vec2> {
         self.nodes
             .get(&(graph_key.to_owned(), node_key.to_owned()))
             .map(|node| node.position)
+    }
+
+    pub(crate) fn node(&self, graph_key: &str, node_key: &str) -> Option<(Vec2, bool)> {
+        self.nodes
+            .get(&(graph_key.to_owned(), node_key.to_owned()))
+            .map(|node| (node.position, node.collapsed))
+    }
+
+    pub(crate) fn set_node(
+        &mut self,
+        graph_key: impl Into<String>,
+        node_key: impl Into<String>,
+        position: Vec2,
+        collapsed: bool,
+    ) {
+        self.nodes.insert(
+            (graph_key.into(), node_key.into()),
+            GraphNodeView {
+                position,
+                collapsed,
+            },
+        );
     }
 
     pub(crate) fn place_node(
@@ -183,13 +213,7 @@ impl GraphViewportMemory {
         node_key: impl Into<String>,
         position: Vec2,
     ) {
-        self.nodes.insert(
-            (graph_key.into(), node_key.into()),
-            GraphNodeView {
-                position,
-                collapsed: false,
-            },
-        );
+        self.set_node(graph_key, node_key, position, false);
     }
 
     pub(crate) fn remove_node(&mut self, graph_key: &str, node_key: &str) {
@@ -569,13 +593,13 @@ fn remember_graph_viewports(
         if viewport.is_added() {
             continue;
         }
-        memory.views.insert(
-            viewport.key.clone(),
-            GraphView {
-                pan: viewport.pan,
-                zoom: viewport.zoom,
-            },
-        );
+        let next = GraphView {
+            pan: viewport.pan,
+            zoom: viewport.zoom,
+        };
+        if memory.views.get(&viewport.key) != Some(&next) {
+            memory.views.insert(viewport.key.clone(), next);
+        }
     }
 }
 

@@ -228,6 +228,7 @@ name = "aestra-project"
 version = "0.1.0"
 dependencies = [
  "aestra-core",
+ "ron",
  "serde",
  "tempfile",
  "thiserror 2.0.20",

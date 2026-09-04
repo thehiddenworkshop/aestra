@@ -41,6 +41,7 @@ use aestra_core::{
         MaterialVectorComponent,
     },
 };
+use aestra_project::{MaterialGraphNodeLayout, MaterialGraphViewportLayout, ProjectEditorLayout};
 use bevy::{
     asset::RenderAssetUsages,
     image::ImageSampler,
@@ -52,12 +53,18 @@ use bevy::{
     ui_widgets::Activate,
 };
 use bevy_resvg::prelude::{SvgColor, UiSvg};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 const COLUMN_WIDTH: f32 = 282.0;
 const CANVAS_PADDING: f32 = 34.0;
 const NODE_GAP: f32 = 22.0;
 const SNAP_RADIUS: f32 = 38.0;
+const MATERIAL_GRAPH_LAYOUT_SAVE_DELAY: Duration = Duration::from_millis(300);
+const MATERIAL_GRAPH_OUTPUT_NODE_KEY: &str = "output";
 
 pub(crate) struct EditorMaterialGraphPlugin;
 
@@ -67,6 +74,7 @@ impl Plugin for EditorMaterialGraphPlugin {
             .init_resource::<MaterialGraphPaletteState>()
             .init_resource::<MaterialGraphSelectionState>()
             .init_resource::<MaterialGraphPreviewState>()
+            .init_resource::<MaterialGraphLayoutPersistence>()
             .add_observer(begin_material_connection_drag)
             .add_observer(update_material_connection_drag)
             .add_observer(finish_material_connection_drag)
@@ -106,6 +114,15 @@ impl Plugin for EditorMaterialGraphPlugin {
                 )
                     .chain()
                     .after(bevy::transform::TransformSystems::Propagate),
+            )
+            .add_systems(Startup, load_material_graph_layout)
+            .add_systems(
+                Last,
+                (
+                    persist_material_graph_layout,
+                    flush_material_graph_layout_on_exit,
+                )
+                    .chain(),
             );
     }
 }
@@ -254,6 +271,233 @@ impl MaterialGraphPreviewState {
                 self.visible.remove(&key);
             }
         }
+    }
+
+    fn visible_expressions(&self, program: MaterialProgramId) -> BTreeSet<MaterialExpressionId> {
+        self.visible
+            .iter()
+            .filter_map(|(candidate, target)| {
+                (*candidate == program)
+                    .then_some(*target)
+                    .and_then(|target| match target {
+                        MaterialGraphPreviewTarget::Expression(expression) => Some(expression),
+                        MaterialGraphPreviewTarget::Output => None,
+                    })
+            })
+            .collect()
+    }
+
+    fn output_visible(&self, program: MaterialProgramId) -> bool {
+        self.is_visible(program, MaterialGraphPreviewTarget::Output)
+    }
+
+    fn restore_layout(
+        &mut self,
+        program: MaterialProgramId,
+        expressions: &BTreeSet<MaterialExpressionId>,
+        output_visible: bool,
+    ) {
+        self.visible.retain(|(candidate, _)| *candidate != program);
+        self.visible.extend(
+            expressions
+                .iter()
+                .copied()
+                .map(|expression| (program, MaterialGraphPreviewTarget::Expression(expression))),
+        );
+        if output_visible {
+            self.visible
+                .insert((program, MaterialGraphPreviewTarget::Output));
+        }
+    }
+}
+
+#[derive(Resource, Debug, Default)]
+struct MaterialGraphLayoutPersistence {
+    root: Option<PathBuf>,
+    document: ProjectEditorLayout,
+    persisted: ProjectEditorLayout,
+    changed_at: Option<Instant>,
+    last_error: Option<String>,
+}
+
+fn load_material_graph_layout(
+    catalog: Res<ProjectEffectCatalog>,
+    mut persistence: ResMut<MaterialGraphLayoutPersistence>,
+    mut graph_memory: ResMut<GraphViewportMemory>,
+    mut previews: ResMut<MaterialGraphPreviewState>,
+) {
+    let root = catalog.root().to_owned();
+    let document = match ProjectEditorLayout::load(&root) {
+        Ok(document) => document,
+        Err(error) => {
+            warn!(
+                "failed to load project material graph layout from {}: {error}",
+                root.display()
+            );
+            ProjectEditorLayout::default()
+        }
+    };
+    restore_material_graph_layouts(&document, &mut graph_memory, &mut previews);
+    persistence.root = Some(root);
+    persistence.persisted = document.clone();
+    persistence.document = document;
+    persistence.changed_at = None;
+    persistence.last_error = None;
+}
+
+fn persist_material_graph_layout(
+    session: Res<EditorSession>,
+    catalog: Res<ProjectEffectCatalog>,
+    graph_memory: Res<GraphViewportMemory>,
+    previews: Res<MaterialGraphPreviewState>,
+    mut persistence: ResMut<MaterialGraphLayoutPersistence>,
+) {
+    let Ok(programs) = catalog.material_programs_for_effect(&session.effect) else {
+        return;
+    };
+    update_material_graph_layout_document(
+        &mut persistence.document,
+        &programs,
+        &graph_memory,
+        &previews,
+    );
+    if persistence.document == persistence.persisted {
+        persistence.changed_at = None;
+        return;
+    }
+    let now = Instant::now();
+    let changed_at = persistence.changed_at.get_or_insert(now);
+    if now.duration_since(*changed_at) < MATERIAL_GRAPH_LAYOUT_SAVE_DELAY {
+        return;
+    }
+    save_material_graph_layout(&mut persistence);
+}
+
+fn flush_material_graph_layout_on_exit(
+    mut exits: MessageReader<AppExit>,
+    mut persistence: ResMut<MaterialGraphLayoutPersistence>,
+) {
+    if exits.read().next().is_some() && persistence.document != persistence.persisted {
+        save_material_graph_layout(&mut persistence);
+    }
+}
+
+fn save_material_graph_layout(persistence: &mut MaterialGraphLayoutPersistence) {
+    let Some(root) = persistence.root.clone() else {
+        return;
+    };
+    match persistence.document.save(&root) {
+        Ok(()) => {
+            persistence.persisted = persistence.document.clone();
+            persistence.changed_at = None;
+            persistence.last_error = None;
+        }
+        Err(error) => {
+            let message = error.to_string();
+            if persistence.last_error.as_deref() != Some(&message) {
+                warn!(
+                    "failed to save project material graph layout to {}: {message}",
+                    root.display()
+                );
+            }
+            persistence.last_error = Some(message);
+            persistence.changed_at = Some(Instant::now());
+        }
+    }
+}
+
+fn restore_material_graph_layouts(
+    document: &ProjectEditorLayout,
+    graph_memory: &mut GraphViewportMemory,
+    previews: &mut MaterialGraphPreviewState,
+) {
+    for (program, layout) in &document.material_graphs {
+        let graph_key = material_graph_view_key(*program);
+        if let Some(viewport) = layout.viewport {
+            graph_memory.set_view(
+                graph_key.clone(),
+                Vec2::from_array(viewport.pan),
+                viewport.zoom,
+            );
+        }
+        for (expression, node) in &layout.nodes {
+            graph_memory.set_node(
+                graph_key.clone(),
+                material_graph_expression_node_key(*expression),
+                Vec2::from_array(node.position),
+                node.collapsed,
+            );
+        }
+        if let Some(output) = layout.output {
+            graph_memory.set_node(
+                graph_key,
+                MATERIAL_GRAPH_OUTPUT_NODE_KEY,
+                Vec2::from_array(output.position),
+                output.collapsed,
+            );
+        }
+        previews.restore_layout(
+            *program,
+            &layout.visible_previews,
+            layout.output_preview_visible,
+        );
+    }
+}
+
+fn update_material_graph_layout_document(
+    document: &mut ProjectEditorLayout,
+    programs: &[MaterialProgram],
+    graph_memory: &GraphViewportMemory,
+    previews: &MaterialGraphPreviewState,
+) {
+    for program in programs {
+        let graph_key = material_graph_view_key(program.id);
+        let expressions = program
+            .expressions
+            .iter()
+            .map(|expression| expression.id)
+            .collect::<BTreeSet<_>>();
+        let mut layout = document
+            .material_graphs
+            .remove(&program.id)
+            .unwrap_or_default();
+        layout.retain_expressions(&expressions);
+        layout.viewport =
+            graph_memory
+                .view(&graph_key)
+                .map(|(pan, zoom)| MaterialGraphViewportLayout {
+                    pan: pan.to_array(),
+                    zoom,
+                });
+        layout.nodes = expressions
+            .iter()
+            .filter_map(|expression| {
+                graph_memory
+                    .node(&graph_key, &material_graph_expression_node_key(*expression))
+                    .map(|(position, collapsed)| {
+                        (
+                            *expression,
+                            MaterialGraphNodeLayout {
+                                position: position.to_array(),
+                                collapsed,
+                            },
+                        )
+                    })
+            })
+            .collect();
+        layout.output = graph_memory
+            .node(&graph_key, MATERIAL_GRAPH_OUTPUT_NODE_KEY)
+            .map(|(position, collapsed)| MaterialGraphNodeLayout {
+                position: position.to_array(),
+                collapsed,
+            });
+        layout.visible_previews = previews
+            .visible_expressions(program.id)
+            .intersection(&expressions)
+            .copied()
+            .collect();
+        layout.output_preview_visible = previews.output_visible(program.id);
+        document.material_graphs.insert(program.id, layout);
     }
 }
 
@@ -1139,7 +1383,7 @@ fn handle_material_graph_palette_actions(
                 for expression in &plan.created_expressions {
                     graph_memory.place_node(
                         action.graph_key.clone(),
-                        format!("expression:{expression}"),
+                        material_graph_expression_node_key(*expression),
                         position,
                     );
                 }
@@ -1395,14 +1639,16 @@ fn apply_material_graph_selection_edit(
                             .get(source)
                             .copied()
                             .or_else(|| {
-                                graph_memory
-                                    .node_position(&graph_key, &format!("expression:{source}"))
+                                graph_memory.node_position(
+                                    &graph_key,
+                                    &material_graph_expression_node_key(*source),
+                                )
                             })
                             .unwrap_or(Vec2::ZERO)
                             + Vec2::splat(24.0);
                         graph_memory.place_node(
                             graph_key.clone(),
-                            format!("expression:{duplicate}"),
+                            material_graph_expression_node_key(*duplicate),
                             position,
                         );
                         selection.expressions.insert(*duplicate);
@@ -1420,7 +1666,10 @@ fn apply_material_graph_selection_edit(
                 }
                 MaterialGraphSelectionEdit::Delete => {
                     for expression in &expressions {
-                        graph_memory.remove_node(&graph_key, &format!("expression:{expression}"));
+                        graph_memory.remove_node(
+                            &graph_key,
+                            &material_graph_expression_node_key(*expression),
+                        );
                     }
                     selection.expressions.clear();
                     selection.connection = None;
@@ -3078,6 +3327,10 @@ fn material_graph_view_key(program: MaterialProgramId) -> String {
     format!("material:{program}")
 }
 
+fn material_graph_expression_node_key(expression: MaterialExpressionId) -> String {
+    format!("expression:{expression}")
+}
+
 fn selected_graph_node_bounds(
     layout: &MaterialGraphLayout,
     graph: &MaterialGraphProjection,
@@ -3094,7 +3347,7 @@ fn selected_graph_node_bounds(
         .iter()
         .filter(|node| selection.expressions.contains(&node.expression))
         .filter_map(|node| {
-            let node_key = format!("expression:{}", node.expression);
+            let node_key = material_graph_expression_node_key(node.expression);
             let position = graph_memory
                 .node_position(graph_key, &node_key)
                 .or_else(|| layout.nodes.get(&node.expression).copied())?;
@@ -3545,7 +3798,7 @@ fn spawn_expression_node(
         parent,
         GraphNodeProps {
             graph_key: graph_key.to_owned(),
-            node_key: format!("expression:{}", node.expression),
+            node_key: material_graph_expression_node_key(node.expression),
             title: if node.kind == MaterialGraphNodeKind::Constant {
                 "Constant".to_owned()
             } else {
@@ -3707,7 +3960,7 @@ fn spawn_output_node(
         parent,
         GraphNodeProps {
             graph_key: graph_key.to_owned(),
-            node_key: "output".to_owned(),
+            node_key: MATERIAL_GRAPH_OUTPUT_NODE_KEY.to_owned(),
             title: localizer.text("material-graph-outputs"),
             position,
             selected: false,
@@ -4238,6 +4491,60 @@ mod tests {
                 .into_iter()
                 .all(|target| !previews.is_visible(program, target))
         );
+    }
+
+    #[test]
+    fn material_graph_layout_round_trip_does_not_mutate_semantic_programs() {
+        let program = MaterialProgram::additive_sprite("Layout contract");
+        let expression = program.expressions[0].id;
+        let semantic_source = program.to_pretty_ron().unwrap();
+        let graph_key = material_graph_view_key(program.id);
+        let mut memory = GraphViewportMemory::default();
+        memory.set_view(graph_key.clone(), Vec2::new(24.0, -12.0), 1.25);
+        memory.set_node(
+            graph_key.clone(),
+            material_graph_expression_node_key(expression),
+            Vec2::new(180.0, 96.0),
+            true,
+        );
+        memory.set_node(
+            graph_key.clone(),
+            MATERIAL_GRAPH_OUTPUT_NODE_KEY,
+            Vec2::new(520.0, 110.0),
+            false,
+        );
+        let mut previews = MaterialGraphPreviewState::default();
+        previews.toggle(
+            program.id,
+            MaterialGraphPreviewTarget::Expression(expression),
+        );
+        previews.toggle(program.id, MaterialGraphPreviewTarget::Output);
+        let mut document = ProjectEditorLayout::default();
+
+        update_material_graph_layout_document(
+            &mut document,
+            std::slice::from_ref(&program),
+            &memory,
+            &previews,
+        );
+
+        assert_eq!(program.to_pretty_ron().unwrap(), semantic_source);
+        let mut restored_memory = GraphViewportMemory::default();
+        let mut restored_previews = MaterialGraphPreviewState::default();
+        restore_material_graph_layouts(&document, &mut restored_memory, &mut restored_previews);
+        assert_eq!(
+            restored_memory.view(&graph_key),
+            Some((Vec2::new(24.0, -12.0), 1.25))
+        );
+        assert_eq!(
+            restored_memory.node(&graph_key, &material_graph_expression_node_key(expression)),
+            Some((Vec2::new(180.0, 96.0), true))
+        );
+        assert!(restored_previews.is_visible(
+            program.id,
+            MaterialGraphPreviewTarget::Expression(expression)
+        ));
+        assert!(restored_previews.is_visible(program.id, MaterialGraphPreviewTarget::Output));
     }
 
     #[test]

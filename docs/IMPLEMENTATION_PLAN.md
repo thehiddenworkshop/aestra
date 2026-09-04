@@ -381,7 +381,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   choices are compiler-filtered for the active socket, general node creation is one validated
   semantic transaction, and scalar/boolean connection defaults plus all numeric constant
   components use reusable Feather controls with the shared material undo/redo history.
-- [ ] **Material 14 — graph layout metadata.** Persist optional layout separately from semantics.
+- [x] **Material 14 — graph layout metadata.** A versioned project-local editor-layout sidecar now
+  persists material-graph viewport pan/zoom, stable expression and output-node positions,
+  collapsed state, and preview visibility. The sidecar is keyed by semantic program/expression IDs,
+  prunes deleted-expression entries, validates finite geometry on load, writes atomically, and is
+  excluded from project asset discovery. Layout changes never dirty or recompile semantic material
+  programs, and missing or invalid metadata safely falls back to generated layout.
 
 ### Phase E — reuse and extensibility
 

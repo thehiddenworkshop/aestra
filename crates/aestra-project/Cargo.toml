@@ -9,8 +9,7 @@ repository.workspace = true
 
 [dependencies]
 aestra-core = { path = "../aestra-core" }
+ron.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
 tempfile.workspace = true

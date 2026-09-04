@@ -906,6 +906,12 @@ pub struct MaterialGraphMetadata {
 
 This metadata must never affect shader semantics.
 
+Implementation status (2026-09-04): a versioned project-local editor-layout sidecar persists
+viewport pan/zoom, stable expression and output-node positions, collapsed state, and node-preview
+visibility. It is keyed by semantic material IDs, excluded from asset discovery, prunes stale
+expression entries, and never participates in material validation, lowering, fingerprints, or
+runtime artifacts.
+
 If AI transforms:
 
 ```text

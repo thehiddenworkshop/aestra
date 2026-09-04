@@ -5,6 +5,10 @@
 //! [`ProjectSourceId`] exists only to identify rows and diagnostics for source files that may be
 //! invalid and therefore have no readable semantic ID.
 
+mod editor_layout;
+
+pub use editor_layout::*;
+
 pub use aestra_core::EffectAssetRef;
 use aestra_core::{
     AssetError, EffectAsset, EffectClipId, EffectId, MaterialId, MaterialProgramId,
@@ -1557,6 +1561,8 @@ fn collect_effect_sources(
         };
         let path = entry.path();
         match entry.file_type() {
+            Ok(kind) if kind.is_dir() && path.file_name().is_some_and(|name| name == ".aestra") => {
+            }
             Ok(kind) if kind.is_dir() => {
                 collect_effect_sources(&path, paths, diagnostics, false)?;
             }
