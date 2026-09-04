@@ -3,8 +3,8 @@ use aestra_core::{
     ValidationReport,
     material::{
         MaterialDomain, MaterialEvaluationDomain, MaterialExpressionDomain, MaterialExpressionInfo,
-        MaterialExpressionKind, MaterialInput, MaterialProgram, MaterialRenderStatePolicy,
-        MaterialValue, MaterialValueType, MaterialVectorComponent,
+        MaterialExpressionKind, MaterialInput, MaterialParameter, MaterialProgram,
+        MaterialRenderStatePolicy, MaterialValue, MaterialValueType, MaterialVectorComponent,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -384,6 +384,8 @@ pub struct MaterialIrSourceMap {
 pub struct MaterialIrOptimizationStats {
     pub constant_folds: usize,
     pub trivial_simplifications: usize,
+    /// Shader-static parameter reads replaced by their typed program defaults.
+    pub specialized_parameter_reads: usize,
     /// Pure expressions that reuse an already-lowered IR value.
     pub common_subexpressions: usize,
     pub eliminated_values: usize,
@@ -449,9 +451,15 @@ impl MaterialCompiler {
             .iter()
             .map(|expression| (expression.id, &expression.kind))
             .collect::<BTreeMap<_, _>>();
+        let parameters = normalized
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.id, parameter))
+            .collect::<BTreeMap<_, _>>();
         let mut builder = MaterialIrBuilder {
             analysis: &analysis.expressions,
             expressions,
+            parameters,
             disabled_expressions: normalized.disabled_expressions.iter().copied().collect(),
             values: Vec::new(),
             source_map: MaterialIrSourceMap::default(),
@@ -502,6 +510,7 @@ impl MaterialCompiler {
 struct MaterialIrBuilder<'a> {
     analysis: &'a BTreeMap<MaterialExpressionId, MaterialExpressionInfo>,
     expressions: BTreeMap<MaterialExpressionId, &'a MaterialExpressionKind>,
+    parameters: BTreeMap<MaterialParameterId, &'a MaterialParameter>,
     disabled_expressions: BTreeSet<MaterialExpressionId>,
     values: Vec<MaterialIrValue>,
     source_map: MaterialIrSourceMap,
@@ -532,7 +541,18 @@ impl MaterialIrBuilder<'_> {
             }
             MaterialExpressionKind::Input(input) => MaterialIrInstruction::Input(input),
             MaterialExpressionKind::Parameter(parameter) => {
-                MaterialIrInstruction::Parameter(parameter)
+                let definition = self.parameters[&parameter];
+                if definition.evaluation_domain == MaterialEvaluationDomain::ShaderStatic {
+                    self.optimizations.specialized_parameter_reads += 1;
+                    MaterialIrInstruction::Constant(lower_constant(
+                        definition
+                            .default
+                            .as_ref()
+                            .expect("validated shader-static parameter has a default"),
+                    ))
+                } else {
+                    MaterialIrInstruction::Parameter(parameter)
+                }
             }
             MaterialExpressionKind::FunctionInput(_)
             | MaterialExpressionKind::FunctionCall { .. } => {

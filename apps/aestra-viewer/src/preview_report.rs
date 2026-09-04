@@ -51,6 +51,9 @@ impl CompilerPreviewData {
                 runtime_parameter_reads: effect.optimizations.runtime_parameter_reads,
                 eliminated_attributes: effect.optimizations.eliminated_attributes,
                 material_common_subexpressions: effect.optimizations.material_common_subexpressions,
+                material_specialized_parameter_reads: effect
+                    .optimizations
+                    .material_specialized_parameter_reads,
             },
             material_program_fingerprints: material_program_fingerprints
                 .into_iter()
@@ -287,6 +290,7 @@ struct PreviewOptimizations {
     runtime_parameter_reads: usize,
     eliminated_attributes: usize,
     material_common_subexpressions: usize,
+    material_specialized_parameter_reads: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -600,6 +604,7 @@ mod tests {
         effect.emitters.push(Emitter::basic_sprite("Sparks", 2.0));
         let mut compiled = EffectCompiler::default().compile(&effect).unwrap();
         compiled.optimizations.material_common_subexpressions = 3;
+        compiled.optimizations.material_specialized_parameter_reads = 5;
         let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
         let profile = EffectProfile::from_compiled(&compiled);
 
@@ -638,6 +643,10 @@ mod tests {
         assert_eq!(
             value["compiler"]["optimizations"]["material_common_subexpressions"],
             3
+        );
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_specialized_parameter_reads"],
+            5
         );
     }
 

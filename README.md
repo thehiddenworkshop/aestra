@@ -105,6 +105,10 @@ constants, inputs, parameters, and operations. Commutative Add and Multiply inpu
 canonicalized, while texture samples and custom WESL calls remain deliberately separate until
 their resource and purity contracts can prove that merging is safe. The merged-expression count
 is preserved in compiled artifacts, the Compiler Inspector, and `preview-report.json`.
+Shader-static parameter reads are also replaced by their typed defaults during IR lowering, so
+dependent expressions can fold before backend resource reflection; the authored parameter
+metadata remains available for inspection and specialization changes still alter the shader
+fingerprint.
 
 Run the native-GPU visual regression against the approved, effect-only reference:
 

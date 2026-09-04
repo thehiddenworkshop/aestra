@@ -1,5 +1,6 @@
 use aestra_compiler::{
-    MaterialCompiler, MaterialFunctionLibrary, MaterialPresetCatalog, MaterialPresetDescriptor,
+    MaterialCompiler, MaterialFunctionLibrary, MaterialIrInstruction, MaterialPresetCatalog,
+    MaterialPresetDescriptor,
 };
 use aestra_core::{
     AssetId, MaterialExpressionId, MaterialParameterId, MaterialProgramId,
@@ -602,8 +603,19 @@ fn shader_static_values_rebuild_shader_but_render_state_only_changes_pipeline_ke
     program.parameters[3].evaluation_domain = MaterialEvaluationDomain::ShaderStatic;
     let mut specialized = program.clone();
     specialized.parameters[3].default = Some(MaterialValue::Float(4.0));
-    let first = compile(&program);
-    let second = compile(&specialized);
+    let parameter = program.parameters[3].id;
+    let first_ir = MaterialCompiler.compile(&program).unwrap();
+    let second_ir = MaterialCompiler.compile(&specialized).unwrap();
+    assert_eq!(first_ir.optimizations.specialized_parameter_reads, 1);
+    assert!(!first_ir.values.iter().any(
+        |value| matches!(value.instruction, MaterialIrInstruction::Parameter(id) if id == parameter)
+    ));
+    let first = MaterialShaderCompiler
+        .compile(&first_ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    let second = MaterialShaderCompiler
+        .compile(&second_ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
 
     assert_ne!(first.program_fingerprint, second.program_fingerprint);
     assert_ne!(first.shader.wesl, second.shader.wesl);

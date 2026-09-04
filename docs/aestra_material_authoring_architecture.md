@@ -2496,7 +2496,10 @@ merges common pure expressions deterministically, including operand-order canoni
 Add and Multiply, without losing the many-to-one semantic source map. Resource texture samples
 and custom WESL calls are intentionally not merged until their purity contracts are explicit.
 Counts are exposed by compiled effects and survive artifact round trips, editor inspection, and
-machine-readable preview reports. The remaining items above are still planned.
+machine-readable preview reports. Shader-static parameter reads are now specialized to their typed
+defaults during IR lowering rather than only during backend emission. This enables dependent
+constant folding and CSE while retaining authored parameter reflection and deterministic shader
+fingerprint invalidation. The remaining items above are still planned.
 
 ### Completion Criterion
 

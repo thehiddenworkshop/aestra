@@ -350,6 +350,7 @@ outdated or future format.
 - [x] module registry, typed compiler plan, runtime instances, and CPU extraction
 - [x] runtime parameter slots, compiled curves, constant folding, and attribute liveness
 - [x] deterministic semantic-material common-subexpression elimination with source-map aliases
+- [x] IR-level shader-static parameter specialization before folding and resource reflection
 - [x] cursor-centered timeline zooming, panning, adaptive rulers, and configurable snapping
 - [x] module stack for spawn, initialize, update, and renderer stages
 - [x] typed event-link authoring between emitter layers

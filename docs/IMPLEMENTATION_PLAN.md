@@ -452,9 +452,11 @@ the current sprite-material path until the native-GPU compatibility gate approve
   and Multiply canonicalize operand order; texture sampling and custom WESL calls remain excluded
   until they carry explicit purity contracts. Aliased semantic expressions retain complete source
   mapping, and the optimization count flows through compiled effects, backward-compatible
-  artifacts, the Compiler Inspector, and preview JSON. Parameter specialization, static-branch
-  and feature pruning, texture analysis, function deduplication, varying minimization, and required
-  particle-attribute pruning remain.
+  artifacts, the Compiler Inspector, and preview JSON. Shader-static parameter specialization is
+  also complete at the IR boundary: typed program defaults replace static reads before dependent
+  folding and CSE, while parameter metadata and fingerprint invalidation remain intact. Static-
+  branch and feature pruning, texture analysis, function deduplication, varying minimization, and
+  required particle-attribute pruning remain.
 - [ ] **Material 20 — mesh and ribbon domains.**
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

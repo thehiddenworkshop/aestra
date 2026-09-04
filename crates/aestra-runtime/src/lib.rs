@@ -551,6 +551,8 @@ pub struct OptimizationStats {
     pub eliminated_attributes: usize,
     /// Repeated pure semantic-material expressions represented by one IR value.
     pub material_common_subexpressions: usize,
+    /// Shader-static semantic-material reads replaced before backend code generation.
+    pub material_specialized_parameter_reads: usize,
 }
 
 /// Immutable, engine-independent output of the Aestra compiler.

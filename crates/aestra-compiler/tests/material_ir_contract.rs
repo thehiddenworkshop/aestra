@@ -909,6 +909,69 @@ fn common_subexpressions_merge_commutative_pure_operations_and_preserve_sources(
 }
 
 #[test]
+fn shader_static_parameters_specialize_early_and_enable_dependent_folding() {
+    let parameter = MaterialParameterId::from_u128(0x4150);
+    let parameter_read = MaterialExpressionId::from_u128(0x4151);
+    let scale = MaterialExpressionId::from_u128(0x4152);
+    let alpha = MaterialExpressionId::from_u128(0x4153);
+    let mut program = MaterialProgram::additive_sprite("Shader-static specialization");
+    program.parameters = vec![MaterialParameter {
+        id: parameter,
+        name: "alpha scale".into(),
+        value_type: MaterialValueType::Float,
+        evaluation_domain: MaterialEvaluationDomain::ShaderStatic,
+        default: Some(MaterialValue::Float(2.0)),
+    }];
+    program.expressions.extend([
+        MaterialExpression {
+            id: parameter_read,
+            kind: MaterialExpressionKind::Parameter(parameter),
+        },
+        MaterialExpression {
+            id: scale,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(3.0)),
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Multiply(parameter_read, scale),
+        },
+    ]);
+    program.outputs.alpha = alpha;
+
+    let specialized = MaterialCompiler.compile(&program).unwrap();
+
+    assert_eq!(specialized.optimizations.specialized_parameter_reads, 1);
+    assert_eq!(specialized.optimizations.constant_folds, 1);
+    assert!(specialized.source_map.eliminated.contains(&parameter_read));
+    assert!(specialized.parameters.iter().any(|item| {
+        item.source == parameter && item.evaluation_domain == MaterialEvaluationDomain::ShaderStatic
+    }));
+    assert!(!specialized.values.iter().any(
+        |value| matches!(value.instruction, MaterialIrInstruction::Parameter(id) if id == parameter)
+    ));
+    assert!(matches!(
+        specialized.value(specialized.outputs.alpha).unwrap().instruction,
+        MaterialIrInstruction::Constant(MaterialIrConstant::Float(value)) if value == 6.0
+    ));
+
+    let mut runtime_bound = program;
+    runtime_bound.parameters[0].evaluation_domain = MaterialEvaluationDomain::Effect;
+    let runtime_bound = MaterialCompiler.compile(&runtime_bound).unwrap();
+
+    assert_eq!(runtime_bound.optimizations.specialized_parameter_reads, 0);
+    assert!(runtime_bound.values.iter().any(
+        |value| matches!(value.instruction, MaterialIrInstruction::Parameter(id) if id == parameter)
+    ));
+    assert!(matches!(
+        runtime_bound
+            .value(runtime_bound.outputs.alpha)
+            .unwrap()
+            .instruction,
+        MaterialIrInstruction::Multiply(_, _)
+    ));
+}
+
+#[test]
 fn texture_samples_are_not_commoned_without_a_resource_purity_contract() {
     let texture_parameter = MaterialParameterId::from_u128(0x4201);
     let texture = MaterialExpressionId::from_u128(0x4202);

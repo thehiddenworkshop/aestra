@@ -1287,6 +1287,7 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
         exposed: true,
     };
     let material_parameter = MaterialParameterId::from_u128(0xD002);
+    let static_tint_parameter = MaterialParameterId::from_u128(0xD005);
     let mut program = MaterialProgram::additive_sprite("Compiled semantic material");
     program.id = MaterialProgramId::from_u128(0xD003);
     program.parameters.push(MaterialParameter {
@@ -1295,6 +1296,13 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
         value_type: MaterialValueType::Float,
         evaluation_domain: MaterialEvaluationDomain::Effect,
         default: Some(MaterialValue::Float(1.0)),
+    });
+    program.parameters.push(MaterialParameter {
+        id: static_tint_parameter,
+        name: "Static tint".into(),
+        value_type: MaterialValueType::Color,
+        evaluation_domain: MaterialEvaluationDomain::ShaderStatic,
+        default: Some(MaterialValue::ColorSrgb([0.25, 0.5, 1.0, 1.0])),
     });
     let particle_color = aestra_core::MaterialExpressionId::from_u128(0xD010);
     let tint = aestra_core::MaterialExpressionId::from_u128(0xD011);
@@ -1308,7 +1316,7 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
         },
         MaterialExpression {
             id: tint,
-            kind: MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([0.25, 0.5, 1.0, 1.0])),
+            kind: MaterialExpressionKind::Parameter(static_tint_parameter),
         },
         MaterialExpression {
             id: first_product,
@@ -1351,6 +1359,13 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
     assert_eq!(project.root.material_programs, [program.normalized()]);
     assert_eq!(project.root.material_instances, root.material_instances);
     assert_eq!(project.root.optimizations.material_common_subexpressions, 1);
+    assert_eq!(
+        project
+            .root
+            .optimizations
+            .material_specialized_parameter_reads,
+        1
+    );
     assert_eq!(
         project.root.parameter_slots.get(&effect_parameter.id),
         Some(&aestra_runtime::ParameterSlot(0))
