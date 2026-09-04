@@ -58,6 +58,39 @@ The real GPU bottlenecks, in rough order of measured severity per unit work, are
 3. **Emitter lookup (§2.3)** — 2.7× at 64 emitters; replace linear per-slot search
    with precomputed slot→emitter ranges or per-emitter dispatch.
 
+## Sweep completion — emitter-count and occupancy curves
+
+Generated from `benchmarks/sweep-scenarios/` (`sweep_*.json` beside this manifest),
+filling the two axes left open after B006/B007/B008.
+
+**Emitter count at fixed ~100k alive** (`simulate` p50, ms):
+
+| Emitters | 1 (b003) | 4 | 16 | 64 (b006) |
+| --- | ---: | ---: | ---: | ---: |
+| sim p50 | 0.362 | 0.196 | 0.223 | 0.965 |
+
+Not monotonic at the low end — 1/4/16 sit within measurement noise of each other
+(GPU under-utilization and b003's high-variance distribution). §2.3 is real but
+**only bites at high emitter counts (64 ≈ 3–5×)**; moderate emitter counts are
+effectively free. This lowers §2.3's practical priority — most effects have few
+emitters.
+
+**Occupancy at fixed 10k alive** (`simulate` p50, ms):
+
+| Capacity | 10k (100%) | 100k (10%) | 1M (1%) |
+| --- | ---: | ---: | ---: |
+| sim p50 | 0.033 | 0.135 | 0.003 |
+
+Non-monotonic (workgroup-count / GPU-utilization confound at 10k alive), but the
+decisive point stands: **1M capacity holding only 10k alive is the *cheapest* of the
+three** — 100× the capacity, ~10× *less* time. §2.2 (capacity-bound sim) is refuted
+even more firmly: dead slots are free, and more of them can even improve GPU
+saturation.
+
+**Net:** the confirmed GPU bottlenecks and their order are unchanged — loop pressure
+(§2.4) ≫ curve emission (§2.5) > emitter lookup (§2.3, high-count only); capacity
+(§2.2) is a non-issue.
+
 ## Caveats
 
 - b007/b008 are `LoopContinuous`; b003/b004/b006 are `Once`. The loop-pressure and

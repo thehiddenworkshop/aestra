@@ -204,8 +204,9 @@ Implications:
 - The GPU bottlenecks that *are* real, by measured per-work severity: loop-pressure
   reconstruction (§2.4) ≫ curve-driven emission (§2.5) > emitter lookup (§2.3).
   These reorder Phase 7 (below).
-- Still open to sweep: occupancy at fixed alive-count, and emitter count at 4/16
-  (only 1 vs 64 measured so far).
+- Sweep completed (`a6e6103…/` manifest): emitter count 1/4/16/64 shows §2.3 bites
+  only at high counts (64 ≈ 3–5×; 1–16 within noise); occupancy at fixed 10k alive
+  across 10k/100k/1M capacity reconfirms §2.2 refutation (1M cap is *cheapest*).
 
 ---
 

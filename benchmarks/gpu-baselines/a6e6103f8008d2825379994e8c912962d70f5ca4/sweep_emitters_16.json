@@ -1,0 +1,87 @@
+{
+  "effect": "emitters_16",
+  "warmup": 0,
+  "frames": 600,
+  "metrics": {
+    "render/aestra::gpu::simulate/elapsed_cpu": {
+      "samples": 600,
+      "p50": 0.0027,
+      "p95": 0.0202,
+      "p99": 0.0356,
+      "max": 0.0424,
+      "min": 0.0022,
+      "mean": 0.004686666666666681,
+      "stddev": 0.0067678767390929595
+    },
+    "render/aestra::gpu::simulate/elapsed_gpu": {
+      "samples": 600,
+      "p50": 0.223232,
+      "p95": 6.12352,
+      "p99": 6.211584,
+      "max": 6.238208,
+      "min": 0.082944,
+      "mean": 2.564109653333334,
+      "stddev": 2.7391717642167057
+    },
+    "render/main_transparent_pass_2d/clipper_invocations": {
+      "samples": 600,
+      "p50": 200040.0,
+      "p95": 200040.0,
+      "p99": 200040.0,
+      "max": 200040.0,
+      "min": 40.0,
+      "mean": 118040.0,
+      "stddev": 98366.6610188635
+    },
+    "render/main_transparent_pass_2d/clipper_primitives_out": {
+      "samples": 600,
+      "p50": 200040.0,
+      "p95": 200040.0,
+      "p99": 200040.0,
+      "max": 200040.0,
+      "min": 40.0,
+      "mean": 118040.0,
+      "stddev": 98366.6610188635
+    },
+    "render/main_transparent_pass_2d/elapsed_cpu": {
+      "samples": 600,
+      "p50": 0.007700000000000001,
+      "p95": 0.032100000000000004,
+      "p99": 0.08399999999999999,
+      "max": 0.1189,
+      "min": 0.0061,
+      "mean": 0.011570333333333342,
+      "stddev": 0.013489331088761302
+    },
+    "render/main_transparent_pass_2d/elapsed_gpu": {
+      "samples": 600,
+      "p50": 0.192512,
+      "p95": 0.267264,
+      "p99": 0.818176,
+      "max": 5.709824,
+      "min": 0.009216,
+      "mean": 0.1784678400000002,
+      "stddev": 0.35714008491992943
+    },
+    "render/main_transparent_pass_2d/fragment_shader_invocations": {
+      "samples": 600,
+      "p50": 426160.0,
+      "p95": 2596624.0,
+      "p99": 2866752.0,
+      "max": 2935792.0,
+      "min": 33024.0,
+      "mean": 765620.4533333334,
+      "stddev": 865832.6636125217
+    },
+    "render/main_transparent_pass_2d/vertex_shader_invocations": {
+      "samples": 600,
+      "p50": 600080.0,
+      "p95": 600080.0,
+      "p99": 600080.0,
+      "max": 600080.0,
+      "min": 80.0,
+      "mean": 354080.0,
+      "stddev": 295099.9830565905
+    }
+  }
+}

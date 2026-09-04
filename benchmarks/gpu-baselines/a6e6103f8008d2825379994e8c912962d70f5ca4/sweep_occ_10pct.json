@@ -1,0 +1,87 @@
+{
+  "effect": "occ_10pct",
+  "warmup": 0,
+  "frames": 600,
+  "metrics": {
+    "render/aestra::gpu::simulate/elapsed_cpu": {
+      "samples": 600,
+      "p50": 0.003,
+      "p95": 0.0079,
+      "p99": 0.036699999999999997,
+      "max": 0.0527,
+      "min": 0.0023,
+      "mean": 0.004251500000000021,
+      "stddev": 0.005472857061596499
+    },
+    "render/aestra::gpu::simulate/elapsed_gpu": {
+      "samples": 600,
+      "p50": 0.135168,
+      "p95": 0.334848,
+      "p99": 0.342016,
+      "max": 0.346112,
+      "min": 0.047104,
+      "mean": 0.1992192000000001,
+      "stddev": 0.1095435975318199
+    },
+    "render/main_transparent_pass_2d/clipper_invocations": {
+      "samples": 600,
+      "p50": 20040.0,
+      "p95": 20040.0,
+      "p99": 20040.0,
+      "max": 20040.0,
+      "min": 40.0,
+      "mean": 11840.0,
+      "stddev": 9836.66610188635
+    },
+    "render/main_transparent_pass_2d/clipper_primitives_out": {
+      "samples": 600,
+      "p50": 20040.0,
+      "p95": 20040.0,
+      "p99": 20040.0,
+      "max": 20040.0,
+      "min": 40.0,
+      "mean": 11840.0,
+      "stddev": 9836.66610188635
+    },
+    "render/main_transparent_pass_2d/elapsed_cpu": {
+      "samples": 600,
+      "p50": 0.0056,
+      "p95": 0.0157,
+      "p99": 0.0646,
+      "max": 0.0759,
+      "min": 0.004,
+      "mean": 0.008110833333333359,
+      "stddev": 0.009727968234540151
+    },
+    "render/main_transparent_pass_2d/elapsed_gpu": {
+      "samples": 600,
+      "p50": 0.016384,
+      "p95": 0.026624,
+      "p99": 0.028672,
+      "max": 0.03072,
+      "min": 0.01024,
+      "mean": 0.01814869333333335,
+      "stddev": 0.005836810978547172
+    },
+    "render/main_transparent_pass_2d/fragment_shader_invocations": {
+      "samples": 600,
+      "p50": 72233.0,
+      "p95": 289526.0,
+      "p99": 316405.0,
+      "max": 323174.0,
+      "min": 33024.0,
+      "mean": 106280.975,
+      "stddev": 86583.81750653168
+    },
+    "render/main_transparent_pass_2d/vertex_shader_invocations": {
+      "samples": 600,
+      "p50": 60080.0,
+      "p95": 60080.0,
+      "p99": 60080.0,
+      "max": 60080.0,
+      "min": 80.0,
+      "mean": 35480.0,
+      "stddev": 29509.99830565905
+    }
+  }
+}
