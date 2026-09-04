@@ -241,15 +241,36 @@ Implications:
 3. **Eliminate linear per-slot emitter search (§2.3)** — precomputed slot→emitter
    ranges or per-emitter dispatch. Lower priority: only ~3× at 64 emitters, flat below.
 
-Before optimizing further, **re-measure per-particle simulation cost with matched
-workgroup counts** — the confounded loop-pressure result shows cross-scenario GPU
-comparisons need equal dispatch sizes to be trustworthy. The per-particle sim
-(transcendental forces, gradient/curve sampling) appears to dominate and is the real
-throughput lever.
+### Per-particle floor — shader ablation (b003, 100k @ 100%, matched workgroups)
+
+Ablating shader sections (measuring the `simulate` p50 delta on b003, in-session
+variance ~1%) attributes the 0.418 ms baseline:
+
+| Component | Cost | Share | Lever |
+| --- | ---: | ---: | --- |
+| Reconstruction + memory (particle write, emitter read, spawn/age recompute per slot) | ~0.282 ms | **67%** | inherent to the analytical model |
+| Force / shape / gradient / curve / quaternion compute | ~0.116 ms | 28% | micro-opt (broad, no single hotspot) |
+| Atomic bookkeeping (§2.6) | ~0.020 ms | 5% | not worth it |
+
+Findings that redirect the roadmap:
+- **Turbulence (3 `sin` + 3 hashes) is ~0 cost** — transcendentals run on GPU SFUs;
+  chasing them is pointless.
+- **§2.6 (atomic contention) is a non-issue** at ~5% — do not remove the dead list
+  / atomics for performance.
+- **67% is inherent per-slot reconstruction + memory**, which no micro-optimization
+  touches — every slot recomputes its particle from scratch each frame. The ceiling
+  for micro-optimizing the analytical kernel is therefore only ~33% (28% compute +
+  5% atomics), and most of that is spread thinly.
+
+**Conclusion:** the analytical GPU kernel is already near its practical floor for
+dense effects. Substantial further gains require the **incremental backend
+(strategy M7 / §3)** — persistent particles updated in place instead of full
+per-frame reconstruction — not more kernel micro-opts. That is now a measurement-
+backed decision, not a hunch.
 
 Explicitly **not** pursued (measurement did not justify): dead-slot dispatch
-elimination and packed slot ranges for capacity (§2.2 refuted). Dead-list
-bookkeeping / atomics (§2.6) remain unmeasured — profile before touching.
+elimination and packed slot ranges for capacity (§2.2 refuted); dead-list /
+atomics (§2.6, measured ~5%); transcendental force math (turbulence ~0).
 
 **Exit criteria:** each landed optimization cites the scenario and before/after
 delta (re-run its `--gpu-bench` capture) that justified it.
