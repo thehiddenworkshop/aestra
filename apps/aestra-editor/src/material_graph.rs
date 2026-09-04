@@ -9,8 +9,8 @@ use crate::{
         },
         icon::load_svg_icon,
         node_graph::{
-            FeathersGraphNode, FeathersGraphNodePreviewToggle, FeathersGraphViewport,
-            FeathersGraphWireLayer, GraphFrameAction, GraphFrameTarget,
+            FeathersGraphNavigationBlocker, FeathersGraphNode, FeathersGraphNodePreviewToggle,
+            FeathersGraphViewport, FeathersGraphWireLayer, GraphFrameAction, GraphFrameTarget,
             GraphNodePreviewToggleProps, GraphNodeProps, GraphPortProps, GraphSocketSide,
             GraphViewportMemory, GraphViewportProps, GraphWireMaterial, NODE_HEADER_HEIGHT,
             NODE_PREVIEW_SIZE, NODE_WIDTH, PORT_ROW_HEIGHT, spawn_graph_frame_button,
@@ -562,6 +562,14 @@ struct MaterialGraphPaletteAnchor;
 #[derive(Component)]
 struct MaterialGraphPaletteSearch;
 
+#[derive(Component, Debug, Clone)]
+struct MaterialGraphPaletteCategory {
+    searchable: String,
+}
+
+#[derive(Component)]
+struct MaterialGraphPaletteEmptySearch;
+
 #[derive(Component, Debug, Clone, Copy)]
 enum MaterialGraphContextAction {
     Duplicate(MaterialProgramId),
@@ -1090,17 +1098,46 @@ fn update_material_graph_palette_search(
     change: On<ValueChange<String>>,
     searches: Query<(), With<MaterialGraphPaletteSearch>>,
     mut items: Query<(&MaterialGraphPaletteAction, &mut Node)>,
+    mut categories: Query<
+        (&MaterialGraphPaletteCategory, &mut Node),
+        Without<MaterialGraphPaletteAction>,
+    >,
+    mut empty_search: Query<
+        &mut Node,
+        (
+            With<MaterialGraphPaletteEmptySearch>,
+            Without<MaterialGraphPaletteAction>,
+            Without<MaterialGraphPaletteCategory>,
+        ),
+    >,
     mut palette: ResMut<MaterialGraphPaletteState>,
 ) {
     if !searches.contains(change.source) {
         return;
     }
     palette.query = change.value.trim().to_lowercase();
+    let mut any_matches = false;
     for (action, mut node) in &mut items {
-        node.display = if palette.query.is_empty() || action.searchable.contains(&palette.query) {
+        let matches = palette.query.is_empty() || action.searchable.contains(&palette.query);
+        any_matches |= matches;
+        node.display = if matches {
             Display::Flex
         } else {
             Display::None
+        };
+    }
+    for (category, mut node) in &mut categories {
+        node.display = if palette.query.is_empty() || category.searchable.contains(&palette.query) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for mut node in &mut empty_search {
+        node.display = if palette.query.is_empty() || any_matches {
+            Display::None
+        } else {
+            Display::Flex
         };
     }
 }
@@ -3046,7 +3083,7 @@ fn spawn_material_graph_palette(
         open.menu_position,
         268.0,
         MaterialGraphPaletteAnchor,
-        MaterialGraphPalette,
+        (MaterialGraphPalette, FeathersGraphNavigationBlocker),
         |menu| {
             spawn_search_field(
                 menu,
@@ -3071,54 +3108,146 @@ fn spawn_material_graph_palette(
                 ));
                 return;
             }
-            for option in options {
-                let label = option.descriptor.label.as_str();
-                let category = option.descriptor.category.as_str();
-                let searchable = format!("{category} {label}").to_lowercase();
-                spawn_pointer_context_menu_custom_item(
-                    menu,
-                    label,
-                    MaterialGraphPaletteAction {
-                        program: open.program,
-                        kind: option.descriptor.kind,
-                        source: option.source,
-                        target: option.target,
-                        label: option.descriptor.label.clone(),
-                        graph_position: open.graph_position,
-                        graph_key: open.graph_key.clone(),
-                        searchable,
+            menu.spawn(Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(360.0),
+                min_height: Val::Px(0.0),
+                align_items: AlignItems::Stretch,
+                ..default()
+            })
+            .with_children(|body| {
+                spawn_vertical_scroll_area(
+                    body,
+                    ScrollMemoryKey::MaterialGraphPalette,
+                    Node {
+                        flex_grow: 1.0,
+                        min_width: Val::Px(0.0),
+                        height: Val::Percent(100.0),
+                        padding: UiRect::right(Val::Px(2.0)),
+                        flex_direction: FlexDirection::Column,
+                        ..default()
                     },
-                    |item| {
-                        item.spawn(Node {
-                            min_height: Val::Px(34.0),
-                            flex_direction: FlexDirection::Column,
-                            align_items: AlignItems::FlexStart,
-                            justify_content: JustifyContent::Center,
-                            ..default()
-                        })
-                        .with_children(|content| {
-                            content.spawn((
-                                Text::new(label),
-                                TextFont {
-                                    font_size: FontSize::Px(11.0),
+                    |list| {
+                        for (category, category_options) in
+                            material_graph_palette_categories(options)
+                        {
+                            let searchable = category_options
+                                .iter()
+                                .map(|option| {
+                                    format!(
+                                        "{} {}",
+                                        option.descriptor.category, option.descriptor.label
+                                    )
+                                    .to_lowercase()
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            list.spawn((
+                                MaterialGraphPaletteCategory { searchable },
+                                Node {
+                                    width: Val::Percent(100.0),
+                                    min_height: Val::Px(24.0),
+                                    padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                                    align_items: AlignItems::Center,
                                     ..default()
                                 },
-                                TextColor(theme::TEXT),
                                 Pickable::IGNORE,
-                            ));
-                            content.spawn((
-                                Text::new(category),
-                                TextFont {
-                                    font_size: FontSize::Px(8.0),
-                                    ..default()
-                                },
-                                TextColor(theme::TEXT_FAINT),
-                                Pickable::IGNORE,
-                            ));
-                        });
+                            ))
+                            .with_children(|header| {
+                                header.spawn((
+                                    Text::new(category.to_uppercase()),
+                                    TextFont {
+                                        font_size: FontSize::Px(8.0),
+                                        ..default()
+                                    },
+                                    TextColor(theme::ACCENT),
+                                    Pickable::IGNORE,
+                                ));
+                            });
+                            for option in category_options {
+                                spawn_material_graph_palette_option(list, open, option);
+                            }
+                        }
+                        list.spawn((
+                            MaterialGraphPaletteEmptySearch,
+                            Text::new(localizer.text("material-graph-no-matching-nodes")),
+                            TextFont {
+                                font_size: FontSize::Px(10.0),
+                                ..default()
+                            },
+                            TextColor(theme::TEXT_FAINT),
+                            Node {
+                                display: Display::None,
+                                padding: UiRect::all(Val::Px(10.0)),
+                                ..default()
+                            },
+                            Pickable::IGNORE,
+                        ));
                     },
                 );
-            }
+            });
+        },
+    );
+}
+
+fn material_graph_palette_categories(
+    options: &[MaterialGraphPaletteOption],
+) -> Vec<(&str, Vec<&MaterialGraphPaletteOption>)> {
+    let mut categories = Vec::<(&str, Vec<&MaterialGraphPaletteOption>)>::new();
+    for option in options {
+        let category = option.descriptor.category.as_str();
+        if let Some((_, category_options)) = categories
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == category)
+        {
+            category_options.push(option);
+        } else {
+            categories.push((category, vec![option]));
+        }
+    }
+    categories
+}
+
+fn spawn_material_graph_palette_option(
+    parent: &mut ChildSpawnerCommands,
+    open: &MaterialGraphPaletteOpen,
+    option: &MaterialGraphPaletteOption,
+) {
+    let label = option.descriptor.label.as_str();
+    let category = option.descriptor.category.as_str();
+    let searchable = format!("{category} {label}").to_lowercase();
+    spawn_pointer_context_menu_custom_item(
+        parent,
+        label,
+        MaterialGraphPaletteAction {
+            program: open.program,
+            kind: option.descriptor.kind,
+            source: option.source,
+            target: option.target,
+            label: option.descriptor.label.clone(),
+            graph_position: open.graph_position,
+            graph_key: open.graph_key.clone(),
+            searchable,
+        },
+        |item| {
+            item.spawn(Node {
+                min_height: Val::Px(32.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::FlexStart,
+                justify_content: JustifyContent::Center,
+                ..default()
+            })
+            .with_children(|content| {
+                content.spawn((
+                    Text::new(label),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT),
+                    Pickable::IGNORE,
+                ));
+            });
         },
     );
 }
@@ -3133,7 +3262,7 @@ fn spawn_material_graph_node_menu(
         open.menu_position,
         190.0,
         MaterialGraphPaletteAnchor,
-        MaterialGraphNodeMenu,
+        (MaterialGraphNodeMenu, FeathersGraphNavigationBlocker),
         |menu| {
             spawn_pointer_context_menu_item(
                 menu,
@@ -4757,6 +4886,43 @@ mod tests {
         assert!(from_input.iter().any(
             |option| option.descriptor.kind.consumes_source() && option.source == Some(source)
         ));
+    }
+
+    #[test]
+    fn add_node_palette_groups_options_by_category_in_catalog_order() {
+        let option = |label: &str, category: &str| MaterialGraphPaletteOption {
+            descriptor: MaterialGraphNodeDescriptor {
+                kind: MaterialGraphCreateKind::Constant(MaterialValueType::Float),
+                label: label.to_owned(),
+                category: category.to_owned(),
+            },
+            source: None,
+            target: None,
+        };
+        let options = vec![
+            option("Float", "Constants"),
+            option("UV", "Inputs"),
+            option("Color", "Constants"),
+            option("Add", "Math"),
+        ];
+
+        let categories = material_graph_palette_categories(&options);
+
+        assert_eq!(
+            categories
+                .iter()
+                .map(|(category, _)| *category)
+                .collect::<Vec<_>>(),
+            vec!["Constants", "Inputs", "Math"]
+        );
+        assert_eq!(
+            categories[0]
+                .1
+                .iter()
+                .map(|option| option.descriptor.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Float", "Color"]
+        );
     }
 
     #[test]

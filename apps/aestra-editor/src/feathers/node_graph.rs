@@ -101,6 +101,13 @@ pub(crate) enum GraphFrameTarget {
     Selection,
 }
 
+/// A visible overlay that owns pointer navigation above a graph viewport.
+///
+/// Graph wheel navigation is message-based rather than pointer-event based, so overlays use this
+/// marker to prevent a wheel gesture from both scrolling the overlay and zooming the graph below.
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct FeathersGraphNavigationBlocker;
+
 #[derive(Component, Debug, Clone)]
 pub(crate) struct GraphFrameAction {
     key: String,
@@ -913,6 +920,13 @@ fn navigate_graph_viewports(
         &ComputedNode,
         &mut FeathersGraphViewport,
     )>,
+    blockers: Query<
+        &RelativeCursorPosition,
+        (
+            With<FeathersGraphNavigationBlocker>,
+            Without<FeathersGraphViewport>,
+        ),
+    >,
 ) {
     let cursor_position = cursor_moved
         .read()
@@ -927,9 +941,13 @@ fn navigate_graph_viewports(
         };
         sum + event.y * scale
     });
-    let hovered = viewports
-        .iter()
-        .find_map(|(entity, cursor, _, _)| cursor.cursor_over().then_some(entity));
+    let navigation_blocked = blockers.iter().any(RelativeCursorPosition::cursor_over);
+    let hovered = (!navigation_blocked).then(|| {
+        viewports
+            .iter()
+            .find_map(|(entity, cursor, _, _)| cursor.cursor_over().then_some(entity))
+    });
+    let hovered = hovered.flatten();
     let space = keys.pressed(KeyCode::Space);
     let was_panning = gesture.viewport.is_some();
 

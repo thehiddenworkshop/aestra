@@ -68,6 +68,7 @@ pub(crate) enum ScrollMemoryKey {
     ChangesList,
     ChangesReview,
     Curves,
+    MaterialGraphPalette,
 }
 
 #[derive(Resource, Default)]
