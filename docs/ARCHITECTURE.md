@@ -249,7 +249,7 @@ EffectInstance (aestra-runtime) ──► CPU reference interpreter
   The dockable Compiler Inspector is hidden from the default workspace but remains
   available from View, and saved `GeneratedCode` layout entries migrate without losing
   their placement. It presents execution stages, source-mapped instructions, particle layout, runtime parameter
-  slots, renderer plans, optimization statistics, and the WESL backend entry points.
+  slots, renderer plans, optimization statistics (including semantic-material CSE), and the WESL backend entry points.
   Compiled rows navigate back to their semantic emitter, module, renderer, or parameter.
 - Runs panel selection, visibility, floating, and workspace reset commands through the
   `DockingAction` contract owned by `DockingPlugin`. Dock tabs, context menus, and View-menu
@@ -349,6 +349,7 @@ outdated or future format.
 - [x] native file dialogs, project asset discovery, and unsaved-change protection
 - [x] module registry, typed compiler plan, runtime instances, and CPU extraction
 - [x] runtime parameter slots, compiled curves, constant folding, and attribute liveness
+- [x] deterministic semantic-material common-subexpression elimination with source-map aliases
 - [x] cursor-centered timeline zooming, panning, adaptive rulers, and configurable snapping
 - [x] module stack for spawn, initialize, update, and renderer stages
 - [x] typed event-link authoring between emitter layers

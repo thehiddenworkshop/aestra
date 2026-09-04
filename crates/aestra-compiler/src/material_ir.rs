@@ -384,6 +384,8 @@ pub struct MaterialIrSourceMap {
 pub struct MaterialIrOptimizationStats {
     pub constant_folds: usize,
     pub trivial_simplifications: usize,
+    /// Pure expressions that reuse an already-lowered IR value.
+    pub common_subexpressions: usize,
     pub eliminated_values: usize,
     pub eliminated_expressions: usize,
 }
@@ -454,6 +456,7 @@ impl MaterialCompiler {
             values: Vec::new(),
             source_map: MaterialIrSourceMap::default(),
             optimizations: MaterialIrOptimizationStats::default(),
+            common_subexpressions: BTreeMap::new(),
         };
         let color = builder.lower(normalized.outputs.color);
         let alpha = builder.lower(normalized.outputs.alpha);
@@ -503,6 +506,7 @@ struct MaterialIrBuilder<'a> {
     values: Vec<MaterialIrValue>,
     source_map: MaterialIrSourceMap,
     optimizations: MaterialIrOptimizationStats,
+    common_subexpressions: BTreeMap<MaterialIrCseKey, MaterialIrValueId>,
 }
 
 impl MaterialIrBuilder<'_> {
@@ -755,6 +759,18 @@ impl MaterialIrBuilder<'_> {
                 }
             }
         };
+        let common_subexpression =
+            MaterialIrCseKey::new(info.value_type, info.evaluation_domain, &instruction);
+        if let Some(existing) = common_subexpression
+            .as_ref()
+            .and_then(|key| self.common_subexpressions.get(key))
+            .copied()
+        {
+            self.source_map.values.insert(expression, existing);
+            self.optimizations.common_subexpressions += 1;
+            return existing;
+        }
+
         let id = MaterialIrValueId(self.values.len() as u32);
         self.values.push(MaterialIrValue {
             id,
@@ -762,6 +778,9 @@ impl MaterialIrBuilder<'_> {
             evaluation_domain: info.evaluation_domain,
             instruction,
         });
+        if let Some(key) = common_subexpression {
+            self.common_subexpressions.insert(key, id);
+        }
         self.source_map.values.insert(expression, id);
         id
     }
@@ -889,6 +908,302 @@ impl MaterialIrBuilder<'_> {
 
     fn is_one(&self, id: MaterialIrValueId) -> bool {
         self.constant(id).is_some_and(is_one)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct MaterialIrCseKey {
+    value_type: MaterialIrValueTypeKey,
+    evaluation_domain: MaterialExpressionDomain,
+    instruction: MaterialIrInstructionKey,
+}
+
+impl MaterialIrCseKey {
+    fn new(
+        value_type: MaterialValueType,
+        evaluation_domain: MaterialExpressionDomain,
+        instruction: &MaterialIrInstruction,
+    ) -> Option<Self> {
+        Some(Self {
+            value_type: MaterialIrValueTypeKey::from(value_type),
+            evaluation_domain,
+            instruction: MaterialIrInstructionKey::from_instruction(instruction)?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum MaterialIrValueTypeKey {
+    Float,
+    Vec2,
+    Vec3,
+    Vec4,
+    Color,
+    Texture2d {
+        color_space: u8,
+        filter: u8,
+        mip_filter: u8,
+        address_u: u8,
+        address_v: u8,
+    },
+    Bool,
+}
+
+impl From<MaterialValueType> for MaterialIrValueTypeKey {
+    fn from(value: MaterialValueType) -> Self {
+        match value {
+            MaterialValueType::Float => Self::Float,
+            MaterialValueType::Vec2 => Self::Vec2,
+            MaterialValueType::Vec3 => Self::Vec3,
+            MaterialValueType::Vec4 => Self::Vec4,
+            MaterialValueType::Color => Self::Color,
+            MaterialValueType::Texture2D(descriptor) => Self::Texture2d {
+                color_space: descriptor.color_space as u8,
+                filter: descriptor.sampler.filter as u8,
+                mip_filter: descriptor.sampler.mip_filter as u8,
+                address_u: descriptor.sampler.address_u as u8,
+                address_v: descriptor.sampler.address_v as u8,
+            },
+            MaterialValueType::Bool => Self::Bool,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct MaterialIrInstructionKey {
+    opcode: u8,
+    operands: Vec<MaterialIrValueId>,
+    payload: MaterialIrInstructionPayloadKey,
+}
+
+impl MaterialIrInstructionKey {
+    fn from_instruction(instruction: &MaterialIrInstruction) -> Option<Self> {
+        let (opcode, mut operands, payload) = match instruction {
+            MaterialIrInstruction::Constant(value) => (
+                0,
+                Vec::new(),
+                MaterialIrInstructionPayloadKey::Constant(value.into()),
+            ),
+            MaterialIrInstruction::Input(input) => (
+                1,
+                Vec::new(),
+                MaterialIrInstructionPayloadKey::Input(material_input_key(*input)),
+            ),
+            MaterialIrInstruction::Parameter(parameter) => (
+                2,
+                Vec::new(),
+                MaterialIrInstructionPayloadKey::Parameter(*parameter),
+            ),
+            // A custom function needs an explicit purity contract before calls may be merged.
+            MaterialIrInstruction::CustomWeslCall { .. } => return None,
+            MaterialIrInstruction::Add(left, right) => (
+                3,
+                vec![*left, *right],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Subtract(left, right) => (
+                4,
+                vec![*left, *right],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Multiply(left, right) => (
+                5,
+                vec![*left, *right],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Divide(left, right) => (
+                6,
+                vec![*left, *right],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Lerp { start, end, factor } => (
+                7,
+                vec![*start, *end, *factor],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Clamp { value, min, max } => (
+                8,
+                vec![*value, *min, *max],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Remap {
+                value,
+                input_min,
+                input_max,
+                output_min,
+                output_max,
+            } => (
+                9,
+                vec![*value, *input_min, *input_max, *output_min, *output_max],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Smoothstep {
+                edge_min,
+                edge_max,
+                value,
+            } => (
+                10,
+                vec![*edge_min, *edge_max, *value],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Fresnel {
+                normal,
+                view,
+                power,
+            } => (
+                11,
+                vec![*normal, *view, *power],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::RadialMask {
+                uv,
+                center,
+                radius,
+                softness,
+                invert,
+            } => (
+                12,
+                vec![*uv, *center, *radius, *softness, *invert],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::Dissolve {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => (
+                13,
+                vec![*source, *threshold, *edge_width, *invert],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::DissolveEdge {
+                source,
+                threshold,
+                edge_width,
+                invert,
+            } => (
+                14,
+                vec![*source, *threshold, *edge_width, *invert],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::DepthFade {
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => (
+                15,
+                vec![*scene_depth, *pixel_depth, *fade_distance, *invert],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::SoftParticle {
+                alpha,
+                scene_depth,
+                pixel_depth,
+                fade_distance,
+                invert,
+            } => (
+                16,
+                vec![*alpha, *scene_depth, *pixel_depth, *fade_distance, *invert],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::PanUv { uv, speed, time } => (
+                17,
+                vec![*uv, *speed, *time],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::RotateUv { uv, center, angle } => (
+                18,
+                vec![*uv, *center, *angle],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::ScaleUv { uv, center, scale } => (
+                19,
+                vec![*uv, *center, *scale],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            // Texture sampling remains conservative until resource operations carry purity data.
+            MaterialIrInstruction::SampleTexture { .. } => return None,
+            MaterialIrInstruction::ExtractComponent { value, component } => (
+                21,
+                vec![*value],
+                MaterialIrInstructionPayloadKey::Component(*component as u8),
+            ),
+        };
+        if matches!(opcode, 3 | 5) {
+            operands.sort_unstable();
+        }
+        Some(Self {
+            opcode,
+            operands,
+            payload,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum MaterialIrInstructionPayloadKey {
+    None,
+    Constant(MaterialIrConstantKey),
+    Input(u8),
+    Parameter(MaterialParameterId),
+    Component(u8),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum MaterialIrConstantKey {
+    Float(u32),
+    Vec2([u32; 2]),
+    Vec3([u32; 3]),
+    Vec4([u32; 4]),
+    ColorLinear([u32; 4]),
+    Texture2d(AssetId),
+    Bool(bool),
+}
+
+impl From<&MaterialIrConstant> for MaterialIrConstantKey {
+    fn from(value: &MaterialIrConstant) -> Self {
+        match value {
+            MaterialIrConstant::Float(value) => Self::Float(value.to_bits()),
+            MaterialIrConstant::Vec2(value) => Self::Vec2(value.map(f32::to_bits)),
+            MaterialIrConstant::Vec3(value) => Self::Vec3(value.map(f32::to_bits)),
+            MaterialIrConstant::Vec4(value) => Self::Vec4(value.map(f32::to_bits)),
+            MaterialIrConstant::ColorLinear(value) => Self::ColorLinear(value.map(f32::to_bits)),
+            MaterialIrConstant::Texture2D(asset) => Self::Texture2d(*asset),
+            MaterialIrConstant::Bool(value) => Self::Bool(*value),
+        }
+    }
+}
+
+const fn material_input_key(input: MaterialInput) -> u8 {
+    match input {
+        MaterialInput::Uv0 => 0,
+        MaterialInput::Uv1 => 1,
+        MaterialInput::LocalPosition => 2,
+        MaterialInput::WorldPosition => 3,
+        MaterialInput::Normal => 4,
+        MaterialInput::Tangent => 5,
+        MaterialInput::ViewDirection => 6,
+        MaterialInput::ScreenUv => 7,
+        MaterialInput::ParticleColor => 8,
+        MaterialInput::ParticleOpacity => 9,
+        MaterialInput::ParticleAge => 10,
+        MaterialInput::ParticleNormalizedAge => 11,
+        MaterialInput::ParticleLifetime => 12,
+        MaterialInput::ParticleVelocity => 13,
+        MaterialInput::ParticleSpeed => 14,
+        MaterialInput::ParticleRandom => 15,
+        MaterialInput::ParticleId => 16,
+        MaterialInput::ParticleSize => 17,
+        MaterialInput::ParticleRotation => 18,
+        MaterialInput::EffectTime => 19,
+        MaterialInput::EmitterTime => 20,
+        MaterialInput::EffectNormalizedTime => 21,
+        MaterialInput::EmitterNormalizedTime => 22,
+        MaterialInput::SceneDepth => 23,
+        MaterialInput::CameraPosition => 24,
+        MaterialInput::CameraDirection => 25,
+        MaterialInput::PixelDepth => 26,
     }
 }
 

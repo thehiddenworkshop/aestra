@@ -21,7 +21,8 @@ use aestra_runtime::{
 
 #[test]
 fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
-    let compiled = compiled_fixture();
+    let mut compiled = compiled_fixture();
+    compiled.optimizations.material_common_subexpressions = 7;
     let bytes = encode_effect(&compiled).unwrap();
     let text = std::str::from_utf8(&bytes).unwrap();
     assert!(text.contains(ARTIFACT_MAGIC));
@@ -73,6 +74,19 @@ fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
         format!("{:?}", reloaded_gpu.renderers),
         format!("{:?}", original_gpu.renderers)
     );
+}
+
+#[test]
+fn current_artifacts_without_cse_statistics_decode_with_a_zero_default() {
+    let mut compiled = compiled_fixture();
+    compiled.optimizations.material_common_subexpressions = 7;
+    let text = String::from_utf8(encode_effect(&compiled).unwrap()).unwrap();
+    let legacy = text.replacen(",material_common_subexpressions:7", "", 1);
+    assert_ne!(legacy, text);
+
+    let decoded = decode_effect(legacy.as_bytes()).unwrap();
+
+    assert_eq!(decoded.optimizations.material_common_subexpressions, 0);
 }
 
 #[test]

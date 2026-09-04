@@ -319,6 +319,7 @@ fn spawn_compiled_layout(
                 args.set("constants", compiled.optimizations.constant_expressions);
                 args.set("reads", compiled.optimizations.runtime_parameter_reads);
                 args.set("removed", compiled.optimizations.eliminated_attributes);
+                args.set("cse", compiled.optimizations.material_common_subexpressions);
                 localizer.text_with("generated-optimization-summary", &args)
             });
         },

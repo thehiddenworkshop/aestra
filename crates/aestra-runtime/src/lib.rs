@@ -549,6 +549,8 @@ pub struct OptimizationStats {
     pub constant_expressions: usize,
     pub runtime_parameter_reads: usize,
     pub eliminated_attributes: usize,
+    /// Repeated pure semantic-material expressions represented by one IR value.
+    pub material_common_subexpressions: usize,
 }
 
 /// Immutable, engine-independent output of the Aestra compiler.

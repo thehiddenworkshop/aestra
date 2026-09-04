@@ -50,6 +50,7 @@ impl CompilerPreviewData {
                 constant_expressions: effect.optimizations.constant_expressions,
                 runtime_parameter_reads: effect.optimizations.runtime_parameter_reads,
                 eliminated_attributes: effect.optimizations.eliminated_attributes,
+                material_common_subexpressions: effect.optimizations.material_common_subexpressions,
             },
             material_program_fingerprints: material_program_fingerprints
                 .into_iter()
@@ -285,6 +286,7 @@ struct PreviewOptimizations {
     constant_expressions: usize,
     runtime_parameter_reads: usize,
     eliminated_attributes: usize,
+    material_common_subexpressions: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -596,7 +598,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let mut effect = EffectAsset::new("Preview", 2.0);
         effect.emitters.push(Emitter::basic_sprite("Sparks", 2.0));
-        let compiled = EffectCompiler::default().compile(&effect).unwrap();
+        let mut compiled = EffectCompiler::default().compile(&effect).unwrap();
+        compiled.optimizations.material_common_subexpressions = 3;
         let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
         let profile = EffectProfile::from_compiled(&compiled);
 
@@ -632,6 +635,10 @@ mod tests {
         assert_eq!(value["capture"]["frames"][1]["time_seconds"], 0.5);
         assert_eq!(value["capture"]["frames"][2]["image"], "frame-002.png");
         assert_eq!(value["metrics"]["emitter_count"]["source"], "measured");
+        assert_eq!(
+            value["compiler"]["optimizations"]["material_common_subexpressions"],
+            3
+        );
     }
 
     #[test]

@@ -9,8 +9,10 @@ use aestra_core::{
     ModuleParameters, ModuleTypeId, ParameterId, PropertySourceValue, ScalarRange, StageKind,
     Value, Vec3Curve, Vec3Range,
     material::{
-        MaterialEvaluationDomain, MaterialInstance, MaterialParameter, MaterialParameterValue,
-        MaterialProgram, MaterialProgramRef, MaterialRenderState, MaterialValue, MaterialValueType,
+        MaterialEvaluationDomain, MaterialExpression, MaterialExpressionKind,
+        MaterialInput as SemanticMaterialInput, MaterialInstance, MaterialParameter,
+        MaterialParameterValue, MaterialProgram, MaterialProgramRef, MaterialRenderState,
+        MaterialValue, MaterialValueType,
     },
 };
 use aestra_project::ProjectAssetIndex;
@@ -1294,6 +1296,34 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
         evaluation_domain: MaterialEvaluationDomain::Effect,
         default: Some(MaterialValue::Float(1.0)),
     });
+    let particle_color = aestra_core::MaterialExpressionId::from_u128(0xD010);
+    let tint = aestra_core::MaterialExpressionId::from_u128(0xD011);
+    let first_product = aestra_core::MaterialExpressionId::from_u128(0xD012);
+    let second_product = aestra_core::MaterialExpressionId::from_u128(0xD013);
+    let combined = aestra_core::MaterialExpressionId::from_u128(0xD014);
+    program.expressions.extend([
+        MaterialExpression {
+            id: particle_color,
+            kind: MaterialExpressionKind::Input(SemanticMaterialInput::ParticleColor),
+        },
+        MaterialExpression {
+            id: tint,
+            kind: MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([0.25, 0.5, 1.0, 1.0])),
+        },
+        MaterialExpression {
+            id: first_product,
+            kind: MaterialExpressionKind::Multiply(particle_color, tint),
+        },
+        MaterialExpression {
+            id: second_product,
+            kind: MaterialExpressionKind::Multiply(tint, particle_color),
+        },
+        MaterialExpression {
+            id: combined,
+            kind: MaterialExpressionKind::Add(first_product, second_product),
+        },
+    ]);
+    program.outputs.color = combined;
     program
         .save_ron(temporary.path().join("semantic.aestra.material.ron"))
         .unwrap();
@@ -1320,6 +1350,7 @@ fn project_compilation_carries_semantic_materials_and_their_parameter_bindings()
 
     assert_eq!(project.root.material_programs, [program.normalized()]);
     assert_eq!(project.root.material_instances, root.material_instances);
+    assert_eq!(project.root.optimizations.material_common_subexpressions, 1);
     assert_eq!(
         project.root.parameter_slots.get(&effect_parameter.id),
         Some(&aestra_runtime::ParameterSlot(0))

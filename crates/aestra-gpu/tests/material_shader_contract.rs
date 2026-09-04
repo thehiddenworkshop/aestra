@@ -481,6 +481,73 @@ fn authored_order_does_not_change_layout_shader_or_fingerprint() {
 }
 
 #[test]
+fn commoned_material_expressions_emit_one_portable_shader_value() {
+    let particle_color = MaterialExpressionId::from_u128(0xc501);
+    let tint = MaterialExpressionId::from_u128(0xc502);
+    let first = MaterialExpressionId::from_u128(0xc503);
+    let second = MaterialExpressionId::from_u128(0xc504);
+    let color = MaterialExpressionId::from_u128(0xc505);
+    let mut duplicated =
+        aestra_core::material::MaterialProgram::additive_sprite("CSE shader contract");
+    duplicated.id = MaterialProgramId::from_u128(0xc500);
+    duplicated.expressions.extend([
+        MaterialExpression {
+            id: particle_color,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleColor),
+        },
+        MaterialExpression {
+            id: tint,
+            kind: MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([0.25, 0.5, 1.0, 1.0])),
+        },
+        MaterialExpression {
+            id: first,
+            kind: MaterialExpressionKind::Multiply(particle_color, tint),
+        },
+        MaterialExpression {
+            id: second,
+            kind: MaterialExpressionKind::Multiply(tint, particle_color),
+        },
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Add(first, second),
+        },
+    ]);
+    duplicated.outputs.color = color;
+    let mut shared = duplicated.clone();
+    shared
+        .expressions
+        .iter_mut()
+        .find(|expression| expression.id == color)
+        .unwrap()
+        .kind = MaterialExpressionKind::Add(first, first);
+
+    let ir = MaterialCompiler.compile(&duplicated).unwrap();
+    let common_value = ir.source_map.values[&first];
+    assert_eq!(common_value, ir.source_map.values[&second]);
+    let compiled = MaterialShaderCompiler
+        .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+        .unwrap();
+    let shared = compile(&shared);
+
+    assert_eq!(compiled.shader, shared.shader);
+    assert_eq!(compiled.program_fingerprint, shared.program_fingerprint);
+    assert_eq!(
+        compiled
+            .source_map
+            .wesl_lines
+            .values()
+            .filter(|value| **value == common_value)
+            .count(),
+        1
+    );
+    assert_eq!(
+        compiled.source_map.ir.expressions[&common_value],
+        [first, second]
+    );
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+}
+
+#[test]
 fn equal_sampler_descriptors_share_one_stable_binding() {
     let mut program = two_texture_flame_program();
     let main_descriptor = match program.parameters[0].value_type {

@@ -381,6 +381,8 @@ struct OptimizationStatsV1 {
     constant_expressions: u64,
     runtime_parameter_reads: u64,
     eliminated_attributes: u64,
+    #[serde(default)]
+    material_common_subexpressions: u64,
 }
 
 impl TryFrom<&CompiledEffect> for EffectV1 {
@@ -1751,6 +1753,10 @@ impl OptimizationStatsV1 {
                 stats.eliminated_attributes,
                 "effect.optimizations.eliminated_attributes",
             )?,
+            material_common_subexpressions: encode_u64(
+                stats.material_common_subexpressions,
+                "effect.optimizations.material_common_subexpressions",
+            )?,
         })
     }
 
@@ -1767,6 +1773,10 @@ impl OptimizationStatsV1 {
             eliminated_attributes: decode_usize(
                 self.eliminated_attributes,
                 "effect.optimizations.eliminated_attributes",
+            )?,
+            material_common_subexpressions: decode_usize(
+                self.material_common_subexpressions,
+                "effect.optimizations.material_common_subexpressions",
             )?,
         })
     }

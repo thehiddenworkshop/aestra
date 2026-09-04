@@ -859,6 +859,119 @@ fn folding_simplification_and_dead_elimination_preserve_source_mapping() {
 }
 
 #[test]
+fn common_subexpressions_merge_commutative_pure_operations_and_preserve_sources() {
+    let particle_color = MaterialExpressionId::from_u128(0x4101);
+    let tint = MaterialExpressionId::from_u128(0x4102);
+    let first = MaterialExpressionId::from_u128(0x4103);
+    let second = MaterialExpressionId::from_u128(0x4104);
+    let color = MaterialExpressionId::from_u128(0x4105);
+    let alpha = MaterialExpressionId::from_u128(0x4106);
+    let mut program = MaterialProgram::additive_sprite("Common subexpressions");
+    program.expressions = vec![
+        MaterialExpression {
+            id: particle_color,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleColor),
+        },
+        MaterialExpression {
+            id: tint,
+            kind: MaterialExpressionKind::Constant(MaterialValue::ColorSrgb([0.25, 0.5, 1.0, 1.0])),
+        },
+        MaterialExpression {
+            id: first,
+            kind: MaterialExpressionKind::Multiply(particle_color, tint),
+        },
+        MaterialExpression {
+            id: second,
+            kind: MaterialExpressionKind::Multiply(tint, particle_color),
+        },
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Add(first, second),
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+    ];
+    program.outputs.color = color;
+    program.outputs.alpha = alpha;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+
+    assert_eq!(ir.optimizations.common_subexpressions, 1);
+    assert_eq!(ir.source_map.values[&first], ir.source_map.values[&second]);
+    assert_eq!(
+        ir.source_map.expressions[&ir.source_map.values[&first]],
+        [first, second]
+    );
+    assert!(!ir.source_map.eliminated.contains(&second));
+    assert_eq!(ir.values.len(), 5);
+}
+
+#[test]
+fn texture_samples_are_not_commoned_without_a_resource_purity_contract() {
+    let texture_parameter = MaterialParameterId::from_u128(0x4201);
+    let texture = MaterialExpressionId::from_u128(0x4202);
+    let uv = MaterialExpressionId::from_u128(0x4203);
+    let first = MaterialExpressionId::from_u128(0x4204);
+    let second = MaterialExpressionId::from_u128(0x4205);
+    let color = MaterialExpressionId::from_u128(0x4206);
+    let alpha = MaterialExpressionId::from_u128(0x4207);
+    let descriptor = texture_descriptor(MaterialTextureColorSpace::SrgbColor);
+    let mut program = MaterialProgram::additive_sprite("Conservative texture samples");
+    program.parameters = vec![MaterialParameter {
+        id: texture_parameter,
+        name: "texture".into(),
+        value_type: MaterialValueType::Texture2D(descriptor),
+        evaluation_domain: MaterialEvaluationDomain::Instance,
+        default: Some(MaterialValue::Texture2D(AssetId::from_u128(0x4208))),
+    }];
+    program.expressions = vec![
+        MaterialExpression {
+            id: texture,
+            kind: MaterialExpressionKind::Parameter(texture_parameter),
+        },
+        MaterialExpression {
+            id: uv,
+            kind: MaterialExpressionKind::Input(MaterialInput::Uv0),
+        },
+        MaterialExpression {
+            id: first,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv },
+        },
+        MaterialExpression {
+            id: second,
+            kind: MaterialExpressionKind::SampleTexture { texture, uv },
+        },
+        MaterialExpression {
+            id: color,
+            kind: MaterialExpressionKind::Add(first, second),
+        },
+        MaterialExpression {
+            id: alpha,
+            kind: MaterialExpressionKind::Input(MaterialInput::ParticleOpacity),
+        },
+    ];
+    program.outputs.color = color;
+    program.outputs.alpha = alpha;
+
+    let ir = MaterialCompiler.compile(&program).unwrap();
+
+    assert_eq!(ir.optimizations.common_subexpressions, 0);
+    assert_ne!(ir.source_map.values[&first], ir.source_map.values[&second]);
+    assert_eq!(
+        ir.values
+            .iter()
+            .filter(|value| matches!(
+                value.instruction,
+                MaterialIrInstruction::SampleTexture { .. }
+            ))
+            .count(),
+        2
+    );
+}
+
+#[test]
 fn authored_srgb_constants_are_lowered_to_linear_color() {
     let mut program = MaterialProgram::additive_sprite("Linearized");
     program.expressions[0].kind =

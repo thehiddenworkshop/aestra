@@ -388,6 +388,19 @@ impl EffectCompiler {
         let mut discovered_attributes = BTreeSet::new();
         let mut emitters = Vec::with_capacity(asset.emitters.len());
         let mut optimizations = OptimizationStats::default();
+        optimizations.material_common_subexpressions = asset
+            .material_instances
+            .iter()
+            .map(|instance| instance.program.id())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter_map(|id| material_programs.get(&id))
+            .try_fold(0, |total, program| {
+                MaterialCompiler
+                    .compile_expanded(program)
+                    .map(|ir| total + ir.optimizations.common_subexpressions)
+            })
+            .map_err(|error| CompileError::Validation(error.report().clone()))?;
         let materials = asset
             .materials
             .iter()

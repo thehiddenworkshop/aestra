@@ -100,6 +100,12 @@ driver, physical capacity, and configured particle budget. Use `--backend
 auto|gpu|gpu-readback|cpu` to exercise a specific policy, or
 `--max-gpu-particles <count>` to test budget fallback.
 
+Semantic material lowering performs deterministic common-subexpression elimination for pure
+constants, inputs, parameters, and operations. Commutative Add and Multiply inputs are
+canonicalized, while texture samples and custom WESL calls remain deliberately separate until
+their resource and purity contracts can prove that merging is safe. The merged-expression count
+is preserved in compiled artifacts, the Compiler Inspector, and `preview-report.json`.
+
 Run the native-GPU visual regression against the approved, effect-only reference:
 
 ```powershell

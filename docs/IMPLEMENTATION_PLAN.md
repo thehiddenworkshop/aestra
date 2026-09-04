@@ -447,7 +447,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
   even when thresholds fail. Preparation and capture failures remain machine-readable and return
   non-zero status. This keeps visual reasoning caller-owned while providing the deterministic
   edit/compile/render/analyze contract required by AI tools.
-- [ ] **Material 19 — advanced compiler optimization.**
+- [ ] **Material 19 — advanced compiler optimization.** Deterministic common-subexpression
+  elimination is complete for pure constants, inputs, parameters, and semantic operations. Add
+  and Multiply canonicalize operand order; texture sampling and custom WESL calls remain excluded
+  until they carry explicit purity contracts. Aliased semantic expressions retain complete source
+  mapping, and the optimization count flows through compiled effects, backward-compatible
+  artifacts, the Compiler Inspector, and preview JSON. Parameter specialization, static-branch
+  and feature pruning, texture analysis, function deduplication, varying minimization, and required
+  particle-attribute pruning remain.
 - [ ] **Material 20 — mesh and ribbon domains.**
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
