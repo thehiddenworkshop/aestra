@@ -9,12 +9,36 @@ pub(super) struct TrailReplay {
     epoch: Option<u32>,
     time: f32,
     replaying: bool,
+    checkpoint_times: Vec<f32>,
 }
 
 impl TrailReplay {
+    pub(super) fn context_changed(&mut self) {
+        // A pending seek must reconstruct in the new context. Ordinary moving-host
+        // playback retains its observed world path, but never produces checkpoints.
+        if self.replaying {
+            *self = Self::default();
+        }
+    }
+
+    pub(super) fn needs_restore(&self, epoch: u32, target: f32) -> bool {
+        self.epoch != Some(epoch) || target < self.time
+    }
+
+    pub(super) fn restore(&mut self, epoch: u32, time: f32) {
+        self.epoch = Some(epoch);
+        self.time = time;
+        self.replaying = true;
+    }
+
+    pub(super) fn should_capture(&self, time: f32) -> bool {
+        self.checkpoint_times.contains(&time)
+    }
+
     pub(super) fn observations(&mut self, epoch: u32, target: f32) -> Vec<f32> {
         let mut times = Vec::new();
-        if self.epoch != Some(epoch) || target < self.time {
+        self.checkpoint_times.clear();
+        if self.needs_restore(epoch, target) {
             self.epoch = Some(epoch);
             self.time = 0.0;
             self.replaying = true;
@@ -28,6 +52,11 @@ impl TrailReplay {
                 let next = (next as f32).max(self.time.next_up()).min(target);
                 self.time = next;
                 times.push(next);
+                // Only canonical, frame-aligned replay is reusable. Live playback
+                // can have arbitrary observation times or a moving host transform.
+                if next >= 1.0 && next.fract() == 0.0 {
+                    self.checkpoint_times.push(next);
+                }
             }
             self.replaying = self.time < target;
         } else {
@@ -45,6 +74,30 @@ impl TrailReplay {
 mod tests {
     use super::*;
     const STEP: f32 = 1.0 / 60.0;
+
+    #[test]
+    fn checkpoints_resume_at_the_next_frame_and_never_capture_live_observations() {
+        let mut replay = TrailReplay::default();
+        replay.observations(1, 2.005);
+        assert!(replay.should_capture(1.0));
+        assert!(replay.should_capture(2.0));
+        assert!(!replay.should_capture(2.005));
+        replay.observations(1, 3.0);
+        assert!(!replay.should_capture(3.0));
+        replay.context_changed();
+        assert!(!replay.needs_restore(1, 3.0));
+        assert!(replay.needs_restore(2, 1.5));
+        replay.restore(2, 1.0);
+        let times = replay.observations(2, 1.5);
+        assert_eq!(times.len(), 30);
+        assert_eq!(times[0], 61.0 / 60.0);
+        assert_eq!(*times.last().unwrap(), 1.5);
+        replay.restore(3, 1.0);
+        assert_eq!(replay.observations(3, 1.0), vec![1.0]);
+        replay.observations(4, 10.0);
+        replay.context_changed();
+        assert_eq!(replay.observations(4, 0.5)[0], 0.0);
+    }
 
     #[test]
     fn seek_replays_intermediate_frames_and_pause_preserves_the_result() {

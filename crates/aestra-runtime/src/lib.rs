@@ -984,6 +984,7 @@ pub struct EffectInstance {
     overridden: BTreeSet<ParameterSlot>,
     choreography_started: bool,
     history_epoch: u32,
+    history_revision: u64,
 }
 
 impl EffectInstance {
@@ -1001,6 +1002,7 @@ impl EffectInstance {
             overridden: BTreeSet::new(),
             choreography_started: false,
             history_epoch: 0,
+            history_revision: 0,
         }
     }
 
@@ -1099,7 +1101,7 @@ impl EffectInstance {
     }
 
     pub fn seek(&mut self, time: f32) {
-        self.invalidate_history();
+        self.mark_history_discontinuity();
         self.set_playback_time(time);
     }
 
@@ -1108,14 +1110,27 @@ impl EffectInstance {
         self.history_epoch
     }
 
+    /// Discard observed history and any reusable checkpoints after a context edit.
+    /// Use [`Self::mark_history_discontinuity`] for an external-clock seek instead.
     pub fn invalidate_history(&mut self) {
+        self.history_revision = self.history_revision.wrapping_add(1);
+        self.mark_history_discontinuity();
+    }
+
+    /// Simulation-context revision. Unlike the epoch, ordinary seeks do not change it.
+    pub fn history_revision(&self) -> u64 {
+        self.history_revision
+    }
+
+    /// Start a new observation sequence without invalidating compatible checkpoints.
+    pub fn mark_history_discontinuity(&mut self) {
         self.history_epoch = self.history_epoch.wrapping_add(1);
     }
 
     /// Synchronize normal playback to an external clock without treating every frame as a seek.
     pub fn set_playback_time(&mut self, time: f32) {
         if time < self.time {
-            self.invalidate_history();
+            self.mark_history_discontinuity();
         }
         self.time = if self.effect.playback_mode.is_continuous() {
             time.max(0.0)
@@ -1126,7 +1141,7 @@ impl EffectInstance {
     }
 
     pub fn restart(&mut self) {
-        self.invalidate_history();
+        self.mark_history_discontinuity();
         self.time = 0.0;
         self.choreography_started = false;
     }
@@ -1137,7 +1152,7 @@ impl EffectInstance {
             || (self.effect.playback_mode == EffectPlaybackMode::LoopRestart
                 && next >= self.effect.duration)
         {
-            self.invalidate_history();
+            self.mark_history_discontinuity();
         }
         self.time = match self.effect.playback_mode {
             EffectPlaybackMode::Once => next.clamp(0.0, self.effect.duration),
@@ -1164,7 +1179,7 @@ impl EffectInstance {
             let total = previous_phase + delta_seconds;
             let wraps = (total / duration).floor() as u64;
             if wraps > 0 && self.effect.playback_mode == EffectPlaybackMode::LoopRestart {
-                self.invalidate_history();
+                self.mark_history_discontinuity();
             }
             let next = total.rem_euclid(duration);
             if wraps == 0 {

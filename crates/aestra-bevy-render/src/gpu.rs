@@ -4,6 +4,7 @@ mod bounds;
 mod mesh_inputs;
 mod render;
 mod ribbon_bounds;
+mod trail_checkpoints;
 mod trail_culling;
 mod trail_replay;
 mod wireframe;
@@ -100,6 +101,8 @@ pub(crate) struct GpuEffectBuffers {
     total_slots: u32,
     simulation_time: f32,
     history_epoch: u32,
+    checkpoint_context: Arc<trail_checkpoints::TrailContext>,
+    trail_roots: Vec<(u32, u32)>,
 }
 
 #[derive(Component, Clone)]
@@ -520,6 +523,13 @@ pub(crate) fn prepare_gpu_effects(
             half_extents: Vec3A::from(artifact.bounds_half_extents),
         };
         let indirect_draw_commands = indirect_draw_commands(&artifact.emitters);
+        let trail_roots = artifact
+            .emitters
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.trail_points >= 2)
+            .map(|(i, e)| (i as u32, e.trail_offset))
+            .collect();
         let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
         let ribbon_renderers = artifact
             .renderers
@@ -608,6 +618,8 @@ pub(crate) fn prepare_gpu_effects(
                 has_trails,
                 simulation_time: player.simulation_time(),
                 history_epoch: player.instance.history_epoch(),
+                checkpoint_context: default(),
+                trail_roots,
                 ribbon_workgroups,
                 total_slots: artifact.total_slots,
             },
@@ -1032,6 +1044,32 @@ fn sync_gpu_render_transforms(
     for (player, transform, mut gpu) in &mut players {
         gpu.simulation_time = player.simulation_time();
         gpu.history_epoch = player.instance.history_epoch();
+        if gpu.has_trails {
+            let seed = player.instance.seed();
+            let revision = player.instance.history_revision();
+            let mut key = [0; 22];
+            key[..6].copy_from_slice(&[
+                seed as u32,
+                (seed >> 32) as u32,
+                revision as u32,
+                (revision >> 32) as u32,
+                player.effect().duration.to_bits(),
+                u32::from(player.effect().playback_mode.is_continuous()),
+            ]);
+            key[6..].copy_from_slice(
+                &Mat4::from(transform.affine())
+                    .to_cols_array()
+                    .map(f32::to_bits),
+            );
+            if let Some(data) = buffers.get(&gpu.emitters).and_then(|b| b.data.as_ref())
+                && (gpu.checkpoint_context.key != key || gpu.checkpoint_context.emitters != *data)
+            {
+                gpu.checkpoint_context = Arc::new(trail_checkpoints::TrailContext {
+                    emitters: data.clone(),
+                    key,
+                });
+            }
+        }
         if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
             buffer.set_data(GpuGlobals {
                 time: player.simulation_time(),
@@ -1321,6 +1359,15 @@ fn prepare_bind_groups(
     }
 }
 
+type TrailHistories = BTreeMap<
+    Entity,
+    (
+        AssetId<ShaderBuffer>,
+        Arc<trail_checkpoints::TrailContext>,
+        trail_checkpoints::TrailHistory,
+    ),
+>;
+
 fn run_simulation(
     mut render_context: RenderContext,
     pipeline_cache: Res<PipelineCache>,
@@ -1328,7 +1375,7 @@ fn run_simulation(
     effects: Query<(Entity, &GpuEffectBuffers, &GpuBindGroup)>,
     mesh_draws: Query<(&GpuDrawInstance, &render::PreparedMeshDraw)>,
     gpu_resources: (Res<RenderAssets<GpuShaderBuffer>>, Res<RenderDevice>),
-    mut histories: Local<BTreeMap<Entity, (AssetId<ShaderBuffer>, trail_replay::TrailReplay)>>,
+    mut histories: Local<TrailHistories>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
     let (buffers, render_device) = gpu_resources;
@@ -1346,7 +1393,8 @@ fn run_simulation(
     let diagnostics = render_context.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let gpu_span = diagnostics.time_span(render_context.command_encoder(), "aestra::gpu::simulate");
-    histories.retain(|entity, _| effects.contains(*entity));
+    histories.retain(|entity, _| effects.get(*entity).is_ok_and(|(_, e, _)| e.has_trails));
+    let mut allocated: u64 = histories.values().map(|h| h.2.checkpoints.bytes()).sum();
     for (entity, effect, bind_group) in &effects {
         if (effect.has_ribbons && link_ribbons.is_none())
             || (effect.has_trails && update_trails.is_none())
@@ -1360,14 +1408,66 @@ fn run_simulation(
             let Some(render_globals) = buffers.get(&effect.render_globals) else {
                 continue;
             };
-            let history = histories
-                .entry(entity)
-                .or_insert_with(|| (effect.particles.id(), default()));
+            let handles = [
+                &effect.particles,
+                &effect.alive,
+                &effect.dead,
+                &effect.counters,
+                &effect.indirect,
+                &effect.aux,
+            ];
+            let Some(state) = handles
+                .iter()
+                .map(|h| buffers.get(*h).map(|b| &b.buffer))
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            let history = histories.entry(entity).or_insert_with(|| {
+                (
+                    effect.particles.id(),
+                    effect.checkpoint_context.clone(),
+                    default(),
+                )
+            });
             if history.0 != effect.particles.id() {
-                *history = (effect.particles.id(), default());
+                allocated -= history.2.checkpoints.bytes();
+                *history = (
+                    effect.particles.id(),
+                    effect.checkpoint_context.clone(),
+                    default(),
+                );
+            } else if history.1 != effect.checkpoint_context {
+                allocated -= history.2.checkpoints.bytes();
+                history.2.checkpoints = default();
+                history.2.replay.context_changed();
+                history.1 = effect.checkpoint_context.clone();
+            }
+            let previous = history.2.checkpoints.bytes();
+            history.2.sync_buffers(&state);
+            allocated = allocated - previous + history.2.checkpoints.bytes();
+            if history
+                .2
+                .replay
+                .needs_restore(effect.history_epoch, effect.simulation_time)
+                && let Some(time) = history.2.checkpoints.restore(
+                    render_context.command_encoder(),
+                    &state,
+                    effect.simulation_time,
+                )
+            {
+                trail_checkpoints::rebase_epoch(
+                    render_context.command_encoder(),
+                    &globals.buffer,
+                    state[5],
+                    state[3],
+                    &effect.trail_roots,
+                );
+                history.2.replay.restore(effect.history_epoch, time);
             }
             let times = history
-                .1
+                .2
+                .replay
                 .observations(effect.history_epoch, effect.simulation_time);
             // A queue.write_buffer loop would expose only the final time to all
             // dispatches. Encoder copies make each observation visible in order.
@@ -1387,12 +1487,12 @@ fn run_simulation(
                 64,
                 4,
             );
-            Some((times_buffer, times.len(), globals))
+            Some((times_buffer, times, globals, state))
         } else {
             None
         };
-        for observation in 0..replay.as_ref().map_or(1, |(_, count, _)| *count) {
-            if let Some((times, _, globals)) = &replay {
+        for observation in 0..replay.as_ref().map_or(1, |(_, times, _, _)| times.len()) {
+            if let Some((times, _, globals, _)) = &replay {
                 render_context.command_encoder().copy_buffer_to_buffer(
                     times,
                     observation as u64 * 4,
@@ -1424,6 +1524,22 @@ fn run_simulation(
             {
                 pass.set_pipeline(update_trails);
                 pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+            }
+            drop(pass);
+            if let Some((_, times, _, state)) = &replay {
+                let history = &mut histories.get_mut(&entity).unwrap().2;
+                let time = times[observation];
+                if history.replay.should_capture(time) {
+                    let previous = history.checkpoints.bytes();
+                    history.checkpoints.capture(
+                        &render_device,
+                        render_context.command_encoder(),
+                        state,
+                        time,
+                        trail_checkpoints::MEMORY_LIMIT.saturating_sub(allocated),
+                    );
+                    allocated = allocated - previous + history.checkpoints.bytes();
+                }
             }
         }
     }
@@ -1541,6 +1657,8 @@ mod tests {
                     total_slots: 1,
                     simulation_time: 0.0,
                     history_epoch: 0,
+                    checkpoint_context: default(),
+                    trail_roots: vec![],
                 },
             ))
             .id();

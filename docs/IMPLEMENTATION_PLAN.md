@@ -569,8 +569,15 @@ the current sprite-material path until the native-GPU compatibility gate approve
   and rounded caps; stale epochs/times/seeds, invalid bounds, jittered cameras and vertex
   displacement retain the no-culling fallback. Offscreen history keeps simulating. Native tests
   cover all frustum planes, camera isolation, viewport-edge width/caps, history movement,
-  seeking, pause, expiry and invalidation. Multiple ribbon IDs, adaptive sampling, history
-  checkpoints, a dedicated Normal output and PBR remain follow-up work.
+  seeking, pause, expiry and invalidation. GPU trail checkpoints now retain up to four
+  canonical replay snapshots per effect within a shared 64 MiB cache. Seeking restores the
+  nearest earlier snapshot and replays only the remainder; epoch tags are rebased without
+  restoring stale globals. Emitter inputs, seed, explicit context revision, world transform
+  and buffer replacement invalidate reuse. Variable-step live playback does not seed the
+  cache. Native tests compare restored history and UV phase against full replay, including
+  sub-frame targets, retired tails and continuous-loop boundaries. Multiple ribbon IDs,
+  adaptive sampling, exact host-trajectory replay, a dedicated Normal output and PBR remain
+  follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

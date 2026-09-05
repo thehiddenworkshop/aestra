@@ -191,7 +191,7 @@ impl EffectPlayer {
     /// Seeks continuous playback using absolute simulation time while leaving the playhead
     /// wrapped to the authored effect duration.
     pub fn seek_simulation_time(&mut self, time: f32) {
-        self.instance.invalidate_history();
+        self.instance.mark_history_discontinuity();
         let duration = self.effect().duration;
         if self.effect().playback_mode.is_continuous() {
             self.clock.seek_elapsed_seconds(time, duration);
@@ -202,7 +202,7 @@ impl EffectPlayer {
     }
 
     pub fn seek_frame(&mut self, frame: u64) {
-        self.instance.invalidate_history();
+        self.instance.mark_history_discontinuity();
         let duration = self.effect().duration;
         let target = frame.min(self.clock.maximum_frame(duration));
         if self.seek_mode() == SimulationSeekMode::StatelessDirect {

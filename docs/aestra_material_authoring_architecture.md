@@ -2815,7 +2815,39 @@ fallback until exact jittered view uniforms are supported; semantic vertex displ
 opts out. Culling is emitter-level, not per owner, and does not compact trail geometry. Bounds
 reduction and per-view compute add work; the gain is avoiding offscreen trail vertex expansion.
 
-Remaining trail work: adaptive spatial sampling, exact trajectory replay/checkpoint
+### GPU trail-history checkpoints
+
+The render-world replay cache captures one snapshot per integer simulation second, only
+while rebuilding canonical 60 Hz history. Each effect retains at most four snapshots and
+all effects share a 64 MiB allocation budget. At capacity the oldest local allocation is
+reused. If another effect consumes the budget, or a single snapshot exceeds it, that effect
+continues with bounded replay from zero. Removed effects and replaced GPU buffers release
+their cache entries. These allocations are additional to the live simulation buffers.
+
+Snapshots contain particles/history, auxiliary ring/UV state, alive/dead lists, counters,
+and indirect commands. GPU encoder copies capture after the history pass and restore before
+simulation. No history is read back to the CPU. On a seek, the nearest snapshot at or before
+the requested absolute time is restored and only the remaining observations are dispatched
+(still at most 240 per rendered frame). An exact checkpoint target regenerates current
+particle lists without advancing history. Header and telemetry epoch tags are rebased to the
+new seek; current globals, camera state and per-view culling decisions are not restored.
+
+Checkpoint compatibility includes encoded emitter inputs, full seed, duration/playback
+mode, an explicit simulation-context revision and the propagated world transform. Changing
+any of these clears reuse; a context change during an unfinished replay restarts it from
+zero. Normal moving-host playback keeps its observed path, but cannot populate the cache.
+`EffectInstance::history_epoch()` tracks discontinuities, while `history_revision()` tracks
+seed/parameter changes and explicit `invalidate_history()` calls. Seek/restart and loop
+boundaries change only the epoch, allowing compatible cached observations to be reused.
+
+Only fixed-step reconstruction is cached: variable-rate live playback and sub-frame final
+observations cannot become checkpoints. This preserves equivalence with replay from zero,
+not exact reconstruction of an externally animated host trajectory. GPU checkpoints are
+session-local device allocations, separate from CPU checkpoints and artifact serialization.
+Native conformance covers backward/forward/exact/sub-frame seeks, continuous-loop survivors,
+retired tails, UV phase, epoch rebasing, allocation limits and buffer replacement.
+
+Remaining trail work: adaptive spatial sampling, exact host-trajectory replay, checkpoint
 serialization, finer-grained history culling and larger parallel owner maps.
 
 ### Add inputs

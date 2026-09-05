@@ -116,6 +116,8 @@ fn continuous_loop_keeps_particles_from_the_previous_cycle_alive() {
 
     let mut player = EffectPlayer::from_compiled(compiled);
     player.seek_simulation_time(1.1);
+    assert_eq!(player.instance.history_revision(), 0);
+    assert_ne!(player.instance.history_epoch(), 0);
     assert!((player.elapsed() - 0.1).abs() < 0.0001);
     assert!((player.simulation_time() - 1.1).abs() < 0.0001);
     player.instance.evaluate(&mut samples);

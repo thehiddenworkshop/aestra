@@ -7,6 +7,9 @@ use bevy::math::{Mat4, UVec2, Vec3, Vec4};
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use wgpu::util::DeviceExt;
 
+#[allow(dead_code)] // Also contains render-world bookkeeping, not used by this native harness.
+#[path = "../src/gpu/trail_checkpoints.rs"]
+mod trail_checkpoints;
 #[path = "../src/gpu/trail_replay.rs"]
 mod trail_replay;
 
@@ -104,7 +107,7 @@ fn expand_legacy(packed: &[u8], aux: &[u8], counters: &[u8], records: usize) -> 
 
 // Exercise the real simulation as well as history: a direct jump has live
 // particles but only coincident head/anchor pairs, which cannot draw a trail.
-fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
+fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, distance: bool) {
     let effect = aestra_core::EffectAsset::from_ron(include_str!(
         "../../../assets/effects/trail_lab.aestra.ron"
     ))
@@ -120,7 +123,8 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
         )
         .unwrap();
     let instance = aestra_runtime::EffectInstance::new(std::sync::Arc::new(effect));
-    let artifact = aestra_gpu::GpuEffectArtifact::from_instance(&instance).unwrap();
+    let mut artifact = aestra_gpu::GpuEffectArtifact::from_instance(&instance).unwrap();
+    artifact.emitters[0].trail_sampling = u32::from(distance);
     let e = artifact.emitters[0];
     let globals = GpuGlobals {
         time: 86.0 / 60.0,
@@ -205,96 +209,187 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
             })
             .collect::<Vec<_>>(),
     });
-    let run = |times: &[f32], epoch| {
-        queue.write_buffer(
-            &buffers[6],
-            0,
-            &encode(&GpuGlobals {
-                _padding: UVec2::new(epoch, 0),
-                ..globals
-            }),
-        );
-        let times_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: &times
-                .iter()
-                .flat_map(|t| t.to_le_bytes())
-                .collect::<Vec<_>>(),
-            usage: wgpu::BufferUsages::COPY_SRC,
-        });
-        let readback = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: buffers[1].size() + buffers[7].size(),
-            mapped_at_creation: false,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        });
-        let mut encoder = device.create_command_encoder(&Default::default());
-        for (i, _) in times.iter().enumerate() {
-            encoder.copy_buffer_to_buffer(&times_buffer, i as u64 * 4, &buffers[6], 0, 4);
-            let mut pass = encoder.begin_compute_pass(&Default::default());
-            pass.set_bind_group(0, &group, &[]);
-            for pipeline in &pipelines {
-                pass.set_pipeline(pipeline);
-                pass.dispatch_workgroups(1, 1, 1);
+    let state_buffers: Vec<bevy::render::render_resource::Buffer> =
+        [1, 2, 3, 4, 5, 7].map(|i| buffers[i].clone().into()).into();
+    let state = state_buffers.iter().collect::<Vec<_>>();
+    let render_device = bevy::render::renderer::RenderDevice::from(device.clone());
+    let globals_buffer = bevy::render::render_resource::Buffer::from(buffers[6].clone());
+    let run =
+        |times: &[f32], epoch, mut cache: Option<&mut trail_checkpoints::TrailCheckpoints>| {
+            queue.write_buffer(
+                &buffers[6],
+                0,
+                &encode(&GpuGlobals {
+                    _padding: UVec2::new(epoch, 0),
+                    ..globals
+                }),
+            );
+            let times_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: &times
+                    .iter()
+                    .flat_map(|t| t.to_le_bytes())
+                    .collect::<Vec<_>>(),
+                usage: wgpu::BufferUsages::COPY_SRC,
+            });
+            let readback = device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: buffers[1].size() + buffers[7].size(),
+                mapped_at_creation: false,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            });
+            let mut encoder = device.create_command_encoder(&Default::default());
+            let restored = cache
+                .as_ref()
+                .and_then(|c| c.restore(&mut encoder, &state, *times.last().unwrap()));
+            if restored.is_some() {
+                trail_checkpoints::rebase_epoch(
+                    &mut encoder,
+                    &globals_buffer,
+                    state[5],
+                    state[3],
+                    &[(0, e.trail_offset)],
+                );
             }
-        }
-        encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, buffers[1].size());
-        encoder.copy_buffer_to_buffer(
-            &buffers[7],
-            0,
-            &readback,
-            buffers[1].size(),
-            buffers[7].size(),
-        );
-        let submission = queue.submit([encoder.finish()]);
-        let (sender, receiver) = std::sync::mpsc::channel();
-        readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-            let _ = sender.send(r);
-        });
-        device
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(submission),
-                timeout: Some(std::time::Duration::from_secs(120)),
-            })
-            .unwrap();
-        receiver
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .unwrap()
-            .unwrap();
-        let bytes = readback.slice(..).get_mapped_range().to_vec();
-        readback.unmap();
-        let p = buffers[1].size() as usize;
-        let result = expand_legacy(&bytes[0..p], &bytes[p..], &[], p / 48);
-        assert_world_bounds(&result, artifact.total_slots as usize, 64, 64);
-        result
-    };
+            for (i, &time) in times.iter().enumerate() {
+                if restored.is_some_and(|saved| time <= saved && time != *times.last().unwrap()) {
+                    continue;
+                }
+                encoder.copy_buffer_to_buffer(&times_buffer, i as u64 * 4, &buffers[6], 0, 4);
+                let mut pass = encoder.begin_compute_pass(&Default::default());
+                pass.set_bind_group(0, &group, &[]);
+                for pipeline in &pipelines {
+                    pass.set_pipeline(pipeline);
+                    pass.dispatch_workgroups(1, 1, 1);
+                }
+                drop(pass);
+                if time >= 1.0
+                    && time.fract() == 0.0
+                    && let Some(cache) = cache.as_mut()
+                {
+                    cache.capture(
+                        &render_device,
+                        &mut encoder,
+                        &state,
+                        time,
+                        trail_checkpoints::MEMORY_LIMIT.saturating_sub(cache.bytes()),
+                    );
+                }
+            }
+            encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, buffers[1].size());
+            encoder.copy_buffer_to_buffer(
+                &buffers[7],
+                0,
+                &readback,
+                buffers[1].size(),
+                buffers[7].size(),
+            );
+            let submission = queue.submit([encoder.finish()]);
+            let (sender, receiver) = std::sync::mpsc::channel();
+            readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+                let _ = sender.send(r);
+            });
+            device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: Some(submission),
+                    timeout: Some(std::time::Duration::from_secs(120)),
+                })
+                .unwrap();
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+                .unwrap();
+            let bytes = readback.slice(..).get_mapped_range().to_vec();
+            readback.unmap();
+            let p = buffers[1].size() as usize;
+            let result = expand_legacy(&bytes[0..p], &bytes[p..], &[], p / 48);
+            assert_world_bounds(&result, artifact.total_slots as usize, 64, 64);
+            result
+        };
     let heads =
         || (0..e.trail_capacity).map(|i| (e.trail_offset + 1 + i * e.trail_points) as usize);
-    let direct = run(&[globals.time], 0);
+    let direct = run(&[globals.time], 0, None);
     assert!(
         heads()
             .filter(|&h| word(&direct, h, 44) != 0)
             .all(|h| word(&direct, h, 56) == 1)
     );
     let mut planner = trail_replay::TrailReplay::default();
-    let replayed = run(&planner.observations(1, globals.time), 1);
+    let replayed = run(&planner.observations(1, globals.time), 1, None);
     assert!(
         heads().any(|h| word(&replayed, h, 56) > 20),
         "seek must create drawable history, not only live heads"
     );
     assert_eq!(
         replayed,
-        run(&planner.observations(1, globals.time), 1),
+        run(&planner.observations(1, globals.time), 1, None),
         "paused history must be stable"
     );
-    let backward = run(&planner.observations(2, 0.75), 2);
+    let backward = run(&planner.observations(2, 0.75), 2, None);
     assert!(heads().any(|h| word(&backward, h, 56) > 5));
-    let forward = run(&planner.observations(3, globals.time), 3);
+    let forward = run(&planner.observations(3, globals.time), 3, None);
     // Header epoch differs; owner/sample data must reproduce the first seek.
     let history_start = (e.trail_offset as usize + 1) * 64;
     assert_eq!(&replayed[history_start..], &forward[history_start..]);
-    let beyond_loop = run(&planner.observations(4, 3.5), 4);
+    let beyond_loop = run(&planner.observations(4, 3.5), 4, None);
     assert!(heads().any(|h| word(&beyond_loop, h, 56) > 20));
+
+    let mut cache = trail_checkpoints::TrailCheckpoints::default();
+    run(&planner.observations(5, 3.5), 5, Some(&mut cache));
+    let snapshot_size: u64 = state.iter().map(|b| b.size()).sum();
+    assert_eq!(cache.bytes(), snapshot_size * 3);
+    for (i, target) in [1.0, 1.25, 2.005, 3.5, 0.75, 2.5].into_iter().enumerate() {
+        let epoch = 6 + i as u32 * 2;
+        let reference = run(&planner.observations(epoch, target), epoch, None);
+        let restored = run(
+            &planner.observations(epoch + 1, target),
+            epoch + 1,
+            Some(&mut cache),
+        );
+        assert_eq!(
+            &reference[history_start..],
+            &restored[history_start..],
+            "checkpoint history/UV phase differs at {target}"
+        );
+        assert_eq!(word(&restored, e.trail_offset as usize, 52), epoch + 1);
+    }
+    // A zero available budget still permits reuse, never growth; an empty cache
+    // falls back without allocating. Replacing a source buffer discards all state.
+    let mut encoder = device.create_command_encoder(&Default::default());
+    cache.capture(&render_device, &mut encoder, &state, 4.0, 0);
+    assert_eq!(cache.bytes(), snapshot_size * 3);
+    for time in [5.0, 6.0, 7.0] {
+        cache.capture(
+            &render_device,
+            &mut encoder,
+            &state,
+            time,
+            trail_checkpoints::MEMORY_LIMIT.saturating_sub(cache.bytes()),
+        );
+    }
+    assert_eq!(cache.bytes(), snapshot_size * 4);
+    assert_eq!(cache.restore(&mut encoder, &state, 2.0), None);
+    assert_eq!(cache.restore(&mut encoder, &state, 6.5), Some(6.0));
+    let mut empty = trail_checkpoints::TrailCheckpoints::default();
+    empty.capture(&render_device, &mut encoder, &state, 1.0, 0);
+    assert_eq!(empty.bytes(), 0);
+    assert_eq!(empty.restore(&mut encoder, &state, 2.0), None);
+    let mut history = trail_checkpoints::TrailHistory::default();
+    history.sync_buffers(&state);
+    history.checkpoints = cache;
+    history.sync_buffers(&state);
+    assert_ne!(history.checkpoints.bytes(), 0);
+    let replacement = render_device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: state[0].size(),
+        mapped_at_creation: false,
+        usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+    });
+    let mut replaced = state.clone();
+    replaced[0] = &replacement;
+    history.sync_buffers(&replaced);
+    assert_eq!(history.checkpoints.bytes(), 0);
+    queue.submit([encoder.finish()]);
 }
 
 #[test]
@@ -330,7 +425,8 @@ fn check_pool(max_trails: u32, distance: bool) {
     }))
     .unwrap();
     if distance {
-        check_seek_replay(&device, &queue);
+        check_seek_replay(&device, &queue, false);
+        check_seek_replay(&device, &queue, true);
     }
     let shader = compile_wesl(
         "package::trail_test",

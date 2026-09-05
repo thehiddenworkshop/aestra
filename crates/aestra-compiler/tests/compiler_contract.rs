@@ -1059,6 +1059,35 @@ fn runtime_instances_are_deterministic_per_seed() {
 }
 
 #[test]
+fn checkpoint_context_survives_seeks_but_not_simulation_edits() {
+    let (mut asset, parameter) = parameterized_effect(true);
+    asset.playback_mode = EffectPlaybackMode::LoopRestart;
+    let mut instance =
+        EffectInstance::new(Arc::new(EffectCompiler::default().compile(&asset).unwrap()));
+    let revision = instance.history_revision();
+    instance.seek(0.5);
+    instance.seek(0.1);
+    instance.restart();
+    instance.advance(asset.duration + 0.1);
+    instance.advance(-0.05);
+    instance.advance_with_choreography_events(asset.duration * 2.0, &mut Vec::new());
+    assert_eq!(instance.history_revision(), revision);
+    assert_ne!(instance.history_epoch(), 0);
+    instance.set_seed(42);
+    assert_eq!(instance.history_revision(), revision + 1);
+    instance.set_seed(42);
+    assert_eq!(instance.history_revision(), revision + 1);
+    instance
+        .set_parameter(parameter, Value::Scalar(20.0))
+        .unwrap();
+    assert_eq!(instance.history_revision(), revision + 2);
+    instance.clear_parameter(parameter).unwrap();
+    assert_eq!(instance.history_revision(), revision + 3);
+    instance.invalidate_history();
+    assert_eq!(instance.history_revision(), revision + 4);
+}
+
+#[test]
 fn choreography_events_compile_and_dispatch_deterministically_across_loop_boundaries() {
     let mut asset = EffectAsset::new("Event dispatch", 2.0);
     asset.playback_mode = EffectPlaybackMode::LoopRestart;
