@@ -212,9 +212,11 @@ the many-emitter path needs to get faster, and measure against b006.
    interleaved `Particle` (the render bottleneck), and the ~2 ms sim plateau is
    bandwidth-bound on the same buffer. A tightly packed, contiguous render record
    (~half the bytes) shrinks both. Bounded, measurable, model-preserving.
-2. **Sprite vertex path** — 6→4 vertices per sprite (indexed quad / strip) and reading
-   the invariant particle once per sprite instead of once per vertex remove the ~6×
-   redundant gather. Measure against `render-ablation-cd8cae7/`.
+2. **Sprite vertex path** — the 6→4 triangle-strip step is **done**: −33% vertex
+   invocations, up to **−32%** render in the 100k–1M range (but ~0% at 4M, where the
+   pass turns fill/bandwidth-bound). Remaining: read the invariant particle once per
+   sprite instead of once per vertex (compute pre-expansion). See the plan's
+   "6→4 vertex strip" finding and `benchmarks/gpu-baselines/vertex-strip-441422a/`.
 3. **Per-emitter dispatch (Phase 7 #3)** — removes the §2.3 per-slot emitter search
    (b006 = 0.965 ms) and sizes each dispatch to its emitter's occupancy. Justified
    once the many-emitter path needs to be faster; measure against b006.

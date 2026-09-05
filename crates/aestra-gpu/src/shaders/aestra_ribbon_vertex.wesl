@@ -29,7 +29,9 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     if end == 0xffffffffu { return output; }
     let delta = ribbon_world(end) - ribbon_world(start);
     if dot(delta, delta) < 1e-12 { return output; }
-    let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
+    // Four-vertex triangle strip (see aestra_sprite_vertex): same corner set and
+    // winding as the sprite quad, so ribbons stay camera-facing under back-face cull.
+    let corners = array<vec2<f32>, 4>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 1.0));
     let corner = corners[vertex_index];
     let slot = select(start, end, corner.y > 0.0);
     let direction = ribbon_direction(slot);

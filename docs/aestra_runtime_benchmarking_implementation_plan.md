@@ -259,6 +259,17 @@ so these are precise, not noise. Findings — several of them corrections:
   member loads (~42 scattered gathers/particle). 6M verts at ~5 ms is ~8–10× off the
   4070's vertex peak → memory-latency bound. **This corrects the earlier
   "overdraw/fill-rate" attribution, which the ablation refuted.**
+- **6→4 vertex strip — DONE, measured (`benchmarks/gpu-baselines/vertex-strip-441422a/`).**
+  All billboards (sprite/ribbon/trail) now draw as a four-vertex triangle strip instead
+  of a six-vertex list, cutting vertex invocations exactly **33%** (verified: 6M→4M at
+  1M, 24M→16M at 4M). Same-session render-pass delta: **−32% at 1M with moderate sprites**
+  (4.93→3.37 ms), −9% at 1M with the size-curve scenario, **~0% at 4M**. So the win is
+  real where the pass is vertex-fetch bound (the 100k–1M hero-effect range) but vanishes
+  at 4M — **refining the bullet above: the pass is vertex-bound only up to ~1–2M; at 4M
+  it is bound by fill/bandwidth** (the 1M fill-ablation did not generalize to 4M).
+  Visual regression passes (worst RMSE 0.0008; strip flips the quad's internal diagonal,
+  a sub-pixel change) and the ribbon join-conformance test was remapped to the new layout.
+  Free (no ABI change, no downside), so it stays regardless of the scale-dependent payoff.
 - **This weakens M7's throughput motivation.** The incremental backend was framed as
   the lever "past the analytical floor"; at dense scale the floor is far higher than
   feared and the sim is not the wall. M7 still matters for weaker GPUs and for
@@ -281,8 +292,9 @@ vertex path**, not overdraw:
    color+age, ~half the bytes, contiguous) cuts the scattered traffic that bounds the
    pass. This is the **same SoA/FP16 work that also relieves the ~2 ms sim plateau**,
    so it is now the single highest-leverage item — it hits both dominant costs.
-2. **Fewer vertices per sprite** — 6 → 4 (indexed quad / triangle strip) drops vertex
-   invocations and the redundant per-vertex gathers ~33%.
+2. **Fewer vertices per sprite — DONE.** 6 → 4 (triangle strip) dropped vertex
+   invocations 33% and the render pass up to −32% in the 100k–1M range (~0% at 4M).
+   See the "6→4 vertex strip" finding above.
 3. **Read the particle once per sprite, not once per vertex** — the particle is
    invariant across its 6 vertices; a compute expansion (or per-instance read) removes
    the 6× redundancy. Larger change; measure it against the ablation numbers.

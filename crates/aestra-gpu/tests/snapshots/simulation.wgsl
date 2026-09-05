@@ -336,7 +336,7 @@ fn reset() {
             break;
         }
         let command = emitter_index * 4u;
-        atomicStore(&indirect[command], 6u);
+        atomicStore(&indirect[command], 4u);
         atomicStore(&indirect[command + 1u], 0u);
         atomicStore(&indirect[command + 2u], 0u);
         atomicStore(&indirect[command + 3u], 0u);

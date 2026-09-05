@@ -366,10 +366,16 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 ..default()
             }),
             primitive: PrimitiveState {
+                // Billboards (sprite/ribbon/trail — no mesh layout) draw as a
+                // four-vertex triangle strip, so the GPU runs one vertex invocation
+                // per quad corner instead of six; host meshes keep their indexed
+                // TriangleList geometry.
                 topology: if key.mesh_wireframe {
                     PrimitiveTopology::LineList
-                } else {
+                } else if key.mesh_layout.is_some() {
                     PrimitiveTopology::TriangleList
+                } else {
+                    PrimitiveTopology::TriangleStrip
                 },
                 cull_mode: if key.mesh_wireframe {
                     None
@@ -1095,7 +1101,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
             return RenderCommandResult::Skip;
         };
         if let Some(count) = effect.trail_instances {
-            pass.draw(0..6, 0..count);
+            pass.draw(0..4, 0..count);
         } else {
             pass.draw_indirect(&indirect.buffer, effect.indirect_offset);
         }

@@ -63,7 +63,7 @@ fn ribbon_geometry_has_front_facing_winding_shared_joins_and_hidden_degenerate_s
 @group(0) @binding(0) var<storage, read_write> probe: array<vec4<f32>>;
 @compute @workgroup_size(1)
 fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
-    let scenario = id.x / 18u;
+    let scenario = id.x / 12u;
     let identity = mat4x4<f32>(vec4<f32>(1,0,0,0), vec4<f32>(0,1,0,0), vec4<f32>(0,0,1,0), vec4<f32>(0,0,0,1));
     view.clip_from_world = identity;
     view.world_from_view = identity;
@@ -84,7 +84,7 @@ fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
         particles[i]._padding_1 = select(i - 1u, 0xffffffffu, i == 0u);
         particles[i]._padding_2 = bitcast<u32>(f32(i) * 0.5);
     }
-    let value = aestra_sprite_vertex(id.x % 6u, (id.x % 18u) / 6u);
+    let value = aestra_sprite_vertex(id.x % 4u, (id.x % 12u) / 4u);
     probe[id.x * 2u] = value.clip_position;
     probe[id.x * 2u + 1u] = vec4<f32>(value.uv, f32(value.visible), 0.0);
 }
@@ -104,7 +104,7 @@ fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
     });
     let output = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 54 * 32,
+        size: 36 * 32,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
@@ -127,7 +127,7 @@ fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(54, 1, 1);
+        pass.dispatch_workgroups(36, 1, 1);
     }
     encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, output.size());
     let submission = queue.submit([encoder.finish()]);
@@ -157,7 +157,7 @@ fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
         .into_iter()
         .enumerate()
     {
-        let base = scenario * 18;
+        let base = scenario * 12;
         let normal =
             (position(base + 1) - position(base)).cross(position(base + 2) - position(base));
         assert!(normal.dot(camera) > 0.0, "front-facing winding");
@@ -176,25 +176,29 @@ fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
         };
         let linear = bevy::math::Mat3::from_diagonal(scale);
         let bounds = model.half_extents(linear).unwrap();
-        for v in base..base + 12 {
+        // Four-vertex strip per segment: [start-left, start-right, end-left, end-right].
+        // Two visible segments (verts 0..8) then a hidden terminal segment (8..12).
+        for v in base..base + 8 {
             assert!(
                 (linear.inverse() * position(v)).abs().cmple(bounds).all(),
                 "shader vertex outside culling bound"
             );
         }
-        assert_eq!(position(base + 2), position(base + 7), "right join");
-        assert_eq!(position(base + 5), position(base + 6), "left join");
+        // Segment 0's end edge coincides with segment 1's start edge (seamless join).
+        assert_eq!(position(base + 3), position(base + 5), "right join");
+        assert_eq!(position(base + 2), position(base + 4), "left join");
+        // uv.x runs 0 -> 0.5 -> 1 along the ribbon length (particles 0, 1, 2).
         assert_eq!(value(base, 4), 0.0);
         assert_eq!(value(base + 2, 4), 0.5);
-        assert_eq!(value(base + 8, 4), 1.0);
-        for v in base..base + 12 {
+        assert_eq!(value(base + 6, 4), 1.0);
+        for v in base..base + 8 {
             assert_eq!(value(v, 6), 1.0);
         }
-        for v in base + 12..base + 18 {
+        for v in base + 8..base + 12 {
             assert_eq!(value(v, 6), 0.0);
         }
     }
-    for v in 36..54 {
+    for v in 24..36 {
         assert!(position(v).is_finite());
         assert_eq!(
             value(v, 6),

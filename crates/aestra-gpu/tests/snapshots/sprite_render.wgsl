@@ -135,7 +135,7 @@ fn aestra_sprite_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     if renderers[params.renderer_index].renderer_kind == 4u {
         return aestra_trail_vertex(vertex_index, instance_index);
     }
-    let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
+    let corners = array<vec2<f32>, 4>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 1.0));
     let corner = corners[vertex_index];
     let particle_index = alive_indices[params.alive_offset + instance_index];
     let renderer = renderers[params.renderer_index];
@@ -225,7 +225,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     if dot(delta, delta) < 1e-12 {
         return output;
     }
-    let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
+    let corners = array<vec2<f32>, 4>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 1.0));
     let corner = corners[vertex_index];
     let slot = select(start, end, corner.y > 0.0);
     let direction = ribbon_direction(slot);
@@ -282,7 +282,7 @@ fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexDa
     if dot(delta, delta) < 1e-12 || globals.time - particles[end].rotation >= r.frame_rate {
         return output;
     }
-    let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
+    let corners = array<vec2<f32>, 4>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 1.0));
     let corner = corners[vertex_index];
     let index = segment + select(0u, 1u, corner.y > 0.0);
     let slot = trail_slot(base, capacity, index);

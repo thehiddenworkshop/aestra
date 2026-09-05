@@ -17,7 +17,8 @@ fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexDa
     let end = trail_slot(base, capacity, segment + 1u);
     let delta = particles[end].position - particles[start].position;
     if dot(delta, delta) < 1e-12 || globals.time - particles[end].rotation >= r.frame_rate { return output; }
-    let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
+    // Four-vertex triangle strip (see aestra_sprite_vertex): same corner set/winding.
+    let corners = array<vec2<f32>, 4>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 1.0));
     let corner = corners[vertex_index];
     let index = segment + select(0u, 1u, corner.y > 0.0);
     let slot = trail_slot(base, capacity, index);

@@ -126,13 +126,14 @@ fn aestra_sprite_vertex(
 ) -> SpriteVertexData {
     if renderers[params.renderer_index].renderer_kind == 3u { return aestra_ribbon_vertex(vertex_index, instance_index); }
     if renderers[params.renderer_index].renderer_kind == 4u { return aestra_trail_vertex(vertex_index, instance_index); }
-    let corners = array<vec2<f32>, 6>(
+    // Four-vertex triangle strip (BL, BR, TL, TR): two triangles, CCW/front-facing,
+    // so the GPU runs one vertex invocation per corner instead of six per quad —
+    // cutting the scattered per-vertex particle gathers that bound the sprite pass.
+    let corners = array<vec2<f32>, 4>(
         vec2<f32>(-1.0, -1.0),
         vec2<f32>(1.0, -1.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>(1.0, 1.0),
         vec2<f32>(-1.0, 1.0),
+        vec2<f32>(1.0, 1.0),
     );
     let corner = corners[vertex_index];
     let particle_index = alive_indices[params.alive_offset + instance_index];
