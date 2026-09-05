@@ -287,11 +287,15 @@ so these are precise, not noise. Findings — several of them corrections:
 
 **Roadmap redirection.** The measured next lever for dense scale is the **sprite
 vertex path**, not overdraw:
-1. **Compact / SoA render attributes** — the vertex shader gathers from the 64-byte
-   interleaved `Particle`; a tightly packed render record (position+size+rotation+
-   color+age, ~half the bytes, contiguous) cuts the scattered traffic that bounds the
-   pass. This is the **same SoA/FP16 work that also relieves the ~2 ms sim plateau**,
-   so it is now the single highest-leverage item — it hits both dominant costs.
+1. **Compact / SoA render attributes — investigated, blocked (see below).** Looked
+   like the highest-leverage item, but `GpuParticle` is an overloaded union the
+   just-landed trail/ribbon system depends on (`_padding_0/1/2` as ring/link state,
+   `alive` tri-state, `rotation` as timestamp, `particle_index` as owner id; trail
+   samples stored in Particle-sized slots). It can't be compacted or FP16'd without
+   redesigning `trail_history`/`ribbon_link` storage — high risk on fresh code for a
+   ~4M-only payoff (the 100k–1M range is already served by the vertex strip). Deferred
+   to an M7-style storage redesign. Details in
+   [`aestra_gpu_architecture_comparison.md`](aestra_gpu_architecture_comparison.md) §5.
 2. **Fewer vertices per sprite — DONE.** 6 → 4 (triangle strip) dropped vertex
    invocations 33% and the render pass up to −32% in the 100k–1M range (~0% at 4M).
    See the "6→4 vertex strip" finding above.

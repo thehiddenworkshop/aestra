@@ -207,11 +207,21 @@ the many-emitter path needs to get faster, and measure against b006.
 > vertex shader's redundant scattered particle gathers (6 verts/particle × ~7 member
 > loads). M7's dense-throughput motivation is weakened accordingly.
 
-1. **SoA / compact + FP16 particle attributes** — *the single highest-leverage item.*
-   It hits **both** dominant costs: the vertex shader gathers from the 64-byte
-   interleaved `Particle` (the render bottleneck), and the ~2 ms sim plateau is
-   bandwidth-bound on the same buffer. A tightly packed, contiguous render record
-   (~half the bytes) shrinks both. Bounded, measurable, model-preserving.
+1. **SoA / compact + FP16 particle attributes — investigated, blocked as a simple
+   layout change.** It *looked* like the highest-leverage item (hitting the vertex
+   gather and the sim bandwidth plateau at once). But `GpuParticle` is a heavily
+   **overloaded union**: the trail system (`aestra_trail_history.wesl`) reuses
+   `_padding_0/1/2` as ring-buffer state, `alive` as a tri-state (0/1/2), `rotation`
+   as a timestamp, and `particle_index` as an owner id — *and stores trail samples in
+   Particle-sized slots*; `aestra_ribbon_link.wesl` reuses the padding as prev/next/uv
+   links. So it can't be compacted (the words are load-bearing), can't be FP16'd (the
+   reinterpreted fields are bit/precision critical for trail timing), and a true SoA
+   split would mean rewriting the intricate read-modify-write logic in `trail_history`
+   / `ribbon_link`. High risk on freshly-landed code, for a payoff concentrated at
+   ~4M (where render turns bandwidth-bound) — the 100k–1M hero range is already served
+   by the vertex strip (#2). **Deferred**: only worth revisiting alongside an M7-style
+   storage redesign that gives trails/ribbons their own records instead of overloading
+   the particle struct.
 2. **Sprite vertex path** — the 6→4 triangle-strip step is **done**: −33% vertex
    invocations, up to **−32%** render in the 100k–1M range (but ~0% at 4M, where the
    pass turns fill/bandwidth-bound). Remaining: read the invariant particle once per
