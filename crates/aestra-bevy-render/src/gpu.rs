@@ -525,7 +525,7 @@ pub(crate) fn prepare_gpu_effects(
             .iter()
             .enumerate()
             .filter(|(_, r)| r.renderer_kind == 4)
-            .map(|(index, r)| (index as u32, r.playback_mode * (r.frame_count - 1)))
+            .map(|(index, r)| (index as u32, aestra_gpu::trail_draw_instances(r)))
             .collect();
         let has_trails = !trail_renderers.is_empty();
         let has_ribbons = !ribbon_renderers.is_empty() || has_trails;
@@ -560,7 +560,7 @@ pub(crate) fn prepare_gpu_effects(
         let counters = buffers.add(ShaderBuffer::from(vec![
             0_u32;
             2 + if has_trails {
-                5 * player.effect().emitters.len()
+                6 * player.effect().emitters.len()
             } else {
                 0
             }
@@ -1159,7 +1159,7 @@ fn receive_trail_statistics(
         {
             continue;
         }
-        let Some(stats) = words.get(2 + index * 5..2 + (index + 1) * 5) else {
+        let Some(stats) = words.get(2 + index * 6..2 + (index + 1) * 6) else {
             return;
         };
         if stats[4] != player.instance.history_epoch() {
@@ -1168,6 +1168,7 @@ fn receive_trail_statistics(
         usage.occupied = usage.occupied.saturating_add(stats[0]);
         usage.retired = usage.retired.saturating_add(stats[1]);
         usage.evictions = usage.evictions.saturating_add(stats[2]);
+        usage.truncated = usage.truncated.saturating_add(stats[5]);
     }
     statistics.epoch = Some(player.instance.history_epoch());
     statistics.usage = usage;
@@ -1484,6 +1485,7 @@ mod tests {
                 occupied: 5,
                 retired: 2,
                 evictions: 7,
+                truncated: 3,
             },
         };
         assert_eq!(stats.usage(&instance).unwrap().occupied, 5);

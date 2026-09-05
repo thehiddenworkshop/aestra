@@ -470,6 +470,7 @@ pub enum RendererPlanKind {
         sample_distance: f32,
         uv_mode: aestra_core::TrailUvMode,
         tile_length: f32,
+        end_cap: aestra_core::TrailEndCap,
     },
     Ribbon {
         width: f32,

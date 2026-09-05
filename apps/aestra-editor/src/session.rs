@@ -1699,6 +1699,7 @@ impl EditorSession {
             sample_distance: aestra_core::default_trail_sample_distance(),
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         };
         let id = renderer.id;
         if self.execute(
@@ -2800,6 +2801,7 @@ mod tests {
             sample_distance: 1.0,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         };
         session.preview = Some(EffectInstance::new(Arc::new(compiled)));
         session.seek_time(0.75);

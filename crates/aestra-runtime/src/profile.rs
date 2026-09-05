@@ -50,6 +50,8 @@ pub struct TrailUsage {
     pub occupied: u32,
     pub retired: u32,
     pub evictions: u32,
+    /// Owners missing still-unexpired points because their history ring filled.
+    pub truncated: u32,
 }
 
 /// Machine-readable runtime and compiler cost snapshot for one effect instance.
@@ -60,6 +62,7 @@ pub struct EffectProfile {
     pub retired_trails: ProfileValue<u32>,
     /// Oldest retired owners evicted since the last history reset.
     pub trail_evictions: ProfileValue<u32>,
+    pub truncated_trails: ProfileValue<u32>,
     pub cpu_time_ns: ProfileValue<u64>,
     pub gpu_time_ns: ProfileValue<u64>,
     pub alive_particles: ProfileValue<u32>,
@@ -88,6 +91,9 @@ impl EffectProfile {
         });
         self.trail_evictions = usage.map_or(ProfileValue::Unavailable, |v| {
             ProfileValue::Measured(v.evictions)
+        });
+        self.truncated_trails = usage.map_or(ProfileValue::Unavailable, |v| {
+            ProfileValue::Measured(v.truncated)
         });
     }
 
@@ -132,6 +138,7 @@ impl EffectProfile {
             occupied_trails: ProfileValue::Unavailable,
             retired_trails: ProfileValue::Unavailable,
             trail_evictions: ProfileValue::Unavailable,
+            truncated_trails: ProfileValue::Unavailable,
             cpu_time_ns: ProfileValue::Unavailable,
             gpu_time_ns: ProfileValue::Unavailable,
             alive_particles: ProfileValue::Unavailable,
@@ -283,7 +290,7 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
         .sum::<u64>();
     let alive_and_dead_indices = particle_count.saturating_mul(2 * size_of::<u32>() as u64);
     let counter_words = 2 + if history_storage > 0 {
-        5 * effect.emitters.len() as u64
+        6 * effect.emitters.len() as u64
     } else {
         0
     };

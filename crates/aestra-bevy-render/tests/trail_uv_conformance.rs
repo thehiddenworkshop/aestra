@@ -56,16 +56,20 @@ fn trail_uvs_stretch_or_tile_with_continuous_joins_and_stable_phase() {
 @group(0) @binding(0) var<storage, read_write> probe: array<vec4<f32>>;
 @compute @workgroup_size(1)
 fn probe_trail(@builtin(global_invocation_id) id: vec3<u32>) {
-    let scenario = id.x / 8u;
+    let rounded = id.x >= 32u;
+    let scenario = select(id.x / 8u, 4u + (id.x - 32u) / 76u, rounded);
     let identity = mat4x4<f32>(vec4<f32>(1,0,0,0), vec4<f32>(0,1,0,0), vec4<f32>(0,0,1,0), vec4<f32>(0,0,0,1));
     view.clip_from_world = identity;
     view.world_from_view = identity;
     globals.time = 0.5;
+    if scenario == 5u { globals.time = 0.75; } // retired head keeps aging
+    if scenario == 8u { globals.time = 1.5; } // all history expired
     renderers[0].renderer_kind = 4u;
     renderers[0].frame_count = 4u;
     renderers[0].frame_rate = 1.0;
     renderers[0].attribute_flags.y = bitcast<u32>(1.0);
     renderers[0].flipbook_flags = select(1u, 0u, scenario == 0u);
+    if rounded { renderers[0].flipbook_flags |= 2u; }
     renderers[0].frames[0].x = select(2.0, 4.0, scenario == 3u);
     particles[1].packed_emitter_alive = 1u;
     particles[1].position = vec3<f32>(4.0, 0.0, 0.0);
@@ -77,12 +81,18 @@ fn probe_trail(@builtin(global_invocation_id) id: vec3<u32>) {
     particles[3].position = vec3<f32>(2.0, 0.0, 0.0);
     particles[3].rotation = 0.25;
     particles[3].size = 1.0;
+    if scenario == 6u { particles[3].position = particles[1].position; }
+    if scenario == 7u {
+        particles[2].position = particles[1].position;
+        particles[3].position = particles[1].position;
+    }
     aux[3] = 2u; // next ring index
     aux[4] = select(2u, 1u, scenario == 2u); // expire the oldest anchor
     aux[6] = bitcast<u32>(10.0);
     aux[7] = bitcast<u32>(14.0); // cumulative head distance
     aux[9] = bitcast<u32>(12.0);
-    let value = aestra_trail_vertex(id.x % 4u, (id.x % 8u) / 4u);
+    let primitive = select((id.x % 8u) / 4u, ((id.x - 32u) % 76u) / 4u, rounded);
+    let value = aestra_trail_vertex(id.x % 4u, primitive);
     probe[id.x * 2u] = vec4<f32>(value.uv, f32(value.visible), value.quad_position.y);
     probe[id.x * 2u + 1u] = value.clip_position;
 }
@@ -102,7 +112,7 @@ fn probe_trail(@builtin(global_invocation_id) id: vec3<u32>) {
     });
     let output = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 32 * 32,
+        size: (32 + 5 * 76) * 32,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
@@ -125,7 +135,7 @@ fn probe_trail(@builtin(global_invocation_id) id: vec3<u32>) {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(32, 1, 1);
+        pass.dispatch_workgroups(32 + 5 * 76, 1, 1);
     }
     encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, output.size());
     let submission = queue.submit([encoder.finish()]);
@@ -173,5 +183,76 @@ fn probe_trail(@builtin(global_invocation_id) id: vec3<u32>) {
             assert_eq!(value(base + 4, 2), 0.0, "expired segment hidden");
         }
         assert_eq!(value(base, 2), 1.0);
+    }
+    for scenario in 4..9 {
+        let base = 32 + (scenario - 4) * 76;
+        for primitive in 3..19 {
+            let head = primitive >= 11;
+            let center_x = if head { 4.0 } else { 0.0 };
+            let fade = match (scenario, head) {
+                (5, true) => 0.75,
+                (5, false) => 0.25,
+                (_, true) => 1.0,
+                (_, false) => 0.5,
+            };
+            for vertex in 0..4 {
+                let index = base + primitive * 4 + vertex;
+                if scenario >= 7 {
+                    assert_eq!(
+                        value(index, 2),
+                        0.0,
+                        "coincident/expired trails have no caps"
+                    );
+                    continue;
+                }
+                assert_eq!(
+                    value(index, 2),
+                    1.0,
+                    "caps remain visible at coincident head samples"
+                );
+                assert_eq!(
+                    value(index, 0),
+                    if head { 7.0 } else { 5.0 },
+                    "cap UV meets the body endpoint"
+                );
+                assert_eq!(
+                    value(index, 3),
+                    fade,
+                    "retired caps age with their endpoint"
+                );
+                let dx = value(index, 4) - center_x;
+                let dy = value(index, 5);
+                let radius = if vertex == 0 { 0.0 } else { fade * 0.5 };
+                assert!((dx.hypot(dy) - radius).abs() < 0.0001, "cap is circular");
+                assert!(
+                    if head { dx >= -0.0001 } else { dx <= 0.0001 },
+                    "cap extends outward only"
+                );
+                if vertex == 3 {
+                    assert_eq!(value(index, 4), value(index - 1, 4));
+                    assert_eq!(
+                        value(index, 5),
+                        value(index - 1, 5),
+                        "second strip triangle degenerates"
+                    );
+                }
+            }
+        }
+        if scenario == 4 {
+            // Tail and head fan endpoints meet the body exactly across its width.
+            for (cap, body) in [
+                (3 * 4 + 1, 0),
+                (10 * 4 + 2, 1),
+                (11 * 4 + 1, 7),
+                (18 * 4 + 2, 6),
+            ] {
+                for component in 4..7 {
+                    assert!(
+                        (value(base + cap, component) - value(base + body, component)).abs()
+                            < 0.0001
+                    );
+                }
+            }
+        }
     }
 }

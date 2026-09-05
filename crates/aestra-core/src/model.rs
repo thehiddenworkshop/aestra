@@ -2635,6 +2635,8 @@ pub enum RendererProperties {
         uv_mode: TrailUvMode,
         #[serde(default = "default_trail_tile_length")]
         tile_length: f32,
+        #[serde(default)]
+        end_cap: TrailEndCap,
     },
 }
 
@@ -2650,6 +2652,13 @@ pub enum TrailUvMode {
     #[default]
     Stretch,
     Tile,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TrailEndCap {
+    #[default]
+    Flat,
+    Rounded,
 }
 
 pub const fn default_trail_tile_length() -> f32 {

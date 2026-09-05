@@ -21,6 +21,7 @@ fn fixture() -> EffectAsset {
         sample_distance: 0.1,
         uv_mode: aestra_core::TrailUvMode::Stretch,
         tile_length: 1.0,
+        end_cap: aestra_core::TrailEndCap::Flat,
     };
     effect.emitters.push(emitter);
     effect
@@ -51,6 +52,7 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             sample_distance: 0.1,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         },
         RendererProperties::Trail {
             width: 1.0,
@@ -62,6 +64,7 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             sample_distance: 0.1,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         },
         RendererProperties::Trail {
             width: 1.0,
@@ -73,6 +76,7 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             sample_distance: 0.1,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         },
         RendererProperties::Trail {
             width: 1.0,
@@ -84,6 +88,7 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             sample_distance: 0.1,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         },
     ] {
         let mut effect = effect.clone();
@@ -144,12 +149,21 @@ fn independent_pool_capacity_is_serialized_validated_and_profiled() {
         occupied: 20,
         retired: 12,
         evictions: 3,
+        truncated: 2,
     }));
+    assert_eq!(
+        profile.truncated_trails,
+        aestra_runtime::ProfileValue::Measured(2)
+    );
     assert_eq!(
         profile.retired_trails,
         aestra_runtime::ProfileValue::Measured(12)
     );
     profile.record_trail_usage(None);
+    assert_eq!(
+        profile.truncated_trails,
+        aestra_runtime::ProfileValue::Unavailable
+    );
     assert_eq!(
         profile.trail_evictions,
         aestra_runtime::ProfileValue::Unavailable
@@ -245,13 +259,15 @@ fn uv_modes_round_trip_validate_and_use_existing_renderer_lanes() {
         .to_pretty_ron()
         .unwrap()
         .replace("uv_mode: Stretch,", "")
-        .replace("tile_length: 1.0,", "");
+        .replace("tile_length: 1.0,", "")
+        .replace("end_cap: Flat,", "");
     let restored = EffectAsset::from_ron(&legacy).unwrap();
     assert!(matches!(
         restored.emitters[0].renderers[0].properties,
         RendererProperties::Trail {
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
             ..
         }
     ));
@@ -294,4 +310,47 @@ fn history_epoch_distinguishes_clock_updates_from_explicit_seeks_and_restarts() 
         initial,
         "whole-cycle advances must also reset"
     );
+}
+
+#[test]
+fn end_caps_round_trip_and_add_draw_primitives_without_spending_history() {
+    for cap in [
+        aestra_core::TrailEndCap::Flat,
+        aestra_core::TrailEndCap::Rounded,
+    ] {
+        for mode in [
+            aestra_core::TrailUvMode::Stretch,
+            aestra_core::TrailUvMode::Tile,
+        ] {
+            let mut effect = fixture();
+            if let RendererProperties::Trail {
+                end_cap, uv_mode, ..
+            } = &mut effect.emitters[0].renderers[0].properties
+            {
+                *end_cap = cap;
+                *uv_mode = mode;
+            }
+            let decoded = EffectAsset::from_ron(&effect.to_pretty_ron().unwrap()).unwrap();
+            assert_eq!(decoded, effect);
+            let compiled = EffectCompiler::default().compile(&decoded).unwrap();
+            let gpu =
+                GpuEffectArtifact::from_instance(&EffectInstance::new(Arc::new(compiled))).unwrap();
+            let r = &gpu.renderers[0];
+            assert_eq!(
+                r.flipbook_flags & 1,
+                u32::from(mode == aestra_core::TrailUvMode::Tile)
+            );
+            assert_eq!(
+                r.flipbook_flags & 2 != 0,
+                cap == aestra_core::TrailEndCap::Rounded
+            );
+            assert_eq!(gpu.particles.len(), 8 + 1 + 8 * 32);
+            let caps = if cap == aestra_core::TrailEndCap::Rounded {
+                16
+            } else {
+                0
+            };
+            assert_eq!(aestra_gpu::trail_draw_instances(r), 8 * (31 + caps));
+        }
+    }
 }

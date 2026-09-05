@@ -518,6 +518,8 @@ const EDITOR_MESSAGE_IDS: &[&str] = &[
     "profiler-metric-trails-occupied",
     "profiler-metric-trails-retired",
     "profiler-metric-trail-evictions",
+    "profiler-metric-trails-truncated",
+    "profiler-trail-point-warning",
     "profiler-metric-emitters",
     "profiler-metric-draw-calls",
     "profiler-metric-dispatches",

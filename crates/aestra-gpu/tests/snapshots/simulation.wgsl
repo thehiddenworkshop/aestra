@@ -728,6 +728,10 @@ fn record_trails(emitter_index: u32) {
         var ring_count = 0u;
         var ring_tick = 0u;
         var path_distance = 0.0;
+        var discarded_time = -3.402823e38;
+        if owner != 4294967295u {
+            discarded_time = bitcast<f32>(aux[(owner + 1u) * 3u + 2u]);
+        }
         if owner == 4294967295u {
             if candidate == 4294967295u {
                 continue;
@@ -755,6 +759,10 @@ fn record_trails(emitter_index: u32) {
                 let steps = floor(total / e.trail_distance);
                 let retained = u32(min(steps, f32(capacity)));
                 let remainder = clamp(total - steps * e.trail_distance, 0.0, e.trail_distance);
+                if steps > f32(capacity) {
+                    let along = segment - remainder - f32(capacity) * e.trail_distance;
+                    discarded_time = max(discarded_time, mix(previous.rotation, now, clamp(along / segment, 0.0, 1.0)));
+                }
                 for (var s = 0u; s < retained; s += 1u) {
                     let along = segment - remainder - f32(retained - 1u - s) * e.trail_distance;
                     let t = clamp(along / segment, 0.0, 1.0);
@@ -763,6 +771,9 @@ fn record_trails(emitter_index: u32) {
                     sample.color = mix(previous.color, head.color, t);
                     sample.size = mix(previous.size, head.size, t);
                     sample.rotation = mix(previous.rotation, now, t);
+                    if ring_count == capacity {
+                        discarded_time = max(discarded_time, particles[owner + 1u + ring_head].rotation);
+                    }
                     particles[owner + 1u + ring_head] = sample;
                     aux[(owner + 1u + ring_head) * 3u] = bitcast<u32>(previous_distance + along);
                     ring_head = (ring_head + 1u) % capacity;
@@ -781,6 +792,7 @@ fn record_trails(emitter_index: u32) {
             let steps = u32(max(0.0, floor((now - tick) / e.trail_interval)));
             if steps > capacity {
                 tick += f32(steps - capacity) * e.trail_interval;
+                discarded_time = max(discarded_time, tick);
             }
             for (var s = 0u; s < min(steps, capacity); s += 1u) {
                 tick += e.trail_interval;
@@ -790,6 +802,9 @@ fn record_trails(emitter_index: u32) {
                 sample.color = mix(previous.color, head.color, t);
                 sample.size = mix(previous.size, head.size, t);
                 sample.rotation = tick;
+                if ring_count == capacity {
+                    discarded_time = max(discarded_time, particles[owner + 1u + ring_head].rotation);
+                }
                 particles[owner + 1u + ring_head] = sample;
                 aux[(owner + 1u + ring_head) * 3u] = bitcast<u32>(mix(previous_distance, path_distance, t));
                 ring_head = (ring_head + 1u) % capacity;
@@ -801,10 +816,12 @@ fn record_trails(emitter_index: u32) {
         aux[owner * 3u + 1u] = ring_count;
         aux[owner * 3u + 2u] = ring_tick;
         aux[(owner + 1u) * 3u + 1u] = bitcast<u32>(path_distance);
+        aux[(owner + 1u) * 3u + 2u] = bitcast<u32>(discarded_time);
         particles[owner] = head;
     }
     var occupied = 0u;
     var retired = 0u;
+    var truncated = 0u;
     for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
         if e.trail_sampling == 1u && particle_alive(particles[base]) != 0u {
@@ -823,6 +840,9 @@ fn record_trails(emitter_index: u32) {
         if particle_alive(particles[base]) != 0u {
             occupied += 1u;
         }
+        if particle_alive(particles[base]) != 0u && now - bitcast<f32>(aux[(base + 1u) * 3u + 2u]) < e.trail_lifetime {
+            truncated += 1u;
+        }
         if particle_alive(particles[base]) == 1u {
             retired += 1u;
         }
@@ -837,12 +857,13 @@ fn record_trails(emitter_index: u32) {
     aux[root * 3u + 1u] = evictions;
     let peak = max(occupied, select(aux[root * 3u + 2u], 0u, reset));
     aux[root * 3u + 2u] = peak;
-    let stats = 2u + emitter_index * 5u;
+    let stats = 2u + emitter_index * 6u;
     atomicStore(&counters[stats], occupied);
     atomicStore(&counters[stats + 1u], retired);
     atomicStore(&counters[stats + 2u], evictions);
     atomicStore(&counters[stats + 3u], peak);
     atomicStore(&counters[stats + 4u], globals._padding.x);
+    atomicStore(&counters[stats + 5u], truncated);
 }
 
 @compute @workgroup_size(64)

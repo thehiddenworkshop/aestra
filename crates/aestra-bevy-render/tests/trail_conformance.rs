@@ -82,7 +82,7 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
         encode(&artifact.particles),
         encode(&vec![0u32; artifact.total_slots as usize]),
         encode(&vec![0u32; artifact.total_slots as usize]),
-        encode(&vec![0u32; 7]),
+        encode(&vec![0u32; 8]),
         encode(&aestra_gpu::indirect_draw_commands(&artifact.emitters)),
         encode(&globals),
         encode(&vec![0u32; artifact.particles.len() * 3]),
@@ -333,7 +333,7 @@ fn check_pool(max_trails: u32, distance: bool) {
         encode(&vec![GpuParticle::default(); 3 + max_trails as usize * 4]),
         encode(&vec![0u32, 1]),
         encode(&vec![0u32; 2]),
-        encode(&vec![0u32; 7]),
+        encode(&vec![0u32; 8]),
         encode(&vec![6u32, 2, 0, 0]),
         encode(&GpuGlobals::default()),
         encode(&vec![0u32; (3 + max_trails as usize * 4) * 3]),
@@ -460,7 +460,13 @@ fn check_pool(max_trails: u32, distance: bool) {
     };
     if distance {
         let initial = step(0.0, [0, 1], 2, 0.0, 0, 0);
+        let stats_record = 3 + max_trails as usize * 4;
         let stationary = step(0.25, [0, 1], 2, 0.0, 0, 0);
+        assert_eq!(
+            word(&stationary, stats_record, 28),
+            0,
+            "no truncation during warmup"
+        );
         assert_eq!(
             word(&stationary, 3, 56),
             1,
@@ -482,6 +488,11 @@ fn check_pool(max_trails: u32, distance: bool) {
             "sample timestamps interpolate, lifetime remains time-based"
         );
         let fast = step(1.0, [1, 0], 2, 10.2, 0, 0);
+        assert_eq!(
+            word(&fast, stats_record, 28),
+            2,
+            "fast movement discards unexpired points"
+        );
         assert!(
             (f32::from_bits(word(&fast, 4, 56)) - 10.2).abs() < 0.0001,
             "head path length survives ring wrap"
@@ -533,6 +544,11 @@ fn check_pool(max_trails: u32, distance: bool) {
         );
         let reset = step(1.5, [2, 1], 2, 40.0, 1, 0);
         assert_eq!(
+            word(&reset, stats_record, 28),
+            0,
+            "seek clears point warnings"
+        );
+        assert_eq!(
             word(&reset, 3, 56),
             1,
             "seek clears history instead of drawing a discontinuity"
@@ -555,6 +571,7 @@ fn check_pool(max_trails: u32, distance: bool) {
         step(0.0, [0, 1], 2, 0.0, 2, 0);
         step(0.1, [0, 1], 2, 0.4, 2, 0);
         let stopped = step(1.0, [0, 1], 2, 0.4, 2, 0);
+        assert_eq!(word(&stopped, stats_record, 28), 0);
         assert_eq!(
             word(&stopped, 3, 56),
             0,
@@ -572,6 +589,22 @@ fn check_pool(max_trails: u32, distance: bool) {
         assert!(
             (f32::from_bits(word(&corner, 5, 20)) - 0.6).abs() < 0.0001,
             "distance remainder follows the observed polyline through corners"
+        );
+        step(3.0, [0, 1], 2, 0.0, 3, 0);
+        let truncated = step(3.2, [0, 1], 2, 10.0, 3, 0);
+        assert_eq!(word(&truncated, stats_record, 28), 2);
+        let held = step(3.7, [0, 1], 2, 10.0, 3, 0);
+        assert_eq!(
+            word(&held, stats_record, 28),
+            2,
+            "warning survives while missing points are unexpired"
+        );
+        let aged = step(4.2, [0, 1], 2, 10.0, 3, 0);
+        assert_eq!(word(&aged, stats_record, 8), 2, "owners remain alive");
+        assert_eq!(
+            word(&aged, stats_record, 28),
+            0,
+            "warning clears without a seek or owner death"
         );
         return;
     }
@@ -600,8 +633,18 @@ fn check_pool(max_trails: u32, distance: bool) {
         "past world position does not follow current transform"
     );
     let paused = step(0.25, [1, 0], 2, 300.0, 0, 0);
+    assert_eq!(
+        word(&paused, stats_record, 28),
+        0,
+        "a full ring is not itself truncation"
+    );
     assert_eq!(&moved[128..], &paused[128..], "pause freezes history");
     let looped = step(0.375, [2, 1], 2, 400.0, 0, 0);
+    assert_eq!(
+        word(&looped, stats_record, 28),
+        1,
+        "surviving time-sampled owner loses an unexpired point"
+    );
     assert_eq!(word(&looped, 7, 48), 1);
     assert_eq!(
         word(&looped, 7, 56),
@@ -665,6 +708,11 @@ fn check_pool(max_trails: u32, distance: bool) {
     assert_eq!(word(&expired, 7, 44), 0);
     assert_eq!(word(&expired, stats_record, 8), 0);
     assert_eq!(word(&expired, stats_record, 12), 0);
+    assert_eq!(
+        word(&expired, stats_record, 28),
+        0,
+        "warning expires with the missing history"
+    );
     assert_eq!(
         word(&expired, stats_record, 16),
         0,

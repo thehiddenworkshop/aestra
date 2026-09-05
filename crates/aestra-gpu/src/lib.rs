@@ -28,6 +28,18 @@ pub const MAX_CURVE_KEYS: usize = 8;
 /// GPU a tighter starting bracket, so fewer refinement iterations are needed.
 pub const SPAWN_INVERSE_SAMPLES: usize = 32;
 pub const MAX_FLIPBOOK_FRAMES: usize = 64;
+/// Eight triangles per semicircular endpoint; must match the trail vertex shader.
+pub const TRAIL_CAP_SEGMENTS: u32 = 8;
+
+pub fn trail_draw_instances(renderer: &GpuRenderer) -> u32 {
+    let caps = if renderer.flipbook_flags & 2 != 0 {
+        2 * TRAIL_CAP_SEGMENTS
+    } else {
+        0
+    };
+    renderer.playback_mode * (renderer.frame_count.saturating_sub(1) + caps)
+}
+
 pub const WORKGROUP_SIZE: u32 = 64;
 const INDIRECT_DRAW_WORDS: usize = 4;
 pub const INDIRECT_DRAW_BYTES: u64 = (INDIRECT_DRAW_WORDS * std::mem::size_of::<u32>()) as u64;
@@ -421,6 +433,7 @@ impl GpuEffectArtifact {
                             lifetime,
                             uv_mode,
                             tile_length,
+                            end_cap,
                             ..
                         } => {
                             // Trail reuses otherwise unused flipbook lanes; the
@@ -430,7 +443,9 @@ impl GpuEffectArtifact {
                                 4,
                                 *max_points,
                                 trail_capacity,
-                                u32::from(*uv_mode == aestra_core::TrailUvMode::Tile),
+                                u32::from(*uv_mode == aestra_core::TrailUvMode::Tile)
+                                    | (u32::from(*end_cap == aestra_core::TrailEndCap::Rounded)
+                                        << 1),
                                 *lifetime,
                                 material_texture,
                             )

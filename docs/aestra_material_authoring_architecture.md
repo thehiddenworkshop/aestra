@@ -2765,8 +2765,33 @@ Repeat-U sampler, with an 8-world-unit tile length. GPU tests cover actual verte
 joins, expiry, ring overflow, corners, host motion, loop identities, pause and seek reconstruction;
 portable tests cover validation, backward-compatible decoding and unchanged storage budgets.
 
+### Trail end caps and point-budget warnings
+
+Trail Renderer exposes an undoable `End caps: Flat / Rounded` setting. Flat preserves
+existing authored files and version-1 artifacts when the field is omitted. Rounded adds
+eight triangles per semicircular endpoint in the existing four-vertex strip pipeline,
+without consuming history points or changing the particle/aux storage layout. The Trail
+flipbook flags lane uses bit 0 for Tile UVs and bit 1 for Rounded caps.
+
+Caps use the endpoint's world-space width, tint, age fade and UV phase; U stays at the
+body endpoint while V spans its width. The tangent is projected into the billboard plane.
+Coincident head/sample positions search for a distinct anchor; fully coincident or expired
+trails produce no visible caps. Retired tails shrink and fade with their endpoint timestamps.
+
+First physical sample aux word 2 stores the newest sample timestamp discarded by point
+capacity, including skipped insertions during fast movement. Each emitter's asynchronous
+counter record now has six words: occupied, retired, evictions, peak, epoch, point-limited
+owners. An owner is point-limited only while that missing sample would still be alive;
+full rings, warmup, or normal lifetime expiry alone are not warnings. This works with both
+Time and Distance sampling. Seek/seed resets invalidate readback and reset this state.
+
+The Profiler's Point-limited trails card shows an actionable warning to increase History
+points or sample spacing. This is separate from the owner-budget eviction counter:
+increasing Maximum Trails does not fix a per-owner point limit. Telemetry remains async,
+and caps add at most sixteen draw instances per owner, not simulation/history records.
+
 Remaining trail work: adaptive spatial sampling, exact
-trajectory replay/checkpoint serialization, caps, conservative world
+trajectory replay/checkpoint serialization, conservative world
 history culling and larger parallel owner maps.
 
 ### Add inputs

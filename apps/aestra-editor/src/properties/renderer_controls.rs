@@ -165,6 +165,11 @@ pub(super) fn handle_renderer_action(
                 session.execute("Changed trail UV mode", command, true);
             }
         }
+        PropertiesAction::SetTrailEndCap(id, value) => {
+            if let Some(command) = trail_end_cap_command(session, id, value) {
+                session.execute("Changed trail end caps", command, true);
+            }
+        }
         PropertiesAction::SetFlipbookPlayback(id, value) => {
             session.set_flipbook_playback(id, value);
         }
@@ -888,6 +893,28 @@ pub(super) fn normalize_renderer_uv_scrub_value(
         3 => value.clamp(uv.min[1], 1.0),
         _ => value.clamp(0.0, 1.0),
     }
+}
+
+fn trail_end_cap_command(
+    session: &EditorSession,
+    id: RendererId,
+    value: aestra_core::TrailEndCap,
+) -> Option<EffectCommand> {
+    let renderer = session
+        .selected_layer()
+        .renderers
+        .iter()
+        .find(|r| r.id == id)?;
+    let mut properties = renderer.properties.clone();
+    let RendererProperties::Trail { end_cap, .. } = &mut properties else {
+        return None;
+    };
+    *end_cap = value;
+    Some(EffectCommand::SetRendererProperties {
+        emitter: session.selected_layer().id,
+        renderer: id,
+        properties,
+    })
 }
 
 fn trail_uv_command(
@@ -2519,9 +2546,30 @@ pub(super) fn spawn_renderer_card(
         },
         |card| {
             if let RendererProperties::Trail {
-                sampling, uv_mode, ..
+                sampling,
+                uv_mode,
+                end_cap,
+                ..
             } = renderer.properties
             {
+                let options = [
+                    aestra_core::TrailEndCap::Flat,
+                    aestra_core::TrailEndCap::Rounded,
+                ]
+                .into_iter()
+                .map(|candidate| ComboOption {
+                    label: format!("{candidate:?}"),
+                    selected: candidate == end_cap,
+                    action: PropertiesAction::SetTrailEndCap(renderer.id, candidate),
+                })
+                .collect::<Vec<_>>();
+                spawn_properties_combo_row(
+                    card,
+                    "End caps",
+                    &format!("{end_cap:?}"),
+                    &options,
+                    None,
+                );
                 let options = [
                     aestra_core::TrailUvMode::Stretch,
                     aestra_core::TrailUvMode::Tile,
@@ -2911,6 +2959,7 @@ mod tests {
             sample_distance: 0.1,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         };
         let control = RendererNumberControl::Trail(renderer, TrailField::Points);
         let widget = renderer_scrubbable_number(&session, control);
@@ -2929,6 +2978,7 @@ mod tests {
                     sample_distance: 0.1,
                     uv_mode: aestra_core::TrailUvMode::Stretch,
                     tile_length: 1.0,
+                    end_cap: aestra_core::TrailEndCap::Flat,
                 },
                 ..
             }
@@ -2958,6 +3008,7 @@ mod tests {
             sample_distance: 0.1,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         };
         let control = RendererNumberControl::Trail(renderer, TrailField::Capacity);
         let widget = renderer_scrubbable_number(&session, control);
@@ -2997,6 +3048,7 @@ mod tests {
             sample_distance: 0.3,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         };
         let command =
             trail_sampling_command(&session, renderer, aestra_core::TrailSamplingMode::Distance)
@@ -3085,6 +3137,7 @@ mod tests {
             sample_distance: 0.3,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 8.0,
+            end_cap: aestra_core::TrailEndCap::Flat,
         };
         let before = target.properties.clone();
         let command = trail_uv_command(&session, renderer, aestra_core::TrailUvMode::Tile).unwrap();
@@ -3100,11 +3153,26 @@ mod tests {
             RendererProperties::Trail {
                 uv_mode: aestra_core::TrailUvMode::Tile,
                 tile_length: 0.001,
+                end_cap: aestra_core::TrailEndCap::Flat,
                 sample_distance: 0.3,
                 ..
             }
         ));
         session.undo();
+        session.undo();
+        assert_eq!(session.selected_layer().renderers[0].properties, before);
+        let command =
+            trail_end_cap_command(&session, renderer, aestra_core::TrailEndCap::Rounded).unwrap();
+        assert!(session.execute("Rounded caps", command, true));
+        assert!(matches!(
+            session.selected_layer().renderers[0].properties,
+            RendererProperties::Trail {
+                end_cap: aestra_core::TrailEndCap::Rounded,
+                tile_length: 8.0,
+                sample_distance: 0.3,
+                ..
+            }
+        ));
         session.undo();
         assert_eq!(session.selected_layer().renderers[0].properties, before);
     }

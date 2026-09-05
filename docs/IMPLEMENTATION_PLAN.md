@@ -559,7 +559,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Time/Distance sampling, and bounded GPU seek replay. Stretch/Tile UV controls are implemented
   end to end: world-space tile length, stable owner-anchored texture phase, shared Feather controls,
   compatible authored/artifact defaults, and native GPU UV/history conformance tests. Trail Lab
-  demonstrates a repeating textured material. Multiple ribbon IDs, trail caps, adaptive sampling,
+  demonstrates a repeating textured material. Flat/Rounded trail end caps are implemented with
+  compatible Flat defaults, undoable controls and bounded endpoint geometry. GPU telemetry now
+  reports owners with prematurely discarded history points; the Profiler warns to increase
+  History points or sample spacing until those missing points expire. Native tests cover cap
+  joins/UVs, coincident head samples, retired tails, expiry, warning resets and seeking.
+  Multiple ribbon IDs, adaptive sampling,
   history culling/checkpoints, a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

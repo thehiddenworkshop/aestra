@@ -136,6 +136,7 @@ enum ProfilerMetric {
     OccupiedTrails,
     RetiredTrails,
     TrailEvictions,
+    TruncatedTrails,
     Emitters,
     DrawCalls,
     Dispatches,
@@ -376,6 +377,7 @@ fn spawn_profiler_metric_grid(
                 ProfilerMetric::OccupiedTrails,
                 ProfilerMetric::RetiredTrails,
                 ProfilerMetric::TrailEvictions,
+                ProfilerMetric::TruncatedTrails,
                 ProfilerMetric::Emitters,
                 ProfilerMetric::DrawCalls,
                 ProfilerMetric::Dispatches,
@@ -393,6 +395,7 @@ fn spawn_profiler_metric_card(
     localizer: &Localizer,
 ) {
     let (value, source) = profiler_metric_display(profile, metric);
+    let (source_text, source_color) = profiler_metric_source(profile, metric, source, localizer);
     parent
         .spawn((
             Node {
@@ -435,12 +438,12 @@ fn spawn_profiler_metric_card(
                     metric,
                     part: ProfilerMetricPart::Source,
                 },
-                Text::new(profile_source_label(source, localizer)),
+                Text::new(source_text),
                 TextFont {
                     font_size: FontSize::Px(8.0),
                     ..default()
                 },
-                TextColor(profile_source_color(source)),
+                TextColor(source_color),
             ));
         });
 }
@@ -575,6 +578,26 @@ fn spawn_profiler_availability(
     );
 }
 
+fn profiler_metric_source(
+    profile: &EffectProfile,
+    metric: ProfilerMetric,
+    source: ProfileValueSource,
+    localizer: &Localizer,
+) -> (String, Color) {
+    if matches!(metric, ProfilerMetric::TruncatedTrails)
+        && profile.truncated_trails.value().is_some_and(|n| n > 0)
+    {
+        return (
+            localizer.text("profiler-trail-point-warning"),
+            Color::srgb(1.0, 0.65, 0.25),
+        );
+    }
+    (
+        profile_source_label(source, localizer),
+        profile_source_color(source),
+    )
+}
+
 fn profiler_metric_message(metric: ProfilerMetric) -> &'static str {
     match metric {
         ProfilerMetric::CpuTime => "profiler-metric-cpu-update",
@@ -587,6 +610,7 @@ fn profiler_metric_message(metric: ProfilerMetric) -> &'static str {
         ProfilerMetric::OccupiedTrails => "profiler-metric-trails-occupied",
         ProfilerMetric::RetiredTrails => "profiler-metric-trails-retired",
         ProfilerMetric::TrailEvictions => "profiler-metric-trail-evictions",
+        ProfilerMetric::TruncatedTrails => "profiler-metric-trails-truncated",
         ProfilerMetric::Emitters => "profiler-metric-emitters",
         ProfilerMetric::DrawCalls => "profiler-metric-draw-calls",
         ProfilerMetric::Dispatches => "profiler-metric-dispatches",
@@ -609,6 +633,7 @@ fn profiler_metric_display(
         ProfilerMetric::OccupiedTrails => format_profile_count(profile.occupied_trails),
         ProfilerMetric::RetiredTrails => format_profile_count(profile.retired_trails),
         ProfilerMetric::TrailEvictions => format_profile_count(profile.trail_evictions),
+        ProfilerMetric::TruncatedTrails => format_profile_count(profile.truncated_trails),
         ProfilerMetric::Emitters => format_profile_count(profile.emitter_count),
         ProfilerMetric::DrawCalls => format_profile_count(profile.draw_calls),
         ProfilerMetric::Dispatches => format_profile_count(profile.dispatch_count),
@@ -733,8 +758,8 @@ fn update_profiler_labels(
                         color.0 = theme::TEXT;
                     }
                     ProfilerMetricPart::Source => {
-                        text.0 = profile_source_label(source, &localizer);
-                        color.0 = profile_source_color(source);
+                        (text.0, color.0) =
+                            profiler_metric_source(profile, metric.metric, source, &localizer);
                     }
                 }
             } else if let Some(emitter) = emitter {
@@ -781,6 +806,39 @@ fn update_profiler_labels(
 mod tests {
     use super::*;
     use crate::test_support;
+
+    #[test]
+    fn point_budget_warning_is_actionable_and_clears_with_telemetry() {
+        let session = test_support::session_with_timing_slack();
+        let mut profile = EffectProfile::from_compiled(session.preview.as_ref().unwrap().effect());
+        for locale in ["en-US", "fr-FR"] {
+            let localizer = Localizer::new(locale).unwrap();
+            profile.record_trail_usage(Some(aestra_runtime::TrailUsage {
+                truncated: 2,
+                ..default()
+            }));
+            let (message, color) = profiler_metric_source(
+                &profile,
+                ProfilerMetric::TruncatedTrails,
+                ProfileValueSource::Measured,
+                &localizer,
+            );
+            assert_eq!(message, localizer.text("profiler-trail-point-warning"));
+            assert_eq!(color, Color::srgb(1.0, 0.65, 0.25));
+            for usage in [Some(aestra_runtime::TrailUsage::default()), None] {
+                profile.record_trail_usage(usage);
+                let (_, source) =
+                    profiler_metric_display(&profile, ProfilerMetric::TruncatedTrails);
+                let (message, _) = profiler_metric_source(
+                    &profile,
+                    ProfilerMetric::TruncatedTrails,
+                    source,
+                    &localizer,
+                );
+                assert_eq!(message, profile_source_label(source, &localizer));
+            }
+        }
+    }
 
     #[test]
     fn frame_ingestion_preserves_preview_state_and_provenance() {

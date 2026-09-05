@@ -208,11 +208,16 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
         .replace(",sampling:Distance", "")
         .replace(",sample_distance:1.0", "")
         .replace(",uv_mode:Tile", "")
-        .replace(",tile_length:8.0", "");
+        .replace(",tile_length:8.0", "")
+        .replace(",end_cap:Flat", "");
     let legacy = decode_effect(legacy.as_bytes()).unwrap();
     assert!(matches!(
         legacy.emitters[0].renderers[0].kind,
-        RendererPlanKind::Trail { max_trails: 0, .. }
+        RendererPlanKind::Trail {
+            max_trails: 0,
+            end_cap: aestra_core::TrailEndCap::Flat,
+            ..
+        }
     ));
     let legacy =
         GpuEffectArtifact::from_instance(&EffectInstance::new(std::sync::Arc::new(legacy)))
@@ -222,6 +227,14 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
     assert_eq!(legacy.emitters[0].trail_distance, 0.1);
     assert_eq!(legacy.renderers[0].flipbook_flags, 0);
     assert_eq!(legacy.renderers[0].frames[0].x, 1.0);
+    let mut rounded = compiled.clone();
+    if let RendererPlanKind::Trail { end_cap, .. } = &mut rounded.emitters[0].renderers[0].kind {
+        *end_cap = aestra_core::TrailEndCap::Rounded;
+    }
+    assert_eq!(
+        decode_effect(&encode_effect(&rounded).unwrap()).unwrap(),
+        rounded
+    );
 }
 
 #[test]

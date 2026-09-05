@@ -584,6 +584,7 @@ impl EffectCompiler {
                         sample_distance,
                         uv_mode,
                         tile_length,
+                        end_cap,
                     } => RendererPlan {
                         source: renderer.id,
                         material: renderer.material,
@@ -594,6 +595,7 @@ impl EffectCompiler {
                             sample_distance: *sample_distance,
                             uv_mode: *uv_mode,
                             tile_length: *tile_length,
+                            end_cap: *end_cap,
                             lifetime: *lifetime,
                             max_points: *max_points,
                             max_trails: if *max_trails == 0 {
