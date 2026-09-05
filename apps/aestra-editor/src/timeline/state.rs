@@ -34,6 +34,7 @@ impl TimelineView {
 
 #[derive(Resource, Debug)]
 pub(crate) struct TimelineState {
+    pub(crate) host_motion: super::host_motion::HostMotionState,
     pub(super) view: TimelineView,
     pub(super) snap: TimelineSnapMode,
     pub(super) drag: Option<TimelineDrag>,
@@ -86,6 +87,7 @@ impl TimelineState {
     pub(crate) fn framed(duration: f32) -> Self {
         let duration = duration.max(0.05);
         Self {
+            host_motion: default(),
             view: TimelineView {
                 start: 0.0,
                 end: duration,

@@ -5671,6 +5671,9 @@ pub(crate) fn spawn_properties(
         }
         spawn_source_navigation_row(parent, &breadcrumbs, None, None, asset_server);
     }
+    if crate::timeline::host_motion::spawn_inspector(parent, session, timeline) {
+        return;
+    }
     if let Some(selection) = timeline.inspected_child.as_ref() {
         let spawned = match selection {
             EffectClipChildSelection::EffectClip { path } => {

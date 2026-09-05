@@ -56,6 +56,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod actions;
 mod automation;
+pub(crate) mod host_motion;
 mod referenced_effect;
 mod regions;
 mod state;
@@ -108,6 +109,7 @@ pub(crate) struct TimelinePlugin;
 
 impl Plugin for TimelinePlugin {
     fn build(&self, app: &mut App) {
+        host_motion::install(app);
         let duration = app
             .world()
             .get_resource::<EditorSession>()
@@ -326,7 +328,7 @@ fn execute_timeline_action(
                 session.ui_revision += 1;
             }
         }
-        TimelineAction::FrameAll => state.frame_all(session.playback_duration()),
+        TimelineAction::FrameAll => state.frame_all(host_motion::timeline_duration(&session)),
         TimelineAction::AddMarker => {
             state.clear_emitter_selection();
             let index = session.effect.markers.len();
@@ -704,6 +706,9 @@ fn choreography_keyboard_input(
         return;
     }
     let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    if host_motion::keyboard_input(&session, &state, &keys, &mut commands) {
+        return;
+    }
     if control && keys.just_pressed(KeyCode::Enter) {
         commands.trigger(ChoreographyAction::AddEmitter);
     }
@@ -4159,7 +4164,7 @@ fn update_timeline_visuals(
     >,
     mut texts: Query<&mut Text>,
 ) {
-    state.ensure_duration(session.playback_duration());
+    state.ensure_duration(host_motion::timeline_duration(&session));
     let view = state.view;
     let width = canvases
         .iter()
@@ -5667,6 +5672,7 @@ pub(crate) fn spawn_timeline(
                             TextColor(theme::TEXT_MUTED),
                             Pickable::IGNORE,
                         ));
+                        host_motion::spawn_header(labels);
                         labels
                             .spawn((
                                 TimelineVerticalPane::Headers,
@@ -5849,7 +5855,7 @@ pub(crate) fn spawn_timeline(
                             height: Val::Percent(100.0),
                             min_height: Val::Px(0.0),
                             position_type: PositionType::Relative,
-                            padding: UiRect::top(Val::Px(53.0)),
+                            padding: UiRect::top(Val::Px(81.0)),
                             flex_direction: FlexDirection::Column,
                             overflow: Overflow::clip(),
                             ..default()
@@ -5864,6 +5870,7 @@ pub(crate) fn spawn_timeline(
                     .with_children(|tracks| {
                         spawn_ruler(tracks, session, localizer);
                         spawn_choreography_event_lane(tracks, session, localizer);
+                        host_motion::spawn_lane(tracks, session);
                         vertical_scroll_target =
                             Some(
                                 tracks
@@ -7888,7 +7895,7 @@ fn navigate_timeline(
     {
         let width = canvas.size().x.max(1.0);
         let delta_time = -pointer_delta.x / width * state.view.span();
-        state.pan_by(delta_time, session.playback_duration());
+        state.pan_by(delta_time, host_motion::timeline_duration(&session));
     }
 
     let (scroll, track_scroll) =
@@ -7925,14 +7932,17 @@ fn navigate_timeline(
                 state.zoom_at(
                     anchor,
                     0.82_f32.powf(amount),
-                    session.playback_duration(),
+                    host_motion::timeline_duration(&session),
                     session.clock.tick_rate(),
                 );
             }
         }
         TimelineWheelIntent::PanTime(amount) => {
             let span = state.view.span();
-            state.pan_by(-amount * span * 0.08, session.playback_duration());
+            state.pan_by(
+                -amount * span * 0.08,
+                host_motion::timeline_duration(&session),
+            );
         }
         TimelineWheelIntent::ScrollTracks(amount) => {
             let maximum = track_panes

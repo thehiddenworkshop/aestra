@@ -923,7 +923,16 @@ pub(super) fn finish_timeline_clip_drag(
 pub(super) fn dismiss_emitter_region_selection(
     buttons: Res<ButtonInput<MouseButton>>,
     regions: Query<&RelativeCursorPosition, With<TimelineClip>>,
-    tools: Query<&RelativeCursorPosition, (With<TimelineRegionToolButton>, Without<TimelineClip>)>,
+    tools: Query<
+        &RelativeCursorPosition,
+        (
+            Or<(
+                With<TimelineRegionToolButton>,
+                With<host_motion::HostMotionControl>,
+            )>,
+            Without<TimelineClip>,
+        ),
+    >,
     mut state: ResMut<TimelineState>,
     mut session: ResMut<EditorSession>,
 ) {

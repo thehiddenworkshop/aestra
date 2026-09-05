@@ -36,8 +36,36 @@ and last poses. The track period is independent of effect duration.
 
 `EffectCommand::SetHostTransformTrack` validates edits transactionally, reports a
 semantic diff and supports undo/redo. The editor preview consumes the compiled
-track without depending on `aestra-bevy`. A dedicated motion-key timeline editor
-is not part of this slice; author keys in RON or through the command API.
+track without depending on `aestra-bevy`.
+
+### Editor workflow
+
+The **Host Motion** lane sits below Events. Click its heading or a pose diamond
+to open the pose inspector in Properties. Use the lane's **+**, **Key at playhead**,
+or **Insert** while inspecting motion to add a sampled pose at the playhead.
+An existing key at that time is selected instead of duplicated. Creating a track
+away from zero also creates the required time-zero anchor.
+
+- Drag a diamond to retime it with the timeline's snapping mode, or edit **Time**
+  in Properties. The first key stays at zero. Coincident key times are rejected.
+- Edit position, XYZ rotation in degrees, and positive scale using the shared
+  draggable Feather numeric controls. Intermediate values update the preview;
+  releasing commits one undoable edit. Escape cancels the preview.
+- **Hold** keeps the final pose after the endpoint. **Repeat** requires a positive
+  period and matching endpoint poses. **Close loop** explicitly copies the first
+  pose to the last and enables Repeat; a one-key track gains an endpoint at the
+  effect duration. In Repeat mode, editing either endpoint pose updates both.
+- **Delete key** (or Delete while inspecting motion) removes the selected key.
+  The zero anchor cannot be removed while other keys remain. Deletions that would
+  break a repeating seam are rejected; switch to Hold to reshape the endpoints.
+  **Clear motion** removes the whole track through the same undo history.
+- **Frame all** includes motion endpoints beyond the effect duration without
+  changing playback length. The playhead still follows the effect's playback
+  range; use the key time field for motion keys outside that range.
+
+Motion edits invalidate preview history, so subsequent scrubbing rebuilds trails
+from the new trajectory. Undo/redo restores the track and its replay inputs.
+To try it, open Moving Trail Lab, edit the middle pose, scrub backward, then undo.
 
 Hosts can validate an immutable `aestra_runtime::CompiledHostTransformTrack` and
 replace it through `EffectInstance::set_host_transform_track` or the Bevy

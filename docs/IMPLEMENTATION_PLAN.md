@@ -592,8 +592,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   the immutable track and stable host placement. Transactional edits and runtime track replacement
   invalidate history. Moving Trail Lab exercises translation, rotation and scale; source/artifact,
   undo/redo, native seek/playback/checkpoint and presentation tests cover the slice.
-  See `docs/host_motion_tracks.md` for integration and limits. Arbitrary per-particle ribbon-ID
-  authoring, a motion-key editor, composed parent/clip trajectories, unrecorded live-motion replay,
+  The editor now has an effect-level Host Motion lane and pose inspector: sampled key creation,
+  retiming, deletion, shared Feather TRS scrubbing, Hold/Repeat and explicit loop closure.
+  Preview-only interactions commit once on release, cancel on Escape, and retain transactional
+  undo/redo and history invalidation. Timeline framing includes longer motion periods without
+  changing playback length. See `docs/host_motion_tracks.md` for the workflow and limits.
+  Arbitrary per-particle ribbon-ID authoring, composed parent/clip trajectories, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
