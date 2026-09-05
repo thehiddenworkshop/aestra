@@ -2666,7 +2666,8 @@ before admitting new parents. Retired tails remain until lifetime expiry; if the
 is full, the oldest retired owner is evicted deterministically. Ring samples use a fixed time
 interval, interpolating observed heads when frames skip sample ticks. Thus the same observation
 sequence is deterministic; this is not yet frame-rate-independent trajectory reconstruction.
-The effective tail length is limited by both lifetime and `(points - 1) * sample interval`.
+In Time mode, the effective tail length is limited by both lifetime and
+`(points - 1) * sample interval`.
 
 The live head follows the current particle; stored points do not follow subsequent effect
 transforms. Width and opacity fade with sample age. `RibbonUv`/`Uv0` use U=0 at lifetime expiry
@@ -2702,6 +2703,43 @@ buffer is read back, not particle samples or history. Counts are unavailable bef
 and after a discontinuity until matching-epoch counters arrive; they can lag the current frame.
 Native GPU tests exercise both legacy-sized and expanded pools, burst replacement, slot
 permutations, loop survivors, deterministic overflow, expiry and counter resets.
+
+### Distance-based trail sampling
+
+Trail Renderer now offers `Sampling: Time / Distance`. Time remains the default for new
+renderers and for authored files/version-1 artifacts without the new fields. Both interval
+and distance values are preserved when switching modes. Distance uses `Sample Distance`
+in world units (default 0.1, minimum 0.001), edited with the reusable Feather number scrubber.
+Trail Lab demonstrates Distance mode; its existing time interval remains available.
+
+The GPU accumulates traveled distance along successive observed world-space head positions,
+including motion of the effect transform. A sub-spacing remainder carries across frames
+and corners. Samples interpolate position, color, size and timestamp along each observed
+segment. Fast movement emits at most the ring capacity worth of newest samples per update,
+skipping points that would immediately be overwritten. Stationary parents add no samples;
+expired anchors are pruned so a stationary live head cannot keep an old partial strip visible.
+Owner budgets, retired-tail expiry, continuous-loop identity and discontinuity resets are
+unchanged. Existing reserved emitter words hold the mode/distance, without extra storage or
+bindings. Distance controls geometry spacing, **not UVs**: UV/fade remain lifetime-based.
+
+This is sampling of the observed polyline, not analytic trajectory reconstruction. More
+frequent observations can capture curves more accurately; it does not promise frame-rate
+independent reconstruction of unobserved motion.
+
+**Interactive seek replay:** explicit seeks still invalidate history, but the shared Bevy GPU
+adapter reconstructs it with ordered 60 Hz simulation/link/history dispatches from time zero
+to the exact target. Up to 240 observations are submitted per render frame; longer seeks
+continue in later frames and a new seek cancels the pending reconstruction. The render time
+follows the processed history during catch-up. Paused targets preserve the reconstructed
+tail. Pipeline warm-up does not consume replay steps. The editor labels this GPU trail replay
+rather than claiming trail presentation is stateless. Reconstruction uses current parameter
+values and the current host transform, not a recording of past external transform changes.
+Viewer capture retains its sequential observation path for deterministic capture scheduling.
+
+Trail Lab uses 64 points with 1-unit Distance spacing: the former 31 anchors at 0.1 units
+retained only about 0.06 seconds at its 55-unit/second launch speed, truncating tails well
+before their 0.65-second lifetime. Point capacity and spacing bound retained path length;
+undersized user-authored budgets can still produce a hard tail end.
 
 Remaining trail work: adaptive spatial sampling, exact
 trajectory replay/checkpoint serialization, caps and distance-based UVs, conservative world

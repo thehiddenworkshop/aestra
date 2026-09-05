@@ -17,6 +17,8 @@ fn fixture() -> EffectAsset {
         lifetime: 0.5,
         max_points: 32,
         max_trails: 0,
+        sampling: aestra_core::TrailSamplingMode::Time,
+        sample_distance: 0.1,
     };
     effect.emitters.push(emitter);
     effect
@@ -43,6 +45,8 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             lifetime: 1.0,
             max_points: 4,
             max_trails: 0,
+            sampling: aestra_core::TrailSamplingMode::Time,
+            sample_distance: 0.1,
         },
         RendererProperties::Trail {
             width: 1.0,
@@ -50,6 +54,8 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             lifetime: 1.0,
             max_points: 4,
             max_trails: 0,
+            sampling: aestra_core::TrailSamplingMode::Time,
+            sample_distance: 0.1,
         },
         RendererProperties::Trail {
             width: 1.0,
@@ -57,6 +63,8 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             lifetime: -1.0,
             max_points: 4,
             max_trails: 0,
+            sampling: aestra_core::TrailSamplingMode::Time,
+            sample_distance: 0.1,
         },
         RendererProperties::Trail {
             width: 1.0,
@@ -64,6 +72,8 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             lifetime: 1.0,
             max_points: 65,
             max_trails: 0,
+            sampling: aestra_core::TrailSamplingMode::Time,
+            sample_distance: 0.1,
         },
     ] {
         let mut effect = effect.clone();
@@ -86,11 +96,18 @@ fn independent_pool_capacity_is_serialized_validated_and_profiled() {
     let legacy = effect
         .to_pretty_ron()
         .unwrap()
-        .replace("max_trails: 0,", "");
+        .replace("max_trails: 0,", "")
+        .replace("sampling: Time,", "")
+        .replace("sample_distance: 0.1,", "");
     let legacy = EffectAsset::from_ron(&legacy).unwrap();
     assert!(matches!(
         legacy.emitters[0].renderers[0].properties,
-        RendererProperties::Trail { max_trails: 0, .. }
+        RendererProperties::Trail {
+            max_trails: 0,
+            sampling: aestra_core::TrailSamplingMode::Time,
+            sample_distance: 0.1,
+            ..
+        }
     ));
     let compiled = EffectCompiler::default().compile(&effect).unwrap();
     let mut profile = aestra_runtime::EffectProfile::from_compiled(&compiled);
@@ -139,6 +156,34 @@ fn independent_pool_capacity_is_serialized_validated_and_profiled() {
             *max_trails = capacity;
         }
         assert!(EffectCompiler::default().compile(&effect).is_err());
+    }
+}
+
+#[test]
+fn distance_sampling_validates_and_lowers_without_increasing_storage() {
+    let mut effect = fixture();
+    let expected = 8 + 1 + 8 * 32;
+    for distance in [0.001, 0.25, 100.0, 0.0, -1.0, f32::NAN, f32::INFINITY] {
+        if let RendererProperties::Trail {
+            sampling,
+            sample_distance,
+            ..
+        } = &mut effect.emitters[0].renderers[0].properties
+        {
+            *sampling = aestra_core::TrailSamplingMode::Distance;
+            *sample_distance = distance;
+        }
+        let compiled = EffectCompiler::default().compile(&effect);
+        if distance.is_finite() && distance >= 0.001 {
+            let gpu =
+                GpuEffectArtifact::from_instance(&EffectInstance::new(Arc::new(compiled.unwrap())))
+                    .unwrap();
+            assert_eq!(gpu.emitters[0].trail_sampling, 1);
+            assert_eq!(gpu.emitters[0].trail_distance, distance);
+            assert_eq!(gpu.particles.len(), expected);
+        } else {
+            assert!(compiled.is_err());
+        }
     }
 }
 

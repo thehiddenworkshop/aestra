@@ -136,7 +136,9 @@ pub struct GpuEmitter {
     pub trail_interval: f32,
     pub trail_lifetime: f32,
     pub trail_capacity: u32,
-    pub _trail_padding: [u32; 3],
+    pub trail_sampling: u32,
+    pub trail_distance: f32,
+    pub _trail_padding: u32,
 }
 
 /// One authored presentation path for an emitter.
@@ -295,6 +297,8 @@ impl GpuEffectArtifact {
                         lifetime,
                         max_points,
                         max_trails,
+                        sampling,
+                        sample_distance,
                         ..
                     } if emitter.enabled => Some((
                         sample_interval,
@@ -305,19 +309,29 @@ impl GpuEffectArtifact {
                         } else {
                             max_trails
                         },
+                        sampling,
+                        sample_distance,
                     )),
                     _ => None,
                 })
                 .collect();
             let trail_offset = history_offset;
-            let (trail_interval, trail_lifetime, trail_points, trail_capacity) =
-                trails.first().copied().unwrap_or_default();
+            let (
+                trail_interval,
+                trail_lifetime,
+                trail_points,
+                trail_capacity,
+                trail_sampling,
+                trail_distance,
+            ) = trails.first().copied().unwrap_or_default();
             if !trails.is_empty() {
                 if trails.len() > 1
                     || emitter.max_particles > 256
                     || !(2..=64).contains(&trail_points)
                     || trail_capacity < emitter.max_particles
                     || trail_capacity > 1024
+                    || !trail_distance.is_finite()
+                    || trail_distance < 0.001
                 {
                     return Err(GpuArtifactError::TrailLimit);
                 }
@@ -623,7 +637,11 @@ impl GpuEffectArtifact {
                 trail_interval,
                 trail_lifetime,
                 trail_capacity,
-                _trail_padding: [0; 3],
+                trail_sampling: u32::from(
+                    trail_sampling == aestra_core::TrailSamplingMode::Distance,
+                ),
+                trail_distance,
+                _trail_padding: 0,
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }

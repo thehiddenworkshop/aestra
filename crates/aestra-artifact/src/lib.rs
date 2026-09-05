@@ -295,6 +295,10 @@ enum RendererPlanKindV1 {
         max_points: u32,
         #[serde(default)]
         max_trails: u32,
+        #[serde(default)]
+        sampling: aestra_core::TrailSamplingMode,
+        #[serde(default = "aestra_core::default_trail_sample_distance")]
+        sample_distance: f32,
     },
 }
 
@@ -1419,12 +1423,16 @@ impl From<&RendererPlan> for RendererPlanV1 {
                     lifetime,
                     max_points,
                     max_trails,
+                    sampling,
+                    sample_distance,
                 } => RendererPlanKindV1::Trail {
                     width,
                     sample_interval,
                     lifetime,
                     max_points,
                     max_trails,
+                    sampling,
+                    sample_distance,
                 },
                 RendererPlanKind::Flipbook {
                     flipbook,
@@ -1457,12 +1465,16 @@ impl From<RendererPlanV1> for RendererPlan {
                     lifetime,
                     max_points,
                     max_trails,
+                    sampling,
+                    sample_distance,
                 } => RendererPlanKind::Trail {
                     width,
                     sample_interval,
                     lifetime,
                     max_points,
                     max_trails,
+                    sampling,
+                    sample_distance,
                 },
                 RendererPlanKindV1::Flipbook {
                     flipbook,

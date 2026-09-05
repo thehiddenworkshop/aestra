@@ -208,6 +208,7 @@ pub(crate) enum PropertiesAction {
     SetRendererTexture(RendererId, Option<usize>),
     SetRendererFlipbook(RendererId, usize),
     SetFlipbookTimeSource(RendererId, FlipbookTimeSource),
+    SetTrailSampling(RendererId, aestra_core::TrailSamplingMode),
     SetFlipbookPlayback(RendererId, FlipbookPlaybackMode),
     SetSemanticMaterialTexture {
         instance: MaterialId,
@@ -822,6 +823,7 @@ fn handle_properties_actions(
                     | PropertiesAction::SetRendererTexture(_, _)
                     | PropertiesAction::SetRendererFlipbook(_, _)
                     | PropertiesAction::SetFlipbookTimeSource(_, _)
+                    | PropertiesAction::SetTrailSampling(_, _)
                     | PropertiesAction::SetFlipbookPlayback(_, _)
                     | PropertiesAction::DuplicateRenderer(_)
                     | PropertiesAction::DeleteRenderer(_) => unreachable!(),

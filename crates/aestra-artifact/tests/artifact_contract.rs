@@ -176,27 +176,33 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
     assert!(matches!(
         restored.emitters[0].renderers[0].kind,
         RendererPlanKind::Trail {
-            max_points: 32,
+            max_points: 64,
             max_trails: 64,
+            sampling: aestra_core::TrailSamplingMode::Distance,
+            sample_distance: 1.0,
             ..
         }
     ));
     let instance = EffectInstance::new(std::sync::Arc::new(restored));
     let gpu = GpuEffectArtifact::from_instance(&instance).unwrap();
     let dynamic = GpuEffectArtifact::dynamics_from_instance(&instance).unwrap();
-    assert_eq!(gpu.particles.len(), 32 + 1 + 64 * 32);
+    assert_eq!(gpu.particles.len(), 32 + 1 + 64 * 64);
     assert_eq!(dynamic.storage_records as usize, gpu.particles.len());
     assert_eq!(gpu.total_slots, 32);
     assert_eq!(gpu.emitters[0].trail_offset, 32);
+    assert_eq!(gpu.emitters[0].trail_sampling, 1);
+    assert_eq!(gpu.emitters[0].trail_distance, 1.0);
     assert_eq!(gpu.renderers[0].attribute_flags.z, 32);
     assert_eq!(gpu.renderers[0].renderer_kind, 4);
-    assert_eq!(gpu.renderers[0].frame_count, 32);
+    assert_eq!(gpu.renderers[0].frame_count, 64);
     assert_eq!(gpu.renderers[0].playback_mode, 64);
 
     // Older version-1 artifacts omitted this field and used one owner per parent.
     let legacy = String::from_utf8(encode_effect(&compiled).unwrap())
         .unwrap()
-        .replace(",max_trails:64", "");
+        .replace(",max_trails:64", "")
+        .replace(",sampling:Distance", "")
+        .replace(",sample_distance:1.0", "");
     let legacy = decode_effect(legacy.as_bytes()).unwrap();
     assert!(matches!(
         legacy.emitters[0].renderers[0].kind,
@@ -205,7 +211,9 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
     let legacy =
         GpuEffectArtifact::from_instance(&EffectInstance::new(std::sync::Arc::new(legacy)))
             .unwrap();
-    assert_eq!(legacy.particles.len(), 32 + 1 + 32 * 32);
+    assert_eq!(legacy.particles.len(), 32 + 1 + 32 * 64);
+    assert_eq!(legacy.emitters[0].trail_sampling, 0);
+    assert_eq!(legacy.emitters[0].trail_distance, 0.1);
 }
 
 #[test]

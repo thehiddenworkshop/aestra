@@ -2543,11 +2543,15 @@ impl RendererInstance {
                 lifetime,
                 max_points,
                 max_trails,
+                sample_distance,
+                ..
             } => {
                 if !width.is_finite()
                     || *width <= 0.0
                     || !sample_interval.is_finite()
                     || *sample_interval < 1.0 / 240.0
+                    || !sample_distance.is_finite()
+                    || *sample_distance < 0.001
                     || !lifetime.is_finite()
                     || *lifetime <= 0.0
                     || !(2..=64).contains(max_points)
@@ -2556,7 +2560,7 @@ impl RendererInstance {
                     invalid_value(
                         report,
                         path,
-                        "trail requires positive finite width/lifetime, a sample interval of at least 1/240s, 2–64 points and at most 1024 trails (0 inherits parent capacity)",
+                        "trail requires positive finite width/lifetime, sample interval >= 1/240s, sample distance >= 0.001 world units, 2–64 points and at most 1024 trails (0 inherits parent capacity)",
                     );
                 }
                 Some(RENDERER_TRAIL)
@@ -2620,7 +2624,22 @@ pub enum RendererProperties {
         max_points: u32,
         #[serde(default)]
         max_trails: u32,
+        #[serde(default)]
+        sampling: TrailSamplingMode,
+        #[serde(default = "default_trail_sample_distance")]
+        sample_distance: f32,
     },
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TrailSamplingMode {
+    #[default]
+    Time,
+    Distance,
+}
+
+pub const fn default_trail_sample_distance() -> f32 {
+    0.1
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

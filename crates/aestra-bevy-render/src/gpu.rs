@@ -4,6 +4,7 @@ mod bounds;
 mod mesh_inputs;
 mod render;
 mod ribbon_bounds;
+mod trail_replay;
 mod wireframe;
 
 use crate::{
@@ -45,7 +46,7 @@ use bevy::{
         render_asset::RenderAssets,
         render_resource::{
             BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
-            BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
+            BufferInitDescriptor, BufferUsages, CachedComputePipelineId, ComputePassDescriptor,
             ComputePipelineDescriptor, DownlevelFlags, Extent3d, PipelineCache, ShaderStages,
             TextureDimension, TextureFormat,
             binding_types::{storage_buffer, storage_buffer_read_only},
@@ -93,6 +94,8 @@ pub(crate) struct GpuEffectBuffers {
     has_trails: bool,
     ribbon_workgroups: u32,
     total_slots: u32,
+    simulation_time: f32,
+    history_epoch: u32,
 }
 
 #[derive(Component, Clone)]
@@ -578,6 +581,8 @@ pub(crate) fn prepare_gpu_effects(
                 workgroups: artifact.total_slots.div_ceil(WORKGROUP_SIZE),
                 has_ribbons,
                 has_trails,
+                simulation_time: player.simulation_time(),
+                history_epoch: player.instance.history_epoch(),
                 ribbon_workgroups,
                 total_slots: artifact.total_slots,
             },
@@ -996,9 +1001,11 @@ fn install_visibility_updates(app: &mut App) {
 // Rendering and culling must see the same frame's propagated effect transform.
 fn sync_gpu_render_transforms(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    players: Query<(&PresentedEffect, &GlobalTransform, &GpuEffectBuffers)>,
+    mut players: Query<(&PresentedEffect, &GlobalTransform, &mut GpuEffectBuffers)>,
 ) {
-    for (player, transform, gpu) in &players {
+    for (player, transform, mut gpu) in &mut players {
+        gpu.simulation_time = player.simulation_time();
+        gpu.history_epoch = player.instance.history_epoch();
         if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
             buffer.set_data(GpuGlobals {
                 time: player.simulation_time(),
@@ -1286,11 +1293,13 @@ fn run_simulation(
     mut render_context: RenderContext,
     pipeline_cache: Res<PipelineCache>,
     pipeline: Res<SimulationPipeline>,
-    effects: Query<(&GpuEffectBuffers, &GpuBindGroup)>,
+    effects: Query<(Entity, &GpuEffectBuffers, &GpuBindGroup)>,
     mesh_draws: Query<(&GpuDrawInstance, &render::PreparedMeshDraw)>,
-    buffers: Res<RenderAssets<GpuShaderBuffer>>,
+    gpu_resources: (Res<RenderAssets<GpuShaderBuffer>>, Res<RenderDevice>),
+    mut histories: Local<BTreeMap<Entity, (AssetId<ShaderBuffer>, trail_replay::TrailReplay)>>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
+    let (buffers, render_device) = gpu_resources;
     let link_ribbons = pipeline_cache.get_compute_pipeline(pipeline.link_ribbons);
     let update_trails = pipeline_cache.get_compute_pipeline(pipeline.update_trails);
     let (Some(reset), Some(simulate)) = (
@@ -1305,35 +1314,85 @@ fn run_simulation(
     let diagnostics = render_context.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let gpu_span = diagnostics.time_span(render_context.command_encoder(), "aestra::gpu::simulate");
-    for (effect, bind_group) in &effects {
+    histories.retain(|entity, _| effects.contains(*entity));
+    for (entity, effect, bind_group) in &effects {
         if (effect.has_ribbons && link_ribbons.is_none())
             || (effect.has_trails && update_trails.is_none())
         {
             continue;
         }
-        let mut pass =
-            render_context
-                .command_encoder()
-                .begin_compute_pass(&ComputePassDescriptor {
-                    label: Some("aestra simulation"),
-                    ..default()
-                });
-        pass.set_bind_group(0, &bind_group.0, &[]);
-        pass.set_pipeline(reset);
-        pass.dispatch_workgroups(1, 1, 1);
-        pass.set_pipeline(simulate);
-        pass.dispatch_workgroups(effect.workgroups, 1, 1);
-        if effect.has_ribbons
-            && let Some(link_ribbons) = link_ribbons
-        {
-            pass.set_pipeline(link_ribbons);
-            pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
-        }
-        if effect.has_trails
-            && let Some(update_trails) = update_trails
-        {
-            pass.set_pipeline(update_trails);
-            pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+        let replay = if effect.has_trails {
+            let Some(globals) = buffers.get(&effect.globals) else {
+                continue;
+            };
+            let Some(render_globals) = buffers.get(&effect.render_globals) else {
+                continue;
+            };
+            let history = histories
+                .entry(entity)
+                .or_insert_with(|| (effect.particles.id(), default()));
+            if history.0 != effect.particles.id() {
+                *history = (effect.particles.id(), default());
+            }
+            let times = history
+                .1
+                .observations(effect.history_epoch, effect.simulation_time);
+            // A queue.write_buffer loop would expose only the final time to all
+            // dispatches. Encoder copies make each observation visible in order.
+            let bytes: Vec<u8> = times.iter().flat_map(|time| time.to_le_bytes()).collect();
+            let times_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("aestra trail replay times"),
+                contents: &bytes,
+                usage: BufferUsages::COPY_SRC,
+            });
+            // GpuRenderGlobals starts with a mat4, followed by time. During a
+            // multi-frame replay, draw the processed time rather than expiring
+            // all intermediate history against the eventual seek target.
+            render_context.command_encoder().copy_buffer_to_buffer(
+                &times_buffer,
+                (times.len() as u64 - 1) * 4,
+                &render_globals.buffer,
+                64,
+                4,
+            );
+            Some((times_buffer, times.len(), globals))
+        } else {
+            None
+        };
+        for observation in 0..replay.as_ref().map_or(1, |(_, count, _)| *count) {
+            if let Some((times, _, globals)) = &replay {
+                render_context.command_encoder().copy_buffer_to_buffer(
+                    times,
+                    observation as u64 * 4,
+                    &globals.buffer,
+                    0,
+                    4,
+                );
+            }
+            let mut pass =
+                render_context
+                    .command_encoder()
+                    .begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("aestra simulation"),
+                        ..default()
+                    });
+            pass.set_bind_group(0, &bind_group.0, &[]);
+            pass.set_pipeline(reset);
+            pass.dispatch_workgroups(1, 1, 1);
+            pass.set_pipeline(simulate);
+            pass.dispatch_workgroups(effect.workgroups, 1, 1);
+            if effect.has_ribbons
+                && let Some(link_ribbons) = link_ribbons
+            {
+                pass.set_pipeline(link_ribbons);
+                pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+            }
+            if effect.has_trails
+                && let Some(update_trails) = update_trails
+            {
+                pass.set_pipeline(update_trails);
+                pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+            }
         }
     }
     // Copy only instance counts after simulation; mesh commands retain their own geometry ranges.
@@ -1446,6 +1505,8 @@ mod tests {
                     has_trails: false,
                     ribbon_workgroups: 1,
                     total_slots: 1,
+                    simulation_time: 0.0,
+                    history_epoch: 0,
                 },
             ))
             .id();

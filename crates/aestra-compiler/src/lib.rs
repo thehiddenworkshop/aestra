@@ -580,12 +580,16 @@ impl EffectCompiler {
                         lifetime,
                         max_points,
                         max_trails,
+                        sampling,
+                        sample_distance,
                     } => RendererPlan {
                         source: renderer.id,
                         material: renderer.material,
                         kind: RendererPlanKind::Trail {
                             width: *width,
                             sample_interval: *sample_interval,
+                            sampling: *sampling,
+                            sample_distance: *sample_distance,
                             lifetime: *lifetime,
                             max_points: *max_points,
                             max_trails: if *max_trails == 0 {

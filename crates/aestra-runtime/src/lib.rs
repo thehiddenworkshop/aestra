@@ -466,6 +466,8 @@ pub enum RendererPlanKind {
         max_points: u32,
         // Zero preserves the legacy parent-sized owner pool.
         max_trails: u32,
+        sampling: aestra_core::TrailSamplingMode,
+        sample_distance: f32,
     },
     Ribbon {
         width: f32,

@@ -155,7 +155,7 @@
                     renderer_type: "aestra.renderer.trail",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-00000000c101",
-                    properties: Trail(width: 0.35, sample_interval: 0.025, lifetime: 0.65, max_points: 32, max_trails: 64),
+                    properties: Trail(width: 0.35, sample_interval: 0.025, lifetime: 0.65, max_points: 64, max_trails: 64, sampling: Distance, sample_distance: 1.0),
                 ),
             ],
         ),
@@ -163,6 +163,6 @@
     events: [],
     dependencies: [],
     metadata: {
-        "purpose": "World-space bounded per-particle trail history; continuous loops preserve history, explicit seeks clear it",
+        "purpose": "World-space bounded per-particle trail history; continuous loops preserve history, explicit seeks rebuild it",
     },
 )

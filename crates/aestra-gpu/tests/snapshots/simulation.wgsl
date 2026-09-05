@@ -74,7 +74,9 @@ struct Emitter {
     trail_interval: f32,
     trail_lifetime: f32,
     trail_capacity: u32,
-    _trail_padding: array<u32, 3>
+    trail_sampling: u32,
+    trail_distance: f32,
+    _trail_padding: u32
 }
 
 struct Particle {
@@ -709,8 +711,34 @@ fn record_trails(emitter_index: u32) {
             }
             head._padding_0 = 1u % capacity;
             head._padding_1 = 1u;
-            head._padding_2 = bitcast<u32>(now);
+            head._padding_2 = bitcast<u32>(select(now, 0.0, e.trail_sampling == 1u));
             particles[owner + 1u] = head;
+        }
+        else if e.trail_sampling == 1u {
+            let previous = particles[owner];
+            head._padding_0 = previous._padding_0;
+            head._padding_1 = previous._padding_1;
+            head._padding_2 = previous._padding_2;
+            let segment = length(head.position - previous.position);
+            let total = bitcast<f32>(previous._padding_2) + segment;
+            if segment > 0.0 && total <= min(3.402823e38, 3.402823e38 * e.trail_distance) {
+                let steps = floor(total / e.trail_distance);
+                let retained = u32(min(steps, f32(capacity)));
+                let remainder = clamp(total - steps * e.trail_distance, 0.0, e.trail_distance);
+                for (var s = 0u; s < retained; s += 1u) {
+                    let along = segment - remainder - f32(retained - 1u - s) * e.trail_distance;
+                    let t = clamp(along / segment, 0.0, 1.0);
+                    var sample = head;
+                    sample.position = mix(previous.position, head.position, t);
+                    sample.color = mix(previous.color, head.color, t);
+                    sample.size = mix(previous.size, head.size, t);
+                    sample.rotation = mix(previous.rotation, now, t);
+                    particles[owner + 1u + head._padding_0] = sample;
+                    head._padding_0 = (head._padding_0 + 1u) % capacity;
+                    head._padding_1 = min(head._padding_1 + 1u, capacity);
+                }
+                head._padding_2 = bitcast<u32>(remainder);
+            }
         }
         else {
             let previous = particles[owner];
@@ -741,6 +769,19 @@ fn record_trails(emitter_index: u32) {
     var retired = 0u;
     for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
+        if e.trail_sampling == 1u && particles[base].alive != 0u {
+            for (var s = 0u; s < capacity; s += 1u) {
+                let points = particles[base]._padding_1;
+                if points == 0u {
+                    break;
+                }
+                let oldest_slot = base + 1u + (particles[base]._padding_0 + capacity - points) % capacity;
+                if now - particles[oldest_slot].rotation < e.trail_lifetime {
+                    break;
+                }
+                particles[base]._padding_1 = points - 1u;
+            }
+        }
         if particles[base].alive != 0u {
             occupied += 1u;
         }

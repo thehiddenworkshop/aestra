@@ -7,6 +7,9 @@ use bevy::math::{Mat4, UVec2, Vec3, Vec4};
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
 use wgpu::util::DeviceExt;
 
+#[path = "../src/gpu/trail_replay.rs"]
+mod trail_replay;
+
 fn encode<T: ShaderType + WriteInto>(value: &T) -> Vec<u8> {
     let mut bytes = Vec::new();
     StorageBuffer::new(&mut bytes).write(value).unwrap();
@@ -18,17 +21,206 @@ fn word(bytes: &[u8], record: usize, offset: usize) -> u32 {
     u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
 }
 
+// Exercise the real simulation as well as history: a direct jump has live
+// particles but only coincident head/anchor pairs, which cannot draw a trail.
+fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
+    let effect = aestra_core::EffectAsset::from_ron(include_str!(
+        "../../../assets/effects/trail_lab.aestra.ron"
+    ))
+    .unwrap();
+    let program = aestra_core::material::MaterialProgram::from_ron(include_str!(
+        "../../../assets/materials/ribbon_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    let effect = aestra_compiler::EffectCompiler::default()
+        .compile_with_material_programs(
+            &effect,
+            &std::collections::BTreeMap::from([(program.id, program)]),
+        )
+        .unwrap();
+    let instance = aestra_runtime::EffectInstance::new(std::sync::Arc::new(effect));
+    let artifact = aestra_gpu::GpuEffectArtifact::from_instance(&instance).unwrap();
+    let e = artifact.emitters[0];
+    let globals = GpuGlobals {
+        time: 86.0 / 60.0,
+        total_slots: artifact.total_slots,
+        emitter_count: 1,
+        seed: aestra_gpu::fold_seed(instance.seed()),
+        duration: 3.0,
+        continuous: 1,
+        world_from_effect: Mat4::IDENTITY,
+        ..Default::default()
+    };
+    let data = [
+        encode(&artifact.emitters),
+        encode(&artifact.particles),
+        encode(&vec![0u32; artifact.total_slots as usize]),
+        encode(&vec![0u32; artifact.total_slots as usize]),
+        encode(&vec![0u32; 7]),
+        encode(&aestra_gpu::indirect_draw_commands(&artifact.emitters)),
+        encode(&globals),
+    ];
+    let buffers = data
+        .iter()
+        .map(|bytes| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytes,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            })
+        })
+        .collect::<Vec<_>>();
+    let entries = (0..7)
+        .map(|binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage {
+                    read_only: matches!(binding, 0 | 6),
+                },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        })
+        .collect::<Vec<_>>();
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: None,
+        entries: &entries,
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let entries = ["reset", "simulate", "link_ribbons", "update_trails"];
+    let shader = compile_wesl("package::trail_seek", SIMULATION_WESL, &entries).unwrap();
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(shader.wgsl.into()),
+    });
+    let pipelines = entries.map(|entry| {
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            module: &module,
+            entry_point: Some(entry),
+            compilation_options: Default::default(),
+            cache: None,
+        })
+    });
+    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &layout,
+        entries: &buffers
+            .iter()
+            .enumerate()
+            .map(|(binding, buffer)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: buffer.as_entire_binding(),
+            })
+            .collect::<Vec<_>>(),
+    });
+    let run = |times: &[f32], epoch| {
+        queue.write_buffer(
+            &buffers[6],
+            0,
+            &encode(&GpuGlobals {
+                _padding: UVec2::new(epoch, 0),
+                ..globals
+            }),
+        );
+        let times_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: &times
+                .iter()
+                .flat_map(|t| t.to_le_bytes())
+                .collect::<Vec<_>>(),
+            usage: wgpu::BufferUsages::COPY_SRC,
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: buffers[1].size(),
+            mapped_at_creation: false,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        for (i, _) in times.iter().enumerate() {
+            encoder.copy_buffer_to_buffer(&times_buffer, i as u64 * 4, &buffers[6], 0, 4);
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_bind_group(0, &group, &[]);
+            for pipeline in &pipelines {
+                pass.set_pipeline(pipeline);
+                pass.dispatch_workgroups(1, 1, 1);
+            }
+        }
+        encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, buffers[1].size());
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            let _ = sender.send(r);
+        });
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(std::time::Duration::from_secs(120)),
+            })
+            .unwrap();
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        let bytes = readback.slice(..).get_mapped_range().to_vec();
+        readback.unmap();
+        bytes
+    };
+    let heads =
+        || (0..e.trail_capacity).map(|i| (e.trail_offset + 1 + i * e.trail_points) as usize);
+    let direct = run(&[globals.time], 0);
+    assert!(
+        heads()
+            .filter(|&h| word(&direct, h, 44) != 0)
+            .all(|h| word(&direct, h, 56) == 1)
+    );
+    let mut planner = trail_replay::TrailReplay::default();
+    let replayed = run(&planner.observations(1, globals.time), 1);
+    assert!(
+        heads().any(|h| word(&replayed, h, 56) > 20),
+        "seek must create drawable history, not only live heads"
+    );
+    assert_eq!(
+        replayed,
+        run(&planner.observations(1, globals.time), 1),
+        "paused history must be stable"
+    );
+    let backward = run(&planner.observations(2, 0.75), 2);
+    assert!(heads().any(|h| word(&backward, h, 56) > 5));
+    let forward = run(&planner.observations(3, globals.time), 3);
+    // Header epoch differs; owner/sample data must reproduce the first seek.
+    let history_start = (e.trail_offset as usize + 1) * 64;
+    assert_eq!(&replayed[history_start..], &forward[history_start..]);
+    let beyond_loop = run(&planner.observations(4, 3.5), 4);
+    assert!(heads().any(|h| word(&beyond_loop, h, 56) > 20));
+}
+
 #[test]
 fn trails_preserve_identity_world_history_and_retired_tails_and_reset_on_discontinuities() {
-    check_pool(2);
+    check_pool(2, false);
 }
 
 #[test]
 fn separate_trail_budget_retains_burst_tails_until_expiry_or_oldest_retired_eviction() {
-    check_pool(4);
+    check_pool(4, false);
 }
 
-fn check_pool(max_trails: u32) {
+#[test]
+fn distance_sampling_handles_stationary_speed_changes_overflow_loops_and_resets() {
+    check_pool(4, true);
+}
+
+fn check_pool(max_trails: u32, distance: bool) {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::PRIMARY;
     let instance = wgpu::Instance::new(descriptor);
@@ -45,6 +237,9 @@ fn check_pool(max_trails: u32) {
         ..Default::default()
     }))
     .unwrap();
+    if distance {
+        check_seek_replay(&device, &queue);
+    }
     let shader = compile_wesl(
         "package::trail_test",
         SIMULATION_WESL,
@@ -94,6 +289,8 @@ fn check_pool(max_trails: u32) {
             trail_offset: 2,
             trail_points: 4,
             trail_capacity: max_trails,
+            trail_sampling: u32::from(distance),
+            trail_distance: 1.0,
             trail_interval: 0.125,
             trail_lifetime: 1.0,
             ..Default::default()
@@ -129,77 +326,177 @@ fn check_pool(max_trails: u32) {
             })
             .collect::<Vec<_>>(),
     });
-    let step = |time: f32, ids: [u32; 2], count: u32, translation: f32, epoch: u32, seed: u32| {
-        let parents = ids
-            .map(|particle_index| GpuParticle {
-                particle_index,
-                position: Vec3::new(particle_index as f32 + time, 0.0, 0.0),
-                size: 2.0,
-                color: Vec4::ONE,
-                alive: 1,
-                ..Default::default()
-            })
-            .to_vec();
-        // Upload only the simulation prefix. The history tail is never reinitialized.
-        queue.write_buffer(&buffers[1], 0, &encode(&parents));
-        queue.write_buffer(&buffers[2], 0, &encode(&vec![0u32, 1]));
-        queue.write_buffer(&buffers[5], 0, &encode(&vec![6u32, count, 0, 0]));
-        queue.write_buffer(
-            &buffers[6],
-            0,
-            &encode(&GpuGlobals {
-                time,
-                total_slots: 2,
-                emitter_count: 1,
-                seed,
-                duration: 0.25,
-                continuous: 1,
-                _padding: UVec2::new(epoch, 0),
-                world_from_effect: Mat4::from_translation(Vec3::new(translation, 0.0, 0.0)),
-            }),
-        );
-        let readback = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: buffers[1].size() + buffers[4].size(),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut encoder = device.create_command_encoder(&Default::default());
-        {
-            let mut pass = encoder.begin_compute_pass(&Default::default());
-            pass.set_bind_group(0, &group, &[]);
-            for pipeline in &pipelines {
-                pass.set_pipeline(pipeline);
-                pass.dispatch_workgroups(1, 1, 1);
+    let step_at =
+        |time: f32, ids: [u32; 2], count: u32, translation: Vec3, epoch: u32, seed: u32| {
+            let parents = ids
+                .map(|particle_index| GpuParticle {
+                    particle_index,
+                    position: Vec3::new(
+                        particle_index as f32 + if distance { 0.0 } else { time },
+                        0.0,
+                        0.0,
+                    ),
+                    size: 2.0,
+                    color: Vec4::ONE,
+                    alive: 1,
+                    ..Default::default()
+                })
+                .to_vec();
+            // Upload only the simulation prefix. The history tail is never reinitialized.
+            queue.write_buffer(&buffers[1], 0, &encode(&parents));
+            queue.write_buffer(&buffers[2], 0, &encode(&vec![0u32, 1]));
+            queue.write_buffer(&buffers[5], 0, &encode(&vec![6u32, count, 0, 0]));
+            queue.write_buffer(
+                &buffers[6],
+                0,
+                &encode(&GpuGlobals {
+                    time,
+                    total_slots: 2,
+                    emitter_count: 1,
+                    seed,
+                    duration: 0.25,
+                    continuous: 1,
+                    _padding: UVec2::new(epoch, 0),
+                    world_from_effect: Mat4::from_translation(translation),
+                }),
+            );
+            let readback = device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: buffers[1].size() + buffers[4].size(),
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let mut encoder = device.create_command_encoder(&Default::default());
+            {
+                let mut pass = encoder.begin_compute_pass(&Default::default());
+                pass.set_bind_group(0, &group, &[]);
+                for pipeline in &pipelines {
+                    pass.set_pipeline(pipeline);
+                    pass.dispatch_workgroups(1, 1, 1);
+                }
             }
-        }
-        encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, buffers[1].size());
-        encoder.copy_buffer_to_buffer(
-            &buffers[4],
-            0,
-            &readback,
-            buffers[1].size(),
-            buffers[4].size(),
-        );
-        let submission = queue.submit([encoder.finish()]);
-        let (sender, receiver) = std::sync::mpsc::channel();
-        readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-            let _ = sender.send(r);
-        });
-        device
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(submission),
-                timeout: Some(std::time::Duration::from_secs(60)),
-            })
-            .unwrap();
-        receiver
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .unwrap()
-            .unwrap();
-        let bytes = readback.slice(..).get_mapped_range().to_vec();
-        readback.unmap();
-        bytes
+            encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, buffers[1].size());
+            encoder.copy_buffer_to_buffer(
+                &buffers[4],
+                0,
+                &readback,
+                buffers[1].size(),
+                buffers[4].size(),
+            );
+            let submission = queue.submit([encoder.finish()]);
+            let (sender, receiver) = std::sync::mpsc::channel();
+            readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+                let _ = sender.send(r);
+            });
+            device
+                .poll(wgpu::PollType::Wait {
+                    submission_index: Some(submission),
+                    timeout: Some(std::time::Duration::from_secs(60)),
+                })
+                .unwrap();
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+                .unwrap();
+            let bytes = readback.slice(..).get_mapped_range().to_vec();
+            readback.unmap();
+            bytes
+        };
+    let step = |time, ids, count, translation, epoch, seed| {
+        step_at(
+            time,
+            ids,
+            count,
+            Vec3::new(translation, 0.0, 0.0),
+            epoch,
+            seed,
+        )
     };
+    if distance {
+        let initial = step(0.0, [0, 1], 2, 0.0, 0, 0);
+        let stationary = step(0.25, [0, 1], 2, 0.0, 0, 0);
+        assert_eq!(
+            word(&stationary, 3, 56),
+            1,
+            "stationary parents do not spend history points"
+        );
+        assert_eq!(&initial[4 * 64..7 * 64], &stationary[4 * 64..7 * 64]);
+        let slow = step(0.5, [0, 1], 2, 0.4, 0, 0);
+        assert_eq!(word(&slow, 3, 56), 1);
+        let crossing = step(0.75, [1, 0], 2, 1.2, 0, 0);
+        assert_eq!(
+            word(&crossing, 3, 48),
+            0,
+            "stable owner survives slot permutation"
+        );
+        assert_eq!(word(&crossing, 3, 56), 2);
+        assert!((f32::from_bits(word(&crossing, 5, 16)) - 1.0).abs() < 0.0001);
+        assert!(
+            (f32::from_bits(word(&crossing, 5, 32)) - 0.6875).abs() < 0.0001,
+            "sample timestamps interpolate, lifetime remains time-based"
+        );
+        let fast = step(1.0, [1, 0], 2, 10.2, 0, 0);
+        assert_eq!(
+            word(&fast, 3, 56),
+            3,
+            "many crossed distances stay ring-bounded"
+        );
+        let mut xs = (4..7)
+            .map(|i| f32::from_bits(word(&fast, i, 16)))
+            .collect::<Vec<_>>();
+        xs.sort_by(f32::total_cmp);
+        for (x, expected) in xs.into_iter().zip([8.0, 9.0, 10.0]) {
+            assert!((x - expected).abs() < 0.0001);
+        }
+        let paused = step(1.0, [1, 0], 2, 10.2, 0, 0);
+        assert_eq!(&fast[128..], &paused[128..]);
+        let looped = step(1.25, [2, 1], 2, 10.4, 0, 0);
+        assert_eq!(
+            word(&looped, 3, 48),
+            0,
+            "retired owner retained through loop births"
+        );
+        assert_eq!(word(&looped, 7, 48), 1);
+        assert_eq!(word(&looped, 11, 48), 2);
+        assert_eq!(
+            word(&looped, 11, 56),
+            1,
+            "new owner starts with zero distance remainder"
+        );
+        let reset = step(1.5, [2, 1], 2, 40.0, 1, 0);
+        assert_eq!(
+            word(&reset, 3, 56),
+            1,
+            "seek clears history instead of drawing a discontinuity"
+        );
+        assert_eq!(word(&reset, 3, 60), 0, "seek clears distance phase");
+        let resumed = step(1.75, [1, 2], 2, 40.6, 1, 0);
+        assert_eq!(word(&resumed, 3, 56), 1);
+        let expired = step(2.75, [0, 0], 0, 0.0, 1, 0);
+        assert_eq!(
+            word(&expired, 3, 44),
+            0,
+            "distance mode still expires by lifetime"
+        );
+        assert_eq!(word(&expired, 7, 44), 0);
+        step(0.0, [0, 1], 2, 0.0, 2, 0);
+        step(0.1, [0, 1], 2, 0.4, 2, 0);
+        let stopped = step(1.0, [0, 1], 2, 0.4, 2, 0);
+        assert_eq!(
+            word(&stopped, 3, 56),
+            0,
+            "stationary live heads cannot retain expired anchors"
+        );
+        assert_eq!(word(&stopped, 3, 44), 1, "living owner is still reserved");
+        let corner = step_at(1.1, [0, 1], 2, Vec3::new(0.4, 0.8, 0.0), 2, 0);
+        assert_eq!(word(&corner, 3, 56), 1);
+        assert!((f32::from_bits(word(&corner, 5, 16)) - 0.4).abs() < 0.0001);
+        assert!(
+            (f32::from_bits(word(&corner, 5, 20)) - 0.6).abs() < 0.0001,
+            "distance remainder follows the observed polyline through corners"
+        );
+        return;
+    }
     let initial = step(0.0, [0, 1], 2, 100.0, 0, 0);
     let stats_record = 3 + max_trails as usize * 4;
     assert_eq!(word(&initial, stats_record, 8), 2, "two occupied owners");

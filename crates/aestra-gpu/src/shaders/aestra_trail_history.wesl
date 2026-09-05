@@ -1,7 +1,8 @@
 // Persistent tail of the particle buffer: one emitter header followed by bounded
-// owner chunks. A chunk is a live head plus a ring of fixed-cadence samples.
+// owner chunks. A chunk is a live head plus a ring of time- or distance-spaced samples.
 // History positions/sizes are world-space. rotation stores the observation time;
-// head padding stores next ring index, count, and last sample time (f32 bits).
+// head padding stores next ring index, count, and last sample time (Time) or
+// residual world-space path length (Distance), encoded as f32 bits.
 // Owners use stable particle_index, never compacted/physical particle slots.
 fn record_trails(emitter_index: u32) {
     let e = emitters[emitter_index];
@@ -55,8 +56,37 @@ fn record_trails(emitter_index: u32) {
             if particles[owner].alive != 0u { evictions += 1u; }
             head._padding_0 = 1u % capacity;
             head._padding_1 = 1u;
-            head._padding_2 = bitcast<u32>(now);
+            head._padding_2 = bitcast<u32>(select(now, 0.0, e.trail_sampling == 1u));
             particles[owner + 1u] = head;
+        } else if e.trail_sampling == 1u {
+            let previous = particles[owner];
+            head._padding_0 = previous._padding_0;
+            head._padding_1 = previous._padding_1;
+            head._padding_2 = previous._padding_2;
+            let segment = length(head.position - previous.position);
+            let total = bitcast<f32>(previous._padding_2) + segment;
+            // Sample the observed world-space polyline. Carry the sub-spacing
+            // remainder across frames/corners; stationary parents consume no points.
+            if segment > 0.0 && total <= min(3.402823e38, 3.402823e38 * e.trail_distance) {
+                let steps = floor(total / e.trail_distance);
+                let retained = u32(min(steps, f32(capacity)));
+                let remainder = clamp(total - steps * e.trail_distance, 0.0, e.trail_distance);
+                // Skip points that would immediately fall out of the ring. Work
+                // stays bounded even when a fast parent travels many sample distances.
+                for (var s = 0u; s < retained; s += 1u) {
+                    let along = segment - remainder - f32(retained - 1u - s) * e.trail_distance;
+                    let t = clamp(along / segment, 0.0, 1.0);
+                    var sample = head;
+                    sample.position = mix(previous.position, head.position, t);
+                    sample.color = mix(previous.color, head.color, t);
+                    sample.size = mix(previous.size, head.size, t);
+                    sample.rotation = mix(previous.rotation, now, t);
+                    particles[owner + 1u + head._padding_0] = sample;
+                    head._padding_0 = (head._padding_0 + 1u) % capacity;
+                    head._padding_1 = min(head._padding_1 + 1u, capacity);
+                }
+                head._padding_2 = bitcast<u32>(remainder);
+            }
         } else {
             let previous = particles[owner];
             head._padding_0 = previous._padding_0;
@@ -85,6 +115,18 @@ fn record_trails(emitter_index: u32) {
     var retired = 0u;
     for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
+        // Distance mode may leave its ring untouched for many frames. Remove
+        // expired anchors, otherwise a stationary live head could keep an old
+        // partial segment visible forever. The moving head itself is not a sample.
+        if e.trail_sampling == 1u && particles[base].alive != 0u {
+            for (var s = 0u; s < capacity; s += 1u) {
+                let points = particles[base]._padding_1;
+                if points == 0u { break; }
+                let oldest_slot = base + 1u + (particles[base]._padding_0 + capacity - points) % capacity;
+                if now - particles[oldest_slot].rotation < e.trail_lifetime { break; }
+                particles[base]._padding_1 = points - 1u;
+            }
+        }
         if particles[base].alive != 0u { occupied += 1u; }
         if particles[base].alive == 1u { retired += 1u; }
         if particles[base].alive == 2u { particles[base].alive = 1u; }

@@ -204,6 +204,23 @@ impl EditorSession {
     }
 
     pub fn seek_status(&self) -> String {
+        if self.preview.as_ref().is_some_and(|preview| {
+            preview
+                .effect()
+                .emitters
+                .iter()
+                .filter(|emitter| emitter.enabled)
+                .any(|emitter| {
+                    emitter.renderers.iter().any(|renderer| {
+                        matches!(
+                            renderer.kind,
+                            aestra_runtime::RendererPlanKind::Trail { .. }
+                        )
+                    })
+                })
+        }) {
+            return "DIRECT SEEK · GPU TRAIL REPLAY".into();
+        }
         match self.seek_mode() {
             SimulationSeekMode::StatelessDirect => "DIRECT SEEK · STATELESS".into(),
             SimulationSeekMode::CheckpointRestore => format!(
@@ -1678,6 +1695,8 @@ impl EditorSession {
             lifetime: 0.65,
             max_points: 32,
             max_trails: emitter.max_particles.saturating_mul(2).min(1024),
+            sampling: aestra_core::TrailSamplingMode::Time,
+            sample_distance: aestra_core::default_trail_sample_distance(),
         };
         let id = renderer.id;
         if self.execute(
@@ -2762,6 +2781,27 @@ mod tests {
         assert_eq!(session.preview.as_ref().unwrap().history_epoch(), epoch);
         session.seek_time(0.75);
         assert_ne!(session.preview.as_ref().unwrap().history_epoch(), epoch);
+    }
+
+    #[test]
+    fn trail_seek_status_distinguishes_history_replay_from_stateless_particles() {
+        let mut session = test_support::session_with_timing_slack();
+        assert_eq!(session.seek_status(), "DIRECT SEEK · STATELESS");
+        let mut compiled = EffectCompiler::default().compile(&session.effect).unwrap();
+        compiled.emitters[0].renderers[0].kind = aestra_runtime::RendererPlanKind::Trail {
+            width: 1.0,
+            sample_interval: 0.025,
+            lifetime: 0.65,
+            max_points: 64,
+            max_trails: 64,
+            sampling: aestra_core::TrailSamplingMode::Distance,
+            sample_distance: 1.0,
+        };
+        session.preview = Some(EffectInstance::new(Arc::new(compiled)));
+        session.seek_time(0.75);
+        assert_eq!(session.seek_status(), "DIRECT SEEK · GPU TRAIL REPLAY");
+        assert_eq!(session.frame(), 45);
+        assert!(!session.playing);
     }
 
     #[test]
