@@ -55,6 +55,10 @@ fn ribbon_geometry_has_front_facing_winding_shared_joins_and_hidden_degenerate_s
             "@group(1) @binding(4) var<storage, read> params: RenderParams;",
             "var<private> params: RenderParams;",
         ),
+        (
+            "@group(1) @binding(7) var<storage, read> aux: array<u32>;",
+            "var<private> aux: array<u32, 9>;",
+        ),
     ] {
         assert!(source.contains(declaration));
         source = source.replace(declaration, replacement);
@@ -80,9 +84,9 @@ fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
         alive_indices[i] = i;
         particles[i].position = vec3<f32>(0.0, select(f32(i), 0.0, scenario == 2u), 0.0);
         particles[i].size = 1.0;
-        particles[i]._padding_0 = select(i + 1u, 0xffffffffu, i == 2u);
-        particles[i]._padding_1 = select(i - 1u, 0xffffffffu, i == 0u);
-        particles[i]._padding_2 = bitcast<u32>(f32(i) * 0.5);
+        aux[i * 3u] = select(i + 1u, 0xffffffffu, i == 2u);
+        aux[i * 3u + 1u] = select(i - 1u, 0xffffffffu, i == 0u);
+        aux[i * 3u + 2u] = bitcast<u32>(f32(i) * 0.5);
     }
     let value = aestra_sprite_vertex(id.x % 4u, (id.x % 12u) / 4u);
     probe[id.x * 2u] = value.clip_position;
@@ -231,7 +235,7 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
         label: None,
         source: wgpu::ShaderSource::Wgsl(shader.wgsl.into()),
     });
-    let entries = (0..7)
+    let entries = (0..8)
         .map(|binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::COMPUTE,
@@ -295,6 +299,10 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
             }
             alive[..order.len()].copy_from_slice(&order);
             alive[8..].copy_from_slice(&[8, 9]);
+            // Ribbon link state now lives in the aux buffer (3 words/slot), no longer
+            // in particle padding. Seed it with the old sentinels so unlinked slots
+            // are still recognisable.
+            let aux_init: Vec<u32> = (0..10).flat_map(|_| [17u32, 19, 23]).collect();
             let data = [
                 encode(&emitters),
                 encode(&particles),
@@ -306,6 +314,7 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
                     emitter_count: 2,
                     ..Default::default()
                 }),
+                encode(&aux_init),
             ];
             let buffers = data
                 .iter()
@@ -331,7 +340,7 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
             });
             let readback = device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
-                size: 680,
+                size: 800,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             });
@@ -344,6 +353,8 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
             }
             encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, 640);
             encoder.copy_buffer_to_buffer(&buffers[2], 0, &readback, 640, 40);
+            // aux buffer (10 slots x 3 words) holds the ribbon link triple now.
+            encoder.copy_buffer_to_buffer(&buffers[7], 0, &readback, 680, 120);
             let submission = queue.submit([encoder.finish()]);
             let (sender, receiver) = std::sync::mpsc::channel();
             readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
@@ -363,27 +374,27 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
             let word = |offset| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
             let mut expected = selected.clone();
             expected.sort_by_key(|&slot| identities[slot as usize]);
+            // aux link triple for slot s: next/prev/uv at readback offset 680 + s*12.
+            let aux = |slot: u32, k: usize| word(680 + slot as usize * 12 + k * 4);
             for (i, &slot) in expected.iter().enumerate() {
                 assert_eq!(word(640 + i * 4), slot, "compaction {order:?}");
-                let base = slot as usize * 64;
                 assert_eq!(
-                    word(base + 52),
+                    aux(slot, 0),
                     expected.get(i + 1).copied().unwrap_or(u32::MAX)
                 );
                 assert_eq!(
-                    word(base + 56),
+                    aux(slot, 1),
                     i.checked_sub(1).map_or(u32::MAX, |j| expected[j])
                 );
                 assert!(
-                    (f32::from_bits(word(base + 60))
-                        - i as f32 / (expected.len().max(2) - 1) as f32)
+                    (f32::from_bits(aux(slot, 2)) - i as f32 / (expected.len().max(2) - 1) as f32)
                         .abs()
                         < 1e-6
                 );
             }
             // Another emitter and dead slots must never be linked or reordered.
             for slot in (0..10u32).filter(|slot| !selected.contains(slot)) {
-                assert_eq!(word(slot as usize * 64 + 52), 17);
+                assert_eq!(aux(slot, 0), 17);
             }
             assert_eq!(word(640 + 8 * 4), 8);
             assert_eq!(word(640 + 9 * 4), 9);

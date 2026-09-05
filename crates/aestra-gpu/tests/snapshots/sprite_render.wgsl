@@ -87,6 +87,9 @@ var sprite_texture: texture_2d<f32>;
 @group(1) @binding(6)
 var sprite_sampler: sampler;
 
+@group(1) @binding(7)
+var<storage, read> aux: array<u32>;
+
 fn hash01(index: u32, channel: u32) -> f32 {
     var result = (index * 2654435769u) ^ (channel * 2246822507u) ^ globals.seed;
     result ^= result >> 16u;
@@ -201,8 +204,8 @@ fn ribbon_direction(slot: u32) -> vec3<f32> {
     let point = ribbon_world(slot);
     var before = point;
     var after = point;
-    let previous = particles[slot]._padding_1;
-    let next = particles[slot]._padding_0;
+    let previous = aux[slot * 3u + 1u];
+    let next = aux[slot * 3u];
     if previous != 4294967295u {
         before = ribbon_world(previous);
     }
@@ -216,7 +219,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     var output: SpriteVertexData;
     let renderer = renderers[params.renderer_index];
     let start = alive_indices[params.alive_offset + instance_index];
-    let end = particles[start]._padding_0;
+    let end = aux[start * 3u];
     output.clip_position = vec4<f32>(0.0, 0.0, 0.0, 1.0);
     if end == 4294967295u {
         return output;
@@ -245,7 +248,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
         }
     }
     output.quad_position = corner;
-    output.uv = vec2<f32>(bitcast<f32>(particles[slot]._padding_2), corner.x * 0.5 + 0.5);
+    output.uv = vec2<f32>(bitcast<f32>(aux[slot * 3u + 2u]), corner.x * 0.5 + 0.5);
     output.ribbon_direction = direction;
     output.visible = select(0u, 1u, particles[start].emitter_index == renderer.emitter_index && particles[end].emitter_index == renderer.emitter_index);
     output.softness = renderer.softness;

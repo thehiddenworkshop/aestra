@@ -74,6 +74,9 @@ struct SpriteVertexData {
 @group(1) @binding(4) var<storage, read> params: RenderParams;
 @group(1) @binding(5) var sprite_texture: texture_2d<f32>;
 @group(1) @binding(6) var sprite_sampler: sampler;
+// Shared per-slot aux scratch (see aestra_simulation): ribbon link state, read here
+// by the ribbon vertex path. Bound for every effect; unused by sprite/mesh draws.
+@group(1) @binding(7) var<storage, read> aux: array<u32>;
 
 fn hash01(index: u32, channel: u32) -> f32 {
     var result = (index * 0x9e3779b9u) ^ (channel * 0x85ebca6bu) ^ globals.seed;

@@ -125,6 +125,9 @@ var<storage, read_write> indirect: array<atomic<u32>>;
 @group(0) @binding(6)
 var<storage, read> globals: Globals;
 
+@group(0) @binding(7)
+var<storage, read_write> aux: array<u32>;
+
 fn hash01_seeded(index: u32, channel: u32, seed: u32) -> f32 {
     var value = (index * 2654435769u) ^ (channel * 2246822507u) ^ seed;
     value = value ^ (value >> 16u);
@@ -629,9 +632,9 @@ fn link_ribbon(emitter_index: u32) {
         if i > 0u {
             previous = alive_indices[offset + i - 1u];
         }
-        particles[slot]._padding_0 = next;
-        particles[slot]._padding_1 = previous;
-        particles[slot]._padding_2 = bitcast<u32>(f32(i) / f32(max(count, 2u) - 1u));
+        aux[slot * 3u] = next;
+        aux[slot * 3u + 1u] = previous;
+        aux[slot * 3u + 2u] = bitcast<u32>(f32(i) / f32(max(count, 2u) - 1u));
     }
 }
 

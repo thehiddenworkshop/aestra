@@ -13,8 +13,8 @@ fn ribbon_direction(slot: u32) -> vec3<f32> {
     let point = ribbon_world(slot);
     var before = point;
     var after = point;
-    let previous = particles[slot]._padding_1;
-    let next = particles[slot]._padding_0;
+    let previous = aux[slot * 3u + 1u];
+    let next = aux[slot * 3u];
     if previous != 0xffffffffu { before = ribbon_world(previous); }
     if next != 0xffffffffu { after = ribbon_world(next); }
     return ribbon_unit(after - before, ribbon_unit(after - point, ribbon_unit(point - before, vec3<f32>(1.0, 0.0, 0.0))));
@@ -24,7 +24,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     var output: SpriteVertexData;
     let renderer = renderers[params.renderer_index];
     let start = alive_indices[params.alive_offset + instance_index];
-    let end = particles[start]._padding_0;
+    let end = aux[start * 3u];
     output.clip_position = vec4<f32>(0.0, 0.0, 0.0, 1.0);
     if end == 0xffffffffu { return output; }
     let delta = ribbon_world(end) - ribbon_world(start);
@@ -48,7 +48,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
         if (renderer.attribute_flags.x & 16u) == 0u { output.color.a *= particles[slot].color.a; }
     }
     output.quad_position = corner;
-    output.uv = vec2<f32>(bitcast<f32>(particles[slot]._padding_2), corner.x * 0.5 + 0.5);
+    output.uv = vec2<f32>(bitcast<f32>(aux[slot * 3u + 2u]), corner.x * 0.5 + 0.5);
     output.ribbon_direction = direction;
     output.visible = select(0u, 1u, particles[start].emitter_index == renderer.emitter_index && particles[end].emitter_index == renderer.emitter_index);
     output.softness = renderer.softness;

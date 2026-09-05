@@ -941,7 +941,7 @@ impl GpuHarness {
         .map_err(|error| error.to_string())?;
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Aestra CPU GPU conformance bindings"),
-            entries: &(0..7)
+            entries: &(0..8)
                 .map(|binding| wgpu::BindGroupLayoutEntry {
                     binding,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -1004,6 +1004,12 @@ impl GpuHarness {
             false,
         );
         let globals = self.read_only_buffer("globals", &encode(&globals)?);
+        // aux is unused by reset/simulate but must be bound to satisfy the layout.
+        let aux = self.read_write_buffer(
+            "aux",
+            &encode(&vec![0_u32; artifact.total_slots as usize * 3])?,
+            false,
+        );
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Aestra CPU GPU conformance bind group"),
             layout: &self.bind_group_layout,
@@ -1015,6 +1021,7 @@ impl GpuHarness {
                 binding(4, &counters),
                 binding(5, &indirect),
                 binding(6, &globals),
+                binding(7, &aux),
             ],
         });
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {

@@ -183,6 +183,7 @@ fn init_render_pipeline(
                 storage_buffer_read_only::<GpuRenderParams>(false),
                 texture_2d(TextureSampleType::Float { filterable: true }),
                 sampler(SamplerBindingType::Filtering),
+                storage_buffer_read_only::<Vec<u32>>(false),
             ),
         ),
     );
@@ -639,6 +640,9 @@ fn prepare_render_bind_groups(
         else {
             continue;
         };
+        let Some(aux) = buffers.get(&effect.aux) else {
+            continue;
+        };
         let bind_group = render_device.create_bind_group(
             Some("aestra gpu sprite"),
             &pipeline_cache.get_bind_group_layout(&pipeline.effect_layout),
@@ -650,6 +654,7 @@ fn prepare_render_bind_groups(
                 params.buffer.as_entire_buffer_binding(),
                 &image.texture_view,
                 &image.sampler,
+                aux.buffer.as_entire_buffer_binding(),
             )),
         );
         commands

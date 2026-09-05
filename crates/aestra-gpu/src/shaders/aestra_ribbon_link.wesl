@@ -48,10 +48,11 @@ fn link_ribbon(emitter_index: u32) {
         var previous = 0xffffffffu;
         if i + 1u < count { next = alive_indices[offset + i + 1u]; }
         if i > 0u { previous = alive_indices[offset + i - 1u]; }
-        // Reuse padding in the fixed 64-byte particle ABI. Non-ribbon readers ignore it.
-        particles[slot]._padding_0 = next;
-        particles[slot]._padding_1 = previous;
-        particles[slot]._padding_2 = bitcast<u32>(f32(i) / f32(max(count, 2u) - 1u));
+        // Ribbon link state lives in the shared aux buffer (3 words/slot), off the
+        // particle ABI. Non-ribbon readers ignore it.
+        aux[slot * 3u] = next;
+        aux[slot * 3u + 1u] = previous;
+        aux[slot * 3u + 2u] = bitcast<u32>(f32(i) / f32(max(count, 2u) - 1u));
     }
 }
 

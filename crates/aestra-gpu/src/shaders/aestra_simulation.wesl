@@ -112,6 +112,11 @@ struct Globals {
 @group(0) @binding(4) var<storage, read_write> counters: array<atomic<u32>>;
 @group(0) @binding(5) var<storage, read_write> indirect: array<atomic<u32>>;
 @group(0) @binding(6) var<storage, read> globals: Globals;
+// Auxiliary per-slot scratch (3 words/slot), separate from the particle record.
+// Ribbon slots store [next, prev, uv-param]; trail heads will migrate their ring
+// state here in a later step. Keeps this off the particle ABI so the core can be
+// compacted. One shared buffer stays within the WebGPU 8-storage-buffer baseline.
+@group(0) @binding(7) var<storage, read_write> aux: array<u32>;
 
 fn hash01_seeded(index: u32, channel: u32, seed: u32) -> f32 {
     var value = (index * 0x9e3779b9u) ^ (channel * 0x85ebca6bu) ^ seed;

@@ -59,6 +59,7 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
         encode(&vec![0u32; 7]),
         encode(&aestra_gpu::indirect_draw_commands(&artifact.emitters)),
         encode(&globals),
+        encode(&vec![0u32; artifact.particles.len() * 3]),
     ];
     let buffers = data
         .iter()
@@ -72,7 +73,7 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
             })
         })
         .collect::<Vec<_>>();
-    let entries = (0..7)
+    let entries = (0..8)
         .map(|binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::COMPUTE,
@@ -252,7 +253,7 @@ fn check_pool(max_trails: u32, distance: bool) {
     });
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
-        entries: &(0..7)
+        entries: &(0..8)
             .map(|binding| wgpu::BindGroupLayoutEntry {
                 binding,
                 visibility: wgpu::ShaderStages::COMPUTE,
@@ -301,6 +302,7 @@ fn check_pool(max_trails: u32, distance: bool) {
         encode(&vec![0u32; 7]),
         encode(&vec![6u32, 2, 0, 0]),
         encode(&GpuGlobals::default()),
+        encode(&vec![0u32; (3 + max_trails as usize * 4) * 3]),
     ];
     let buffers = data
         .iter()

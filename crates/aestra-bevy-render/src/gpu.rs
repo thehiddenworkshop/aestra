@@ -88,6 +88,9 @@ pub(crate) struct GpuEffectBuffers {
     counters: Handle<ShaderBuffer>,
     indirect: Handle<ShaderBuffer>,
     globals: Handle<ShaderBuffer>,
+    /// Shared per-slot scratch (3 words/slot) for ribbon link state, kept off the
+    /// particle ABI. A 1-word dummy when the effect has no ribbon renderer.
+    aux: Handle<ShaderBuffer>,
     render_globals: Handle<ShaderBuffer>,
     workgroups: u32,
     has_ribbons: bool,
@@ -107,6 +110,7 @@ struct GpuDrawInstance {
     renderers: Handle<ShaderBuffer>,
     particles: Handle<ShaderBuffer>,
     alive: Handle<ShaderBuffer>,
+    aux: Handle<ShaderBuffer>,
     indirect: Handle<ShaderBuffer>,
     render_globals: Handle<ShaderBuffer>,
     render_params: Handle<ShaderBuffer>,
@@ -540,6 +544,16 @@ pub(crate) fn prepare_gpu_effects(
             0_u32;
             artifact.total_slots as usize
         ]));
+        // Shared per-slot aux scratch (3 words/slot) for ribbon link state; a 1-word
+        // dummy when the effect draws no ribbons/trails so sprite effects pay nothing.
+        let aux = buffers.add(ShaderBuffer::from(vec![
+            0_u32;
+            if has_ribbons {
+                artifact.total_slots as usize * 3
+            } else {
+                1
+            }
+        ]));
         let counters = buffers.add(ShaderBuffer::from(vec![
             0_u32;
             2 + if has_trails {
@@ -577,6 +591,7 @@ pub(crate) fn prepare_gpu_effects(
                 counters: counters.clone(),
                 indirect: indirect.clone(),
                 globals,
+                aux: aux.clone(),
                 render_globals: render_globals.clone(),
                 workgroups: artifact.total_slots.div_ceil(WORKGROUP_SIZE),
                 has_ribbons,
@@ -634,6 +649,7 @@ pub(crate) fn prepare_gpu_effects(
                                 renderers: renderers.clone(),
                                 particles: particles.clone(),
                                 alive: alive.clone(),
+                                aux: aux.clone(),
                                 indirect: indirect.clone(),
                                 render_globals: render_globals.clone(),
                                 render_params,
@@ -773,15 +789,15 @@ fn detect_gpu_capabilities(
             "compute workgroups cannot run {WORKGROUP_SIZE} invocations"
         ));
     }
-    if limits.max_storage_buffers_per_shader_stage < 7 {
+    if limits.max_storage_buffers_per_shader_stage < 8 {
         limitations.push(format!(
-            "{} storage buffers per shader stage are available; 7 are required",
+            "{} storage buffers per shader stage are available; 8 are required",
             limits.max_storage_buffers_per_shader_stage
         ));
     }
-    if limits.max_bindings_per_bind_group < 7 {
+    if limits.max_bindings_per_bind_group < 8 {
         limitations.push(format!(
-            "{} bindings per group are available; 7 are required",
+            "{} bindings per group are available; 8 are required",
             limits.max_bindings_per_bind_group
         ));
     }
@@ -791,8 +807,8 @@ fn detect_gpu_capabilities(
     let compute_pipeline_supported = compute_shaders
         && limits.max_compute_invocations_per_workgroup >= WORKGROUP_SIZE
         && limits.max_compute_workgroup_size_x >= WORKGROUP_SIZE
-        && limits.max_storage_buffers_per_shader_stage >= 7
-        && limits.max_bindings_per_bind_group >= 7
+        && limits.max_storage_buffers_per_shader_stage >= 8
+        && limits.max_bindings_per_bind_group >= 8
         && max_particles > 0;
     if !indirect_execution {
         limitations.push("indirect execution is unavailable".into());
@@ -1200,6 +1216,7 @@ fn init_pipeline(
                 storage_buffer::<Vec<u32>>(false),
                 storage_buffer::<Vec<u32>>(false),
                 storage_buffer_read_only::<GpuGlobals>(false),
+                storage_buffer::<Vec<u32>>(false),
             ),
         ),
     );
@@ -1272,6 +1289,9 @@ fn prepare_bind_groups(
         let Some(globals) = buffers.get(&effect.globals) else {
             continue;
         };
+        let Some(aux) = buffers.get(&effect.aux) else {
+            continue;
+        };
         let bind_group = render_device.create_bind_group(
             Some("aestra_gpu_simulation"),
             &pipeline_cache.get_bind_group_layout(&pipeline.layout),
@@ -1283,6 +1303,7 @@ fn prepare_bind_groups(
                 counters.buffer.as_entire_buffer_binding(),
                 indirect.buffer.as_entire_buffer_binding(),
                 globals.buffer.as_entire_buffer_binding(),
+                aux.buffer.as_entire_buffer_binding(),
             )),
         );
         commands.entity(entity).insert(GpuBindGroup(bind_group));
@@ -1499,6 +1520,7 @@ mod tests {
                     counters: default(),
                     indirect: default(),
                     globals: default(),
+                    aux: default(),
                     render_globals: handle.clone(),
                     workgroups: 1,
                     has_ribbons: true,

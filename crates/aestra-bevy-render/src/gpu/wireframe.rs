@@ -248,6 +248,7 @@ mod tests {
             renderers: default(),
             particles: default(),
             alive: default(),
+            aux: default(),
             indirect: default(),
             render_globals: default(),
             render_params: default(),
