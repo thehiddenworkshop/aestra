@@ -165,38 +165,51 @@ after both halves free the struct.
   as owner id — and writes **trail samples into `particles[owner+1+head]` slots**.
 - `aestra_trail_vertex.wesl` (`group(1)`) reads that ring.
 
-**Half A — ribbon links (self-contained, do first):**
-1. Add `ribbon_links: array<u32>` (3 words/slot; or a `vec3<u32>`-friendly struct)
-   sized to `storage_records`. Alloc once alongside the particle buffer in `gpu.rs`.
-2. Bind it into **both** groups: sim `group(0)` gets a new `@binding(7)` (read_write,
-   for `link_ribbons`); render `group(1)` gets a new `@binding(7)` (read, for
-   `ribbon_vertex`). Update both `BindGroupLayoutDescriptor`s and both bind-group
-   *creations* in `gpu.rs`/`render.rs` (`effect_layout` 7→8 entries).
-3. `ribbon_link.wesl`: write `ribbon_links[slot*3 + 0/1/2]` instead of `_padding_*`.
-4. `ribbon_vertex.wesl`: read `ribbon_links` instead of `_padding_*`.
-5. **Capability floor:** both groups reach 8 bindings — bump the `< 7` guards in
-   `detect_gpu_capabilities`/`render.rs` to `< 8` (universally supported; note it in
-   `aestra_gpu_architecture_portability.md`). Storage-buffer counts stay ≤7/stage.
-6. Regenerate `simulation.wgsl` + `sprite_render.wgsl` snapshots.
-7. **Test harness:** `ribbon_conformance.rs` currently seeds link data through
-   `_padding`; move it to bind a `ribbon_links` buffer instead. Verify: ribbon
-   conformance + the `ribbon_lab` visual reference (RMSE 0).
+> **Hard constraint found while starting the implementation (2026-09-05).** The sim
+> `group(0)` already binds **7 storage buffers** (emitters, particles, alive, dead,
+> counters, indirect, globals). The **WebGPU baseline `maxStorageBuffersPerShaderStage`
+> is 8** — one free slot. A *separate* `ribbon_links` buffer plus a *separate* trail
+> buffer would need **two** → **9 → over the WebGPU baseline**, breaking portable
+> backends and Half B. **So ribbons and trails must share ONE `aux` buffer**, and the
+> two halves migrate **together**, not ribbon-first. Also: removing `_padding` alone
+> does **not** shrink `GpuParticle` — encase rounds 52 B back to 64 B (16-byte align) —
+> so there is still **no size/perf win until Step 2 compaction** repacks the real
+> fields. This revises the ribbon-first/separate-buffers sketch below.
 
-**Half B — trail records (intricate, do second):**
-- Introduce a `GpuTrailRecord` type + its own buffer for ring heads and samples, so
-  `trail_history`/`trail_vertex` stop reusing `alive`/`rotation`/`particle_index`/
-  `_padding` and stop storing samples in the particle buffer. This is the delicate
-  part (tri-state, epoch resets, ring math) — pair with the author of the trail code.
-  Verify: trail conformance + `trail_lab` visual reference.
+**Half A+B together — one shared `aux` buffer (revised design):**
+1. Add a single `aux: array<u32>` (3 words/slot, sized to `storage_records`) — the last
+   storage-buffer slot under the WebGPU-8 baseline. Any slot is *either* a ribbon
+   particle *or* a trail head, so both reuse the same 3-word layout: ribbons store
+   `[next, prev, uv]`, trail heads store `[ring_head, count, tick]`.
+2. Bind `aux` into **both** groups: sim `group(0) @binding(7)` (read_write, used by
+   `link_ribbons` and `update_trails`); render `group(1) @binding(7)` (read, used by
+   `ribbon_vertex`/`trail_vertex`). Update both `BindGroupLayoutDescriptor`s and both
+   bind-group *creations* (`gpu.rs` sim group; `render.rs` `effect_layout` 7→8 entries)
+   — with a 1-element **dummy** `aux` for effects that have neither ribbons nor trails,
+   so 4M sprite effects don't pay 12 B/slot.
+3. `ribbon_link.wesl` + `trail_history.wesl`: write `aux[slot*3 + k]` instead of
+   `particles[...]._padding_k`. **Trails also reuse `alive` (tri-state), `rotation`
+   (timestamp), `particle_index` (owner) — those stay on the particle record for now;
+   only the `_padding` triple moves to `aux`.** (Fully separating trail state is a
+   larger Half-B++ that can follow.)
+4. `ribbon_vertex.wesl` + `trail_vertex.wesl`: read `aux` instead of `_padding`.
+5. **Capability floor:** both groups reach 8 bindings and the compute stage reaches
+   **8 storage buffers = the WebGPU baseline**. Bump the `< 7` binding/storage guards to
+   `< 8` in `detect_gpu_capabilities`; document in
+   `aestra_gpu_architecture_portability.md` that the compute stage now sits exactly at
+   the WebGPU storage-buffer floor (no room for a 9th — future additions must reuse
+   `aux` or pack into existing buffers).
+6. Regenerate `simulation.wgsl` + `sprite_render.wgsl` snapshots; drop `_padding_0/1/2`
+   from `GpuParticle` (CPU + all shader `Particle` structs) — stride stays 64 B.
+7. **Test harnesses:** `ribbon_conformance.rs` (and any trail probe) seed link/ring data
+   through `_padding`; rebind them to an `aux` buffer. Verify: ribbon + trail
+   conformance **and** the `ribbon_lab`/`trail_lab` visual references (RMSE 0).
 
-**Then Step 2 (compaction):** with `_padding` and the reused fields free, shrink the
-core (§4) for the render-gather + sim-bandwidth win and the ~2× ceiling. Only now does
-the size drop.
-
-**Ordering rationale:** Half A is isolated and low-risk (three fields, one compute
-writer, one render reader); it proves the buffer-plus-binding pattern before the trail
-state machine is touched. But note: no size/perf benefit banks until Half B + Step 2,
-so schedule all three together rather than shipping Half A alone for its own sake.
+**Then Step 2 (compaction):** repack the real live fields (position/size/rotation/
+color/age — and, if trail state is fully separated, `alive`/`rotation`/`particle_index`)
+for the render-gather + sim-bandwidth win and the ~2× ceiling. **This is the first step
+that actually banks a size/perf benefit** — schedule it with the aux migration, never
+ship the migration alone.
 
 ---
 
