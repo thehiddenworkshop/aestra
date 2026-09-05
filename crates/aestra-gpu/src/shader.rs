@@ -15,6 +15,21 @@ pub const SPRITE_RENDER_WESL: &str = concat!(
     "\n",
     include_str!("shaders/aestra_sprite_render.wesl"),
 );
+/// Shared geometry/transform ABI for semantic Mesh materials and diagnostic wireframes.
+pub(crate) fn mesh_vertex_wesl() -> String {
+    let mut source = SPRITE_VERTEX_WESL.replace("\r\n", "\n").replace(
+        "alive_offset: u32,\n    _padding: vec2<u32>,",
+        "alive_offset: u32,\n    _padding: vec2<u32>,\n    mesh_from_local: mat4x4<f32>,",
+    );
+    source.push_str(include_str!("shaders/aestra_mesh_vertex.wesl"));
+    source
+}
+
+pub fn mesh_wireframe_wesl() -> String {
+    let mut source = mesh_vertex_wesl();
+    source.push_str(include_str!("shaders/aestra_mesh_wireframe.wesl"));
+    source
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuShaderKind {

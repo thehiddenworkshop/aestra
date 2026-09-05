@@ -153,14 +153,11 @@ impl MaterialVaryingLayout {
     }
 
     pub(super) fn vertex_wesl(&self) -> String {
-        let mut source = String::from(crate::shader::SPRITE_VERTEX_WESL);
-        if self.domain == MaterialDomain::Mesh {
-            source = source.replace(
-                "alive_offset: u32,\n    _padding: vec2<u32>,",
-                "alive_offset: u32,\n    _padding: vec2<u32>,\n    mesh_from_local: mat4x4<f32>,",
-            );
-            source.push_str(include_str!("../shaders/aestra_mesh_vertex.wesl"));
-        }
+        let mut source = if self.domain == MaterialDomain::Mesh {
+            crate::shader::mesh_vertex_wesl()
+        } else {
+            String::from(crate::shader::SPRITE_VERTEX_WESL)
+        };
         source.push_str(
             "\nstruct MaterialVertexOutput {\n    @builtin(position) clip_position: vec4<f32>,\n",
         );

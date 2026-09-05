@@ -1,6 +1,7 @@
 use super::{
     GpuBlend, GpuDrawInstance, GpuParticle, GpuRenderGlobals, GpuRenderMode, GpuRenderParams,
-    GpuRenderer, GpuSemanticMaterialBinding, WESL_RENDER_SHADER_PATH,
+    GpuRenderer, GpuSemanticMaterialBinding, WESL_MESH_WIREFRAME_SHADER_PATH,
+    WESL_RENDER_SHADER_PATH,
 };
 use crate::material::{bevy_sampler_descriptor, material_bind_group_layout};
 use aestra_core::material::{MaterialCullMode, MaterialDepthTest};
@@ -89,6 +90,7 @@ pub(super) fn install(render_app: &mut SubApp) {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct GpuSpritePipelineKey {
+    mesh_wireframe: bool,
     mesh_layout: Option<MeshVertexBufferLayoutRef>,
     view: GpuSpriteViewKey,
     blend: GpuBlend,
@@ -133,6 +135,7 @@ struct GpuSpritePipeline {
     scene_depth_layout: BindGroupLayoutDescriptor,
     multisampled_scene_depth_layout: BindGroupLayoutDescriptor,
     shader: Handle<Shader>,
+    mesh_wireframe_shader: Handle<Shader>,
 }
 
 #[derive(Clone, Copy, ShaderType)]
@@ -190,6 +193,7 @@ fn init_render_pipeline(
         scene_depth_layout,
         multisampled_scene_depth_layout,
         shader: asset_server.load(WESL_RENDER_SHADER_PATH),
+        mesh_wireframe_shader: asset_server.load(WESL_MESH_WIREFRAME_SHADER_PATH),
     });
 }
 
@@ -257,13 +261,17 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 });
             }
         }
-        let fragment_shader = key
-            .material
-            .as_ref()
-            .filter(|_| key.render_mode == GpuRenderMode::Rendered)
-            .map_or_else(|| self.shader.clone(), |material| material.shader.clone());
-        let fragment_entry = if key.material.is_some() && key.render_mode == GpuRenderMode::Rendered
-        {
+        let fragment_shader = if key.mesh_wireframe {
+            self.mesh_wireframe_shader.clone()
+        } else {
+            key.material
+                .as_ref()
+                .filter(|_| key.render_mode == GpuRenderMode::Rendered)
+                .map_or_else(|| self.shader.clone(), |material| material.shader.clone())
+        };
+        let fragment_entry = if key.mesh_wireframe {
+            "fragment_mesh_wireframe"
+        } else if key.material.is_some() && key.render_mode == GpuRenderMode::Rendered {
             aestra_gpu::material::MATERIAL_FRAGMENT_ENTRY_POINT
         } else {
             match key.render_mode {
@@ -281,22 +289,40 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             vertex: VertexState {
                 // Semantic modules contain both stages with one matching varying layout.
                 shader: fragment_shader.clone(),
-                entry_point: Some("vertex".into()),
-                buffers: key
-                    .mesh_layout
-                    .as_ref()
-                    .map(|layout| {
-                        layout
-                            .0
-                            .get_layout(&[
-                                Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
-                                Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
-                                Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
-                            ])
-                            .expect("mesh attributes validated before queueing")
-                    })
-                    .into_iter()
-                    .collect(),
+                entry_point: Some(
+                    if key.mesh_wireframe {
+                        "vertex_mesh_wireframe"
+                    } else {
+                        "vertex"
+                    }
+                    .into(),
+                ),
+                buffers: if key.mesh_wireframe {
+                    vec![bevy::mesh::VertexBufferLayout {
+                        array_stride: 12,
+                        step_mode: bevy::render::render_resource::VertexStepMode::Vertex,
+                        attributes: vec![bevy::render::render_resource::VertexAttribute {
+                            format: bevy::render::render_resource::VertexFormat::Float32x3,
+                            offset: 0,
+                            shader_location: 0,
+                        }],
+                    }]
+                } else {
+                    key.mesh_layout
+                        .as_ref()
+                        .map(|layout| {
+                            layout
+                                .0
+                                .get_layout(&[
+                                    Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+                                    Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
+                                    Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
+                                ])
+                                .expect("mesh attributes validated before queueing")
+                        })
+                        .into_iter()
+                        .collect()
+                },
                 ..default()
             },
             fragment: Some(FragmentState {
@@ -310,12 +336,20 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 ..default()
             }),
             primitive: PrimitiveState {
-                topology: PrimitiveTopology::TriangleList,
-                cull_mode: render_state.map_or(Some(Face::Back), |state| match state.cull_mode {
-                    MaterialCullMode::None => None,
-                    MaterialCullMode::Front => Some(Face::Front),
-                    MaterialCullMode::Back => Some(Face::Back),
-                }),
+                topology: if key.mesh_wireframe {
+                    PrimitiveTopology::LineList
+                } else {
+                    PrimitiveTopology::TriangleList
+                },
+                cull_mode: if key.mesh_wireframe {
+                    None
+                } else {
+                    render_state.map_or(Some(Face::Back), |state| match state.cull_mode {
+                        MaterialCullMode::None => None,
+                        MaterialCullMode::Front => Some(Face::Front),
+                        MaterialCullMode::Back => Some(Face::Back),
+                    })
+                },
                 ..default()
             },
             depth_stencil: Some(DepthStencilState {
@@ -355,7 +389,8 @@ pub(super) struct PreparedMeshDraw {
     pub(super) indirect: Buffer,
     vertex: Buffer,
     index: Option<(Buffer, IndexFormat)>,
-    layout: MeshVertexBufferLayoutRef,
+    layout: Option<MeshVertexBufferLayoutRef>,
+    wireframe: Option<std::sync::Arc<super::wireframe::WireframeGeometry>>,
 }
 
 fn prepare_mesh_draws(
@@ -370,6 +405,57 @@ fn prepare_mesh_draws(
         let Some(handle) = &draw.mesh else {
             continue;
         };
+        if draw.render_mode == GpuRenderMode::Wireframe {
+            let Some(geometry) = &draw.wireframe_geometry else {
+                commands.entity(entity).remove::<PreparedMeshDraw>();
+                continue;
+            };
+            if previous
+                .and_then(|previous| previous.wireframe.as_ref())
+                .is_some_and(|previous| std::sync::Arc::ptr_eq(previous, geometry))
+            {
+                continue;
+            }
+            let positions = geometry
+                .positions
+                .iter()
+                .flatten()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>();
+            let indices = geometry
+                .indices
+                .iter()
+                .flat_map(|i| i.to_le_bytes())
+                .collect::<Vec<_>>();
+            let words = [geometry.indices.len() as u32, 0, 0, 0, 0];
+            let indirect = device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("aestra mesh wireframe indirect"),
+                contents: &words
+                    .into_iter()
+                    .flat_map(u32::to_le_bytes)
+                    .collect::<Vec<_>>(),
+                usage: BufferUsages::INDIRECT | BufferUsages::COPY_DST,
+            });
+            commands.entity(entity).insert(PreparedMeshDraw {
+                indirect,
+                vertex: device.create_buffer_with_data(&BufferInitDescriptor {
+                    label: Some("aestra mesh wireframe positions"),
+                    contents: &positions,
+                    usage: BufferUsages::VERTEX,
+                }),
+                index: Some((
+                    device.create_buffer_with_data(&BufferInitDescriptor {
+                        label: Some("aestra mesh wireframe edges"),
+                        contents: &indices,
+                        usage: BufferUsages::INDEX,
+                    }),
+                    IndexFormat::Uint32,
+                )),
+                layout: None,
+                wireframe: Some(geometry.clone()),
+            });
+            continue;
+        }
         let Some(mesh) = meshes.get(handle) else {
             commands.entity(entity).remove::<PreparedMeshDraw>();
             continue;
@@ -432,7 +518,8 @@ fn prepare_mesh_draws(
             indirect,
             vertex: vertices.buffer.clone(),
             index,
-            layout: mesh.layout.clone(),
+            layout: Some(mesh.layout.clone()),
+            wireframe: None,
         });
     }
 }
@@ -638,13 +725,16 @@ fn queue_gpu_sprites(
             };
             if effect.mesh.is_some()
                 && (mesh.is_none()
-                    || effect.semantic_material.is_none()
-                    || effect.render_mode != GpuRenderMode::Rendered)
+                    || (effect.semantic_material.is_none()
+                        && effect.render_mode == GpuRenderMode::Rendered))
             {
                 continue;
             }
             let material = semantic_pipeline_key(
-                effect.semantic_material.as_ref(),
+                effect
+                    .semantic_material
+                    .as_ref()
+                    .filter(|_| effect.render_mode == GpuRenderMode::Rendered),
                 view.target_format,
                 msaa.samples(),
                 0,
@@ -662,7 +752,9 @@ fn queue_gpu_sprites(
                 &pipeline_cache,
                 &pipeline,
                 GpuSpritePipelineKey {
-                    mesh_layout: mesh.map(|mesh| mesh.layout.clone()),
+                    mesh_wireframe: effect.mesh.is_some()
+                        && effect.render_mode == GpuRenderMode::Wireframe,
+                    mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),
                     view: GpuSpriteViewKey::TwoD(mesh_key),
                     blend: effect.blend,
                     render_mode: effect.render_mode,
@@ -719,13 +811,16 @@ fn queue_gpu_sprites_3d(
             };
             if effect.mesh.is_some()
                 && (mesh.is_none()
-                    || effect.semantic_material.is_none()
-                    || effect.render_mode != GpuRenderMode::Rendered)
+                    || (effect.semantic_material.is_none()
+                        && effect.render_mode == GpuRenderMode::Rendered))
             {
                 continue;
             }
             let material = semantic_pipeline_key(
-                effect.semantic_material.as_ref(),
+                effect
+                    .semantic_material
+                    .as_ref()
+                    .filter(|_| effect.render_mode == GpuRenderMode::Rendered),
                 view.target_format,
                 mesh_key.msaa_samples(),
                 1,
@@ -737,7 +832,9 @@ fn queue_gpu_sprites_3d(
                 &pipeline_cache,
                 &pipeline,
                 GpuSpritePipelineKey {
-                    mesh_layout: mesh.map(|mesh| mesh.layout.clone()),
+                    mesh_wireframe: effect.mesh.is_some()
+                        && effect.render_mode == GpuRenderMode::Wireframe,
+                    mesh_layout: mesh.and_then(|mesh| mesh.layout.clone()),
                     view: GpuSpriteViewKey::ThreeD(mesh_key),
                     blend: effect.blend,
                     render_mode: effect.render_mode,

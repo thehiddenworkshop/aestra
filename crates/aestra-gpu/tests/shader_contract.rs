@@ -74,6 +74,19 @@ fn representative_artifact_produces_naga_validated_shader_package() {
 }
 
 #[test]
+fn mesh_wireframe_uses_shared_geometry_and_portable_line_shader() {
+    let shader = aestra_gpu::shader::compile_wesl(
+        "package::aestra_mesh_wireframe",
+        &aestra_gpu::shader::mesh_wireframe_wesl(),
+        &["vertex_mesh_wireframe", "fragment_mesh_wireframe"],
+    )
+    .unwrap();
+    assert!(shader.wgsl.contains("aestra_mesh_vertex"));
+    assert_translates_to_spirv(&shader.wgsl);
+    assert_translates_to_hlsl(&shader.wgsl);
+}
+
+#[test]
 fn generated_wgsl_matches_reviewable_snapshots() {
     let package = GpuShaderPackage::for_artifact(&representative_artifact()).unwrap();
 

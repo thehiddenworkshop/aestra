@@ -35,6 +35,15 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
     .unwrap();
 
     let legacy = compile(GpuShaderKind::SpriteRender).unwrap();
+    let wireframe = aestra_gpu::shader::compile_wesl(
+        "package::aestra_mesh_wireframe",
+        &aestra_gpu::shader::mesh_wireframe_wesl(),
+        &["vertex_mesh_wireframe", "fragment_mesh_wireframe"],
+    )
+    .unwrap();
+    for samples in [1, 4] {
+        assert_pipeline(&device, &wireframe.wgsl, "fragment_mesh_wireframe", samples);
+    }
     for fragment in [
         "fragment_alpha",
         "fragment_additive",
@@ -114,6 +123,7 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
 }
 
 fn assert_pipeline(device: &wgpu::Device, wgsl: &str, fragment: &str, samples: u32) {
+    let wireframe = fragment == "fragment_mesh_wireframe";
     let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Aestra sprite stage-link contract"),
@@ -125,20 +135,39 @@ fn assert_pipeline(device: &wgpu::Device, wgsl: &str, fragment: &str, samples: u
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &mesh_attributes,
     }];
+    let line_attributes = wgpu::vertex_attr_array![0 => Float32x3];
+    let line_layout = [wgpu::VertexBufferLayout {
+        array_stride: 12,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &line_attributes,
+    }];
     let _pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(fragment),
         layout: None,
         vertex: wgpu::VertexState {
             module: &shader,
-            entry_point: Some("vertex"),
+            entry_point: Some(if wireframe {
+                "vertex_mesh_wireframe"
+            } else {
+                "vertex"
+            }),
             compilation_options: Default::default(),
-            buffers: if wgsl.contains("struct MeshVertexInput") {
+            buffers: if wireframe {
+                &line_layout
+            } else if wgsl.contains("struct MeshVertexInput") {
                 &mesh_layout
             } else {
                 &[]
             },
         },
-        primitive: Default::default(),
+        primitive: wgpu::PrimitiveState {
+            topology: if wireframe {
+                wgpu::PrimitiveTopology::LineList
+            } else {
+                wgpu::PrimitiveTopology::TriangleList
+            },
+            ..Default::default()
+        },
         depth_stencil: None,
         multisample: wgpu::MultisampleState {
             count: samples,

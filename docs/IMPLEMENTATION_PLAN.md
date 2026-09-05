@@ -504,8 +504,13 @@ the current sprite-material path until the native-GPU compatibility gate approve
   and emitter rotation/nonuniform scale. Bevy applies the outer effect transform during frustum
   checks. Bounds refresh for particle settings and asset load/edit/removal; missing or invalid
   geometry remains uncullable. Regression tests cover rotation, mirrored scale, asset lifecycle and
-  viewport-edge visibility. Mesh wireframe,
-  vertex deformation, tangent/UV1 inputs, ribbons/trails and PBR remain follow-up work.
+  viewport-edge visibility. Native mesh wireframe now uses portable LineList triangle edges in
+  both 2D and 3D views, sharing the rendered mesh transform and GPU indirect instance counts.
+  Indexed/non-indexed topology conversion is cached per mesh and refreshed on asset changes;
+  indexed shared edges are emitted once. Viewer `--wireframe` captures and `W` mode switching
+  exercise the path. Wireframe requires main-world position data; unavailable/invalid geometry
+  is skipped safely. Vertex deformation, tangent/UV1 inputs, ribbons/trails and PBR remain
+  follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

@@ -2,6 +2,7 @@
 
 mod bounds;
 mod render;
+mod wireframe;
 
 use crate::{
     ActiveBackend, AestraRenderSettings, AestraRuntimeStatus, CompatibilityIssue,
@@ -64,6 +65,8 @@ use std::{
 pub const WESL_SHADER_PATH: &str = "embedded://aestra_bevy_render/shaders/aestra_simulation.wesl";
 pub const WESL_RENDER_SHADER_PATH: &str =
     "embedded://aestra_bevy_render/shaders/aestra_sprite_render.wesl";
+pub const WESL_MESH_WIREFRAME_SHADER_PATH: &str =
+    "embedded://aestra_bevy_render/shaders/aestra_mesh_wireframe.wesl";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 enum GpuRenderMode {
@@ -92,6 +95,7 @@ pub(crate) struct GpuEffectBuffers {
 #[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
 struct GpuDrawInstance {
     mesh: Option<Handle<Mesh>>,
+    wireframe_geometry: Option<Arc<wireframe::WireframeGeometry>>,
     renderers: Handle<ShaderBuffer>,
     particles: Handle<ShaderBuffer>,
     alive: Handle<ShaderBuffer>,
@@ -247,7 +251,11 @@ pub(crate) fn install(app: &mut App) {
     .add_systems(Update, update_gpu_inputs.after(prepare_gpu_effects))
     .add_systems(
         PostUpdate,
-        bounds::sync_mesh_bounds.before(visibility::VisibilitySystems::CheckVisibility),
+        (
+            bounds::sync_mesh_bounds,
+            wireframe::prepare_wireframe_geometry,
+        )
+            .before(visibility::VisibilitySystems::CheckVisibility),
     );
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
         let capabilities = GpuCapabilities::unavailable("Bevy has no render sub-application");
@@ -278,6 +286,11 @@ pub(crate) fn install(app: &mut App) {
 fn install_shader_assets(app: &App) {
     let registry = app.world().resource::<EmbeddedAssetRegistry>();
     let shader_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../aestra-gpu/src/shaders");
+    registry.insert_asset(
+        shader_root.join("aestra_mesh_wireframe.wesl"),
+        Path::new("aestra_bevy_render/shaders/aestra_mesh_wireframe.wesl"),
+        aestra_gpu::shader::mesh_wireframe_wesl().into_bytes(),
+    );
     registry.insert_asset(
         shader_root.join("aestra_simulation.wesl"),
         Path::new("aestra_bevy_render/shaders/aestra_simulation.wesl"),
@@ -553,6 +566,7 @@ pub(crate) fn prepare_gpu_effects(
                         let mut draw = parent.spawn((
                             GpuDrawInstance {
                                 mesh,
+                                wireframe_geometry: None,
                                 renderers: renderers.clone(),
                                 particles: particles.clone(),
                                 alive: alive.clone(),

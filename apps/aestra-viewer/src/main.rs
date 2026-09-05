@@ -44,7 +44,7 @@ const OVERLAY_PROBE_SIZE: u32 = 144;
 fn main() {
     let config = ViewerConfig::from_args().unwrap_or_else(|error| {
         eprintln!("aestra-viewer: {error}");
-        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--diagnostics] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
+        eprintln!("usage: aestra-viewer [--effect file.aestra.ron] [--semantic-materials] [--wireframe] [--diagnostics] [--gpu-bench output.json] [--backend auto|gpu|gpu-readback|cpu] [--seed number] [--max-gpu-particles count] [--frames 8 | --sample-frames 0,30,60 | --sample-times 0,0.5,1] [--capture output-dir | --approve-visual-reference reference-dir | --visual-test reference-dir output-dir | --editor-viewport-smoke output-dir]");
         std::process::exit(2);
     });
     let preview_seed = config.resolved_seed();
@@ -155,6 +155,7 @@ struct PreparationFailure {
 struct ViewerConfig {
     effect_path: Option<PathBuf>,
     semantic_materials: bool,
+    wireframe: bool,
     capture_mode: Option<CaptureMode>,
     capture_sampling: CaptureSampling,
     presentation: PresentationMode,
@@ -202,6 +203,7 @@ impl ViewerConfig {
     fn from_args() -> Result<Self, String> {
         let mut effect_path = None;
         let mut semantic_materials = false;
+        let mut wireframe = false;
         let mut capture_mode = None;
         let mut capture_sampling = CaptureSampling::EvenlySpaced(8);
         let mut capture_sampling_was_set = false;
@@ -219,6 +221,7 @@ impl ViewerConfig {
                     ));
                 }
                 "--semantic-materials" => semantic_materials = true,
+                "--wireframe" => wireframe = true,
                 "--diagnostics" => diagnostics = true,
                 "--gpu-bench" => {
                     gpu_bench = Some(PathBuf::from(
@@ -345,6 +348,7 @@ impl ViewerConfig {
         Ok(Self {
             effect_path,
             semantic_materials,
+            wireframe,
             capture_mode,
             capture_sampling,
             presentation,
@@ -616,6 +620,9 @@ fn setup(mut commands: Commands, config: Res<ViewerConfig>, prepared: Res<Prepar
         .is_some_and(CaptureMode::is_editor_viewport_smoke);
 
     let mut player = EffectPlayer::from_compiled(Arc::clone(&prepared.compiled));
+    if config.wireframe {
+        player.set_render_mode(aestra_bevy::EffectRenderMode::Wireframe);
+    }
     player.set_seed(config.resolved_seed());
     let presentation = PresentedEffect::new(player.effect().clone());
     if editor_viewport_smoke {
@@ -781,6 +788,15 @@ fn viewer_controls(
             player.restart();
         }
     }
+    if keys.just_pressed(KeyCode::KeyW) {
+        for mut player in &mut players {
+            let mode = match player.render_mode() {
+                aestra_bevy::EffectRenderMode::Rendered => aestra_bevy::EffectRenderMode::Wireframe,
+                aestra_bevy::EffectRenderMode::Wireframe => aestra_bevy::EffectRenderMode::Rendered,
+            };
+            player.set_render_mode(mode);
+        }
+    }
     if keys.just_pressed(KeyCode::ArrowLeft) {
         for mut player in &mut players {
             player.step_back();
@@ -820,7 +836,7 @@ fn update_hud(
         return;
     };
     text.0 = format!(
-        "F{:05} @ {} Hz  |  {:06.3} / {:06.3}  |  seed {:016x}  |  {}  |  {}  |  ←/→ Step  |  [/] Seed",
+        "F{:05} @ {} Hz  |  {:06.3} / {:06.3}  |  seed {:016x}  |  {}  |  {}  |  ←/→ Step  |  [/] Seed  |  W Wireframe",
         player.frame(),
         player.tick_rate(),
         player.elapsed(),

@@ -2563,8 +2563,14 @@ Mesh Material Lab exercises this path. Mesh bounds combine geometry about its ro
 particle motion, maximum size, angular sweep and emitter transforms; the host applies the outer
 effect transform when culling. Shared geometry bounds are cached and invalidated on mesh asset
 load/change/removal. Missing, invalid or render-world-only geometry remains conservatively
-uncullable rather than falling back to sprite bounds. CPU/readback mesh presentation, mesh wireframe,
-vertex deformation, tangents, UV1, ribbons and PBR are not included in this first slice.
+uncullable rather than falling back to sprite bounds. Native mesh wireframe is supported in 2D and
+3D using LineList triangle edges, without optional polygon-line GPU features. Main-world mesh
+positions and indexed/non-indexed topology produce cached edge geometry, invalidated on asset
+changes. The diagnostic shader shares mesh transforms with semantic Mesh materials, reuses GPU
+indirect instance counts, and draws without material texture/depth-input dependencies. Viewer
+`--wireframe` and the `W` key support captures and rendered/wireframe switching. Render-world-only
+or invalid geometry cannot produce a wireframe and is skipped. CPU/readback mesh presentation,
+vertex deformation, tangents, UV1, ribbons and PBR remain follow-up work.
 
 ### Add inputs
 
