@@ -199,6 +199,10 @@ pub(crate) fn present_cpu_effects(
             sprite.custom_size = Some(Vec2::splat(sample.size.max(0.01)));
             transform.translation = Vec3::from_array(sample.position);
             transform.rotation = Quat::from_rotation_z(sample.rotation);
+            transform.scale = Vec3::ONE;
+            *transform = crate::host_transform::transform(
+                effect.instance.host_transform_at(effect.simulation_time()),
+            ) * *transform;
             *visibility = Visibility::Visible;
         }
         restore_samples(&mut effect, uses_gpu_readback, samples);

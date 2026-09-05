@@ -1,0 +1,178 @@
+(
+    format_version: 3,
+    id: "a3574a00-0000-4000-8000-00000000d001",
+    name: "Moving Trail Lab",
+    duration: 3.0,
+    playback_mode: LoopContinuous,
+    host_transform_track: Some((
+        repeat: true,
+        keys: [
+            (time: 0.0, transform: (translation: (-25.0, 0.0, 0.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0))),
+            (time: 1.5, transform: (translation: (25.0, 15.0, 0.0), rotation: (0.0, 0.0, 0.70710677, 0.70710677), scale: (1.5, 0.75, 1.0))),
+            (time: 3.0, transform: (translation: (-25.0, 0.0, 0.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0))),
+        ],
+    )),
+    material_instances: [
+        (
+            id: "a3574a00-0000-4000-8000-00000000d101",
+            program: Project("a3574a00-0000-4000-8000-00000000c201"),
+            values: {},
+            render_state: (
+                blend: Alpha,
+                depth_test: LessEqual,
+                depth_write: false,
+                cull_mode: None,
+            ),
+        ),
+    ],
+    assets: [
+        (id: "a3574a00-0000-4000-8000-00000000c401", name: "Trail Tile", kind: Texture, path: "textures/ember_spark.png"),
+    ],
+    parameters: [],
+    emitters: [
+        (
+            id: "a3574a00-0000-4000-8000-00000000d301",
+            name: "Moving Comets",
+            enabled: true,
+            display_color: Some((0.22, 0.55, 1.0, 1.0)),
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            start_time: 0.0,
+            duration: 3.0,
+            max_particles: 32,
+            simulation_domain: Particle,
+            modules: [
+                (
+                    id: "a3574a00-0000-4000-8000-00000000d311",
+                    module_type: "aestra.emission.rate",
+                    stage: EmitterUpdate,
+                    enabled: true,
+                    parameters: Emission(
+                        spawn_rate: 4.0,
+                        burst_count: 0,
+                    ),
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-00000000d312",
+                    module_type: "aestra.spawn.shape",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Shape(
+                        shape: Sphere(
+                            radius: 0.0,
+                        ),
+                    ),
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-00000000d313",
+                    module_type: "aestra.spawn.initialize",
+                    stage: ParticleSpawn,
+                    enabled: true,
+                    parameters: Initialize(
+                        lifetime: (
+                            min: 2.4,
+                            max: 2.4,
+                        ),
+                        speed: (
+                            min: 55.0,
+                            max: 55.0,
+                        ),
+                        direction: (0.8, 0.6, 0.0),
+                        spread_degrees: 25.0,
+                        angular_velocity: (
+                            min: -1.5,
+                            max: 1.5,
+                        ),
+                    ),
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-00000000d314",
+                    module_type: "aestra.update.motion",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Motion(
+                        gravity: (0.0, -35.0, 0.0),
+                        drag: 0.0,
+                        turbulence: 5.0,
+                    ),
+                ),
+                (
+                    id: "a3574a00-0000-4000-8000-00000000d315",
+                    module_type: "aestra.update.appearance",
+                    stage: ParticleUpdate,
+                    enabled: true,
+                    parameters: Appearance(
+                        size: (
+                            id: "a3574a00-0000-4000-8000-00000000d321",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    value: 3.0,
+                                ),
+                                (
+                                    time: 0.35,
+                                    value: 12.0,
+                                ),
+                                (
+                                    time: 1.0,
+                                    value: 1.5,
+                                ),
+                            ],
+                        ),
+                        opacity: (
+                            id: "a3574a00-0000-4000-8000-00000000d322",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    value: 0.0,
+                                ),
+                                (
+                                    time: 0.12,
+                                    value: 1.0,
+                                ),
+                                (
+                                    time: 1.0,
+                                    value: 0.0,
+                                ),
+                            ],
+                        ),
+                        color: (
+                            id: "a3574a00-0000-4000-8000-00000000d323",
+                            keys: [
+                                (
+                                    time: 0.0,
+                                    color: (0.08, 0.2, 0.95, 1.0),
+                                ),
+                                (
+                                    time: 0.5,
+                                    color: (0.25, 0.8, 1.0, 1.0),
+                                ),
+                                (
+                                    time: 1.0,
+                                    color: (0.65, 0.2, 1.0, 0.0),
+                                ),
+                            ],
+                        ),
+                    ),
+                ),
+            ],
+            renderers: [
+                (
+                    id: "a3574a00-0000-4000-8000-00000000d331",
+                    renderer_type: "aestra.renderer.trail",
+                    enabled: true,
+                    material: "a3574a00-0000-4000-8000-00000000d101",
+                    properties: Trail(width: 0.35, sample_interval: 0.025, lifetime: 0.65, max_points: 64, max_trails: 64, sampling: Distance, sample_distance: 1.0, uv_mode: Tile, tile_length: 8.0),
+                ),
+            ],
+        ),
+    ],
+    events: [],
+    dependencies: [],
+    metadata: {
+        "purpose": "Authored translation, rotation and scale repeat with the effect; seeking samples historical host poses",
+    },
+)

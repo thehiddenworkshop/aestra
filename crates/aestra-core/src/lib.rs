@@ -1,12 +1,14 @@
 //! Engine-independent semantic source model for Aestra effects.
 
 mod diagnostic;
+mod host_transform;
 mod id;
 pub mod material;
 mod migration;
 mod model;
 
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity, ValidationReport};
+pub use host_transform::*;
 pub use id::*;
 pub use migration::*;
 pub use model::*;

@@ -665,6 +665,7 @@ pub(crate) fn prepare_gpu_effects(
                         }));
                         let mesh_bounds = mesh.clone().map(bounds::MeshBoundsSource::new);
                         let mut draw = parent.spawn((
+                            HostMotionDraw,
                             GpuDrawInstance {
                                 mesh,
                                 wireframe_geometry: None,
@@ -1025,6 +1026,10 @@ fn update_gpu_inputs(
 fn install_visibility_updates(app: &mut App) {
     app.add_systems(
         PostUpdate,
+        sync_host_motion_draw_transforms.before(bevy::transform::TransformSystems::Propagate),
+    );
+    app.add_systems(
+        PostUpdate,
         (
             bounds::sync_mesh_bounds,
             ribbon_bounds::sync_ribbon_bounds,
@@ -1034,6 +1039,74 @@ fn install_visibility_updates(app: &mut App) {
             .after(bevy::transform::TransformSystems::Propagate)
             .before(visibility::VisibilitySystems::CheckVisibility),
     );
+    app.add_systems(
+        PostUpdate,
+        sync_host_motion_replay_culling
+            .after(bounds::sync_mesh_bounds)
+            .after(ribbon_bounds::sync_ribbon_bounds)
+            .before(visibility::VisibilitySystems::CheckVisibility),
+    );
+}
+
+#[derive(Component)]
+struct HostMotionDraw;
+
+#[derive(Component)]
+struct HostMotionReplayCulling;
+
+// During a bounded multi-frame seek the processed pose can lag the requested pose.
+// Do not cull mixed sprite/mesh/ribbon draws at the future pose. Trails have their
+// own per-camera world-history culling; ordinary bounds resume when motion is removed.
+#[allow(clippy::type_complexity)]
+fn sync_host_motion_replay_culling(
+    mut commands: Commands,
+    players: Query<(&PresentedEffect, &GpuEffectBuffers)>,
+    draws: Query<(
+        Entity,
+        &ChildOf,
+        &GpuDrawInstance,
+        Has<visibility::NoFrustumCulling>,
+        Has<HostMotionReplayCulling>,
+        Has<ribbon_bounds::RibbonBoundsSource>,
+    )>,
+) {
+    for (entity, parent, draw, uncullable, was_forced, ribbon) in &draws {
+        let forced = players.get(parent.parent()).is_ok_and(|(player, gpu)| {
+            gpu.has_trails && player.instance.host_transform_track().is_some()
+        });
+        if forced {
+            if !uncullable || !was_forced {
+                commands
+                    .entity(entity)
+                    .insert((HostMotionReplayCulling, visibility::NoFrustumCulling));
+            }
+        } else if was_forced {
+            commands.entity(entity).remove::<HostMotionReplayCulling>();
+            if draw.mesh.is_none() && !ribbon && draw.trail_instances.is_none() {
+                commands
+                    .entity(entity)
+                    .remove::<visibility::NoFrustumCulling>();
+            }
+        }
+    }
+}
+
+// Keep Bevy visibility/sorting transforms aligned with the matrix used by the shader.
+// The host's own placement is never overwritten by animation.
+fn sync_host_motion_draw_transforms(
+    players: Query<&PresentedEffect>,
+    mut draws: Query<(&ChildOf, &mut Transform), With<HostMotionDraw>>,
+) {
+    for (parent, mut transform) in &mut draws {
+        if let Ok(player) = players.get(parent.parent()) {
+            let desired = crate::host_transform::transform(
+                player.instance.host_transform_at(player.simulation_time()),
+            );
+            if *transform != desired {
+                *transform = desired;
+            }
+        }
+    }
 }
 
 // Rendering and culling must see the same frame's propagated effect transform.
@@ -1042,6 +1115,11 @@ fn sync_gpu_render_transforms(
     mut players: Query<(&PresentedEffect, &GlobalTransform, &mut GpuEffectBuffers)>,
 ) {
     for (player, transform, mut gpu) in &mut players {
+        let placement = Mat4::from(transform.affine());
+        let world = placement
+            * crate::host_transform::matrix(
+                player.instance.host_transform_at(player.simulation_time()),
+            );
         gpu.simulation_time = player.simulation_time();
         gpu.history_epoch = player.instance.history_epoch();
         if gpu.has_trails {
@@ -1062,11 +1140,15 @@ fn sync_gpu_render_transforms(
                     .map(f32::to_bits),
             );
             if let Some(data) = buffers.get(&gpu.emitters).and_then(|b| b.data.as_ref())
-                && (gpu.checkpoint_context.key != key || gpu.checkpoint_context.emitters != *data)
+                && (gpu.checkpoint_context.key != key
+                    || gpu.checkpoint_context.emitters != *data
+                    || gpu.checkpoint_context.motion.as_ref()
+                        != player.instance.host_transform_track())
             {
                 gpu.checkpoint_context = Arc::new(trail_checkpoints::TrailContext {
                     emitters: data.clone(),
                     key,
+                    motion: player.instance.host_transform_track().cloned(),
                 });
             }
         }
@@ -1079,12 +1161,12 @@ fn sync_gpu_render_transforms(
                 duration: player.effect().duration,
                 continuous: u32::from(player.effect().playback_mode.is_continuous()),
                 _padding: UVec2::new(player.instance.history_epoch(), 0),
-                world_from_effect: Mat4::from(transform.affine()),
+                world_from_effect: world,
             });
         }
         if let Some(mut buffer) = buffers.get_mut(&gpu.render_globals) {
             buffer.set_data(GpuRenderGlobals {
-                world_from_effect: Mat4::from(transform.affine()),
+                world_from_effect: world,
                 time: player.simulation_time(),
                 seed: fold_seed(player.instance.seed()),
                 _padding: Vec2::ZERO,
@@ -1440,12 +1522,27 @@ fn run_simulation(
             } else if history.1 != effect.checkpoint_context {
                 allocated -= history.2.checkpoints.bytes();
                 history.2.checkpoints = default();
-                history.2.replay.context_changed();
+                if history.1.motion.is_some() || effect.checkpoint_context.motion.is_some() {
+                    history.2.replay = default();
+                    // Placement edits while paused at time zero need an explicit reset too.
+                    for &(_, root) in &effect.trail_roots {
+                        render_context.command_encoder().clear_buffer(
+                            state[0],
+                            root as u64 * 48 + 40,
+                            Some(4),
+                        );
+                    }
+                } else {
+                    history.2.replay.context_changed();
+                }
                 history.1 = effect.checkpoint_context.clone();
             }
             let previous = history.2.checkpoints.bytes();
             history.2.sync_buffers(&state);
             allocated = allocated - previous + history.2.checkpoints.bytes();
+            if effect.checkpoint_context.motion.is_some() {
+                history.2.replay.prepare_tracked(effect.simulation_time);
+            }
             if history
                 .2
                 .replay
@@ -1471,9 +1568,16 @@ fn run_simulation(
                 .observations(effect.history_epoch, effect.simulation_time);
             // A queue.write_buffer loop would expose only the final time to all
             // dispatches. Encoder copies make each observation visible in order.
-            let bytes: Vec<u8> = times.iter().flat_map(|time| time.to_le_bytes()).collect();
+            let placement = Mat4::from_cols_array(&std::array::from_fn(|i| {
+                f32::from_bits(effect.checkpoint_context.key[6 + i])
+            }));
+            let bytes = crate::host_transform::observation_bytes(
+                &times,
+                placement,
+                effect.checkpoint_context.motion.as_deref(),
+            );
             let times_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-                label: Some("aestra trail replay times"),
+                label: Some("aestra trail replay times and host transforms"),
                 contents: &bytes,
                 usage: BufferUsages::COPY_SRC,
             });
@@ -1482,10 +1586,17 @@ fn run_simulation(
             // all intermediate history against the eventual seek target.
             render_context.command_encoder().copy_buffer_to_buffer(
                 &times_buffer,
-                (times.len() as u64 - 1) * 4,
+                (times.len() as u64 - 1) * 68,
                 &render_globals.buffer,
                 64,
                 4,
+            );
+            render_context.command_encoder().copy_buffer_to_buffer(
+                &times_buffer,
+                (times.len() as u64 - 1) * 68 + 4,
+                &render_globals.buffer,
+                0,
+                64,
             );
             Some((times_buffer, times, globals, state))
         } else {
@@ -1495,10 +1606,17 @@ fn run_simulation(
             if let Some((times, _, globals, _)) = &replay {
                 render_context.command_encoder().copy_buffer_to_buffer(
                     times,
-                    observation as u64 * 4,
+                    observation as u64 * 68,
                     &globals.buffer,
                     0,
                     4,
+                );
+                render_context.command_encoder().copy_buffer_to_buffer(
+                    times,
+                    observation as u64 * 68 + 4,
+                    &globals.buffer,
+                    32,
+                    64,
                 );
             }
             let mut pass =
@@ -1673,6 +1791,7 @@ mod tests {
                 Transform::IDENTITY,
                 Aabb::default(),
                 ribbon_bounds::RibbonBoundsSource(Some(model)),
+                HostMotionDraw,
                 visibility::NoFrustumCulling,
             ))
             .id();
@@ -1709,6 +1828,64 @@ mod tests {
                 !app.world()
                     .entity(draw)
                     .contains::<visibility::NoFrustumCulling>()
+            );
+        }
+        let track =
+            aestra_runtime::CompiledHostTransformTrack::new(aestra_core::HostTransformTrack {
+                repeat: false,
+                keys: vec![
+                    aestra_core::HostTransformKey {
+                        time: 0.0,
+                        transform: default(),
+                    },
+                    aestra_core::HostTransformKey {
+                        time: 1.0,
+                        transform: aestra_core::EmitterTransform {
+                            translation: [20.0, 30.0, 10.0],
+                            rotation: Quat::from_rotation_y(0.8).to_array(),
+                            scale: [0.5, 2.0, 1.5],
+                        },
+                    },
+                ],
+            })
+            .unwrap();
+        app.world_mut()
+            .get_mut::<PresentedEffect>(player)
+            .unwrap()
+            .instance
+            .set_host_transform_track(Some(Arc::new(track)));
+        for time in [0.0, 0.5, 1.0, 0.25, 0.25] {
+            app.world_mut()
+                .get_mut::<PresentedEffect>(player)
+                .unwrap()
+                .instance
+                .seek(time);
+            app.update();
+            let placement =
+                Mat4::from(app.world().get::<GlobalTransform>(player).unwrap().affine());
+            let pose = app
+                .world()
+                .get::<PresentedEffect>(player)
+                .unwrap()
+                .instance
+                .host_transform_at(time);
+            let expected = placement * crate::host_transform::matrix(pose);
+            let actual = Mat4::from(app.world().get::<GlobalTransform>(draw).unwrap().affine());
+            assert!(actual.abs_diff_eq(expected, 1e-5));
+            let bytes = app
+                .world()
+                .resource::<Assets<ShaderBuffer>>()
+                .get(&handle)
+                .unwrap()
+                .data
+                .as_ref()
+                .unwrap();
+            let uploaded = Mat4::from_cols_array(&std::array::from_fn(|i| {
+                f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())
+            }));
+            assert!(
+                uploaded.abs_diff_eq(actual, 1e-5),
+                "GPU and Bevy must use the same frame's pose"
             );
         }
     }

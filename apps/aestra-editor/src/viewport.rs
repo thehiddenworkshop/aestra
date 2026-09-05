@@ -3444,6 +3444,66 @@ mod tests {
     }
 
     #[test]
+    fn editor_preview_keeps_authored_motion_across_seek_and_recompile() {
+        let mut effect = aestra_core::EffectAsset::from_ron(include_str!(
+            "../../../assets/effects/moving_trail_lab.aestra.ron"
+        ))
+        .unwrap();
+        let program = aestra_core::material::MaterialProgram::from_ron(include_str!(
+            "../../../assets/materials/trail_lab.aestra.material.ron"
+        ))
+        .unwrap();
+        let programs = std::collections::BTreeMap::from([(program.id, program)]);
+        let compile = |effect: &aestra_core::EffectAsset| {
+            Arc::new(
+                aestra_compiler::EffectCompiler::default()
+                    .compile_with_material_programs(effect, &programs)
+                    .unwrap(),
+            )
+        };
+        let compiled = compile(&effect);
+        for time in [0.0, 1.5, 4.5, 0.75] {
+            let player = configured_preview_instance(compiled.clone(), time, 42, &[]);
+            assert_eq!(
+                player.instance.host_transform_at(time),
+                compiled.host_transform_track.as_ref().unwrap().sample(time)
+            );
+            assert_eq!(player.simulation_time(), time);
+        }
+        let replacement = aestra_core::HostTransformTrack {
+            keys: vec![aestra_core::HostTransformKey {
+                time: 0.0,
+                transform: aestra_core::EmitterTransform {
+                    translation: [50.0, 0.0, 0.0],
+                    ..default()
+                },
+            }],
+            repeat: false,
+        };
+        let undo = aestra_authoring::CommandExecutor::execute(
+            &mut effect,
+            &default(),
+            &aestra_authoring::EffectTransaction::single(
+                "Edit host motion",
+                aestra_authoring::EffectCommand::SetHostTransformTrack {
+                    track: Some(replacement),
+                },
+            ),
+        )
+        .unwrap();
+        let edited = configured_preview_instance(compile(&effect), 1.5, 42, &[]);
+        assert_eq!(
+            edited.instance.host_transform_at(1.5).translation,
+            [50.0, 0.0, 0.0]
+        );
+        aestra_authoring::CommandExecutor::execute(&mut effect, &default(), &undo.inverse).unwrap();
+        assert_eq!(
+            compile(&effect).host_transform_track,
+            compiled.host_transform_track
+        );
+    }
+
+    #[test]
     fn project_preview_recompiles_referenced_effects_when_the_catalog_refreshes() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("child.aestra.ron");

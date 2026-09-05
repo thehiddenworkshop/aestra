@@ -86,6 +86,8 @@ struct EffectV1 {
     name: String,
     duration: f32,
     playback_mode: EffectPlaybackMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    host_transform_track: Option<aestra_core::HostTransformTrack>,
     seek_mode: SeekModeV1,
     assets: Vec<AssetV1>,
     flipbooks: Vec<FlipbookV1>,
@@ -444,6 +446,10 @@ impl TryFrom<&CompiledEffect> for EffectV1 {
             name: effect.name.clone(),
             duration: effect.duration,
             playback_mode: effect.playback_mode,
+            host_transform_track: effect
+                .host_transform_track
+                .as_ref()
+                .map(|track| track.source().clone()),
             seek_mode: effect.seek_mode.into(),
             assets: effect.assets.iter().map(AssetV1::from).collect(),
             flipbooks: effect.flipbooks.iter().map(FlipbookV1::from).collect(),
@@ -601,6 +607,17 @@ impl TryFrom<EffectV1> for CompiledEffect {
             name: effect.name,
             duration: effect.duration,
             playback_mode: effect.playback_mode,
+            host_transform_track: effect
+                .host_transform_track
+                .map(|track| {
+                    aestra_runtime::CompiledHostTransformTrack::new(track)
+                        .map(std::sync::Arc::new)
+                        .map_err(|error| ArtifactError::InvalidData {
+                            path: "effect.host_transform_track".into(),
+                            message: error.to_string(),
+                        })
+                })
+                .transpose()?,
             seek_mode: effect.seek_mode.into(),
             assets: effect.assets.into_iter().map(CompiledAsset::from).collect(),
             flipbooks: effect

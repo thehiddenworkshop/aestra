@@ -152,6 +152,7 @@ fn migrate_v2_to_v3(source: &str) -> Result<EffectAsset, AssetError> {
             EffectPlaybackMode::Once
         },
         assets: legacy.assets,
+        host_transform_track: None,
         flipbooks: legacy.flipbooks,
         materials: legacy.materials,
         material_instances: Vec::new(),

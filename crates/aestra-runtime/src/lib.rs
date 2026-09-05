@@ -2,7 +2,9 @@
 
 mod checkpoint;
 mod compatibility;
+mod host_transform;
 mod profile;
+pub use host_transform::CompiledHostTransformTrack;
 
 pub use checkpoint::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, SeekOrigin,
@@ -599,6 +601,7 @@ pub struct CompiledEffect {
     pub name: String,
     pub duration: f32,
     pub playback_mode: EffectPlaybackMode,
+    pub host_transform_track: Option<Arc<CompiledHostTransformTrack>>,
     pub seek_mode: SimulationSeekMode,
     pub assets: Vec<CompiledAsset>,
     pub flipbooks: Vec<CompiledFlipbook>,
@@ -987,6 +990,7 @@ pub struct EffectInstance {
     choreography_started: bool,
     history_epoch: u32,
     history_revision: u64,
+    host_transform_track: Option<Arc<CompiledHostTransformTrack>>,
 }
 
 impl EffectInstance {
@@ -996,8 +1000,10 @@ impl EffectInstance {
             .iter()
             .map(|parameter| parameter.default.clone())
             .collect();
+        let host_transform_track = effect.host_transform_track.clone();
         Self {
             effect,
+            host_transform_track,
             time: 0.0,
             seed: 0,
             parameters,
@@ -1122,6 +1128,25 @@ impl EffectInstance {
     /// Simulation-context revision. Unlike the epoch, ordinary seeks do not change it.
     pub fn history_revision(&self) -> u64 {
         self.history_revision
+    }
+
+    pub fn host_transform_track(&self) -> Option<&Arc<CompiledHostTransformTrack>> {
+        self.host_transform_track.as_ref()
+    }
+
+    /// Replace explicit motion atomically; equivalent tracks preserve compatible checkpoints.
+    /// `None` returns to the host's ordinary live placement.
+    pub fn set_host_transform_track(&mut self, track: Option<Arc<CompiledHostTransformTrack>>) {
+        if self.host_transform_track != track {
+            self.host_transform_track = track;
+            self.invalidate_history();
+        }
+    }
+
+    pub fn host_transform_at(&self, time: f32) -> EmitterTransform {
+        self.host_transform_track
+            .as_ref()
+            .map_or_else(EmitterTransform::default, |track| track.sample(time))
     }
 
     /// Start a new observation sequence without invalidating compatible checkpoints.

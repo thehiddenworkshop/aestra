@@ -22,6 +22,55 @@ fn test_effect() -> EffectAsset {
 }
 
 #[test]
+fn host_motion_edits_validate_diff_and_undo_atomically() {
+    let mut effect = test_effect();
+    let original = effect.clone();
+    let track = aestra_core::HostTransformTrack {
+        keys: vec![aestra_core::HostTransformKey {
+            time: 0.0,
+            transform: EmitterTransform::default(),
+        }],
+        repeat: false,
+    };
+    let mut history = CommandHistory::default();
+    let diff = history
+        .execute(
+            &mut effect,
+            &LockState::default(),
+            EffectTransaction::single(
+                "Set host motion",
+                EffectCommand::SetHostTransformTrack {
+                    track: Some(track.clone()),
+                },
+            ),
+        )
+        .unwrap();
+    assert_eq!(diff.changes[0].path, "effect.host_transform_track");
+    history.undo(&mut effect).unwrap();
+    assert_eq!(effect, original);
+    history.redo(&mut effect).unwrap();
+    assert_eq!(effect.host_transform_track, Some(track.clone()));
+    let before = effect.clone();
+    let mut invalid = track;
+    invalid.repeat = true;
+    assert!(
+        history
+            .execute(
+                &mut effect,
+                &LockState::default(),
+                EffectTransaction::single(
+                    "Invalid motion",
+                    EffectCommand::SetHostTransformTrack {
+                        track: Some(invalid)
+                    },
+                )
+            )
+            .is_err()
+    );
+    assert_eq!(effect, before);
+}
+
+#[test]
 fn semantic_material_instance_replacements_join_effect_history() {
     let mut effect = test_effect();
     let instance_id = MaterialId::from_u128(0x7100);

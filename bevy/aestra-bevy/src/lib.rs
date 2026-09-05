@@ -142,6 +142,14 @@ impl EffectPlayer {
         self.instance.effect()
     }
 
+    /// Motion relative to this entity's stable placement. Changes invalidate trail checkpoints.
+    pub fn set_host_transform_track(
+        &mut self,
+        track: Option<Arc<aestra_runtime::CompiledHostTransformTrack>>,
+    ) {
+        self.instance.set_host_transform_track(track);
+    }
+
     pub fn render_mode(&self) -> EffectRenderMode {
         self.render_mode
     }
@@ -477,6 +485,61 @@ fn record_presented_profile(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_motion_reaches_presentation_and_replacement_resets_history() {
+        for mode in [
+            EffectPlaybackMode::Once,
+            EffectPlaybackMode::LoopRestart,
+            EffectPlaybackMode::LoopContinuous,
+        ] {
+            let mut effect = EffectAsset::new("Motion", 2.0);
+            effect.playback_mode = mode;
+            effect.emitters.push(Emitter::basic_sprite("Sparks", 2.0));
+            effect.host_transform_track = Some(aestra_core::HostTransformTrack {
+                repeat: false,
+                keys: vec![
+                    aestra_core::HostTransformKey {
+                        time: 0.0,
+                        transform: Default::default(),
+                    },
+                    aestra_core::HostTransformKey {
+                        time: 4.0,
+                        transform: aestra_core::EmitterTransform {
+                            translation: [40.0, 0.0, 0.0],
+                            ..Default::default()
+                        },
+                    },
+                ],
+            });
+            let mut player = EffectPlayer::new(&effect);
+            player.seek_simulation_time(3.0);
+            let expected_time = player.simulation_time();
+            assert_eq!(
+                player.instance.host_transform_at(expected_time).translation[0],
+                expected_time * 10.0
+            );
+            let mut app = App::new();
+            app.add_systems(Update, sync_player_presentations);
+            let entity = app
+                .world_mut()
+                .spawn((PresentedEffect::new(player.effect().clone()), player))
+                .id();
+            app.update();
+            let presented = app.world().get::<PresentedEffect>(entity).unwrap();
+            assert_eq!(presented.simulation_time(), expected_time);
+            assert!(presented.instance.host_transform_track().is_some());
+            let revision = presented.instance.history_revision();
+            app.world_mut()
+                .get_mut::<EffectPlayer>(entity)
+                .unwrap()
+                .set_host_transform_track(None);
+            app.update();
+            let presented = app.world().get::<PresentedEffect>(entity).unwrap();
+            assert_eq!(presented.instance.history_revision(), revision + 1);
+            assert!(presented.instance.host_transform_track().is_none());
+        }
+    }
 
     #[test]
     fn player_compiles_authored_effect() {

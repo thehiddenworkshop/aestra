@@ -58,6 +58,15 @@ impl EffectDiff {
                 after.playback_mode,
             );
         }
+        if before.host_transform_track != after.host_transform_track {
+            modified(
+                &mut changes,
+                SemanticTarget::Effect(after.id),
+                "effect.host_transform_track",
+                format!("{:?}", before.host_transform_track),
+                format!("{:?}", after.host_transform_track),
+            );
+        }
         if before.choreography_order != after.choreography_order {
             modified(
                 &mut changes,

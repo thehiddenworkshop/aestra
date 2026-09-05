@@ -649,6 +649,12 @@ impl EffectCompiler {
             name: asset.name.clone(),
             duration: asset.duration,
             playback_mode: asset.playback_mode,
+            host_transform_track: asset.host_transform_track.clone().map(|track| {
+                std::sync::Arc::new(
+                    aestra_runtime::CompiledHostTransformTrack::new(track)
+                        .expect("validated host transform track"),
+                )
+            }),
             seek_mode: SimulationSeekMode::StatelessDirect,
             assets: asset
                 .assets

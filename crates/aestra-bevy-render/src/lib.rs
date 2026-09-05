@@ -7,6 +7,7 @@
 mod capabilities;
 mod cpu;
 pub mod gpu;
+mod host_transform;
 pub mod material;
 
 pub use aestra_runtime::{

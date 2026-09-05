@@ -13,6 +13,19 @@ pub(super) struct TrailReplay {
 }
 
 impl TrailReplay {
+    /// A supplied trajectory can be observed at every canonical simulation tick
+    /// during live playback as well as seeking. Never cache a path contaminated
+    /// by a previous sub-frame observation: restore/replay the canonical prefix.
+    pub(super) fn prepare_tracked(&mut self, target: f32) {
+        if target <= self.time || self.replaying {
+            return;
+        }
+        let frame = self.time as f64 * 60.0;
+        if (frame - frame.round()).abs() > 0.0001 {
+            self.epoch = None;
+        }
+        self.replaying = true;
+    }
     pub(super) fn context_changed(&mut self) {
         // A pending seek must reconstruct in the new context. Ordinary moving-host
         // playback retains its observed world path, but never produces checkpoints.
@@ -74,6 +87,24 @@ impl TrailReplay {
 mod tests {
     use super::*;
     const STEP: f32 = 1.0 / 60.0;
+
+    #[test]
+    fn tracked_playback_fills_skipped_ticks_and_rebuilds_after_subframe_samples() {
+        let mut replay = TrailReplay::default();
+        replay.observations(1, 1.0);
+        replay.prepare_tracked(2.0);
+        assert!(!replay.needs_restore(1, 2.0));
+        assert_eq!(replay.observations(1, 2.0).len(), 60);
+        assert!(replay.should_capture(2.0));
+        replay.prepare_tracked(2.005);
+        assert_eq!(replay.observations(1, 2.005), vec![2.005]);
+        replay.prepare_tracked(2.005);
+        assert!(!replay.needs_restore(1, 2.005));
+        replay.prepare_tracked(2.5);
+        assert!(replay.needs_restore(1, 2.5));
+        replay.restore(1, 2.0);
+        assert_eq!(replay.observations(1, 2.5).len(), 30);
+    }
 
     #[test]
     fn checkpoints_resume_at_the_next_frame_and_never_capture_live_observations() {

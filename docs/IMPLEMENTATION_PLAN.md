@@ -586,8 +586,15 @@ the current sprite-material path until the native-GPU compatibility gate approve
   one). GPU sorting/linking isolates neighbors and normalized UVs per strand without enlarging
   buffers. Shared-link renderer conflicts are diagnosed; RON/artifact defaults and round trips,
   integer Feather scrubbing/undo and native sparse-group/compaction/seek/loop tests cover the contract.
-  Ribbon Lab demonstrates three strands. Arbitrary per-particle ribbon-ID authoring,
-  exact host-trajectory replay, a dedicated Normal output and PBR remain follow-up work.
+  Ribbon Lab demonstrates three strands. Explicit host-trajectory replay now uses a portable
+  validated TRS track, shortest-arc rotation interpolation and optional closed-loop repetition.
+  Each canonical GPU history observation samples its own pose; compatible checkpoints include
+  the immutable track and stable host placement. Transactional edits and runtime track replacement
+  invalidate history. Moving Trail Lab exercises translation, rotation and scale; source/artifact,
+  undo/redo, native seek/playback/checkpoint and presentation tests cover the slice.
+  See `docs/host_motion_tracks.md` for integration and limits. Arbitrary per-particle ribbon-ID
+  authoring, a motion-key editor, composed parent/clip trajectories, unrecorded live-motion replay,
+  a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

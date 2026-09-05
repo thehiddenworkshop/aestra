@@ -39,6 +39,9 @@ pub struct EffectAsset {
         deserialize_with = "deserialize_playback_mode"
     )]
     pub playback_mode: EffectPlaybackMode,
+    /// Optional explicit host motion relative to the placement of this effect instance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_transform_track: Option<crate::HostTransformTrack>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<AssetDefinition>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -81,6 +84,7 @@ impl EffectAsset {
             name: name.into(),
             duration,
             playback_mode: EffectPlaybackMode::LoopRestart,
+            host_transform_track: None,
             assets: Vec::new(),
             flipbooks: Vec::new(),
             materials: vec![MaterialDefinition::default_sprite()],
@@ -99,6 +103,15 @@ impl EffectAsset {
 
     pub fn validation_report(&self) -> ValidationReport {
         let mut report = ValidationReport::default();
+        if let Some(track) = &self.host_transform_track
+            && let Err(error) = track.validate()
+        {
+            invalid_value(
+                &mut report,
+                "effect.host_transform_track",
+                &error.to_string(),
+            );
+        }
         if self.format_version != crate::CURRENT_FORMAT_VERSION {
             report.push(Diagnostic::error(
                 DiagnosticCode::UnsupportedFormat,
@@ -1040,7 +1053,7 @@ impl EmitterTransform {
         *self == Self::default()
     }
 
-    fn is_valid(&self) -> bool {
+    pub(crate) fn is_valid(&self) -> bool {
         let rotation_length_squared = self.rotation.iter().map(|value| value * value).sum::<f32>();
         self.translation
             .iter()

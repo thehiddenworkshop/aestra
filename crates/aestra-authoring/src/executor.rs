@@ -146,6 +146,10 @@ fn apply_command(
             let previous = std::mem::replace(&mut effect.playback_mode, *mode);
             vec![EffectCommand::SetEffectPlaybackMode { mode: previous }]
         }
+        EffectCommand::SetHostTransformTrack { track } => {
+            let previous = std::mem::replace(&mut effect.host_transform_track, track.clone());
+            vec![EffectCommand::SetHostTransformTrack { track: previous }]
+        }
         EffectCommand::SetChoreographyOrder { order } => {
             let previous = std::mem::replace(&mut effect.choreography_order, order.clone());
             vec![EffectCommand::SetChoreographyOrder { order: previous }]

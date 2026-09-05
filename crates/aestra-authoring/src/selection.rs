@@ -328,6 +328,7 @@ fn command_targets(command: &EffectCommand) -> (Option<EmitterId>, Option<Semant
         EffectCommand::SetEffectName { .. }
         | EffectCommand::SetEffectDuration { .. }
         | EffectCommand::SetEffectPlaybackMode { .. }
+        | EffectCommand::SetHostTransformTrack { .. }
         | EffectCommand::SetChoreographyOrder { .. }
         | EffectCommand::AddMarker { .. }
         | EffectCommand::AddChoreographyEvent { .. }

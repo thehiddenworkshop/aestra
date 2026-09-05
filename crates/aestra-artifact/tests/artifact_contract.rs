@@ -22,6 +22,72 @@ use aestra_runtime::{
 };
 
 #[test]
+fn host_motion_round_trips_and_edits_invalidate_only_affected_instance_history() {
+    let effect = EffectAsset::from_ron(include_str!(
+        "../../../assets/effects/moving_trail_lab.aestra.ron"
+    ))
+    .unwrap();
+    assert_eq!(
+        EffectAsset::from_ron(&effect.to_pretty_ron().unwrap()).unwrap(),
+        effect
+    );
+    let program = MaterialProgram::from_ron(include_str!(
+        "../../../assets/materials/trail_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    let compiled = EffectCompiler::default()
+        .compile_with_material_programs(
+            &effect,
+            &std::collections::BTreeMap::from([(program.id, program)]),
+        )
+        .unwrap();
+    let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(restored, compiled);
+    let mut instance = EffectInstance::new(std::sync::Arc::new(restored));
+    let other = instance.clone();
+    let original = instance.host_transform_track().cloned();
+    assert_eq!(
+        instance.host_transform_at(1.5).translation,
+        [25.0, 15.0, 0.0]
+    );
+    assert_eq!(
+        instance.host_transform_at(4.5),
+        instance.host_transform_at(1.5)
+    );
+    instance.set_host_transform_track(original.clone());
+    assert_eq!(instance.history_revision(), 0);
+    instance.seek(1.5);
+    assert_eq!(instance.history_revision(), 0);
+    let epoch = instance.history_epoch();
+    instance.set_host_transform_track(None);
+    assert_eq!(instance.history_epoch(), epoch + 1);
+    assert_eq!(instance.history_revision(), 1);
+    assert_eq!(
+        instance.host_transform_at(1.5),
+        aestra_core::EmitterTransform::default()
+    );
+    assert_eq!(other.host_transform_track(), original.as_ref());
+    instance.set_host_transform_track(original);
+    assert_eq!(instance.history_revision(), 2);
+
+    let malformed = String::from_utf8(encode_effect(&compiled).unwrap())
+        .unwrap()
+        .replace("time:1.5,transform:", "time:0.0,transform:");
+    assert!(
+        matches!(decode_effect(malformed.as_bytes()), Err(ArtifactError::InvalidData { path, .. }) if path == "effect.host_transform_track")
+    );
+    let mut legacy = compiled;
+    legacy.host_transform_track = None;
+    let bytes = encode_effect(&legacy).unwrap();
+    assert!(
+        !std::str::from_utf8(&bytes)
+            .unwrap()
+            .contains("host_transform_track")
+    );
+    assert_eq!(decode_effect(&bytes).unwrap(), legacy);
+}
+
+#[test]
 fn mesh_renderer_and_material_domain_survive_artifact_round_trip() {
     let effect = EffectAsset::from_ron(include_str!(
         "../../../assets/effects/mesh_material_lab.aestra.ron"

@@ -19,6 +19,9 @@ pub enum EffectCommand {
     SetEffectPlaybackMode {
         mode: EffectPlaybackMode,
     },
+    SetHostTransformTrack {
+        track: Option<aestra_core::HostTransformTrack>,
+    },
     SetChoreographyOrder {
         order: Vec<ChoreographyTrackId>,
     },
