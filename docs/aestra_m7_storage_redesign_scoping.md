@@ -32,10 +32,11 @@ the analytical floor*. This session's measurements changed that premise:
 
 **Reframed M7 = a storage redesign** whose primary, measured goal is to **untangle
 the shared particle buffer** so that (a) SoA/compact packing becomes possible and (b)
-trails/ribbons stop overloading the particle struct. A stateful/incremental *sim*
-backend becomes an **optional** later layer on that storage, gated on a workload the
-analytical kernel provably cannot serve — which the sweep did **not** find at dense
-scale.
+trails/ribbons stop overloading the particle struct. **That storage work (Steps 1–2) is
+now done** (see §5 status). A stateful/incremental *sim* backend is a later layer on
+that storage — **not** justified by the sweep for dense throughput, but **required for
+collisions and fluids**, which the analytical kernel provably cannot express at any
+speed. That backend is specified in **§6a**.
 
 ---
 
@@ -86,19 +87,15 @@ the core of M7.
 3. **Preserve the analytical backend unchanged** as the authoring/reference path
    (deterministic seeking, bit-exact snapshots, CPU conformance). Non-negotiable.
 
-### Non-goals (explicitly, grounded in measurement)
-- **Not** a stateful/incremental *sim* backend for dense throughput — the sweep showed
-  the analytical kernel already does 4M in ~2.2 ms. Do not build dead/alive-list
-  update-in-place *to go faster at dense scale*; that motivation was refuted.
+### Non-goals for *this* (storage) work — grounded in measurement
+- **Not** a stateful/incremental sim backend *for dense throughput* — the sweep showed
+  the analytical kernel already does 4M in ~2.2 ms, so update-in-place is not worth
+  building **to go faster**. (It *is* worth building for capability — see §6a; that is a
+  separate, expressiveness-driven decision, not a perf one.)
 - **Not** FP16 on trail-timing fields — `rotation`-as-timestamp and bitcast ring state
   are precision/bit critical.
 - **Not** overdraw/fill work — the fill ablation showed it is nearly free on capable
   GPUs at ≤1M.
-
-### Optional, later, gated
-- A stateful incremental backend as a **second playback backend** for **weaker GPUs**
-  or **long-lived/persistent-state** effects the analytical model cannot express. Gate
-  on a concrete such workload; share the semantic IR; keep analytical for authoring.
 
 ---
 
@@ -125,6 +122,13 @@ the core of M7.
 
 ## 5. Phasing (each step lands green on its own)
 
+> **Status (2026-09-05): Steps 1 and 2 are DONE and measured.** The untangling shipped
+> as a shared `aux` buffer rather than separate per-record buffers (the WebGPU
+> 8-storage-buffer baseline forced one shared slot): ribbon links `8ad3ff5`, trail ring
+> state `d3b657c`. Compaction shipped as `6ee4b3a` — `emitter_index`+`alive` packed into
+> one word, padding dropped, **64 → 48 B (−25%)**, measured **simulate −12–16%** at 1M/4M
+> and ~2× the storage ceiling. What remains open is Step 3, now reframed in **§6a**.
+
 1. **Extract trail/ribbon records first** (no perf goal): move trail ring state and
    ribbon links out of `GpuParticle`'s reused fields into dedicated buffers. Rewrite
    `trail_history` / `ribbon_link` / trail+ribbon vertex shaders against the new
@@ -141,9 +145,9 @@ the core of M7.
    against `benchmarks/gpu-baselines/vertex-strip-441422a/` and the `scale_*` sweep at
    1M **and** 4M — 4M is where render turned bandwidth-bound, so it is the scenario
    that should move most.
-3. **(Optional, gated) incremental playback backend** — only if a real weaker-GPU or
-   persistent-state workload demands it. Prototype dead/alive lists + update-in-place
-   as a *second* backend; keep analytical for authoring.
+3. **Incremental / stateful playback backend** — no longer "optional, gated on a
+   hypothetical": it is **required** for the collisions and fluids on the roadmap, which
+   the analytical model provably cannot express. Fully specified in **§6a** below.
 
 ---
 
@@ -225,6 +229,71 @@ ship the migration alone.
   against the portability floor (`aestra_gpu_architecture_portability.md`).
 - **Determinism** — the analytical backend's bit-exact seeking and snapshots must be
   untouched; treat any analytical-path change as a regression.
+
+---
+
+## 6a. Incremental / stateful backend — required for collisions and fluids
+
+**This is no longer a hypothetical, perf-gated option.** The roadmap needs collisions
+and fluids for complex/realistic effects, and those provably **cannot** be expressed by
+the stateless/analytical kernel. This section reframes Step 3 from "maybe someday" into
+a staged capability roadmap. The trigger is **expressiveness, not speed** — the sweep
+already showed analytical is fast enough at dense scale; this backend exists to do
+things analytical *cannot do at any speed*.
+
+### Why analytical cannot do it (the hard boundary)
+Analytical motion is a **closed-form function of time**: `position = f(age)`, recomputed
+each frame. It holds only while forces depend on time/age alone (constant gravity,
+linear drag, the age-parameterized turbulence Aestra ships). The moment a force depends
+on **position, the scene, or other particles**, the motion becomes a feedback ODE
+(`dx/dt = f(x, neighbours, scene)`) with no closed form — it *must* be integrated
+step-by-step with persistent state. Both roadmap items cross that boundary:
+
+- **Collisions.** *Static analytic colliders + a few bounces* (ground plane, sphere,
+  simple SDF) can be chained as closed-form segments and stay analytical. **General
+  collision** — scene meshes, the depth buffer, moving geometry, many bounces — cannot.
+- **Fluids.** *True* fluids (SPH / grid Navier–Stokes / FLIP) are irreducibly stateful:
+  a particle's velocity depends on its neighbours' positions **this frame**. And the
+  common *fake-fluid* shortcut — **flow-field / curl-noise advection** — is **also not
+  analytical**, because velocity is a function of *position* (`v = curl(x)`), so
+  advecting it is a position-feedback ODE that needs numerical stepping. (Aestra's
+  turbulence escapes this only by being keyed on age, not position — it wiggles but
+  cannot follow a vortex or flow around geometry.)
+
+### Architecture — a second backend, not a replacement
+- **Per-emitter backend choice.** Most VFX (sparks, magic, explosions, embers, trails)
+  stay analytical — cheaper, seekable, and the editor depends on it. Only emitters that
+  need collision/flow/fluid opt into stateful. Both backends share the semantic effect
+  IR; analytical stays the default and the **authoring/reference/seeking** backend.
+- **Seeking is what stateful gives up.** A stateful effect cannot scrub backward. The
+  editor answer is bounded **history record/replay** — exactly what the trail system
+  already does — so plan a replay buffer for stateful emitters from the start.
+- **Determinism.** Fixed-timestep integration + seeded spawn keeps runs reproducible
+  enough for regression; expect looser tolerances than the analytical bit-exact path.
+
+### Staged roadmap (each stage ships a capability)
+1. **Stateful particle backend** *(the smaller lift, biggest capability jump)*.
+   Persistent per-particle state (position, **velocity**, age) + GPU-driven spawn from a
+   dead/alive free list + fixed-step Euler/Verlet integration + compaction. Unlocks
+   **flow-field / curl-noise advection** (real swirly "fluid-look") and **collision
+   against SDF / simple colliders and the depth buffer**. This alone covers a large
+   slice of "complex and realistic". Note the stateful record must **store velocity**
+   (analytical recomputes it), so it is larger than the 48 B analytical core — its
+   memory bill partly offsets the "skip reconstruction" compute saving, which is the
+   measured reason this was never worth building for *speed*.
+2. **Fluid simulation domain** *(the heavy milestone)*. Grids (2D/3D) and/or neighbour
+   structures with a pressure/velocity solve feeding particle motion — the Niagara
+   "Simulation Stages + Grid2D/3D" shape. Only when true CFD-grade smoke/water/splash is
+   required; the flow-field look from stage 1 defers this a long way.
+3. **AAA polish** — sorting for correct blending, LOD/culling, and the >4M dispatch
+   ceiling (multi-/2-D dispatch) become relevant once these dense stateful sims exist.
+
+### What stays true regardless
+Analytical remains the editor/authoring/reference/seeking backend and the default for
+everything it can express (which, post-compaction, it does efficiently to millions of
+particles). The stateful backend is *additive*, opt-in per emitter, and justified by
+capability — collisions and fluids — not by the per-frame throughput numbers, which
+already favour keeping analytical wherever it suffices.
 
 ---
 
