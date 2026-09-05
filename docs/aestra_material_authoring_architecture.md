@@ -2559,8 +2559,11 @@ TriangleList geometry with position, normal and UV0 attributes. The shared compi
 UV0, Normal, LocalPosition (the existing semantic vertex position), WorldPosition and ViewDirection
 inputs. Normals use an inverse-transpose-equivalent transform, including nonuniform and mirrored
 scale. Per-renderer indirect commands copy alive counts from simulation without CPU readback.
-Mesh Material Lab exercises this path. Mesh bounds are conservatively uncullable until a follow-up
-combines geometry bounds with particle bounds. CPU/readback mesh presentation, mesh wireframe,
+Mesh Material Lab exercises this path. Mesh bounds combine geometry about its rotation pivot with
+particle motion, maximum size, angular sweep and emitter transforms; the host applies the outer
+effect transform when culling. Shared geometry bounds are cached and invalidated on mesh asset
+load/change/removal. Missing, invalid or render-world-only geometry remains conservatively
+uncullable rather than falling back to sprite bounds. CPU/readback mesh presentation, mesh wireframe,
 vertex deformation, tangents, UV1, ribbons and PBR are not included in this first slice.
 
 ### Add inputs

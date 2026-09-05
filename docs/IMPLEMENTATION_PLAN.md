@@ -499,8 +499,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   commands copy simulation instance counts on the GPU. Material inputs include real UV0, normals,
   local/world positions and view direction, without sprite coverage. The Mesh Material Lab effect
   uses an embedded-buffer glTF cube and normal-color material. This slice requires native GPU;
-  meshes without position/normal/UV0 or triangle topology are rejected by presentation. Mesh
-  frustum culling is conservatively disabled pending geometry-aware particle bounds. Mesh wireframe,
+  meshes without position/normal/UV0 or triangle topology are rejected by presentation. Geometry-aware
+  mesh bounds now combine particle motion and maximum size with off-center geometry, angular sweep,
+  and emitter rotation/nonuniform scale. Bevy applies the outer effect transform during frustum
+  checks. Bounds refresh for particle settings and asset load/edit/removal; missing or invalid
+  geometry remains uncullable. Regression tests cover rotation, mirrored scale, asset lifecycle and
+  viewport-edge visibility. Mesh wireframe,
   vertex deformation, tangent/UV1 inputs, ribbons/trails and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

@@ -5,6 +5,7 @@
 //! windowing, ECS, shader loading, dispatch, or drawing integration.
 
 pub mod material;
+pub mod mesh_bounds;
 pub mod particle_attributes;
 pub mod shader;
 
@@ -215,6 +216,8 @@ pub enum GpuBlend {
 /// on the per-frame update path, where only emitter and renderer inputs change.
 #[derive(Debug, Clone)]
 pub struct GpuEffectDynamics {
+    /// Geometry-independent bounds inputs, indexed by compiled emitter (including disabled ones).
+    pub mesh_bounds: Vec<mesh_bounds::MeshParticleBounds>,
     pub emitters: Vec<GpuEmitter>,
     pub renderers: Vec<GpuRenderer>,
     pub total_slots: u32,
@@ -254,6 +257,7 @@ impl GpuEffectArtifact {
         let parameters = instance.parameter_values();
         let mut slot_offset = 0_u32;
         let mut bounds_half_extents = Vec3::splat(0.01);
+        let mut mesh_bounds = Vec::new();
         let mut emitters = Vec::with_capacity(instance.effect().emitters.len());
         let mut renderers = Vec::new();
         for (emitter_index, emitter) in instance.effect().emitters.iter().enumerate() {
@@ -398,7 +402,7 @@ impl GpuEffectArtifact {
                 init.speed,
                 maximum_absolute_vector_source(motion.gravity),
                 maximum_absolute_scalar_source(motion.turbulence),
-                appearance.size,
+                maximum_absolute_curve(appearance.size) * 0.5,
             );
             bounds_half_extents = bounds_half_extents.max(transformed_emitter_bounds(
                 local_bounds,
@@ -408,6 +412,24 @@ impl GpuEffectArtifact {
             ));
             let rotation = Quat::from_array(emitter.transform.rotation).normalize();
             let scale = Vec3::from_array(emitter.transform.scale);
+            mesh_bounds.push(mesh_bounds::MeshParticleBounds {
+                position_half_extents: transformed_emitter_bounds(
+                    emitter_bounds(
+                        shape,
+                        init.lifetime,
+                        init.speed,
+                        maximum_absolute_vector_source(motion.gravity),
+                        maximum_absolute_scalar_source(motion.turbulence),
+                        0.0,
+                    ),
+                    emitter.transform.translation,
+                    emitter.transform.rotation,
+                    emitter.transform.scale,
+                ),
+                linear_from_local: glam::Mat3::from_quat(rotation)
+                    * glam::Mat3::from_diagonal(scale),
+                maximum_size: maximum_absolute_curve(appearance.size),
+            });
             let (spawn_inverse, spawn_inverse_total) = if emitter.enabled {
                 build_spawn_inverse(spawn_rate, emitter.source_duration)
             } else {
@@ -474,6 +496,7 @@ impl GpuEffectArtifact {
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }
         Ok(GpuEffectDynamics {
+            mesh_bounds,
             emitters,
             renderers,
             total_slots: slot_offset,
@@ -500,7 +523,7 @@ fn emitter_bounds(
     speed: ScalarRange,
     gravity: [f32; 3],
     turbulence: f32,
-    size: &CompiledCurve,
+    size: f32,
 ) -> Vec3 {
     let shape_extents = match shape {
         EmitterShape::Point => Vec3::ZERO,
@@ -519,7 +542,6 @@ fn emitter_bounds(
     let lifetime = lifetime.min.abs().max(lifetime.max.abs());
     let speed = speed.min.abs().max(speed.max.abs());
     let travel = speed * lifetime;
-    let size = maximum_absolute_curve(size) * 0.5;
     shape_extents
         + Vec3::new(
             travel + turbulence.abs() + gravity[0].abs() * lifetime * lifetime * 0.5 + size,
@@ -911,6 +933,49 @@ mod tests {
         assert_eq!(artifact.emitters[0].slot_offset, 0);
         assert_eq!(artifact.emitters[1].slot_offset, 17);
         assert_eq!(artifact.particles.len(), 40);
+    }
+
+    #[test]
+    fn mesh_bounds_enclose_evaluated_particles_and_geometry() {
+        let mut effect = EffectAsset::new("Mesh bounds", 2.0);
+        let mut disabled = Emitter::basic_sprite("Disabled", 2.0);
+        disabled.enabled = false;
+        let mut emitter = Emitter::basic_sprite("Moving mesh", 2.0);
+        emitter.transform.translation = [100.0, 20.0, -30.0];
+        emitter.transform.rotation =
+            Quat::from_euler(glam::EulerRot::XYZ, 0.5, 0.9, -0.3).to_array();
+        emitter.transform.scale = [2.0, 0.3, 4.0];
+        effect.emitters.extend([disabled, emitter]);
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let mut instance = EffectInstance::new(compiled);
+        let dynamics = GpuEffectArtifact::dynamics_from_instance(&instance).unwrap();
+        assert_eq!(dynamics.mesh_bounds.len(), 2);
+        let source = dynamics.mesh_bounds[1];
+        let bounds = source
+            .half_extents(Vec3::new(-30.0, -4.0, -1.0), Vec3::new(10.0, 20.0, 8.0))
+            .unwrap();
+        let mut particles = Vec::new();
+        let mut sampled = 0;
+        for frame in 0..120 {
+            instance.seek(frame as f32 / 60.0);
+            instance.evaluate(&mut particles);
+            for particle in &particles {
+                assert_eq!(particle.emitter_index, 1);
+                for vertex in [Vec3::new(-30.0, -4.0, -1.0), Vec3::new(10.0, 20.0, 8.0)] {
+                    // Same emitter scale compensation as the native mesh vertex shader.
+                    let vertex = Vec3::from_array(particle.position)
+                        + source.linear_from_local
+                            * (Quat::from_rotation_z(particle.rotation) * vertex)
+                            * (particle.size / dynamics.emitters[1].max_scale);
+                    assert!(
+                        vertex.abs().cmple(bounds).all(),
+                        "{vertex:?} outside {bounds:?}"
+                    );
+                    sampled += 1;
+                }
+            }
+        }
+        assert!(sampled > 0);
     }
 
     #[test]

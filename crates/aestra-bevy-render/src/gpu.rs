@@ -1,5 +1,6 @@
 //! Bevy render-world adapter for engine-neutral Aestra GPU artifacts.
 
+mod bounds;
 mod render;
 
 use crate::{
@@ -243,7 +244,11 @@ pub(crate) fn install(app: &mut App) {
     ))
     .init_resource::<MaterialShaderCache>()
     .add_systems(Startup, init_fallback_textures)
-    .add_systems(Update, update_gpu_inputs.after(prepare_gpu_effects));
+    .add_systems(Update, update_gpu_inputs.after(prepare_gpu_effects))
+    .add_systems(
+        PostUpdate,
+        bounds::sync_mesh_bounds.before(visibility::VisibilitySystems::CheckVisibility),
+    );
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
         let capabilities = GpuCapabilities::unavailable("Bevy has no render sub-application");
         let requested = app.world().resource::<AestraRenderSettings>().presentation;
@@ -544,7 +549,7 @@ pub(crate) fn prepare_gpu_effects(
                                 player.effect().emitters[emitter_index as usize].transform,
                             ),
                         }));
-                        let is_mesh = mesh.is_some();
+                        let mesh_bounds = mesh.clone().map(bounds::MeshBoundsSource::new);
                         let mut draw = parent.spawn((
                             GpuDrawInstance {
                                 mesh,
@@ -570,10 +575,10 @@ pub(crate) fn prepare_gpu_effects(
                             Transform::default(),
                             Visibility::Inherited,
                         ));
-                        // Until asset bounds are integrated with particle bounds, never cull a mesh
-                        // using the billboard-only estimate.
-                        if is_mesh {
-                            draw.insert(bevy::camera::visibility::NoFrustumCulling);
+                        // Geometry may still be loading; enable culling only once its bounds
+                        // and the current particle motion have both been resolved.
+                        if let Some(mesh_bounds) = mesh_bounds {
+                            draw.insert((mesh_bounds, visibility::NoFrustumCulling));
                         }
                     }
                 }
@@ -751,7 +756,14 @@ fn update_gpu_inputs(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
     mut players: PreparedGpuPlayers,
-    mut draw_instances: Query<(&mut GpuDrawInstance, &mut RenderLayers), Without<PresentedEffect>>,
+    mut draw_instances: Query<
+        (
+            &mut GpuDrawInstance,
+            &mut RenderLayers,
+            Option<&mut bounds::MeshBoundsSource>,
+        ),
+        Without<PresentedEffect>,
+    >,
 ) {
     let _span = tracing::info_span!("aestra::gpu::artifact_update").entered();
     for (mut player, transform, gpu, runtime, render_layers, children) in &mut players {
@@ -781,7 +793,11 @@ fn update_gpu_inputs(
         if let Some(children) = children {
             let render_mode = gpu_render_mode(player.render_mode());
             for child in children.iter() {
-                if let Ok((mut draw, mut draw_layers)) = draw_instances.get_mut(child) {
+                if let Ok((mut draw, mut draw_layers, mesh_bounds)) = draw_instances.get_mut(child)
+                {
+                    if let Some(mut mesh_bounds) = mesh_bounds {
+                        mesh_bounds.motion = None;
+                    }
                     draw.render_mode = render_mode;
                     let emitter = player
                         .effect()
@@ -811,12 +827,22 @@ fn update_gpu_inputs(
         // Use the binding that actually prepared successfully, including retained bindings
         // on preparation failure. Never prune CPU-presentation/readback data.
         if let Ok(mut dynamics) = GpuEffectArtifact::dynamics_from_instance(&player.instance) {
+            if let Some(children) = children {
+                for child in children.iter() {
+                    if let Ok((draw, _, Some(mut mesh_bounds))) = draw_instances.get_mut(child) {
+                        mesh_bounds.motion = dynamics
+                            .mesh_bounds
+                            .get(draw.emitter_index as usize)
+                            .copied();
+                    }
+                }
+            }
             apply_semantic_sprite_compatibility_to_renderers(&mut dynamics.renderers, &player);
             if runtime.active == ActiveBackend::Gpu {
                 let mut requirements = vec![GpuParticleAttributes::ALL; dynamics.renderers.len()];
                 if let Some(children) = children {
                     for child in children.iter() {
-                        if let Ok((draw, _)) = draw_instances.get(child)
+                        if let Ok((draw, _, _)) = draw_instances.get(child)
                             && let Some(renderer) =
                                 dynamics.renderers.get(draw.renderer_order as usize)
                         {
