@@ -13,7 +13,7 @@ fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexDa
     let base = r.attribute_flags.z + 1u + (instance_index / capacity) * r.frame_count;
     let segment = instance_index % capacity;
     let count = aux[base * 3u + 1u];
-    if particles[base].alive == 0u || segment >= count { return output; }
+    if particle_alive(particles[base]) == 0u || segment >= count { return output; }
     let start = trail_slot(base, capacity, segment);
     let end = trail_slot(base, capacity, segment + 1u);
     let delta = particles[end].position - particles[start].position;

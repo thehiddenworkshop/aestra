@@ -194,7 +194,10 @@ pub struct GpuRenderGlobals {
     pub _padding: Vec2,
 }
 
-/// Stable storage/readback ABI shared with the GPU simulation shader.
+/// Stable storage/readback ABI shared with the GPU simulation shader. 48 bytes:
+/// `emitter_index` and `alive` are packed into one word (`emitter_index << 16 | alive`),
+/// and ribbon/trail scratch lives in the separate `aux` buffer, so the record holds
+/// only live presentation state.
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
 pub struct GpuParticle {
     pub color: Vec4,
@@ -202,12 +205,9 @@ pub struct GpuParticle {
     pub size: f32,
     pub rotation: f32,
     pub normalized_age: f32,
-    pub emitter_index: u32,
-    pub alive: u32,
+    /// `emitter_index << 16 | (alive & 0xffff)`. `alive` carries the trail tri-state (0/1/2).
+    pub packed_emitter_alive: u32,
     pub particle_index: u32,
-    pub _padding_0: u32,
-    pub _padding_1: u32,
-    pub _padding_2: u32,
 }
 
 #[derive(Debug, Clone)]

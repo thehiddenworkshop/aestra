@@ -10,14 +10,14 @@ fn record_trails(emitter_index: u32) {
     let root = e.trail_offset;
     let now = globals.time;
     let last = particles[root];
-    let reset = last.alive == 0u || aux[root * 3u] != globals._padding.x || last.particle_index != globals.seed || now < last.rotation || now - last.rotation > e.trail_lifetime;
+    let reset = particle_alive(last) == 0u || aux[root * 3u] != globals._padding.x || last.particle_index != globals.seed || now < last.rotation || now - last.rotation > e.trail_lifetime;
     if !reset && now == last.rotation { return; }
     let capacity = e.trail_points - 1u;
     var evictions = select(aux[root * 3u + 1u], 0u, reset);
     for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
         if reset || now - particles[base].rotation >= e.trail_lifetime {
-            particles[base].alive = 0u;
+            particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 0u);
         }
     }
     let count = min(atomicLoad(&indirect[emitter_index * 4u + 1u]), e.max_particles);
@@ -27,7 +27,7 @@ fn record_trails(emitter_index: u32) {
         let id = particles[alive_indices[e.slot_offset + n]].particle_index;
         for (var i = 0u; i < e.trail_capacity; i += 1u) {
             let base = root + 1u + i * e.trail_points;
-            if particles[base].alive != 0u && particles[base].particle_index == id { particles[base].alive = 2u; break; }
+            if particle_alive(particles[base]) != 0u && particles[base].particle_index == id { particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 2u); break; }
         }
     }
     let world_scale = max(length(globals.world_from_effect[0].xyz), max(length(globals.world_from_effect[1].xyz), length(globals.world_from_effect[2].xyz)));
@@ -39,17 +39,17 @@ fn record_trails(emitter_index: u32) {
         for (var i = 0u; i < e.trail_capacity; i += 1u) {
             let base = root + 1u + i * e.trail_points;
             let previous = particles[base];
-            if previous.alive != 0u && previous.particle_index == head.particle_index { owner = base; break; }
-            if previous.alive == 0u {
+            if particle_alive(previous) != 0u && previous.particle_index == head.particle_index { owner = base; break; }
+            if particle_alive(previous) == 0u {
                 if oldest > -3.402823e38 { candidate = base; oldest = -3.402823e38; }
-            } else if previous.alive != 2u && previous.rotation < oldest {
+            } else if particle_alive(previous) != 2u && previous.rotation < oldest {
                 candidate = base; oldest = previous.rotation;
             }
         }
         head.position = (globals.world_from_effect * vec4<f32>(head.position, 1.0)).xyz;
         head.size *= world_scale;
         head.rotation = now;
-        head.alive = 2u;
+        head.packed_emitter_alive = set_alive(head.packed_emitter_alive, 2u);
         // Ring state (next index, sample count, tick/remainder bits) now lives in the
         // shared aux buffer at aux[owner*3 + 0/1/2], off the particle ABI.
         var ring_head = 0u;
@@ -58,7 +58,7 @@ fn record_trails(emitter_index: u32) {
         if owner == 0xffffffffu {
             if candidate == 0xffffffffu { continue; }
             owner = candidate;
-            if particles[owner].alive != 0u { evictions += 1u; }
+            if particle_alive(particles[owner]) != 0u { evictions += 1u; }
             ring_head = 1u % capacity;
             ring_count = 1u;
             ring_tick = bitcast<u32>(select(now, 0.0, e.trail_sampling == 1u));
@@ -126,7 +126,7 @@ fn record_trails(emitter_index: u32) {
         // Distance mode may leave its ring untouched for many frames. Remove
         // expired anchors, otherwise a stationary live head could keep an old
         // partial segment visible forever. The moving head itself is not a sample.
-        if e.trail_sampling == 1u && particles[base].alive != 0u {
+        if e.trail_sampling == 1u && particle_alive(particles[base]) != 0u {
             for (var s = 0u; s < capacity; s += 1u) {
                 let points = aux[base * 3u + 1u];
                 if points == 0u { break; }
@@ -135,11 +135,11 @@ fn record_trails(emitter_index: u32) {
                 aux[base * 3u + 1u] = points - 1u;
             }
         }
-        if particles[base].alive != 0u { occupied += 1u; }
-        if particles[base].alive == 1u { retired += 1u; }
-        if particles[base].alive == 2u { particles[base].alive = 1u; }
+        if particle_alive(particles[base]) != 0u { occupied += 1u; }
+        if particle_alive(particles[base]) == 1u { retired += 1u; }
+        if particle_alive(particles[base]) == 2u { particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 1u); }
     }
-    particles[root].alive = 1u;
+    particles[root].packed_emitter_alive = set_alive(particles[root].packed_emitter_alive, 1u);
     particles[root].rotation = now;
     particles[root].particle_index = globals.seed;
     aux[root * 3u] = globals._padding.x;

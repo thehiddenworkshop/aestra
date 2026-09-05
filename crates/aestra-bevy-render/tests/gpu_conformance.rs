@@ -1081,9 +1081,9 @@ impl GpuHarness {
             .map_err(|error| error.to_string())?;
         Ok(particles
             .into_iter()
-            .filter(|particle| particle.alive != 0)
+            .filter(|particle| particle.packed_emitter_alive & 0xffff != 0)
             .map(|particle| ParticleSample {
-                emitter_index: particle.emitter_index as usize,
+                emitter_index: (particle.packed_emitter_alive >> 16) as usize,
                 particle_index: particle.particle_index,
                 position: particle.position.to_array(),
                 size: particle.size,

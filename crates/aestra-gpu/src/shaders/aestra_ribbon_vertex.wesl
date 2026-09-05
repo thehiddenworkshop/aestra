@@ -50,7 +50,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     output.quad_position = corner;
     output.uv = vec2<f32>(bitcast<f32>(aux[slot * 3u + 2u]), corner.x * 0.5 + 0.5);
     output.ribbon_direction = direction;
-    output.visible = select(0u, 1u, particles[start].emitter_index == renderer.emitter_index && particles[end].emitter_index == renderer.emitter_index);
+    output.visible = select(0u, 1u, particle_emitter(particles[start]) == renderer.emitter_index && particle_emitter(particles[end]) == renderer.emitter_index);
     output.softness = renderer.softness;
     output.textured = renderer.textured | 2u;
     output.effect_time = globals.time;

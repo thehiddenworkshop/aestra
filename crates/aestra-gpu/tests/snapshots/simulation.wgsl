@@ -85,12 +85,20 @@ struct Particle {
     size: f32,
     rotation: f32,
     normalized_age: f32,
-    emitter_index: u32,
-    alive: u32,
-    particle_index: u32,
-    _padding_0: u32,
-    _padding_1: u32,
-    _padding_2: u32
+    packed_emitter_alive: u32,
+    particle_index: u32
+}
+
+fn particle_alive(p: Particle) -> u32 {
+    return p.packed_emitter_alive & 65535u;
+}
+
+fn pack_emitter_alive(emitter: u32, alive: u32) -> u32 {
+    return (emitter << 16u) | (alive & 65535u);
+}
+
+fn set_alive(packed: u32, alive: u32) -> u32 {
+    return (packed & 4294901760u) | (alive & 65535u);
 }
 
 struct Globals {
@@ -321,7 +329,7 @@ fn sample_gradient(gradient: Gradient, time: f32) -> vec4<f32> {
 }
 
 fn dead_particle(emitter_index: u32) -> Particle {
-    return Particle(vec4<f32>(0.0), vec3<f32>(0.0), 0.0, 0.0, 0.0, emitter_index, 0u, 0u, 0u, 0u, 0u);
+    return Particle(vec4<f32>(0.0), vec3<f32>(0.0), 0.0, 0.0, 0.0, pack_emitter_alive(emitter_index, 0u), 0u);
 }
 
 fn append_dead(slot: u32) {
@@ -563,7 +571,7 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if (emitter.omitted_attributes & 2u) == 0u {
         size = sample_curve(emitter.size, normalized_age) * emitter.max_scale;
     }
-    particles[slot] = Particle(color, position, size, rotation, select(normalized_age, 0.0, (emitter.omitted_attributes & 32u) != 0u), emitter_index, 1u, particle_index + particle_cycle * max(emitter.max_particles, 1u), 0u, 0u, 0u);
+    particles[slot] = Particle(color, position, size, rotation, select(normalized_age, 0.0, (emitter.omitted_attributes & 32u) != 0u), pack_emitter_alive(emitter_index, 1u), particle_index + particle_cycle * max(emitter.max_particles, 1u));
     atomicAdd(&counters[0], 1u);
     let command = emitter_index * 4u;
     let compact_index = atomicAdd(&indirect[command + 1u], 1u);
@@ -653,7 +661,7 @@ fn record_trails(emitter_index: u32) {
     let root = e.trail_offset;
     let now = globals.time;
     let last = particles[root];
-    let reset = last.alive == 0u || aux[root * 3u] != globals._padding.x || last.particle_index != globals.seed || now < last.rotation || now - last.rotation > e.trail_lifetime;
+    let reset = particle_alive(last) == 0u || aux[root * 3u] != globals._padding.x || last.particle_index != globals.seed || now < last.rotation || now - last.rotation > e.trail_lifetime;
     if !reset && now == last.rotation {
         return;
     }
@@ -662,7 +670,7 @@ fn record_trails(emitter_index: u32) {
     for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
         if reset || now - particles[base].rotation >= e.trail_lifetime {
-            particles[base].alive = 0u;
+            particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 0u);
         }
     }
     let count = min(atomicLoad(&indirect[emitter_index * 4u + 1u]), e.max_particles);
@@ -670,8 +678,8 @@ fn record_trails(emitter_index: u32) {
         let id = particles[alive_indices[e.slot_offset + n]].particle_index;
         for (var i = 0u; i < e.trail_capacity; i += 1u) {
             let base = root + 1u + i * e.trail_points;
-            if particles[base].alive != 0u && particles[base].particle_index == id {
-                particles[base].alive = 2u;
+            if particle_alive(particles[base]) != 0u && particles[base].particle_index == id {
+                particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 2u);
                 break;
             }
         }
@@ -685,17 +693,17 @@ fn record_trails(emitter_index: u32) {
         for (var i = 0u; i < e.trail_capacity; i += 1u) {
             let base = root + 1u + i * e.trail_points;
             let previous = particles[base];
-            if previous.alive != 0u && previous.particle_index == head.particle_index {
+            if particle_alive(previous) != 0u && previous.particle_index == head.particle_index {
                 owner = base;
                 break;
             }
-            if previous.alive == 0u {
+            if particle_alive(previous) == 0u {
                 if oldest > -3.402823e38 {
                     candidate = base;
                     oldest = -3.402823e38;
                 }
             }
-            else if previous.alive != 2u && previous.rotation < oldest {
+            else if particle_alive(previous) != 2u && previous.rotation < oldest {
                 candidate = base;
                 oldest = previous.rotation;
             }
@@ -703,7 +711,7 @@ fn record_trails(emitter_index: u32) {
         head.position = (globals.world_from_effect * vec4<f32>(head.position, 1.0)).xyz;
         head.size *= world_scale;
         head.rotation = now;
-        head.alive = 2u;
+        head.packed_emitter_alive = set_alive(head.packed_emitter_alive, 2u);
         var ring_head = 0u;
         var ring_count = 0u;
         var ring_tick = 0u;
@@ -712,7 +720,7 @@ fn record_trails(emitter_index: u32) {
                 continue;
             }
             owner = candidate;
-            if particles[owner].alive != 0u {
+            if particle_alive(particles[owner]) != 0u {
                 evictions += 1u;
             }
             ring_head = 1u % capacity;
@@ -778,7 +786,7 @@ fn record_trails(emitter_index: u32) {
     var retired = 0u;
     for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
-        if e.trail_sampling == 1u && particles[base].alive != 0u {
+        if e.trail_sampling == 1u && particle_alive(particles[base]) != 0u {
             for (var s = 0u; s < capacity; s += 1u) {
                 let points = aux[base * 3u + 1u];
                 if points == 0u {
@@ -791,17 +799,17 @@ fn record_trails(emitter_index: u32) {
                 aux[base * 3u + 1u] = points - 1u;
             }
         }
-        if particles[base].alive != 0u {
+        if particle_alive(particles[base]) != 0u {
             occupied += 1u;
         }
-        if particles[base].alive == 1u {
+        if particle_alive(particles[base]) == 1u {
             retired += 1u;
         }
-        if particles[base].alive == 2u {
-            particles[base].alive = 1u;
+        if particle_alive(particles[base]) == 2u {
+            particles[base].packed_emitter_alive = set_alive(particles[base].packed_emitter_alive, 1u);
         }
     }
-    particles[root].alive = 1u;
+    particles[root].packed_emitter_alive = set_alive(particles[root].packed_emitter_alive, 1u);
     particles[root].rotation = now;
     particles[root].particle_index = globals.seed;
     aux[root * 3u] = globals._padding.x;

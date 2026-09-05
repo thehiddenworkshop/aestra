@@ -1189,9 +1189,9 @@ pub(crate) fn receive_readback(
     player.gpu_samples.extend(
         particles
             .into_iter()
-            .filter(|particle| particle.alive != 0)
+            .filter(|particle| particle.packed_emitter_alive & 0xffff != 0)
             .map(|particle| aestra_runtime::ParticleSample {
-                emitter_index: particle.emitter_index as usize,
+                emitter_index: (particle.packed_emitter_alive >> 16) as usize,
                 particle_index: particle.particle_index,
                 position: particle.position.to_array(),
                 size: particle.size,

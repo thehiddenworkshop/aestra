@@ -32,13 +32,13 @@ struct Particle {
     size: f32,
     rotation: f32,
     normalized_age: f32,
-    emitter_index: u32,
-    alive: u32,
+    // emitter_index << 16 | (alive & 0xffff).
+    packed_emitter_alive: u32,
     particle_index: u32,
-    _padding_0: u32,
-    _padding_1: u32,
-    _padding_2: u32,
 }
+
+fn particle_alive(p: Particle) -> u32 { return p.packed_emitter_alive & 0xffffu; }
+fn particle_emitter(p: Particle) -> u32 { return p.packed_emitter_alive >> 16u; }
 
 struct RenderGlobals {
     world_from_effect: mat4x4<f32>,
@@ -146,7 +146,7 @@ fn aestra_sprite_vertex(
     particle.position = particles[particle_index].position;
     particle.size = particles[particle_index].size;
     particle.rotation = particles[particle_index].rotation;
-    particle.emitter_index = particles[particle_index].emitter_index;
+    particle.packed_emitter_alive = particles[particle_index].packed_emitter_alive;
     if (renderer.attribute_flags.x & 32u) == 0u {
         particle.normalized_age = particles[particle_index].normalized_age;
     }
@@ -181,7 +181,7 @@ fn aestra_sprite_vertex(
     }
     output.quad_position = corner;
     output.softness = renderer.softness;
-    output.visible = select(0u, 1u, particle.emitter_index == renderer.emitter_index);
+    output.visible = select(0u, 1u, particle_emitter(particle) == renderer.emitter_index);
     var uv_bounds = vec4<f32>(renderer.uv_min, renderer.uv_max);
     if renderer.renderer_kind == 1u {
         var identity = 0u;

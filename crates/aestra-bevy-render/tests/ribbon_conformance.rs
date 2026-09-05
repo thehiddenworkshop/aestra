@@ -284,9 +284,6 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
         .iter()
         .map(|&particle_index| GpuParticle {
             particle_index,
-            _padding_0: 17,
-            _padding_1: 19,
-            _padding_2: 23,
             ..Default::default()
         })
         .collect::<Vec<_>>();
@@ -351,7 +348,9 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
                 pass.set_bind_group(0, &group, &[]);
                 pass.dispatch_workgroups(1, 1, 1);
             }
-            encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, 640);
+            // Particles are now a packed 48-byte record (10 * 48 = 480); this copy is
+            // unused by the assertions below, which read the alive list and aux.
+            encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, 480);
             encoder.copy_buffer_to_buffer(&buffers[2], 0, &readback, 640, 40);
             // aux buffer (10 slots x 3 words) holds the ribbon link triple now.
             encoder.copy_buffer_to_buffer(&buffers[7], 0, &readback, 680, 120);

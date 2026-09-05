@@ -29,12 +29,16 @@ struct Particle {
     size: f32,
     rotation: f32,
     normalized_age: f32,
-    emitter_index: u32,
-    alive: u32,
-    particle_index: u32,
-    _padding_0: u32,
-    _padding_1: u32,
-    _padding_2: u32
+    packed_emitter_alive: u32,
+    particle_index: u32
+}
+
+fn particle_alive(p: Particle) -> u32 {
+    return p.packed_emitter_alive & 65535u;
+}
+
+fn particle_emitter(p: Particle) -> u32 {
+    return p.packed_emitter_alive >> 16u;
 }
 
 struct RenderGlobals {
@@ -146,7 +150,7 @@ fn aestra_sprite_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     particle.position = particles[particle_index].position;
     particle.size = particles[particle_index].size;
     particle.rotation = particles[particle_index].rotation;
-    particle.emitter_index = particles[particle_index].emitter_index;
+    particle.packed_emitter_alive = particles[particle_index].packed_emitter_alive;
     if (renderer.attribute_flags.x & 32u) == 0u {
         particle.normalized_age = particles[particle_index].normalized_age;
     }
@@ -172,7 +176,7 @@ fn aestra_sprite_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     }
     output.quad_position = corner;
     output.softness = renderer.softness;
-    output.visible = select(0u, 1u, particle.emitter_index == renderer.emitter_index);
+    output.visible = select(0u, 1u, particle_emitter(particle) == renderer.emitter_index);
     var uv_bounds = vec4<f32>(renderer.uv_min, renderer.uv_max);
     if renderer.renderer_kind == 1u {
         var identity = 0u;
@@ -250,7 +254,7 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
     output.quad_position = corner;
     output.uv = vec2<f32>(bitcast<f32>(aux[slot * 3u + 2u]), corner.x * 0.5 + 0.5);
     output.ribbon_direction = direction;
-    output.visible = select(0u, 1u, particles[start].emitter_index == renderer.emitter_index && particles[end].emitter_index == renderer.emitter_index);
+    output.visible = select(0u, 1u, particle_emitter(particles[start]) == renderer.emitter_index && particle_emitter(particles[end]) == renderer.emitter_index);
     output.softness = renderer.softness;
     output.textured = renderer.textured | 2u;
     output.effect_time = globals.time;
@@ -276,7 +280,7 @@ fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexDa
     let base = r.attribute_flags.z + 1u + (instance_index / capacity) * r.frame_count;
     let segment = instance_index % capacity;
     let count = aux[base * 3u + 1u];
-    if particles[base].alive == 0u || segment >= count {
+    if particle_alive(particles[base]) == 0u || segment >= count {
         return output;
     }
     let start = trail_slot(base, capacity, segment);

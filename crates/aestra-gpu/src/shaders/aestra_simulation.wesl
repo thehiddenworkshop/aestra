@@ -86,13 +86,16 @@ struct Particle {
     size: f32,
     rotation: f32,
     normalized_age: f32,
-    emitter_index: u32,
-    alive: u32,
+    // emitter_index << 16 | (alive & 0xffff). alive carries the trail tri-state (0/1/2).
+    packed_emitter_alive: u32,
     particle_index: u32,
-    _padding_0: u32,
-    _padding_1: u32,
-    _padding_2: u32,
 }
+
+fn particle_alive(p: Particle) -> u32 { return p.packed_emitter_alive & 0xffffu; }
+fn particle_emitter(p: Particle) -> u32 { return p.packed_emitter_alive >> 16u; }
+fn pack_emitter_alive(emitter: u32, alive: u32) -> u32 { return (emitter << 16u) | (alive & 0xffffu); }
+// Replace only the alive half of a packed word, preserving the emitter index.
+fn set_alive(packed: u32, alive: u32) -> u32 { return (packed & 0xffff0000u) | (alive & 0xffffu); }
 
 struct Globals {
     time: f32,
@@ -361,11 +364,7 @@ fn dead_particle(emitter_index: u32) -> Particle {
         0.0,
         0.0,
         0.0,
-        emitter_index,
-        0u,
-        0u,
-        0u,
-        0u,
+        pack_emitter_alive(emitter_index, 0u),
         0u,
     );
 }
@@ -691,12 +690,8 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         size,
         rotation,
         select(normalized_age, 0.0, (emitter.omitted_attributes & 32u) != 0u),
-        emitter_index,
-        1u,
+        pack_emitter_alive(emitter_index, 1u),
         particle_index + particle_cycle * max(emitter.max_particles, 1u),
-        0u,
-        0u,
-        0u,
     );
     atomicAdd(&counters[0], 1u);
     let command = emitter_index * 4u;

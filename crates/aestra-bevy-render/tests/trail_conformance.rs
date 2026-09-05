@@ -21,18 +21,30 @@ fn word(bytes: &[u8], record: usize, offset: usize) -> u32 {
     u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
 }
 
-// Ring state (ring head / count / tick) moved out of the particle record into the
-// aux buffer. The readbacks append aux; this splices aux[record*3 + k] back into the
-// record's former _padding offsets (52/56/60) so offset-based assertions still read it.
-fn splice_aux(bytes: &mut [u8], aux_start: usize, records: usize) {
+// The record is now a packed 48-byte struct (emitter_index and alive share one word)
+// with ring state living in the separate aux buffer. Reconstruct the historical
+// 64-byte layout (emitter_index@40, alive@44, particle_index@48, ring state@52/56/60)
+// from the packed records + aux, so the offset-based `word` assertions keep working.
+// `counters` (if any) is appended unchanged so stats_record reads still land.
+fn expand_legacy(packed: &[u8], aux: &[u8], counters: &[u8], records: usize) -> Vec<u8> {
+    let mut out = vec![0u8; records * 64 + counters.len()];
     for r in 0..records {
+        let src = &packed[r * 48..r * 48 + 48];
+        // color/position/size/rotation/normalized_age share the first 40 bytes.
+        out[r * 64..r * 64 + 40].copy_from_slice(&src[0..40]);
+        let packed_word = u32::from_le_bytes(src[40..44].try_into().unwrap());
+        let emitter = packed_word >> 16;
+        let alive = packed_word & 0xffff;
+        out[r * 64 + 40..r * 64 + 44].copy_from_slice(&emitter.to_le_bytes());
+        out[r * 64 + 44..r * 64 + 48].copy_from_slice(&alive.to_le_bytes());
+        out[r * 64 + 48..r * 64 + 52].copy_from_slice(&src[44..48]); // particle_index
         for k in 0..3 {
-            let src = aux_start + r * 12 + k * 4;
-            let v = [bytes[src], bytes[src + 1], bytes[src + 2], bytes[src + 3]];
-            let dst = r * 64 + 52 + k * 4;
-            bytes[dst..dst + 4].copy_from_slice(&v);
+            let a = r * 12 + k * 4;
+            out[r * 64 + 52 + k * 4..r * 64 + 56 + k * 4].copy_from_slice(&aux[a..a + 4]);
         }
     }
+    out[records * 64..].copy_from_slice(counters);
+    out
 }
 
 // Exercise the real simulation as well as history: a direct jump has live
@@ -194,12 +206,10 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
             .recv_timeout(std::time::Duration::from_secs(5))
             .unwrap()
             .unwrap();
-        let mut bytes = readback.slice(..).get_mapped_range().to_vec();
+        let bytes = readback.slice(..).get_mapped_range().to_vec();
         readback.unmap();
-        let records = buffers[1].size() as usize / 64;
-        splice_aux(&mut bytes, buffers[1].size() as usize, records);
-        bytes.truncate(buffers[1].size() as usize);
-        bytes
+        let p = buffers[1].size() as usize;
+        expand_legacy(&bytes[0..p], &bytes[p..], &[], p / 48)
     };
     let heads =
         || (0..e.trail_capacity).map(|i| (e.trail_offset + 1 + i * e.trail_points) as usize);
@@ -364,7 +374,8 @@ fn check_pool(max_trails: u32, distance: bool) {
                     ),
                     size: 2.0,
                     color: Vec4::ONE,
-                    alive: 1,
+                    // packed emitter_index (0) << 16 | alive (1).
+                    packed_emitter_alive: 1,
                     ..Default::default()
                 })
                 .to_vec();
@@ -431,13 +442,11 @@ fn check_pool(max_trails: u32, distance: bool) {
                 .recv_timeout(std::time::Duration::from_secs(5))
                 .unwrap()
                 .unwrap();
-            let mut bytes = readback.slice(..).get_mapped_range().to_vec();
+            let bytes = readback.slice(..).get_mapped_range().to_vec();
             readback.unmap();
-            let records = buffers[1].size() as usize / 64;
-            let tail = buffers[1].size() as usize + buffers[4].size() as usize;
-            splice_aux(&mut bytes, tail, records);
-            bytes.truncate(tail);
-            bytes
+            let p = buffers[1].size() as usize;
+            let c = buffers[4].size() as usize;
+            expand_legacy(&bytes[0..p], &bytes[p + c..], &bytes[p..p + c], p / 48)
         };
     let step = |time, ids, count, translation, epoch, seed| {
         step_at(

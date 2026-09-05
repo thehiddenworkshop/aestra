@@ -150,8 +150,9 @@ fn emitter_requirements_union_consumers_and_refresh_without_sticky_omissions() {
     assert_eq!(artifact.emitters[0].omitted_attributes, A::ALL.0);
     assert_eq!(
         GpuParticle::min_size().get(),
-        64,
-        "particle storage/readback ABI must not shrink"
+        48,
+        "particle storage/readback ABI is the packed 48-byte record (emitter+alive \
+         packed, ribbon/trail scratch in aux)"
     );
 }
 
