@@ -7,7 +7,7 @@
     material_instances: [
         (
             id: "a3574a00-0000-4000-8000-00000000c101",
-            program: Project("a3574a00-0000-4000-8000-00000000b201"),
+            program: Project("a3574a00-0000-4000-8000-00000000c201"),
             values: {},
             render_state: (
                 blend: Alpha,
@@ -17,7 +17,9 @@
             ),
         ),
     ],
-    assets: [],
+    assets: [
+        (id: "a3574a00-0000-4000-8000-00000000c401", name: "Trail Tile", kind: Texture, path: "textures/ember_spark.png"),
+    ],
     parameters: [],
     emitters: [
         (
@@ -155,7 +157,7 @@
                     renderer_type: "aestra.renderer.trail",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-00000000c101",
-                    properties: Trail(width: 0.35, sample_interval: 0.025, lifetime: 0.65, max_points: 64, max_trails: 64, sampling: Distance, sample_distance: 1.0),
+                    properties: Trail(width: 0.35, sample_interval: 0.025, lifetime: 0.65, max_points: 64, max_trails: 64, sampling: Distance, sample_distance: 1.0, uv_mode: Tile, tile_length: 8.0),
                 ),
             ],
         ),

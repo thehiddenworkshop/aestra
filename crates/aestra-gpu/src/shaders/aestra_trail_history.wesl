@@ -55,6 +55,10 @@ fn record_trails(emitter_index: u32) {
         var ring_head = 0u;
         var ring_count = 0u;
         var ring_tick = 0u;
+        // Sample aux word 0 stores accumulated world path distance. Word 1 of
+        // the first physical sample stores the owner's current head distance;
+        // it is independent of ring rotation. No live particle fields are reused.
+        var path_distance = 0.0;
         if owner == 0xffffffffu {
             if candidate == 0xffffffffu { continue; }
             owner = candidate;
@@ -63,12 +67,15 @@ fn record_trails(emitter_index: u32) {
             ring_count = 1u;
             ring_tick = bitcast<u32>(select(now, 0.0, e.trail_sampling == 1u));
             particles[owner + 1u] = head;
+            aux[(owner + 1u) * 3u] = bitcast<u32>(0.0);
         } else if e.trail_sampling == 1u {
             let previous = particles[owner];
             ring_head = aux[owner * 3u];
             ring_count = aux[owner * 3u + 1u];
             ring_tick = aux[owner * 3u + 2u];
             let segment = length(head.position - previous.position);
+            let previous_distance = bitcast<f32>(aux[(owner + 1u) * 3u + 1u]);
+            path_distance = previous_distance + segment;
             let total = bitcast<f32>(ring_tick) + segment;
             // Sample the observed world-space polyline. Carry the sub-spacing
             // remainder across frames/corners; stationary parents consume no points.
@@ -87,6 +94,7 @@ fn record_trails(emitter_index: u32) {
                     sample.size = mix(previous.size, head.size, t);
                     sample.rotation = mix(previous.rotation, now, t);
                     particles[owner + 1u + ring_head] = sample;
+                    aux[(owner + 1u + ring_head) * 3u] = bitcast<u32>(previous_distance + along);
                     ring_head = (ring_head + 1u) % capacity;
                     ring_count = min(ring_count + 1u, capacity);
                 }
@@ -94,6 +102,8 @@ fn record_trails(emitter_index: u32) {
             }
         } else {
             let previous = particles[owner];
+            let previous_distance = bitcast<f32>(aux[(owner + 1u) * 3u + 1u]);
+            path_distance = previous_distance + length(head.position - previous.position);
             ring_head = aux[owner * 3u];
             ring_count = aux[owner * 3u + 1u];
             var tick = bitcast<f32>(aux[owner * 3u + 2u]);
@@ -109,6 +119,7 @@ fn record_trails(emitter_index: u32) {
                 sample.size = mix(previous.size, head.size, t);
                 sample.rotation = tick;
                 particles[owner + 1u + ring_head] = sample;
+                aux[(owner + 1u + ring_head) * 3u] = bitcast<u32>(mix(previous_distance, path_distance, t));
                 ring_head = (ring_head + 1u) % capacity;
                 ring_count = min(ring_count + 1u, capacity);
             }
@@ -117,6 +128,7 @@ fn record_trails(emitter_index: u32) {
         aux[owner * 3u] = ring_head;
         aux[owner * 3u + 1u] = ring_count;
         aux[owner * 3u + 2u] = ring_tick;
+        aux[(owner + 1u) * 3u + 1u] = bitcast<u32>(path_distance);
         particles[owner] = head;
     }
     var occupied = 0u;

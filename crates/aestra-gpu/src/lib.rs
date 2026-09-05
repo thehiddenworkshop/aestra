@@ -156,10 +156,12 @@ pub struct GpuRenderer {
     pub frame_count: u32,
     /// Flipbook playback mode, or the resolved owner budget for Trail (kind 4).
     pub playback_mode: u32,
+    /// Flipbook flags; for Trail, 0 = Stretch and 1 = Tile UVs.
     pub flipbook_flags: u32,
     pub frame_rate: f32,
     /// x: omitted particle reads; y: strip width (f32 bits); z: trail history offset.
     pub attribute_flags: UVec3,
+    /// Flipbook rectangles; Trail uses only frames[0].x for world-space tile length.
     pub frames: [Vec4; MAX_FLIPBOOK_FRAMES],
 }
 
@@ -332,6 +334,8 @@ impl GpuEffectArtifact {
                     || trail_capacity > 1024
                     || !trail_distance.is_finite()
                     || trail_distance < 0.001
+                    || emitter.renderers.iter().any(|renderer| matches!(renderer.kind,
+                        RendererPlanKind::Trail { tile_length, .. } if !tile_length.is_finite() || tile_length < 0.001))
                 {
                     return Err(GpuArtifactError::TrailLimit);
                 }
@@ -415,15 +419,22 @@ impl GpuEffectArtifact {
                         RendererPlanKind::Trail {
                             max_points,
                             lifetime,
+                            uv_mode,
+                            tile_length,
                             ..
-                        } => (
-                            4,
-                            *max_points,
-                            trail_capacity,
-                            0,
-                            *lifetime,
-                            material_texture,
-                        ),
+                        } => {
+                            // Trail reuses otherwise unused flipbook lanes; the
+                            // compact particle/aux ABI and bindings stay unchanged.
+                            frames[0].x = *tile_length;
+                            (
+                                4,
+                                *max_points,
+                                trail_capacity,
+                                u32::from(*uv_mode == aestra_core::TrailUvMode::Tile),
+                                *lifetime,
+                                material_texture,
+                            )
+                        }
                         RendererPlanKind::Mesh { .. } => (2, 1, 0, 0, 0.0, material_texture),
                         RendererPlanKind::Flipbook {
                             flipbook,

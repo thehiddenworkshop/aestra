@@ -272,6 +272,13 @@ fn trail_slot(base: u32, capacity: u32, index: u32) -> u32 {
     return base + 1u + (aux[base * 3u] + capacity - count + index) % capacity;
 }
 
+fn trail_path_distance(base: u32, slot: u32) -> f32 {
+    if slot == base {
+        return bitcast<f32>(aux[(base + 1u) * 3u + 1u]);
+    }
+    return bitcast<f32>(aux[slot * 3u]);
+}
+
 fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexData {
     var output: SpriteVertexData;
     output.clip_position = vec4<f32>(0.0, 0.0, 0.0, 1.0);
@@ -307,7 +314,14 @@ fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexDa
         output.color *= particles[slot].color;
     }
     output.quad_position = vec2<f32>(corner.x, fade);
-    output.uv = vec2<f32>(fade, corner.x * 0.5 + 0.5);
+    let distance = trail_path_distance(base, slot);
+    let oldest_distance = trail_path_distance(base, trail_slot(base, capacity, 0u));
+    let head_distance = trail_path_distance(base, base);
+    var u = clamp((distance - oldest_distance) / max(head_distance - oldest_distance, 1e-6), 0.0, 1.0);
+    if r.flipbook_flags == 1u {
+        u = distance / max(r.frames[0].x, 0.001);
+    }
+    output.uv = vec2<f32>(u, corner.x * 0.5 + 0.5);
     output.ribbon_direction = direction;
     output.visible = 1u;
     output.softness = r.softness;

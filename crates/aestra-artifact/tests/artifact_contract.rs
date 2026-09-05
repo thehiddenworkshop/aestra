@@ -162,7 +162,7 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
         EffectAsset::from_ron(include_str!("../../../assets/effects/trail_lab.aestra.ron"))
             .unwrap();
     let program = MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/ribbon_lab.aestra.material.ron"
+        "../../../assets/materials/trail_lab.aestra.material.ron"
     ))
     .unwrap();
     let compiled = EffectCompiler::default()
@@ -180,6 +180,8 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
             max_trails: 64,
             sampling: aestra_core::TrailSamplingMode::Distance,
             sample_distance: 1.0,
+            uv_mode: aestra_core::TrailUvMode::Tile,
+            tile_length: 8.0,
             ..
         }
     ));
@@ -196,13 +198,17 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
     assert_eq!(gpu.renderers[0].renderer_kind, 4);
     assert_eq!(gpu.renderers[0].frame_count, 64);
     assert_eq!(gpu.renderers[0].playback_mode, 64);
+    assert_eq!(gpu.renderers[0].flipbook_flags, 1);
+    assert_eq!(gpu.renderers[0].frames[0].x, 8.0);
 
     // Older version-1 artifacts omitted this field and used one owner per parent.
     let legacy = String::from_utf8(encode_effect(&compiled).unwrap())
         .unwrap()
         .replace(",max_trails:64", "")
         .replace(",sampling:Distance", "")
-        .replace(",sample_distance:1.0", "");
+        .replace(",sample_distance:1.0", "")
+        .replace(",uv_mode:Tile", "")
+        .replace(",tile_length:8.0", "");
     let legacy = decode_effect(legacy.as_bytes()).unwrap();
     assert!(matches!(
         legacy.emitters[0].renderers[0].kind,
@@ -214,6 +220,8 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
     assert_eq!(legacy.particles.len(), 32 + 1 + 32 * 64);
     assert_eq!(legacy.emitters[0].trail_sampling, 0);
     assert_eq!(legacy.emitters[0].trail_distance, 0.1);
+    assert_eq!(legacy.renderers[0].flipbook_flags, 0);
+    assert_eq!(legacy.renderers[0].frames[0].x, 1.0);
 }
 
 #[test]

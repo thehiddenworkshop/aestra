@@ -2720,7 +2720,7 @@ skipping points that would immediately be overwritten. Stationary parents add no
 expired anchors are pruned so a stationary live head cannot keep an old partial strip visible.
 Owner budgets, retired-tail expiry, continuous-loop identity and discontinuity resets are
 unchanged. Existing reserved emitter words hold the mode/distance, without extra storage or
-bindings. Distance controls geometry spacing, **not UVs**: UV/fade remain lifetime-based.
+bindings. Sampling controls geometry spacing independently of UV mode; fading remains lifetime-based.
 
 This is sampling of the observed polyline, not analytic trajectory reconstruction. More
 frequent observations can capture curves more accurately; it does not promise frame-rate
@@ -2741,8 +2741,32 @@ retained only about 0.06 seconds at its 55-unit/second launch speed, truncating 
 before their 0.65-second lifetime. Point capacity and spacing bound retained path length;
 undersized user-authored budgets can still produce a hard tail end.
 
+### Trail Stretch / Tile UVs
+
+Trail Renderer exposes `UV mode: Stretch / Tile` independently of Time / Distance sampling.
+Stretch maps U from 0 at the oldest retained anchor to 1 at the head, by observed path length.
+Tile maps U to accumulated world-space path distance divided by `Tile length` (minimum 0.001,
+default 1 world unit). V runs 0–1 across the strip. Tile coordinates are anchored at the owner's
+first observation: expiry and ring wrap do not restart the texture phase. New owners and seeks
+reset that phase; replay reconstructs it. Shared endpoints use the same stored distance and UV.
+U is deliberately unwrapped for continuous derivatives: textured materials should use Repeat
+on their U sampler. Width taper and opacity still use age, not UV values.
+
+No new GPU bindings or particle fields are required. Each sample uses aux word 0 for cumulative
+distance; aux word 1 of the first physical sample stores head distance (independent of ring
+rotation). Owner aux words retain their existing ring state. The unused Trail flipbook flags
+lane stores UV mode; frames[0].x stores tile length. The 48-byte compact particle ABI is unchanged.
+Authored RON and version-1 artifacts missing UV fields default to Stretch with tile length 1;
+this replaces the former implicit lifetime-based UV mapping. Tile length remains stored when
+switching to Stretch. Mode and numeric edits use undoable commands and shared Feather controls.
+
+Trail Lab now uses its own Ribbon-domain material with the existing Ember Spark texture and a
+Repeat-U sampler, with an 8-world-unit tile length. GPU tests cover actual vertex UVs, shared
+joins, expiry, ring overflow, corners, host motion, loop identities, pause and seek reconstruction;
+portable tests cover validation, backward-compatible decoding and unchanged storage budgets.
+
 Remaining trail work: adaptive spatial sampling, exact
-trajectory replay/checkpoint serialization, caps and distance-based UVs, conservative world
+trajectory replay/checkpoint serialization, caps, conservative world
 history culling and larger parallel owner maps.
 
 ### Add inputs

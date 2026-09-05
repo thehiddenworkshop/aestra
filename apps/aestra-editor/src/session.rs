@@ -1697,6 +1697,8 @@ impl EditorSession {
             max_trails: emitter.max_particles.saturating_mul(2).min(1024),
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: aestra_core::default_trail_sample_distance(),
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
         };
         let id = renderer.id;
         if self.execute(
@@ -2796,6 +2798,8 @@ mod tests {
             max_trails: 64,
             sampling: aestra_core::TrailSamplingMode::Distance,
             sample_distance: 1.0,
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
         };
         session.preview = Some(EffectInstance::new(Arc::new(compiled)));
         session.seek_time(0.75);

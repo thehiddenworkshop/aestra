@@ -554,8 +554,13 @@ the current sprite-material path until the native-GPU compatibility gate approve
   and shear. Singular, nonfinite or overflowing bounds retain the no-culling fallback and recover
   when valid again. Render-transform uploads now run after propagation so culling and rendering
   use the same frame. Tests cover viewport edges, offscreen rejection, live edits, same-frame
-  uploads and containment of actual GPU ribbon vertices. History-based trails, multiple ribbon IDs,
-  distance-based UVs, a dedicated Normal output and PBR remain follow-up work.
+  uploads and containment of actual GPU ribbon vertices.
+  History-based Trail rendering now includes bounded independent owner pools, retired tails,
+  Time/Distance sampling, and bounded GPU seek replay. Stretch/Tile UV controls are implemented
+  end to end: world-space tile length, stable owner-anchored texture phase, shared Feather controls,
+  compatible authored/artifact defaults, and native GPU UV/history conformance tests. Trail Lab
+  demonstrates a repeating textured material. Multiple ribbon IDs, trail caps, adaptive sampling,
+  history culling/checkpoints, a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

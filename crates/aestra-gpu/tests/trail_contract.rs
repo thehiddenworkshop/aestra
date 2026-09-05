@@ -19,6 +19,8 @@ fn fixture() -> EffectAsset {
         max_trails: 0,
         sampling: aestra_core::TrailSamplingMode::Time,
         sample_distance: 0.1,
+        uv_mode: aestra_core::TrailUvMode::Stretch,
+        tile_length: 1.0,
     };
     effect.emitters.push(emitter);
     effect
@@ -47,6 +49,8 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
         },
         RendererProperties::Trail {
             width: 1.0,
@@ -56,6 +60,8 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
         },
         RendererProperties::Trail {
             width: 1.0,
@@ -65,6 +71,8 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
         },
         RendererProperties::Trail {
             width: 1.0,
@@ -74,6 +82,8 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
         },
     ] {
         let mut effect = effect.clone();
@@ -185,6 +195,66 @@ fn distance_sampling_validates_and_lowers_without_increasing_storage() {
             assert!(compiled.is_err());
         }
     }
+}
+
+#[test]
+fn uv_modes_round_trip_validate_and_use_existing_renderer_lanes() {
+    for mode in [
+        aestra_core::TrailUvMode::Stretch,
+        aestra_core::TrailUvMode::Tile,
+    ] {
+        for length in [0.001, 8.0, 0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let mut effect = fixture();
+            if let RendererProperties::Trail {
+                uv_mode,
+                tile_length,
+                ..
+            } = &mut effect.emitters[0].renderers[0].properties
+            {
+                *uv_mode = mode;
+                *tile_length = length;
+            }
+            let compiled = EffectCompiler::default().compile(&effect);
+            if !length.is_finite() || length < 0.001 {
+                assert!(compiled.is_err());
+                continue;
+            }
+            let restored = EffectAsset::from_ron(&effect.to_pretty_ron().unwrap()).unwrap();
+            assert_eq!(effect, restored);
+            let mut compiled = compiled.unwrap();
+            let gpu =
+                GpuEffectArtifact::from_instance(&EffectInstance::new(Arc::new(compiled.clone())))
+                    .unwrap();
+            assert_eq!(
+                gpu.renderers[0].flipbook_flags,
+                u32::from(mode == aestra_core::TrailUvMode::Tile)
+            );
+            assert_eq!(gpu.renderers[0].frames[0].x, length);
+            assert_eq!(gpu.particles.len(), 8 + 1 + 8 * 32);
+            if let aestra_runtime::RendererPlanKind::Trail { tile_length, .. } =
+                &mut compiled.emitters[0].renderers[0].kind
+            {
+                *tile_length = f32::NAN;
+            }
+            assert!(
+                GpuEffectArtifact::from_instance(&EffectInstance::new(Arc::new(compiled))).is_err()
+            );
+        }
+    }
+    let legacy = fixture()
+        .to_pretty_ron()
+        .unwrap()
+        .replace("uv_mode: Stretch,", "")
+        .replace("tile_length: 1.0,", "");
+    let restored = EffectAsset::from_ron(&legacy).unwrap();
+    assert!(matches!(
+        restored.emitters[0].renderers[0].properties,
+        RendererProperties::Trail {
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
+            ..
+        }
+    ));
 }
 
 #[test]

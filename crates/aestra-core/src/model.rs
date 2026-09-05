@@ -2544,6 +2544,7 @@ impl RendererInstance {
                 max_points,
                 max_trails,
                 sample_distance,
+                tile_length,
                 ..
             } => {
                 if !width.is_finite()
@@ -2552,6 +2553,8 @@ impl RendererInstance {
                     || *sample_interval < 1.0 / 240.0
                     || !sample_distance.is_finite()
                     || *sample_distance < 0.001
+                    || !tile_length.is_finite()
+                    || *tile_length < 0.001
                     || !lifetime.is_finite()
                     || *lifetime <= 0.0
                     || !(2..=64).contains(max_points)
@@ -2560,7 +2563,7 @@ impl RendererInstance {
                     invalid_value(
                         report,
                         path,
-                        "trail requires positive finite width/lifetime, sample interval >= 1/240s, sample distance >= 0.001 world units, 2–64 points and at most 1024 trails (0 inherits parent capacity)",
+                        "trail requires positive finite width/lifetime, sample interval >= 1/240s, sample distance/tile length >= 0.001 world units, 2–64 points and at most 1024 trails (0 inherits parent capacity)",
                     );
                 }
                 Some(RENDERER_TRAIL)
@@ -2628,6 +2631,10 @@ pub enum RendererProperties {
         sampling: TrailSamplingMode,
         #[serde(default = "default_trail_sample_distance")]
         sample_distance: f32,
+        #[serde(default)]
+        uv_mode: TrailUvMode,
+        #[serde(default = "default_trail_tile_length")]
+        tile_length: f32,
     },
 }
 
@@ -2636,6 +2643,17 @@ pub enum TrailSamplingMode {
     #[default]
     Time,
     Distance,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TrailUvMode {
+    #[default]
+    Stretch,
+    Tile,
+}
+
+pub const fn default_trail_tile_length() -> f32 {
+    1.0
 }
 
 pub const fn default_trail_sample_distance() -> f32 {

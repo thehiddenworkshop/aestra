@@ -55,7 +55,7 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
     ))
     .unwrap();
     let program = aestra_core::material::MaterialProgram::from_ron(include_str!(
-        "../../../assets/materials/ribbon_lab.aestra.material.ron"
+        "../../../assets/materials/trail_lab.aestra.material.ron"
     ))
     .unwrap();
     let effect = aestra_compiler::EffectCompiler::default()
@@ -482,6 +482,18 @@ fn check_pool(max_trails: u32, distance: bool) {
             "sample timestamps interpolate, lifetime remains time-based"
         );
         let fast = step(1.0, [1, 0], 2, 10.2, 0, 0);
+        assert!(
+            (f32::from_bits(word(&fast, 4, 56)) - 10.2).abs() < 0.0001,
+            "head path length survives ring wrap"
+        );
+        for slot in 4..7 {
+            assert!(
+                (f32::from_bits(word(&fast, slot, 52)) - f32::from_bits(word(&fast, slot, 16)))
+                    .abs()
+                    < 0.0001,
+                "samples retain their birth-anchored distance, not distance from the moving tail"
+            );
+        }
         assert_eq!(
             word(&fast, 3, 56),
             3,
@@ -505,6 +517,16 @@ fn check_pool(max_trails: u32, distance: bool) {
         assert_eq!(word(&looped, 7, 48), 1);
         assert_eq!(word(&looped, 11, 48), 2);
         assert_eq!(
+            word(&looped, 12, 56),
+            0,
+            "new loop owner starts its own tile phase"
+        );
+        assert_eq!(
+            word(&looped, 4, 56),
+            word(&fast, 4, 56),
+            "retired phase stays fixed"
+        );
+        assert_eq!(
             word(&looped, 11, 56),
             1,
             "new owner starts with zero distance remainder"
@@ -516,6 +538,11 @@ fn check_pool(max_trails: u32, distance: bool) {
             "seek clears history instead of drawing a discontinuity"
         );
         assert_eq!(word(&reset, 3, 60), 0, "seek clears distance phase");
+        assert_eq!(
+            word(&reset, 4, 56),
+            0,
+            "seek resets cumulative UV distance too"
+        );
         let resumed = step(1.75, [1, 2], 2, 40.6, 1, 0);
         assert_eq!(word(&resumed, 3, 56), 1);
         let expired = step(2.75, [0, 0], 0, 0.0, 1, 0);
@@ -535,6 +562,11 @@ fn check_pool(max_trails: u32, distance: bool) {
         );
         assert_eq!(word(&stopped, 3, 44), 1, "living owner is still reserved");
         let corner = step_at(1.1, [0, 1], 2, Vec3::new(0.4, 0.8, 0.0), 2, 0);
+        assert!((f32::from_bits(word(&corner, 4, 56)) - 1.2).abs() < 0.0001);
+        assert!(
+            (f32::from_bits(word(&corner, 5, 52)) - 1.0).abs() < 0.0001,
+            "UV distance follows the corner, not the chord"
+        );
         assert_eq!(word(&corner, 3, 56), 1);
         assert!((f32::from_bits(word(&corner, 5, 16)) - 0.4).abs() < 0.0001);
         assert!(
@@ -557,6 +589,10 @@ fn check_pool(max_trails: u32, distance: bool) {
         "owner survives physical slot permutation"
     );
     assert_eq!(word(&moved, 3, 56), 3);
+    assert!(
+        (f32::from_bits(word(&moved, 4, 56)) - 200.25).abs() < 0.0001,
+        "time sampling records world-space path length too"
+    );
     assert_eq!(f32::from_bits(word(&moved, 3, 16)), 300.25);
     assert_eq!(
         f32::from_bits(word(&moved, 4, 16)),

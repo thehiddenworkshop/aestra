@@ -299,6 +299,10 @@ enum RendererPlanKindV1 {
         sampling: aestra_core::TrailSamplingMode,
         #[serde(default = "aestra_core::default_trail_sample_distance")]
         sample_distance: f32,
+        #[serde(default)]
+        uv_mode: aestra_core::TrailUvMode,
+        #[serde(default = "aestra_core::default_trail_tile_length")]
+        tile_length: f32,
     },
 }
 
@@ -1425,6 +1429,8 @@ impl From<&RendererPlan> for RendererPlanV1 {
                     max_trails,
                     sampling,
                     sample_distance,
+                    uv_mode,
+                    tile_length,
                 } => RendererPlanKindV1::Trail {
                     width,
                     sample_interval,
@@ -1433,6 +1439,8 @@ impl From<&RendererPlan> for RendererPlanV1 {
                     max_trails,
                     sampling,
                     sample_distance,
+                    uv_mode,
+                    tile_length,
                 },
                 RendererPlanKind::Flipbook {
                     flipbook,
@@ -1467,6 +1475,8 @@ impl From<RendererPlanV1> for RendererPlan {
                     max_trails,
                     sampling,
                     sample_distance,
+                    uv_mode,
+                    tile_length,
                 } => RendererPlanKind::Trail {
                     width,
                     sample_interval,
@@ -1475,6 +1485,8 @@ impl From<RendererPlanV1> for RendererPlan {
                     max_trails,
                     sampling,
                     sample_distance,
+                    uv_mode,
+                    tile_length,
                 },
                 RendererPlanKindV1::Flipbook {
                     flipbook,

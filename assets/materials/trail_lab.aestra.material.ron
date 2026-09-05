@@ -1,0 +1,31 @@
+(
+    id: "a3574a00-0000-4000-8000-00000000c201",
+    schema_version: 1,
+    name: "Trail Lab Tiles",
+    domain: Ribbon,
+    render_state_policy: (
+        default: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: None),
+        allowed: [(blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: None)],
+    ),
+    parameters: [
+        (id: "a3574a00-0000-4000-8000-00000000c211", name: "Trail Texture",
+         value_type: Texture2D((color_space: SrgbColor, sampler: (filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: ClampToEdge))), evaluation_domain: Instance,
+         default: Some(Texture2D("a3574a00-0000-4000-8000-00000000c401"))),
+    ],
+    expressions: [
+        (id: "a3574a00-0000-4000-8000-00000000c221", kind: Input(ParticleColor)),
+        (id: "a3574a00-0000-4000-8000-00000000c222", kind: Input(ParticleOpacity)),
+        (id: "a3574a00-0000-4000-8000-00000000c223", kind: Input(RibbonUv)),
+        (id: "a3574a00-0000-4000-8000-00000000c224", kind: Parameter("a3574a00-0000-4000-8000-00000000c211")),
+        (id: "a3574a00-0000-4000-8000-00000000c225", kind: SampleTexture(texture: "a3574a00-0000-4000-8000-00000000c224", uv: "a3574a00-0000-4000-8000-00000000c223")),
+        // Modulate brightness instead of cutting holes into the trail with the
+        // sparse spark alpha. A visible base makes tile spacing easy to inspect.
+        (id: "a3574a00-0000-4000-8000-00000000c226", kind: Multiply("a3574a00-0000-4000-8000-00000000c221", "a3574a00-0000-4000-8000-00000000c231")),
+        (id: "a3574a00-0000-4000-8000-00000000c227", kind: ExtractComponent(value: "a3574a00-0000-4000-8000-00000000c225", component: W)),
+        (id: "a3574a00-0000-4000-8000-00000000c228", kind: Constant(Float(0.8))),
+        (id: "a3574a00-0000-4000-8000-00000000c229", kind: Constant(Float(0.6))),
+        (id: "a3574a00-0000-4000-8000-00000000c230", kind: Multiply("a3574a00-0000-4000-8000-00000000c227", "a3574a00-0000-4000-8000-00000000c228")),
+        (id: "a3574a00-0000-4000-8000-00000000c231", kind: Add("a3574a00-0000-4000-8000-00000000c230", "a3574a00-0000-4000-8000-00000000c229")),
+    ],
+    outputs: (color: "a3574a00-0000-4000-8000-00000000c226", alpha: "a3574a00-0000-4000-8000-00000000c222"),
+)

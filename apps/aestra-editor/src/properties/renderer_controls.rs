@@ -19,6 +19,7 @@ pub(super) enum TrailField {
     Width,
     Interval,
     Distance,
+    TileLength,
     Lifetime,
     Points,
     Capacity,
@@ -29,7 +30,7 @@ impl TrailField {
         match self {
             Self::Width | Self::Lifetime => (0.001, f32::MAX),
             Self::Interval => (1.0 / 240.0, f32::MAX),
-            Self::Distance => (0.001, f32::MAX),
+            Self::Distance | Self::TileLength => (0.001, f32::MAX),
             Self::Points => (2.0, 64.0),
             Self::Capacity => (1.0, 1024.0),
         }
@@ -157,6 +158,11 @@ pub(super) fn handle_renderer_action(
         PropertiesAction::SetTrailSampling(id, value) => {
             if let Some(command) = trail_sampling_command(session, id, value) {
                 session.execute("Changed trail sampling", command, true);
+            }
+        }
+        PropertiesAction::SetTrailUvMode(id, value) => {
+            if let Some(command) = trail_uv_command(session, id, value) {
+                session.execute("Changed trail UV mode", command, true);
             }
         }
         PropertiesAction::SetFlipbookPlayback(id, value) => {
@@ -780,11 +786,13 @@ pub(super) fn renderer_number_input_value(
                 max_points,
                 max_trails,
                 sample_distance,
+                tile_length,
                 ..
             } => Some(match field {
                 TrailField::Width => width,
                 TrailField::Interval => sample_interval,
                 TrailField::Distance => sample_distance,
+                TrailField::TileLength => tile_length,
                 TrailField::Lifetime => lifetime,
                 TrailField::Points => max_points as f32,
                 TrailField::Capacity => {
@@ -882,6 +890,28 @@ pub(super) fn normalize_renderer_uv_scrub_value(
     }
 }
 
+fn trail_uv_command(
+    session: &EditorSession,
+    id: RendererId,
+    value: aestra_core::TrailUvMode,
+) -> Option<EffectCommand> {
+    let renderer = session
+        .selected_layer()
+        .renderers
+        .iter()
+        .find(|r| r.id == id)?;
+    let mut properties = renderer.properties.clone();
+    let RendererProperties::Trail { uv_mode, .. } = &mut properties else {
+        return None;
+    };
+    *uv_mode = value;
+    Some(EffectCommand::SetRendererProperties {
+        emitter: session.selected_layer().id,
+        renderer: id,
+        properties,
+    })
+}
+
 fn trail_sampling_command(
     session: &EditorSession,
     id: RendererId,
@@ -934,6 +964,7 @@ pub(super) fn renderer_numeric_scrub_command(
                 max_points,
                 max_trails,
                 sample_distance,
+                tile_length,
                 ..
             } = &mut properties
             else {
@@ -944,6 +975,7 @@ pub(super) fn renderer_numeric_scrub_command(
                 TrailField::Width => *width = value,
                 TrailField::Interval => *sample_interval = value,
                 TrailField::Distance => *sample_distance = value,
+                TrailField::TileLength => *tile_length = value,
                 TrailField::Lifetime => *lifetime = value,
                 TrailField::Points => *max_points = value as u32,
                 TrailField::Capacity => {
@@ -2486,7 +2518,37 @@ pub(super) fn spawn_renderer_card(
             );
         },
         |card| {
-            if let RendererProperties::Trail { sampling, .. } = renderer.properties {
+            if let RendererProperties::Trail {
+                sampling, uv_mode, ..
+            } = renderer.properties
+            {
+                let options = [
+                    aestra_core::TrailUvMode::Stretch,
+                    aestra_core::TrailUvMode::Tile,
+                ]
+                .into_iter()
+                .map(|candidate| ComboOption {
+                    label: format!("{candidate:?}"),
+                    selected: candidate == uv_mode,
+                    action: PropertiesAction::SetTrailUvMode(renderer.id, candidate),
+                })
+                .collect::<Vec<_>>();
+                spawn_properties_combo_row(
+                    card,
+                    "UV mode",
+                    &format!("{uv_mode:?}"),
+                    &options,
+                    None,
+                );
+                if uv_mode == aestra_core::TrailUvMode::Tile {
+                    spawn_renderer_scalar_control(
+                        card,
+                        "Tile length",
+                        Some("wu"),
+                        RendererNumberControl::Trail(renderer.id, TrailField::TileLength),
+                        session,
+                    );
+                }
                 let options = [
                     aestra_core::TrailSamplingMode::Time,
                     aestra_core::TrailSamplingMode::Distance,
@@ -2847,6 +2909,8 @@ mod tests {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
         };
         let control = RendererNumberControl::Trail(renderer, TrailField::Points);
         let widget = renderer_scrubbable_number(&session, control);
@@ -2863,6 +2927,8 @@ mod tests {
                     max_trails: 0,
                     sampling: aestra_core::TrailSamplingMode::Time,
                     sample_distance: 0.1,
+                    uv_mode: aestra_core::TrailUvMode::Stretch,
+                    tile_length: 1.0,
                 },
                 ..
             }
@@ -2890,6 +2956,8 @@ mod tests {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
         };
         let control = RendererNumberControl::Trail(renderer, TrailField::Capacity);
         let widget = renderer_scrubbable_number(&session, control);
@@ -2927,6 +2995,8 @@ mod tests {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.3,
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 1.0,
         };
         let command =
             trail_sampling_command(&session, renderer, aestra_core::TrailSamplingMode::Distance)
@@ -2990,6 +3060,53 @@ mod tests {
             renderer_number_input_value(&session, RendererNumberControl::Softness(renderer))
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn trail_uv_mode_and_tile_length_use_undoable_shared_controls() {
+        let mut session = test_support::session_with_timing_slack();
+        let emitter = session.selected_layer().id;
+        let renderer = session.selected_layer().renderers[0].id;
+        let target = &mut session
+            .effect
+            .emitters
+            .iter_mut()
+            .find(|e| e.id == emitter)
+            .unwrap()
+            .renderers[0];
+        target.renderer_type = aestra_core::RendererTypeId(aestra_core::RENDERER_TRAIL.into());
+        target.properties = RendererProperties::Trail {
+            width: 1.0,
+            sample_interval: 0.025,
+            lifetime: 0.5,
+            max_points: 32,
+            max_trails: 0,
+            sampling: aestra_core::TrailSamplingMode::Distance,
+            sample_distance: 0.3,
+            uv_mode: aestra_core::TrailUvMode::Stretch,
+            tile_length: 8.0,
+        };
+        let before = target.properties.clone();
+        let command = trail_uv_command(&session, renderer, aestra_core::TrailUvMode::Tile).unwrap();
+        assert!(session.execute("Tile UVs", command, true));
+        let control = RendererNumberControl::Trail(renderer, TrailField::TileLength);
+        let widget = renderer_scrubbable_number(&session, control);
+        assert_eq!((widget.value, widget.min, widget.step), (8.0, 0.001, 0.1));
+        assert!(renderer_numeric_scrub_command(&session, control, f32::NAN).is_none());
+        let command = renderer_numeric_scrub_command(&session, control, -1.0).unwrap();
+        assert!(session.execute("Tile length", command, true));
+        assert!(matches!(
+            session.selected_layer().renderers[0].properties,
+            RendererProperties::Trail {
+                uv_mode: aestra_core::TrailUvMode::Tile,
+                tile_length: 0.001,
+                sample_distance: 0.3,
+                ..
+            }
+        ));
+        session.undo();
+        session.undo();
+        assert_eq!(session.selected_layer().renderers[0].properties, before);
     }
 
     #[test]
