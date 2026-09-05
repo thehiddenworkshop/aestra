@@ -285,6 +285,9 @@ enum RendererPlanKindV1 {
         playback: FlipbookPlaybackMode,
         random_start: bool,
     },
+    Ribbon {
+        width: f32,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -365,6 +368,7 @@ enum RendererCapabilityV1 {
     MeshParticles,
     SpriteParticles,
     FlipbookParticles,
+    RibbonParticles,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1400,6 +1404,7 @@ impl From<&RendererPlan> for RendererPlanV1 {
             kind: match renderer.kind {
                 RendererPlanKind::Sprite => RendererPlanKindV1::Sprite,
                 RendererPlanKind::Mesh { asset } => RendererPlanKindV1::Mesh { asset },
+                RendererPlanKind::Ribbon { width } => RendererPlanKindV1::Ribbon { width },
                 RendererPlanKind::Flipbook {
                     flipbook,
                     time_source,
@@ -1424,6 +1429,7 @@ impl From<RendererPlanV1> for RendererPlan {
             kind: match renderer.kind {
                 RendererPlanKindV1::Sprite => RendererPlanKind::Sprite,
                 RendererPlanKindV1::Mesh { asset } => RendererPlanKind::Mesh { asset },
+                RendererPlanKindV1::Ribbon { width } => RendererPlanKind::Ribbon { width },
                 RendererPlanKindV1::Flipbook {
                     flipbook,
                     time_source,
@@ -1702,6 +1708,7 @@ impl From<RendererCapability> for RendererCapabilityV1 {
     fn from(capability: RendererCapability) -> Self {
         match capability {
             RendererCapability::MeshParticles => Self::MeshParticles,
+            RendererCapability::RibbonParticles => Self::RibbonParticles,
             RendererCapability::SpriteParticles => Self::SpriteParticles,
             RendererCapability::FlipbookParticles => Self::FlipbookParticles,
         }
@@ -1712,6 +1719,7 @@ impl From<RendererCapabilityV1> for RendererCapability {
     fn from(capability: RendererCapabilityV1) -> Self {
         match capability {
             RendererCapabilityV1::MeshParticles => Self::MeshParticles,
+            RendererCapabilityV1::RibbonParticles => Self::RibbonParticles,
             RendererCapabilityV1::SpriteParticles => Self::SpriteParticles,
             RendererCapabilityV1::FlipbookParticles => Self::FlipbookParticles,
         }

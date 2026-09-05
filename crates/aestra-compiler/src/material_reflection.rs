@@ -203,7 +203,9 @@ fn input_category(input: MaterialInput) -> MaterialInputCategory {
         | MaterialInput::Tangent
         | MaterialInput::Bitangent
         | MaterialInput::ViewDirection
-        | MaterialInput::ScreenUv => MaterialInputCategory::Vertex,
+        | MaterialInput::ScreenUv
+        | MaterialInput::RibbonUv
+        | MaterialInput::RibbonDirection => MaterialInputCategory::Vertex,
         MaterialInput::ParticleColor
         | MaterialInput::ParticleOpacity
         | MaterialInput::ParticleAge
@@ -277,6 +279,8 @@ fn input_rank(input: MaterialInput) -> u8 {
         MaterialInput::Normal => 4,
         MaterialInput::Tangent => 5,
         MaterialInput::Bitangent => 27,
+        MaterialInput::RibbonUv => 28,
+        MaterialInput::RibbonDirection => 29,
         MaterialInput::ViewDirection => 6,
         MaterialInput::ScreenUv => 7,
         MaterialInput::ParticleColor => 8,

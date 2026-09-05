@@ -361,12 +361,14 @@ impl EffectCompiler {
                     .find(|instance| instance.id == renderer.material)
                     && let Some(program) = material_programs.get(&instance.program.id())
                 {
-                    let expected = if matches!(renderer.properties, RendererProperties::Mesh { .. })
-                    {
-                        aestra_core::material::MaterialDomain::Mesh
-                    } else {
-                        aestra_core::material::MaterialDomain::Sprite
-                    };
+                    let expected =
+                        if matches!(renderer.properties, RendererProperties::Ribbon { .. }) {
+                            aestra_core::material::MaterialDomain::Ribbon
+                        } else if matches!(renderer.properties, RendererProperties::Mesh { .. }) {
+                            aestra_core::material::MaterialDomain::Mesh
+                        } else {
+                            aestra_core::material::MaterialDomain::Sprite
+                        };
                     if program.domain != expected {
                         report.push(Diagnostic::error(
                             DiagnosticCode::UnsupportedMaterialDomain,
@@ -564,6 +566,11 @@ impl EffectCompiler {
                             playback: *playback,
                             random_start: *random_start,
                         },
+                    },
+                    RendererProperties::Ribbon { width } => RendererPlan {
+                        source: renderer.id,
+                        material: renderer.material,
+                        kind: RendererPlanKind::Ribbon { width: *width },
                     },
                     RendererProperties::Mesh { asset } => RendererPlan {
                         source: renderer.id,
@@ -862,6 +869,10 @@ impl EffectCompiler {
                     (RendererProperties::Sprite, RENDERER_SPRITE)
                         | (RendererProperties::Flipbook { .. }, RENDERER_FLIPBOOK)
                         | (RendererProperties::Mesh { .. }, RENDERER_MESH)
+                        | (
+                            RendererProperties::Ribbon { .. },
+                            aestra_core::RENDERER_RIBBON
+                        )
                 );
                 if renderer.enabled && !supported {
                     push_unique(
@@ -1056,6 +1067,7 @@ fn derive_effect_requirements(emitters: &[CompiledEmitter]) -> EffectRequirement
         renderers.insert(match renderer.kind {
             RendererPlanKind::Sprite => RendererCapability::SpriteParticles,
             RendererPlanKind::Mesh { .. } => RendererCapability::MeshParticles,
+            RendererPlanKind::Ribbon { .. } => RendererCapability::RibbonParticles,
             RendererPlanKind::Flipbook { .. } => RendererCapability::FlipbookParticles,
         });
     }

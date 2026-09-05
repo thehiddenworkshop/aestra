@@ -2880,6 +2880,8 @@ fn preview_value(value: &MaterialValue) -> Option<PreviewValue> {
 
 fn preview_input(input: MaterialInput, context: MaterialPreviewContext) -> PreviewValue {
     match input {
+        MaterialInput::RibbonUv => PreviewValue::Numeric([context.uv.x, context.uv.y, 0.0, 0.0], 2),
+        MaterialInput::RibbonDirection => PreviewValue::Numeric([1.0, 0.0, 0.0, 0.0], 3),
         MaterialInput::Tangent | MaterialInput::Bitangent => {
             // Synthetic preview geometry has a right-handed basis, with no imported UV seams.
             let normal = context.normal.normalize_or_zero();

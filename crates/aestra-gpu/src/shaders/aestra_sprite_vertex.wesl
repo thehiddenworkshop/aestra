@@ -63,6 +63,7 @@ struct SpriteVertexData {
     textured: u32,
     effect_time: f32,
     particle_normalized_age: f32,
+    ribbon_direction: vec3<f32>,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -123,6 +124,7 @@ fn aestra_sprite_vertex(
     vertex_index: u32,
     instance_index: u32,
 ) -> SpriteVertexData {
+    if renderers[params.renderer_index].renderer_kind == 3u { return aestra_ribbon_vertex(vertex_index, instance_index); }
     let corners = array<vec2<f32>, 6>(
         vec2<f32>(-1.0, -1.0),
         vec2<f32>(1.0, -1.0),

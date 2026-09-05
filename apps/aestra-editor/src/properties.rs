@@ -4992,6 +4992,7 @@ fn normalize_numeric_scrub_value_with_multiplier(
             _ => value,
         },
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(_)) => value.max(0.0),
+        NumericScrubTarget::Renderer(RendererNumberControl::RibbonWidth(_)) => value.max(0.001),
         NumericScrubTarget::Renderer(RendererNumberControl::Uv(renderer, component)) => {
             normalize_renderer_uv_scrub_value(session, renderer, component, value)
         }
@@ -5147,6 +5148,11 @@ fn commit_numeric_scrub(
                 );
             }
         }
+        NumericScrubTarget::Renderer(RendererNumberControl::RibbonWidth(_)) => {
+            if let Some(command) = numeric_scrub_command(session, target, value) {
+                session.execute("Changed ribbon width", command, false);
+            }
+        }
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(renderer)) => {
             session.set_renderer_softness(renderer, value);
         }
@@ -5197,6 +5203,9 @@ fn commit_bounded_slider(
         }
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(_)) => {
             "Changed material softness".into()
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::RibbonWidth(_)) => {
+            "Changed ribbon width".into()
         }
         NumericScrubTarget::Emitter(_) => "Changed emitter value".into(),
         NumericScrubTarget::EffectClip(_) => "Changed effect clip transform".into(),

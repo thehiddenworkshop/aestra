@@ -21,12 +21,21 @@ pub enum MaterialVarying {
     EffectTime,
     ParticleNormalizedAge,
     Bitangent,
+    RibbonUv,
+    RibbonDirection,
 }
 
 impl MaterialVarying {
     // Name, WGSL type, interpolation attribute, shared vertex-data expression.
     fn fields(self) -> (&'static str, &'static str, &'static str, &'static str) {
         match self {
+            Self::RibbonUv => ("ribbon_uv", "vec2<f32>", "", "sprite.uv"),
+            Self::RibbonDirection => (
+                "ribbon_direction",
+                "vec3<f32>",
+                "",
+                "sprite.ribbon_direction",
+            ),
             Self::Uv1 => ("uv1", "vec2<f32>", "", "mesh.uv1"),
             Self::Tangent => ("tangent", "vec3<f32>", "", "mesh.tangent"),
             Self::Bitangent => ("bitangent", "vec3<f32>", "", "mesh.bitangent"),
@@ -53,14 +62,15 @@ impl MaterialVarying {
 
     pub const fn components(self) -> u32 {
         match self {
-            Self::QuadPosition | Self::Uv0 | Self::Uv1 => 2,
+            Self::QuadPosition | Self::Uv0 | Self::Uv1 | Self::RibbonUv => 2,
             Self::ParticleColor => 4,
             Self::Tangent
             | Self::Bitangent
             | Self::Normal
             | Self::WorldPosition
             | Self::LocalPosition
-            | Self::ViewDirection => 3,
+            | Self::ViewDirection
+            | Self::RibbonDirection => 3,
             _ => 1,
         }
     }
@@ -110,6 +120,11 @@ impl MaterialVaryingLayout {
         }
         for (input, varying) in [
             (MaterialInput::Uv0, MaterialVarying::Uv0),
+            (MaterialInput::RibbonUv, MaterialVarying::RibbonUv),
+            (
+                MaterialInput::RibbonDirection,
+                MaterialVarying::RibbonDirection,
+            ),
             (MaterialInput::ParticleColor, MaterialVarying::ParticleColor),
             (
                 MaterialInput::ParticleOpacity,

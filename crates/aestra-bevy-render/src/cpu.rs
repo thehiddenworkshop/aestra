@@ -134,7 +134,7 @@ pub(crate) fn present_cpu_effects(
                 continue;
             };
             let (texture, uv) = match &renderer.kind {
-                RendererPlanKind::Mesh { .. } => {
+                RendererPlanKind::Mesh { .. } | RendererPlanKind::Ribbon { .. } => {
                     *visibility = Visibility::Hidden;
                     continue;
                 }

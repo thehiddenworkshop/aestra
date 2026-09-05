@@ -97,6 +97,7 @@ impl GpuCapabilities {
                 RendererCapability::SpriteParticles,
                 RendererCapability::FlipbookParticles,
                 RendererCapability::MeshParticles,
+                RendererCapability::RibbonParticles,
             ]),
         }
     }

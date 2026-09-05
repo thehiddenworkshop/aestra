@@ -106,6 +106,7 @@ pub struct GpuEmitter {
     pub gravity_curves: [GpuCurve; 3],
     pub turbulence: Vec2,
     pub turbulence_source: u32,
+    /// Nonzero enables deterministic ribbon linking after simulation (former padding).
     pub _turbulence_padding: u32,
     pub turbulence_curve: GpuCurve,
     pub translation: Vec3,
@@ -143,7 +144,7 @@ pub struct GpuRenderer {
     pub playback_mode: u32,
     pub flipbook_flags: u32,
     pub frame_rate: f32,
-    /// x: omitted particle reads; y/z reserved. Reuses the former padding lane.
+    /// x: omitted particle reads; y: ribbon width (f32 bits); z: reserved.
     pub attribute_flags: UVec3,
     pub frames: [Vec4; MAX_FLIPBOOK_FRAMES],
 }
@@ -330,6 +331,7 @@ impl GpuEffectArtifact {
                         texture,
                     ) = match &renderer.kind {
                         RendererPlanKind::Sprite => (0, 1, 0, 0, 0.0, material_texture),
+                        RendererPlanKind::Ribbon { .. } => (3, 1, 0, 0, 0.0, material_texture),
                         RendererPlanKind::Mesh { .. } => (2, 1, 0, 0, 0.0, material_texture),
                         RendererPlanKind::Flipbook {
                             flipbook,
@@ -391,7 +393,14 @@ impl GpuEffectArtifact {
                         playback_mode,
                         flipbook_flags,
                         frame_rate,
-                        attribute_flags: UVec3::ZERO,
+                        attribute_flags: UVec3::new(
+                            0,
+                            match renderer.kind {
+                                RendererPlanKind::Ribbon { width } => width.to_bits(),
+                                _ => 0,
+                            },
+                            0,
+                        ),
                         frames,
                     }
                 }));
@@ -402,7 +411,16 @@ impl GpuEffectArtifact {
                 init.speed,
                 maximum_absolute_vector_source(motion.gravity),
                 maximum_absolute_scalar_source(motion.turbulence),
-                maximum_absolute_curve(appearance.size) * 0.5,
+                maximum_absolute_curve(appearance.size)
+                    * 0.5
+                    * emitter
+                        .renderers
+                        .iter()
+                        .map(|r| match r.kind {
+                            RendererPlanKind::Ribbon { width } => width,
+                            _ => 1.0,
+                        })
+                        .fold(1.0_f32, f32::max),
             );
             bounds_half_extents = bounds_half_extents.max(transformed_emitter_bounds(
                 local_bounds,
@@ -479,7 +497,12 @@ impl GpuEffectArtifact {
                 gravity_curves,
                 turbulence,
                 turbulence_source,
-                _turbulence_padding: 0,
+                _turbulence_padding: u32::from(
+                    emitter
+                        .renderers
+                        .iter()
+                        .any(|r| matches!(r.kind, RendererPlanKind::Ribbon { .. })),
+                ),
                 turbulence_curve,
                 translation: Vec3::from_array(emitter.transform.translation),
                 max_scale: scale.max_element(),

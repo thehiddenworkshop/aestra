@@ -538,7 +538,19 @@ the current sprite-material path until the native-GPU compatibility gate approve
   tests cover strength, both tangent handedness signs and mirrored/nonuniform transforms.
   Mesh Material Lab samples a reproducible linear normal texture and uses the decoded normal
   for unlit coloring and Fresnel, alongside the existing UV1 mask and vertex breathing.
-  A dedicated Normal output, ribbons/trails and PBR remain follow-up work.
+  The first Ribbon-domain slice now connects live particles in deterministic spawn order per
+  emitter region on the native GPU. A post-simulation in-place heapsort/link pass runs only for
+  ribbon effects, independently per emitter, with no CPU readback or additional particle storage.
+  Camera-facing strips share endpoint frames, interpolate particle color/opacity, multiply
+  appearance size by renderer width, and hide terminal/zero-length segments. RibbonUv provides
+  normalized oldest-to-newest U and cross-strip V; RibbonDirection provides the world-space
+  tangent. Shader generation, graph catalog/previews, artifact round trips, backend diagnostics,
+  Feather width scrubbing and Ribbon Lab cover the path. GPU tests check compaction permutations,
+  sparse/empty/singleton lists, loop identities, emitter isolation, front-facing winding, shared
+  joins, width/UVs and degenerate segments. Rendered and wireframe viewport smoke checks pass.
+  Ribbons currently bypass
+  frustum culling pending camera-facing width bounds. History-based trails, multiple ribbon IDs,
+  distance-based UVs, a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

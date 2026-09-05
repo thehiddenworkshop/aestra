@@ -1593,6 +1593,8 @@ const fn material_input_key(input: MaterialInput) -> u8 {
         MaterialInput::Normal => 4,
         MaterialInput::Tangent => 5,
         MaterialInput::Bitangent => 27,
+        MaterialInput::RibbonUv => 28,
+        MaterialInput::RibbonDirection => 29,
         MaterialInput::ViewDirection => 6,
         MaterialInput::ScreenUv => 7,
         MaterialInput::ParticleColor => 8,

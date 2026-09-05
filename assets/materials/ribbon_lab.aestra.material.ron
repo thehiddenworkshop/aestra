@@ -1,0 +1,21 @@
+(
+    id: "a3574a00-0000-4000-8000-00000000b201",
+    schema_version: 1,
+    name: "Ribbon Lab",
+    domain: Ribbon,
+    render_state_policy: (
+        default: (blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: None),
+        allowed: [(blend: Alpha, depth_test: LessEqual, depth_write: false, cull_mode: None)],
+    ),
+    parameters: [],
+    expressions: [
+        (id: "a3574a00-0000-4000-8000-00000000b221", kind: Input(ParticleColor)),
+        (id: "a3574a00-0000-4000-8000-00000000b222", kind: Input(ParticleOpacity)),
+        (id: "a3574a00-0000-4000-8000-00000000b223", kind: Input(RibbonUv)),
+        (id: "a3574a00-0000-4000-8000-00000000b224", kind: ExtractComponent(value: "a3574a00-0000-4000-8000-00000000b223", component: X)),
+        (id: "a3574a00-0000-4000-8000-00000000b225", kind: Constant(Float(0.25))),
+        (id: "a3574a00-0000-4000-8000-00000000b226", kind: Add("a3574a00-0000-4000-8000-00000000b224", "a3574a00-0000-4000-8000-00000000b225")),
+        (id: "a3574a00-0000-4000-8000-00000000b227", kind: Multiply("a3574a00-0000-4000-8000-00000000b221", "a3574a00-0000-4000-8000-00000000b226")),
+    ],
+    outputs: (color: "a3574a00-0000-4000-8000-00000000b227", alpha: "a3574a00-0000-4000-8000-00000000b222"),
+)

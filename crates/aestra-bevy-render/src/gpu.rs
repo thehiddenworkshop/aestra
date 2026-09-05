@@ -88,6 +88,8 @@ pub(crate) struct GpuEffectBuffers {
     globals: Handle<ShaderBuffer>,
     render_globals: Handle<ShaderBuffer>,
     workgroups: u32,
+    has_ribbons: bool,
+    ribbon_workgroups: u32,
     total_slots: u32,
 }
 
@@ -198,7 +200,7 @@ type PreparedGpuPlayers<'w, 's> = Query<
     (
         &'static mut PresentedEffect,
         &'static GlobalTransform,
-        &'static GpuEffectBuffers,
+        &'static mut GpuEffectBuffers,
         &'static EffectRuntimeStatus,
         Option<&'static RenderLayers>,
         Option<&'static Children>,
@@ -239,6 +241,7 @@ struct SimulationPipeline {
     layout: BindGroupLayoutDescriptor,
     reset: CachedComputePipelineId,
     simulate: CachedComputePipelineId,
+    link_ribbons: CachedComputePipelineId,
 }
 
 pub(crate) fn install(app: &mut App) {
@@ -406,6 +409,9 @@ pub(crate) fn prepare_gpu_effects(
                     .flatten();
                 let texture = match &plan.kind {
                     RendererPlanKind::Mesh { .. } => None,
+                    RendererPlanKind::Ribbon { .. } => {
+                        material.and_then(|material| material.texture)
+                    }
                     RendererPlanKind::Sprite => material.and_then(|material| material.texture),
                     RendererPlanKind::Flipbook { flipbook, .. } => player
                         .effect()
@@ -497,6 +503,18 @@ pub(crate) fn prepare_gpu_effects(
         };
         let indirect_draw_commands = indirect_draw_commands(&artifact.emitters);
         let emitters = buffers.add(ShaderBuffer::from(artifact.emitters));
+        let ribbon_renderers = artifact
+            .renderers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, r)| (r.renderer_kind == 3).then_some(index as u32))
+            .collect::<Vec<_>>();
+        let has_ribbons = !ribbon_renderers.is_empty();
+        let ribbon_workgroups = player
+            .effect()
+            .emitters
+            .len()
+            .div_ceil(WORKGROUP_SIZE as usize) as u32;
         let renderers = buffers.add(ShaderBuffer::from(artifact.renderers));
         let particles = buffers.add(ShaderBuffer::from(artifact.particles));
         let alive = buffers.add(ShaderBuffer::from(vec![
@@ -538,6 +556,8 @@ pub(crate) fn prepare_gpu_effects(
                 globals,
                 render_globals: render_globals.clone(),
                 workgroups: artifact.total_slots.div_ceil(WORKGROUP_SIZE),
+                has_ribbons,
+                ribbon_workgroups,
                 total_slots: artifact.total_slots,
             },
             GpuPresentationPrepared,
@@ -598,6 +618,11 @@ pub(crate) fn prepare_gpu_effects(
                         // and the current particle motion have both been resolved.
                         if let Some(mesh_bounds) = mesh_bounds {
                             draw.insert((mesh_bounds, visibility::NoFrustumCulling));
+                        }
+                        // Ribbon width is camera-facing and uses maximum world scale. Until
+                        // view-independent world bounds account for it, never cull a valid strip.
+                        if ribbon_renderers.contains(&renderer_index) {
+                            draw.insert(visibility::NoFrustumCulling);
                         }
                     }
                 }
@@ -785,7 +810,7 @@ fn update_gpu_inputs(
     >,
 ) {
     let _span = tracing::info_span!("aestra::gpu::artifact_update").entered();
-    for (mut player, transform, gpu, runtime, render_layers, children) in &mut players {
+    for (mut player, transform, mut gpu, runtime, render_layers, children) in &mut players {
         player.refresh_automatic_material_bindings();
         // Only emitter and renderer inputs change per frame; use the dynamics
         // builder so we never reallocate the capacity-sized particle scratch buffer
@@ -846,6 +871,14 @@ fn update_gpu_inputs(
         // Use the binding that actually prepared successfully, including retained bindings
         // on preparation failure. Never prune CPU-presentation/readback data.
         if let Ok(mut dynamics) = GpuEffectArtifact::dynamics_from_instance(&player.instance) {
+            let ribbon_workgroups = (dynamics.emitters.len() as u32).div_ceil(WORKGROUP_SIZE);
+            if gpu.ribbon_workgroups != ribbon_workgroups {
+                gpu.ribbon_workgroups = ribbon_workgroups;
+            }
+            let has_ribbons = dynamics.renderers.iter().any(|r| r.renderer_kind == 3);
+            if gpu.has_ribbons != has_ribbons {
+                gpu.has_ribbons = has_ribbons;
+            }
             if let Some(children) = children {
                 for child in children.iter() {
                     if let Ok((draw, _, Some(mut mesh_bounds))) = draw_instances.get_mut(child) {
@@ -1033,14 +1066,22 @@ fn init_pipeline(
     let simulate = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
         label: Some("aestra simulate particles".into()),
         layout: vec![layout.clone()],
-        shader,
+        shader: shader.clone(),
         entry_point: Some("simulate".into()),
+        ..default()
+    });
+    let link_ribbons = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+        label: Some("aestra link ribbons".into()),
+        layout: vec![layout.clone()],
+        shader,
+        entry_point: Some("link_ribbons".into()),
         ..default()
     });
     commands.insert_resource(SimulationPipeline {
         layout,
         reset,
         simulate,
+        link_ribbons,
     });
 }
 
@@ -1101,6 +1142,7 @@ fn run_simulation(
     buffers: Res<RenderAssets<GpuShaderBuffer>>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
+    let link_ribbons = pipeline_cache.get_compute_pipeline(pipeline.link_ribbons);
     let (Some(reset), Some(simulate)) = (
         pipeline_cache.get_compute_pipeline(pipeline.reset),
         pipeline_cache.get_compute_pipeline(pipeline.simulate),
@@ -1114,6 +1156,9 @@ fn run_simulation(
     let diagnostics = diagnostics.as_deref();
     let gpu_span = diagnostics.time_span(render_context.command_encoder(), "aestra::gpu::simulate");
     for (effect, bind_group) in &effects {
+        if effect.has_ribbons && link_ribbons.is_none() {
+            continue;
+        }
         let mut pass =
             render_context
                 .command_encoder()
@@ -1126,6 +1171,12 @@ fn run_simulation(
         pass.dispatch_workgroups(1, 1, 1);
         pass.set_pipeline(simulate);
         pass.dispatch_workgroups(effect.workgroups, 1, 1);
+        if effect.has_ribbons
+            && let Some(link_ribbons) = link_ribbons
+        {
+            pass.set_pipeline(link_ribbons);
+            pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+        }
     }
     // Copy only instance counts after simulation; mesh commands retain their own geometry ranges.
     // This avoids CPU readback and preserves the existing per-emitter simulation ABI.

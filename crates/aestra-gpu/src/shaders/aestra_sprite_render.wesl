@@ -30,10 +30,11 @@ fn particle_color(input: VertexOutput) -> vec4<f32> {
     let feather = clamp(input.softness, 0.001, 1.0);
     var distance = length(input.quad_position);
     var sampled = vec4<f32>(1.0);
-    if input.textured != 0u {
+    if (input.textured & 1u) != 0u {
         distance = max(abs(input.quad_position.x), abs(input.quad_position.y));
         sampled = textureSample(sprite_texture, sprite_sampler, input.uv);
     }
+    if (input.textured & 2u) != 0u { distance = abs(input.quad_position.x); }
     let coverage = 1.0 - smoothstep(1.0 - feather, 1.0, distance);
     return vec4<f32>(input.color.rgb * sampled.rgb, input.color.a * sampled.a * coverage);
 }

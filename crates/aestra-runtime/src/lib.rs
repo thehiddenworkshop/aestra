@@ -459,6 +459,9 @@ pub struct RendererPlan {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RendererPlanKind {
+    Ribbon {
+        width: f32,
+    },
     Sprite,
     Mesh {
         asset: AssetId,

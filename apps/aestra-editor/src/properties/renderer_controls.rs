@@ -8,6 +8,7 @@ pub(super) struct RendererEnabledControl(pub(super) RendererId);
 #[derive(Component, Debug, Clone, Copy)]
 pub(super) enum RendererNumberControl {
     Softness(RendererId),
+    RibbonWidth(RendererId),
     Uv(RendererId, u8),
     FlipbookFrameRate(RendererId),
 }
@@ -712,6 +713,7 @@ pub(super) fn renderer_number_input_value(
 ) -> Option<f32> {
     let renderer_id = match control {
         RendererNumberControl::Softness(renderer)
+        | RendererNumberControl::RibbonWidth(renderer)
         | RendererNumberControl::Uv(renderer, _)
         | RendererNumberControl::FlipbookFrameRate(renderer) => renderer,
     };
@@ -721,6 +723,10 @@ pub(super) fn renderer_number_input_value(
         .iter()
         .find(|renderer| renderer.id == renderer_id)?;
     match control {
+        RendererNumberControl::RibbonWidth(_) => match renderer.properties {
+            RendererProperties::Ribbon { width } => Some(width),
+            _ => None,
+        },
         RendererNumberControl::Softness(_) => {
             let material = session
                 .effect
@@ -764,7 +770,7 @@ pub(super) fn renderer_number_input_value(
 
 pub(super) fn renderer_number_step(control: RendererNumberControl) -> f32 {
     match control {
-        RendererNumberControl::Softness(_) => 0.1,
+        RendererNumberControl::Softness(_) | RendererNumberControl::RibbonWidth(_) => 0.1,
         RendererNumberControl::Uv(_, _) => 0.05,
         RendererNumberControl::FlipbookFrameRate(_) => 1.0,
     }
@@ -808,6 +814,7 @@ pub(super) fn renderer_numeric_scrub_command(
 ) -> Option<EffectCommand> {
     let renderer_id = match control {
         RendererNumberControl::Softness(id)
+        | RendererNumberControl::RibbonWidth(id)
         | RendererNumberControl::Uv(id, _)
         | RendererNumberControl::FlipbookFrameRate(id) => id,
     };
@@ -817,6 +824,20 @@ pub(super) fn renderer_numeric_scrub_command(
         .iter()
         .find(|renderer| renderer.id == renderer_id)?;
     match control {
+        RendererNumberControl::RibbonWidth(_) => {
+            if !value.is_finite()
+                || !matches!(renderer.properties, RendererProperties::Ribbon { .. })
+            {
+                return None;
+            }
+            Some(EffectCommand::SetRendererProperties {
+                emitter: session.selected_layer().id,
+                renderer: renderer.id,
+                properties: RendererProperties::Ribbon {
+                    width: value.max(0.001),
+                },
+            })
+        }
         RendererNumberControl::Softness(_) | RendererNumberControl::Uv(_, _) => {
             let mut material = session
                 .effect
@@ -839,7 +860,8 @@ pub(super) fn renderer_numeric_scrub_command(
                     3 => uv.max[1] = value.clamp(uv.min[1], 1.0),
                     _ => return None,
                 },
-                RendererNumberControl::FlipbookFrameRate(_) => unreachable!(),
+                RendererNumberControl::FlipbookFrameRate(_)
+                | RendererNumberControl::RibbonWidth(_) => unreachable!(),
             }
             Some(EffectCommand::SetMaterial {
                 id: material.id,
@@ -918,6 +940,15 @@ pub(super) fn handle_renderer_scalar_change(
         return;
     }
     match *control {
+        RendererNumberControl::RibbonWidth(_) => {
+            if let Some(command) = renderer_numeric_scrub_command(&session, *control, change.value)
+            {
+                session.execute_transaction(
+                    EffectTransaction::single("Changed ribbon width", command),
+                    false,
+                );
+            }
+        }
         RendererNumberControl::Softness(renderer) => {
             session.set_renderer_softness(renderer, change.value)
         }
@@ -996,6 +1027,7 @@ pub(super) fn properties_renderer_card_memory(
 
 pub(super) fn properties_renderer_key(renderer: &aestra_core::RendererInstance) -> String {
     match renderer.properties {
+        RendererProperties::Ribbon { .. } => "renderer/ribbon",
         RendererProperties::Sprite => "renderer/sprite",
         RendererProperties::Flipbook { .. } => "renderer/flipbook",
         _ => "renderer/unknown",
@@ -1015,7 +1047,9 @@ fn spawn_renderer_scalar_control(
         let (min, max, step) = match control {
             RendererNumberControl::Uv(_, _) => (0.0, 1.0, renderer_number_step(control)),
             RendererNumberControl::FlipbookFrameRate(_) => (1.0, 120.0, 1.0),
-            RendererNumberControl::Softness(_) => return None,
+            RendererNumberControl::Softness(_) | RendererNumberControl::RibbonWidth(_) => {
+                return None;
+            }
         };
         SliderRowProps::new(value, min, max, step)
     });
@@ -1075,11 +1109,12 @@ fn renderer_scrubbable_number(
     use crate::feathers::number_input::ScrubbableNumber;
 
     let value = renderer_number_input_value(session, control).unwrap_or(match control {
-        RendererNumberControl::FlipbookFrameRate(_) => 1.0,
+        RendererNumberControl::FlipbookFrameRate(_) | RendererNumberControl::RibbonWidth(_) => 1.0,
         RendererNumberControl::Softness(_) | RendererNumberControl::Uv(_, _) => 0.0,
     });
     let (min, max) = match control {
         RendererNumberControl::Softness(_) => (0.0, f32::MAX),
+        RendererNumberControl::RibbonWidth(_) => (0.001, f32::MAX),
         RendererNumberControl::Uv(renderer, 0) => (
             0.0,
             renderer_number_input_value(session, RendererNumberControl::Uv(renderer, 2))
@@ -2259,6 +2294,7 @@ pub(super) fn spawn_renderer_card(
     asset_server: &AssetServer,
 ) {
     let display_name = match renderer.properties {
+        RendererProperties::Ribbon { .. } => "Ribbon Renderer",
         RendererProperties::Sprite => "Sprite Renderer",
         RendererProperties::Flipbook { .. } => "Flipbook Renderer",
         _ => "Renderer",
@@ -2308,6 +2344,15 @@ pub(super) fn spawn_renderer_card(
             );
         },
         |card| {
+            if matches!(renderer.properties, RendererProperties::Ribbon { .. }) {
+                spawn_renderer_scalar_control(
+                    card,
+                    "Width multiplier",
+                    None,
+                    RendererNumberControl::RibbonWidth(renderer.id),
+                    session,
+                );
+            }
             match spawn_semantic_material_controls(
                 card,
                 renderer,
@@ -2575,6 +2620,30 @@ mod tests {
             renderer_number_step(RendererNumberControl::FlipbookFrameRate(id)),
             1.0
         );
+    }
+
+    #[test]
+    fn ribbon_width_uses_feather_scrubbing_and_transactional_properties() {
+        let mut session = test_support::session_with_timing_slack();
+        let emitter = session.selected_layer().id;
+        let renderer = session.selected_layer().renderers[0].id;
+        session
+            .effect
+            .emitters
+            .iter_mut()
+            .find(|e| e.id == emitter)
+            .unwrap()
+            .renderers[0]
+            .properties = RendererProperties::Ribbon { width: 2.0 };
+        let control = RendererNumberControl::RibbonWidth(renderer);
+        assert_eq!(renderer_number_input_value(&session, control), Some(2.0));
+        let _input = renderer_scrubbable_number(&session, control);
+        assert_eq!(renderer_number_step(control), 0.1);
+        let command = renderer_numeric_scrub_command(&session, control, -2.0).unwrap();
+        assert!(
+            matches!(command, EffectCommand::SetRendererProperties { properties: RendererProperties::Ribbon { width }, .. } if width == 0.001)
+        );
+        assert!(renderer_numeric_scrub_command(&session, control, f32::NAN).is_none());
     }
 
     #[test]

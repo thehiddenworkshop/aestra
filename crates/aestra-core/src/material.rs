@@ -1172,6 +1172,8 @@ pub enum MaterialInput {
     PixelDepth,
     /// World-space orthonormal bitangent, including mesh tangent handedness and mirrored transforms.
     Bitangent,
+    RibbonUv,
+    RibbonDirection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2544,12 +2546,26 @@ fn infer_expression(
             evaluation_domain: MaterialExpressionDomain::ShaderStatic,
         }),
         MaterialExpressionKind::Input(input) => {
-            if program.domain == MaterialDomain::Sprite && !sprite_domain_supports_input(*input) {
+            if (program.domain == MaterialDomain::Sprite && !sprite_domain_supports_input(*input))
+                || (program.domain != MaterialDomain::Ribbon
+                    && matches!(
+                        input,
+                        MaterialInput::RibbonUv | MaterialInput::RibbonDirection
+                    ))
+                || (program.domain == MaterialDomain::Ribbon
+                    && matches!(
+                        input,
+                        MaterialInput::Uv1 | MaterialInput::Tangent | MaterialInput::Bitangent
+                    ))
+            {
                 error(
                     report,
                     DiagnosticCode::UnsupportedMaterialInput,
                     &path,
-                    format!("material input {input:?} is not available in the Sprite domain"),
+                    format!(
+                        "material input {input:?} is not available in the {:?} domain",
+                        program.domain
+                    ),
                 );
             }
             Some(material_input_info(*input))
@@ -3658,7 +3674,7 @@ fn validate_material_output_type(
 fn validate_material_domain(program: &MaterialProgram, report: &mut ValidationReport) {
     if !matches!(
         program.domain,
-        MaterialDomain::Sprite | MaterialDomain::Mesh
+        MaterialDomain::Sprite | MaterialDomain::Mesh | MaterialDomain::Ribbon
     ) {
         error(
             report,
@@ -3754,9 +3770,10 @@ fn material_value_type(value: &MaterialValue) -> MaterialValueType {
 
 fn material_input_info(input: MaterialInput) -> MaterialExpressionInfo {
     let (value_type, evaluation_domain) = match input {
-        MaterialInput::Uv0 | MaterialInput::Uv1 | MaterialInput::ScreenUv => {
-            (MaterialValueType::Vec2, MaterialExpressionDomain::Fragment)
-        }
+        MaterialInput::Uv0
+        | MaterialInput::Uv1
+        | MaterialInput::ScreenUv
+        | MaterialInput::RibbonUv => (MaterialValueType::Vec2, MaterialExpressionDomain::Fragment),
         MaterialInput::LocalPosition
         | MaterialInput::WorldPosition
         | MaterialInput::Normal
@@ -3764,7 +3781,8 @@ fn material_input_info(input: MaterialInput) -> MaterialExpressionInfo {
         | MaterialInput::Bitangent
         | MaterialInput::ViewDirection
         | MaterialInput::CameraPosition
-        | MaterialInput::CameraDirection => {
+        | MaterialInput::CameraDirection
+        | MaterialInput::RibbonDirection => {
             (MaterialValueType::Vec3, MaterialExpressionDomain::Fragment)
         }
         MaterialInput::ParticleColor => {
@@ -3805,7 +3823,11 @@ fn material_input_info(input: MaterialInput) -> MaterialExpressionInfo {
 fn sprite_domain_supports_input(input: MaterialInput) -> bool {
     !matches!(
         input,
-        MaterialInput::Uv1 | MaterialInput::Tangent | MaterialInput::Bitangent
+        MaterialInput::Uv1
+            | MaterialInput::Tangent
+            | MaterialInput::Bitangent
+            | MaterialInput::RibbonUv
+            | MaterialInput::RibbonDirection
     )
 }
 

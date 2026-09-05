@@ -2610,7 +2610,35 @@ UV1 mask and breathing animation. Regenerate the analytic texture with
 `cargo run -p aestra-viewer --example generate_normal_map` from the repository root.
 Native GPU numeric tests exercise strength, Y-flip, tangent handedness and mirrored/nonuniform
 transforms; authoring tests cover creation, rewiring, duplication and undo/redo.
-CPU/readback mesh presentation, a dedicated Normal output, ribbons and PBR remain follow-up work.
+CPU/readback mesh presentation, a dedicated Normal output and PBR remain follow-up work.
+
+### Native live-particle ribbons (first slice)
+
+Ribbon renderers use a Ribbon-domain semantic material, or the existing legacy particle-color
+material. Width is a positive renderer multiplier on Appearance size; particle color and opacity
+are interpolated along the strip. The Properties panel uses the shared Feather number widget.
+Ribbon Lab demonstrates a tapered arc with an unlit UV-driven material.
+
+Each emitter region connects its live particles in ascending spawn identity (including surviving
+particles from previous continuous loops). A GPU post-simulation heapsort makes this independent
+of atomic compaction order. One invocation per emitter performs O(n log n) in-place sorting and
+records neighboring slots and normalized U in the particle ABI's former padding. Sprite/mesh
+consumers ignore those fields; non-ribbon emitters are not sorted. Effects without ribbons skip
+this extra dispatch. This is intended for modest live-point counts, not large trail histories.
+
+The vertex shader constructs camera-facing segment quads with shared endpoint frames. Terminal
+points and coincident segments do not draw. Safe vector fallbacks avoid NaNs at reversals and
+view-aligned segments. Width uses the maximum effect scale, preserving visibility under mirrors
+and nonuniform transforms. Ribbons bypass frustum culling until world-space billboard-width
+bounds are available; layer/visibility filtering and depth tests still apply.
+
+`RibbonUv` is Vec2: U runs from 0 at the oldest live point to 1 at the newest (rank-based, not
+arc length), and V spans the width. `Uv0` aliases those coordinates. `RibbonDirection` is the
+interpolated world-space unit tangent from the vertex stage. Both dedicated inputs are rejected
+outside Ribbon materials; mesh-only UV1/Tangent/Bitangent and Vertex Offset are not supported.
+The same geometry supports diagnostic wireframe. CPU and GPU-readback presentation reject ribbon
+requirements explicitly. No point history, trail IDs, discontinuity markers, caps, or distance UVs
+are introduced by this slice; particle death reconnects surviving neighbors.
 
 ### Add inputs
 

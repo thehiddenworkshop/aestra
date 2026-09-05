@@ -6,12 +6,14 @@ pub enum RendererCapability {
     SpriteParticles,
     FlipbookParticles,
     MeshParticles,
+    RibbonParticles,
 }
 
 impl fmt::Display for RendererCapability {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::MeshParticles => "mesh particles",
+            Self::RibbonParticles => "ribbon particles",
             Self::SpriteParticles => "sprite particles",
             Self::FlipbookParticles => "flipbook particles",
         })
@@ -144,6 +146,19 @@ impl EffectRequirements {
                 [CompatibilityIssue::new(
                     CompatibilityIssueCode::RendererUnsupported,
                     "mesh particles require native GPU presentation",
+                )],
+            );
+        }
+        if target != CompatibilityTarget::NativeGpu
+            && self
+                .renderers
+                .contains(&RendererCapability::RibbonParticles)
+        {
+            return CompatibilityReport::from_issues(
+                target,
+                [CompatibilityIssue::new(
+                    CompatibilityIssueCode::RendererUnsupported,
+                    "ribbon particles require native GPU presentation",
                 )],
             );
         }

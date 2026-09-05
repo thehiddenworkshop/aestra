@@ -89,6 +89,12 @@ fn mesh_wireframe_uses_shared_geometry_and_portable_line_shader() {
 #[test]
 fn generated_wgsl_matches_reviewable_snapshots() {
     let package = GpuShaderPackage::for_artifact(&representative_artifact()).unwrap();
+    if std::env::var_os("AESTRA_UPDATE_SHADER_SNAPSHOTS").is_some() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots");
+        std::fs::write(root.join("simulation.wgsl"), &package.simulation.wgsl).unwrap();
+        std::fs::write(root.join("sprite_render.wgsl"), &package.sprite_render.wgsl).unwrap();
+        return;
+    }
 
     assert_eq!(
         normalized(&package.simulation.wgsl),

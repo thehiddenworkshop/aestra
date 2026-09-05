@@ -94,7 +94,9 @@ pub enum MaterialGraphNodeCreationError {
     FunctionInputDefaultUnavailable { input: String },
 }
 
-const MATERIAL_INPUTS: [MaterialInput; 28] = [
+const MATERIAL_INPUTS: [MaterialInput; 30] = [
+    MaterialInput::RibbonUv,
+    MaterialInput::RibbonDirection,
     MaterialInput::Uv0,
     MaterialInput::Uv1,
     MaterialInput::LocalPosition,

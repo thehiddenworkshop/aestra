@@ -1683,7 +1683,7 @@ fn sampled_textures_require_instance_resource_declarations() {
 #[test]
 fn unsupported_domains_inputs_and_render_states_are_diagnosed() {
     let mut program = MaterialProgram::additive_sprite("Unsupported policy");
-    program.domain = MaterialDomain::Ribbon;
+    program.domain = MaterialDomain::Decal;
     program.parameters.push(MaterialParameter {
         id: MaterialParameterId::from_u128(0xD01),
         name: "texture".into(),

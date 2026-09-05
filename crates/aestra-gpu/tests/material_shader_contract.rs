@@ -249,6 +249,50 @@ fn sampler(address_u: MaterialAddressMode) -> MaterialSamplerDescriptor {
 }
 
 #[test]
+fn ribbon_material_has_portable_uv_direction_and_no_mesh_attributes() {
+    let mut program = aestra_core::material::MaterialProgram::from_ron(include_str!(
+        "../../../assets/materials/ribbon_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    let original = compile(&program);
+    assert_portable_shader_targets(&original.shader.wgsl);
+    assert!(
+        original
+            .reflection
+            .required_vertex_inputs
+            .contains(&MaterialInput::RibbonUv)
+    );
+    let direction = MaterialExpressionId::new();
+    program.expressions.push(MaterialExpression {
+        id: direction,
+        kind: MaterialExpressionKind::Input(MaterialInput::RibbonDirection),
+    });
+    program.outputs.color = direction;
+    let compiled = compile(&program);
+    assert_portable_shader_targets(&compiled.shader.wgsl);
+    assert!(
+        compiled
+            .reflection
+            .required_vertex_inputs
+            .contains(&MaterialInput::RibbonDirection)
+    );
+    assert!(
+        !compiled
+            .reflection
+            .required_vertex_inputs
+            .contains(&MaterialInput::Tangent)
+    );
+    assert!(
+        compiled
+            .varying_layout
+            .slots
+            .iter()
+            .any(|v| v.varying == MaterialVarying::RibbonDirection)
+    );
+    assert!(compiled.shader.wgsl.contains("aestra_ribbon_vertex"));
+}
+
+#[test]
 fn varying_layout_keeps_coverage_but_only_interpolates_live_material_inputs() {
     use MaterialVarying::*;
     let mut program = aestra_core::material::MaterialProgram::additive_sprite("Minimal interface");
@@ -666,7 +710,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "3a547fb9f1e1c0f55113f73edebe7ac682ea10702978b46653a5d37669ef2459"
+        "0475ee281813fefd80a45b621e1ed102beb3be2c0235090dd940fb50283d17d0"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,

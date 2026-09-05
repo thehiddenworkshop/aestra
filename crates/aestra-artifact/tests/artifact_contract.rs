@@ -52,6 +52,41 @@ fn mesh_renderer_and_material_domain_survive_artifact_round_trip() {
 }
 
 #[test]
+fn ribbon_renderer_material_inputs_and_width_survive_artifact_round_trip() {
+    let effect = EffectAsset::from_ron(include_str!(
+        "../../../assets/effects/ribbon_lab.aestra.ron"
+    ))
+    .unwrap();
+    let program = MaterialProgram::from_ron(include_str!(
+        "../../../assets/materials/ribbon_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    let compiled = EffectCompiler::default()
+        .compile_with_material_programs(
+            &effect,
+            &std::collections::BTreeMap::from([(program.id, program)]),
+        )
+        .unwrap();
+    let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(restored, compiled);
+    assert!(matches!(
+        restored.emitters[0].renderers[0].kind,
+        RendererPlanKind::Ribbon { width: 1.0 }
+    ));
+    assert!(
+        restored
+            .requirements
+            .renderers
+            .contains(&RendererCapability::RibbonParticles)
+    );
+    let gpu = GpuEffectArtifact::from_instance(&EffectInstance::new(std::sync::Arc::new(restored)))
+        .unwrap();
+    assert_eq!(gpu.emitters[0]._turbulence_padding, 1);
+    assert_eq!(gpu.renderers[0].renderer_kind, 3);
+    assert_eq!(f32::from_bits(gpu.renderers[0].attribute_flags.y), 1.0);
+}
+
+#[test]
 fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
     let mut compiled = compiled_fixture();
     compiled.optimizations.material_function_calls_authored = 9;

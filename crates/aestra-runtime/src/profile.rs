@@ -87,7 +87,12 @@ impl EffectProfile {
             })
             .count()
             .min(u32::MAX as usize) as u32;
-        let dispatch_count = u32::from(effect.max_particles > 0) * 2;
+        let has_ribbons = effect.emitters.iter().filter(|e| e.enabled).any(|e| {
+            e.renderers
+                .iter()
+                .any(|r| matches!(r.kind, crate::RendererPlanKind::Ribbon { .. }))
+        });
+        let dispatch_count = u32::from(effect.max_particles > 0) * (2 + u32::from(has_ribbons));
         Self {
             cpu_time_ns: ProfileValue::Unavailable,
             gpu_time_ns: ProfileValue::Unavailable,
