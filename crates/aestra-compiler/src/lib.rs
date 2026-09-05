@@ -569,10 +569,16 @@ impl EffectCompiler {
                             random_start: *random_start,
                         },
                     },
-                    RendererProperties::Ribbon { width } => RendererPlan {
+                    RendererProperties::Ribbon {
+                        width,
+                        strand_count,
+                    } => RendererPlan {
                         source: renderer.id,
                         material: renderer.material,
-                        kind: RendererPlanKind::Ribbon { width: *width },
+                        kind: RendererPlanKind::Ribbon {
+                            width: *width,
+                            strand_count: *strand_count,
+                        },
                     },
                     RendererProperties::Trail {
                         width,
@@ -899,6 +905,26 @@ impl EffectCompiler {
                 );
             }
             for (renderer_index, renderer) in emitter.renderers.iter().enumerate() {
+                if renderer.enabled
+                    && let RendererProperties::Ribbon { strand_count, .. } = renderer.properties
+                    && emitter.renderers.iter().any(|other| {
+                        other.enabled
+                            && matches!(other.properties,
+                            RendererProperties::Ribbon { strand_count: other_count, .. }
+                            if other_count != strand_count)
+                    })
+                {
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::UnsupportedRenderer,
+                            format!(
+                                "{emitter_path}.renderers[{renderer_index}].properties.strand_count"
+                            ),
+                            "Ribbon renderers on the same emitter must use the same strand count because they share particle links",
+                        ),
+                    );
+                }
                 if let RendererProperties::Trail { max_trails, .. } = renderer.properties
                     && max_trails != 0
                     && max_trails < emitter.max_particles

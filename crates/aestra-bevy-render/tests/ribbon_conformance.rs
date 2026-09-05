@@ -266,7 +266,7 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
         compilation_options: Default::default(),
         cache: None,
     });
-    let emitters = vec![
+    let mut emitters = vec![
         GpuEmitter {
             max_particles: 8,
             _turbulence_padding: 1,
@@ -287,116 +287,142 @@ fn ribbon_linking_is_deterministic_for_sparse_empty_singleton_and_loop_identitie
             ..Default::default()
         })
         .collect::<Vec<_>>();
-    for selected in [vec![], vec![3], vec![7, 2], vec![7, 2, 0, 4, 1, 5]] {
-        for reverse in [false, true] {
-            let mut alive = vec![0; 10];
-            let mut order = selected.clone();
-            if reverse {
-                order.reverse();
-            }
-            alive[..order.len()].copy_from_slice(&order);
-            alive[8..].copy_from_slice(&[8, 9]);
-            // Ribbon link state now lives in the aux buffer (3 words/slot), no longer
-            // in particle padding. Seed it with the old sentinels so unlinked slots
-            // are still recognisable.
-            let aux_init: Vec<u32> = (0..10).flat_map(|_| [17u32, 19, 23]).collect();
-            let data = [
-                encode(&emitters),
-                encode(&particles),
-                encode(&alive),
-                encode(&vec![0u32; 10]),
-                encode(&vec![0u32; 2]),
-                encode(&vec![6u32, order.len() as u32, 0, 0, 6, 2, 0, 0]),
-                encode(&GpuGlobals {
-                    emitter_count: 2,
-                    ..Default::default()
-                }),
-                encode(&aux_init),
-            ];
-            let buffers = data
-                .iter()
-                .map(|bytes| {
-                    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: None,
-                        contents: bytes,
-                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                    })
-                })
-                .collect::<Vec<_>>();
-            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &layout,
-                entries: &buffers
+    for strands in [1, 2, 3, 7, 256] {
+        emitters[0]._turbulence_padding = strands;
+        for selected in [
+            vec![],
+            vec![3],
+            vec![7, 2],
+            vec![7, 2, 0, 4, 1, 5],
+            vec![6, 3, 5, 0],
+        ] {
+            for reverse in [false, true] {
+                let mut alive = vec![0; 10];
+                let mut order = selected.clone();
+                if reverse {
+                    order.reverse();
+                }
+                alive[..order.len()].copy_from_slice(&order);
+                alive[8..].copy_from_slice(&[8, 9]);
+                // Ribbon link state now lives in the aux buffer (3 words/slot), no longer
+                // in particle padding. Seed it with the old sentinels so unlinked slots
+                // are still recognisable.
+                let aux_init: Vec<u32> = (0..10).flat_map(|_| [17u32, 19, 23]).collect();
+                let data = [
+                    encode(&emitters),
+                    encode(&particles),
+                    encode(&alive),
+                    encode(&vec![0u32; 10]),
+                    encode(&vec![0u32; 2]),
+                    encode(&vec![6u32, order.len() as u32, 0, 0, 6, 2, 0, 0]),
+                    encode(&GpuGlobals {
+                        emitter_count: 2,
+                        ..Default::default()
+                    }),
+                    encode(&aux_init),
+                ];
+                let buffers = data
                     .iter()
-                    .enumerate()
-                    .map(|(i, b)| wgpu::BindGroupEntry {
-                        binding: i as u32,
-                        resource: b.as_entire_binding(),
+                    .map(|bytes| {
+                        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: None,
+                            contents: bytes,
+                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                        })
                     })
-                    .collect::<Vec<_>>(),
-            });
-            let readback = device.create_buffer(&wgpu::BufferDescriptor {
-                label: None,
-                size: 800,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-            let mut encoder = device.create_command_encoder(&Default::default());
-            {
-                let mut pass = encoder.begin_compute_pass(&Default::default());
-                pass.set_pipeline(&pipeline);
-                pass.set_bind_group(0, &group, &[]);
-                pass.dispatch_workgroups(1, 1, 1);
+                    .collect::<Vec<_>>();
+                let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &layout,
+                    entries: &buffers
+                        .iter()
+                        .enumerate()
+                        .map(|(i, b)| wgpu::BindGroupEntry {
+                            binding: i as u32,
+                            resource: b.as_entire_binding(),
+                        })
+                        .collect::<Vec<_>>(),
+                });
+                let readback = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: None,
+                    size: 800,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+                let mut encoder = device.create_command_encoder(&Default::default());
+                {
+                    let mut pass = encoder.begin_compute_pass(&Default::default());
+                    pass.set_pipeline(&pipeline);
+                    pass.set_bind_group(0, &group, &[]);
+                    pass.dispatch_workgroups(1, 1, 1);
+                }
+                // Particles are now a packed 48-byte record (10 * 48 = 480); this copy is
+                // unused by the assertions below, which read the alive list and aux.
+                encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, 480);
+                encoder.copy_buffer_to_buffer(&buffers[2], 0, &readback, 640, 40);
+                // aux buffer (10 slots x 3 words) holds the ribbon link triple now.
+                encoder.copy_buffer_to_buffer(&buffers[7], 0, &readback, 680, 120);
+                let submission = queue.submit([encoder.finish()]);
+                let (sender, receiver) = std::sync::mpsc::channel();
+                readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+                    let _ = sender.send(r);
+                });
+                device
+                    .poll(wgpu::PollType::Wait {
+                        submission_index: Some(submission),
+                        timeout: Some(std::time::Duration::from_secs(60)),
+                    })
+                    .unwrap();
+                receiver
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap()
+                    .unwrap();
+                let bytes = readback.slice(..).get_mapped_range();
+                let word =
+                    |offset| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+                let mut expected = selected.clone();
+                expected.sort_by_key(|&slot| {
+                    (
+                        identities[slot as usize] % strands,
+                        identities[slot as usize],
+                        slot,
+                    )
+                });
+                // aux link triple for slot s: next/prev/uv at readback offset 680 + s*12.
+                let aux = |slot: u32, k: usize| word(680 + slot as usize * 12 + k * 4);
+                for (i, &slot) in expected.iter().enumerate() {
+                    let group = expected
+                        .iter()
+                        .copied()
+                        .filter(|&other| {
+                            identities[other as usize] % strands
+                                == identities[slot as usize] % strands
+                        })
+                        .collect::<Vec<_>>();
+                    let rank = group.iter().position(|&other| other == slot).unwrap();
+                    assert_eq!(word(640 + i * 4), slot, "compaction {order:?}");
+                    assert_eq!(
+                        aux(slot, 0),
+                        group.get(rank + 1).copied().unwrap_or(u32::MAX)
+                    );
+                    assert_eq!(
+                        aux(slot, 1),
+                        rank.checked_sub(1).map_or(u32::MAX, |j| group[j])
+                    );
+                    assert!(
+                        (f32::from_bits(aux(slot, 2))
+                            - rank as f32 / (group.len().max(2) - 1) as f32)
+                            .abs()
+                            < 1e-6
+                    );
+                }
+                // Another emitter and dead slots must never be linked or reordered.
+                for slot in (0..10u32).filter(|slot| !selected.contains(slot)) {
+                    assert_eq!(aux(slot, 0), 17);
+                }
+                assert_eq!(word(640 + 8 * 4), 8);
+                assert_eq!(word(640 + 9 * 4), 9);
             }
-            // Particles are now a packed 48-byte record (10 * 48 = 480); this copy is
-            // unused by the assertions below, which read the alive list and aux.
-            encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, 480);
-            encoder.copy_buffer_to_buffer(&buffers[2], 0, &readback, 640, 40);
-            // aux buffer (10 slots x 3 words) holds the ribbon link triple now.
-            encoder.copy_buffer_to_buffer(&buffers[7], 0, &readback, 680, 120);
-            let submission = queue.submit([encoder.finish()]);
-            let (sender, receiver) = std::sync::mpsc::channel();
-            readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-                let _ = sender.send(r);
-            });
-            device
-                .poll(wgpu::PollType::Wait {
-                    submission_index: Some(submission),
-                    timeout: Some(std::time::Duration::from_secs(60)),
-                })
-                .unwrap();
-            receiver
-                .recv_timeout(std::time::Duration::from_secs(5))
-                .unwrap()
-                .unwrap();
-            let bytes = readback.slice(..).get_mapped_range();
-            let word = |offset| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
-            let mut expected = selected.clone();
-            expected.sort_by_key(|&slot| identities[slot as usize]);
-            // aux link triple for slot s: next/prev/uv at readback offset 680 + s*12.
-            let aux = |slot: u32, k: usize| word(680 + slot as usize * 12 + k * 4);
-            for (i, &slot) in expected.iter().enumerate() {
-                assert_eq!(word(640 + i * 4), slot, "compaction {order:?}");
-                assert_eq!(
-                    aux(slot, 0),
-                    expected.get(i + 1).copied().unwrap_or(u32::MAX)
-                );
-                assert_eq!(
-                    aux(slot, 1),
-                    i.checked_sub(1).map_or(u32::MAX, |j| expected[j])
-                );
-                assert!(
-                    (f32::from_bits(aux(slot, 2)) - i as f32 / (expected.len().max(2) - 1) as f32)
-                        .abs()
-                        < 1e-6
-                );
-            }
-            // Another emitter and dead slots must never be linked or reordered.
-            for slot in (0..10u32).filter(|slot| !selected.contains(slot)) {
-                assert_eq!(aux(slot, 0), 17);
-            }
-            assert_eq!(word(640 + 8 * 4), 8);
-            assert_eq!(word(640 + 9 * 4), 9);
         }
     }
 }

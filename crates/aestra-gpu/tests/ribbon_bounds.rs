@@ -31,8 +31,20 @@ fn authored_width_size_motion_and_emitter_transform_refresh_ribbon_bounds() {
     ))
     .unwrap();
     let initial = bounds(&effect);
-    assert_eq!(initial.maximum_half_width, 6.0);
-    effect.emitters[0].renderers[0].properties = RendererProperties::Ribbon { width: 3.0 };
+    assert_eq!(initial.maximum_half_width, 2.1);
+    effect.emitters[0].renderers[0].properties = RendererProperties::Ribbon {
+        width: 0.35,
+        strand_count: 1,
+    };
+    assert_eq!(
+        bounds(&effect),
+        initial,
+        "grouping does not change the conservative particle/width bounds"
+    );
+    effect.emitters[0].renderers[0].properties = RendererProperties::Ribbon {
+        width: 3.0,
+        strand_count: 3,
+    };
     assert_eq!(bounds(&effect).maximum_half_width, 18.0);
     for module in &mut effect.emitters[0].modules {
         if let ModuleParameters::Appearance { size, .. } = &mut module.parameters {

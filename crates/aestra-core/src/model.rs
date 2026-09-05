@@ -2531,9 +2531,19 @@ impl RendererInstance {
                 }
                 Some(RENDERER_FLIPBOOK)
             }
-            RendererProperties::Ribbon { width } => {
+            RendererProperties::Ribbon {
+                width,
+                strand_count,
+            } => {
                 if !width.is_finite() || *width <= 0.0 {
                     invalid_value(report, path, "ribbon width must be positive and finite");
+                }
+                if !(1..=256).contains(strand_count) {
+                    invalid_value(
+                        report,
+                        path,
+                        "ribbon strand count must be between 1 and 256",
+                    );
                 }
                 Some(RENDERER_RIBBON)
             }
@@ -2618,6 +2628,9 @@ pub enum RendererProperties {
     },
     Ribbon {
         width: f32,
+        /// Stable spawn identity modulo this count assigns particles to independent strands.
+        #[serde(default = "default_ribbon_strand_count")]
+        strand_count: u32,
     },
     Mesh {
         asset: AssetId,
@@ -2665,6 +2678,10 @@ pub enum TrailEndCap {
     #[default]
     Flat,
     Rounded,
+}
+
+pub const fn default_ribbon_strand_count() -> u32 {
+    1
 }
 
 pub const fn default_trail_tile_length() -> f32 {

@@ -287,6 +287,8 @@ enum RendererPlanKindV1 {
     },
     Ribbon {
         width: f32,
+        #[serde(default = "aestra_core::default_ribbon_strand_count")]
+        strand_count: u32,
     },
     Trail {
         width: f32,
@@ -1424,7 +1426,13 @@ impl From<&RendererPlan> for RendererPlanV1 {
             kind: match renderer.kind {
                 RendererPlanKind::Sprite => RendererPlanKindV1::Sprite,
                 RendererPlanKind::Mesh { asset } => RendererPlanKindV1::Mesh { asset },
-                RendererPlanKind::Ribbon { width } => RendererPlanKindV1::Ribbon { width },
+                RendererPlanKind::Ribbon {
+                    width,
+                    strand_count,
+                } => RendererPlanKindV1::Ribbon {
+                    width,
+                    strand_count,
+                },
                 RendererPlanKind::Trail {
                     width,
                     sample_interval,
@@ -1474,7 +1482,13 @@ impl From<RendererPlanV1> for RendererPlan {
             kind: match renderer.kind {
                 RendererPlanKindV1::Sprite => RendererPlanKind::Sprite,
                 RendererPlanKindV1::Mesh { asset } => RendererPlanKind::Mesh { asset },
-                RendererPlanKindV1::Ribbon { width } => RendererPlanKind::Ribbon { width },
+                RendererPlanKindV1::Ribbon {
+                    width,
+                    strand_count,
+                } => RendererPlanKind::Ribbon {
+                    width,
+                    strand_count,
+                },
                 RendererPlanKindV1::Trail {
                     width,
                     sample_interval,

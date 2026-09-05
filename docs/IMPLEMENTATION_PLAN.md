@@ -581,7 +581,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   observations share fewer anchors. Overflow work remains bounded and reports lost history;
   UV phase, retired tails, culling and checkpoint replay retain the existing storage contract.
   Typed validation, backward-compatible defaults, artifact round trips, Feather scrubbing,
-  undo/redo and native GPU curve/spacing/seek tests cover the slice. Multiple ribbon IDs,
+  undo/redo and native GPU curve/spacing/seek tests cover the slice. Independent ribbon strands
+  now use stable cycle-qualified spawn identity modulo a renderer strand count (1–256, default
+  one). GPU sorting/linking isolates neighbors and normalized UVs per strand without enlarging
+  buffers. Shared-link renderer conflicts are diagnosed; RON/artifact defaults and round trips,
+  integer Feather scrubbing/undo and native sparse-group/compaction/seek/loop tests cover the contract.
+  Ribbon Lab demonstrates three strands. Arbitrary per-particle ribbon-ID authoring,
   exact host-trajectory replay, a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

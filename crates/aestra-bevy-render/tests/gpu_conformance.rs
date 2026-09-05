@@ -142,6 +142,71 @@ fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_sources_a
     assert_event_aware_playback_matches(&harness, EffectPlaybackMode::Once);
     assert_event_aware_playback_matches(&harness, EffectPlaybackMode::LoopRestart);
     assert_event_aware_playback_matches(&harness, EffectPlaybackMode::LoopContinuous);
+    assert_ribbon_strands_match_across_seeks_and_loops(&harness);
+}
+
+fn assert_ribbon_strands_match_across_seeks_and_loops(harness: &GpuHarness) {
+    for mode in [
+        EffectPlaybackMode::Once,
+        EffectPlaybackMode::LoopRestart,
+        EffectPlaybackMode::LoopContinuous,
+    ] {
+        let mut asset = conformance_asset(mode, false);
+        asset.emitters[0].regions = vec![
+            EmitterRegion::new(0.0, 0.0, 1.0),
+            EmitterRegion::new(0.5, 0.0, 1.0),
+        ];
+        let renderer = &mut asset.emitters[0].renderers[0];
+        renderer.renderer_type = aestra_core::RendererTypeId(aestra_core::RENDERER_RIBBON.into());
+        renderer.properties = aestra_core::RendererProperties::Ribbon {
+            width: 1.0,
+            strand_count: 3,
+        };
+        let lab = EffectAsset::from_ron(include_str!(
+            "../../../assets/effects/ribbon_lab.aestra.ron"
+        ))
+        .unwrap();
+        renderer.material = lab.material_instances[0].id;
+        asset.material_instances = lab.material_instances;
+        let program = aestra_core::material::MaterialProgram::from_ron(include_str!(
+            "../../../assets/materials/ribbon_lab.aestra.material.ron"
+        ))
+        .unwrap();
+        let effect = Arc::new(
+            EffectCompiler::default()
+                .compile_with_material_programs(
+                    &asset,
+                    &std::collections::BTreeMap::from([(program.id, program)]),
+                )
+                .unwrap(),
+        );
+        // The harness checks actual GPU neighbors/UVs against live spawn identities.
+        // Exercise source-region isolation, surviving earlier cycles, expired particles,
+        // physical-slot reassignment and non-monotonic seeks.
+        assert_effect_matches_at_times(harness, effect.clone(), &[0.05, 0.8, 1.95, 2.05, 4.55]);
+        let mut instance = EffectInstance::with_seed(effect.clone(), TEST_SEED);
+        for time in [1.6, 0.2, 1.1, 0.0, 1.6] {
+            instance.seek(time);
+            let mut expected = Vec::new();
+            instance.evaluate(&mut expected);
+            let artifact = GpuEffectArtifact::from_instance(&instance).unwrap();
+            let actual = harness
+                .simulate(
+                    &artifact,
+                    GpuGlobals {
+                        time: instance.time(),
+                        total_slots: artifact.total_slots,
+                        seed: fold_seed(TEST_SEED),
+                        emitter_count: artifact.emitters.len() as u32,
+                        duration: effect.duration,
+                        continuous: u32::from(mode.is_continuous()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            assert_particle_samples_match(mode, time, instance.time(), &expected, &actual);
+        }
+    }
 }
 
 fn assert_event_steps(effect: Arc<aestra_runtime::CompiledEffect>, steps: &[EventStep]) {
@@ -913,6 +978,7 @@ struct GpuHarness {
     bind_group_layout: wgpu::BindGroupLayout,
     reset_pipeline: wgpu::ComputePipeline,
     simulate_pipeline: wgpu::ComputePipeline,
+    link_pipeline: wgpu::ComputePipeline,
 }
 
 impl GpuHarness {
@@ -977,12 +1043,14 @@ impl GpuHarness {
         };
         let reset_pipeline = pipeline("reset");
         let simulate_pipeline = pipeline("simulate");
+        let link_pipeline = pipeline("link_ribbons");
         Ok(Some(Self {
             device,
             queue,
             bind_group_layout,
             reset_pipeline,
             simulate_pipeline,
+            link_pipeline,
         }))
     }
 
@@ -1004,11 +1072,11 @@ impl GpuHarness {
             false,
         );
         let globals = self.read_only_buffer("globals", &encode(&globals)?);
-        // aux is unused by reset/simulate but must be bound to satisfy the layout.
+        // Read the actual link output after simulation for ribbon fixtures.
         let aux = self.read_write_buffer(
             "aux",
             &encode(&vec![0_u32; artifact.total_slots as usize * 3])?,
-            false,
+            true,
         );
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Aestra CPU GPU conformance bind group"),
@@ -1026,7 +1094,7 @@ impl GpuHarness {
         });
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Aestra CPU GPU conformance readback"),
-            size: particles_bytes.len() as u64,
+            size: particles_bytes.len() as u64 + aux.size(),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -1045,8 +1113,11 @@ impl GpuHarness {
             pass.dispatch_workgroups(1, 1, 1);
             pass.set_pipeline(&self.simulate_pipeline);
             pass.dispatch_workgroups(artifact.total_slots.div_ceil(WORKGROUP_SIZE), 1, 1);
+            pass.set_pipeline(&self.link_pipeline);
+            pass.dispatch_workgroups((artifact.emitters.len() as u32).div_ceil(64), 1, 1);
         }
         encoder.copy_buffer_to_buffer(&particles, 0, &staging, 0, particles_bytes.len() as u64);
+        encoder.copy_buffer_to_buffer(&aux, 0, &staging, particles_bytes.len() as u64, aux.size());
         let submission = self.queue.submit([encoder.finish()]);
         let slice = staging.slice(..);
         let (sender, receiver) = mpsc::channel();
@@ -1076,9 +1147,44 @@ impl GpuHarness {
             .map_err(|error| error.to_string())?;
         let bytes = slice.get_mapped_range().to_vec();
         staging.unmap();
-        let particles: Vec<GpuParticle> = StorageBuffer::new(bytes)
+        let particles: Vec<GpuParticle> = StorageBuffer::new(&bytes[..particles_bytes.len()])
             .create()
             .map_err(|error| error.to_string())?;
+        let links: Vec<u32> = StorageBuffer::new(&bytes[particles_bytes.len()..])
+            .create()
+            .map_err(|error| error.to_string())?;
+        for (emitter_index, emitter) in artifact.emitters.iter().enumerate() {
+            let strands = emitter._turbulence_padding;
+            if strands == 0 {
+                continue;
+            }
+            for group in 0..strands {
+                let mut slots = particles
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(slot, particle)| {
+                        (particle.packed_emitter_alive & 0xffff != 0
+                            && particle.packed_emitter_alive >> 16 == emitter_index as u32
+                            && particle.particle_index % strands == group)
+                            .then_some(slot)
+                    })
+                    .collect::<Vec<_>>();
+                slots.sort_by_key(|&slot| (particles[slot].particle_index, slot));
+                for (rank, &slot) in slots.iter().enumerate() {
+                    assert_eq!(
+                        links[slot * 3],
+                        slots.get(rank + 1).map_or(u32::MAX, |&next| next as u32)
+                    );
+                    assert_eq!(
+                        links[slot * 3 + 1],
+                        rank.checked_sub(1)
+                            .map_or(u32::MAX, |previous| slots[previous] as u32)
+                    );
+                    let uv = rank as f32 / (slots.len().max(2) - 1) as f32;
+                    assert!((f32::from_bits(links[slot * 3 + 2]) - uv).abs() < 1e-6);
+                }
+            }
+        }
         Ok(particles
             .into_iter()
             .filter(|particle| particle.packed_emitter_alive & 0xffff != 0)

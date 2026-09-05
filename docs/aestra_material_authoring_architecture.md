@@ -2612,19 +2612,31 @@ Native GPU numeric tests exercise strength, Y-flip, tangent handedness and mirro
 transforms; authoring tests cover creation, rewiring, duplication and undo/redo.
 CPU/readback mesh presentation, a dedicated Normal output and PBR remain follow-up work.
 
-### Native live-particle ribbons (first slice)
+### Native live-particle ribbons and independent strands
 
-Ribbon renderers use a Ribbon-domain semantic material, or the existing legacy particle-color
-material. Width is a positive renderer multiplier on Appearance size; particle color and opacity
+Ribbon renderers use a Ribbon-domain semantic material.
+Width is a positive renderer multiplier on Appearance size; particle color and opacity
 are interpolated along the strip. The Properties panel uses the shared Feather number widget.
-Ribbon Lab demonstrates a tapered arc with an unlit UV-driven material.
+Ribbon Lab demonstrates three interleaved tapered strands with an unlit UV-driven material.
 
-Each emitter region connects its live particles in ascending spawn identity (including surviving
-particles from previous continuous loops). A GPU post-simulation heapsort makes this independent
+Each emitter region assigns particles to a stable ribbon ID using `spawn_identity % strand_count`.
+Strand count is a renderer setting from 1 to 256, defaulting to one for existing RON/artifacts,
+edited with integer Feather scrubbing and command-based undo/redo. IDs use the existing
+cycle-qualified spawn identity, never physical slots or compacted-list positions. Each strand
+connects its own live particles in ascending spawn identity, including surviving particles from
+previous continuous loops. Its U range restarts at zero and ends at one independently; empty
+strands draw nothing and singleton strands have U=0 and no segment. Changing the count intentionally
+regroups the live particles. This is deterministic interleaved grouping, not an arbitrary authored
+per-particle ribbon attribute or a strand-specific motion generator.
+
+A GPU post-simulation heapsort by (ribbon ID, spawn identity, slot tie-break) makes this independent
 of atomic compaction order. One invocation per emitter performs O(n log n) in-place sorting and
-records neighboring slots and normalized U in the particle ABI's former padding. Sprite/mesh
-consumers ignore those fields; non-ribbon emitters are not sorted. Effects without ribbons skip
-this extra dispatch. This is intended for modest live-point counts, not large trail histories.
+linear run linking. Neighboring slots and normalized U live in the shared three-word-per-slot
+aux buffer; the particle/emitter buffer strides do not grow. Enabled Ribbon renderers on the
+same emitter must agree on strand count because they share links; the compiler diagnoses a
+conflict. Different emitters/regions remain isolated. Sprite/mesh consumers ignore links, and
+effects without ribbons or trails skip this extra dispatch (trails also need stable ordering).
+This is intended for modest live-point counts, not large trail histories.
 
 The vertex shader constructs camera-facing segment quads with shared endpoint frames. Terminal
 points and coincident segments do not draw. Safe vector fallbacks avoid NaNs at reversals and
@@ -2638,13 +2650,13 @@ Bounds update after transform propagation and before visibility checks; render-t
 use that same propagated frame. Singular/nonfinite transforms or overflowing bounds disable
 frustum culling until valid data returns. Layer/visibility filtering and depth tests still apply.
 
-`RibbonUv` is Vec2: U runs from 0 at the oldest live point to 1 at the newest (rank-based, not
-arc length), and V spans the width. `Uv0` aliases those coordinates. `RibbonDirection` is the
+`RibbonUv` is Vec2: U runs from 0 at the oldest live point to 1 at the newest within each strand
+(rank-based, not arc length), and V spans the width. `Uv0` aliases those coordinates. `RibbonDirection` is the
 interpolated world-space unit tangent from the vertex stage. Both dedicated inputs are rejected
 outside Ribbon materials; mesh-only UV1/Tangent/Bitangent and Vertex Offset are not supported.
 The same geometry supports diagnostic wireframe. CPU and GPU-readback presentation reject ribbon
 requirements explicitly. No point history, trail IDs, discontinuity markers, caps, or distance UVs
-are introduced by this slice; particle death reconnects surviving neighbors.
+are introduced by this slice; particle death reconnects surviving neighbors only within its strand.
 
 ### Native history-based trails (first slice)
 

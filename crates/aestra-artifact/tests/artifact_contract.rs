@@ -71,7 +71,10 @@ fn ribbon_renderer_material_inputs_and_width_survive_artifact_round_trip() {
     assert_eq!(restored, compiled);
     assert!(matches!(
         restored.emitters[0].renderers[0].kind,
-        RendererPlanKind::Ribbon { width: 1.0 }
+        RendererPlanKind::Ribbon {
+            width: 0.35,
+            strand_count: 3
+        }
     ));
     assert!(
         restored
@@ -81,9 +84,21 @@ fn ribbon_renderer_material_inputs_and_width_survive_artifact_round_trip() {
     );
     let gpu = GpuEffectArtifact::from_instance(&EffectInstance::new(std::sync::Arc::new(restored)))
         .unwrap();
-    assert_eq!(gpu.emitters[0]._turbulence_padding, 1);
+    assert_eq!(gpu.emitters[0]._turbulence_padding, 3);
     assert_eq!(gpu.renderers[0].renderer_kind, 3);
-    assert_eq!(f32::from_bits(gpu.renderers[0].attribute_flags.y), 1.0);
+    assert_eq!(f32::from_bits(gpu.renderers[0].attribute_flags.y), 0.35);
+    // Artifacts predating strand grouping remain one strand without migration.
+    let legacy = String::from_utf8(encode_effect(&compiled).unwrap()).unwrap();
+    assert!(legacy.contains(",strand_count:3"));
+    let legacy = legacy.replace(",strand_count:3", "");
+    let legacy = decode_effect(legacy.as_bytes()).unwrap();
+    assert!(matches!(
+        legacy.emitters[0].renderers[0].kind,
+        RendererPlanKind::Ribbon {
+            strand_count: 1,
+            ..
+        }
+    ));
 }
 
 #[test]

@@ -170,7 +170,7 @@
     "emitters": [
       {
         "id": "a3574a00-0000-4000-8000-00000000b301",
-        "name": "Arc Ribbon",
+        "name": "Arc Strands",
         "alive_particles": 0,
         "peak_particles": 0,
         "particle_capacity": 128

@@ -22,7 +22,7 @@
     emitters: [
         (
             id: "a3574a00-0000-4000-8000-00000000b301",
-            name: "Arc Ribbon",
+            name: "Arc Strands",
             enabled: true,
             display_color: Some((0.22, 0.55, 1.0, 1.0)),
             transform: (
@@ -71,7 +71,7 @@
                             max: 55.0,
                         ),
                         direction: (0.8, 0.6, 0.0),
-                        spread_degrees: 0.0,
+                        spread_degrees: 6.0,
                         angular_velocity: (
                             min: -1.5,
                             max: 1.5,
@@ -155,7 +155,7 @@
                     renderer_type: "aestra.renderer.ribbon",
                     enabled: true,
                     material: "a3574a00-0000-4000-8000-00000000b101",
-                    properties: Ribbon(width: 1.0),
+                    properties: Ribbon(width: 0.35, strand_count: 3),
                 ),
             ],
         ),
@@ -163,6 +163,6 @@
     events: [],
     dependencies: [],
     metadata: {
-        "purpose": "Camera-facing live-particle ribbon with normalized UVs and width/color/opacity over life",
+        "purpose": "Three independent interleaved ribbon strands with per-strand normalized UVs and width/color/opacity over life",
     },
 )

@@ -131,7 +131,7 @@ pub struct GpuEmitter {
     pub gravity_curves: [GpuCurve; 3],
     pub turbulence: Vec2,
     pub turbulence_source: u32,
-    /// Nonzero enables deterministic ribbon linking after simulation (former padding).
+    /// Strand count for deterministic ribbon linking; zero disables, trails use one.
     pub _turbulence_padding: u32,
     pub turbulence_curve: GpuCurve,
     pub translation: Vec3,
@@ -527,7 +527,7 @@ impl GpuEffectArtifact {
                         attribute_flags: UVec3::new(
                             0,
                             match renderer.kind {
-                                RendererPlanKind::Ribbon { width }
+                                RendererPlanKind::Ribbon { width, .. }
                                 | RendererPlanKind::Trail { width, .. } => width.to_bits(),
                                 _ => 0,
                             },
@@ -549,7 +549,7 @@ impl GpuEffectArtifact {
                         .renderers
                         .iter()
                         .map(|r| match r.kind {
-                            RendererPlanKind::Ribbon { width } => width,
+                            RendererPlanKind::Ribbon { width, .. } => width,
                             _ => 1.0,
                         })
                         .fold(1.0_f32, f32::max),
@@ -584,7 +584,7 @@ impl GpuEffectArtifact {
                 .renderers
                 .iter()
                 .map(|r| match r.kind {
-                    RendererPlanKind::Ribbon { width } => width,
+                    RendererPlanKind::Ribbon { width, .. } => width,
                     _ => 0.0,
                 })
                 .fold(0.0_f32, f32::max);
@@ -653,12 +653,16 @@ impl GpuEffectArtifact {
                 gravity_curves,
                 turbulence,
                 turbulence_source,
-                _turbulence_padding: u32::from(emitter.renderers.iter().any(|r| {
-                    matches!(
-                        r.kind,
-                        RendererPlanKind::Ribbon { .. } | RendererPlanKind::Trail { .. }
-                    )
-                })),
+                _turbulence_padding: emitter
+                    .renderers
+                    .iter()
+                    .filter_map(|r| match r.kind {
+                        RendererPlanKind::Ribbon { strand_count, .. } => Some(strand_count.max(1)),
+                        RendererPlanKind::Trail { .. } => Some(1),
+                        _ => None,
+                    })
+                    .max()
+                    .unwrap_or(0),
                 turbulence_curve,
                 translation: Vec3::from_array(emitter.transform.translation),
                 max_scale: scale.max_element(),

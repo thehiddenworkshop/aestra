@@ -5001,6 +5001,9 @@ fn normalize_numeric_scrub_value_with_multiplier(
         },
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(_)) => value.max(0.0),
         NumericScrubTarget::Renderer(RendererNumberControl::RibbonWidth(_)) => value.max(0.001),
+        NumericScrubTarget::Renderer(RendererNumberControl::RibbonStrands(_)) => {
+            value.round().clamp(1.0, 256.0)
+        }
         NumericScrubTarget::Renderer(RendererNumberControl::Trail(_, field)) => field.clamp(value),
         NumericScrubTarget::Renderer(RendererNumberControl::Uv(renderer, component)) => {
             normalize_renderer_uv_scrub_value(session, renderer, component, value)
@@ -5158,7 +5161,9 @@ fn commit_numeric_scrub(
             }
         }
         NumericScrubTarget::Renderer(
-            RendererNumberControl::RibbonWidth(_) | RendererNumberControl::Trail(_, _),
+            RendererNumberControl::RibbonWidth(_)
+            | RendererNumberControl::RibbonStrands(_)
+            | RendererNumberControl::Trail(_, _),
         ) => {
             if let Some(command) = numeric_scrub_command(session, target, value) {
                 session.execute("Changed strip renderer", command, false);
@@ -5217,6 +5222,9 @@ fn commit_bounded_slider(
         }
         NumericScrubTarget::Renderer(RendererNumberControl::RibbonWidth(_)) => {
             "Changed ribbon width".into()
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::RibbonStrands(_)) => {
+            "Changed ribbon strand count".into()
         }
         NumericScrubTarget::Renderer(RendererNumberControl::Trail(_, _)) => {
             "Changed trail renderer".into()

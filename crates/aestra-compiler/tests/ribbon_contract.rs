@@ -29,7 +29,10 @@ fn ribbon_lab_compiles_and_requires_native_presentation() {
         .unwrap();
     assert!(matches!(
         compiled.emitters[0].renderers[0].kind,
-        RendererPlanKind::Ribbon { width: 1.0 }
+        RendererPlanKind::Ribbon {
+            width: 0.35,
+            strand_count: 3
+        }
     ));
     assert_eq!(
         aestra_runtime::EffectProfile::from_compiled(&compiled).dispatch_count,
@@ -55,6 +58,70 @@ fn ribbon_lab_compiles_and_requires_native_presentation() {
 }
 
 #[test]
+fn ribbon_strand_count_defaults_validates_and_rejects_conflicting_shared_links() {
+    let legacy = include_str!("../../../assets/effects/ribbon_lab.aestra.ron")
+        .replace(", strand_count: 3", "");
+    let legacy = EffectAsset::from_ron(&legacy).unwrap();
+    assert!(matches!(
+        legacy.emitters[0].renderers[0].properties,
+        RendererProperties::Ribbon {
+            strand_count: 1,
+            ..
+        }
+    ));
+    let (effect, program) = fixture();
+    let programs = BTreeMap::from([(program.id, program)]);
+    for strand_count in [0, 1, 3, 256, 257, u32::MAX] {
+        let mut effect = effect.clone();
+        effect.emitters[0].renderers[0].properties = RendererProperties::Ribbon {
+            width: 1.0,
+            strand_count,
+        };
+        if (1..=256).contains(&strand_count) {
+            let serialized = effect.to_pretty_ron().unwrap();
+            assert_eq!(EffectAsset::from_ron(&serialized).unwrap(), effect);
+        }
+        assert_eq!(
+            EffectCompiler::default()
+                .compile_with_material_programs(&effect, &programs)
+                .is_ok(),
+            (1..=256).contains(&strand_count)
+        );
+    }
+    let mut effect = effect;
+    let mut other = effect.emitters[0].renderers[0].clone();
+    other.id = aestra_core::RendererId::new();
+    other.properties = RendererProperties::Ribbon {
+        width: 2.0,
+        strand_count: 2,
+    };
+    effect.emitters[0].renderers.push(other);
+    let report = EffectCompiler::default()
+        .compile_with_material_programs(&effect, &programs)
+        .unwrap_err();
+    assert!(format!("{report:?}").contains("same strand count"));
+    effect.emitters[0].renderers[1].properties = RendererProperties::Ribbon {
+        width: 2.0,
+        strand_count: 3,
+    };
+    assert!(
+        EffectCompiler::default()
+            .compile_with_material_programs(&effect, &programs)
+            .is_ok()
+    );
+    effect.emitters[0].renderers[1].properties = RendererProperties::Ribbon {
+        width: 2.0,
+        strand_count: 2,
+    };
+    effect.emitters[0].renderers[1].enabled = false;
+    assert!(
+        EffectCompiler::default()
+            .compile_with_material_programs(&effect, &programs)
+            .is_ok()
+    );
+}
+
+#[test]
 fn ribbon_inputs_are_domain_specific_and_width_must_be_positive() {
     let (effect, program) = fixture();
     for input in [MaterialInput::RibbonUv, MaterialInput::RibbonDirection] {
@@ -75,7 +142,10 @@ fn ribbon_inputs_are_domain_specific_and_width_must_be_positive() {
     }
     for width in [0.0, -1.0, f32::INFINITY, f32::NAN] {
         let mut invalid = effect.clone();
-        invalid.emitters[0].renderers[0].properties = RendererProperties::Ribbon { width };
+        invalid.emitters[0].renderers[0].properties = RendererProperties::Ribbon {
+            width,
+            strand_count: 1,
+        };
         assert!(
             EffectCompiler::default()
                 .compile_with_material_programs(

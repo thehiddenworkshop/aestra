@@ -475,6 +475,7 @@ pub enum RendererPlanKind {
     },
     Ribbon {
         width: f32,
+        strand_count: u32,
     },
     Sprite,
     Mesh {
