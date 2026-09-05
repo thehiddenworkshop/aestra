@@ -135,6 +135,7 @@ pub enum MaterialGraphFunction {
     SampleTextureLevel,
     SampleTextureGradient,
     ExtractComponent,
+    NormalMap,
 }
 
 impl MaterialGraphFunction {
@@ -164,6 +165,7 @@ impl MaterialGraphFunction {
             Self::SampleTextureLevel => "Sample Texture Level",
             Self::SampleTextureGradient => "Sample Texture Gradient",
             Self::ExtractComponent => "Extract Component",
+            Self::NormalMap => "Normal Map",
         }
     }
 
@@ -185,6 +187,7 @@ impl MaterialGraphFunction {
             Self::RadialMask | Self::Dissolve | Self::DissolveEdge => "Mask",
             Self::DepthFade | Self::SoftParticle => "Depth",
             Self::Fresnel
+            | Self::NormalMap
             | Self::SampleTexture
             | Self::SampleTextureLevel
             | Self::SampleTextureGradient => "Material",
@@ -206,6 +209,14 @@ impl MaterialGraphFunction {
             ],
             Self::Smoothstep => &["LowerEdge", "UpperEdge", "Value"],
             Self::Fresnel => &["Normal", "ViewDirection", "Power"],
+            Self::NormalMap => &[
+                "Sample",
+                "Strength",
+                "FlipY",
+                "Normal",
+                "Tangent",
+                "Bitangent",
+            ],
             Self::RadialMask => &["Uv", "Center", "Radius", "Softness", "Invert"],
             Self::Dissolve | Self::DissolveEdge => &["Source", "Threshold", "EdgeWidth", "Invert"],
             Self::DepthFade => &["SceneDepth", "PixelDepth", "FadeDistance", "Invert"],
@@ -1311,6 +1322,17 @@ pub enum MaterialExpressionKind {
         value: MaterialExpressionId,
         component: MaterialVectorComponent,
     },
+    /// Decodes linear RGB normal data (alpha ignored) into a world-space unit direction.
+    /// Strength scales tangent-space XY; non-positive strength returns the geometric normal.
+    /// Flip Y changes texture convention, independently of the basis handedness.
+    NormalMap {
+        sample: MaterialExpressionId,
+        strength: MaterialExpressionId,
+        flip_y: MaterialExpressionId,
+        normal: MaterialExpressionId,
+        tangent: MaterialExpressionId,
+        bitangent: MaterialExpressionId,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1354,6 +1376,7 @@ impl MaterialExpressionKind {
             | Self::Clamp { .. }
             | Self::Select { .. }
             | Self::Fresnel { .. }
+            | Self::NormalMap { .. }
             | Self::DepthFade { .. }
             | Self::ExtractComponent { .. } => None,
         }
@@ -1362,6 +1385,14 @@ impl MaterialExpressionKind {
     /// Returns every expression referenced by this expression in stable socket order.
     pub fn dependencies(&self) -> Vec<MaterialExpressionId> {
         match self {
+            Self::NormalMap {
+                sample,
+                strength,
+                flip_y,
+                normal,
+                tangent,
+                bitangent,
+            } => vec![*sample, *strength, *flip_y, *normal, *tangent, *bitangent],
             Self::Constant(_) | Self::Input(_) | Self::Parameter(_) | Self::FunctionInput(_) => {
                 Vec::new()
             }
@@ -2757,6 +2788,59 @@ fn infer_expression(
                 ),
                 _ => None,
             }
+        }
+        MaterialExpressionKind::NormalMap {
+            sample,
+            strength,
+            flip_y,
+            normal,
+            tangent,
+            bitangent,
+        } => {
+            let mut valid = true;
+            let mut evaluation_domain = MaterialExpressionDomain::ShaderStatic;
+            let inputs = [
+                ("sample", sample, MaterialValueType::Vec3),
+                ("strength", strength, MaterialValueType::Float),
+                ("flip_y", flip_y, MaterialValueType::Bool),
+                ("normal", normal, MaterialValueType::Vec3),
+                ("tangent", tangent, MaterialValueType::Vec3),
+                ("bitangent", bitangent, MaterialValueType::Vec3),
+            ]
+            .map(|(socket, id, expected)| (socket, dependency(*id), expected));
+            for (socket, info, expected) in inputs {
+                if let Some(info) = info {
+                    evaluation_domain = evaluation_domain.max(info.evaluation_domain);
+                    let matches = info.value_type == expected
+                        || (socket == "sample"
+                            && matches!(
+                                info.value_type,
+                                MaterialValueType::Vec4 | MaterialValueType::Color
+                            ));
+                    if !matches {
+                        material_type_error(
+                            report,
+                            format!("{path}.{socket}"),
+                            format!(
+                                "Normal Map {socket} expects {} but received {:?}",
+                                if socket == "sample" {
+                                    "Vec3, Vec4 or Color (linear normal data)".to_owned()
+                                } else {
+                                    format!("{expected:?}")
+                                },
+                                info.value_type
+                            ),
+                        );
+                        valid = false;
+                    }
+                } else {
+                    valid = false;
+                }
+            }
+            valid.then_some(MaterialExpressionInfo {
+                value_type: MaterialValueType::Vec3,
+                evaluation_domain,
+            })
         }
         MaterialExpressionKind::Fresnel {
             normal,

@@ -2643,6 +2643,28 @@ impl MaterialPreviewEvaluator<'_> {
                     }
                 })
             }
+            MaterialExpressionKind::NormalMap {
+                sample,
+                strength,
+                flip_y,
+                normal,
+                tangent,
+                bitangent,
+            } => {
+                let sample = read(*sample)?.numeric()?.0;
+                let result = aestra_compiler::evaluate_normal_map(
+                    [sample[0], sample[1], sample[2]],
+                    read(*strength)?.numeric()?.0[0],
+                    read(*flip_y)?.boolean()?,
+                    preview_vec3(read(*normal)?)?.to_array(),
+                    preview_vec3(read(*tangent)?)?.to_array(),
+                    preview_vec3(read(*bitangent)?)?.to_array(),
+                );
+                Some(PreviewValue::Numeric(
+                    [result[0], result[1], result[2], 1.0],
+                    3,
+                ))
+            }
             MaterialExpressionKind::Fresnel {
                 normal,
                 view,
@@ -3163,6 +3185,7 @@ fn preview_uses_surface_normal(
             expression.kind,
             MaterialExpressionKind::Input(MaterialInput::Normal | MaterialInput::ViewDirection)
                 | MaterialExpressionKind::Fresnel { .. }
+                | MaterialExpressionKind::NormalMap { .. }
         ) {
             return true;
         }
@@ -3199,6 +3222,14 @@ fn preview_output_rgba(
 
 fn preview_dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
     match kind {
+        MaterialExpressionKind::NormalMap {
+            sample,
+            strength,
+            flip_y,
+            normal,
+            tangent,
+            bitangent,
+        } => vec![*sample, *strength, *flip_y, *normal, *tangent, *bitangent],
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
         | MaterialExpressionKind::Parameter(_)
@@ -4773,6 +4804,11 @@ fn input_target(expression: MaterialExpressionId, name: &str) -> Option<Material
         "edge_min" => MaterialExpressionInput::EdgeMinimum,
         "edge_max" => MaterialExpressionInput::EdgeMaximum,
         "normal" => MaterialExpressionInput::Normal,
+        "sample" => MaterialExpressionInput::Sample,
+        "strength" => MaterialExpressionInput::Strength,
+        "flip_y" => MaterialExpressionInput::FlipY,
+        "tangent" => MaterialExpressionInput::Tangent,
+        "bitangent" => MaterialExpressionInput::Bitangent,
         "view" => MaterialExpressionInput::View,
         "power" => MaterialExpressionInput::Power,
         "radius" => MaterialExpressionInput::Radius,
@@ -4846,6 +4882,26 @@ fn input_port_presentation(name: &str) -> MaterialInputPortPresentation {
         "edge_min" => ("Lower edge", "Value where the smooth transition begins."),
         "edge_max" => ("Upper edge", "Value where the smooth transition ends."),
         "normal" => ("Normal", "Surface normal used by the calculation."),
+        "sample" => (
+            "Sample",
+            "Sampled linear RGB normal data; alpha is ignored. Set the normal texture color space to Linear, not sRGB.",
+        ),
+        "strength" => (
+            "Strength",
+            "Scales tangent-space X and Y. Zero returns the geometric normal.",
+        ),
+        "flip_y" => (
+            "Flip Y",
+            "Invert the sampled green axis to switch normal-map convention; does not change mesh handedness.",
+        ),
+        "tangent" => (
+            "Tangent",
+            "World-space tangent direction for the normal-map basis.",
+        ),
+        "bitangent" => (
+            "Bitangent",
+            "World-space bitangent including UV handedness and mirrored transforms.",
+        ),
         "view" => (
             "View direction",
             "Direction from the surface toward the camera.",
@@ -5313,6 +5369,11 @@ mod tests {
             "uv",
             "source",
             "alpha",
+            "sample",
+            "strength",
+            "flip_y",
+            "tangent",
+            "bitangent",
         ] {
             assert!(input_target(expression, name).is_some(), "missing {name}");
         }
@@ -5355,6 +5416,60 @@ mod tests {
             assert!(normal.dot(bitangent).abs() < 1e-5);
             assert!(tangent.dot(bitangent).abs() < 1e-5);
             assert!(tangent.cross(bitangent).abs_diff_eq(normal, 1e-5));
+        }
+    }
+
+    #[test]
+    fn normal_map_node_preview_decodes_inline_values_in_the_mesh_basis() {
+        let mut program = MaterialProgram::additive_sprite("Normal preview");
+        program.domain = aestra_core::material::MaterialDomain::Mesh;
+        let plan = MaterialCompiler
+            .plan_graph_node_creation(
+                &program,
+                MaterialGraphCreateKind::Function(
+                    aestra_core::material::MaterialGraphFunction::NormalMap,
+                ),
+                None,
+            )
+            .unwrap();
+        let mut program = plan.replacement;
+        let MaterialExpressionKind::NormalMap { sample, flip_y, .. } = program
+            .expressions
+            .iter()
+            .find(|node| node.id == plan.expression)
+            .unwrap()
+            .kind
+        else {
+            panic!("normal map")
+        };
+        program
+            .expressions
+            .iter_mut()
+            .find(|node| node.id == sample)
+            .unwrap()
+            .kind = MaterialExpressionKind::Constant(MaterialValue::Vec4([0.5, 0.8, 0.9, 0.0]));
+        for flipped in [false, true] {
+            program
+                .expressions
+                .iter_mut()
+                .find(|node| node.id == flip_y)
+                .unwrap()
+                .kind = MaterialExpressionKind::Constant(MaterialValue::Bool(flipped));
+            let evaluator = MaterialPreviewEvaluator {
+                program: &program,
+                instance: None,
+            };
+            let Some(PreviewValue::Numeric(value, 3)) = evaluator.evaluate(
+                plan.expression,
+                MaterialPreviewContext {
+                    uv: Vec2::ZERO,
+                    normal: Vec3::Z,
+                },
+            ) else {
+                panic!("Vec3 preview")
+            };
+            let expected = Vec3::new(0.0, if flipped { -0.6 } else { 0.6 }, 0.8);
+            assert!(Vec3::new(value[0], value[1], value[2]).abs_diff_eq(expected, 1e-5));
         }
     }
 

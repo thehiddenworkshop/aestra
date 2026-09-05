@@ -125,7 +125,7 @@ const MATERIAL_INPUTS: [MaterialInput; 28] = [
     MaterialInput::PixelDepth,
 ];
 
-const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 23] = [
+const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 24] = [
     MaterialGraphFunction::Add,
     MaterialGraphFunction::Subtract,
     MaterialGraphFunction::Multiply,
@@ -136,6 +136,7 @@ const MATERIAL_FUNCTIONS: [MaterialGraphFunction; 23] = [
     MaterialGraphFunction::Remap,
     MaterialGraphFunction::Smoothstep,
     MaterialGraphFunction::Fresnel,
+    MaterialGraphFunction::NormalMap,
     MaterialGraphFunction::RadialMask,
     MaterialGraphFunction::Dissolve,
     MaterialGraphFunction::DissolveEdge,
@@ -837,6 +838,33 @@ fn append_graph_function(
                 if_true,
             }
         }
+        MaterialGraphFunction::NormalMap => {
+            let sample = source.unwrap_or_else(|| {
+                append_graph_constant(program, MaterialValue::Vec3([0.5, 0.5, 1.0]))
+            });
+            let strength = append_graph_constant(program, MaterialValue::Float(1.0));
+            let flip_y = append_graph_constant(program, MaterialValue::Bool(false));
+            let normal = append_graph_expression(
+                program,
+                MaterialExpressionKind::Input(MaterialInput::Normal),
+            );
+            let tangent = append_graph_expression(
+                program,
+                MaterialExpressionKind::Input(MaterialInput::Tangent),
+            );
+            let bitangent = append_graph_expression(
+                program,
+                MaterialExpressionKind::Input(MaterialInput::Bitangent),
+            );
+            MaterialExpressionKind::NormalMap {
+                sample,
+                strength,
+                flip_y,
+                normal,
+                tangent,
+                bitangent,
+            }
+        }
         MaterialGraphFunction::Fresnel => {
             let normal = source.unwrap_or_else(|| {
                 append_graph_expression(
@@ -1028,6 +1056,7 @@ fn graph_function_modifier(function: MaterialGraphFunction) -> Option<MaterialSt
         | MaterialGraphFunction::Clamp
         | MaterialGraphFunction::Select
         | MaterialGraphFunction::Fresnel
+        | MaterialGraphFunction::NormalMap
         | MaterialGraphFunction::DepthFade
         | MaterialGraphFunction::DerivativeX
         | MaterialGraphFunction::DerivativeY
@@ -1142,6 +1171,7 @@ fn node_kind(kind: &MaterialExpressionKind) -> MaterialGraphNodeKind {
         E::Select { .. } => MaterialGraphFunction::Select,
         E::Remap { .. } => MaterialGraphFunction::Remap,
         E::Smoothstep { .. } => MaterialGraphFunction::Smoothstep,
+        E::NormalMap { .. } => MaterialGraphFunction::NormalMap,
         E::Fresnel { .. } => MaterialGraphFunction::Fresnel,
         E::RadialMask { .. } => MaterialGraphFunction::RadialMask,
         E::Dissolve { .. } => MaterialGraphFunction::Dissolve,
@@ -1168,6 +1198,7 @@ fn node_label(
 ) -> String {
     match kind {
         MaterialExpressionKind::Constant(value) => format!("Constant · {value:?}"),
+        MaterialExpressionKind::NormalMap { .. } => "Normal Map".to_owned(),
         MaterialExpressionKind::Input(input) => format!("{input:?}"),
         MaterialExpressionKind::Parameter(id) => program
             .parameters
@@ -1284,6 +1315,21 @@ fn expression_inputs(kind: &MaterialExpressionKind) -> Vec<(&'static str, Materi
             ("edge_min", *edge_min),
             ("edge_max", *edge_max),
             ("value", *value),
+        ],
+        E::NormalMap {
+            sample,
+            strength,
+            flip_y,
+            normal,
+            tangent,
+            bitangent,
+        } => vec![
+            ("sample", *sample),
+            ("strength", *strength),
+            ("flip_y", *flip_y),
+            ("normal", *normal),
+            ("tangent", *tangent),
+            ("bitangent", *bitangent),
         ],
         E::Fresnel {
             normal,

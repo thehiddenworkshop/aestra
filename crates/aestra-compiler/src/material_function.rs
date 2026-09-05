@@ -630,6 +630,21 @@ fn remap_kind(
             edge_max: remap(*edge_max)?,
             value: remap(*value)?,
         },
+        E::NormalMap {
+            sample,
+            strength,
+            flip_y,
+            normal,
+            tangent,
+            bitangent,
+        } => E::NormalMap {
+            sample: remap(*sample)?,
+            strength: remap(*strength)?,
+            flip_y: remap(*flip_y)?,
+            normal: remap(*normal)?,
+            tangent: remap(*tangent)?,
+            bitangent: remap(*bitangent)?,
+        },
         E::Fresnel {
             normal,
             view,

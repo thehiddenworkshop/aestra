@@ -169,6 +169,11 @@ pub enum MaterialExpressionInput {
     Ddy,
     Source,
     SourceAlpha,
+    Sample,
+    Strength,
+    FlipY,
+    Tangent,
+    Bitangent,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -782,6 +787,25 @@ pub(crate) fn rewire_expression(
         ) => edge_max,
         (MaterialExpressionKind::Smoothstep { value, .. }, MaterialExpressionInput::Value) => value,
         (MaterialExpressionKind::Fresnel { normal, .. }, MaterialExpressionInput::Normal) => normal,
+        (MaterialExpressionKind::NormalMap { sample, .. }, MaterialExpressionInput::Sample) => {
+            sample
+        }
+        (MaterialExpressionKind::NormalMap { strength, .. }, MaterialExpressionInput::Strength) => {
+            strength
+        }
+        (MaterialExpressionKind::NormalMap { flip_y, .. }, MaterialExpressionInput::FlipY) => {
+            flip_y
+        }
+        (MaterialExpressionKind::NormalMap { normal, .. }, MaterialExpressionInput::Normal) => {
+            normal
+        }
+        (MaterialExpressionKind::NormalMap { tangent, .. }, MaterialExpressionInput::Tangent) => {
+            tangent
+        }
+        (
+            MaterialExpressionKind::NormalMap { bitangent, .. },
+            MaterialExpressionInput::Bitangent,
+        ) => bitangent,
         (MaterialExpressionKind::Fresnel { view, .. }, MaterialExpressionInput::View) => view,
         (MaterialExpressionKind::Fresnel { power, .. }, MaterialExpressionInput::Power) => power,
         (MaterialExpressionKind::RadialMask { uv, .. }, MaterialExpressionInput::Uv) => uv,

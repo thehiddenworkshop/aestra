@@ -5,6 +5,8 @@ mod material_graph;
 mod material_ir;
 mod material_reflection;
 mod material_stack;
+mod normal_map;
+pub use normal_map::evaluate_normal_map;
 
 pub use material_function::*;
 pub use material_graph::*;

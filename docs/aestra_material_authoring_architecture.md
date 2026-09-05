@@ -2591,9 +2591,26 @@ attribute (no additional vertex stream), including when used only for Vertex Off
 mistyped tangents reject the draw through the same geometry diagnostics, and deformed wireframes
 retain the imported handedness. Singular transforms/degenerate imported bases have no defined
 orthonormal basis; this does not add automatic repair or reconstruction after deformation.
-The graph exposes a typed Bitangent input with a synthetic right-handed preview basis. The lab
-combines bitangent coloring with a separate UV1 mapping and its breathing animation.
-CPU/readback mesh presentation, normal-map decoding/Normal output, ribbons and PBR remain follow-up work.
+The graph exposes a typed Bitangent input with a synthetic right-handed preview basis.
+
+Normal Map decodes sampled linear RGB (Vec3, Vec4 or Color; alpha ignored) from [0, 1] to
+[-1, 1], scales its tangent-space X/Y components by Strength, optionally flips Y, and returns
+a normalized world-space Vec3. Non-positive strength returns the geometric normal. Connect a
+texture sample using LinearData, not sRGB. The default basis uses Normal, Tangent and Bitangent;
+the latter two require mesh tangent attributes. Y-flip is independent of imported handedness
+and mirrored transforms. The decoder re-orthogonalizes the interpolated basis and preserves
+its orientation, with deterministic fallbacks for zero-length inputs. This does not reconstruct
+normals after vertex deformation or manufacture missing mesh attributes.
+
+The operation is available in graph authoring, typed validation, IR optimization, portable
+shader generation and CPU node previews. It produces an ordinary graph value rather than a
+new material output: connect it to Fresnel or other vector operations. Mesh Material Lab uses
+UV0 to sample a linear normal texture and combines normal coloring/Fresnel with its separate
+UV1 mask and breathing animation. Regenerate the analytic texture with
+`cargo run -p aestra-viewer --example generate_normal_map` from the repository root.
+Native GPU numeric tests exercise strength, Y-flip, tangent handedness and mirrored/nonuniform
+transforms; authoring tests cover creation, rewiring, duplication and undo/redo.
+CPU/readback mesh presentation, a dedicated Normal output, ribbons and PBR remain follow-up work.
 
 ### Add inputs
 

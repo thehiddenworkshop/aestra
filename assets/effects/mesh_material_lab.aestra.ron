@@ -17,7 +17,10 @@
             ),
         ),
     ],
-    assets: [(id: "a3574a00-0000-4000-8000-00000000a401", name: "Lab Cube", kind: Mesh, path: "meshes/lab_cube.gltf#Mesh0/Primitive0")],
+    assets: [
+        (id: "a3574a00-0000-4000-8000-00000000a401", name: "Lab Cube", kind: Mesh, path: "meshes/lab_cube.gltf#Mesh0/Primitive0"),
+        (id: "a3574a00-0000-4000-8000-00000000a402", name: "Lab Normal (Linear)", kind: Texture, path: "textures/lab_normal.png"),
+    ],
     parameters: [],
     emitters: [
         (

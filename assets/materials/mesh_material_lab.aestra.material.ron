@@ -10,12 +10,19 @@
     parameters: [
         (id: "a3574a00-0000-4000-8000-00000000a211", name: "Breath Strength",
          value_type: Float, evaluation_domain: Instance, default: Some(Float(2.4))),
+        (id: "a3574a00-0000-4000-8000-00000000a212", name: "Normal Texture",
+         value_type: Texture2D((color_space: LinearData, sampler: (filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: Repeat))), evaluation_domain: Instance,
+         default: Some(Texture2D("a3574a00-0000-4000-8000-00000000a402"))),
+        (id: "a3574a00-0000-4000-8000-00000000a213", name: "Normal Strength",
+         value_type: Float, evaluation_domain: Instance, default: Some(Float(1.2))),
+        (id: "a3574a00-0000-4000-8000-00000000a214", name: "Flip Normal Y",
+         value_type: Bool, evaluation_domain: Instance, default: Some(Bool(false))),
     ],
     expressions: [
-        // Bitangent basis direction mapped from [-1, 1] to color [0, 1].
+        // The world-space normal map drives both normal coloring and an unlit Fresnel rim.
         (id: "a3574a00-0000-4000-8000-00000000a221", kind: Input(Bitangent)),
         (id: "a3574a00-0000-4000-8000-00000000a222", kind: Constant(Vec3((0.5, 0.5, 0.5)))),
-        (id: "a3574a00-0000-4000-8000-00000000a223", kind: Multiply("a3574a00-0000-4000-8000-00000000a221", "a3574a00-0000-4000-8000-00000000a222")),
+        (id: "a3574a00-0000-4000-8000-00000000a223", kind: Multiply("a3574a00-0000-4000-8000-00000000a255", "a3574a00-0000-4000-8000-00000000a222")),
         (id: "a3574a00-0000-4000-8000-00000000a224", kind: Add("a3574a00-0000-4000-8000-00000000a223", "a3574a00-0000-4000-8000-00000000a222")),
         (id: "a3574a00-0000-4000-8000-00000000a227", kind: Input(ParticleOpacity)),
         // Radial breathing: local position * (2.4 * age * (1 - age)).
@@ -38,7 +45,24 @@
             radius: "a3574a00-0000-4000-8000-00000000a242", softness: "a3574a00-0000-4000-8000-00000000a243",
             invert: "a3574a00-0000-4000-8000-00000000a244")),
         (id: "a3574a00-0000-4000-8000-00000000a246", kind: Multiply("a3574a00-0000-4000-8000-00000000a224", "a3574a00-0000-4000-8000-00000000a245")),
+        (id: "a3574a00-0000-4000-8000-00000000a247", kind: Parameter("a3574a00-0000-4000-8000-00000000a212")),
+        (id: "a3574a00-0000-4000-8000-00000000a248", kind: Input(Uv0)),
+        (id: "a3574a00-0000-4000-8000-00000000a249", kind: SampleTexture(texture: "a3574a00-0000-4000-8000-00000000a247", uv: "a3574a00-0000-4000-8000-00000000a248")),
+        (id: "a3574a00-0000-4000-8000-00000000a250", kind: Parameter("a3574a00-0000-4000-8000-00000000a213")),
+        (id: "a3574a00-0000-4000-8000-00000000a251", kind: Parameter("a3574a00-0000-4000-8000-00000000a214")),
+        (id: "a3574a00-0000-4000-8000-00000000a252", kind: Input(Normal)),
+        (id: "a3574a00-0000-4000-8000-00000000a253", kind: Input(Tangent)),
+        (id: "a3574a00-0000-4000-8000-00000000a255", kind: NormalMap(
+            sample: "a3574a00-0000-4000-8000-00000000a249", strength: "a3574a00-0000-4000-8000-00000000a250",
+            flip_y: "a3574a00-0000-4000-8000-00000000a251", normal: "a3574a00-0000-4000-8000-00000000a252",
+            tangent: "a3574a00-0000-4000-8000-00000000a253", bitangent: "a3574a00-0000-4000-8000-00000000a221")),
+        (id: "a3574a00-0000-4000-8000-00000000a256", kind: Input(ViewDirection)),
+        (id: "a3574a00-0000-4000-8000-00000000a257", kind: Constant(Float(3.0))),
+        (id: "a3574a00-0000-4000-8000-00000000a258", kind: Fresnel(normal: "a3574a00-0000-4000-8000-00000000a255", view: "a3574a00-0000-4000-8000-00000000a256", power: "a3574a00-0000-4000-8000-00000000a257")),
+        (id: "a3574a00-0000-4000-8000-00000000a259", kind: Constant(Float(0.35))),
+        (id: "a3574a00-0000-4000-8000-00000000a260", kind: Add("a3574a00-0000-4000-8000-00000000a258", "a3574a00-0000-4000-8000-00000000a259")),
+        (id: "a3574a00-0000-4000-8000-00000000a261", kind: Multiply("a3574a00-0000-4000-8000-00000000a246", "a3574a00-0000-4000-8000-00000000a260")),
     ],
     inline_constants: ["a3574a00-0000-4000-8000-00000000a222", "a3574a00-0000-4000-8000-00000000a232"],
-    outputs: (color: "a3574a00-0000-4000-8000-00000000a246", alpha: "a3574a00-0000-4000-8000-00000000a227", vertex_offset: Some("a3574a00-0000-4000-8000-00000000a237")),
+    outputs: (color: "a3574a00-0000-4000-8000-00000000a261", alpha: "a3574a00-0000-4000-8000-00000000a227", vertex_offset: Some("a3574a00-0000-4000-8000-00000000a237")),
 )

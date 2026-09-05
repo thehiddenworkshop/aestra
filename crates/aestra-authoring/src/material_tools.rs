@@ -1303,6 +1303,21 @@ fn remap_expression_sources(
             remap(edge_max);
             remap(value);
         }
+        MaterialExpressionKind::NormalMap {
+            sample,
+            strength,
+            flip_y,
+            normal,
+            tangent,
+            bitangent,
+        } => {
+            remap(sample);
+            remap(strength);
+            remap(flip_y);
+            remap(normal);
+            remap(tangent);
+            remap(bitangent);
+        }
         MaterialExpressionKind::Fresnel {
             normal,
             view,

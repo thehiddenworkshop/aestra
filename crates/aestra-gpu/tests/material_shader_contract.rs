@@ -176,6 +176,69 @@ fn mesh_material_inputs_use_real_geometry_and_no_billboard_coverage() {
     assert_portable_shader_targets(&compile(&program).shader.wgsl);
 }
 
+#[test]
+fn normal_map_accepts_rgb_and_rgba_samples_on_portable_mesh_shaders() {
+    use aestra_compiler::{MaterialGraphCreateKind, MaterialGraphFunction};
+    use aestra_core::material::{MaterialDomain, MaterialProgram};
+    let mut program = MaterialProgram::additive_sprite("Normal Map samples");
+    // The default basis needs mesh attributes and must not be offered on a sprite.
+    assert!(
+        MaterialCompiler
+            .plan_graph_node_creation(
+                &program,
+                MaterialGraphCreateKind::Function(MaterialGraphFunction::NormalMap),
+                None,
+            )
+            .is_err()
+    );
+    program.domain = MaterialDomain::Mesh;
+    let plan = MaterialCompiler
+        .plan_graph_node_creation(
+            &program,
+            MaterialGraphCreateKind::Function(MaterialGraphFunction::NormalMap),
+            None,
+        )
+        .unwrap();
+    let mut program = plan.replacement;
+    program.outputs.color = plan.expression;
+    let MaterialExpressionKind::NormalMap { sample, .. } = program
+        .expressions
+        .iter()
+        .find(|node| node.id == plan.expression)
+        .unwrap()
+        .kind
+    else {
+        panic!("Normal Map node")
+    };
+    for value in [
+        MaterialValue::Vec3([0.5, 0.5, 1.0]),
+        MaterialValue::Vec4([0.5, 0.5, 1.0, 0.0]),
+        MaterialValue::ColorSrgb([0.5, 0.5, 1.0, 1.0]),
+    ] {
+        program
+            .expressions
+            .iter_mut()
+            .find(|node| node.id == sample)
+            .unwrap()
+            .kind = MaterialExpressionKind::Constant(value);
+        let compiled = compile(&program);
+        assert_portable_shader_targets(&compiled.shader.wgsl);
+        assert!(compiled.shader.wesl.contains("fn aestra_normal_map("));
+        assert!(
+            compiled
+                .reflection
+                .required_vertex_inputs
+                .contains(&MaterialInput::Tangent)
+        );
+        assert!(
+            compiled
+                .reflection
+                .required_vertex_inputs
+                .contains(&MaterialInput::Bitangent)
+        );
+    }
+}
+
 fn sampler(address_u: MaterialAddressMode) -> MaterialSamplerDescriptor {
     MaterialSamplerDescriptor {
         filter: MaterialFilterMode::Linear,
@@ -603,7 +666,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "fdbb24546907549410b3b05f879711ff104f5dfab070dfae5fd7856efd8949df"
+        "3a547fb9f1e1c0f55113f73edebe7ac682ea10702978b46653a5d37669ef2459"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,

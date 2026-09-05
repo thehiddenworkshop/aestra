@@ -950,6 +950,7 @@ fn modifier_property_targets(
         | MaterialExpressionKind::SampleTexture { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::SampleTextureGradient { .. }
+        | MaterialExpressionKind::NormalMap { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => Vec::new(),
     }
 }
@@ -1196,6 +1197,14 @@ fn graph_recipe_function(
             edge_min: input("LowerEdge")?,
             edge_max: input("UpperEdge")?,
             value: input("Value")?,
+        },
+        MaterialGraphFunction::NormalMap => MaterialExpressionKind::NormalMap {
+            sample: input("Sample")?,
+            strength: input("Strength")?,
+            flip_y: input("FlipY")?,
+            normal: input("Normal")?,
+            tangent: input("Tangent")?,
+            bitangent: input("Bitangent")?,
         },
         MaterialGraphFunction::Fresnel => MaterialExpressionKind::Fresnel {
             normal: input("Normal")?,
@@ -1822,6 +1831,7 @@ fn primary_source(kind: &MaterialExpressionKind) -> Option<MaterialExpressionId>
         | MaterialExpressionKind::Clamp { .. }
         | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::Fresnel { .. }
+        | MaterialExpressionKind::NormalMap { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::SampleTextureGradient { .. }
@@ -1857,6 +1867,7 @@ fn set_primary_source(kind: &mut MaterialExpressionKind, source: MaterialExpress
         | MaterialExpressionKind::Clamp { .. }
         | MaterialExpressionKind::Select { .. }
         | MaterialExpressionKind::Fresnel { .. }
+        | MaterialExpressionKind::NormalMap { .. }
         | MaterialExpressionKind::DepthFade { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::SampleTextureGradient { .. }
@@ -1896,6 +1907,7 @@ fn modifier_kind(kind: &MaterialExpressionKind) -> Option<MaterialStackModifierK
         | MaterialExpressionKind::DerivativeY { .. }
         | MaterialExpressionKind::SampleTextureLevel { .. }
         | MaterialExpressionKind::SampleTextureGradient { .. }
+        | MaterialExpressionKind::NormalMap { .. }
         | MaterialExpressionKind::ExtractComponent { .. } => return None,
     })
 }
@@ -1934,6 +1946,7 @@ fn collect_nearest_modifiers(
 
 fn dependencies(kind: &MaterialExpressionKind) -> Vec<MaterialExpressionId> {
     match kind {
+        MaterialExpressionKind::NormalMap { .. } => kind.dependencies(),
         MaterialExpressionKind::Constant(_)
         | MaterialExpressionKind::Input(_)
         | MaterialExpressionKind::Parameter(_)

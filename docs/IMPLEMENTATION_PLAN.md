@@ -531,7 +531,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
   UV1 radial mask and breathing. Native GPU numeric tests cover both handedness signs, mirrored/
   nonuniform scale, rotation and translation; optional-layout diagnostics, portable shader
   validation, graph creation and serialization regressions cover the slice.
-  Normal-map decoding/Normal output, ribbons/trails and PBR remain follow-up work.
+  Normal Map decoding is now supported end to end: sampled linear RGB/RGBA, strength and
+  independent Y-flip controls produce a normalized world-space direction using the mesh basis.
+  Graph creation, inline defaults, rewiring, duplication, undo/redo, typed validation, IR/CSE,
+  portable shader generation and CPU node previews support the operation. Native GPU numeric
+  tests cover strength, both tangent handedness signs and mirrored/nonuniform transforms.
+  Mesh Material Lab samples a reproducible linear normal texture and uses the decoded normal
+  for unlit coloring and Fresnel, alongside the existing UV1 mask and vertex breathing.
+  A dedicated Normal output, ribbons/trails and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

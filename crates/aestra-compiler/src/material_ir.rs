@@ -151,6 +151,14 @@ pub enum MaterialIrInstruction {
         value: MaterialIrValueId,
         component: MaterialVectorComponent,
     },
+    NormalMap {
+        sample: MaterialIrValueId,
+        strength: MaterialIrValueId,
+        flip_y: MaterialIrValueId,
+        normal: MaterialIrValueId,
+        tangent: MaterialIrValueId,
+        bitangent: MaterialIrValueId,
+    },
 }
 
 /// Texture-coordinate evaluation contract carried into backend-neutral material IR.
@@ -217,6 +225,14 @@ impl MaterialIrInstruction {
                 edge_max,
                 value,
             } => vec![*edge_min, *edge_max, *value],
+            Self::NormalMap {
+                sample,
+                strength,
+                flip_y,
+                normal,
+                tangent,
+                bitangent,
+            } => vec![*sample, *strength, *flip_y, *normal, *tangent, *bitangent],
             Self::Fresnel {
                 normal,
                 view,
@@ -329,6 +345,21 @@ impl MaterialIrInstruction {
                 remap(edge_min);
                 remap(edge_max);
                 remap(value);
+            }
+            Self::NormalMap {
+                sample,
+                strength,
+                flip_y,
+                normal,
+                tangent,
+                bitangent,
+            } => {
+                remap(sample);
+                remap(strength);
+                remap(flip_y);
+                remap(normal);
+                remap(tangent);
+                remap(bitangent);
             }
             Self::Fresnel {
                 normal,
@@ -936,6 +967,21 @@ impl MaterialIrBuilder<'_> {
                 edge_max: self.lower(edge_max),
                 value: self.lower(value),
             },
+            MaterialExpressionKind::NormalMap {
+                sample,
+                strength,
+                flip_y,
+                normal,
+                tangent,
+                bitangent,
+            } => MaterialIrInstruction::NormalMap {
+                sample: self.lower(sample),
+                strength: self.lower(strength),
+                flip_y: self.lower(flip_y),
+                normal: self.lower(normal),
+                tangent: self.lower(tangent),
+                bitangent: self.lower(bitangent),
+            },
             MaterialExpressionKind::Fresnel {
                 normal,
                 view,
@@ -1376,6 +1422,18 @@ impl MaterialIrInstructionKey {
             } => (
                 10,
                 vec![*edge_min, *edge_max, *value],
+                MaterialIrInstructionPayloadKey::None,
+            ),
+            MaterialIrInstruction::NormalMap {
+                sample,
+                strength,
+                flip_y,
+                normal,
+                tangent,
+                bitangent,
+            } => (
+                25,
+                vec![*sample, *strength, *flip_y, *normal, *tangent, *bitangent],
                 MaterialIrInstructionPayloadKey::None,
             ),
             MaterialIrInstruction::Fresnel {
