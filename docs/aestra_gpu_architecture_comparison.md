@@ -128,29 +128,52 @@ Sorting the playbook by whether it fits Aestra's analytical model:
   thus dispatch size) for distant or minor effects — and because Aestra dispatches
   over capacity, cutting capacity is a direct, proportional win here.
 
-### The standout: analytically-sized indirect dispatch
-There is a **third option** neither camp uses, available to Aestra *precisely
-because* it is analytical:
+### The idea that looked like the standout — and why measurement killed it
+There *appears* to be a **third option** neither camp uses, available to Aestra
+because it is analytical:
 
-> **Aestra can compute the alive-particle count for any time `t` on the CPU cheaply**
-> (it already inverts the emission curve — Phase 7 #2). So it can size the compute
-> dispatch to the *known* alive count — `ceil(alive/64)` groups — **without any
-> GPU-side dead list and without giving up determinism.**
+> Aestra can compute the alive-particle count for any time `t` on the CPU cheaply
+> (it already inverts the emission curve — Phase 7 #2). So it *could* size the
+> compute dispatch to the known alive count — `ceil(alive/64)` groups — with no
+> GPU-side dead list and no loss of determinism, capturing the professional
+> engines' highest-impact technique (work ∝ alive, not capacity) while staying
+> seekable.
 
-- Pure-analytical engines don't do this (they lack curve inversion).
-- Stateful engines don't need it (they have dead lists + GPU counters).
-- Aestra is uniquely positioned to take the indirect-dispatch win — the single
-  technique most responsible for the professional engines' throughput — while
-  keeping full seekability.
+Attractive on paper. **The measurement and the kernel's slot layout jointly refute
+it** — recorded here so it is not re-proposed on intuition:
 
-This directly targets the exact confound Phase 6/7 identified: Aestra dispatches
-over *capacity*, so a sparse effect (Phase 6 scenario **B004**, 500k capacity /
-~5k alive) wastes almost all its threadgroups. Note Phase 6 *refuted* §2.2 for
-**dense** kernels (dead slots are already near-free once workgroups saturate) — but
-for **sparse** effects at low occupancy, sizing the dispatch to the analytic alive
-count avoids launching workgroups that do nothing. It is a fraction of M7's effort.
-**This is the recommended next prototype**, and it must be measured against the
-B004 baseline before being adopted (per the guiding rule).
+1. **The measured cost is already at the timer floor.** The archived GPU baseline
+   ([`benchmarks/gpu-baselines/20d5785…/b004_sparse_large.json`](../benchmarks/gpu-baselines/20d57855763fb90cbe7fac2bd8eb8dab731bc1f5/b004_sparse_large.json))
+   puts b004's `simulate` at **p50 0.001024 ms — one GPU timer tick** (min 0.0),
+   while b004's own transparent render pass is **0.043 ms (~40×)**. A dead slot's
+   `particle_index >= emitted` early-return is a couple of instructions the GPU
+   hides behind occupancy, so Aestra's analytical kernel *already* gets the
+   indirect-dispatch benefit for free on this GPU. This is the §2.2 refutation
+   extended to the sparse case — not a new opportunity.
+
+2. **The slot layout defeats it for *multi*-emitter effects anyway.** Emitters are
+   packed contiguously by `slot_offset`: emitter *i* owns
+   `[slot_offset_i, slot_offset_i + max_particles_i)`. A sparse effect with *N*
+   emitters (capacity *C* each, occupancy *o ≪ C*) puts the last emitter's live
+   slots at the *top* of the range — `slot_offset_{N-1} + o ≈ (N-1)·C + o`. A single
+   global dispatch sized to that high-water mark still covers ~`total_slots`, saving
+   only `(C − o)` out of `N·C` — **under 2% at 64 emitters.** It works fully only for
+   `N = 1` (b004), the exact case point 1 shows is unmeasurable.
+
+**Verdict:** the single-dispatch analytically-sized variant is not a justified
+optimization on measured hardware. The version that *is* both measurably motivated
+and layout-correct is **per-emitter dispatch** (next section).
+
+### The measurably-motivated version: per-emitter dispatch (= Phase 7 #3)
+The real many-emitter cost is the per-slot linear **emitter search** (§2.3):
+b006 (64 emitters, dense 100k) measures `simulate` **p50 0.965 ms**, ~2.7× the
+single-emitter kernel at the same particle count. Giving each emitter its own
+dispatch — Niagara's "fewer emitters = fewer dispatches" model — removes the search
+*and*, as a side effect, sizes each dispatch to that emitter's own occupancy, which
+finally captures the sparse win that single-dispatch sizing could not. This is the
+plan's **Phase 7 #3** (previously "low priority" on the strength of §2.3 biting only
+at 64+ emitters). It subsumes the analytically-sized-dispatch idea; build *this* if
+the many-emitter path needs to get faster, and measure against b006.
 
 ### Requires going stateful — i.e. *is* M7
 - **Dead/alive lists, update-in-place, true O(alive) simulation.** These are the
@@ -163,28 +186,40 @@ B004 baseline before being adopted (per the guiding rule).
 ### Measurement already says *don't bother*
 - **Dead-list / atomic removal for performance** — Phase 7 measured atomics at ~5%.
 - **Transcendental force micro-opt** (turbulence) — measured ~0 (runs on GPU SFUs).
-- **Dead-slot dispatch elimination for dense/high-occupancy kernels** — §2.2 refuted.
+- **Dead-slot dispatch elimination (dense *and* sparse)** — §2.2 refuted; b004
+  `simulate` p50 = 0.001 ms (timer floor). The dead-slot early-return already gives
+  the indirect-dispatch benefit for free on the RTX 4070 SUPER; see §4.
+- **Single global analytically-sized dispatch** — layout-defeated for multi-emitter,
+  unmeasurable for single-emitter; superseded by per-emitter dispatch. See §4.
 
 ---
 
 ## 5. Re-ranked roadmap (measurement-backed)
 
-1. **Analytically-sized indirect dispatch** — *new, high-value, determinism-preserving.*
-   Adapts the professional engines' most impactful technique to Aestra's analytical
-   strengths. Far cheaper than M7. Prototype and measure on B004 (sparse) first.
-2. **SoA + FP16 particle attributes** — attacks the 67% memory floor without changing
-   the model. Bounded and measurable.
+1. **SoA + FP16 particle attributes** — attacks the measured 67% memory floor
+   (Phase 7) without changing the model. Bounded and measurable — the clearest
+   remaining kernel win.
+2. **Per-emitter dispatch (Phase 7 #3)** — removes the §2.3 per-slot emitter search
+   (b006 = 0.965 ms) and, as a side effect, sizes each dispatch to its emitter's
+   occupancy. Only justified once the many-emitter path needs to be faster; measure
+   against b006.
 3. **M7 incremental / stateful backend** — the full dead-list + alive-list +
    update-in-place playbook, as a *second playback backend* that keeps the analytical
    kernel for authoring. Biggest ceiling, largest effort; gate on whether #1 and #2
    close the gap enough.
 4. **Bitonic sort** — adopt when blend-order correctness demands it; orthogonal.
 
-The through-line: the profiling said the analytical kernel is near its floor, and
-this survey says the way past that floor is the professional engines' *indirect,
-alive-proportional* execution — but Aestra can capture much of that benefit
-(technique #1) without paying the state-model cost that makes those engines
-un-seekable. Chase #1 before M7.
+**Not pursued** (measurement/layout refuted): single global analytically-sized
+dispatch (§4).
+
+The through-line: Phase 7 profiling said the analytical kernel is near its floor,
+and this survey asked whether the professional engines' *indirect, alive-proportional*
+execution is the way past it. The seductive answer — CPU-sized analytical dispatch —
+does not survive contact with the measured cost (already at the timer floor for the
+only case it fits) or the kernel's packed slot layout. What survives is narrower and
+honest: **attack the memory floor (SoA/FP16), and reach for per-emitter dispatch only
+when the many-emitter search actually hurts.** The big architectural lever remains
+M7 — and it, too, waits for a workload the analytical kernel provably cannot serve.
 
 ---
 

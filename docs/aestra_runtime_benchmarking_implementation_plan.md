@@ -239,7 +239,13 @@ Implications:
    b008-vs-control comparison shares workgroup counts).
    - The confirming control lives at `benchmarks/sweep-scenarios/curve_control.ron`.
 3. **Eliminate linear per-slot emitter search (§2.3)** — precomputed slot→emitter
-   ranges or per-emitter dispatch. Lower priority: only ~3× at 64 emitters, flat below.
+   ranges or per-emitter dispatch. Only ~3× at 64 emitters (b006 = 0.965 ms), flat
+   below, so still gated on the many-emitter path mattering. Note the
+   [architecture survey](aestra_gpu_architecture_comparison.md) elevates the
+   **per-emitter dispatch** form specifically: it removes the search *and* sizes each
+   dispatch to its emitter's occupancy, subsuming the (separately refuted)
+   analytically-sized single-dispatch idea. This is the measurably-motivated way to
+   capture the professional engines' indirect-dispatch benefit.
 
 ### Per-particle floor — shader ablation (b003, 100k @ 100%, matched workgroups)
 
@@ -313,17 +319,28 @@ Kept deliberately light; each is a decision gated by earlier phases, not committ
 > Graph, Wicked Engine) solve this — and which of their techniques transfer to
 > Aestra's analytical model — is surveyed in
 > [`aestra_gpu_architecture_comparison.md`](aestra_gpu_architecture_comparison.md).
-> Its headline: before M7, prototype **analytically-sized indirect dispatch** — the
-> professional engines' highest-impact technique (work proportional to *alive*, not
-> *capacity*), which Aestra can adopt *without* a GPU dead list or losing
-> determinism, because it can compute the alive count for any `t` on the CPU. This
-> targets the sparse-effect (B004) case Phase 6 left open.
+> Its measured conclusion: the seductive **analytically-sized single dispatch**
+> (size the simulate dispatch to the CPU-computed alive count) is **not** worth
+> building — b004's `simulate` is already at the GPU timer floor (p50 0.001 ms,
+> ~40× below its own render pass), so §2.2 extends to the sparse case; and the
+> packed slot layout means a single global dispatch saves <2% for multi-emitter
+> effects anyway. What survives the survey: attack the 67% memory floor with
+> **SoA/FP16 attribute packing**, and reach for **per-emitter dispatch (Phase 7 #3)**
+> only when the §2.3 emitter search (b006 = 0.965 ms) actually hurts — it subsumes
+> the sparse-dispatch idea. M7 remains the big lever, gated on a workload the
+> analytical kernel provably cannot serve.
 
-- **Analytically-sized indirect dispatch (pre-M7, recommended next):** size the
-  simulate dispatch to the CPU-computed alive count for time `t` (reusing the Phase 7
-  #2 curve inversion), so sparse effects stop launching threadgroups over dead
-  capacity. Preserves seeking and bit-exact determinism. Prototype and measure
-  against the B004 baseline before adopting. See the comparison doc, §4.
+- **Analytically-sized single dispatch — investigated, not pursued.** Sizing the one
+  `simulate` dispatch to the CPU-known alive count (reusing Phase 7 #2 inversion)
+  looked like a cheap, determinism-preserving way to capture the professional
+  engines' indirect-dispatch win. Grounding it in the archived baseline refuted it:
+  b004 `simulate` p50 = 0.001 ms (one timer tick; the dead-slot early-return is
+  already free on the RTX 4070 SUPER), and the packed slot layout limits a single
+  global high-water dispatch to <2% savings at 64 emitters. Superseded by per-emitter
+  dispatch below. See the comparison doc §4.
+- **SoA + FP16 particle attributes (kernel win):** structure-of-arrays output and
+  half-precision on tolerant attributes attack the measured 67% memory floor
+  (Phase 7) without changing the analytical model. Bounded and measurable.
 - **Incremental gameplay backend (M7):** prototype persistent particles + alive/dead
   lists + spawn/update/compaction only *if* Phase 6 shows the analytical kernel is
   inadequate for sparse/long-lived/high-instance workloads. Analytical execution is
