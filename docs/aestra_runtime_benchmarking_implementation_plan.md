@@ -287,14 +287,13 @@ so these are precise, not noise. Findings — several of them corrections:
 
 **Roadmap redirection.** The measured next lever for dense scale is the **sprite
 vertex path**, not overdraw:
-1. **Compact / SoA render attributes — investigated, blocked (see below).** Looked
-   like the highest-leverage item, but `GpuParticle` is an overloaded union the
-   just-landed trail/ribbon system depends on (`_padding_0/1/2` as ring/link state,
-   `alive` tri-state, `rotation` as timestamp, `particle_index` as owner id; trail
-   samples stored in Particle-sized slots). It can't be compacted or FP16'd without
-   redesigning `trail_history`/`ribbon_link` storage — high risk on fresh code for a
-   ~4M-only payoff (the 100k–1M range is already served by the vertex strip). Deferred
-   to an M7-style storage redesign. Details in
+1. **Compact particle record — DONE (M7 Step 1 + 2).** The overloaded `GpuParticle`
+   union was untangled: ribbon/trail scratch moved to a shared `aux` buffer
+   (`8ad3ff5`+`d3b657c`), then `emitter_index`+`alive` packed into one word and padding
+   dropped — **64 → 48 B (−25%)** (`6ee4b3a`). Measured same-session **simulate −12–16%**
+   at 1M/4M (write-bandwidth-bound plateau), render saving below noise, ~2× storage
+   ceiling. Integer packing (no FP16, for portability). See
+   [`aestra_m7_storage_redesign_scoping.md`](aestra_m7_storage_redesign_scoping.md) and
    [`aestra_gpu_architecture_comparison.md`](aestra_gpu_architecture_comparison.md) §5.
 2. **Fewer vertices per sprite — DONE.** 6 → 4 (triangle strip) dropped vertex
    invocations 33% and the render pass up to −32% in the 100k–1M range (~0% at 4M).

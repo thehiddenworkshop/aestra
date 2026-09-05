@@ -207,21 +207,16 @@ the many-emitter path needs to get faster, and measure against b006.
 > vertex shader's redundant scattered particle gathers (6 verts/particle × ~7 member
 > loads). M7's dense-throughput motivation is weakened accordingly.
 
-1. **SoA / compact + FP16 particle attributes — investigated, blocked as a simple
-   layout change.** It *looked* like the highest-leverage item (hitting the vertex
-   gather and the sim bandwidth plateau at once). But `GpuParticle` is a heavily
-   **overloaded union**: the trail system (`aestra_trail_history.wesl`) reuses
-   `_padding_0/1/2` as ring-buffer state, `alive` as a tri-state (0/1/2), `rotation`
-   as a timestamp, and `particle_index` as an owner id — *and stores trail samples in
-   Particle-sized slots*; `aestra_ribbon_link.wesl` reuses the padding as prev/next/uv
-   links. So it can't be compacted (the words are load-bearing), can't be FP16'd (the
-   reinterpreted fields are bit/precision critical for trail timing), and a true SoA
-   split would mean rewriting the intricate read-modify-write logic in `trail_history`
-   / `ribbon_link`. High risk on freshly-landed code, for a payoff concentrated at
-   ~4M (where render turns bandwidth-bound) — the 100k–1M hero range is already served
-   by the vertex strip (#2). **Deferred**: only worth revisiting alongside an M7-style
-   storage redesign that gives trails/ribbons their own records instead of overloading
-   the particle struct.
+1. **Compact particle record — DONE (M7 Step 1 + 2).** `GpuParticle` was a heavily
+   overloaded union (trail ring state, tri-state `alive`, timestamp `rotation`, owner
+   `particle_index`, and ribbon links all crammed into the record). The M7 storage
+   redesign moved ribbon/trail scratch into a shared `aux` buffer (Step 1a/1b,
+   `8ad3ff5`+`d3b657c`), then packed `emitter_index`+`alive` into one word and dropped
+   the padding — **64 → 48 B (−25%)** (`6ee4b3a`). Measured same-session: **simulate
+   −12% to −16%** at 1M/4M (the plateau is write-bandwidth bound), render saving below
+   its noise floor, and ~2× the storage-bound particle ceiling. FP16 was deliberately
+   *not* used (portability); exact integer packing avoided precision risk on the trail
+   timing fields. Full conformance + visual coverage verified throughout.
 2. **Sprite vertex path** — the 6→4 triangle-strip step is **done**: −33% vertex
    invocations, up to **−32%** render in the 100k–1M range (but ~0% at 4M, where the
    pass turns fill/bandwidth-bound). Remaining: read the invariant particle once per
