@@ -147,6 +147,59 @@ the core of M7.
 
 ---
 
+## 5a. Step 1 implementation design (turnkey, from the current code)
+
+Mapped against the shaders as they stand, so the extraction is executable without
+re-derivation. **Safety net is already in place** (`ribbon_lab`/`trail_lab` visual
+references + conformance). Do the two halves in order; neither shrinks `GpuParticle`
+(trails still need `_padding` until their half lands) — the size/perf win is Step 2,
+after both halves free the struct.
+
+**Data-flow facts that shape the design:**
+- `aestra_ribbon_link.wesl` runs inside the **simulation** shader module (it uses the
+  sim's `group(0)` `particles`/`emitters`/`alive_indices`/`indirect`) and writes the
+  link triple into `particles[slot]._padding_0/1/2` (next / prev / uv-param).
+- `aestra_ribbon_vertex.wesl` (in the **sprite_render** `group(1)`) reads those three.
+- `aestra_trail_history.wesl` (sim `group(0)`) owns the trail ring via `_padding_0/1/2`
+  (head / count / tick), `alive` tri-state, `rotation`-as-timestamp, `particle_index`
+  as owner id — and writes **trail samples into `particles[owner+1+head]` slots**.
+- `aestra_trail_vertex.wesl` (`group(1)`) reads that ring.
+
+**Half A — ribbon links (self-contained, do first):**
+1. Add `ribbon_links: array<u32>` (3 words/slot; or a `vec3<u32>`-friendly struct)
+   sized to `storage_records`. Alloc once alongside the particle buffer in `gpu.rs`.
+2. Bind it into **both** groups: sim `group(0)` gets a new `@binding(7)` (read_write,
+   for `link_ribbons`); render `group(1)` gets a new `@binding(7)` (read, for
+   `ribbon_vertex`). Update both `BindGroupLayoutDescriptor`s and both bind-group
+   *creations* in `gpu.rs`/`render.rs` (`effect_layout` 7→8 entries).
+3. `ribbon_link.wesl`: write `ribbon_links[slot*3 + 0/1/2]` instead of `_padding_*`.
+4. `ribbon_vertex.wesl`: read `ribbon_links` instead of `_padding_*`.
+5. **Capability floor:** both groups reach 8 bindings — bump the `< 7` guards in
+   `detect_gpu_capabilities`/`render.rs` to `< 8` (universally supported; note it in
+   `aestra_gpu_architecture_portability.md`). Storage-buffer counts stay ≤7/stage.
+6. Regenerate `simulation.wgsl` + `sprite_render.wgsl` snapshots.
+7. **Test harness:** `ribbon_conformance.rs` currently seeds link data through
+   `_padding`; move it to bind a `ribbon_links` buffer instead. Verify: ribbon
+   conformance + the `ribbon_lab` visual reference (RMSE 0).
+
+**Half B — trail records (intricate, do second):**
+- Introduce a `GpuTrailRecord` type + its own buffer for ring heads and samples, so
+  `trail_history`/`trail_vertex` stop reusing `alive`/`rotation`/`particle_index`/
+  `_padding` and stop storing samples in the particle buffer. This is the delicate
+  part (tri-state, epoch resets, ring math) — pair with the author of the trail code.
+  Verify: trail conformance + `trail_lab` visual reference.
+
+**Then Step 2 (compaction):** with `_padding` and the reused fields free, shrink the
+core (§4) for the render-gather + sim-bandwidth win and the ~2× ceiling. Only now does
+the size drop.
+
+**Ordering rationale:** Half A is isolated and low-risk (three fields, one compute
+writer, one render reader); it proves the buffer-plus-binding pattern before the trail
+state machine is touched. But note: no size/perf benefit banks until Half B + Step 2,
+so schedule all three together rather than shipping Half A alone for its own sake.
+
+---
+
 ## 6. Risks and verification
 
 - **Freshly-landed trail/ribbon code** is intricate (tri-state `alive`, ring buffers,
