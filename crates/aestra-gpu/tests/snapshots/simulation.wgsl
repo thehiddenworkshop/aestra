@@ -76,7 +76,7 @@ struct Emitter {
     trail_capacity: u32,
     trail_sampling: u32,
     trail_distance: f32,
-    _trail_padding: u32
+    trail_tolerance: f32
 }
 
 struct Particle {
@@ -782,11 +782,11 @@ fn record_trails(emitter_index: u32) {
             }
             ring_head = 1u % capacity;
             ring_count = 1u;
-            ring_tick = bitcast<u32>(select(now, 0.0, e.trail_sampling == 1u));
+            ring_tick = bitcast<u32>(select(now, 0.0, e.trail_sampling != 0u));
             particles[owner + 1u] = head;
             aux[(owner + 1u) * 3u] = bitcast<u32>(0.0);
         }
-        else if e.trail_sampling == 1u {
+        else if e.trail_sampling != 0u {
             let previous = particles[owner];
             ring_head = aux[owner * 3u];
             ring_count = aux[owner * 3u + 1u];
@@ -794,7 +794,28 @@ fn record_trails(emitter_index: u32) {
             let segment = length(head.position - previous.position);
             let previous_distance = bitcast<f32>(aux[(owner + 1u) * 3u + 1u]);
             path_distance = previous_distance + segment;
-            let total = bitcast<f32>(ring_tick) + segment;
+            var pending = bitcast<f32>(ring_tick);
+            if e.trail_sampling == 2u && segment > 0.0 && segment < 3.402823e38 {
+                var commit_previous = ring_count == 0u;
+                if ring_count > 0u {
+                    let anchor = owner + 1u + (ring_head + capacity - 1u) % capacity;
+                    let chord = length(head.position - particles[anchor].position);
+                    let arc = pending + segment;
+                    let error = 0.5 * sqrt(max(0.0, arc - chord) * (arc + chord));
+                    commit_previous = pending > 0.0 && (error > e.trail_tolerance || arc > e.trail_distance);
+                }
+                if commit_previous {
+                    if ring_count == capacity {
+                        discarded_time = max(discarded_time, particles[owner + 1u + ring_head].rotation);
+                    }
+                    particles[owner + 1u + ring_head] = previous;
+                    aux[(owner + 1u + ring_head) * 3u] = bitcast<u32>(previous_distance);
+                    ring_head = (ring_head + 1u) % capacity;
+                    ring_count = min(ring_count + 1u, capacity);
+                    pending = 0.0;
+                }
+            }
+            let total = pending + segment;
             if segment > 0.0 && total <= min(3.402823e38, 3.402823e38 * e.trail_distance) {
                 let steps = floor(total / e.trail_distance);
                 let retained = u32(min(steps, f32(capacity)));
@@ -864,7 +885,7 @@ fn record_trails(emitter_index: u32) {
     var truncated = 0u;
     for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
-        if e.trail_sampling == 1u && particle_alive(particles[base]) != 0u {
+        if e.trail_sampling != 0u && particle_alive(particles[base]) != 0u {
             for (var s = 0u; s < capacity; s += 1u) {
                 let points = aux[base * 3u + 1u];
                 if points == 0u {

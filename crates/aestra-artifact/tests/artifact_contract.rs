@@ -180,6 +180,7 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
             max_trails: 64,
             sampling: aestra_core::TrailSamplingMode::Distance,
             sample_distance: 1.0,
+            curve_tolerance: 0.01,
             uv_mode: aestra_core::TrailUvMode::Tile,
             tile_length: 8.0,
             ..
@@ -207,6 +208,7 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
         .replace(",max_trails:64", "")
         .replace(",sampling:Distance", "")
         .replace(",sample_distance:1.0", "")
+        .replace(",curve_tolerance:0.01", "")
         .replace(",uv_mode:Tile", "")
         .replace(",tile_length:8.0", "")
         .replace(",end_cap:Flat", "");
@@ -225,8 +227,25 @@ fn trail_lab_round_trip_preserves_bounded_history_contract() {
     assert_eq!(legacy.particles.len(), 32 + 1 + 32 * 64);
     assert_eq!(legacy.emitters[0].trail_sampling, 0);
     assert_eq!(legacy.emitters[0].trail_distance, 0.1);
+    assert_eq!(legacy.emitters[0].trail_tolerance, 0.01);
     assert_eq!(legacy.renderers[0].flipbook_flags, 0);
     assert_eq!(legacy.renderers[0].frames[0].x, 1.0);
+    let mut adaptive = compiled.clone();
+    if let RendererPlanKind::Trail {
+        sampling,
+        curve_tolerance,
+        ..
+    } = &mut adaptive.emitters[0].renderers[0].kind
+    {
+        *sampling = aestra_core::TrailSamplingMode::Adaptive;
+        *curve_tolerance = 0.05;
+    }
+    let decoded = decode_effect(&encode_effect(&adaptive).unwrap()).unwrap();
+    assert_eq!(adaptive, decoded);
+    let gpu = GpuEffectArtifact::from_instance(&EffectInstance::new(std::sync::Arc::new(decoded)))
+        .unwrap();
+    assert_eq!(gpu.emitters[0].trail_sampling, 2);
+    assert_eq!(gpu.emitters[0].trail_tolerance, 0.05);
     let mut rounded = compiled.clone();
     if let RendererPlanKind::Trail { end_cap, .. } = &mut rounded.emitters[0].renderers[0].kind {
         *end_cap = aestra_core::TrailEndCap::Rounded;

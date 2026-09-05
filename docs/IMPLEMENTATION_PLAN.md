@@ -575,9 +575,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
   restoring stale globals. Emitter inputs, seed, explicit context revision, world transform
   and buffer replacement invalidate reuse. Variable-step live playback does not seed the
   cache. Native tests compare restored history and UV phase against full replay, including
-  sub-frame targets, retired tails and continuous-loop boundaries. Multiple ribbon IDs,
-  adaptive sampling, exact host-trajectory replay, a dedicated Normal output and PBR remain
-  follow-up work.
+  sub-frame targets, retired tails and continuous-loop boundaries. Adaptive spatial sampling
+  is now implemented end to end with world-space curve tolerance and maximum spacing. A
+  conservative accumulated-polyline error bound preserves bends/reversals while straight
+  observations share fewer anchors. Overflow work remains bounded and reports lost history;
+  UV phase, retired tails, culling and checkpoint replay retain the existing storage contract.
+  Typed validation, backward-compatible defaults, artifact round trips, Feather scrubbing,
+  undo/redo and native GPU curve/spacing/seek tests cover the slice. Multiple ribbon IDs,
+  exact host-trajectory replay, a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

@@ -71,10 +71,10 @@ fn record_trails(emitter_index: u32) {
             if particle_alive(particles[owner]) != 0u { evictions += 1u; }
             ring_head = 1u % capacity;
             ring_count = 1u;
-            ring_tick = bitcast<u32>(select(now, 0.0, e.trail_sampling == 1u));
+            ring_tick = bitcast<u32>(select(now, 0.0, e.trail_sampling != 0u));
             particles[owner + 1u] = head;
             aux[(owner + 1u) * 3u] = bitcast<u32>(0.0);
-        } else if e.trail_sampling == 1u {
+        } else if e.trail_sampling != 0u {
             let previous = particles[owner];
             ring_head = aux[owner * 3u];
             ring_count = aux[owner * 3u + 1u];
@@ -82,7 +82,34 @@ fn record_trails(emitter_index: u32) {
             let segment = length(head.position - previous.position);
             let previous_distance = bitcast<f32>(aux[(owner + 1u) * 3u + 1u]);
             path_distance = previous_distance + segment;
-            let total = bitcast<f32>(ring_tick) + segment;
+            var pending = bitcast<f32>(ring_tick);
+            if e.trail_sampling == 2u && segment > 0.0 && segment < 3.402823e38 {
+                // The pending observed polyline lies in the ellipse with its
+                // endpoints as foci and arc length as major diameter. Its minor
+                // radius bounds EVERY omitted point's distance from the chord,
+                // not only the last observation (which misses gradual bends).
+                var commit_previous = ring_count == 0u;
+                if ring_count > 0u {
+                    let anchor = owner + 1u + (ring_head + capacity - 1u) % capacity;
+                    let chord = length(head.position - particles[anchor].position);
+                    let arc = pending + segment;
+                    let error = 0.5 * sqrt(max(0.0, arc - chord) * (arc + chord));
+                    commit_previous = pending > 0.0 && (error > e.trail_tolerance || arc > e.trail_distance);
+                }
+                if commit_previous {
+                    // The previous head was accepted by the previous observation;
+                    // preserve that endpoint before extending along this segment.
+                    if ring_count == capacity {
+                        discarded_time = max(discarded_time, particles[owner + 1u + ring_head].rotation);
+                    }
+                    particles[owner + 1u + ring_head] = previous;
+                    aux[(owner + 1u + ring_head) * 3u] = bitcast<u32>(previous_distance);
+                    ring_head = (ring_head + 1u) % capacity;
+                    ring_count = min(ring_count + 1u, capacity);
+                    pending = 0.0;
+                }
+            }
+            let total = pending + segment;
             // Sample the observed world-space polyline. Carry the sub-spacing
             // remainder across frames/corners; stationary parents consume no points.
             if segment > 0.0 && total <= min(3.402823e38, 3.402823e38 * e.trail_distance) {
@@ -156,10 +183,10 @@ fn record_trails(emitter_index: u32) {
     var truncated = 0u;
     for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
-        // Distance mode may leave its ring untouched for many frames. Remove
+        // Spatial sampling may leave its ring untouched for many frames. Remove
         // expired anchors, otherwise a stationary live head could keep an old
         // partial segment visible forever. The moving head itself is not a sample.
-        if e.trail_sampling == 1u && particle_alive(particles[base]) != 0u {
+        if e.trail_sampling != 0u && particle_alive(particles[base]) != 0u {
             for (var s = 0u; s < capacity; s += 1u) {
                 let points = aux[base * 3u + 1u];
                 if points == 0u { break; }

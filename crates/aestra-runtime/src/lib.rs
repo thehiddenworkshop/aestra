@@ -468,6 +468,7 @@ pub enum RendererPlanKind {
         max_trails: u32,
         sampling: aestra_core::TrailSamplingMode,
         sample_distance: f32,
+        curve_tolerance: f32,
         uv_mode: aestra_core::TrailUvMode,
         tile_length: f32,
         end_cap: aestra_core::TrailEndCap,

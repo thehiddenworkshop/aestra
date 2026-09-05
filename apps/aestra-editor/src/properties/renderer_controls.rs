@@ -19,6 +19,7 @@ pub(super) enum TrailField {
     Width,
     Interval,
     Distance,
+    Tolerance,
     TileLength,
     Lifetime,
     Points,
@@ -30,7 +31,7 @@ impl TrailField {
         match self {
             Self::Width | Self::Lifetime => (0.001, f32::MAX),
             Self::Interval => (1.0 / 240.0, f32::MAX),
-            Self::Distance | Self::TileLength => (0.001, f32::MAX),
+            Self::Distance | Self::Tolerance | Self::TileLength => (0.001, f32::MAX),
             Self::Points => (2.0, 64.0),
             Self::Capacity => (1.0, 1024.0),
         }
@@ -48,6 +49,7 @@ impl TrailField {
         match self {
             Self::Points | Self::Capacity => 1.0,
             Self::Interval => 0.005,
+            Self::Tolerance => 0.005,
             _ => 0.1,
         }
     }
@@ -791,12 +793,14 @@ pub(super) fn renderer_number_input_value(
                 max_points,
                 max_trails,
                 sample_distance,
+                curve_tolerance,
                 tile_length,
                 ..
             } => Some(match field {
                 TrailField::Width => width,
                 TrailField::Interval => sample_interval,
                 TrailField::Distance => sample_distance,
+                TrailField::Tolerance => curve_tolerance,
                 TrailField::TileLength => tile_length,
                 TrailField::Lifetime => lifetime,
                 TrailField::Points => max_points as f32,
@@ -991,6 +995,7 @@ pub(super) fn renderer_numeric_scrub_command(
                 max_points,
                 max_trails,
                 sample_distance,
+                curve_tolerance,
                 tile_length,
                 ..
             } = &mut properties
@@ -1002,6 +1007,7 @@ pub(super) fn renderer_numeric_scrub_command(
                 TrailField::Width => *width = value,
                 TrailField::Interval => *sample_interval = value,
                 TrailField::Distance => *sample_distance = value,
+                TrailField::Tolerance => *curve_tolerance = value,
                 TrailField::TileLength => *tile_length = value,
                 TrailField::Lifetime => *lifetime = value,
                 TrailField::Points => *max_points = value as u32,
@@ -2600,6 +2606,7 @@ pub(super) fn spawn_renderer_card(
                 let options = [
                     aestra_core::TrailSamplingMode::Time,
                     aestra_core::TrailSamplingMode::Distance,
+                    aestra_core::TrailSamplingMode::Adaptive,
                 ]
                 .into_iter()
                 .map(|candidate| ComboOption {
@@ -2615,10 +2622,21 @@ pub(super) fn spawn_renderer_card(
                     &options,
                     None,
                 );
+                if sampling == aestra_core::TrailSamplingMode::Adaptive {
+                    spawn_renderer_scalar_control(
+                        card,
+                        "Curve tolerance",
+                        Some("wu"),
+                        RendererNumberControl::Trail(renderer.id, TrailField::Tolerance),
+                        session,
+                    );
+                }
                 for (label, unit, field) in [
                     ("Width multiplier", None, TrailField::Width),
                     if sampling == aestra_core::TrailSamplingMode::Time {
                         ("Sample interval", Some("s"), TrailField::Interval)
+                    } else if sampling == aestra_core::TrailSamplingMode::Adaptive {
+                        ("Maximum spacing", Some("wu"), TrailField::Distance)
                     } else {
                         ("Sample Distance", Some("wu"), TrailField::Distance)
                     },
@@ -2957,6 +2975,7 @@ mod tests {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            curve_tolerance: 0.01,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
             end_cap: aestra_core::TrailEndCap::Flat,
@@ -2976,6 +2995,7 @@ mod tests {
                     max_trails: 0,
                     sampling: aestra_core::TrailSamplingMode::Time,
                     sample_distance: 0.1,
+                    curve_tolerance: 0.01,
                     uv_mode: aestra_core::TrailUvMode::Stretch,
                     tile_length: 1.0,
                     end_cap: aestra_core::TrailEndCap::Flat,
@@ -3006,6 +3026,7 @@ mod tests {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            curve_tolerance: 0.01,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
             end_cap: aestra_core::TrailEndCap::Flat,
@@ -3046,6 +3067,7 @@ mod tests {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.3,
+            curve_tolerance: 0.01,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
             end_cap: aestra_core::TrailEndCap::Flat,
@@ -3059,6 +3081,7 @@ mod tests {
                 properties: RendererProperties::Trail {
                     sampling: aestra_core::TrailSamplingMode::Distance,
                     sample_distance: 0.3,
+                    curve_tolerance: 0.01,
                     sample_interval: 0.025,
                     ..
                 },
@@ -3073,6 +3096,7 @@ mod tests {
             EffectCommand::SetRendererProperties {
                 properties: RendererProperties::Trail {
                     sample_distance: 0.001,
+                    curve_tolerance: 0.01,
                     sample_interval: 0.025,
                     ..
                 },
@@ -3089,9 +3113,59 @@ mod tests {
             EffectCommand::SetRendererProperties {
                 properties: RendererProperties::Trail {
                     sample_distance: 0.3,
+                    curve_tolerance: 0.01,
                     sample_interval: 0.025,
                     ..
                 },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn adaptive_trail_controls_are_scrubbable_undoable_and_preserve_other_modes() {
+        let mut session = test_support::session_with_timing_slack();
+        let target = &mut session.effect.emitters[0].renderers[0];
+        let renderer = target.id;
+        target.renderer_type = aestra_core::RendererTypeId(aestra_core::RENDERER_TRAIL.into());
+        target.properties = RendererProperties::Trail {
+            width: 1.0,
+            sample_interval: 0.025,
+            lifetime: 1.0,
+            max_points: 32,
+            max_trails: 0,
+            sampling: aestra_core::TrailSamplingMode::Time,
+            sample_distance: 2.0,
+            curve_tolerance: 0.01,
+            uv_mode: aestra_core::TrailUvMode::Tile,
+            tile_length: 2.0,
+            end_cap: aestra_core::TrailEndCap::Rounded,
+        };
+        let command =
+            trail_sampling_command(&session, renderer, aestra_core::TrailSamplingMode::Adaptive)
+                .unwrap();
+        assert!(session.execute("Adaptive sampling", command, true));
+        let control = RendererNumberControl::Trail(renderer, TrailField::Tolerance);
+        let widget = renderer_scrubbable_number(&session, control);
+        assert_eq!(
+            (widget.value, widget.min, widget.step),
+            (0.01, 0.001, 0.005)
+        );
+        assert!(renderer_numeric_scrub_command(&session, control, f32::INFINITY).is_none());
+        let command = renderer_numeric_scrub_command(&session, control, 0.05).unwrap();
+        assert!(session.execute("Curve tolerance", command, true));
+        session.undo();
+        assert_eq!(renderer_number_input_value(&session, control), Some(0.01));
+        session.redo();
+        assert_eq!(renderer_number_input_value(&session, control), Some(0.05));
+        assert!(matches!(
+            session.selected_layer().renderers[0].properties,
+            RendererProperties::Trail {
+                sampling: aestra_core::TrailSamplingMode::Adaptive,
+                sample_interval: 0.025,
+                sample_distance: 2.0,
+                tile_length: 2.0,
+                end_cap: aestra_core::TrailEndCap::Rounded,
                 ..
             }
         ));
@@ -3135,6 +3209,7 @@ mod tests {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Distance,
             sample_distance: 0.3,
+            curve_tolerance: 0.01,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 8.0,
             end_cap: aestra_core::TrailEndCap::Flat,
@@ -3155,6 +3230,7 @@ mod tests {
                 tile_length: 0.001,
                 end_cap: aestra_core::TrailEndCap::Flat,
                 sample_distance: 0.3,
+                curve_tolerance: 0.01,
                 ..
             }
         ));
@@ -3170,6 +3246,7 @@ mod tests {
                 end_cap: aestra_core::TrailEndCap::Rounded,
                 tile_length: 8.0,
                 sample_distance: 0.3,
+                curve_tolerance: 0.01,
                 ..
             }
         ));

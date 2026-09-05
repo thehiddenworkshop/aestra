@@ -158,7 +158,7 @@ pub struct GpuEmitter {
     pub trail_capacity: u32,
     pub trail_sampling: u32,
     pub trail_distance: f32,
-    pub _trail_padding: u32,
+    pub trail_tolerance: f32,
 }
 
 /// One authored presentation path for an emitter.
@@ -321,6 +321,7 @@ impl GpuEffectArtifact {
                         max_trails,
                         sampling,
                         sample_distance,
+                        curve_tolerance,
                         ..
                     } if emitter.enabled => Some((
                         sample_interval,
@@ -333,6 +334,7 @@ impl GpuEffectArtifact {
                         },
                         sampling,
                         sample_distance,
+                        curve_tolerance,
                     )),
                     _ => None,
                 })
@@ -345,6 +347,7 @@ impl GpuEffectArtifact {
                 trail_capacity,
                 trail_sampling,
                 trail_distance,
+                trail_tolerance,
             ) = trails.first().copied().unwrap_or_default();
             if !trails.is_empty() {
                 if trails.len() > 1
@@ -354,6 +357,8 @@ impl GpuEffectArtifact {
                     || trail_capacity > 1024
                     || !trail_distance.is_finite()
                     || trail_distance < 0.001
+                    || !trail_tolerance.is_finite()
+                    || trail_tolerance < 0.001
                     || emitter.renderers.iter().any(|renderer| matches!(renderer.kind,
                         RendererPlanKind::Trail { tile_length, .. } if !tile_length.is_finite() || tile_length < 0.001))
                 {
@@ -671,11 +676,13 @@ impl GpuEffectArtifact {
                 trail_interval,
                 trail_lifetime,
                 trail_capacity,
-                trail_sampling: u32::from(
-                    trail_sampling == aestra_core::TrailSamplingMode::Distance,
-                ),
+                trail_sampling: match trail_sampling {
+                    aestra_core::TrailSamplingMode::Time => 0,
+                    aestra_core::TrailSamplingMode::Distance => 1,
+                    aestra_core::TrailSamplingMode::Adaptive => 2,
+                },
                 trail_distance,
-                _trail_padding: 0,
+                trail_tolerance,
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }

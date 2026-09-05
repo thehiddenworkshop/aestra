@@ -19,6 +19,7 @@ fn fixture() -> EffectAsset {
         max_trails: 0,
         sampling: aestra_core::TrailSamplingMode::Time,
         sample_distance: 0.1,
+        curve_tolerance: 0.01,
         uv_mode: aestra_core::TrailUvMode::Stretch,
         tile_length: 1.0,
         end_cap: aestra_core::TrailEndCap::Flat,
@@ -50,6 +51,7 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            curve_tolerance: 0.01,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
             end_cap: aestra_core::TrailEndCap::Flat,
@@ -62,6 +64,7 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            curve_tolerance: 0.01,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
             end_cap: aestra_core::TrailEndCap::Flat,
@@ -74,6 +77,7 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            curve_tolerance: 0.01,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
             end_cap: aestra_core::TrailEndCap::Flat,
@@ -86,6 +90,7 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            curve_tolerance: 0.01,
             uv_mode: aestra_core::TrailUvMode::Stretch,
             tile_length: 1.0,
             end_cap: aestra_core::TrailEndCap::Flat,
@@ -113,6 +118,7 @@ fn independent_pool_capacity_is_serialized_validated_and_profiled() {
         .unwrap()
         .replace("max_trails: 0,", "")
         .replace("sampling: Time,", "")
+        .replace("curve_tolerance: 0.01,", "")
         .replace("sample_distance: 0.1,", "");
     let legacy = EffectAsset::from_ron(&legacy).unwrap();
     assert!(matches!(
@@ -121,6 +127,7 @@ fn independent_pool_capacity_is_serialized_validated_and_profiled() {
             max_trails: 0,
             sampling: aestra_core::TrailSamplingMode::Time,
             sample_distance: 0.1,
+            curve_tolerance: 0.01,
             ..
         }
     ));
@@ -205,6 +212,40 @@ fn distance_sampling_validates_and_lowers_without_increasing_storage() {
             assert_eq!(gpu.emitters[0].trail_sampling, 1);
             assert_eq!(gpu.emitters[0].trail_distance, distance);
             assert_eq!(gpu.particles.len(), expected);
+        } else {
+            assert!(compiled.is_err());
+        }
+    }
+}
+
+#[test]
+fn adaptive_sampling_round_trips_validates_tolerance_and_reuses_emitter_padding() {
+    for tolerance in [0.001, 0.05, 10.0, 0.0, -1.0, f32::NAN, f32::INFINITY] {
+        let mut effect = fixture();
+        if let RendererProperties::Trail {
+            sampling,
+            curve_tolerance,
+            sample_distance,
+            ..
+        } = &mut effect.emitters[0].renderers[0].properties
+        {
+            *sampling = aestra_core::TrailSamplingMode::Adaptive;
+            *curve_tolerance = tolerance;
+            *sample_distance = 2.0;
+        }
+        let compiled = EffectCompiler::default().compile(&effect);
+        if tolerance.is_finite() && tolerance >= 0.001 {
+            assert_eq!(
+                EffectAsset::from_ron(&effect.to_pretty_ron().unwrap()).unwrap(),
+                effect
+            );
+            let gpu =
+                GpuEffectArtifact::from_instance(&EffectInstance::new(Arc::new(compiled.unwrap())))
+                    .unwrap();
+            assert_eq!(gpu.emitters[0].trail_sampling, 2);
+            assert_eq!(gpu.emitters[0].trail_tolerance, tolerance);
+            assert_eq!(gpu.emitters[0].trail_distance, 2.0);
+            assert_eq!(gpu.particles.len(), 8 + 1 + 8 * 32);
         } else {
             assert!(compiled.is_err());
         }

@@ -107,7 +107,7 @@ fn expand_legacy(packed: &[u8], aux: &[u8], counters: &[u8], records: usize) -> 
 
 // Exercise the real simulation as well as history: a direct jump has live
 // particles but only coincident head/anchor pairs, which cannot draw a trail.
-fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, distance: bool) {
+fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, sampling: u32) {
     let effect = aestra_core::EffectAsset::from_ron(include_str!(
         "../../../assets/effects/trail_lab.aestra.ron"
     ))
@@ -124,7 +124,7 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, distance: bool)
         .unwrap();
     let instance = aestra_runtime::EffectInstance::new(std::sync::Arc::new(effect));
     let mut artifact = aestra_gpu::GpuEffectArtifact::from_instance(&instance).unwrap();
-    artifact.emitters[0].trail_sampling = u32::from(distance);
+    artifact.emitters[0].trail_sampling = sampling;
     let e = artifact.emitters[0];
     let globals = GpuGlobals {
         time: 86.0 / 60.0,
@@ -317,7 +317,7 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, distance: bool)
     let mut planner = trail_replay::TrailReplay::default();
     let replayed = run(&planner.observations(1, globals.time), 1, None);
     assert!(
-        heads().any(|h| word(&replayed, h, 56) > 20),
+        heads().any(|h| word(&replayed, h, 56) > if sampling == 2 { 1 } else { 20 }),
         "seek must create drawable history, not only live heads"
     );
     assert_eq!(
@@ -332,7 +332,7 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, distance: bool)
     let history_start = (e.trail_offset as usize + 1) * 64;
     assert_eq!(&replayed[history_start..], &forward[history_start..]);
     let beyond_loop = run(&planner.observations(4, 3.5), 4, None);
-    assert!(heads().any(|h| word(&beyond_loop, h, 56) > 20));
+    assert!(heads().any(|h| word(&beyond_loop, h, 56) > if sampling == 2 { 1 } else { 20 }));
 
     let mut cache = trail_checkpoints::TrailCheckpoints::default();
     run(&planner.observations(5, 3.5), 5, Some(&mut cache));
@@ -394,20 +394,157 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, distance: bool)
 
 #[test]
 fn trails_preserve_identity_world_history_and_retired_tails_and_reset_on_discontinuities() {
-    check_pool(2, false);
+    check_pool(2, 0);
 }
 
 #[test]
 fn separate_trail_budget_retains_burst_tails_until_expiry_or_oldest_retired_eviction() {
-    check_pool(4, false);
+    check_pool(4, 0);
 }
 
 #[test]
 fn distance_sampling_handles_stationary_speed_changes_overflow_loops_and_resets() {
-    check_pool(4, true);
+    check_pool(4, 1);
 }
 
-fn check_pool(max_trails: u32, distance: bool) {
+#[test]
+fn adaptive_sampling_bounds_observed_curve_error_and_preserves_corners_with_fewer_points() {
+    check_pool(4, 2);
+}
+
+fn check_adaptive(
+    step: &impl Fn(f32, [u32; 2], u32, Vec3, u32, u32) -> Vec<u8>,
+    points: u32,
+    owners: u32,
+) {
+    let float = |bytes: &[u8], slot, offset| f32::from_bits(word(bytes, slot, offset));
+    let position = |bytes: &[u8], slot| {
+        Vec3::new(
+            float(bytes, slot, 16),
+            float(bytes, slot, 20),
+            float(bytes, slot, 24),
+        )
+    };
+    let stats = (3 + owners * points) as usize;
+    let capacity = points as usize - 1;
+    let slots = |bytes: &[u8]| {
+        let count = word(bytes, 3, 56) as usize;
+        let next = word(bytes, 3, 52) as usize;
+        (0..count)
+            .map(|i| 4 + (next + capacity - count + i) % capacity)
+            .collect::<Vec<_>>()
+    };
+    step(0.0, [0, 1], 1, Vec3::ZERO, 0, 0);
+    let stationary = step(0.2, [0, 1], 1, Vec3::ZERO, 0, 0);
+    assert_eq!(word(&stationary, 3, 56), 1);
+    for i in 1..=20 {
+        let straight = step(
+            0.2 + i as f32 / 120.0,
+            [0, 1],
+            1,
+            Vec3::X * (i as f32 * 0.025),
+            0,
+            0,
+        );
+        assert_eq!(
+            word(&straight, 3, 56),
+            1,
+            "straight observations should collapse into one span"
+        );
+    }
+    step(0.0, [0, 1], 1, Vec3::ZERO, 1, 0);
+    step(0.1, [0, 1], 1, Vec3::new(0.4, 0.0, 0.0), 1, 0);
+    let corner = step(0.2, [0, 1], 1, Vec3::new(0.4, 0.4, 0.0), 1, 0);
+    assert_eq!(word(&corner, 3, 56), 2);
+    assert_eq!(position(&corner, 5), Vec3::new(0.4, 0.0, 0.0));
+    assert!(
+        (float(&corner, 5, 52) - 0.4).abs() < 1e-5,
+        "corner UV phase follows observed arc length"
+    );
+    assert!((float(&corner, 4, 56) - 0.8).abs() < 1e-5);
+    step(0.0, [0, 1], 1, Vec3::ZERO, 4, 0);
+    step(0.1, [0, 1], 1, Vec3::X * 0.4, 4, 0);
+    let reversal = step(0.2, [0, 1], 1, Vec3::ZERO, 4, 0);
+    assert_eq!(
+        word(&reversal, 3, 56),
+        2,
+        "coincident endpoints must not erase a reversal"
+    );
+    assert_eq!(position(&reversal, 5), Vec3::X * 0.4);
+
+    // Check every omitted observation, not just the last bend, against each
+    // retained chord of a gradual 3D curve. All observations are still unexpired.
+    let observations = (0..=60)
+        .map(|i| {
+            let theta = i as f32 * std::f32::consts::FRAC_PI_2 / 60.0;
+            (
+                i as f32 / 120.0,
+                Vec3::new(theta.cos() * 2.0, theta.sin() * 2.0, theta * 0.3),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut curve = Vec::new();
+    for &(time, p) in &observations {
+        curve = step(time, [0, 1], 1, p, 2, 0);
+    }
+    let mut anchors = slots(&curve);
+    assert!(anchors.len() > 2 && anchors.len() < observations.len() / 2);
+    anchors.push(3); // Live head ends the last simplified span.
+    for pair in anchors.windows(2) {
+        let a = position(&curve, pair[0]);
+        let b = position(&curve, pair[1]);
+        assert!(a.distance(b) <= 1.0001, "maximum spacing exceeded");
+        for &(time, p) in &observations {
+            if time < float(&curve, pair[0], 32) || time > float(&curve, pair[1], 32) {
+                continue;
+            }
+            let along = ((p - a).dot(b - a) / (b - a).length_squared().max(1e-10)).clamp(0.0, 1.0);
+            assert!(
+                p.distance(a.lerp(b, along)) <= 0.0201,
+                "curve tolerance exceeded at {time}"
+            );
+        }
+    }
+    for pair in slots(&curve).windows(2) {
+        assert!(float(&curve, pair[0], 52) <= float(&curve, pair[1], 52));
+    }
+    let paused = step(0.5, [0, 1], 1, observations[60].1, 2, 0);
+    assert_eq!(&curve[3 * 64..], &paused[3 * 64..]);
+    let retired = step(0.6, [0, 1], 0, Vec3::ZERO, 2, 0);
+    assert_eq!(word(&retired, stats, 12), 1);
+    assert_eq!(
+        &curve[4 * 64..(3 + points as usize) * 64],
+        &retired[4 * 64..(3 + points as usize) * 64]
+    );
+    let expired = step(1.6, [0, 1], 0, Vec3::ZERO, 2, 0);
+    assert_eq!(word(&expired, stats, 8), 0);
+
+    step(0.0, [0, 1], 1, Vec3::ZERO, 3, 0);
+    let fast = step(0.1, [0, 1], 1, Vec3::X * 1000.25, 3, 0);
+    assert_eq!(word(&fast, 3, 56), points - 1);
+    assert_eq!(
+        word(&fast, stats, 28),
+        1,
+        "budget loss must remain visible in telemetry"
+    );
+    for pair in slots(&fast).windows(2) {
+        assert!((position(&fast, pair[0]).distance(position(&fast, pair[1])) - 1.0).abs() < 1e-4);
+    }
+    let stopped = step(1.095, [0, 1], 1, Vec3::X * 1000.25, 3, 0);
+    assert!(word(&stopped, 3, 56) < points - 1);
+    let stopped = step(1.2, [0, 1], 1, Vec3::X * 1000.25, 3, 0);
+    assert_eq!(word(&stopped, 3, 56), 0);
+    let moving_again = step(1.3, [0, 1], 1, Vec3::X * 1000.5, 3, 0);
+    assert_eq!(
+        word(&moving_again, 3, 56),
+        1,
+        "expired anchors must not bridge a stopped path"
+    );
+}
+
+fn check_pool(max_trails: u32, sampling: u32) {
+    let distance = sampling != 0;
+    let points = if sampling == 2 { 64 } else { 4 };
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::PRIMARY;
     let instance = wgpu::Instance::new(descriptor);
@@ -424,9 +561,10 @@ fn check_pool(max_trails: u32, distance: bool) {
         ..Default::default()
     }))
     .unwrap();
-    if distance {
-        check_seek_replay(&device, &queue, false);
-        check_seek_replay(&device, &queue, true);
+    if sampling == 1 {
+        check_seek_replay(&device, &queue, 0);
+        check_seek_replay(&device, &queue, 1);
+        check_seek_replay(&device, &queue, 2);
     }
     let shader = compile_wesl(
         "package::trail_test",
@@ -475,21 +613,25 @@ fn check_pool(max_trails: u32, distance: bool) {
             max_particles: 2,
             _turbulence_padding: 1,
             trail_offset: 2,
-            trail_points: 4,
+            trail_points: points,
             trail_capacity: max_trails,
-            trail_sampling: u32::from(distance),
+            trail_sampling: sampling,
+            trail_tolerance: 0.02,
             trail_distance: 1.0,
             trail_interval: 0.125,
             trail_lifetime: 1.0,
             ..Default::default()
         }]),
-        encode(&vec![GpuParticle::default(); 3 + max_trails as usize * 4]),
+        encode(&vec![
+            GpuParticle::default();
+            3 + (max_trails * points) as usize
+        ]),
         encode(&vec![0u32, 1]),
         encode(&vec![0u32; 2]),
         encode(&vec![0u32; 8]),
         encode(&vec![6u32, 2, 0, 0]),
         encode(&GpuGlobals::default()),
-        encode(&vec![0u32; (3 + max_trails as usize * 4) * 3]),
+        encode(&vec![0u32; (3 + (max_trails * points) as usize) * 3]),
     ];
     let buffers = data
         .iter()
@@ -600,7 +742,7 @@ fn check_pool(max_trails: u32, distance: bool) {
             let p = buffers[1].size() as usize;
             let c = buffers[4].size() as usize;
             let result = expand_legacy(&bytes[0..p], &bytes[p + c..], &bytes[p..p + c], p / 48);
-            assert_world_bounds(&result, 2, 4, max_trails as usize);
+            assert_world_bounds(&result, 2, points as usize, max_trails as usize);
             result
         };
     let step = |time, ids, count, translation, epoch, seed| {
@@ -613,6 +755,10 @@ fn check_pool(max_trails: u32, distance: bool) {
             seed,
         )
     };
+    if sampling == 2 {
+        check_adaptive(&step_at, points, max_trails);
+        return;
+    }
     if distance {
         let initial = step(0.0, [0, 1], 2, 0.0, 0, 0);
         let stats_record = 3 + max_trails as usize * 4;

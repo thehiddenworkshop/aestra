@@ -77,7 +77,7 @@ struct Emitter {
     trail_capacity: u32,
     trail_sampling: u32,
     trail_distance: f32,
-    _trail_padding: u32,
+    trail_tolerance: f32,
 }
 
 struct Particle {

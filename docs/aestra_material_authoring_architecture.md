@@ -2847,8 +2847,37 @@ session-local device allocations, separate from CPU checkpoints and artifact ser
 Native conformance covers backward/forward/exact/sub-frame seeks, continuous-loop survivors,
 retired tails, UV phase, epoch rebasing, allocation limits and buffer replacement.
 
-Remaining trail work: adaptive spatial sampling, exact host-trajectory replay, checkpoint
-serialization, finer-grained history culling and larger parallel owner maps.
+### Adaptive spatial trail sampling
+
+`TrailSamplingMode::Adaptive` adds a world-space `curve_tolerance` (default 0.01, minimum
+0.001) and uses `sample_distance` as **Maximum spacing**. Time and Distance keep their
+existing behavior; older authored files and artifacts default to Time and the new tolerance
+default. The Properties panel exposes both adaptive values with reusable Feather scrubbing
+and command-based undo/redo. Switching modes preserves the inactive interval and tolerance.
+
+Adaptive sampling bounds the whole observed polyline since the newest retained anchor,
+not only the last turn. For pending arc length L and endpoint chord length D, the ellipse
+bound `sqrt(max(0, L-D) * (L+D)) / 2` conservatively bounds deviation from the chord. Before
+extending beyond the tolerance or maximum spacing, the previous accepted head is committed.
+Long straight observation segments are subdivided at maximum spacing; skipped samples that
+would immediately overflow the ring are handled in bounded work and reported by existing
+point-budget telemetry. This is conservative simplification, not a minimum-point optimizer.
+
+Stationary heads consume no new samples; expired anchors are removed and renewed movement
+starts from the previous observed head. Retired tails retain their anchors. UV distance still
+accumulates along the original observed path, independently of simplified chord length.
+The existing auxiliary remainder stores pending arc length; tolerance occupies an emitter
+padding lane. Particle stride, owner/point allocation, culling and checkpoint buffers do not
+grow. Checkpoint compatibility already includes these encoded emitter settings.
+
+The tolerance applies to the observed spatial path within retained history, subject to
+floating-point precision. It cannot reconstruct unobserved motion between frames, guarantee
+color/width interpolation error, or recover points discarded by the history budget. GPU
+tests cover straight motion, gradual 3D bends, sharp turns, reversals, spacing, overflow,
+stationary expiry, renewed motion, UV phase, retired tails and full-versus-checkpoint replay.
+
+Remaining trail work: exact host-trajectory replay, checkpoint serialization, finer-grained
+history culling and larger parallel owner maps.
 
 ### Add inputs
 

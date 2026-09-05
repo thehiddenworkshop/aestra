@@ -299,6 +299,8 @@ enum RendererPlanKindV1 {
         sampling: aestra_core::TrailSamplingMode,
         #[serde(default = "aestra_core::default_trail_sample_distance")]
         sample_distance: f32,
+        #[serde(default = "aestra_core::default_trail_curve_tolerance")]
+        curve_tolerance: f32,
         #[serde(default)]
         uv_mode: aestra_core::TrailUvMode,
         #[serde(default = "aestra_core::default_trail_tile_length")]
@@ -1431,6 +1433,7 @@ impl From<&RendererPlan> for RendererPlanV1 {
                     max_trails,
                     sampling,
                     sample_distance,
+                    curve_tolerance,
                     uv_mode,
                     tile_length,
                     end_cap,
@@ -1442,6 +1445,7 @@ impl From<&RendererPlan> for RendererPlanV1 {
                     max_trails,
                     sampling,
                     sample_distance,
+                    curve_tolerance,
                     uv_mode,
                     tile_length,
                     end_cap,
@@ -1479,6 +1483,7 @@ impl From<RendererPlanV1> for RendererPlan {
                     max_trails,
                     sampling,
                     sample_distance,
+                    curve_tolerance,
                     uv_mode,
                     tile_length,
                     end_cap,
@@ -1490,6 +1495,7 @@ impl From<RendererPlanV1> for RendererPlan {
                     max_trails,
                     sampling,
                     sample_distance,
+                    curve_tolerance,
                     uv_mode,
                     tile_length,
                     end_cap,

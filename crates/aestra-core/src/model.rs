@@ -2544,6 +2544,7 @@ impl RendererInstance {
                 max_points,
                 max_trails,
                 sample_distance,
+                curve_tolerance,
                 tile_length,
                 ..
             } => {
@@ -2553,6 +2554,8 @@ impl RendererInstance {
                     || *sample_interval < 1.0 / 240.0
                     || !sample_distance.is_finite()
                     || *sample_distance < 0.001
+                    || !curve_tolerance.is_finite()
+                    || *curve_tolerance < 0.001
                     || !tile_length.is_finite()
                     || *tile_length < 0.001
                     || !lifetime.is_finite()
@@ -2563,7 +2566,7 @@ impl RendererInstance {
                     invalid_value(
                         report,
                         path,
-                        "trail requires positive finite width/lifetime, sample interval >= 1/240s, sample distance/tile length >= 0.001 world units, 2–64 points and at most 1024 trails (0 inherits parent capacity)",
+                        "trail requires positive finite width/lifetime, sample interval >= 1/240s, sample distance/curve tolerance/tile length >= 0.001 world units, 2–64 points and at most 1024 trails (0 inherits parent capacity)",
                     );
                 }
                 Some(RENDERER_TRAIL)
@@ -2631,6 +2634,8 @@ pub enum RendererProperties {
         sampling: TrailSamplingMode,
         #[serde(default = "default_trail_sample_distance")]
         sample_distance: f32,
+        #[serde(default = "default_trail_curve_tolerance")]
+        curve_tolerance: f32,
         #[serde(default)]
         uv_mode: TrailUvMode,
         #[serde(default = "default_trail_tile_length")]
@@ -2645,6 +2650,7 @@ pub enum TrailSamplingMode {
     #[default]
     Time,
     Distance,
+    Adaptive,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -2667,6 +2673,10 @@ pub const fn default_trail_tile_length() -> f32 {
 
 pub const fn default_trail_sample_distance() -> f32 {
     0.1
+}
+
+pub const fn default_trail_curve_tolerance() -> f32 {
+    0.01
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
