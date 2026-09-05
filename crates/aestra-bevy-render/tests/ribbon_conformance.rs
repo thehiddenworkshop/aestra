@@ -71,6 +71,9 @@ fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
         view.world_from_view = mat4x4<f32>(vec4<f32>(0,0,-1,0), vec4<f32>(0,1,0,0), vec4<f32>(1,0,0,0), vec4<f32>(0,0,0,1));
     }
     globals.world_from_effect = identity;
+    if scenario == 1u {
+        globals.world_from_effect = mat4x4<f32>(vec4<f32>(-0.1,0,0,0), vec4<f32>(0,4,0,0), vec4<f32>(0,0,2,0), vec4<f32>(0,0,0,1));
+    }
     renderers[0].renderer_kind = 3u;
     renderers[0].attribute_flags.y = bitcast<u32>(1.0);
     for (var i = 0u; i < 3u; i++) {
@@ -158,7 +161,27 @@ fn probe_ribbon(@builtin(global_invocation_id) id: vec3<u32>) {
         let normal =
             (position(base + 1) - position(base)).cross(position(base + 2) - position(base));
         assert!(normal.dot(camera) > 0.0, "front-facing winding");
-        assert!(((position(base + 1) - position(base)).length() - 1.0).abs() < 1e-6);
+        let scale = if scenario == 0 {
+            bevy::math::Vec3::ONE
+        } else {
+            bevy::math::Vec3::new(-0.1, 4.0, 2.0)
+        };
+        assert!(
+            ((position(base + 1) - position(base)).length() - scale.abs().max_element()).abs()
+                < 1e-6
+        );
+        let model = aestra_gpu::ribbon_bounds::RibbonParticleBounds {
+            position_half_extents: bevy::math::Vec3::new(0.0, 2.0, 0.0),
+            maximum_half_width: 0.5,
+        };
+        let linear = bevy::math::Mat3::from_diagonal(scale);
+        let bounds = model.half_extents(linear).unwrap();
+        for v in base..base + 12 {
+            assert!(
+                (linear.inverse() * position(v)).abs().cmple(bounds).all(),
+                "shader vertex outside culling bound"
+            );
+        }
         assert_eq!(position(base + 2), position(base + 7), "right join");
         assert_eq!(position(base + 5), position(base + 6), "left join");
         assert_eq!(value(base, 4), 0.0);

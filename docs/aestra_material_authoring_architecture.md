@@ -2629,8 +2629,14 @@ this extra dispatch. This is intended for modest live-point counts, not large tr
 The vertex shader constructs camera-facing segment quads with shared endpoint frames. Terminal
 points and coincident segments do not draw. Safe vector fallbacks avoid NaNs at reversals and
 view-aligned segments. Width uses the maximum effect scale, preserving visibility under mirrors
-and nonuniform transforms. Ribbons bypass frustum culling until world-space billboard-width
-bounds are available; layer/visibility filtering and depth tests still apply.
+and nonuniform transforms. Culling bounds combine the emitter's conservative particle-center
+bounds with its largest renderer width and maximum Appearance size. The width sphere is computed
+in world space using the shader's maximum-column scale, then pulled back through the inverse
+effect transform (inverse row lengths give local-axis extents). This covers every camera-facing
+offset and shared join, even under mirrors, nonuniform scale and sheared parent transforms.
+Bounds update after transform propagation and before visibility checks; render-transform uploads
+use that same propagated frame. Singular/nonfinite transforms or overflowing bounds disable
+frustum culling until valid data returns. Layer/visibility filtering and depth tests still apply.
 
 `RibbonUv` is Vec2: U runs from 0 at the oldest live point to 1 at the newest (rank-based, not
 arc length), and V spans the width. `Uv0` aliases those coordinates. `RibbonDirection` is the

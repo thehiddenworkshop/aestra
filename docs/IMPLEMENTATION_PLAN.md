@@ -548,8 +548,13 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Feather width scrubbing and Ribbon Lab cover the path. GPU tests check compaction permutations,
   sparse/empty/singleton lists, loop identities, emitter isolation, front-facing winding, shared
   joins, width/UVs and degenerate segments. Rendered and wireframe viewport smoke checks pass.
-  Ribbons currently bypass
-  frustum culling pending camera-facing width bounds. History-based trails, multiple ribbon IDs,
+  Ribbons now use conservative camera-independent culling bounds: emitter motion plus a
+  world-space width sphere pulled back through the effect transform. Bounds refresh for width,
+  Appearance size, motion, and propagated parent transforms, including mirrors/nonuniform scale
+  and shear. Singular, nonfinite or overflowing bounds retain the no-culling fallback and recover
+  when valid again. Render-transform uploads now run after propagation so culling and rendering
+  use the same frame. Tests cover viewport edges, offscreen rejection, live edits, same-frame
+  uploads and containment of actual GPU ribbon vertices. History-based trails, multiple ribbon IDs,
   distance-based UVs, a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

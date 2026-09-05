@@ -3,6 +3,7 @@
 mod bounds;
 mod mesh_inputs;
 mod render;
+mod ribbon_bounds;
 mod wireframe;
 
 use crate::{
@@ -199,7 +200,6 @@ type PreparedGpuPlayers<'w, 's> = Query<
     's,
     (
         &'static mut PresentedEffect,
-        &'static GlobalTransform,
         &'static mut GpuEffectBuffers,
         &'static EffectRuntimeStatus,
         Option<&'static RenderLayers>,
@@ -252,15 +252,8 @@ pub(crate) fn install(app: &mut App) {
     ))
     .init_resource::<MaterialShaderCache>()
     .add_systems(Startup, init_fallback_textures)
-    .add_systems(Update, update_gpu_inputs.after(prepare_gpu_effects))
-    .add_systems(
-        PostUpdate,
-        (
-            bounds::sync_mesh_bounds,
-            wireframe::prepare_wireframe_geometry,
-        )
-            .before(visibility::VisibilitySystems::CheckVisibility),
-    );
+    .add_systems(Update, update_gpu_inputs.after(prepare_gpu_effects));
+    install_visibility_updates(app);
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
         let capabilities = GpuCapabilities::unavailable("Bevy has no render sub-application");
         let requested = app.world().resource::<AestraRenderSettings>().presentation;
@@ -619,10 +612,12 @@ pub(crate) fn prepare_gpu_effects(
                         if let Some(mesh_bounds) = mesh_bounds {
                             draw.insert((mesh_bounds, visibility::NoFrustumCulling));
                         }
-                        // Ribbon width is camera-facing and uses maximum world scale. Until
-                        // view-independent world bounds account for it, never cull a valid strip.
+                        // Enable culling only once motion and the propagated transform resolve.
                         if ribbon_renderers.contains(&renderer_index) {
-                            draw.insert(visibility::NoFrustumCulling);
+                            draw.insert((
+                                ribbon_bounds::RibbonBoundsSource::default(),
+                                visibility::NoFrustumCulling,
+                            ));
                         }
                     }
                 }
@@ -796,21 +791,26 @@ fn detect_gpu_capabilities(
     }
 }
 
+type PreparedDraws<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static mut GpuDrawInstance,
+        &'static mut RenderLayers,
+        Option<&'static mut bounds::MeshBoundsSource>,
+        Option<&'static mut ribbon_bounds::RibbonBoundsSource>,
+    ),
+    Without<PresentedEffect>,
+>;
+
 fn update_gpu_inputs(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
     mut players: PreparedGpuPlayers,
-    mut draw_instances: Query<
-        (
-            &mut GpuDrawInstance,
-            &mut RenderLayers,
-            Option<&mut bounds::MeshBoundsSource>,
-        ),
-        Without<PresentedEffect>,
-    >,
+    mut draw_instances: PreparedDraws,
 ) {
     let _span = tracing::info_span!("aestra::gpu::artifact_update").entered();
-    for (mut player, transform, mut gpu, runtime, render_layers, children) in &mut players {
+    for (mut player, mut gpu, runtime, render_layers, children) in &mut players {
         player.refresh_automatic_material_bindings();
         // Only emitter and renderer inputs change per frame; use the dynamics
         // builder so we never reallocate the capacity-sized particle scratch buffer
@@ -826,19 +826,15 @@ fn update_gpu_inputs(
                 _padding: UVec2::ZERO,
             });
         }
-        if let Some(mut buffer) = buffers.get_mut(&gpu.render_globals) {
-            buffer.set_data(GpuRenderGlobals {
-                world_from_effect: Mat4::from(transform.affine()),
-                time: player.simulation_time(),
-                seed: fold_seed(player.instance.seed()),
-                _padding: Vec2::ZERO,
-            });
-        }
         if let Some(children) = children {
             let render_mode = gpu_render_mode(player.render_mode());
             for child in children.iter() {
-                if let Ok((mut draw, mut draw_layers, mesh_bounds)) = draw_instances.get_mut(child)
+                if let Ok((mut draw, mut draw_layers, mesh_bounds, ribbon_bounds)) =
+                    draw_instances.get_mut(child)
                 {
+                    if let Some(mut source) = ribbon_bounds {
+                        source.0 = None;
+                    }
                     if let Some(mut mesh_bounds) = mesh_bounds {
                         mesh_bounds.motion = None;
                     }
@@ -881,18 +877,27 @@ fn update_gpu_inputs(
             }
             if let Some(children) = children {
                 for child in children.iter() {
-                    if let Ok((draw, _, Some(mut mesh_bounds))) = draw_instances.get_mut(child) {
-                        mesh_bounds.displacement = draw
-                            .semantic_material
-                            .as_ref()
-                            .map_or(Some([0.0; 3]), |binding| {
-                                binding.program.vertex_offset_bounds
-                            })
-                            .map(Vec3::from_array);
-                        mesh_bounds.motion = dynamics
-                            .mesh_bounds
-                            .get(draw.emitter_index as usize)
-                            .copied();
+                    if let Ok((draw, _, mesh_bounds, ribbon_bounds)) = draw_instances.get_mut(child)
+                    {
+                        if let Some(mut source) = ribbon_bounds {
+                            source.0 = dynamics
+                                .ribbon_bounds
+                                .get(draw.emitter_index as usize)
+                                .copied();
+                        }
+                        if let Some(mut mesh_bounds) = mesh_bounds {
+                            mesh_bounds.displacement = draw
+                                .semantic_material
+                                .as_ref()
+                                .map_or(Some([0.0; 3]), |binding| {
+                                    binding.program.vertex_offset_bounds
+                                })
+                                .map(Vec3::from_array);
+                            mesh_bounds.motion = dynamics
+                                .mesh_bounds
+                                .get(draw.emitter_index as usize)
+                                .copied();
+                        }
                     }
                 }
             }
@@ -901,7 +906,7 @@ fn update_gpu_inputs(
                 let mut requirements = vec![GpuParticleAttributes::ALL; dynamics.renderers.len()];
                 if let Some(children) = children {
                     for child in children.iter() {
-                        if let Ok((draw, _, _)) = draw_instances.get(child)
+                        if let Ok((draw, _, _, _)) = draw_instances.get(child)
                             && let Some(renderer) =
                                 dynamics.renderers.get(draw.renderer_order as usize)
                         {
@@ -932,6 +937,37 @@ fn update_gpu_inputs(
             if let Some(mut buffer) = buffers.get_mut(&gpu.renderers) {
                 buffer.set_data(dynamics.renderers);
             }
+        }
+    }
+}
+
+fn install_visibility_updates(app: &mut App) {
+    app.add_systems(
+        PostUpdate,
+        (
+            bounds::sync_mesh_bounds,
+            ribbon_bounds::sync_ribbon_bounds,
+            sync_gpu_render_transforms,
+            wireframe::prepare_wireframe_geometry,
+        )
+            .after(bevy::transform::TransformSystems::Propagate)
+            .before(visibility::VisibilitySystems::CheckVisibility),
+    );
+}
+
+// Rendering and culling must see the same frame's propagated effect transform.
+fn sync_gpu_render_transforms(
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
+    players: Query<(&PresentedEffect, &GlobalTransform, &GpuEffectBuffers)>,
+) {
+    for (player, transform, gpu) in &players {
+        if let Some(mut buffer) = buffers.get_mut(&gpu.render_globals) {
+            buffer.set_data(GpuRenderGlobals {
+                world_from_effect: Mat4::from(transform.affine()),
+                time: player.simulation_time(),
+                seed: fold_seed(player.instance.seed()),
+                _padding: Vec2::ZERO,
+            });
         }
     }
 }
@@ -1228,6 +1264,95 @@ mod tests {
     use aestra_gpu::INDIRECT_DRAW_BYTES;
     use aestra_runtime::EffectInstance;
     use std::sync::Arc;
+
+    #[test]
+    fn rendering_and_ribbon_culling_receive_the_same_propagated_transform() {
+        let mut effect = EffectAsset::new("Bounds upload", 2.0);
+        effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+        let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+        let mut app = App::new();
+        app.add_plugins(bevy::transform::TransformPlugin)
+            .init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<ShaderBuffer>>();
+        install_visibility_updates(&mut app);
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<ShaderBuffer>>()
+            .add(ShaderBuffer::default());
+        let parent = app.world_mut().spawn(Transform::IDENTITY).id();
+        let player = app
+            .world_mut()
+            .spawn((
+                ChildOf(parent),
+                Transform::IDENTITY,
+                PresentedEffect::new(compiled),
+                GpuEffectBuffers {
+                    emitters: default(),
+                    renderers: default(),
+                    particles: default(),
+                    alive: default(),
+                    dead: default(),
+                    counters: default(),
+                    indirect: default(),
+                    globals: default(),
+                    render_globals: handle.clone(),
+                    workgroups: 1,
+                    has_ribbons: true,
+                    ribbon_workgroups: 1,
+                    total_slots: 1,
+                },
+            ))
+            .id();
+        let model = aestra_gpu::ribbon_bounds::RibbonParticleBounds {
+            position_half_extents: Vec3::new(1.0, 5.0, 2.0),
+            maximum_half_width: 3.0,
+        };
+        let draw = app
+            .world_mut()
+            .spawn((
+                ChildOf(player),
+                Transform::IDENTITY,
+                Aabb::default(),
+                ribbon_bounds::RibbonBoundsSource(Some(model)),
+                visibility::NoFrustumCulling,
+            ))
+            .id();
+        for transform in [
+            Transform::IDENTITY,
+            Transform::from_xyz(123.0, -42.0, 70.0)
+                .with_rotation(Quat::from_rotation_y(0.7))
+                .with_scale(Vec3::new(-0.1, 3.0, 2.0)),
+            Transform::from_xyz(-500.0, 20.0, 0.0),
+        ] {
+            *app.world_mut().get_mut::<Transform>(parent).unwrap() = transform;
+            app.update();
+            let expected = app.world().get::<GlobalTransform>(player).unwrap().affine();
+            let buffers = app.world().resource::<Assets<ShaderBuffer>>();
+            let bytes = buffers.get(&handle).unwrap().data.as_ref().unwrap();
+            let actual: [f32; 16] = std::array::from_fn(|i| {
+                f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())
+            });
+            assert_eq!(
+                Mat4::from_cols_array(&actual),
+                Mat4::from(expected),
+                "same-frame render upload"
+            );
+            assert_eq!(
+                app.world().get::<GlobalTransform>(draw).unwrap().affine(),
+                expected
+            );
+            let aabb = app.world().get::<Aabb>(draw).unwrap();
+            assert_eq!(
+                Vec3::from(aabb.half_extents),
+                model.half_extents(Mat3::from(expected.matrix3)).unwrap()
+            );
+            assert!(
+                !app.world()
+                    .entity(draw)
+                    .contains::<visibility::NoFrustumCulling>()
+            );
+        }
+    }
 
     #[test]
     fn semantic_material_instance_reaches_the_gpu_draw_artifact_without_legacy_material_data() {

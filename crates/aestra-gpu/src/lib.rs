@@ -7,6 +7,7 @@
 pub mod material;
 pub mod mesh_bounds;
 pub mod particle_attributes;
+pub mod ribbon_bounds;
 pub mod shader;
 
 use aestra_core::{
@@ -219,6 +220,8 @@ pub enum GpuBlend {
 pub struct GpuEffectDynamics {
     /// Geometry-independent bounds inputs, indexed by compiled emitter (including disabled ones).
     pub mesh_bounds: Vec<mesh_bounds::MeshParticleBounds>,
+    /// Camera-facing bounds inputs, indexed by compiled emitter (including disabled ones).
+    pub ribbon_bounds: Vec<ribbon_bounds::RibbonParticleBounds>,
     pub emitters: Vec<GpuEmitter>,
     pub renderers: Vec<GpuRenderer>,
     pub total_slots: u32,
@@ -259,6 +262,7 @@ impl GpuEffectArtifact {
         let mut slot_offset = 0_u32;
         let mut bounds_half_extents = Vec3::splat(0.01);
         let mut mesh_bounds = Vec::new();
+        let mut ribbon_bounds = Vec::new();
         let mut emitters = Vec::with_capacity(instance.effect().emitters.len());
         let mut renderers = Vec::new();
         for (emitter_index, emitter) in instance.effect().emitters.iter().enumerate() {
@@ -430,7 +434,7 @@ impl GpuEffectArtifact {
             ));
             let rotation = Quat::from_array(emitter.transform.rotation).normalize();
             let scale = Vec3::from_array(emitter.transform.scale);
-            mesh_bounds.push(mesh_bounds::MeshParticleBounds {
+            let particle_bounds = mesh_bounds::MeshParticleBounds {
                 position_half_extents: transformed_emitter_bounds(
                     emitter_bounds(
                         shape,
@@ -447,7 +451,31 @@ impl GpuEffectArtifact {
                 linear_from_local: glam::Mat3::from_quat(rotation)
                     * glam::Mat3::from_diagonal(scale),
                 maximum_size: maximum_absolute_curve(appearance.size),
-            });
+            };
+            let maximum_width = emitter
+                .renderers
+                .iter()
+                .map(|r| match r.kind {
+                    RendererPlanKind::Ribbon { width } => width,
+                    _ => 0.0,
+                })
+                .fold(0.0_f32, f32::max);
+            let ribbon = ribbon_bounds::RibbonParticleBounds {
+                position_half_extents: particle_bounds.position_half_extents,
+                maximum_half_width: particle_bounds.maximum_size
+                    * scale.abs().max_element()
+                    * maximum_width
+                    * 0.5,
+            };
+            // The aggregate bound is also used for initial viewport framing. A
+            // camera-facing ribbon cannot use emitter-axis-scaled sprite padding.
+            if maximum_width > 0.0
+                && let Some(bounds) = ribbon.half_extents(glam::Mat3::IDENTITY)
+            {
+                bounds_half_extents = bounds_half_extents.max(bounds);
+            }
+            ribbon_bounds.push(ribbon);
+            mesh_bounds.push(particle_bounds);
             let (spawn_inverse, spawn_inverse_total) = if emitter.enabled {
                 build_spawn_inverse(spawn_rate, emitter.source_duration)
             } else {
@@ -520,6 +548,7 @@ impl GpuEffectArtifact {
         }
         Ok(GpuEffectDynamics {
             mesh_bounds,
+            ribbon_bounds,
             emitters,
             renderers,
             total_slots: slot_offset,
