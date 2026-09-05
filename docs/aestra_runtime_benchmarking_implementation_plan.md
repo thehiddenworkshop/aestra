@@ -431,11 +431,17 @@ Kept deliberately light; each is a decision gated by earlier phases, not committ
 - **SoA + FP16 particle attributes (kernel win):** structure-of-arrays output and
   half-precision on tolerant attributes attack the measured 67% memory floor
   (Phase 7) without changing the analytical model. Bounded and measurable.
-- **Incremental gameplay backend (M7):** prototype persistent particles + alive/dead
-  lists + spawn/update/compaction only *if* Phase 6 shows the analytical kernel is
-  inadequate for sparse/long-lived/high-instance workloads. Analytical execution is
-  preserved for editor seeking/scrubbing/reference/tests. Both backends share the
-  semantic effect IR.
+- **M7 — recast as a storage redesign. Scoped in
+  [`aestra_m7_storage_redesign_scoping.md`](aestra_m7_storage_redesign_scoping.md).**
+  The AAA-scale sweep refuted the incremental *sim*'s dense-throughput motivation
+  (analytical does 4M in ~2.2 ms), and the SoA/compact win is blocked because
+  `GpuParticle` is an overloaded union the trail/ribbon system depends on. So M7's
+  measured, near-term value is **untangling the particle storage** (separate trail /
+  ribbon / core records) to unblock SoA/compact — *not* an incremental sim. Phasing:
+  (1) extract trail/ribbon records, behavior-preserving; (2) compact/SoA the live core
+  for the render + sim-bandwidth win; (3) *optional, gated* stateful playback backend
+  for weaker GPUs / persistent-state semantics only. Analytical execution stays the
+  authoring/reference path throughout; both backends share the semantic IR.
 - **Batch effect execution (M8):** global particle arena / effect+emitter tables /
   batched compute / multi-draw — only if Phase 5 instance-count benchmarks show
   submission overhead dominates.
