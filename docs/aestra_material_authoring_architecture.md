@@ -2569,8 +2569,22 @@ positions and indexed/non-indexed topology produce cached edge geometry, invalid
 changes. The diagnostic shader shares mesh transforms with semantic Mesh materials, reuses GPU
 indirect instance counts, and draws without material texture/depth-input dependencies. Viewer
 `--wireframe` and the `W` key support captures and rendered/wireframe switching. Render-world-only
-or invalid geometry cannot produce a wireframe and is skipped. CPU/readback mesh presentation,
-vertex deformation, tangents, UV1, ribbons and PBR remain follow-up work.
+or invalid geometry cannot produce a wireframe and is skipped.
+
+Mesh materials also expose optional mesh-local Vertex Offset (Vec3, zero when disconnected).
+Rendered and wireframe pipelines share deformation and vertex-stage validation. Constant offsets
+expand bounds; dynamic offsets disable culling conservatively. Normals are not reconstructed for
+arbitrary deformation. Mesh Material Lab includes an age-driven breathing offset.
+
+UV1 (Vec2) and Tangent (Vec3) are supported in Mesh materials, including Vertex Offset dependencies.
+Only live reads request optional TEXCOORD_1 / TANGENT attributes; missing or incorrectly typed
+attributes produce named geometry diagnostics and skip that draw, without inventing UVs/tangents.
+Tangents use the linear emitter/effect transform and particle rotation, followed by normalization
+and orthogonalization against the transformed normal (not inverse-transpose tangent transformation).
+This supports nonuniform and mirrored transforms. Tangent exposes a world-space direction;
+glTF's fourth handedness component is preserved in diagnostic geometry but is not a bitangent API.
+The lab combines tangent coloring with a separate UV1 mapping and its breathing animation.
+CPU/readback mesh presentation, bitangents/normal mapping, ribbons and PBR remain follow-up work.
 
 ### Add inputs
 

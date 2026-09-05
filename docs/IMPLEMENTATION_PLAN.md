@@ -498,7 +498,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   non-indexed TriangleList geometry uses Bevy-loaded position/normal/UV buffers; per-mesh indirect
   commands copy simulation instance counts on the GPU. Material inputs include real UV0, normals,
   local/world positions and view direction, without sprite coverage. The Mesh Material Lab effect
-  uses an embedded-buffer glTF cube and normal-color material. This slice requires native GPU;
+  uses an embedded-buffer glTF cube and tangent-color/UV1 material. This slice requires native GPU;
   meshes without position/normal/UV0 or triangle topology are rejected by presentation. Geometry-aware
   mesh bounds now combine particle motion and maximum size with off-center geometry, angular sweep,
   and emitter rotation/nonuniform scale. Bevy applies the outer effect transform during frustum
@@ -517,8 +517,15 @@ the current sprite-material path until the native-GPU compatibility gate approve
   expand geometry bounds, while dynamic offsets disable frustum culling until bounded again.
   Mesh Material Lab demonstrates age-driven radial breathing. Serialization, authoring undo/reset,
   stage validation, culling lifecycle and native MSAA pipeline tests cover the path. Original
-  normals are retained (no automatic normal reconstruction). Tangent/UV1 inputs, ribbons/trails
-  and PBR remain follow-up work.
+  normals are retained (no automatic normal reconstruction). Mesh UV1 and Tangent inputs now
+  compile through both fragment and vertex-offset paths. Optional attributes are requested only
+  for live material reads, with named missing/type-mismatched attribute diagnostics. UV1 uses
+  glTF TEXCOORD_1; Tangent exposes the world-space Vec3 direction, linearly transformed then
+  re-orthogonalized against the normal under nonuniform/mirrored scale. The mesh's tangent
+  handedness is preserved in wireframe buffers, but no bitangent input is exposed yet.
+  Mesh Material Lab now combines tangent colors, a distinct UV1 radial mask and breathing.
+  Native GPU numeric tangent tests, optional layout checks, portable shader validation and
+  wireframe attribute tests cover this slice. Ribbons/trails and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

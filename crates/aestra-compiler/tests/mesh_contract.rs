@@ -55,6 +55,17 @@ fn meshes_reject_sprite_materials_and_missing_geometry() {
     let (mut asset, mut program) = fixture();
     program.domain = MaterialDomain::Sprite;
     program.outputs.vertex_offset = None;
+    // Keep the graph valid for Sprite so this isolates the renderer/domain mismatch.
+    for expression in &mut program.expressions {
+        use aestra_core::material::{MaterialExpressionKind as Kind, MaterialInput};
+        match expression.kind {
+            Kind::Input(MaterialInput::Uv1) => expression.kind = Kind::Input(MaterialInput::Uv0),
+            Kind::Input(MaterialInput::Tangent) => {
+                expression.kind = Kind::Input(MaterialInput::Normal)
+            }
+            _ => {}
+        }
+    }
     // Keep render-state validation valid so this test isolates the renderer/domain mismatch.
     program.render_state_policy.default.cull_mode = aestra_core::material::MaterialCullMode::None;
     for state in &mut program.render_state_policy.allowed {

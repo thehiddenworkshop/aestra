@@ -11,7 +11,9 @@ use std::{
 
 #[derive(Debug)]
 pub(super) struct WireframeGeometry {
-    pub vertices: Vec<[f32; 8]>,
+    pub vertices: Vec<[f32; 14]>,
+    pub inputs: super::mesh_inputs::MeshInputs,
+    pub deformation_ready: bool,
     pub indices: Vec<u32>,
 }
 
@@ -36,7 +38,21 @@ pub(super) fn prepare_wireframe_geometry(
                     .or_insert_with(|| meshes.get(handle).and_then(mesh_edges).map(Arc::new))
                     .clone()
             });
-        draw.wireframe_geometry = geometry;
+        let deformed = draw
+            .semantic_material
+            .as_ref()
+            .is_some_and(|material| material.program.has_vertex_offset);
+        let required = draw
+            .semantic_material
+            .as_ref()
+            .filter(|material| material.program.has_vertex_offset)
+            .map(|material| super::mesh_inputs::MeshInputs::for_program(&material.program))
+            .unwrap_or_default();
+        draw.wireframe_geometry = geometry.filter(|geometry| {
+            let valid = (!deformed || geometry.deformation_ready) && (!required.uv1 || geometry.inputs.uv1) && (!required.tangent || geometry.inputs.tangent);
+            if !valid { bevy::log::warn_once!("Aestra deformed mesh wireframe requires valid Normal/UV0 and material-required attributes (UV1: {}, Tangent: {})", required.uv1, required.tangent); }
+            valid
+        });
     }
 }
 
@@ -93,6 +109,28 @@ fn mesh_edges(mesh: &Mesh) -> Option<WireframeGeometry> {
             VertexAttributeValues::Float32x2(values) => Some(values),
             _ => None,
         });
+    let deformation_ready = normals.is_some_and(|values| values.len() == positions.len())
+        && uvs.is_some_and(|values| values.len() == positions.len());
+    let uv1s = mesh
+        .attribute(Mesh::ATTRIBUTE_UV_1)
+        .and_then(|values| match values {
+            VertexAttributeValues::Float32x2(values) if values.len() == positions.len() => {
+                Some(values)
+            }
+            _ => None,
+        });
+    let tangents = mesh
+        .attribute(Mesh::ATTRIBUTE_TANGENT)
+        .and_then(|values| match values {
+            VertexAttributeValues::Float32x4(values) if values.len() == positions.len() => {
+                Some(values)
+            }
+            _ => None,
+        });
+    let inputs = super::mesh_inputs::MeshInputs {
+        uv1: uv1s.is_some(),
+        tangent: tangents.is_some(),
+    };
     let vertices = positions
         .iter()
         .enumerate()
@@ -105,13 +143,23 @@ fn mesh_edges(mesh: &Mesh) -> Option<WireframeGeometry> {
                 .and_then(|values| values.get(index))
                 .copied()
                 .unwrap_or([0.0; 2]);
-            [p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1]]
+            let uv1 = uv1s.map_or([0.0; 2], |values| values[index]);
+            let tangent = tangents.map_or([1.0, 0.0, 0.0, 1.0], |values| values[index]);
+            [
+                p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1], uv1[0], uv1[1], tangent[0],
+                tangent[1], tangent[2], tangent[3],
+            ]
         })
         .collect::<Vec<_>>();
     if vertices.iter().flatten().any(|value| !value.is_finite()) {
         return None;
     }
-    Some(WireframeGeometry { vertices, indices })
+    Some(WireframeGeometry {
+        vertices,
+        indices,
+        inputs,
+        deformation_ready,
+    })
 }
 
 #[cfg(test)]
@@ -147,6 +195,23 @@ mod tests {
         let mesh = triangle()
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0; 3], [1.0; 3], [2.0; 3]]);
         assert_eq!(mesh_edges(&mesh).unwrap().indices, [0, 1, 1, 2, 2, 0]);
+    }
+
+    #[test]
+    fn wireframe_preserves_secondary_uv_and_tangent_handedness() {
+        let mesh = triangle()
+            .with_inserted_indices(Indices::U16(vec![0, 1, 2]))
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, vec![[0.125, 0.625]; 4])
+            .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, vec![[0.0, 1.0, 0.0, -1.0]; 4]);
+        let geometry = mesh_edges(&mesh).unwrap();
+        assert!(geometry.inputs.uv1 && geometry.inputs.tangent);
+        assert_eq!(
+            &geometry.vertices[0][8..],
+            &[0.125, 0.625, 0.0, 1.0, 0.0, -1.0]
+        );
+        let legacy =
+            mesh_edges(&triangle().with_inserted_indices(Indices::U16(vec![0, 1, 2]))).unwrap();
+        assert!(!legacy.inputs.uv1 && !legacy.inputs.tangent);
     }
 
     #[test]

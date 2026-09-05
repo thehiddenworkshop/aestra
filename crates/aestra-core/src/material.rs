@@ -2429,6 +2429,8 @@ impl MaterialProgram {
                             | MaterialInput::WorldPosition
                             | MaterialInput::Normal
                             | MaterialInput::ViewDirection
+                            | MaterialInput::Uv1
+                            | MaterialInput::Tangent
                             | MaterialInput::Uv0
                             | MaterialInput::EffectTime
                             | MaterialInput::ParticleColor

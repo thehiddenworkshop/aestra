@@ -79,6 +79,7 @@ fn mesh_material_inputs_use_real_geometry_and_no_billboard_coverage() {
     use aestra_core::material::{MaterialDomain, MaterialProgram};
     for input in [
         MaterialInput::Normal,
+        MaterialInput::Tangent,
         MaterialInput::WorldPosition,
         MaterialInput::LocalPosition,
         MaterialInput::ViewDirection,
@@ -115,6 +116,21 @@ fn mesh_material_inputs_use_real_geometry_and_no_billboard_coverage() {
             .iter()
             .any(|slot| slot.varying == MaterialVarying::Uv0)
     );
+    for expression in &mut textured.expressions {
+        if expression.kind == MaterialExpressionKind::Input(MaterialInput::Uv0) {
+            expression.kind = MaterialExpressionKind::Input(MaterialInput::Uv1);
+        }
+    }
+    let second_uv = compile(&textured);
+    assert!(
+        second_uv
+            .reflection
+            .required_vertex_inputs
+            .contains(&MaterialInput::Uv1)
+    );
+    assert_portable_shader_targets(&second_uv.shader.wgsl);
+    assert!(second_uv.shader.wesl.contains("@location(3) uv1"));
+    assert!(!second_uv.shader.wesl.contains("@location(4) tangent"));
     let program = MaterialProgram::from_ron(include_str!(
         "../../../assets/materials/mesh_material_lab.aestra.material.ron"
     ))
@@ -549,7 +565,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "de6b6b4ddb05c9c7b19b94d7e10c519a03cf9ca3ac3c0b5525dbe84280983202"
+        "5a17b9c205b477725cdf96762e83afa2b2bb33f91505c795a1b952facc95b383"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,

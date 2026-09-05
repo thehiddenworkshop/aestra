@@ -118,3 +118,37 @@ fn absent_vertex_offset_preserves_legacy_mesh_behavior() {
     assert_eq!(compiled.vertex_offset_bounds, Some([0.0; 3]));
     assert!(!compiled.shader.wgsl.contains("fn aestra_vertex_offset"));
 }
+
+#[test]
+fn optional_mesh_inputs_can_drive_vertex_offset_without_fragment_reads() {
+    for tangent in [true, false] {
+        let mut program = program();
+        program.outputs.color = append(&mut program, Kind::Constant(MaterialValue::Vec3([1.0; 3])));
+        let offset = if tangent {
+            append(&mut program, Kind::Input(MaterialInput::Tangent))
+        } else {
+            let mask = program
+                .expressions
+                .iter()
+                .find(|expression| matches!(expression.kind, Kind::RadialMask { .. }))
+                .unwrap()
+                .id;
+            let position = append(&mut program, Kind::Input(MaterialInput::LocalPosition));
+            append(&mut program, Kind::Multiply(position, mask))
+        };
+        program.outputs.vertex_offset = Some(offset);
+        let ir = MaterialCompiler.compile(&program).unwrap();
+        let compiled = MaterialShaderCompiler
+            .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
+            .unwrap();
+        let input = if tangent {
+            MaterialInput::Tangent
+        } else {
+            MaterialInput::Uv1
+        };
+        assert!(compiled.reflection.required_vertex_inputs.contains(&input));
+        assert!(compiled.has_vertex_offset);
+        assert_eq!(compiled.vertex_offset_bounds, None);
+        assert!(compiled.shader.wgsl.contains("fn vertex_mesh_wireframe"));
+    }
+}

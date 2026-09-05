@@ -26,7 +26,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 3;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 19;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 20;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
@@ -568,7 +568,10 @@ fn build_reflection(
         ) && !(ir.domain == MaterialDomain::Mesh
             && matches!(
                 input,
-                MaterialInput::WorldPosition | MaterialInput::LocalPosition
+                MaterialInput::WorldPosition
+                    | MaterialInput::LocalPosition
+                    | MaterialInput::Uv1
+                    | MaterialInput::Tangent
             ))
         {
             let expressions = ir
@@ -1263,6 +1266,10 @@ fn input_expression(
         }
         MaterialInput::LocalPosition if varyings.domain == MaterialDomain::Mesh => {
             Some("input.local_position")
+        }
+        MaterialInput::Uv1 if varyings.domain == MaterialDomain::Mesh => Some("input.uv1"),
+        MaterialInput::Tangent if varyings.domain == MaterialDomain::Mesh => {
+            Some("normalize(input.tangent)")
         }
         MaterialInput::Uv0 => Some("input.uv0"),
         MaterialInput::Normal => Some(

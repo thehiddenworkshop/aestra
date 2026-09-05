@@ -17,11 +17,42 @@ pub const SPRITE_RENDER_WESL: &str = concat!(
 );
 /// Shared geometry/transform ABI for semantic Mesh materials and diagnostic wireframes.
 pub(crate) fn mesh_vertex_wesl() -> String {
+    mesh_vertex_wesl_with_inputs(false, false)
+}
+
+pub(crate) fn mesh_vertex_wesl_with_inputs(uv1: bool, tangent: bool) -> String {
     let mut source = SPRITE_VERTEX_WESL.replace("\r\n", "\n").replace(
         "alive_offset: u32,\n    _padding: vec2<u32>,",
         "alive_offset: u32,\n    _padding: vec2<u32>,\n    mesh_from_local: mat4x4<f32>,",
     );
-    source.push_str(include_str!("shaders/aestra_mesh_vertex.wesl"));
+    let mut mesh = include_str!("shaders/aestra_mesh_vertex.wesl").replace("\r\n", "\n");
+    if uv1 {
+        mesh = mesh.replace(
+            "@location(2) uv: vec2<f32>,",
+            "@location(2) uv: vec2<f32>,\n    @location(3) uv1: vec2<f32>,",
+        );
+        mesh = mesh.replace(
+            "    normal: vec3<f32>,",
+            "    uv1: vec2<f32>,\n    normal: vec3<f32>,",
+        );
+        mesh = mesh.replace(
+            "    return output;",
+            "    output.uv1 = vertex.uv1;\n    return output;",
+        );
+    }
+    if tangent {
+        source.push_str(include_str!("shaders/aestra_mesh_tangent.wesl"));
+        mesh = mesh.replace(
+            "@location(2) uv: vec2<f32>,",
+            "@location(2) uv: vec2<f32>,\n    @location(4) tangent: vec4<f32>,",
+        );
+        mesh = mesh.replace(
+            "    normal: vec3<f32>,",
+            "    tangent: vec3<f32>,\n    normal: vec3<f32>,",
+        );
+        mesh = mesh.replace("    return output;", "    let rotated_tangent = vec3<f32>(vertex.tangent.x * c - vertex.tangent.y * s, vertex.tangent.x * s + vertex.tangent.y * c, vertex.tangent.z);\n    output.tangent = aestra_mesh_tangent(rotated_tangent, output.normal, mesh_transform);\n    return output;");
+    }
+    source.push_str(&mesh);
     source
 }
 

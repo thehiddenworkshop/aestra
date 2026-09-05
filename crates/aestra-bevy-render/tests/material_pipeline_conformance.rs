@@ -27,13 +27,14 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
             return;
         }
     };
-    let (device, _) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("Aestra material stage-link conformance"),
         required_limits: adapter.limits(),
         ..Default::default()
     }))
     .unwrap();
 
+    assert_tangent_transform(&device, &queue);
     let legacy = compile(GpuShaderKind::SpriteRender).unwrap();
     let wireframe = aestra_gpu::shader::compile_wesl(
         "package::aestra_mesh_wireframe",
@@ -80,6 +81,7 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
     // Exercise geometry position, normal, UV and view direction interfaces in native pipelines.
     for input in [
         MaterialInput::Normal,
+        MaterialInput::Tangent,
         MaterialInput::LocalPosition,
         MaterialInput::WorldPosition,
         MaterialInput::ViewDirection,
@@ -150,15 +152,15 @@ fn assert_pipeline(device: &wgpu::Device, wgsl: &str, fragment: &str, samples: u
         label: Some("Aestra sprite stage-link contract"),
         source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(wgsl)),
     });
-    let mesh_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+    let mesh_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x2, 4 => Float32x4];
     let mesh_layout = [wgpu::VertexBufferLayout {
-        array_stride: 32,
+        array_stride: 56,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &mesh_attributes,
     }];
-    let line_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+    let line_attributes = mesh_attributes;
     let line_layout = [wgpu::VertexBufferLayout {
-        array_stride: 32,
+        array_stride: 56,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &line_attributes,
     }];
@@ -209,4 +211,100 @@ fn assert_pipeline(device: &wgpu::Device, wgsl: &str, fragment: &str, samples: u
     });
     let error = pollster::block_on(scope.pop());
     assert!(error.is_none(), "{fragment}, samples={samples}: {error:?}");
+}
+
+fn assert_tangent_transform(device: &wgpu::Device, queue: &wgpu::Queue) {
+    // Exercise the actual shared shader math: nonuniform/mirrored scale plus a 90-degree
+    // rotation. A translation column must not affect a direction.
+    let source = format!(
+        "{}\n{}",
+        include_str!("../../aestra-gpu/src/shaders/aestra_mesh_tangent.wesl"),
+        r#"
+        @group(0) @binding(0) var<storage, read_write> results: array<vec4<f32>>;
+        @compute @workgroup_size(1)
+        fn check() {
+            let transform = mat4x4<f32>(vec4<f32>(0.0, -2.0, 0.0, 0.0),
+                vec4<f32>(-3.0, 0.0, 0.0, 0.0), vec4<f32>(0.0, 0.0, 0.5, 0.0),
+                vec4<f32>(20.0, 30.0, 40.0, 1.0));
+            results[0] = vec4<f32>(aestra_mesh_tangent(normalize(vec3<f32>(1.0, 1.0, 0.0)),
+                vec3<f32>(0.0, 0.0, 1.0), transform), 0.0);
+            // Gram-Schmidt removes a normal component in imperfect imported tangent data.
+            results[1] = vec4<f32>(aestra_mesh_tangent(vec3<f32>(1.0, 0.0, 0.25),
+                vec3<f32>(0.0, 0.0, 1.0), transform), 0.0);
+        }
+    "#
+    );
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("mesh tangent transform"),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: None,
+        module: &shader,
+        entry_point: Some("check"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let output = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 32,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 32,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: output.as_entire_binding(),
+        }],
+    });
+    let mut encoder = device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_compute_pass(&Default::default());
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.dispatch_workgroups(1, 1, 1);
+    }
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 32);
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| {
+            sender.send(result).unwrap();
+        });
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(std::time::Duration::from_secs(60)),
+        })
+        .unwrap();
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    let mapped = readback.slice(..).get_mapped_range();
+    let values = mapped
+        .chunks_exact(4)
+        .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+        .collect::<Vec<_>>();
+    let length = 13.0_f32.sqrt();
+    for (actual, expected) in
+        values
+            .iter()
+            .zip([-3.0 / length, -2.0 / length, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0])
+    {
+        assert!(
+            (actual - expected).abs() < 1e-5,
+            "tangent transform {actual} != {expected}"
+        );
+    }
 }

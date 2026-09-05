@@ -1,3 +1,4 @@
+use super::mesh_inputs::MeshInputs;
 use super::{
     GpuBlend, GpuDrawInstance, GpuParticle, GpuRenderGlobals, GpuRenderMode, GpuRenderParams,
     GpuRenderer, GpuSemanticMaterialBinding, WESL_MESH_WIREFRAME_SHADER_PATH,
@@ -110,6 +111,7 @@ struct GpuSemanticPipelineKey {
     shader: Handle<Shader>,
     layout: std::sync::Arc<MaterialResourceLayout>,
     requires_scene_depth: bool,
+    mesh_inputs: MeshInputs,
 }
 
 impl PartialEq for GpuSemanticPipelineKey {
@@ -302,7 +304,7 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 ),
                 buffers: if key.mesh_wireframe {
                     vec![bevy::mesh::VertexBufferLayout {
-                        array_stride: 32,
+                        array_stride: 56,
                         step_mode: bevy::render::render_resource::VertexStepMode::Vertex,
                         attributes: vec![
                             bevy::render::render_resource::VertexAttribute {
@@ -320,6 +322,16 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                                 offset: 24,
                                 shader_location: 2,
                             },
+                            bevy::render::render_resource::VertexAttribute {
+                                format: bevy::render::render_resource::VertexFormat::Float32x2,
+                                offset: 32,
+                                shader_location: 3,
+                            },
+                            bevy::render::render_resource::VertexAttribute {
+                                format: bevy::render::render_resource::VertexFormat::Float32x4,
+                                offset: 40,
+                                shader_location: 4,
+                            },
                         ],
                     }]
                 } else {
@@ -328,11 +340,14 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                         .map(|layout| {
                             layout
                                 .0
-                                .get_layout(&[
-                                    Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
-                                    Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
-                                    Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
-                                ])
+                                .get_layout(
+                                    &key.material
+                                        .as_ref()
+                                        .map_or_else(MeshInputs::default, |material| {
+                                            material.mesh_inputs
+                                        })
+                                        .attributes(),
+                                )
                                 .expect("mesh attributes validated before queueing")
                         })
                         .into_iter()
@@ -475,20 +490,19 @@ fn prepare_mesh_draws(
             commands.entity(entity).remove::<PreparedMeshDraw>();
             continue;
         };
-        if mesh.primitive_topology() != PrimitiveTopology::TriangleList
-            || mesh
-                .layout
-                .0
-                .get_layout(&[
-                    Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
-                    Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
-                    Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
-                ])
-                .is_err()
-        {
-            bevy::log::warn_once!(
-                "Aestra mesh particles require TriangleList geometry with position, normal and UV0 attributes"
-            );
+        let inputs = draw
+            .semantic_material
+            .as_ref()
+            .map_or_else(MeshInputs::default, |material| {
+                MeshInputs::for_program(&material.program)
+            });
+        let validation = if mesh.primitive_topology() != PrimitiveTopology::TriangleList {
+            Err("TriangleList topology is required".to_owned())
+        } else {
+            inputs.validate(&mesh.layout.0)
+        };
+        if let Err(error) = validation {
+            bevy::log::warn_once!("Aestra mesh {:?}: {error}", handle.id());
             commands.entity(entity).remove::<PreparedMeshDraw>();
             continue;
         }
@@ -913,6 +927,7 @@ fn semantic_pipeline_key(
         },
         layout: std::sync::Arc::new(binding.program.resource_layout.clone()),
         requires_scene_depth,
+        mesh_inputs: MeshInputs::for_program(&binding.program),
     })
 }
 

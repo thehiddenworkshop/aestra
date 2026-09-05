@@ -6,6 +6,8 @@ use aestra_core::material::{MaterialDomain, MaterialInput};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaterialVarying {
     Normal,
+    Tangent,
+    Uv1,
     WorldPosition,
     LocalPosition,
     ViewDirection,
@@ -24,6 +26,8 @@ impl MaterialVarying {
     // Name, WGSL type, interpolation attribute, shared vertex-data expression.
     fn fields(self) -> (&'static str, &'static str, &'static str, &'static str) {
         match self {
+            Self::Uv1 => ("uv1", "vec2<f32>", "", "mesh.uv1"),
+            Self::Tangent => ("tangent", "vec3<f32>", "", "mesh.tangent"),
             Self::Normal => ("normal", "vec3<f32>", "", "mesh.normal"),
             Self::WorldPosition => ("world_position", "vec3<f32>", "", "mesh.world_position"),
             Self::LocalPosition => ("local_position", "vec3<f32>", "", "mesh.local_position"),
@@ -47,9 +51,13 @@ impl MaterialVarying {
 
     pub const fn components(self) -> u32 {
         match self {
-            Self::QuadPosition | Self::Uv0 => 2,
+            Self::QuadPosition | Self::Uv0 | Self::Uv1 => 2,
             Self::ParticleColor => 4,
-            Self::Normal | Self::WorldPosition | Self::LocalPosition | Self::ViewDirection => 3,
+            Self::Tangent
+            | Self::Normal
+            | Self::WorldPosition
+            | Self::LocalPosition
+            | Self::ViewDirection => 3,
             _ => 1,
         }
     }
@@ -85,6 +93,8 @@ impl MaterialVaryingLayout {
             varyings = vec![MaterialVarying::Visible];
             for (input, varying) in [
                 (MaterialInput::Normal, MaterialVarying::Normal),
+                (MaterialInput::Tangent, MaterialVarying::Tangent),
+                (MaterialInput::Uv1, MaterialVarying::Uv1),
                 (MaterialInput::WorldPosition, MaterialVarying::WorldPosition),
                 (MaterialInput::LocalPosition, MaterialVarying::LocalPosition),
                 (MaterialInput::ViewDirection, MaterialVarying::ViewDirection),
@@ -154,7 +164,14 @@ impl MaterialVaryingLayout {
 
     pub(super) fn vertex_wesl(&self, vertex_offset: bool) -> String {
         let mut source = if self.domain == MaterialDomain::Mesh {
-            crate::shader::mesh_vertex_wesl()
+            crate::shader::mesh_vertex_wesl_with_inputs(
+                self.slots
+                    .iter()
+                    .any(|slot| slot.varying == MaterialVarying::Uv1),
+                self.slots
+                    .iter()
+                    .any(|slot| slot.varying == MaterialVarying::Tangent),
+            )
         } else {
             String::from(crate::shader::SPRITE_VERTEX_WESL)
         };

@@ -1,6 +1,7 @@
 //! Bevy render-world adapter for engine-neutral Aestra GPU artifacts.
 
 mod bounds;
+mod mesh_inputs;
 mod render;
 mod wireframe;
 
