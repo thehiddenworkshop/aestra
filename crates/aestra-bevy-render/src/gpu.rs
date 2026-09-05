@@ -518,13 +518,7 @@ pub(crate) fn prepare_gpu_effects(
             .iter()
             .enumerate()
             .filter(|(_, r)| r.renderer_kind == 4)
-            .map(|(index, r)| {
-                (
-                    index as u32,
-                    player.effect().emitters[r.emitter_index as usize].max_particles
-                        * (r.frame_count - 1),
-                )
-            })
+            .map(|(index, r)| (index as u32, r.playback_mode * (r.frame_count - 1)))
             .collect();
         let has_trails = !trail_renderers.is_empty();
         let has_ribbons = !ribbon_renderers.is_empty() || has_trails;
@@ -543,7 +537,14 @@ pub(crate) fn prepare_gpu_effects(
             0_u32;
             artifact.total_slots as usize
         ]));
-        let counters = buffers.add(ShaderBuffer::from(vec![0_u32; 2]));
+        let counters = buffers.add(ShaderBuffer::from(vec![
+            0_u32;
+            2 + if has_trails {
+                5 * player.effect().emitters.len()
+            } else {
+                0
+            }
+        ]));
         let mut indirect_buffer = ShaderBuffer::from(indirect_draw_commands);
         indirect_buffer.buffer_description.usage |= BufferUsages::INDIRECT;
         let indirect = buffers.add(indirect_buffer);
@@ -570,7 +571,7 @@ pub(crate) fn prepare_gpu_effects(
                 particles: particles.clone(),
                 alive: alive.clone(),
                 dead,
-                counters,
+                counters: counters.clone(),
                 indirect: indirect.clone(),
                 globals,
                 render_globals: render_globals.clone(),
@@ -582,6 +583,19 @@ pub(crate) fn prepare_gpu_effects(
             },
             GpuPresentationPrepared,
         ));
+        if has_trails {
+            commands
+                .entity(entity)
+                .insert(GpuTrailStatistics::default())
+                .with_children(|parent| {
+                    parent
+                        .spawn((
+                            Readback::buffer(counters.clone()),
+                            GpuTrailReadbackOwner(entity),
+                        ))
+                        .observe(receive_trail_statistics);
+                });
+        }
         let render_mode = gpu_render_mode(player.render_mode());
         commands
             .entity(entity)
@@ -1078,6 +1092,61 @@ const fn gpu_blend(blend: aestra_core::BlendMode) -> GpuBlend {
     }
 }
 
+/// Asynchronously observed owner-pool counters, invalidated by history discontinuities.
+#[derive(Component, Debug, Default)]
+pub struct GpuTrailStatistics {
+    epoch: Option<u32>,
+    usage: aestra_runtime::TrailUsage,
+}
+
+impl GpuTrailStatistics {
+    pub fn usage(
+        &self,
+        instance: &aestra_runtime::EffectInstance,
+    ) -> Option<aestra_runtime::TrailUsage> {
+        (self.epoch == Some(instance.history_epoch())).then_some(self.usage)
+    }
+}
+
+#[derive(Component)]
+struct GpuTrailReadbackOwner(Entity);
+
+fn receive_trail_statistics(
+    event: On<ReadbackComplete>,
+    owners: Query<&GpuTrailReadbackOwner>,
+    mut players: Query<(&PresentedEffect, &mut GpuTrailStatistics)>,
+) {
+    let Ok(owner) = owners.get(event.event_target()) else {
+        return;
+    };
+    let Ok((player, mut statistics)) = players.get_mut(owner.0) else {
+        return;
+    };
+    let words: Vec<u32> = event.to_shader_type();
+    let mut usage = aestra_runtime::TrailUsage::default();
+    for (index, emitter) in player.effect().emitters.iter().enumerate() {
+        if !emitter.enabled
+            || !emitter
+                .renderers
+                .iter()
+                .any(|r| matches!(r.kind, aestra_runtime::RendererPlanKind::Trail { .. }))
+        {
+            continue;
+        }
+        let Some(stats) = words.get(2 + index * 5..2 + (index + 1) * 5) else {
+            return;
+        };
+        if stats[4] != player.instance.history_epoch() {
+            return;
+        }
+        usage.occupied = usage.occupied.saturating_add(stats[0]);
+        usage.retired = usage.retired.saturating_add(stats[1]);
+        usage.evictions = usage.evictions.saturating_add(stats[2]);
+    }
+    statistics.epoch = Some(player.instance.history_epoch());
+    statistics.usage = usage;
+}
+
 pub(crate) fn receive_readback(
     event: On<ReadbackComplete>,
     owners: Query<&GpuReadbackOwner>,
@@ -1317,6 +1386,29 @@ mod tests {
     use aestra_gpu::INDIRECT_DRAW_BYTES;
     use aestra_runtime::EffectInstance;
     use std::sync::Arc;
+
+    #[test]
+    fn trail_statistics_are_unavailable_until_readback_and_after_history_reset() {
+        let mut effect = EffectAsset::new("Telemetry", 2.0);
+        effect.emitters.push(Emitter::basic_sprite("Emitter", 2.0));
+        let mut instance = EffectInstance::new(Arc::new(
+            EffectCompiler::default().compile(&effect).unwrap(),
+        ));
+        assert_eq!(GpuTrailStatistics::default().usage(&instance), None);
+        let stats = GpuTrailStatistics {
+            epoch: Some(instance.history_epoch()),
+            usage: aestra_runtime::TrailUsage {
+                occupied: 5,
+                retired: 2,
+                evictions: 7,
+            },
+        };
+        assert_eq!(stats.usage(&instance).unwrap().occupied, 5);
+        instance.set_playback_time(0.5);
+        assert!(stats.usage(&instance).is_some());
+        instance.seek(1.0);
+        assert!(stats.usage(&instance).is_none());
+    }
 
     #[test]
     fn rendering_and_ribbon_culling_receive_the_same_propagated_transform() {

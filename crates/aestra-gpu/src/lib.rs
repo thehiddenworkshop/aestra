@@ -35,7 +35,7 @@ pub const INDIRECT_DRAW_BYTES: u64 = (INDIRECT_DRAW_WORDS * std::mem::size_of::<
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum GpuArtifactError {
     #[error(
-        "trail history supports one renderer per emitter, at most 256 parents, 2–64 points, and 1,048,576 total particle/history records"
+        "trail history supports one renderer per emitter, at most 256 parents, parent capacity–1024 trail owners, 2–64 points, and 1,048,576 total particle/history records"
     )]
     TrailLimit,
     #[error("emitter '{0}' has no {1} instruction")]
@@ -135,6 +135,8 @@ pub struct GpuEmitter {
     pub trail_points: u32,
     pub trail_interval: f32,
     pub trail_lifetime: f32,
+    pub trail_capacity: u32,
+    pub _trail_padding: [u32; 3],
 }
 
 /// One authored presentation path for an emitter.
@@ -150,6 +152,7 @@ pub struct GpuRenderer {
     pub particle_color: u32,
     pub renderer_kind: u32,
     pub frame_count: u32,
+    /// Flipbook playback mode, or the resolved owner budget for Trail (kind 4).
     pub playback_mode: u32,
     pub flipbook_flags: u32,
     pub frame_rate: f32,
@@ -291,23 +294,35 @@ impl GpuEffectArtifact {
                         sample_interval,
                         lifetime,
                         max_points,
+                        max_trails,
                         ..
-                    } if emitter.enabled => Some((sample_interval, lifetime, max_points)),
+                    } if emitter.enabled => Some((
+                        sample_interval,
+                        lifetime,
+                        max_points,
+                        if max_trails == 0 {
+                            emitter.max_particles
+                        } else {
+                            max_trails
+                        },
+                    )),
                     _ => None,
                 })
                 .collect();
             let trail_offset = history_offset;
-            let (trail_interval, trail_lifetime, trail_points) =
+            let (trail_interval, trail_lifetime, trail_points, trail_capacity) =
                 trails.first().copied().unwrap_or_default();
             if !trails.is_empty() {
                 if trails.len() > 1
                     || emitter.max_particles > 256
                     || !(2..=64).contains(&trail_points)
+                    || trail_capacity < emitter.max_particles
+                    || trail_capacity > 1024
                 {
                     return Err(GpuArtifactError::TrailLimit);
                 }
                 history_offset = history_offset
-                    .checked_add(1 + emitter.max_particles * trail_points)
+                    .checked_add(1 + trail_capacity * trail_points)
                     .ok_or(GpuArtifactError::TrailLimit)?;
                 if history_offset > 1_048_576 {
                     return Err(GpuArtifactError::TrailLimit);
@@ -387,7 +402,14 @@ impl GpuEffectArtifact {
                             max_points,
                             lifetime,
                             ..
-                        } => (4, *max_points, 0, 0, *lifetime, material_texture),
+                        } => (
+                            4,
+                            *max_points,
+                            trail_capacity,
+                            0,
+                            *lifetime,
+                            material_texture,
+                        ),
                         RendererPlanKind::Mesh { .. } => (2, 1, 0, 0, 0.0, material_texture),
                         RendererPlanKind::Flipbook {
                             flipbook,
@@ -600,6 +622,8 @@ impl GpuEffectArtifact {
                 trail_points,
                 trail_interval,
                 trail_lifetime,
+                trail_capacity,
+                _trail_padding: [0; 3],
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }

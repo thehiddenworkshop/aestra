@@ -12,7 +12,7 @@ pub use compatibility::{
     BackendCapabilities, CompatibilityIssue, CompatibilityIssueCode, CompatibilityReport,
     CompatibilityTarget, EffectRequirements, RendererCapability,
 };
-pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource};
+pub use profile::{EffectProfile, EmitterProfile, ProfileValue, ProfileValueSource, TrailUsage};
 
 #[cfg(test)]
 use aestra_core::CurveKey;
@@ -464,6 +464,8 @@ pub enum RendererPlanKind {
         sample_interval: f32,
         lifetime: f32,
         max_points: u32,
+        // Zero preserves the legacy parent-sized owner pool.
+        max_trails: u32,
     },
     Ribbon {
         width: f32,

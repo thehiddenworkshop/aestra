@@ -20,6 +20,7 @@ pub(super) enum TrailField {
     Interval,
     Lifetime,
     Points,
+    Capacity,
 }
 
 impl TrailField {
@@ -28,12 +29,13 @@ impl TrailField {
             Self::Width | Self::Lifetime => (0.001, f32::MAX),
             Self::Interval => (1.0 / 240.0, f32::MAX),
             Self::Points => (2.0, 64.0),
+            Self::Capacity => (1.0, 1024.0),
         }
     }
     pub(super) fn clamp(self, value: f32) -> f32 {
         let (min, max) = self.bounds();
         let value = value.clamp(min, max);
-        if matches!(self, Self::Points) {
+        if matches!(self, Self::Points | Self::Capacity) {
             value.round()
         } else {
             value
@@ -41,7 +43,7 @@ impl TrailField {
     }
     pub(super) fn step(self) -> f32 {
         match self {
-            Self::Points => 1.0,
+            Self::Points | Self::Capacity => 1.0,
             Self::Interval => 0.005,
             _ => 0.1,
         }
@@ -769,11 +771,19 @@ pub(super) fn renderer_number_input_value(
                 sample_interval,
                 lifetime,
                 max_points,
+                max_trails,
             } => Some(match field {
                 TrailField::Width => width,
                 TrailField::Interval => sample_interval,
                 TrailField::Lifetime => lifetime,
                 TrailField::Points => max_points as f32,
+                TrailField::Capacity => {
+                    (if max_trails == 0 {
+                        session.selected_layer().max_particles
+                    } else {
+                        max_trails
+                    }) as f32
+                }
             }),
             _ => None,
         },
@@ -890,6 +900,7 @@ pub(super) fn renderer_numeric_scrub_command(
                 sample_interval,
                 lifetime,
                 max_points,
+                max_trails,
             } = &mut properties
             else {
                 return None;
@@ -900,6 +911,9 @@ pub(super) fn renderer_numeric_scrub_command(
                 TrailField::Interval => *sample_interval = value,
                 TrailField::Lifetime => *lifetime = value,
                 TrailField::Points => *max_points = value as u32,
+                TrailField::Capacity => {
+                    *max_trails = (value as u32).max(session.selected_layer().max_particles)
+                }
             }
             Some(EffectCommand::SetRendererProperties {
                 emitter: session.selected_layer().id,
@@ -1201,6 +1215,9 @@ fn renderer_scrubbable_number(
         RendererNumberControl::Softness(_) | RendererNumberControl::Uv(_, _) => 0.0,
     });
     let (min, max) = match control {
+        RendererNumberControl::Trail(_, TrailField::Capacity) => {
+            (session.selected_layer().max_particles as f32, 1024.0)
+        }
         RendererNumberControl::Trail(_, field) => field.bounds(),
         RendererNumberControl::Softness(_) => (0.0, f32::MAX),
         RendererNumberControl::RibbonWidth(_) => (0.001, f32::MAX),
@@ -2440,6 +2457,7 @@ pub(super) fn spawn_renderer_card(
                     ("Sample interval", Some("s"), TrailField::Interval),
                     ("Trail lifetime", Some("s"), TrailField::Lifetime),
                     ("History points", None, TrailField::Points),
+                    ("Maximum Trails", None, TrailField::Capacity),
                 ] {
                     spawn_renderer_scalar_control(
                         card,
@@ -2769,6 +2787,7 @@ mod tests {
             sample_interval: 0.025,
             lifetime: 0.5,
             max_points: 32,
+            max_trails: 0,
         };
         let control = RendererNumberControl::Trail(renderer, TrailField::Points);
         let widget = renderer_scrubbable_number(&session, control);
@@ -2781,12 +2800,47 @@ mod tests {
                     width: 2.0,
                     sample_interval: 0.025,
                     lifetime: 0.5,
-                    max_points: 64
+                    max_points: 64,
+                    max_trails: 0,
                 },
                 ..
             }
         ));
         assert!(renderer_numeric_scrub_command(&session, control, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn trail_capacity_uses_parent_minimum_and_rounds_without_changing_other_properties() {
+        let mut session = test_support::session_with_timing_slack();
+        let emitter = session.selected_layer().id;
+        let renderer = session.selected_layer().renderers[0].id;
+        session
+            .effect
+            .emitters
+            .iter_mut()
+            .find(|e| e.id == emitter)
+            .unwrap()
+            .renderers[0]
+            .properties = RendererProperties::Trail {
+            width: 2.0,
+            sample_interval: 0.025,
+            lifetime: 0.5,
+            max_points: 32,
+            max_trails: 0,
+        };
+        let control = RendererNumberControl::Trail(renderer, TrailField::Capacity);
+        let widget = renderer_scrubbable_number(&session, control);
+        let parents = session.selected_layer().max_particles;
+        assert_eq!(
+            (widget.value, widget.min, widget.max, widget.step),
+            (parents as f32, parents as f32, 1024.0, 1.0)
+        );
+        for (input, expected) in [(0.0, parents), (5000.0, 1024), (511.6, 512)] {
+            let command = renderer_numeric_scrub_command(&session, control, input).unwrap();
+            assert!(
+                matches!(command, EffectCommand::SetRendererProperties { properties: RendererProperties::Trail { max_trails, max_points: 32, width: 2.0, .. }, .. } if max_trails == expected)
+            );
+        }
     }
 
     #[test]

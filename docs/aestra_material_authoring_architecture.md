@@ -2654,9 +2654,9 @@ color. The editor exposes width, sample interval, lifetime and history-point bud
 the reusable Feather scrub controls, and offers Trail Renderer in the Render-stage palette.
 
 History is a persistent tail of the existing 64-byte particle storage buffer: one emitter
-header, followed by one head and a sample ring per parent. No CPU readback or new shader
-bindings are needed. One Trail renderer per emitter, at most 256 parents and 2–64 points per
-parent are supported. Lowering bounds the complete buffer to 1,048,576 records for trail
+header, followed by one head and a sample ring per owner. History stays on the GPU and no new
+shader bindings are needed. One Trail renderer per emitter, at most 256 live parents and
+2–64 points per owner are supported. Lowering bounds the complete buffer to 1,048,576 records for trail
 effects, and the adapter checks its physical binding limit before allocating. Profiler memory
 and dispatch estimates include history. Existing artifact variants keep their ordering.
 
@@ -2683,7 +2683,27 @@ history is not part of CPU checkpoints. Viewer captures replay trail effects at 
 of stateless jumping. Native GPU tests cover slot reuse, world transforms, loop survivors,
 retirement, expiry and reset. CPU/reference-readback presentation rejects the strip capability.
 
-Remaining trail work: adaptive spatial sampling, independent retired-owner capacity, exact
+### Independent trail owner budget
+
+`Maximum Trails` reserves owner slots independently of live particle capacity. The budget
+must cover every live parent and is capped at 1024 owners per emitter; the existing 256-parent,
+64-point and global storage limits still apply. New editor Trail renderers default to twice
+the parent capacity. Trail Lab uses 64 owners for 32 parents. Missing/zero `max_trails` in old
+authored files and version-1 artifacts keeps the original parent-sized allocation.
+
+Each owner consumes `max_points * 64` bytes, plus one emitter header. Rendering reserves
+`max_trails * (max_points - 1)` segment instances. Retired owners do not consume live particle
+slots. Free/expired slots are reused first; overflow evicts the oldest retired owner with
+stable slot-order tie breaking, never a surviving live owner. This policy is fixed for now.
+
+The Profiler exposes the static budget and asynchronously measured occupied/retired counts
+and cumulative oldest-retired evictions since the last history reset. Only a small counter
+buffer is read back, not particle samples or history. Counts are unavailable before readback
+and after a discontinuity until matching-epoch counters arrive; they can lag the current frame.
+Native GPU tests exercise both legacy-sized and expanded pools, burst replacement, slot
+permutations, loop survivors, deterministic overflow, expiry and counter resets.
+
+Remaining trail work: adaptive spatial sampling, exact
 trajectory replay/checkpoint serialization, caps and distance-based UVs, conservative world
 history culling and larger parallel owner maps.
 

@@ -72,7 +72,9 @@ struct Emitter {
     trail_offset: u32,
     trail_points: u32,
     trail_interval: f32,
-    trail_lifetime: f32
+    trail_lifetime: f32,
+    trail_capacity: u32,
+    _trail_padding: array<u32, 3>
 }
 
 struct Particle {
@@ -651,7 +653,8 @@ fn record_trails(emitter_index: u32) {
         return;
     }
     let capacity = e.trail_points - 1u;
-    for (var i = 0u; i < e.max_particles; i += 1u) {
+    var evictions = select(last._padding_1, 0u, reset);
+    for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
         if reset || now - particles[base].rotation >= e.trail_lifetime {
             particles[base].alive = 0u;
@@ -660,7 +663,7 @@ fn record_trails(emitter_index: u32) {
     let count = min(atomicLoad(&indirect[emitter_index * 4u + 1u]), e.max_particles);
     for (var n = 0u; n < count; n += 1u) {
         let id = particles[alive_indices[e.slot_offset + n]].particle_index;
-        for (var i = 0u; i < e.max_particles; i += 1u) {
+        for (var i = 0u; i < e.trail_capacity; i += 1u) {
             let base = root + 1u + i * e.trail_points;
             if particles[base].alive != 0u && particles[base].particle_index == id {
                 particles[base].alive = 2u;
@@ -674,7 +677,7 @@ fn record_trails(emitter_index: u32) {
         var owner = 4294967295u;
         var candidate = 4294967295u;
         var oldest = 3.402823e38;
-        for (var i = 0u; i < e.max_particles; i += 1u) {
+        for (var i = 0u; i < e.trail_capacity; i += 1u) {
             let base = root + 1u + i * e.trail_points;
             let previous = particles[base];
             if previous.alive != 0u && previous.particle_index == head.particle_index {
@@ -701,6 +704,9 @@ fn record_trails(emitter_index: u32) {
                 continue;
             }
             owner = candidate;
+            if particles[owner].alive != 0u {
+                evictions += 1u;
+            }
             head._padding_0 = 1u % capacity;
             head._padding_1 = 1u;
             head._padding_2 = bitcast<u32>(now);
@@ -731,8 +737,16 @@ fn record_trails(emitter_index: u32) {
         }
         particles[owner] = head;
     }
-    for (var i = 0u; i < e.max_particles; i += 1u) {
+    var occupied = 0u;
+    var retired = 0u;
+    for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
+        if particles[base].alive != 0u {
+            occupied += 1u;
+        }
+        if particles[base].alive == 1u {
+            retired += 1u;
+        }
         if particles[base].alive == 2u {
             particles[base].alive = 1u;
         }
@@ -741,6 +755,15 @@ fn record_trails(emitter_index: u32) {
     particles[root].rotation = now;
     particles[root].particle_index = globals.seed;
     particles[root]._padding_0 = globals._padding.x;
+    particles[root]._padding_1 = evictions;
+    let peak = max(occupied, select(last._padding_2, 0u, reset));
+    particles[root]._padding_2 = peak;
+    let stats = 2u + emitter_index * 5u;
+    atomicStore(&counters[stats], occupied);
+    atomicStore(&counters[stats + 1u], retired);
+    atomicStore(&counters[stats + 2u], evictions);
+    atomicStore(&counters[stats + 3u], peak);
+    atomicStore(&counters[stats + 4u], globals._padding.x);
 }
 
 @compute @workgroup_size(64)

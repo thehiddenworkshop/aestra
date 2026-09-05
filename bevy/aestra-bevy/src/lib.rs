@@ -411,6 +411,7 @@ fn bevy_profile(
     profile
 }
 
+#[allow(clippy::type_complexity)]
 fn play_effects(
     mut commands: Commands,
     time: Res<Time>,
@@ -421,10 +422,11 @@ fn play_effects(
         &PresentedEffect,
         &mut EffectProfiler,
         &EffectRuntimeStatus,
+        Option<&aestra_bevy_render::gpu::GpuTrailStatistics>,
     )>,
 ) {
     let _span = tracing::info_span!("aestra::runtime::advance").entered();
-    for (player_entity, mut player, presented, mut profiler, runtime) in &mut players {
+    for (player_entity, mut player, presented, mut profiler, runtime, trails) in &mut players {
         if !profiler.0.matches_compiled(player.effect()) {
             profiler.0 = bevy_profile(player.effect(), &capabilities, runtime);
         }
@@ -447,6 +449,9 @@ fn play_effects(
             presented.cpu_evaluation_time(),
             runtime.active,
         );
+        profiler
+            .0
+            .record_trail_usage(trails.and_then(|s| s.usage(&presented.instance)));
     }
 }
 

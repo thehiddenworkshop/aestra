@@ -44,6 +44,7 @@ pub(crate) struct ProfilerFrameSample<'a> {
     effect: &'a CompiledEffect,
     particles: &'a [ParticleSample],
     cpu_time: Duration,
+    trails: Option<aestra_runtime::TrailUsage>,
 }
 
 impl<'a> ProfilerFrameSample<'a> {
@@ -56,7 +57,13 @@ impl<'a> ProfilerFrameSample<'a> {
             effect,
             particles,
             cpu_time,
+            trails: None,
         }
+    }
+
+    pub(crate) fn with_trails(mut self, usage: Option<aestra_runtime::TrailUsage>) -> Self {
+        self.trails = usage;
+        self
     }
 }
 
@@ -91,6 +98,7 @@ impl ProfilerState {
         let profile = self.profile.as_mut().expect("profile was initialized");
         profile.record_cpu_frame(sample.cpu_time, sample.particles);
         profile.record_submitted_frame(sample.effect, sample.particles);
+        profile.record_trail_usage(sample.trails);
         self.cpu_history_ns
             .push_back(sample.cpu_time.as_nanos().min(u128::from(u64::MAX)) as u64);
         while self.cpu_history_ns.len() > PROFILER_HISTORY_SAMPLES {
@@ -124,6 +132,10 @@ enum ProfilerMetric {
     SubmittedInstances,
     PeakParticles,
     ParticleCapacity,
+    TrailCapacity,
+    OccupiedTrails,
+    RetiredTrails,
+    TrailEvictions,
     Emitters,
     DrawCalls,
     Dispatches,
@@ -360,6 +372,10 @@ fn spawn_profiler_metric_grid(
                 ProfilerMetric::SubmittedInstances,
                 ProfilerMetric::PeakParticles,
                 ProfilerMetric::ParticleCapacity,
+                ProfilerMetric::TrailCapacity,
+                ProfilerMetric::OccupiedTrails,
+                ProfilerMetric::RetiredTrails,
+                ProfilerMetric::TrailEvictions,
                 ProfilerMetric::Emitters,
                 ProfilerMetric::DrawCalls,
                 ProfilerMetric::Dispatches,
@@ -567,6 +583,10 @@ fn profiler_metric_message(metric: ProfilerMetric) -> &'static str {
         ProfilerMetric::SubmittedInstances => "profiler-metric-submitted-instances",
         ProfilerMetric::PeakParticles => "profiler-metric-peak-particles",
         ProfilerMetric::ParticleCapacity => "profiler-metric-capacity",
+        ProfilerMetric::TrailCapacity => "profiler-metric-trail-capacity",
+        ProfilerMetric::OccupiedTrails => "profiler-metric-trails-occupied",
+        ProfilerMetric::RetiredTrails => "profiler-metric-trails-retired",
+        ProfilerMetric::TrailEvictions => "profiler-metric-trail-evictions",
         ProfilerMetric::Emitters => "profiler-metric-emitters",
         ProfilerMetric::DrawCalls => "profiler-metric-draw-calls",
         ProfilerMetric::Dispatches => "profiler-metric-dispatches",
@@ -585,6 +605,10 @@ fn profiler_metric_display(
         ProfilerMetric::SubmittedInstances => format_profile_count(profile.submitted_instances),
         ProfilerMetric::PeakParticles => format_profile_count(profile.peak_particles),
         ProfilerMetric::ParticleCapacity => format_profile_count(profile.particle_capacity),
+        ProfilerMetric::TrailCapacity => format_profile_count(profile.trail_capacity),
+        ProfilerMetric::OccupiedTrails => format_profile_count(profile.occupied_trails),
+        ProfilerMetric::RetiredTrails => format_profile_count(profile.retired_trails),
+        ProfilerMetric::TrailEvictions => format_profile_count(profile.trail_evictions),
         ProfilerMetric::Emitters => format_profile_count(profile.emitter_count),
         ProfilerMetric::DrawCalls => format_profile_count(profile.draw_calls),
         ProfilerMetric::Dispatches => format_profile_count(profile.dispatch_count),

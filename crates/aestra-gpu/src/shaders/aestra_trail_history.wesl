@@ -12,7 +12,8 @@ fn record_trails(emitter_index: u32) {
     let reset = last.alive == 0u || last._padding_0 != globals._padding.x || last.particle_index != globals.seed || now < last.rotation || now - last.rotation > e.trail_lifetime;
     if !reset && now == last.rotation { return; }
     let capacity = e.trail_points - 1u;
-    for (var i = 0u; i < e.max_particles; i += 1u) {
+    var evictions = select(last._padding_1, 0u, reset);
+    for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
         if reset || now - particles[base].rotation >= e.trail_lifetime {
             particles[base].alive = 0u;
@@ -23,7 +24,7 @@ fn record_trails(emitter_index: u32) {
     // cannot evict a living parent's history. Sorted IDs make eviction deterministic.
     for (var n = 0u; n < count; n += 1u) {
         let id = particles[alive_indices[e.slot_offset + n]].particle_index;
-        for (var i = 0u; i < e.max_particles; i += 1u) {
+        for (var i = 0u; i < e.trail_capacity; i += 1u) {
             let base = root + 1u + i * e.trail_points;
             if particles[base].alive != 0u && particles[base].particle_index == id { particles[base].alive = 2u; break; }
         }
@@ -34,7 +35,7 @@ fn record_trails(emitter_index: u32) {
         var owner = 0xffffffffu;
         var candidate = 0xffffffffu;
         var oldest = 3.402823e38;
-        for (var i = 0u; i < e.max_particles; i += 1u) {
+        for (var i = 0u; i < e.trail_capacity; i += 1u) {
             let base = root + 1u + i * e.trail_points;
             let previous = particles[base];
             if previous.alive != 0u && previous.particle_index == head.particle_index { owner = base; break; }
@@ -51,6 +52,7 @@ fn record_trails(emitter_index: u32) {
         if owner == 0xffffffffu {
             if candidate == 0xffffffffu { continue; }
             owner = candidate;
+            if particles[owner].alive != 0u { evictions += 1u; }
             head._padding_0 = 1u % capacity;
             head._padding_1 = 1u;
             head._padding_2 = bitcast<u32>(now);
@@ -79,14 +81,28 @@ fn record_trails(emitter_index: u32) {
         }
         particles[owner] = head;
     }
-    for (var i = 0u; i < e.max_particles; i += 1u) {
+    var occupied = 0u;
+    var retired = 0u;
+    for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
+        if particles[base].alive != 0u { occupied += 1u; }
+        if particles[base].alive == 1u { retired += 1u; }
         if particles[base].alive == 2u { particles[base].alive = 1u; }
     }
     particles[root].alive = 1u;
     particles[root].rotation = now;
     particles[root].particle_index = globals.seed;
     particles[root]._padding_0 = globals._padding.x;
+    particles[root]._padding_1 = evictions;
+    let peak = max(occupied, select(last._padding_2, 0u, reset));
+    particles[root]._padding_2 = peak;
+    // Small asynchronous profiler readback; never copy the history buffer.
+    let stats = 2u + emitter_index * 5u;
+    atomicStore(&counters[stats], occupied);
+    atomicStore(&counters[stats + 1u], retired);
+    atomicStore(&counters[stats + 2u], evictions);
+    atomicStore(&counters[stats + 3u], peak);
+    atomicStore(&counters[stats + 4u], globals._padding.x);
 }
 
 @compute @workgroup_size(64)

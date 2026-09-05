@@ -579,6 +579,7 @@ impl EffectCompiler {
                         sample_interval,
                         lifetime,
                         max_points,
+                        max_trails,
                     } => RendererPlan {
                         source: renderer.id,
                         material: renderer.material,
@@ -587,6 +588,11 @@ impl EffectCompiler {
                             sample_interval: *sample_interval,
                             lifetime: *lifetime,
                             max_points: *max_points,
+                            max_trails: if *max_trails == 0 {
+                                emitter.max_particles
+                            } else {
+                                *max_trails
+                            },
                         },
                     },
                     RendererProperties::Mesh { asset } => RendererPlan {
@@ -881,6 +887,21 @@ impl EffectCompiler {
                 );
             }
             for (renderer_index, renderer) in emitter.renderers.iter().enumerate() {
+                if let RendererProperties::Trail { max_trails, .. } = renderer.properties
+                    && max_trails != 0
+                    && max_trails < emitter.max_particles
+                {
+                    push_unique(
+                        report,
+                        Diagnostic::error(
+                            DiagnosticCode::InvalidValue,
+                            format!(
+                                "{emitter_path}.renderers[{renderer_index}].properties.max_trails"
+                            ),
+                            "Maximum Trails must cover every live parent; increase it above particle capacity to retain retired tails",
+                        ),
+                    );
+                }
                 if renderer.enabled
                     && matches!(renderer.properties, RendererProperties::Trail { .. })
                     && (emitter.max_particles > 256

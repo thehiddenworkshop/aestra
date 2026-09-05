@@ -2673,6 +2673,13 @@ fn update_preview(
     mut profiler: ResMut<ProfilerState>,
     mut preview: ResMut<EditorPreviewProject>,
     timeline: Res<TimelineState>,
+    trail_stats: Query<
+        (
+            &PresentedEffect,
+            &aestra_bevy_render::gpu::GpuTrailStatistics,
+        ),
+        With<PreviewPresentedEffect>,
+    >,
 ) {
     let compiled = session
         .preview
@@ -2704,11 +2711,14 @@ fn update_preview(
         .sum();
     if let Some(compiled) = compiled
         && profiler
-            .ingest(ProfilerFrameSample::new(
-                &compiled,
-                &session.samples,
-                elapsed,
-            ))
+            .ingest(
+                ProfilerFrameSample::new(&compiled, &session.samples, elapsed).with_trails(
+                    trail_stats
+                        .iter()
+                        .find(|(p, _)| std::sync::Arc::ptr_eq(p.effect(), &compiled))
+                        .and_then(|(p, s)| s.usage(&p.instance)),
+                ),
+            )
             .profile_rebuilt()
     {
         session.ui_revision += 1;

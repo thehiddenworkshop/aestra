@@ -293,6 +293,8 @@ enum RendererPlanKindV1 {
         sample_interval: f32,
         lifetime: f32,
         max_points: u32,
+        #[serde(default)]
+        max_trails: u32,
     },
 }
 
@@ -1416,11 +1418,13 @@ impl From<&RendererPlan> for RendererPlanV1 {
                     sample_interval,
                     lifetime,
                     max_points,
+                    max_trails,
                 } => RendererPlanKindV1::Trail {
                     width,
                     sample_interval,
                     lifetime,
                     max_points,
+                    max_trails,
                 },
                 RendererPlanKind::Flipbook {
                     flipbook,
@@ -1452,11 +1456,13 @@ impl From<RendererPlanV1> for RendererPlan {
                     sample_interval,
                     lifetime,
                     max_points,
+                    max_trails,
                 } => RendererPlanKind::Trail {
                     width,
                     sample_interval,
                     lifetime,
                     max_points,
+                    max_trails,
                 },
                 RendererPlanKindV1::Flipbook {
                     flipbook,

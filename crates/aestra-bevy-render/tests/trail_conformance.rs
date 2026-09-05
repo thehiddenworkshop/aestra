@@ -20,6 +20,15 @@ fn word(bytes: &[u8], record: usize, offset: usize) -> u32 {
 
 #[test]
 fn trails_preserve_identity_world_history_and_retired_tails_and_reset_on_discontinuities() {
+    check_pool(2);
+}
+
+#[test]
+fn separate_trail_budget_retains_burst_tails_until_expiry_or_oldest_retired_eviction() {
+    check_pool(4);
+}
+
+fn check_pool(max_trails: u32) {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::PRIMARY;
     let instance = wgpu::Instance::new(descriptor);
@@ -84,14 +93,15 @@ fn trails_preserve_identity_world_history_and_retired_tails_and_reset_on_discont
             _turbulence_padding: 1,
             trail_offset: 2,
             trail_points: 4,
+            trail_capacity: max_trails,
             trail_interval: 0.125,
             trail_lifetime: 1.0,
             ..Default::default()
         }]),
-        encode(&vec![GpuParticle::default(); 11]),
+        encode(&vec![GpuParticle::default(); 3 + max_trails as usize * 4]),
         encode(&vec![0u32, 1]),
         encode(&vec![0u32; 2]),
-        encode(&vec![0u32; 2]),
+        encode(&vec![0u32; 7]),
         encode(&vec![6u32, 2, 0, 0]),
         encode(&GpuGlobals::default()),
     ];
@@ -150,7 +160,7 @@ fn trails_preserve_identity_world_history_and_retired_tails_and_reset_on_discont
         );
         let readback = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: buffers[1].size(),
+            size: buffers[1].size() + buffers[4].size(),
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -163,7 +173,14 @@ fn trails_preserve_identity_world_history_and_retired_tails_and_reset_on_discont
                 pass.dispatch_workgroups(1, 1, 1);
             }
         }
-        encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, readback.size());
+        encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, buffers[1].size());
+        encoder.copy_buffer_to_buffer(
+            &buffers[4],
+            0,
+            &readback,
+            buffers[1].size(),
+            buffers[4].size(),
+        );
         let submission = queue.submit([encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();
         readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
@@ -184,6 +201,9 @@ fn trails_preserve_identity_world_history_and_retired_tails_and_reset_on_discont
         bytes
     };
     let initial = step(0.0, [0, 1], 2, 100.0, 0, 0);
+    let stats_record = 3 + max_trails as usize * 4;
+    assert_eq!(word(&initial, stats_record, 8), 2, "two occupied owners");
+    assert_eq!(word(&initial, stats_record, 12), 0, "no retired owners");
     assert_eq!(word(&initial, 3, 56), 1);
     assert_eq!(f32::from_bits(word(&initial, 4, 16)), 100.0);
     step(0.125, [0, 1], 2, 200.0, 0, 0);
@@ -209,16 +229,54 @@ fn trails_preserve_identity_world_history_and_retired_tails_and_reset_on_discont
         3,
         "survivor keeps ring through loop boundary"
     );
-    assert_eq!(word(&looped, 3, 48), 2);
+    let new_owner = if max_trails == 2 { 3 } else { 11 };
+    assert_eq!(word(&looped, new_owner, 48), 2);
     assert_eq!(
-        word(&looped, 3, 56),
+        word(&looped, new_owner, 56),
         1,
         "new parent cannot inherit evicted trail"
     );
+    if max_trails == 4 {
+        assert_eq!(
+            word(&looped, 3, 48),
+            0,
+            "retired parent retains its own slot"
+        );
+        assert_eq!(
+            word(&looped, 3, 56),
+            3,
+            "retired samples survive new births"
+        );
+        assert_eq!(word(&looped, 2, 56), 0, "no eviction with spare capacity");
+        let full = step(0.4375, [3, 1], 2, 400.0, 0, 0);
+        assert_eq!(
+            word(&full, 2, 60),
+            4,
+            "peak occupancy includes retired owners"
+        );
+        assert_eq!(word(&full, 2, 56), 0);
+        let overflow = step(0.45, [4, 1], 2, 400.0, 0, 0);
+        assert_eq!(word(&overflow, 2, 56), 1);
+        assert_eq!(
+            word(&overflow, 3, 48),
+            4,
+            "oldest retired owner is evicted first"
+        );
+        assert_eq!(word(&overflow, 7, 48), 1, "living owner cannot be evicted");
+        assert_eq!(
+            word(&overflow, 11, 48),
+            2,
+            "newer retired owner is retained"
+        );
+        assert_eq!(word(&overflow, stats_record, 8), 4);
+        assert_eq!(word(&overflow, stats_record, 12), 2);
+        assert_eq!(word(&overflow, stats_record, 16), 1);
+    }
     let retired = step(0.5, [0, 0], 0, 0.0, 0, 0);
     assert_eq!(word(&retired, 7, 44), 1, "tail remains after parent dies");
     let seek = step(0.625, [2, 1], 2, 0.0, 1, 0);
     assert_eq!(word(&seek, 3, 56), 1, "forward seek epoch resets history");
+    assert_eq!(word(&seek, 2, 56), 0, "seek resets eviction counters");
     let seed = step(0.75, [2, 1], 2, 0.0, 1, 1);
     assert_eq!(word(&seed, 3, 56), 1, "seed change resets history");
     let backward = step(0.5, [2, 1], 2, 0.0, 1, 1);
@@ -226,4 +284,11 @@ fn trails_preserve_identity_world_history_and_retired_tails_and_reset_on_discont
     let expired = step(1.5, [0, 0], 0, 0.0, 1, 1);
     assert_eq!(word(&expired, 3, 44), 0);
     assert_eq!(word(&expired, 7, 44), 0);
+    assert_eq!(word(&expired, stats_record, 8), 0);
+    assert_eq!(word(&expired, stats_record, 12), 0);
+    assert_eq!(
+        word(&expired, stats_record, 16),
+        0,
+        "expiry is not eviction"
+    );
 }

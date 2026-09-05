@@ -2542,6 +2542,7 @@ impl RendererInstance {
                 sample_interval,
                 lifetime,
                 max_points,
+                max_trails,
             } => {
                 if !width.is_finite()
                     || *width <= 0.0
@@ -2550,11 +2551,12 @@ impl RendererInstance {
                     || !lifetime.is_finite()
                     || *lifetime <= 0.0
                     || !(2..=64).contains(max_points)
+                    || *max_trails > 1024
                 {
                     invalid_value(
                         report,
                         path,
-                        "trail requires positive finite width/lifetime, a sample interval of at least 1/240s and 2–64 points",
+                        "trail requires positive finite width/lifetime, a sample interval of at least 1/240s, 2–64 points and at most 1024 trails (0 inherits parent capacity)",
                     );
                 }
                 Some(RENDERER_TRAIL)
@@ -2616,6 +2618,8 @@ pub enum RendererProperties {
         sample_interval: f32,
         lifetime: f32,
         max_points: u32,
+        #[serde(default)]
+        max_trails: u32,
     },
 }
 

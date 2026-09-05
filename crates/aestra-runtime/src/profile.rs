@@ -44,9 +44,22 @@ pub struct EmitterProfile {
     pub particle_capacity: u32,
 }
 
+/// Measured native owner-pool usage; evictions accumulate until history resets.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TrailUsage {
+    pub occupied: u32,
+    pub retired: u32,
+    pub evictions: u32,
+}
+
 /// Machine-readable runtime and compiler cost snapshot for one effect instance.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EffectProfile {
+    pub trail_capacity: ProfileValue<u32>,
+    pub occupied_trails: ProfileValue<u32>,
+    pub retired_trails: ProfileValue<u32>,
+    /// Oldest retired owners evicted since the last history reset.
+    pub trail_evictions: ProfileValue<u32>,
     pub cpu_time_ns: ProfileValue<u64>,
     pub gpu_time_ns: ProfileValue<u64>,
     pub alive_particles: ProfileValue<u32>,
@@ -66,6 +79,18 @@ pub struct EffectProfile {
 }
 
 impl EffectProfile {
+    pub fn record_trail_usage(&mut self, usage: Option<TrailUsage>) {
+        self.occupied_trails = usage.map_or(ProfileValue::Unavailable, |v| {
+            ProfileValue::Measured(v.occupied)
+        });
+        self.retired_trails = usage.map_or(ProfileValue::Unavailable, |v| {
+            ProfileValue::Measured(v.retired)
+        });
+        self.trail_evictions = usage.map_or(ProfileValue::Unavailable, |v| {
+            ProfileValue::Measured(v.evictions)
+        });
+    }
+
     pub fn from_compiled(effect: &CompiledEffect) -> Self {
         let emitter_count = effect.emitters.len().min(u32::MAX as usize) as u32;
         let draw_calls = effect
@@ -103,6 +128,10 @@ impl EffectProfile {
         let dispatch_count = u32::from(effect.max_particles > 0)
             * (2 + u32::from(has_ribbons) + u32::from(has_trails));
         Self {
+            trail_capacity: ProfileValue::Measured(trail_capacity(effect)),
+            occupied_trails: ProfileValue::Unavailable,
+            retired_trails: ProfileValue::Unavailable,
+            trail_evictions: ProfileValue::Unavailable,
             cpu_time_ns: ProfileValue::Unavailable,
             gpu_time_ns: ProfileValue::Unavailable,
             alive_particles: ProfileValue::Unavailable,
@@ -139,7 +168,9 @@ impl EffectProfile {
     }
 
     pub fn matches_compiled(&self, effect: &CompiledEffect) -> bool {
-        self.emitters.len() == effect.emitters.len()
+        self.trail_capacity.value() == Some(trail_capacity(effect))
+            && self.buffer_memory_bytes.value() == Some(estimated_buffer_memory(effect))
+            && self.emitters.len() == effect.emitters.len()
             && self
                 .emitters
                 .iter()
@@ -197,6 +228,25 @@ impl EffectProfile {
     }
 }
 
+/// Static owner budget; zero in legacy artifacts inherits the live particle capacity.
+pub fn trail_capacity(effect: &CompiledEffect) -> u32 {
+    effect
+        .emitters
+        .iter()
+        .filter(|e| e.enabled)
+        .flat_map(|e| {
+            e.renderers.iter().filter_map(move |r| match r.kind {
+                crate::RendererPlanKind::Trail { max_trails, .. } => Some(if max_trails == 0 {
+                    e.max_particles
+                } else {
+                    max_trails
+                }),
+                _ => None,
+            })
+        })
+        .fold(0, u32::saturating_add)
+}
+
 fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
     let attribute_bytes = effect
         .particle_layout
@@ -215,15 +265,29 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
         .filter(|e| e.enabled)
         .flat_map(|e| {
             e.renderers.iter().filter_map(move |r| match r.kind {
-                crate::RendererPlanKind::Trail { max_points, .. } => {
-                    Some((1 + u64::from(e.max_particles) * u64::from(max_points)) * 64)
+                crate::RendererPlanKind::Trail {
+                    max_points,
+                    max_trails,
+                    ..
+                } => {
+                    let capacity = if max_trails == 0 {
+                        e.max_particles
+                    } else {
+                        max_trails
+                    };
+                    Some((1 + u64::from(capacity) * u64::from(max_points)) * 64)
                 }
                 _ => None,
             })
         })
         .sum::<u64>();
     let alive_and_dead_indices = particle_count.saturating_mul(2 * size_of::<u32>() as u64);
-    let counters = 2 * size_of::<u32>() as u64;
+    let counter_words = 2 + if history_storage > 0 {
+        5 * effect.emitters.len() as u64
+    } else {
+        0
+    };
+    let counters = counter_words * size_of::<u32>() as u64;
     let indirect_commands = effect.emitters.len() as u64 * 4 * size_of::<u32>() as u64;
     particle_storage
         .saturating_add(history_storage)

@@ -16,6 +16,7 @@ fn fixture() -> EffectAsset {
         sample_interval: 0.025,
         lifetime: 0.5,
         max_points: 32,
+        max_trails: 0,
     };
     effect.emitters.push(emitter);
     effect
@@ -41,24 +42,28 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
             sample_interval: 0.1,
             lifetime: 1.0,
             max_points: 4,
+            max_trails: 0,
         },
         RendererProperties::Trail {
             width: 1.0,
             sample_interval: 0.0,
             lifetime: 1.0,
             max_points: 4,
+            max_trails: 0,
         },
         RendererProperties::Trail {
             width: 1.0,
             sample_interval: 0.1,
             lifetime: -1.0,
             max_points: 4,
+            max_trails: 0,
         },
         RendererProperties::Trail {
             width: 1.0,
             sample_interval: 0.1,
             lifetime: 1.0,
             max_points: 65,
+            max_trails: 0,
         },
     ] {
         let mut effect = effect.clone();
@@ -73,6 +78,68 @@ fn validates_bounded_history_and_keeps_normal_particle_capacity_separate() {
     renderer.id = aestra_core::RendererId::new();
     duplicate.emitters[0].renderers.push(renderer);
     assert!(EffectCompiler::default().compile(&duplicate).is_err());
+}
+
+#[test]
+fn independent_pool_capacity_is_serialized_validated_and_profiled() {
+    let mut effect = fixture();
+    let legacy = effect
+        .to_pretty_ron()
+        .unwrap()
+        .replace("max_trails: 0,", "");
+    let legacy = EffectAsset::from_ron(&legacy).unwrap();
+    assert!(matches!(
+        legacy.emitters[0].renderers[0].properties,
+        RendererProperties::Trail { max_trails: 0, .. }
+    ));
+    let compiled = EffectCompiler::default().compile(&effect).unwrap();
+    let mut profile = aestra_runtime::EffectProfile::from_compiled(&compiled);
+    let old_memory = profile.buffer_memory_bytes.value().unwrap();
+    assert_eq!(profile.trail_capacity.value(), Some(8));
+    assert_eq!(
+        profile.occupied_trails,
+        aestra_runtime::ProfileValue::Unavailable
+    );
+    if let RendererProperties::Trail { max_trails, .. } =
+        &mut effect.emitters[0].renderers[0].properties
+    {
+        *max_trails = 24;
+    }
+    let compiled = Arc::new(EffectCompiler::default().compile(&effect).unwrap());
+    assert!(!profile.matches_compiled(&compiled));
+    profile = aestra_runtime::EffectProfile::from_compiled(&compiled);
+    assert_eq!(profile.trail_capacity.value(), Some(24));
+    assert_eq!(
+        profile.buffer_memory_bytes.value().unwrap() - old_memory,
+        16 * 32 * 64
+    );
+    profile.record_trail_usage(Some(aestra_runtime::TrailUsage {
+        occupied: 20,
+        retired: 12,
+        evictions: 3,
+    }));
+    assert_eq!(
+        profile.retired_trails,
+        aestra_runtime::ProfileValue::Measured(12)
+    );
+    profile.record_trail_usage(None);
+    assert_eq!(
+        profile.trail_evictions,
+        aestra_runtime::ProfileValue::Unavailable
+    );
+    let gpu = GpuEffectArtifact::from_instance(&EffectInstance::new(compiled)).unwrap();
+    assert_eq!(gpu.total_slots, 8);
+    assert_eq!(gpu.particles.len(), 8 + 1 + 24 * 32);
+    assert_eq!(gpu.emitters[0].trail_capacity, 24);
+    assert_eq!(gpu.renderers[0].playback_mode, 24);
+    for capacity in [7, 1025] {
+        if let RendererProperties::Trail { max_trails, .. } =
+            &mut effect.emitters[0].renderers[0].properties
+        {
+            *max_trails = capacity;
+        }
+        assert!(EffectCompiler::default().compile(&effect).is_err());
+    }
 }
 
 #[test]
