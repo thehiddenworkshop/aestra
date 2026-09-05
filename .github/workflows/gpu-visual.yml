@@ -67,6 +67,24 @@ jobs:
           --visual-test apps/aestra-viewer/tests/references/plasma_burst target/visual-regression/plasma-burst
           --frames 8
 
+      - name: Compare Ribbon Lab reference
+        run: >-
+          cargo run --locked -p aestra-viewer --
+          --backend gpu
+          --semantic-materials
+          --effect assets/effects/ribbon_lab.aestra.ron
+          --visual-test apps/aestra-viewer/tests/references/ribbon_lab target/visual-regression/ribbon-lab
+          --frames 8
+
+      - name: Compare Trail Lab reference
+        run: >-
+          cargo run --locked -p aestra-viewer --
+          --backend gpu
+          --semantic-materials
+          --effect assets/effects/trail_lab.aestra.ron
+          --visual-test apps/aestra-viewer/tests/references/trail_lab target/visual-regression/trail-lab
+          --frames 8
+
       - name: Upload captures and regression reports
         if: always()
         uses: actions/upload-artifact@v7

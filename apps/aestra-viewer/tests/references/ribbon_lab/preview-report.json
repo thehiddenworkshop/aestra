@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "status": "succeeded",
+  "errors": [],
+  "effect": {
+    "id": "a3574a00-0000-4000-8000-00000000b001",
+    "name": "Ribbon Lab",
+    "duration_seconds": 3.0,
+    "playback_mode": "LoopContinuous",
+    "seek_mode": "StatelessDirect",
+    "emitter_count": 1,
+    "material_count": 0,
+    "material_program_count": 1,
+    "max_particles": 128
+  },
+  "capture": {
+    "tick_rate": 60,
+    "seed": "0xa3572a115eed0001",
+    "frame_width": 960,
+    "frame_height": 540,
+    "contact_sheet_columns": 3,
+    "contact_sheet_rows": 3,
+    "contact_sheet": "contact-sheet.png",
+    "frames": [
+      {
+        "index": 0,
+        "simulation_frame": 11,
+        "time_seconds": 0.18333333333333332,
+        "image": "frame-000.png"
+      },
+      {
+        "index": 1,
+        "simulation_frame": 34,
+        "time_seconds": 0.5666666666666667,
+        "image": "frame-001.png"
+      },
+      {
+        "index": 2,
+        "simulation_frame": 56,
+        "time_seconds": 0.9333333333333333,
+        "image": "frame-002.png"
+      },
+      {
+        "index": 3,
+        "simulation_frame": 79,
+        "time_seconds": 1.3166666666666667,
+        "image": "frame-003.png"
+      },
+      {
+        "index": 4,
+        "simulation_frame": 101,
+        "time_seconds": 1.6833333333333333,
+        "image": "frame-004.png"
+      },
+      {
+        "index": 5,
+        "simulation_frame": 124,
+        "time_seconds": 2.066666666666667,
+        "image": "frame-005.png"
+      },
+      {
+        "index": 6,
+        "simulation_frame": 146,
+        "time_seconds": 2.433333333333333,
+        "image": "frame-006.png"
+      },
+      {
+        "index": 7,
+        "simulation_frame": 169,
+        "time_seconds": 2.816666666666667,
+        "image": "frame-007.png"
+      }
+    ]
+  },
+  "compiler": {
+    "diagnostics": [],
+    "optimizations": {
+      "material_function_calls_authored": 0,
+      "material_function_calls_eliminated": 0,
+      "material_function_calls_live": 0,
+      "constant_expressions": 14,
+      "runtime_parameter_reads": 0,
+      "eliminated_attributes": 1,
+      "material_common_subexpressions": 0,
+      "material_specialized_parameter_reads": 0,
+      "material_pruned_static_branches": 0,
+      "material_pruned_features": 0,
+      "material_texture_samples_authored": 0,
+      "material_texture_samples_eliminated": 0,
+      "material_texture_samples_live": 0
+    },
+    "material_program_fingerprints": [
+      {
+        "program_id": "a3574a00-0000-4000-8000-00000000b201",
+        "fingerprint": "c1c6f8b4122b597ffe19d05a4a61774786d69633d464e0be09acedf5c2ce8a08"
+      }
+    ]
+  },
+  "runtime": {
+    "requested_backend": "Gpu",
+    "active_backend": "native GPU",
+    "selection_reason": "compute, vertex storage, and indirect drawing are supported",
+    "compatibility": {
+      "target": "native GPU",
+      "compatible": true,
+      "issues": []
+    },
+    "adapter": {
+      "detected": true,
+      "name": "NVIDIA GeForce RTX 4070 SUPER",
+      "backend": "Vulkan",
+      "device_type": "DiscreteGpu",
+      "driver": "NVIDIA",
+      "limitations": []
+    },
+    "physical_gpu_particle_capacity": 4194240,
+    "configured_gpu_particle_budget": 262144,
+    "effective_gpu_particle_budget": 262144
+  },
+  "metrics": {
+    "cpu_time_ns": {
+      "source": "unavailable"
+    },
+    "gpu_time_ns": {
+      "source": "unavailable"
+    },
+    "alive_particles": {
+      "source": "unavailable"
+    },
+    "submitted_instances": {
+      "source": "unavailable"
+    },
+    "peak_particles": {
+      "source": "unavailable"
+    },
+    "particle_capacity": {
+      "source": "measured",
+      "value": 128
+    },
+    "emitter_count": {
+      "source": "measured",
+      "value": 1
+    },
+    "draw_calls": {
+      "source": "estimated",
+      "value": 1
+    },
+    "dispatch_count": {
+      "source": "estimated",
+      "value": 3
+    },
+    "estimated_overdraw": {
+      "source": "unavailable"
+    },
+    "texture_sample_count": {
+      "source": "estimated",
+      "value": 0
+    },
+    "buffer_memory_bytes": {
+      "source": "estimated",
+      "value": 8216
+    },
+    "texture_memory_bytes": {
+      "source": "estimated",
+      "value": 0
+    },
+    "collision_time_ns": {
+      "source": "unavailable"
+    },
+    "emitters": [
+      {
+        "id": "a3574a00-0000-4000-8000-00000000b301",
+        "name": "Arc Ribbon",
+        "alive_particles": 0,
+        "peak_particles": 0,
+        "particle_capacity": 128
+      }
+    ],
+    "platform_warnings": []
+  }
+}

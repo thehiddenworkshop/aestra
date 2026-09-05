@@ -129,9 +129,13 @@ the core of M7.
    ribbon links out of `GpuParticle`'s reused fields into dedicated buffers. Rewrite
    `trail_history` / `ribbon_link` / trail+ribbon vertex shaders against the new
    records. Verify: trail + ribbon conformance, the (bit-exact) prism/ember/plasma
-   visual references, plus a **new ribbon/trail visual reference** to close the
-   coverage gap noted in the vertex-strip work. This step is pure untangling —
-   behavior-preserving, no ABI shrink yet.
+   visual references, plus the **ribbon/trail visual references** — now established
+   (`apps/aestra-viewer/tests/references/{ribbon_lab,trail_lab}`, wired into
+   `gpu-visual.yml`) to close the coverage gap noted in the vertex-strip work; refactor
+   against these. This step is pure untangling — behavior-preserving, no ABI shrink yet.
+   (Caveat: both effects render a small element, so the pixel net catches gross breakage
+   — vanished/inverted geometry — more sharply than subtle sub-pixel drift; the geometry
+   conformance tests remain the fine-grained check.)
 2. **Compact / SoA the live-particle core** (the render+sim bandwidth win): now that
    the core is free of overloading, pack it and split hot render fields. Measure
    against `benchmarks/gpu-baselines/vertex-strip-441422a/` and the `scale_*` sweep at
