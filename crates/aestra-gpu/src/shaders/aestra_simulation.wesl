@@ -401,18 +401,30 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
-    var emitter_index = 0u;
+    // Emitters tile [0, total_slots) with gap-free, in-order slot ranges
+    // (slot_offset[i+1] = slot_offset[i] + max_particles[i]), so the owning emitter is
+    // found by binary search in O(log emitters) instead of a linear scan — the §2.3
+    // many-emitter cost.
+    var emitter_index = globals.emitter_count;
+    var lo = 0u;
+    var hi = globals.emitter_count;
     loop {
-        if emitter_index >= globals.emitter_count {
-            particles[slot] = dead_particle(0u);
-            append_dead(slot);
-            return;
-        }
-        let candidate = emitters[emitter_index];
-        if slot >= candidate.slot_offset && slot < candidate.slot_offset + candidate.max_particles {
+        if lo >= hi { break; }
+        let mid = lo + (hi - lo) / 2u;
+        let candidate = emitters[mid];
+        if slot < candidate.slot_offset {
+            hi = mid;
+        } else if slot >= candidate.slot_offset + candidate.max_particles {
+            lo = mid + 1u;
+        } else {
+            emitter_index = mid;
             break;
         }
-        emitter_index += 1u;
+    }
+    if emitter_index >= globals.emitter_count {
+        particles[slot] = dead_particle(0u);
+        append_dead(slot);
+        return;
     }
 
     let emitter = emitters[emitter_index];

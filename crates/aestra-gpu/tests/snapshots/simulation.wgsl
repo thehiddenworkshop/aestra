@@ -363,18 +363,30 @@ fn simulate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if slot >= globals.total_slots {
         return;
     }
-    var emitter_index = 0u;
+    var emitter_index = globals.emitter_count;
+    var lo = 0u;
+    var hi = globals.emitter_count;
     loop {
-        if emitter_index >= globals.emitter_count {
-            particles[slot] = dead_particle(0u);
-            append_dead(slot);
-            return;
-        }
-        let candidate = emitters[emitter_index];
-        if slot >= candidate.slot_offset && slot < candidate.slot_offset + candidate.max_particles {
+        if lo >= hi {
             break;
         }
-        emitter_index += 1u;
+        let mid = lo + (hi - lo) / 2u;
+        let candidate = emitters[mid];
+        if slot < candidate.slot_offset {
+            hi = mid;
+        }
+        else if slot >= candidate.slot_offset + candidate.max_particles {
+            lo = mid + 1u;
+        }
+        else {
+            emitter_index = mid;
+            break;
+        }
+    }
+    if emitter_index >= globals.emitter_count {
+        particles[slot] = dead_particle(0u);
+        append_dead(slot);
+        return;
     }
     let emitter = emitters[emitter_index];
     var particle_index = slot - emitter.slot_offset;
