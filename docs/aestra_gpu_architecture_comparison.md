@@ -196,30 +196,47 @@ the many-emitter path needs to get faster, and measure against b006.
 
 ## 5. Re-ranked roadmap (measurement-backed)
 
-1. **SoA + FP16 particle attributes** — attacks the measured 67% memory floor
-   (Phase 7) without changing the model. Bounded and measurable — the clearest
-   remaining kernel win.
-2. **Per-emitter dispatch (Phase 7 #3)** — removes the §2.3 per-slot emitter search
-   (b006 = 0.965 ms) and, as a side effect, sizes each dispatch to its emitter's
-   occupancy. Only justified once the many-emitter path needs to be faster; measure
-   against b006.
-3. **M7 incremental / stateful backend** — the full dead-list + alive-list +
-   update-in-place playbook, as a *second playback backend* that keeps the analytical
-   kernel for authoring. Biggest ceiling, largest effort; gate on whether #1 and #2
-   close the gap enough.
-4. **Bitonic sort** — adopt when blend-order correctness demands it; orthogonal.
+> **Updated by the AAA-scale dense sweep** (plan Phase 6, "AAA-scale dense sweep",
+> `benchmarks/gpu-baselines/scale-sweep-b24ce16/`). Pushing real alive counts to 4M
+> found that the **analytical simulation does not hit a throughput wall** — 4M dense
+> simulates in **2.2 ms** (tight, stddev 0.006), plateauing above ~250k as the GPU
+> saturates — while the **transparent render pass is ~2.4–3× the sim cost at every
+> scale** (4M: 5.7 ms). So at dense scale the bottleneck is **overdraw / fill-rate,
+> not simulation**, and M7's dense-throughput motivation is weakened accordingly.
+
+1. **Render / overdraw reduction** — *the measured dense-scale bottleneck.* Soft-particle
+   fragment cost, sprite footprint, blend/sort order, and LOD + off-screen culling to
+   cut fill. This is where AAA-scale dense effects actually spend GPU time; measure
+   against the `scale_*` sweep's `transparent_pass` numbers.
+2. **SoA + FP16 particle attributes** — attacks the measured 67% memory floor
+   (Phase 7) *and* the per-frame bandwidth the ~2 ms sim plateau is bound by. Bounded,
+   measurable, model-preserving — the clearest kernel-side win.
+3. **Per-emitter dispatch (Phase 7 #3)** — removes the §2.3 per-slot emitter search
+   (b006 = 0.965 ms) and sizes each dispatch to its emitter's occupancy. Justified
+   once the many-emitter path needs to be faster; measure against b006.
+4. **>4M-per-effect dispatch** — the current 1-D dispatch caps at ~4.19M
+   (`65535 × 64`). Multi-dispatch / 2-D dispatch is the AAA-readiness item for effects
+   past that ceiling.
+5. **M7 incremental / stateful backend** — the full dead-list + alive-list +
+   update-in-place playbook, as a *second playback backend* keeping the analytical
+   kernel for authoring. Now motivated by **weaker GPUs and persistent-state
+   semantics**, not dense throughput on capable hardware (the sweep refuted that need).
+   Biggest effort; gate on a workload the analytical kernel provably cannot serve.
+6. **Bitonic sort** — adopt when blend-order correctness demands it; orthogonal (and
+   related to #1, since correct order also bounds overdraw work).
 
 **Not pursued** (measurement/layout refuted): single global analytically-sized
 dispatch (§4).
 
-The through-line: Phase 7 profiling said the analytical kernel is near its floor,
-and this survey asked whether the professional engines' *indirect, alive-proportional*
-execution is the way past it. The seductive answer — CPU-sized analytical dispatch —
-does not survive contact with the measured cost (already at the timer floor for the
-only case it fits) or the kernel's packed slot layout. What survives is narrower and
-honest: **attack the memory floor (SoA/FP16), and reach for per-emitter dispatch only
-when the many-emitter search actually hurts.** The big architectural lever remains
-M7 — and it, too, waits for a workload the analytical kernel provably cannot serve.
+The through-line: Phase 7 profiling said the analytical *kernel* is near its
+per-particle floor, and this survey asked whether the professional engines' indirect,
+alive-proportional execution is the way past it. Two measured facts reshaped the
+answer. First, the CPU-sized single-dispatch idea does not survive the timer-floor
+cost or the packed slot layout (§4). Second — and larger — the **AAA-scale sweep
+showed the analytical sim scales to millions on a 4070 (2.2 ms at 4M) and that render,
+not sim, is the dense-scale wall.** So the honest priority order leads with
+**render/overdraw**, then the **SoA/FP16** bandwidth win, with **M7 re-cast** as a
+portability/semantics play rather than the dense-throughput lever it was assumed to be.
 
 ---
 
