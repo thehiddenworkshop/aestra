@@ -309,6 +309,21 @@ regression is flagged.
 
 Kept deliberately light; each is a decision gated by earlier phases, not committed work.
 
+> **Prior art.** How professional VFX engines (bevy_hanabi, Niagara, Unity VFX
+> Graph, Wicked Engine) solve this — and which of their techniques transfer to
+> Aestra's analytical model — is surveyed in
+> [`aestra_gpu_architecture_comparison.md`](aestra_gpu_architecture_comparison.md).
+> Its headline: before M7, prototype **analytically-sized indirect dispatch** — the
+> professional engines' highest-impact technique (work proportional to *alive*, not
+> *capacity*), which Aestra can adopt *without* a GPU dead list or losing
+> determinism, because it can compute the alive count for any `t` on the CPU. This
+> targets the sparse-effect (B004) case Phase 6 left open.
+
+- **Analytically-sized indirect dispatch (pre-M7, recommended next):** size the
+  simulate dispatch to the CPU-computed alive count for time `t` (reusing the Phase 7
+  #2 curve inversion), so sparse effects stop launching threadgroups over dead
+  capacity. Preserves seeking and bit-exact determinism. Prototype and measure
+  against the B004 baseline before adopting. See the comparison doc, §4.
 - **Incremental gameplay backend (M7):** prototype persistent particles + alive/dead
   lists + spawn/update/compaction only *if* Phase 6 shows the analytical kernel is
   inadequate for sparse/long-lived/high-instance workloads. Analytical execution is
