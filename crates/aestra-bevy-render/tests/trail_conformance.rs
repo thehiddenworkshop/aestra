@@ -21,6 +21,20 @@ fn word(bytes: &[u8], record: usize, offset: usize) -> u32 {
     u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
 }
 
+// Ring state (ring head / count / tick) moved out of the particle record into the
+// aux buffer. The readbacks append aux; this splices aux[record*3 + k] back into the
+// record's former _padding offsets (52/56/60) so offset-based assertions still read it.
+fn splice_aux(bytes: &mut [u8], aux_start: usize, records: usize) {
+    for r in 0..records {
+        for k in 0..3 {
+            let src = aux_start + r * 12 + k * 4;
+            let v = [bytes[src], bytes[src + 1], bytes[src + 2], bytes[src + 3]];
+            let dst = r * 64 + 52 + k * 4;
+            bytes[dst..dst + 4].copy_from_slice(&v);
+        }
+    }
+}
+
 // Exercise the real simulation as well as history: a direct jump has live
 // particles but only coincident head/anchor pairs, which cannot draw a trail.
 fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
@@ -143,7 +157,7 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
         });
         let readback = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: buffers[1].size(),
+            size: buffers[1].size() + buffers[7].size(),
             mapped_at_creation: false,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         });
@@ -158,6 +172,13 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
             }
         }
         encoder.copy_buffer_to_buffer(&buffers[1], 0, &readback, 0, buffers[1].size());
+        encoder.copy_buffer_to_buffer(
+            &buffers[7],
+            0,
+            &readback,
+            buffers[1].size(),
+            buffers[7].size(),
+        );
         let submission = queue.submit([encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();
         readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
@@ -173,8 +194,11 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
             .recv_timeout(std::time::Duration::from_secs(5))
             .unwrap()
             .unwrap();
-        let bytes = readback.slice(..).get_mapped_range().to_vec();
+        let mut bytes = readback.slice(..).get_mapped_range().to_vec();
         readback.unmap();
+        let records = buffers[1].size() as usize / 64;
+        splice_aux(&mut bytes, buffers[1].size() as usize, records);
+        bytes.truncate(buffers[1].size() as usize);
         bytes
     };
     let heads =
@@ -364,7 +388,7 @@ fn check_pool(max_trails: u32, distance: bool) {
             );
             let readback = device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
-                size: buffers[1].size() + buffers[4].size(),
+                size: buffers[1].size() + buffers[4].size() + buffers[7].size(),
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
@@ -385,6 +409,13 @@ fn check_pool(max_trails: u32, distance: bool) {
                 buffers[1].size(),
                 buffers[4].size(),
             );
+            encoder.copy_buffer_to_buffer(
+                &buffers[7],
+                0,
+                &readback,
+                buffers[1].size() + buffers[4].size(),
+                buffers[7].size(),
+            );
             let submission = queue.submit([encoder.finish()]);
             let (sender, receiver) = std::sync::mpsc::channel();
             readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
@@ -400,8 +431,12 @@ fn check_pool(max_trails: u32, distance: bool) {
                 .recv_timeout(std::time::Duration::from_secs(5))
                 .unwrap()
                 .unwrap();
-            let bytes = readback.slice(..).get_mapped_range().to_vec();
+            let mut bytes = readback.slice(..).get_mapped_range().to_vec();
             readback.unmap();
+            let records = buffers[1].size() as usize / 64;
+            let tail = buffers[1].size() as usize + buffers[4].size() as usize;
+            splice_aux(&mut bytes, tail, records);
+            bytes.truncate(tail);
             bytes
         };
     let step = |time, ids, count, translation, epoch, seed| {

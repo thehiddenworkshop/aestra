@@ -535,6 +535,9 @@ pub(crate) fn prepare_gpu_effects(
             .len()
             .div_ceil(WORKGROUP_SIZE as usize) as u32;
         let renderers = buffers.add(ShaderBuffer::from(artifact.renderers));
+        // Full record count, including the trail-history storage region past
+        // total_slots, so aux (indexed by slot) covers trail head/record slots.
+        let record_count = artifact.particles.len();
         let particles = buffers.add(ShaderBuffer::from(artifact.particles));
         let alive = buffers.add(ShaderBuffer::from(vec![
             0_u32;
@@ -544,12 +547,12 @@ pub(crate) fn prepare_gpu_effects(
             0_u32;
             artifact.total_slots as usize
         ]));
-        // Shared per-slot aux scratch (3 words/slot) for ribbon link state; a 1-word
-        // dummy when the effect draws no ribbons/trails so sprite effects pay nothing.
+        // Shared per-slot aux scratch (3 words/slot) for ribbon link + trail ring
+        // state; a 1-word dummy when the effect draws no ribbons/trails.
         let aux = buffers.add(ShaderBuffer::from(vec![
             0_u32;
             if has_ribbons {
-                artifact.total_slots as usize * 3
+                record_count * 3
             } else {
                 1
             }

@@ -261,11 +261,11 @@ fn aestra_ribbon_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexD
 }
 
 fn trail_slot(base: u32, capacity: u32, index: u32) -> u32 {
-    let head = particles[base];
-    if index == head._padding_1 {
+    let count = aux[base * 3u + 1u];
+    if index == count {
         return base;
     }
-    return base + 1u + (head._padding_0 + capacity - head._padding_1 + index) % capacity;
+    return base + 1u + (aux[base * 3u] + capacity - count + index) % capacity;
 }
 
 fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexData {
@@ -275,7 +275,7 @@ fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexDa
     let capacity = r.frame_count - 1u;
     let base = r.attribute_flags.z + 1u + (instance_index / capacity) * r.frame_count;
     let segment = instance_index % capacity;
-    let count = particles[base]._padding_1;
+    let count = aux[base * 3u + 1u];
     if particles[base].alive == 0u || segment >= count {
         return output;
     }

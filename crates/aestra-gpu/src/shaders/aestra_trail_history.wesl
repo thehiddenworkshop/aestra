@@ -10,10 +10,10 @@ fn record_trails(emitter_index: u32) {
     let root = e.trail_offset;
     let now = globals.time;
     let last = particles[root];
-    let reset = last.alive == 0u || last._padding_0 != globals._padding.x || last.particle_index != globals.seed || now < last.rotation || now - last.rotation > e.trail_lifetime;
+    let reset = last.alive == 0u || aux[root * 3u] != globals._padding.x || last.particle_index != globals.seed || now < last.rotation || now - last.rotation > e.trail_lifetime;
     if !reset && now == last.rotation { return; }
     let capacity = e.trail_points - 1u;
-    var evictions = select(last._padding_1, 0u, reset);
+    var evictions = select(aux[root * 3u + 1u], 0u, reset);
     for (var i = 0u; i < e.trail_capacity; i += 1u) {
         let base = root + 1u + i * e.trail_points;
         if reset || now - particles[base].rotation >= e.trail_lifetime {
@@ -50,21 +50,26 @@ fn record_trails(emitter_index: u32) {
         head.size *= world_scale;
         head.rotation = now;
         head.alive = 2u;
+        // Ring state (next index, sample count, tick/remainder bits) now lives in the
+        // shared aux buffer at aux[owner*3 + 0/1/2], off the particle ABI.
+        var ring_head = 0u;
+        var ring_count = 0u;
+        var ring_tick = 0u;
         if owner == 0xffffffffu {
             if candidate == 0xffffffffu { continue; }
             owner = candidate;
             if particles[owner].alive != 0u { evictions += 1u; }
-            head._padding_0 = 1u % capacity;
-            head._padding_1 = 1u;
-            head._padding_2 = bitcast<u32>(select(now, 0.0, e.trail_sampling == 1u));
+            ring_head = 1u % capacity;
+            ring_count = 1u;
+            ring_tick = bitcast<u32>(select(now, 0.0, e.trail_sampling == 1u));
             particles[owner + 1u] = head;
         } else if e.trail_sampling == 1u {
             let previous = particles[owner];
-            head._padding_0 = previous._padding_0;
-            head._padding_1 = previous._padding_1;
-            head._padding_2 = previous._padding_2;
+            ring_head = aux[owner * 3u];
+            ring_count = aux[owner * 3u + 1u];
+            ring_tick = aux[owner * 3u + 2u];
             let segment = length(head.position - previous.position);
-            let total = bitcast<f32>(previous._padding_2) + segment;
+            let total = bitcast<f32>(ring_tick) + segment;
             // Sample the observed world-space polyline. Carry the sub-spacing
             // remainder across frames/corners; stationary parents consume no points.
             if segment > 0.0 && total <= min(3.402823e38, 3.402823e38 * e.trail_distance) {
@@ -81,17 +86,17 @@ fn record_trails(emitter_index: u32) {
                     sample.color = mix(previous.color, head.color, t);
                     sample.size = mix(previous.size, head.size, t);
                     sample.rotation = mix(previous.rotation, now, t);
-                    particles[owner + 1u + head._padding_0] = sample;
-                    head._padding_0 = (head._padding_0 + 1u) % capacity;
-                    head._padding_1 = min(head._padding_1 + 1u, capacity);
+                    particles[owner + 1u + ring_head] = sample;
+                    ring_head = (ring_head + 1u) % capacity;
+                    ring_count = min(ring_count + 1u, capacity);
                 }
-                head._padding_2 = bitcast<u32>(remainder);
+                ring_tick = bitcast<u32>(remainder);
             }
         } else {
             let previous = particles[owner];
-            head._padding_0 = previous._padding_0;
-            head._padding_1 = previous._padding_1;
-            var tick = bitcast<f32>(previous._padding_2);
+            ring_head = aux[owner * 3u];
+            ring_count = aux[owner * 3u + 1u];
+            var tick = bitcast<f32>(aux[owner * 3u + 2u]);
             // Skip samples that would immediately fall out of the bounded ring.
             let steps = u32(max(0.0, floor((now - tick) / e.trail_interval)));
             if steps > capacity { tick += f32(steps - capacity) * e.trail_interval; }
@@ -103,12 +108,15 @@ fn record_trails(emitter_index: u32) {
                 sample.color = mix(previous.color, head.color, t);
                 sample.size = mix(previous.size, head.size, t);
                 sample.rotation = tick;
-                particles[owner + 1u + head._padding_0] = sample;
-                head._padding_0 = (head._padding_0 + 1u) % capacity;
-                head._padding_1 = min(head._padding_1 + 1u, capacity);
+                particles[owner + 1u + ring_head] = sample;
+                ring_head = (ring_head + 1u) % capacity;
+                ring_count = min(ring_count + 1u, capacity);
             }
-            head._padding_2 = bitcast<u32>(tick);
+            ring_tick = bitcast<u32>(tick);
         }
+        aux[owner * 3u] = ring_head;
+        aux[owner * 3u + 1u] = ring_count;
+        aux[owner * 3u + 2u] = ring_tick;
         particles[owner] = head;
     }
     var occupied = 0u;
@@ -120,11 +128,11 @@ fn record_trails(emitter_index: u32) {
         // partial segment visible forever. The moving head itself is not a sample.
         if e.trail_sampling == 1u && particles[base].alive != 0u {
             for (var s = 0u; s < capacity; s += 1u) {
-                let points = particles[base]._padding_1;
+                let points = aux[base * 3u + 1u];
                 if points == 0u { break; }
-                let oldest_slot = base + 1u + (particles[base]._padding_0 + capacity - points) % capacity;
+                let oldest_slot = base + 1u + (aux[base * 3u] + capacity - points) % capacity;
                 if now - particles[oldest_slot].rotation < e.trail_lifetime { break; }
-                particles[base]._padding_1 = points - 1u;
+                aux[base * 3u + 1u] = points - 1u;
             }
         }
         if particles[base].alive != 0u { occupied += 1u; }
@@ -134,10 +142,10 @@ fn record_trails(emitter_index: u32) {
     particles[root].alive = 1u;
     particles[root].rotation = now;
     particles[root].particle_index = globals.seed;
-    particles[root]._padding_0 = globals._padding.x;
-    particles[root]._padding_1 = evictions;
-    let peak = max(occupied, select(last._padding_2, 0u, reset));
-    particles[root]._padding_2 = peak;
+    aux[root * 3u] = globals._padding.x;
+    aux[root * 3u + 1u] = evictions;
+    let peak = max(occupied, select(aux[root * 3u + 2u], 0u, reset));
+    aux[root * 3u + 2u] = peak;
     // Small asynchronous profiler readback; never copy the history buffer.
     let stats = 2u + emitter_index * 5u;
     atomicStore(&counters[stats], occupied);
