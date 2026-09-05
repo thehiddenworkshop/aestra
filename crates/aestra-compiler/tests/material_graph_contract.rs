@@ -13,6 +13,43 @@ use aestra_core::{
 };
 
 #[test]
+fn mesh_bitangent_is_constructible_typed_and_reflected_without_a_tangent_node() {
+    let mut program = MaterialProgram::additive_sprite("Bitangent graph");
+    program.domain = aestra_core::material::MaterialDomain::Mesh;
+    let compiler = MaterialCompiler;
+    let kind = MaterialGraphCreateKind::Input(MaterialInput::Bitangent);
+    assert!(
+        compiler
+            .graph_node_catalog(&program)
+            .iter()
+            .any(|node| node.kind == kind && node.label == "Bitangent")
+    );
+    let plan = compiler
+        .plan_graph_node_creation(&program, kind, None)
+        .unwrap();
+    let mut program = plan.replacement;
+    program.outputs.color = plan.expression;
+    let ir = compiler.compile(&program).unwrap();
+    let graph = compiler.project_graph(&program, Some(&ir));
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.expression == plan.expression)
+        .unwrap();
+    assert_eq!(node.value_type, Some(MaterialValueType::Vec3));
+    assert!(node.inputs.is_empty());
+    assert!(graph.diagnostics.is_valid());
+    let serialized = program.to_pretty_ron().unwrap();
+    assert_eq!(
+        MaterialProgram::from_ron(&serialized)
+            .unwrap()
+            .to_pretty_ron()
+            .unwrap(),
+        serialized
+    );
+}
+
+#[test]
 fn graph_projection_is_deterministic_typed_and_source_mapped() {
     let mut program = MaterialProgram::additive_sprite("Graph contract");
     let value = MaterialExpressionId::from_u128(0x6101);

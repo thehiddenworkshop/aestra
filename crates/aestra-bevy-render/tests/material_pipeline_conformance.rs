@@ -82,6 +82,7 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
     for input in [
         MaterialInput::Normal,
         MaterialInput::Tangent,
+        MaterialInput::Bitangent,
         MaterialInput::LocalPosition,
         MaterialInput::WorldPosition,
         MaterialInput::ViewDirection,
@@ -102,6 +103,41 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
             MATERIAL_FRAGMENT_ENTRY_POINT,
             1,
         );
+        if input == MaterialInput::Bitangent {
+            // The basis input must also survive when only the vertex-offset path reads it.
+            let mut vertex_program = mesh_program.clone();
+            vertex_program.outputs.vertex_offset = Some(vertex_program.outputs.color);
+            let color = aestra_core::MaterialExpressionId::new();
+            vertex_program
+                .expressions
+                .push(aestra_core::material::MaterialExpression {
+                    id: color,
+                    kind: MaterialExpressionKind::Constant(
+                        aestra_core::material::MaterialValue::Vec3([1.0; 3]),
+                    ),
+                });
+            vertex_program.outputs.color = color;
+            let compiled = MaterialShaderCompiler
+                .compile(
+                    &MaterialCompiler.compile(&vertex_program).unwrap(),
+                    &MaterialBackendCapabilities::portable_minimum(),
+                )
+                .unwrap();
+            for samples in [1, 4] {
+                assert_pipeline(
+                    &device,
+                    &compiled.shader.wgsl,
+                    MATERIAL_FRAGMENT_ENTRY_POINT,
+                    samples,
+                );
+                assert_pipeline(
+                    &device,
+                    &compiled.shader.wgsl,
+                    "fragment_mesh_wireframe",
+                    samples,
+                );
+            }
+        }
     }
     for input in [
         None,
@@ -231,6 +267,18 @@ fn assert_tangent_transform(device: &wgpu::Device, queue: &wgpu::Queue) {
             // Gram-Schmidt removes a normal component in imperfect imported tangent data.
             results[1] = vec4<f32>(aestra_mesh_tangent(vec3<f32>(1.0, 0.0, 0.25),
                 vec3<f32>(0.0, 0.0, 1.0), transform), 0.0);
+            let normal = vec3<f32>(0.0, 0.0, 1.0);
+            results[2] = vec4<f32>(aestra_mesh_bitangent(normal, results[0].xyz, 1.0, transform), 0.0);
+            results[3] = vec4<f32>(aestra_mesh_bitangent(normal, results[0].xyz, -1.0, transform), 0.0);
+            var positive = transform;
+            positive[0].y = 2.0;
+            let tangent = aestra_mesh_tangent(normalize(vec3<f32>(1.0, 1.0, 0.0)), normal, positive);
+            results[4] = vec4<f32>(aestra_mesh_bitangent(normal, tangent, 1.0, positive), 0.0);
+            results[5] = vec4<f32>(aestra_mesh_bitangent(normal, tangent, -1.0, positive), 0.0);
+            let identity = mat4x4<f32>(vec4<f32>(1.0, 0.0, 0.0, 0.0), vec4<f32>(0.0, 1.0, 0.0, 0.0),
+                vec4<f32>(0.0, 0.0, 1.0, 0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0));
+            results[6] = vec4<f32>(aestra_mesh_bitangent(normal, vec3<f32>(1.0, 0.0, 0.0), 1.0, identity), 0.0);
+            results[7] = vec4<f32>(aestra_mesh_bitangent(normal, vec3<f32>(1.0, 0.0, 0.0), -1.0, identity), 0.0);
         }
     "#
     );
@@ -248,13 +296,13 @@ fn assert_tangent_transform(device: &wgpu::Device, queue: &wgpu::Queue) {
     });
     let output = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 32,
+        size: 128,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 32,
+        size: 128,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -273,7 +321,7 @@ fn assert_tangent_transform(device: &wgpu::Device, queue: &wgpu::Queue) {
         pass.set_bind_group(0, &group, &[]);
         pass.dispatch_workgroups(1, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 32);
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 128);
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -297,11 +345,41 @@ fn assert_tangent_transform(device: &wgpu::Device, queue: &wgpu::Queue) {
         .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
         .collect::<Vec<_>>();
     let length = 13.0_f32.sqrt();
-    for (actual, expected) in
-        values
-            .iter()
-            .zip([-3.0 / length, -2.0 / length, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0])
-    {
+    assert_eq!(values.len(), 32);
+    for (actual, expected) in values.iter().zip([
+        -3.0 / length,
+        -2.0 / length,
+        0.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        -2.0 / length,
+        3.0 / length,
+        0.0,
+        0.0,
+        2.0 / length,
+        -3.0 / length,
+        0.0,
+        0.0,
+        -2.0 / length,
+        -3.0 / length,
+        0.0,
+        0.0,
+        2.0 / length,
+        3.0 / length,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+    ]) {
         assert!(
             (actual - expected).abs() < 1e-5,
             "tangent transform {actual} != {expected}"

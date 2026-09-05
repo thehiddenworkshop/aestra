@@ -15,7 +15,8 @@ impl MeshInputs {
         let inputs = &program.reflection.required_vertex_inputs;
         Self {
             uv1: inputs.contains(&MaterialInput::Uv1),
-            tangent: inputs.contains(&MaterialInput::Tangent),
+            tangent: inputs.contains(&MaterialInput::Tangent)
+                || inputs.contains(&MaterialInput::Bitangent),
         }
     }
 
@@ -65,6 +66,50 @@ mod tests {
         asset::RenderAssetUsages,
         mesh::{MeshVertexBufferLayouts, PrimitiveTopology},
     };
+
+    #[test]
+    fn bitangent_alone_requires_the_imported_tangent_attribute() {
+        use aestra_core::material::{MaterialDomain, MaterialExpressionKind, MaterialProgram};
+        let mut program = MaterialProgram::additive_sprite("Bitangent requirements");
+        program.domain = MaterialDomain::Mesh;
+        let color = program.outputs.color;
+        program
+            .expressions
+            .iter_mut()
+            .find(|expression| expression.id == color)
+            .unwrap()
+            .kind = MaterialExpressionKind::Input(MaterialInput::Bitangent);
+        let ir = aestra_compiler::MaterialCompiler.compile(&program).unwrap();
+        let compiled = aestra_gpu::material::MaterialShaderCompiler
+            .compile(
+                &ir,
+                &aestra_gpu::material::MaterialBackendCapabilities::portable_minimum(),
+            )
+            .unwrap();
+        let inputs = MeshInputs::for_program(&compiled);
+        assert!(inputs.tangent);
+        assert!(!inputs.uv1);
+        let mut layouts = MeshVertexBufferLayouts::default();
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0; 3]; 3])
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 0.0, 1.0]; 3])
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0; 2]; 3]);
+        assert!(
+            inputs
+                .validate(&mesh.get_mesh_vertex_buffer_layout(&mut layouts).0)
+                .unwrap_err()
+                .contains("Tangent")
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, vec![[1.0, 0.0, 0.0, -1.0]; 3]);
+        assert!(
+            inputs
+                .validate(&mesh.get_mesh_vertex_buffer_layout(&mut layouts).0)
+                .is_ok()
+        );
+    }
 
     #[test]
     fn optional_attributes_are_required_only_when_used_and_formats_are_checked() {

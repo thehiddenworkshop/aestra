@@ -2582,9 +2582,18 @@ attributes produce named geometry diagnostics and skip that draw, without invent
 Tangents use the linear emitter/effect transform and particle rotation, followed by normalization
 and orthogonalization against the transformed normal (not inverse-transpose tangent transformation).
 This supports nonuniform and mirrored transforms. Tangent exposes a world-space direction;
-glTF's fourth handedness component is preserved in diagnostic geometry but is not a bitangent API.
-The lab combines tangent coloring with a separate UV1 mapping and its breathing animation.
-CPU/readback mesh presentation, bitangents/normal mapping, ribbons and PBR remain follow-up work.
+Bitangent (Vec3) reconstructs the world-space orthonormal basis using
+`normalize(cross(normal, tangent)) * tangent.w * sign(determinant(transform))`.
+The imported fourth tangent component and the mirror sign are independent: mirrored UV seams
+and mirrored emitter/effect transforms are both respected. This is a basis direction, not the
+potentially sheared linear transform of a local bitangent. It uses the existing optional TANGENT
+attribute (no additional vertex stream), including when used only for Vertex Offset. Missing or
+mistyped tangents reject the draw through the same geometry diagnostics, and deformed wireframes
+retain the imported handedness. Singular transforms/degenerate imported bases have no defined
+orthonormal basis; this does not add automatic repair or reconstruction after deformation.
+The graph exposes a typed Bitangent input with a synthetic right-handed preview basis. The lab
+combines bitangent coloring with a separate UV1 mapping and its breathing animation.
+CPU/readback mesh presentation, normal-map decoding/Normal output, ribbons and PBR remain follow-up work.
 
 ### Add inputs
 

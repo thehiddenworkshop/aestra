@@ -498,7 +498,7 @@ the current sprite-material path until the native-GPU compatibility gate approve
   non-indexed TriangleList geometry uses Bevy-loaded position/normal/UV buffers; per-mesh indirect
   commands copy simulation instance counts on the GPU. Material inputs include real UV0, normals,
   local/world positions and view direction, without sprite coverage. The Mesh Material Lab effect
-  uses an embedded-buffer glTF cube and tangent-color/UV1 material. This slice requires native GPU;
+  uses an embedded-buffer glTF cube and bitangent-color/UV1 material. This slice requires native GPU;
   meshes without position/normal/UV0 or triangle topology are rejected by presentation. Geometry-aware
   mesh bounds now combine particle motion and maximum size with off-center geometry, angular sweep,
   and emitter rotation/nonuniform scale. Bevy applies the outer effect transform during frustum
@@ -522,10 +522,16 @@ the current sprite-material path until the native-GPU compatibility gate approve
   for live material reads, with named missing/type-mismatched attribute diagnostics. UV1 uses
   glTF TEXCOORD_1; Tangent exposes the world-space Vec3 direction, linearly transformed then
   re-orthogonalized against the normal under nonuniform/mirrored scale. The mesh's tangent
-  handedness is preserved in wireframe buffers, but no bitangent input is exposed yet.
-  Mesh Material Lab now combines tangent colors, a distinct UV1 radial mask and breathing.
-  Native GPU numeric tangent tests, optional layout checks, portable shader validation and
-  wireframe attribute tests cover this slice. Ribbons/trails and PBR remain follow-up work.
+  handedness is preserved in wireframe buffers. Bitangent (Vec3) is now exposed end to end:
+  its world-space direction reconstructs an orthonormal basis from normal/tangent, imported
+  tangent handedness and the transform determinant sign. It requests the existing TANGENT
+  attribute only for live reads and works in both fragment and Vertex Offset paths, including
+  deformed wireframes. The graph catalog, typed sockets and synthetic basis previews support it;
+  Sprite materials reject it explicitly. Mesh Material Lab combines bitangent colors, a distinct
+  UV1 radial mask and breathing. Native GPU numeric tests cover both handedness signs, mirrored/
+  nonuniform scale, rotation and translation; optional-layout diagnostics, portable shader
+  validation, graph creation and serialization regressions cover the slice.
+  Normal-map decoding/Normal output, ribbons/trails and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

@@ -1159,6 +1159,8 @@ pub enum MaterialInput {
     CameraPosition,
     CameraDirection,
     PixelDepth,
+    /// World-space orthonormal bitangent, including mesh tangent handedness and mirrored transforms.
+    Bitangent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2431,6 +2433,7 @@ impl MaterialProgram {
                             | MaterialInput::ViewDirection
                             | MaterialInput::Uv1
                             | MaterialInput::Tangent
+                            | MaterialInput::Bitangent
                             | MaterialInput::Uv0
                             | MaterialInput::EffectTime
                             | MaterialInput::ParticleColor
@@ -3674,6 +3677,7 @@ fn material_input_info(input: MaterialInput) -> MaterialExpressionInfo {
         | MaterialInput::WorldPosition
         | MaterialInput::Normal
         | MaterialInput::Tangent
+        | MaterialInput::Bitangent
         | MaterialInput::ViewDirection
         | MaterialInput::CameraPosition
         | MaterialInput::CameraDirection => {
@@ -3715,7 +3719,10 @@ fn material_input_info(input: MaterialInput) -> MaterialExpressionInfo {
 }
 
 fn sprite_domain_supports_input(input: MaterialInput) -> bool {
-    !matches!(input, MaterialInput::Uv1 | MaterialInput::Tangent)
+    !matches!(
+        input,
+        MaterialInput::Uv1 | MaterialInput::Tangent | MaterialInput::Bitangent
+    )
 }
 
 fn material_type_error(

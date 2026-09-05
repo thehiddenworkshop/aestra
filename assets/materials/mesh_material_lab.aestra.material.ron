@@ -12,7 +12,8 @@
          value_type: Float, evaluation_domain: Instance, default: Some(Float(2.4))),
     ],
     expressions: [
-        (id: "a3574a00-0000-4000-8000-00000000a221", kind: Input(Tangent)),
+        // Bitangent basis direction mapped from [-1, 1] to color [0, 1].
+        (id: "a3574a00-0000-4000-8000-00000000a221", kind: Input(Bitangent)),
         (id: "a3574a00-0000-4000-8000-00000000a222", kind: Constant(Vec3((0.5, 0.5, 0.5)))),
         (id: "a3574a00-0000-4000-8000-00000000a223", kind: Multiply("a3574a00-0000-4000-8000-00000000a221", "a3574a00-0000-4000-8000-00000000a222")),
         (id: "a3574a00-0000-4000-8000-00000000a224", kind: Add("a3574a00-0000-4000-8000-00000000a223", "a3574a00-0000-4000-8000-00000000a222")),

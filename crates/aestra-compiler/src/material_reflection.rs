@@ -201,6 +201,7 @@ fn input_category(input: MaterialInput) -> MaterialInputCategory {
         | MaterialInput::WorldPosition
         | MaterialInput::Normal
         | MaterialInput::Tangent
+        | MaterialInput::Bitangent
         | MaterialInput::ViewDirection
         | MaterialInput::ScreenUv => MaterialInputCategory::Vertex,
         MaterialInput::ParticleColor
@@ -275,6 +276,7 @@ fn input_rank(input: MaterialInput) -> u8 {
         MaterialInput::WorldPosition => 3,
         MaterialInput::Normal => 4,
         MaterialInput::Tangent => 5,
+        MaterialInput::Bitangent => 27,
         MaterialInput::ViewDirection => 6,
         MaterialInput::ScreenUv => 7,
         MaterialInput::ParticleColor => 8,

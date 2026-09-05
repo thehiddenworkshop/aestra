@@ -2858,20 +2858,35 @@ fn preview_value(value: &MaterialValue) -> Option<PreviewValue> {
 
 fn preview_input(input: MaterialInput, context: MaterialPreviewContext) -> PreviewValue {
     match input {
+        MaterialInput::Tangent | MaterialInput::Bitangent => {
+            // Synthetic preview geometry has a right-handed basis, with no imported UV seams.
+            let normal = context.normal.normalize_or_zero();
+            let axis = if normal.y.abs() < 0.99 {
+                Vec3::Y
+            } else {
+                Vec3::X
+            };
+            let tangent = axis.cross(normal).normalize_or_zero();
+            let direction = if input == MaterialInput::Tangent {
+                tangent
+            } else {
+                normal.cross(tangent)
+            };
+            PreviewValue::Numeric([direction.x, direction.y, direction.z, 1.0], 3)
+        }
         MaterialInput::Uv0 | MaterialInput::Uv1 | MaterialInput::ScreenUv => {
             preview_vec2_value(context.uv)
         }
-        MaterialInput::Normal
-        | MaterialInput::Tangent
-        | MaterialInput::CameraDirection
-        | MaterialInput::ViewDirection => PreviewValue::Numeric(
-            if input == MaterialInput::ViewDirection {
-                [0.0, 0.0, 1.0, 1.0]
-            } else {
-                [context.normal.x, context.normal.y, context.normal.z, 1.0]
-            },
-            3,
-        ),
+        MaterialInput::Normal | MaterialInput::CameraDirection | MaterialInput::ViewDirection => {
+            PreviewValue::Numeric(
+                if input == MaterialInput::ViewDirection {
+                    [0.0, 0.0, 1.0, 1.0]
+                } else {
+                    [context.normal.x, context.normal.y, context.normal.z, 1.0]
+                },
+                3,
+            )
+        }
         MaterialInput::LocalPosition | MaterialInput::WorldPosition => PreviewValue::Numeric(
             [context.uv.x * 2.0 - 1.0, context.uv.y * 2.0 - 1.0, 0.0, 1.0],
             3,
@@ -5313,6 +5328,34 @@ mod tests {
         );
         assert_eq!(input_port_presentation("edge_min").label, "Lower edge");
         assert_eq!(input_port_presentation("view").label, "View direction");
+    }
+
+    #[test]
+    fn mesh_basis_previews_are_orthonormal_even_at_the_poles() {
+        for normal in [
+            Vec3::Z,
+            Vec3::Y,
+            -Vec3::Y,
+            Vec3::new(1.0, 2.0, 3.0).normalize(),
+        ] {
+            let context = MaterialPreviewContext {
+                uv: Vec2::ZERO,
+                normal,
+            };
+            let direction = |input| {
+                let PreviewValue::Numeric(value, 3) = preview_input(input, context) else {
+                    panic!("expected Vec3 preview")
+                };
+                Vec3::new(value[0], value[1], value[2])
+            };
+            let tangent = direction(MaterialInput::Tangent);
+            let bitangent = direction(MaterialInput::Bitangent);
+            assert!((tangent.length() - 1.0).abs() < 1e-5);
+            assert!((bitangent.length() - 1.0).abs() < 1e-5);
+            assert!(normal.dot(bitangent).abs() < 1e-5);
+            assert!(tangent.dot(bitangent).abs() < 1e-5);
+            assert!(tangent.cross(bitangent).abs_diff_eq(normal, 1e-5));
+        }
     }
 
     #[test]

@@ -121,11 +121,15 @@ fn absent_vertex_offset_preserves_legacy_mesh_behavior() {
 
 #[test]
 fn optional_mesh_inputs_can_drive_vertex_offset_without_fragment_reads() {
-    for tangent in [true, false] {
+    for input in [
+        MaterialInput::Tangent,
+        MaterialInput::Bitangent,
+        MaterialInput::Uv1,
+    ] {
         let mut program = program();
         program.outputs.color = append(&mut program, Kind::Constant(MaterialValue::Vec3([1.0; 3])));
-        let offset = if tangent {
-            append(&mut program, Kind::Input(MaterialInput::Tangent))
+        let offset = if input != MaterialInput::Uv1 {
+            append(&mut program, Kind::Input(input))
         } else {
             let mask = program
                 .expressions
@@ -141,11 +145,6 @@ fn optional_mesh_inputs_can_drive_vertex_offset_without_fragment_reads() {
         let compiled = MaterialShaderCompiler
             .compile(&ir, &MaterialBackendCapabilities::portable_minimum())
             .unwrap();
-        let input = if tangent {
-            MaterialInput::Tangent
-        } else {
-            MaterialInput::Uv1
-        };
         assert!(compiled.reflection.required_vertex_inputs.contains(&input));
         assert!(compiled.has_vertex_offset);
         assert_eq!(compiled.vertex_offset_bounds, None);

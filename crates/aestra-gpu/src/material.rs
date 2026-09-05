@@ -26,7 +26,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 3;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 20;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 21;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
@@ -572,6 +572,7 @@ fn build_reflection(
                     | MaterialInput::LocalPosition
                     | MaterialInput::Uv1
                     | MaterialInput::Tangent
+                    | MaterialInput::Bitangent
             ))
         {
             let expressions = ir
@@ -1271,6 +1272,9 @@ fn input_expression(
         MaterialInput::Tangent if varyings.domain == MaterialDomain::Mesh => {
             Some("normalize(input.tangent)")
         }
+        MaterialInput::Bitangent if varyings.domain == MaterialDomain::Mesh => {
+            Some("normalize(input.bitangent)")
+        }
         MaterialInput::Uv0 => Some("input.uv0"),
         MaterialInput::Normal => Some(
             "normalize(vec3<f32>(input.quad_position, sqrt(max(0.0, 1.0 - dot(input.quad_position, input.quad_position)))))",
@@ -1831,6 +1835,7 @@ fn input_key(input: MaterialInput) -> u8 {
         MaterialInput::WorldPosition => 3,
         MaterialInput::Normal => 4,
         MaterialInput::Tangent => 5,
+        MaterialInput::Bitangent => 27,
         MaterialInput::ViewDirection => 6,
         MaterialInput::ScreenUv => 7,
         MaterialInput::ParticleColor => 8,

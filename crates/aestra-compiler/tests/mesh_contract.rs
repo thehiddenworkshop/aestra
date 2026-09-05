@@ -60,7 +60,7 @@ fn meshes_reject_sprite_materials_and_missing_geometry() {
         use aestra_core::material::{MaterialExpressionKind as Kind, MaterialInput};
         match expression.kind {
             Kind::Input(MaterialInput::Uv1) => expression.kind = Kind::Input(MaterialInput::Uv0),
-            Kind::Input(MaterialInput::Tangent) => {
+            Kind::Input(MaterialInput::Tangent | MaterialInput::Bitangent) => {
                 expression.kind = Kind::Input(MaterialInput::Normal)
             }
             _ => {}

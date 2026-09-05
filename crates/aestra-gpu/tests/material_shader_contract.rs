@@ -80,6 +80,7 @@ fn mesh_material_inputs_use_real_geometry_and_no_billboard_coverage() {
     for input in [
         MaterialInput::Normal,
         MaterialInput::Tangent,
+        MaterialInput::Bitangent,
         MaterialInput::WorldPosition,
         MaterialInput::LocalPosition,
         MaterialInput::ViewDirection,
@@ -104,6 +105,43 @@ fn mesh_material_inputs_use_real_geometry_and_no_billboard_coverage() {
         );
         assert!(compiled.shader.wgsl.contains("mesh_from_local"));
         assert!(!compiled.shader.wgsl.contains("let coverage"));
+        if input == MaterialInput::Bitangent {
+            assert!(compiled.reflection.required_vertex_inputs.contains(&input));
+            assert!(
+                !compiled
+                    .reflection
+                    .required_vertex_inputs
+                    .contains(&MaterialInput::Tangent)
+            );
+            assert!(
+                compiled
+                    .shader
+                    .wesl
+                    .contains("@location(4) tangent: vec4<f32>")
+            );
+            assert!(compiled.shader.wgsl.contains("aestra_mesh_bitangent"));
+            assert!(
+                compiled
+                    .varying_layout
+                    .slots
+                    .iter()
+                    .any(|slot| slot.varying == MaterialVarying::Bitangent)
+            );
+            assert!(
+                !compiled
+                    .varying_layout
+                    .slots
+                    .iter()
+                    .any(|slot| slot.varying == MaterialVarying::Tangent)
+            );
+            let roundtrip = MaterialProgram::from_ron(&program.to_pretty_ron().unwrap()).unwrap();
+            assert_eq!(
+                roundtrip.to_pretty_ron().unwrap(),
+                program.to_pretty_ron().unwrap()
+            );
+            program.domain = MaterialDomain::Sprite;
+            assert!(MaterialCompiler.compile(&program).is_err());
+        }
     }
     let mut textured = two_texture_flame_program();
     textured.domain = MaterialDomain::Mesh;
@@ -565,7 +603,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "5a17b9c205b477725cdf96762e83afa2b2bb33f91505c795a1b952facc95b383"
+        "fdbb24546907549410b3b05f879711ff104f5dfab070dfae5fd7856efd8949df"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,

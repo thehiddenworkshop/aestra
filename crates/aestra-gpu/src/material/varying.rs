@@ -20,6 +20,7 @@ pub enum MaterialVarying {
     ParticleOpacity,
     EffectTime,
     ParticleNormalizedAge,
+    Bitangent,
 }
 
 impl MaterialVarying {
@@ -28,6 +29,7 @@ impl MaterialVarying {
         match self {
             Self::Uv1 => ("uv1", "vec2<f32>", "", "mesh.uv1"),
             Self::Tangent => ("tangent", "vec3<f32>", "", "mesh.tangent"),
+            Self::Bitangent => ("bitangent", "vec3<f32>", "", "mesh.bitangent"),
             Self::Normal => ("normal", "vec3<f32>", "", "mesh.normal"),
             Self::WorldPosition => ("world_position", "vec3<f32>", "", "mesh.world_position"),
             Self::LocalPosition => ("local_position", "vec3<f32>", "", "mesh.local_position"),
@@ -54,6 +56,7 @@ impl MaterialVarying {
             Self::QuadPosition | Self::Uv0 | Self::Uv1 => 2,
             Self::ParticleColor => 4,
             Self::Tangent
+            | Self::Bitangent
             | Self::Normal
             | Self::WorldPosition
             | Self::LocalPosition
@@ -94,6 +97,7 @@ impl MaterialVaryingLayout {
             for (input, varying) in [
                 (MaterialInput::Normal, MaterialVarying::Normal),
                 (MaterialInput::Tangent, MaterialVarying::Tangent),
+                (MaterialInput::Bitangent, MaterialVarying::Bitangent),
                 (MaterialInput::Uv1, MaterialVarying::Uv1),
                 (MaterialInput::WorldPosition, MaterialVarying::WorldPosition),
                 (MaterialInput::LocalPosition, MaterialVarying::LocalPosition),
@@ -171,6 +175,9 @@ impl MaterialVaryingLayout {
                 self.slots
                     .iter()
                     .any(|slot| slot.varying == MaterialVarying::Tangent),
+                self.slots
+                    .iter()
+                    .any(|slot| slot.varying == MaterialVarying::Bitangent),
             )
         } else {
             String::from(crate::shader::SPRITE_VERTEX_WESL)
