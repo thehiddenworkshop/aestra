@@ -4,6 +4,7 @@ mod bounds;
 mod mesh_inputs;
 mod render;
 mod ribbon_bounds;
+mod trail_culling;
 mod trail_replay;
 mod wireframe;
 
@@ -288,11 +289,17 @@ pub(crate) fn install(app: &mut App) {
                 .before(RenderGraphSystems::Render),
         );
     render::install(render_app);
+    trail_culling::install(render_app);
 }
 
 fn install_shader_assets(app: &App) {
     let registry = app.world().resource::<EmbeddedAssetRegistry>();
     let shader_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../aestra-gpu/src/shaders");
+    registry.insert_asset(
+        shader_root.join("aestra_trail_cull.wesl"),
+        Path::new("aestra_bevy_render/shaders/aestra_trail_cull.wesl"),
+        aestra_gpu::shader::trail_cull_wesl().into_bytes(),
+    );
     registry.insert_asset(
         shader_root.join("aestra_mesh_wireframe.wesl"),
         Path::new("aestra_bevy_render/shaders/aestra_mesh_wireframe.wesl"),

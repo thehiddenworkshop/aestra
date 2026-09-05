@@ -1075,13 +1075,16 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGpuSceneDepthBindGrou
 struct DrawGpuSpritesIndirect;
 
 impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
-    type Param = SRes<RenderAssets<GpuShaderBuffer>>;
-    type ViewQuery = ();
+    type Param = (
+        SRes<RenderAssets<GpuShaderBuffer>>,
+        SRes<super::trail_culling::TrailCulling>,
+    );
+    type ViewQuery = Entity;
     type ItemQuery = (Read<GpuDrawInstance>, Option<Read<PreparedMeshDraw>>);
 
     fn render<'w>(
-        _item: &P,
-        _view: ROQueryItem<'w, '_, Self::ViewQuery>,
+        item: &P,
+        view: ROQueryItem<'w, '_, Self::ViewQuery>,
         effect: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
         buffers: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
@@ -1089,6 +1092,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         let Some((effect, mesh)) = effect else {
             return RenderCommandResult::Skip;
         };
+        let (buffers, culling) = buffers;
         if let Some(mesh) = mesh {
             pass.set_vertex_buffer(0, mesh.vertex.slice(..));
             if let Some((index, format)) = &mesh.index {
@@ -1106,7 +1110,11 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
             return RenderCommandResult::Skip;
         };
         if let Some(count) = effect.trail_instances {
-            pass.draw(0..4, 0..count);
+            if let Some(indirect) = culling.into_inner().indirect(view, item.entity()) {
+                pass.draw_indirect(indirect, 0);
+            } else {
+                pass.draw(0..4, 0..count);
+            }
         } else {
             pass.draw_indirect(&indirect.buffer, effect.indirect_offset);
         }

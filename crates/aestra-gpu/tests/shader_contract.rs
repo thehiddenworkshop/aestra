@@ -107,6 +107,17 @@ fn generated_wgsl_matches_reviewable_snapshots() {
 }
 
 #[test]
+fn trail_history_culling_uses_portable_compute_and_shared_particle_abi() {
+    let source = aestra_gpu::shader::trail_cull_wesl();
+    assert!(!source.contains("bevy::"));
+    let shader =
+        aestra_gpu::shader::compile_wesl("package::aestra_trail_cull", &source, &["cull_trail"])
+            .unwrap();
+    assert_translates_to_spirv(&shader.wgsl);
+    assert_translates_to_hlsl(&shader.wgsl);
+}
+
+#[test]
 fn portable_wesl_has_no_engine_shader_imports() {
     for source in [SIMULATION_WESL, SPRITE_RENDER_WESL] {
         assert!(!source.contains("#import bevy"));

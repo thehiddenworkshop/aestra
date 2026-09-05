@@ -26,6 +26,61 @@ fn word(bytes: &[u8], record: usize, offset: usize) -> u32 {
 // 64-byte layout (emitter_index@40, alive@44, particle_index@48, ring state@52/56/60)
 // from the packed records + aux, so the offset-based `word` assertions keep working.
 // `counters` (if any) is appended unchanged so stats_record reads still land.
+fn assert_world_bounds(bytes: &[u8], root: usize, points: usize, owners: usize) {
+    let float = |slot, offset| f32::from_bits(word(bytes, slot, offset));
+    let mut minimum = Vec3::splat(f32::INFINITY);
+    let mut maximum = Vec3::splat(f32::NEG_INFINITY);
+    let mut size = 0.0f32;
+    let mut found = false;
+    let mut valid = true;
+    for owner in 0..owners {
+        let base = root + 1 + owner * points;
+        if word(bytes, base, 44) == 0 {
+            continue;
+        }
+        let count = word(bytes, base, 56) as usize;
+        if count == 0 {
+            continue;
+        }
+        for index in 0..=count {
+            let slot = if index == count {
+                base
+            } else {
+                base + 1
+                    + (word(bytes, base, 52) as usize + points - 1 - count + index) % (points - 1)
+            };
+            let position = Vec3::new(float(slot, 16), float(slot, 20), float(slot, 24));
+            let width = float(slot, 28).abs();
+            valid &= position.is_finite() && width.is_finite();
+            minimum = minimum.min(position);
+            maximum = maximum.max(position);
+            size = size.max(width);
+            found = true;
+        }
+    }
+    assert_eq!(
+        float(root, 28),
+        if !valid {
+            0.0
+        } else if found {
+            1.0
+        } else {
+            2.0
+        }
+    );
+    if valid && found {
+        assert_eq!(
+            Vec3::new(float(root, 16), float(root, 20), float(root, 24)),
+            minimum
+        );
+        assert_eq!(
+            Vec3::new(float(root, 0), float(root, 4), float(root, 8)),
+            maximum
+        );
+        assert_eq!(float(root, 12), size);
+    }
+}
+
 fn expand_legacy(packed: &[u8], aux: &[u8], counters: &[u8], records: usize) -> Vec<u8> {
     let mut out = vec![0u8; records * 64 + counters.len()];
     for r in 0..records {
@@ -209,7 +264,9 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue) {
         let bytes = readback.slice(..).get_mapped_range().to_vec();
         readback.unmap();
         let p = buffers[1].size() as usize;
-        expand_legacy(&bytes[0..p], &bytes[p..], &[], p / 48)
+        let result = expand_legacy(&bytes[0..p], &bytes[p..], &[], p / 48);
+        assert_world_bounds(&result, artifact.total_slots as usize, 64, 64);
+        result
     };
     let heads =
         || (0..e.trail_capacity).map(|i| (e.trail_offset + 1 + i * e.trail_points) as usize);
@@ -446,7 +503,9 @@ fn check_pool(max_trails: u32, distance: bool) {
             readback.unmap();
             let p = buffers[1].size() as usize;
             let c = buffers[4].size() as usize;
-            expand_legacy(&bytes[0..p], &bytes[p + c..], &bytes[p..p + c], p / 48)
+            let result = expand_legacy(&bytes[0..p], &bytes[p + c..], &bytes[p..p + c], p / 48);
+            assert_world_bounds(&result, 2, 4, max_trails as usize);
+            result
         };
     let step = |time, ids, count, translation, epoch, seed| {
         step_at(

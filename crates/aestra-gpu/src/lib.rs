@@ -28,6 +28,14 @@ pub const MAX_CURVE_KEYS: usize = 8;
 /// GPU a tighter starting bracket, so fewer refinement iterations are needed.
 pub const SPAWN_INVERSE_SAMPLES: usize = 32;
 pub const MAX_FLIPBOOK_FRAMES: usize = 64;
+#[derive(Clone, Copy, ShaderType)]
+pub struct GpuTrailCullParams {
+    pub clip_from_world: Mat4,
+    pub renderer_index: u32,
+    pub instance_count: u32,
+    pub epoch: u32,
+    pub _padding: u32,
+}
 /// Eight triangles per semicircular endpoint; must match the trail vertex shader.
 pub const TRAIL_CAP_SEGMENTS: u32 = 8;
 

@@ -2790,9 +2790,33 @@ points or sample spacing. This is separate from the owner-budget eviction counte
 increasing Maximum Trails does not fix a per-owner point limit. Telemetry remains async,
 and caps add at most sixteen draw instances per owner, not simulation/history records.
 
-Remaining trail work: adaptive spatial sampling, exact
-trajectory replay/checkpoint serialization, conservative world
-history culling and larger parallel owner maps.
+### Trail-history culling
+
+The history compute pass reduces every retained anchor and head into an emitter-level
+world-space AABB and maximum absolute recorded size. It includes retired owners and expired
+anchors still used by partial segments. Header lanes previously unused by history store min
+position, max position, size, and unknown/valid/empty status. No particle stride, history
+budget, or simulation bindings change.
+
+A separate GPU pass runs after simulation/replay and before rendering. Each camera/draw pair
+has its own indirect command and current view matrix. The portable shader expands bounds by
+the maximum full (unfaded) half-width, enclosing the strip and rounded caps, and tests the six
+homogeneous clip planes with a numerical tolerance. Fully offscreen or empty histories produce
+zero instances; history simulation continues independently of visibility.
+
+Bounds are usable only when header epoch, seed, and processed replay time match. Unknown,
+nonfinite or overflowing data renders conservatively. Missing buffers or a compiling culling
+pipeline use the original direct draw. Camera/draw removal drops cached decisions; every frame
+must dispatch anew before indirect commands can be consumed. This avoids CPU readback latency,
+seek flicker, and using one camera's result for another.
+
+CPU frustum culling stays disabled for trails. Jittered cameras currently use the direct-draw
+fallback until exact jittered view uniforms are supported; semantic vertex displacement also
+opts out. Culling is emitter-level, not per owner, and does not compact trail geometry. Bounds
+reduction and per-view compute add work; the gain is avoiding offscreen trail vertex expansion.
+
+Remaining trail work: adaptive spatial sampling, exact trajectory replay/checkpoint
+serialization, finer-grained history culling and larger parallel owner maps.
 
 ### Add inputs
 

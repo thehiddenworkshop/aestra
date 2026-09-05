@@ -190,6 +190,7 @@ fn record_trails(emitter_index: u32) {
     atomicStore(&counters[stats + 3u], peak);
     atomicStore(&counters[stats + 4u], globals._padding.x);
     atomicStore(&counters[stats + 5u], truncated);
+    record_trail_bounds(emitter_index);
 }
 
 @compute @workgroup_size(64)

@@ -13,6 +13,8 @@ pub const SIMULATION_WESL: &str = concat!(
     "\n",
     include_str!("shaders/aestra_ribbon_link.wesl"),
     "\n",
+    include_str!("shaders/aestra_trail_bounds.wesl"),
+    "\n",
     include_str!("shaders/aestra_trail_history.wesl")
 );
 pub const SPRITE_VERTEX_WESL: &str = concat!(
@@ -31,6 +33,18 @@ pub const SPRITE_RENDER_WESL: &str = concat!(
     "\n",
     include_str!("shaders/aestra_sprite_render.wesl"),
 );
+
+/// Reuse the compact presentation ABI without importing any engine shader types.
+pub fn trail_cull_wesl() -> String {
+    let types = SPRITE_VERTEX_WESL
+        .split("@group(0)")
+        .next()
+        .expect("vertex ABI");
+    format!(
+        "{types}\n{}",
+        include_str!("shaders/aestra_trail_cull.wesl")
+    )
+}
 /// Shared geometry/transform ABI for semantic Mesh materials and diagnostic wireframes.
 pub(crate) fn mesh_vertex_wesl() -> String {
     mesh_vertex_wesl_with_inputs(false, false, false)

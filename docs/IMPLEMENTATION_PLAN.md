@@ -564,8 +564,13 @@ the current sprite-material path until the native-GPU compatibility gate approve
   reports owners with prematurely discarded history points; the Profiler warns to increase
   History points or sample spacing until those missing points expire. Native tests cover cap
   joins/UVs, coincident head samples, retired tails, expiry, warning resets and seeking.
-  Multiple ribbon IDs, adaptive sampling,
-  history culling/checkpoints, a dedicated Normal output and PBR remain follow-up work.
+  Trail-history culling now reduces retained world-space anchors (including retired tails) on
+  the GPU and issues per-camera indirect draws after history updates. Bounds include full width
+  and rounded caps; stale epochs/times/seeds, invalid bounds, jittered cameras and vertex
+  displacement retain the no-culling fallback. Offscreen history keeps simulating. Native tests
+  cover all frustum planes, camera isolation, viewport-edge width/caps, history movement,
+  seeking, pause, expiry and invalidation. Multiple ribbon IDs, adaptive sampling, history
+  checkpoints, a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual
