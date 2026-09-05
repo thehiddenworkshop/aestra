@@ -196,21 +196,25 @@ the many-emitter path needs to get faster, and measure against b006.
 
 ## 5. Re-ranked roadmap (measurement-backed)
 
-> **Updated by the AAA-scale dense sweep** (plan Phase 6, "AAA-scale dense sweep",
-> `benchmarks/gpu-baselines/scale-sweep-b24ce16/`). Pushing real alive counts to 4M
-> found that the **analytical simulation does not hit a throughput wall** — 4M dense
-> simulates in **2.2 ms** (tight, stddev 0.006), plateauing above ~250k as the GPU
-> saturates — while the **transparent render pass is ~2.4–3× the sim cost at every
-> scale** (4M: 5.7 ms). So at dense scale the bottleneck is **overdraw / fill-rate,
-> not simulation**, and M7's dense-throughput motivation is weakened accordingly.
+> **Updated by the AAA-scale dense sweep + render ablation** (plan Phase 6,
+> "AAA-scale dense sweep"; `benchmarks/gpu-baselines/scale-sweep-b24ce16/` and
+> `render-ablation-cd8cae7/`). Pushing real alive counts to 4M found the **analytical
+> simulation does not hit a throughput wall** — 4M dense simulates in **2.2 ms**
+> (tight, stddev 0.006), plateauing above ~250k as the GPU saturates — while the
+> **transparent render pass is ~2.4–3× the sim cost** (4M: 5.7 ms). A fill ablation
+> then showed that render cost is **vertex/particle-fetch, not overdraw**: varying
+> fragments 440× (393k→173M) left the pass flat at ~5 ms. The bottleneck is the sprite
+> vertex shader's redundant scattered particle gathers (6 verts/particle × ~7 member
+> loads). M7's dense-throughput motivation is weakened accordingly.
 
-1. **Render / overdraw reduction** — *the measured dense-scale bottleneck.* Soft-particle
-   fragment cost, sprite footprint, blend/sort order, and LOD + off-screen culling to
-   cut fill. This is where AAA-scale dense effects actually spend GPU time; measure
-   against the `scale_*` sweep's `transparent_pass` numbers.
-2. **SoA + FP16 particle attributes** — attacks the measured 67% memory floor
-   (Phase 7) *and* the per-frame bandwidth the ~2 ms sim plateau is bound by. Bounded,
-   measurable, model-preserving — the clearest kernel-side win.
+1. **SoA / compact + FP16 particle attributes** — *the single highest-leverage item.*
+   It hits **both** dominant costs: the vertex shader gathers from the 64-byte
+   interleaved `Particle` (the render bottleneck), and the ~2 ms sim plateau is
+   bandwidth-bound on the same buffer. A tightly packed, contiguous render record
+   (~half the bytes) shrinks both. Bounded, measurable, model-preserving.
+2. **Sprite vertex path** — 6→4 vertices per sprite (indexed quad / strip) and reading
+   the invariant particle once per sprite instead of once per vertex remove the ~6×
+   redundant gather. Measure against `render-ablation-cd8cae7/`.
 3. **Per-emitter dispatch (Phase 7 #3)** — removes the §2.3 per-slot emitter search
    (b006 = 0.965 ms) and sizes each dispatch to its emitter's occupancy. Justified
    once the many-emitter path needs to be faster; measure against b006.
@@ -222,21 +226,26 @@ the many-emitter path needs to get faster, and measure against b006.
    kernel for authoring. Now motivated by **weaker GPUs and persistent-state
    semantics**, not dense throughput on capable hardware (the sweep refuted that need).
    Biggest effort; gate on a workload the analytical kernel provably cannot serve.
-6. **Bitonic sort** — adopt when blend-order correctness demands it; orthogonal (and
-   related to #1, since correct order also bounds overdraw work).
+6. **Bitonic sort / overdraw controls** — adopt only where blend-order correctness or
+   pathological fill demands it. The fill ablation showed overdraw is nearly free on
+   this GPU, so this is not a dense-scale lever here; orthogonal.
 
-**Not pursued** (measurement/layout refuted): single global analytically-sized
-dispatch (§4).
+**Not pursued** (measurement refuted): single global analytically-sized dispatch (§4);
+overdraw reduction as the dense-scale render lever (fill ablation — render is
+vertex-fetch bound).
 
 The through-line: Phase 7 profiling said the analytical *kernel* is near its
 per-particle floor, and this survey asked whether the professional engines' indirect,
-alive-proportional execution is the way past it. Two measured facts reshaped the
+alive-proportional execution is the way past it. Three measured facts reshaped the
 answer. First, the CPU-sized single-dispatch idea does not survive the timer-floor
-cost or the packed slot layout (§4). Second — and larger — the **AAA-scale sweep
-showed the analytical sim scales to millions on a 4070 (2.2 ms at 4M) and that render,
-not sim, is the dense-scale wall.** So the honest priority order leads with
-**render/overdraw**, then the **SoA/FP16** bandwidth win, with **M7 re-cast** as a
-portability/semantics play rather than the dense-throughput lever it was assumed to be.
+cost or the packed slot layout (§4). Second, the AAA-scale sweep showed the analytical
+sim scales to millions on a 4070 (2.2 ms at 4M) — sim is **not** the dense-scale wall.
+Third, the render pass that *is* larger turned out to be bound by **redundant scattered
+particle gathers in the sprite vertex shader, not overdraw**. So the honest priority
+leads with **SoA/compact particle data** — one change that relieves both the render
+gather and the sim bandwidth plateau — then the **vertex-path** cleanup, with **M7
+re-cast** as a portability/semantics play rather than the dense-throughput lever it was
+assumed to be.
 
 ---
 

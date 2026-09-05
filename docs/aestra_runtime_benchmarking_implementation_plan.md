@@ -248,9 +248,17 @@ so these are precise, not noise. Findings — several of them corrections:
   predicted 4M ≈ 14–17 ms) — measured, not modelled. Millions of dense analytical
   particles are real-time-feasible on a capable discrete GPU.
 - **Rendering is the dominant Aestra GPU cost at every dense scale — ~2.4–3× the
-  simulation** (4M: 5.7 ms render vs 2.2 ms sim; ~8 ms total). The AAA-scale
-  bottleneck is **overdraw / fill-rate in the transparent pass**, not analytical
-  simulation. Fragment invocations scale linearly (1.9M→146M) while sim stays flat.
+  simulation** (4M: 5.7 ms render vs 2.2 ms sim; ~8 ms total).
+- **The render cost is vertex/particle-fetch, NOT overdraw** (fill-ablation,
+  `benchmarks/gpu-baselines/render-ablation-cd8cae7/`, 1M particles, sprite size
+  0.3/3/12): fragment invocations vary **440×** (393k → 173M) while the transparent
+  pass stays **flat at ~5 ms** (fill adds only ~1 ms even at 173M fragments). Vertex
+  invocations are constant at 6M. So the pass is bound by the **sprite vertex shader's
+  redundant, scattered particle gathers** — `aestra_sprite_vertex.wesl` runs 6 vertex
+  invocations per particle, each re-reading the (invariant) particle via ~7 separate
+  member loads (~42 scattered gathers/particle). 6M verts at ~5 ms is ~8–10× off the
+  4070's vertex peak → memory-latency bound. **This corrects the earlier
+  "overdraw/fill-rate" attribution, which the ablation refuted.**
 - **This weakens M7's throughput motivation.** The incremental backend was framed as
   the lever "past the analytical floor"; at dense scale the floor is far higher than
   feared and the sim is not the wall. M7 still matters for weaker GPUs and for
@@ -266,11 +274,23 @@ so these are precise, not noise. Findings — several of them corrections:
   variance; treat this sweep as **advisory** until the GPU lane locks clocks / takes
   multiple runs (Phase 8 caveat).
 
-**Roadmap redirection.** The measured next lever for dense scale is **render/overdraw**
-(soft-particle cost, sprite size, front-to-back or additive-order handling, LOD and
-off-screen culling to cut fill), ahead of both M7 and further sim micro-opts. The
-kernel-side win that still stands is **SoA/FP16** (Phase 7 memory floor), which also
-shrinks the per-frame bandwidth that the ~2 ms sim plateau is bound by.
+**Roadmap redirection.** The measured next lever for dense scale is the **sprite
+vertex path**, not overdraw:
+1. **Compact / SoA render attributes** — the vertex shader gathers from the 64-byte
+   interleaved `Particle`; a tightly packed render record (position+size+rotation+
+   color+age, ~half the bytes, contiguous) cuts the scattered traffic that bounds the
+   pass. This is the **same SoA/FP16 work that also relieves the ~2 ms sim plateau**,
+   so it is now the single highest-leverage item — it hits both dominant costs.
+2. **Fewer vertices per sprite** — 6 → 4 (indexed quad / triangle strip) drops vertex
+   invocations and the redundant per-vertex gathers ~33%.
+3. **Read the particle once per sprite, not once per vertex** — the particle is
+   invariant across its 6 vertices; a compute expansion (or per-instance read) removes
+   the 6× redundancy. Larger change; measure it against the ablation numbers.
+
+Overdraw work (soft particles, sprite size, blend/sort order, LOD/culling) is **not**
+the dense-scale lever here — the fill ablation showed it is nearly free on this GPU.
+It remains relevant only for pathological fill (huge sprites / tiny viewport) or
+weaker GPUs.
 
 ---
 
