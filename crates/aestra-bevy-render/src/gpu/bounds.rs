@@ -13,11 +13,16 @@ use std::collections::HashMap;
 pub(super) struct MeshBoundsSource {
     mesh: Handle<Mesh>,
     pub motion: Option<MeshParticleBounds>,
+    pub displacement: Option<Vec3>,
 }
 
 impl MeshBoundsSource {
     pub fn new(mesh: Handle<Mesh>) -> Self {
-        Self { mesh, motion: None }
+        Self {
+            mesh,
+            motion: None,
+            displacement: Some(Vec3::ZERO),
+        }
     }
 }
 
@@ -38,9 +43,11 @@ pub(super) fn sync_mesh_bounds(
         let geometry = cache
             .entry(source.mesh.id())
             .or_insert_with(|| meshes.get(&source.mesh).and_then(geometry_bounds));
-        let bounds = source
-            .motion
-            .and_then(|motion| geometry.and_then(|(min, max)| motion.half_extents(min, max)));
+        let bounds = source.motion.and_then(|motion| {
+            let displacement = source.displacement?;
+            geometry
+                .and_then(|(min, max)| motion.half_extents(min - displacement, max + displacement))
+        });
         if let Some(half_extents) = bounds {
             let bounds = Aabb {
                 center: Vec3::ZERO.into(),
@@ -112,6 +119,7 @@ mod tests {
                 MeshBoundsSource {
                     mesh: handle.clone(),
                     motion: Some(motion(2.0)),
+                    displacement: Some(Vec3::ZERO),
                 },
                 Aabb::default(),
                 NoFrustumCulling,
@@ -164,6 +172,60 @@ mod tests {
             .remove(handle.id());
         app.update();
         assert!(app.world().entity(entity).contains::<NoFrustumCulling>());
+    }
+
+    #[test]
+    fn deformation_expands_bounds_or_disables_culling_until_bounded_again() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .add_systems(Update, sync_mesh_bounds);
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<Mesh>>()
+            .add(mesh(1.0));
+        let entity = app
+            .world_mut()
+            .spawn((
+                MeshBoundsSource {
+                    mesh: handle,
+                    motion: Some(motion(2.0)),
+                    displacement: Some(Vec3::ZERO),
+                },
+                Aabb::default(),
+            ))
+            .id();
+        app.update();
+        let original = app.world().get::<Aabb>(entity).unwrap().half_extents;
+        app.world_mut()
+            .get_mut::<MeshBoundsSource>(entity)
+            .unwrap()
+            .displacement = Some(Vec3::splat(10.0));
+        app.update();
+        assert!(
+            app.world()
+                .get::<Aabb>(entity)
+                .unwrap()
+                .half_extents
+                .cmpgt(original)
+                .all()
+        );
+        assert!(!app.world().entity(entity).contains::<NoFrustumCulling>());
+        app.world_mut()
+            .get_mut::<MeshBoundsSource>(entity)
+            .unwrap()
+            .displacement = None;
+        app.update();
+        assert!(app.world().entity(entity).contains::<NoFrustumCulling>());
+        app.world_mut()
+            .get_mut::<MeshBoundsSource>(entity)
+            .unwrap()
+            .displacement = Some(Vec3::ZERO);
+        app.update();
+        assert!(!app.world().entity(entity).contains::<NoFrustumCulling>());
+        assert_eq!(
+            app.world().get::<Aabb>(entity).unwrap().half_extents,
+            original
+        );
     }
 
     #[test]

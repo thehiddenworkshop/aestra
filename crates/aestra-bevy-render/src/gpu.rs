@@ -476,7 +476,11 @@ pub(crate) fn prepare_gpu_effects(
                     GpuParticleAttributes::for_renderer(
                         renderer,
                         draw.7.as_ref().map(|binding| &binding.program.reflection),
-                        player.render_mode() == EffectRenderMode::Wireframe,
+                        player.render_mode() == EffectRenderMode::Wireframe
+                            && !draw
+                                .7
+                                .as_ref()
+                                .is_some_and(|binding| binding.program.has_vertex_offset),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -844,6 +848,13 @@ fn update_gpu_inputs(
             if let Some(children) = children {
                 for child in children.iter() {
                     if let Ok((draw, _, Some(mut mesh_bounds))) = draw_instances.get_mut(child) {
+                        mesh_bounds.displacement = draw
+                            .semantic_material
+                            .as_ref()
+                            .map_or(Some([0.0; 3]), |binding| {
+                                binding.program.vertex_offset_bounds
+                            })
+                            .map(Vec3::from_array);
                         mesh_bounds.motion = dynamics
                             .mesh_bounds
                             .get(draw.emitter_index as usize)
@@ -866,7 +877,10 @@ fn update_gpu_inputs(
                                     draw.semantic_material
                                         .as_ref()
                                         .map(|binding| &binding.program.reflection),
-                                    draw.render_mode == GpuRenderMode::Wireframe,
+                                    draw.render_mode == GpuRenderMode::Wireframe
+                                        && !draw.semantic_material.as_ref().is_some_and(
+                                            |binding| binding.program.has_vertex_offset,
+                                        ),
                                 );
                         }
                     }

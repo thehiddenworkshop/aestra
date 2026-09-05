@@ -38,6 +38,12 @@ fn mesh_renderer_and_material_domain_survive_artifact_round_trip() {
         )
         .unwrap();
     let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert!(
+        restored.material_programs[0]
+            .outputs
+            .vertex_offset
+            .is_some()
+    );
     assert_eq!(restored, compiled);
     assert!(matches!(
         restored.emitters[0].renderers[0].kind,

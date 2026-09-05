@@ -1928,6 +1928,17 @@ fn validate_function_call_identity(
 pub struct MaterialOutputs {
     pub color: MaterialExpressionId,
     pub alpha: MaterialExpressionId,
+    /// Mesh-local displacement, applied before particle rotation and scale. None means zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertex_offset: Option<MaterialExpressionId>,
+}
+
+impl MaterialOutputs {
+    pub fn roots(self) -> impl Iterator<Item = MaterialExpressionId> {
+        [self.color, self.alpha]
+            .into_iter()
+            .chain(self.vertex_offset)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1994,7 +2005,11 @@ impl MaterialProgram {
             ],
             disabled_expressions: Vec::new(),
             inline_constants: Vec::new(),
-            outputs: MaterialOutputs { color, alpha },
+            outputs: MaterialOutputs {
+                color,
+                alpha,
+                vertex_offset: None,
+            },
         }
     }
 
@@ -2268,6 +2283,22 @@ impl MaterialProgram {
             self.outputs.alpha,
             "material_program.outputs.alpha",
         );
+        if let Some(offset) = self.outputs.vertex_offset {
+            validate_output(
+                &mut report,
+                &expressions,
+                offset,
+                "material_program.outputs.vertex_offset",
+            );
+            if self.domain != MaterialDomain::Mesh {
+                error(
+                    &mut report,
+                    DiagnosticCode::InvalidValue,
+                    "material_program.outputs.vertex_offset",
+                    "Vertex Offset is only available for Mesh materials",
+                );
+            }
+        }
 
         for (index, expression) in self.expressions.iter().enumerate() {
             for dependency in expression.kind.dependencies() {
@@ -2290,6 +2321,9 @@ impl MaterialProgram {
         let mut reachable = BTreeSet::new();
         collect_reachable(self.outputs.color, &expressions, &mut reachable);
         collect_reachable(self.outputs.alpha, &expressions, &mut reachable);
+        if let Some(offset) = self.outputs.vertex_offset {
+            collect_reachable(offset, &expressions, &mut reachable);
+        }
         for (index, expression) in self.expressions.iter().enumerate() {
             if !reachable.contains(&expression.id) {
                 report.push(Diagnostic {
@@ -2365,6 +2399,63 @@ impl MaterialProgram {
             |value_type| value_type == MaterialValueType::Float,
         );
 
+        if let Some(offset) = self.outputs.vertex_offset {
+            validate_material_output_type(
+                report,
+                &analysis,
+                offset,
+                "material_program.outputs.vertex_offset",
+                "Vertex Offset",
+                "Vec3",
+                |ty| ty == MaterialValueType::Vec3,
+            );
+            let mut reachable = BTreeSet::new();
+            let mut pending = vec![offset];
+            while let Some(id) = pending.pop() {
+                if !reachable.insert(id) {
+                    continue;
+                }
+                let Some(expression) = expressions.get(&id) else {
+                    continue;
+                };
+                if self.disabled_expressions.contains(&id) {
+                    pending.extend(expression.kind.bypass_input());
+                    continue;
+                }
+                let unsupported = match &expression.kind {
+                    MaterialExpressionKind::Input(input) => !matches!(
+                        input,
+                        MaterialInput::LocalPosition
+                            | MaterialInput::WorldPosition
+                            | MaterialInput::Normal
+                            | MaterialInput::ViewDirection
+                            | MaterialInput::Uv0
+                            | MaterialInput::EffectTime
+                            | MaterialInput::ParticleColor
+                            | MaterialInput::ParticleOpacity
+                            | MaterialInput::ParticleNormalizedAge
+                    ),
+                    MaterialExpressionKind::DerivativeX { .. }
+                    | MaterialExpressionKind::DerivativeY { .. }
+                    | MaterialExpressionKind::SampleTexture { .. }
+                    | MaterialExpressionKind::SampleTextureGradient { .. }
+                    | MaterialExpressionKind::CustomWeslCall { .. } => true,
+                    _ => false,
+                };
+                if unsupported {
+                    error(
+                        report,
+                        DiagnosticCode::InvalidValue,
+                        format!(
+                            "material_program.expressions[{}].kind",
+                            expression_indices[&id]
+                        ),
+                        "Vertex Offset depends on an operation or input unavailable in the vertex stage",
+                    );
+                }
+                pending.extend(expression.kind.dependencies());
+            }
+        }
         analysis
     }
 }

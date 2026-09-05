@@ -3295,3 +3295,53 @@ fn material_graph_disconnect_replaces_the_edge_with_a_typed_default() {
         MaterialExpressionKind::RotateUv { angle, .. } if angle == default
     ));
 }
+
+#[test]
+fn mesh_vertex_output_connect_disconnect_and_undo_preserve_the_document() {
+    let mut document = authoring_document();
+    let mut program = MaterialProgram::from_ron(include_str!(
+        "../../../assets/materials/mesh_material_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    let source = program.outputs.vertex_offset.take().unwrap();
+    let id = program.id;
+    document.programs.push(program);
+    let before = document.clone();
+    let target = MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::VertexOffset);
+    let mut history = MaterialCommandHistory::default();
+    let connect = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::ConnectMaterialExpression {
+            program: id,
+            source,
+            target,
+        },
+    )
+    .unwrap();
+    history.execute(&mut document, connect.transaction).unwrap();
+    assert_eq!(
+        document.programs.last().unwrap().outputs.vertex_offset,
+        Some(source)
+    );
+    let connected = document.clone();
+    let disconnect = MaterialToolPlanner::plan(
+        &document,
+        MaterialToolCommand::DisconnectMaterialConnection {
+            program: id,
+            target,
+        },
+    )
+    .unwrap();
+    assert!(disconnect.created_expressions.is_empty());
+    history
+        .execute(&mut document, disconnect.transaction)
+        .unwrap();
+    assert_eq!(
+        document.programs.last().unwrap().outputs.vertex_offset,
+        None
+    );
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, connected);
+    history.undo(&mut document).unwrap().unwrap();
+    assert_eq!(document, before);
+}

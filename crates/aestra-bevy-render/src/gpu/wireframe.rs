@@ -11,7 +11,7 @@ use std::{
 
 #[derive(Debug)]
 pub(super) struct WireframeGeometry {
-    pub positions: Vec<[f32; 3]>,
+    pub vertices: Vec<[f32; 8]>,
     pub indices: Vec<u32>,
 }
 
@@ -81,10 +81,37 @@ fn mesh_edges(mesh: &Mesh) -> Option<WireframeGeometry> {
     if indices.is_empty() || u32::try_from(indices.len()).is_err() {
         return None;
     }
-    Some(WireframeGeometry {
-        positions: positions.clone(),
-        indices,
-    })
+    let normals = mesh
+        .attribute(Mesh::ATTRIBUTE_NORMAL)
+        .and_then(|values| match values {
+            VertexAttributeValues::Float32x3(values) => Some(values),
+            _ => None,
+        });
+    let uvs = mesh
+        .attribute(Mesh::ATTRIBUTE_UV_0)
+        .and_then(|values| match values {
+            VertexAttributeValues::Float32x2(values) => Some(values),
+            _ => None,
+        });
+    let vertices = positions
+        .iter()
+        .enumerate()
+        .map(|(index, p)| {
+            let n = normals
+                .and_then(|values| values.get(index))
+                .copied()
+                .unwrap_or([0.0, 0.0, 1.0]);
+            let uv = uvs
+                .and_then(|values| values.get(index))
+                .copied()
+                .unwrap_or([0.0; 2]);
+            [p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1]]
+        })
+        .collect::<Vec<_>>();
+    if vertices.iter().flatten().any(|value| !value.is_finite()) {
+        return None;
+    }
+    Some(WireframeGeometry { vertices, indices })
 }
 
 #[cfg(test)]
@@ -111,7 +138,7 @@ mod tests {
         ] {
             let geometry = mesh_edges(&triangle().with_inserted_indices(indices)).unwrap();
             assert_eq!(geometry.indices, [0, 1, 1, 2, 2, 0, 1, 3, 3, 2]);
-            assert_eq!(geometry.positions.len(), 4);
+            assert_eq!(geometry.vertices.len(), 4);
         }
     }
 

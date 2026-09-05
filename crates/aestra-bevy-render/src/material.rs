@@ -718,7 +718,7 @@ pub fn material_bind_group_layout(layout: &MaterialResourceLayout) -> BindGroupL
     if let Some(binding) = layout.uniforms.binding {
         entries.push(BindGroupLayoutEntry {
             binding,
-            visibility: ShaderStages::FRAGMENT,
+            visibility: ShaderStages::VERTEX_FRAGMENT,
             ty: BindingType::Buffer {
                 ty: BufferBindingType::Uniform,
                 has_dynamic_offset: false,
@@ -735,7 +735,7 @@ pub fn material_bind_group_layout(layout: &MaterialResourceLayout) -> BindGroupL
             .is_some_and(|sampler| sampler.is_filtering());
         entries.push(BindGroupLayoutEntry {
             binding: texture.binding,
-            visibility: ShaderStages::FRAGMENT,
+            visibility: ShaderStages::VERTEX_FRAGMENT,
             ty: BindingType::Texture {
                 sample_type: TextureSampleType::Float { filterable },
                 view_dimension: TextureViewDimension::D2,
@@ -747,7 +747,7 @@ pub fn material_bind_group_layout(layout: &MaterialResourceLayout) -> BindGroupL
     for sampler in &layout.samplers {
         entries.push(BindGroupLayoutEntry {
             binding: sampler.binding,
-            visibility: ShaderStages::FRAGMENT,
+            visibility: ShaderStages::VERTEX_FRAGMENT,
             ty: BindingType::Sampler(if sampler.is_filtering() {
                 SamplerBindingType::Filtering
             } else {
@@ -952,6 +952,7 @@ mod tests {
             },
         ];
         program.outputs = MaterialOutputs {
+            vertex_offset: None,
             color: tint_expression,
             alpha: alpha_expression,
         };

@@ -54,6 +54,7 @@ fn mesh_lab_lowers_to_portable_mesh_plans() {
 fn meshes_reject_sprite_materials_and_missing_geometry() {
     let (mut asset, mut program) = fixture();
     program.domain = MaterialDomain::Sprite;
+    program.outputs.vertex_offset = None;
     // Keep render-state validation valid so this test isolates the renderer/domain mismatch.
     program.render_state_policy.default.cull_mode = aestra_core::material::MaterialCullMode::None;
     for state in &mut program.render_state_policy.allowed {

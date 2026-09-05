@@ -2468,7 +2468,11 @@ fn material_preset_preview_program() -> MaterialProgram {
             },
         },
     ];
-    program.outputs = MaterialOutputs { color, alpha: mask };
+    program.outputs = MaterialOutputs {
+        vertex_offset: None,
+        color,
+        alpha: mask,
+    };
     program
 }
 
@@ -4544,10 +4548,15 @@ fn spawn_output_node(
                     MaterialGraphOutputKind::Alpha => {
                         ("Alpha", "Final opacity written by the material.")
                     }
+                    MaterialGraphOutputKind::VertexOffset => (
+                        "Vertex Offset",
+                        "Mesh-local displacement before particle rotation and scale. Unconnected means zero. Fragment-only operations cannot be used here.",
+                    ),
                 };
                 let target = MaterialConnectionTarget::ProgramOutput(match output.kind {
                     MaterialGraphOutputKind::Color => MaterialOutputSocket::Color,
                     MaterialGraphOutputKind::Alpha => MaterialOutputSocket::Alpha,
+                    MaterialGraphOutputKind::VertexOffset => MaterialOutputSocket::VertexOffset,
                 });
                 spawn_graph_port(
                     body,
@@ -4790,6 +4799,9 @@ fn edge_target(target: &MaterialGraphEdgeTarget) -> Option<MaterialConnectionTar
         ),
         MaterialGraphEdgeTarget::Output(MaterialGraphOutputKind::Alpha) => Some(
             MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha),
+        ),
+        MaterialGraphEdgeTarget::Output(MaterialGraphOutputKind::VertexOffset) => Some(
+            MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::VertexOffset),
         ),
     }
 }

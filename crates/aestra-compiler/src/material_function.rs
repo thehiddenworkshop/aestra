@@ -279,6 +279,10 @@ pub(crate) fn inline_material_functions(
     }
     let color = expander.expand_program(program.outputs.color);
     let alpha = expander.expand_program(program.outputs.alpha);
+    let vertex_offset = program
+        .outputs
+        .vertex_offset
+        .and_then(|id| expander.expand_program(id));
     if !expander.report.is_valid() {
         return Err(MaterialCompileError::Validation(expander.report));
     }
@@ -290,6 +294,7 @@ pub(crate) fn inline_material_functions(
     expanded.expressions = expander.output;
     expanded.outputs.color = color;
     expanded.outputs.alpha = alpha;
+    expanded.outputs.vertex_offset = vertex_offset;
     expanded.disabled_expressions.retain(|id| {
         expanded
             .expressions

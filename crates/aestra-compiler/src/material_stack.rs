@@ -452,6 +452,9 @@ impl MaterialCompiler {
         let mut reachable = BTreeSet::new();
         collect_reachable(program.outputs.color, &expressions, &mut reachable);
         collect_reachable(program.outputs.alpha, &expressions, &mut reachable);
+        if let Some(offset) = program.outputs.vertex_offset {
+            collect_reachable(offset, &expressions, &mut reachable);
+        }
         let modifiers = reachable
             .iter()
             .filter_map(|id| modifier_kind(expressions[id]).map(|kind| (*id, kind)))
@@ -1058,7 +1061,8 @@ fn plan_graph_recipe_inner(
     }
     let allowed_references = usize::from(boundary.is_some())
         + usize::from(program.outputs.color == source)
-        + usize::from(program.outputs.alpha == source);
+        + usize::from(program.outputs.alpha == source)
+        + usize::from(program.outputs.vertex_offset == Some(source));
     if allowed_references == 0 || expression_reference_count(program, source) != allowed_references
     {
         return None;
@@ -1109,6 +1113,9 @@ fn plan_graph_recipe_inner(
     }
     if replacement.outputs.alpha == source {
         replacement.outputs.alpha = output;
+    }
+    if replacement.outputs.vertex_offset == Some(source) {
+        replacement.outputs.vertex_offset = Some(output);
     }
     for (target, value) in &recipe.program_outputs {
         let expression =
@@ -1309,7 +1316,8 @@ fn plan_stack_insert_inner(
     }
     let allowed_references = usize::from(boundary.is_some())
         + usize::from(program.outputs.color == source)
-        + usize::from(program.outputs.alpha == source);
+        + usize::from(program.outputs.alpha == source)
+        + usize::from(program.outputs.vertex_offset == Some(source));
     if allowed_references == 0 || expression_reference_count(program, source) != allowed_references
     {
         return None;
@@ -1331,6 +1339,9 @@ fn plan_stack_insert_inner(
     }
     if replacement.outputs.alpha == source {
         replacement.outputs.alpha = expression;
+    }
+    if replacement.outputs.vertex_offset == Some(source) {
+        replacement.outputs.vertex_offset = Some(expression);
     }
     replacement.analyze().ok()?;
     let MaterialStackProjection::Stack { entries: projected } =
@@ -1372,6 +1383,9 @@ fn plan_stack_remove_inner(
         &expressions,
         &mut originally_reachable,
     );
+    if let Some(offset) = program.outputs.vertex_offset {
+        collect_reachable(offset, &expressions, &mut originally_reachable);
+    }
     let source = primary_source(expressions[&selected])?;
     let boundary = entries
         .get(index + 1)
@@ -1379,7 +1393,8 @@ fn plan_stack_remove_inner(
         .filter(|expression| primary_source(expressions[expression]) == Some(selected));
     let allowed_references = usize::from(boundary.is_some())
         + usize::from(program.outputs.color == selected)
-        + usize::from(program.outputs.alpha == selected);
+        + usize::from(program.outputs.alpha == selected)
+        + usize::from(program.outputs.vertex_offset == Some(selected));
     if allowed_references == 0
         || expression_reference_count(program, selected) != allowed_references
     {
@@ -1402,6 +1417,9 @@ fn plan_stack_remove_inner(
     if replacement.outputs.alpha == selected {
         replacement.outputs.alpha = source;
     }
+    if replacement.outputs.vertex_offset == Some(selected) {
+        replacement.outputs.vertex_offset = Some(source);
+    }
     replacement
         .expressions
         .retain(|candidate| candidate.id != selected);
@@ -1413,6 +1431,9 @@ fn plan_stack_remove_inner(
     let mut still_reachable = BTreeSet::new();
     collect_reachable(replacement.outputs.color, &remaining, &mut still_reachable);
     collect_reachable(replacement.outputs.alpha, &remaining, &mut still_reachable);
+    if let Some(offset) = replacement.outputs.vertex_offset {
+        collect_reachable(offset, &remaining, &mut still_reachable);
+    }
     replacement.expressions.retain(|candidate| {
         !originally_reachable.contains(&candidate.id) || still_reachable.contains(&candidate.id)
     });
@@ -1451,6 +1472,7 @@ fn expression_reference_count(
         .sum::<usize>()
         + usize::from(program.outputs.color == expression)
         + usize::from(program.outputs.alpha == expression)
+        + usize::from(program.outputs.vertex_offset == Some(expression))
 }
 
 pub(crate) fn append_default_modifier(
@@ -1662,7 +1684,8 @@ fn plan_stack_move_inner(
         let expected_primary = chain.get(index + 1).copied().or(boundary);
         let allowed_references = usize::from(expected_primary.is_some())
             + usize::from(program.outputs.color == expression)
-            + usize::from(program.outputs.alpha == expression);
+            + usize::from(program.outputs.alpha == expression)
+            + usize::from(program.outputs.vertex_offset == Some(expression));
         let actual_references = program
             .expressions
             .iter()
@@ -1674,7 +1697,8 @@ fn plan_stack_move_inner(
             })
             .sum::<usize>()
             + usize::from(program.outputs.color == expression)
-            + usize::from(program.outputs.alpha == expression);
+            + usize::from(program.outputs.alpha == expression)
+            + usize::from(program.outputs.vertex_offset == Some(expression));
         if actual_references != allowed_references || allowed_references == 0 {
             return None;
         }
@@ -1718,6 +1742,9 @@ fn plan_stack_move_inner(
     }
     if replacement.outputs.alpha == old_tail {
         replacement.outputs.alpha = new_tail;
+    }
+    if replacement.outputs.vertex_offset == Some(old_tail) {
+        replacement.outputs.vertex_offset = Some(new_tail);
     }
     replacement.analyze().ok()?;
 

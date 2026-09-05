@@ -185,11 +185,13 @@ pub struct MaterialGraphNode {
 pub enum MaterialGraphOutputKind {
     Color,
     Alpha,
+    VertexOffset,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialGraphOutput {
     pub kind: MaterialGraphOutputKind,
+    /// Nil only for an unconnected optional output; no edge is emitted for that socket.
     pub source: MaterialExpressionId,
     pub value_type: Option<MaterialValueType>,
     pub evaluation_domain: Option<MaterialExpressionDomain>,
@@ -601,6 +603,15 @@ impl MaterialCompiler {
             (MaterialGraphOutputKind::Alpha, program.outputs.alpha),
         ]
         .into_iter()
+        .chain(
+            (program.domain == aestra_core::material::MaterialDomain::Mesh).then_some((
+                MaterialGraphOutputKind::VertexOffset,
+                program
+                    .outputs
+                    .vertex_offset
+                    .unwrap_or(MaterialExpressionId::from_u128(0)),
+            )),
+        )
         .map(|(kind, source)| {
             let source_info = info.get(&source);
             let ir_info = ir_values
@@ -611,7 +622,11 @@ impl MaterialCompiler {
                 source,
                 value_type: source_info
                     .map(|info| info.value_type)
-                    .or_else(|| ir_info.map(|info| info.value_type)),
+                    .or_else(|| ir_info.map(|info| info.value_type))
+                    .or_else(|| {
+                        (kind == MaterialGraphOutputKind::VertexOffset)
+                            .then_some(MaterialValueType::Vec3)
+                    }),
                 evaluation_domain: source_info
                     .map(|info| info.evaluation_domain)
                     .or_else(|| ir_info.map(|info| info.evaluation_domain)),
@@ -619,12 +634,17 @@ impl MaterialCompiler {
             }
         })
         .collect::<Vec<_>>();
-        edges.extend(outputs.iter().map(|output| MaterialGraphEdge {
-            source: output.source,
-            target: MaterialGraphEdgeTarget::Output(output.kind),
-            value_type: output.value_type,
-            evaluation_domain: output.evaluation_domain,
-        }));
+        edges.extend(
+            outputs
+                .iter()
+                .filter(|output| !output.source.is_nil())
+                .map(|output| MaterialGraphEdge {
+                    source: output.source,
+                    target: MaterialGraphEdgeTarget::Output(output.kind),
+                    value_type: output.value_type,
+                    evaluation_domain: output.evaluation_domain,
+                }),
+        );
 
         MaterialGraphProjection {
             program: program.id,
@@ -1087,7 +1107,7 @@ fn reachable_expressions(program: &MaterialProgram) -> BTreeSet<MaterialExpressi
         .map(|expression| (expression.id, &expression.kind))
         .collect::<BTreeMap<_, _>>();
     let mut reachable = BTreeSet::new();
-    let mut pending = vec![program.outputs.color, program.outputs.alpha];
+    let mut pending = program.outputs.roots().collect::<Vec<_>>();
     while let Some(id) = pending.pop() {
         if !reachable.insert(id) {
             continue;

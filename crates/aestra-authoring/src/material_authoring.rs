@@ -123,6 +123,7 @@ impl MaterialAuthoringDocument {
 pub enum MaterialOutputSocket {
     Color,
     Alpha,
+    VertexOffset,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,6 +219,7 @@ pub enum MaterialCommand {
     SetMaterialOutput {
         program: MaterialProgramId,
         output: MaterialOutputSocket,
+        /// Nil resets the optional Vertex Offset to zero. Required outputs need a real ID.
         expression: MaterialExpressionId,
     },
     AddMaterialExpression {
@@ -598,11 +600,19 @@ fn apply_command(
             expression,
         } => {
             let program = program_mut(document, *program)?;
-            let target = match output {
-                MaterialOutputSocket::Color => &mut program.outputs.color,
-                MaterialOutputSocket::Alpha => &mut program.outputs.alpha,
+            let previous = match output {
+                MaterialOutputSocket::Color => {
+                    std::mem::replace(&mut program.outputs.color, *expression)
+                }
+                MaterialOutputSocket::Alpha => {
+                    std::mem::replace(&mut program.outputs.alpha, *expression)
+                }
+                MaterialOutputSocket::VertexOffset => std::mem::replace(
+                    &mut program.outputs.vertex_offset,
+                    (!expression.is_nil()).then_some(*expression),
+                )
+                .unwrap_or(MaterialExpressionId::from_u128(0)),
             };
-            let previous = std::mem::replace(target, *expression);
             vec![MaterialCommand::SetMaterialOutput {
                 program: program.id,
                 output: *output,
@@ -1019,6 +1029,17 @@ fn diff_program_outputs(
     for (socket, before, after) in [
         ("color", before.outputs.color, after.outputs.color),
         ("alpha", before.outputs.alpha, after.outputs.alpha),
+        (
+            "vertex_offset",
+            before
+                .outputs
+                .vertex_offset
+                .unwrap_or(MaterialExpressionId::from_u128(0)),
+            after
+                .outputs
+                .vertex_offset
+                .unwrap_or(MaterialExpressionId::from_u128(0)),
+        ),
     ] {
         if before != after {
             push_change(

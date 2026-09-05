@@ -979,6 +979,24 @@ impl MaterialToolPlanner {
     ) -> Result<MaterialToolPlan, MaterialToolError> {
         let program = find_program(document, program_id)?;
         connection_source(program, target)?;
+        if target == MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::VertexOffset) {
+            return validate_plan(
+                document,
+                MaterialToolCommand::DisconnectMaterialConnection {
+                    program: program_id,
+                    target,
+                },
+                MaterialTransaction::single(
+                    "Reset Vertex Offset",
+                    MaterialCommand::SetMaterialOutput {
+                        program: program_id,
+                        output: MaterialOutputSocket::VertexOffset,
+                        expression: MaterialExpressionId::from_u128(0),
+                    },
+                ),
+                Vec::new(),
+            );
+        }
         let functions = document.material_function_library();
         let projection = MaterialCompiler.project_graph_with_functions(program, None, &functions);
         let value_type = projection.edges.iter().find_map(|edge| {
@@ -1433,6 +1451,9 @@ fn graph_connection_target(target: &MaterialGraphEdgeTarget) -> Option<MaterialC
         MaterialGraphEdgeTarget::Output(MaterialGraphOutputKind::Alpha) => Some(
             MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha),
         ),
+        MaterialGraphEdgeTarget::Output(MaterialGraphOutputKind::VertexOffset) => Some(
+            MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::VertexOffset),
+        ),
         MaterialGraphEdgeTarget::FunctionInput { expression, input } => {
             Some(MaterialConnectionTarget::ExpressionInput {
                 expression: *expression,
@@ -1565,6 +1586,9 @@ fn apply_connection(
         MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha) => {
             program.outputs.alpha = source;
         }
+        MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::VertexOffset) => {
+            program.outputs.vertex_offset = (!source.is_nil()).then_some(source);
+        }
         MaterialConnectionTarget::ExpressionInput { expression, input } => {
             let destination = program
                 .expressions
@@ -1666,6 +1690,10 @@ fn connection_source(
         MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::Alpha) => {
             Ok(program.outputs.alpha)
         }
+        MaterialConnectionTarget::ProgramOutput(MaterialOutputSocket::VertexOffset) => Ok(program
+            .outputs
+            .vertex_offset
+            .unwrap_or(MaterialExpressionId::from_u128(0))),
         MaterialConnectionTarget::ExpressionInput { expression, input } => {
             let destination = program
                 .expressions

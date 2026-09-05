@@ -68,6 +68,7 @@ fn inspectable_program(id: MaterialProgramId) -> MaterialProgram {
         },
     ];
     program.outputs = MaterialOutputs {
+        vertex_offset: None,
         color,
         alpha: remap,
     };

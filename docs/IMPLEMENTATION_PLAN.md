@@ -509,8 +509,16 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Indexed/non-indexed topology conversion is cached per mesh and refreshed on asset changes;
   indexed shared edges are emitted once. Viewer `--wireframe` captures and `W` mode switching
   exercise the path. Wireframe requires main-world position data; unavailable/invalid geometry
-  is skipped safely. Vertex deformation, tangent/UV1 inputs, ribbons/trails and PBR remain
-  follow-up work.
+  is skipped safely. Mesh materials now expose an optional Vec3 Vertex Offset output (zero when
+  disconnected), evaluated in mesh-local space before particle rotation/size and emitter/effect
+  transforms. Rendered and wireframe modes share the deformation function and preserve its particle
+  inputs. Vertex dependencies reject derivatives, implicit/gradient texture sampling, scene-depth
+  inputs and unverified custom WESL; explicit-LOD texture sampling is supported. Constant offsets
+  expand geometry bounds, while dynamic offsets disable frustum culling until bounded again.
+  Mesh Material Lab demonstrates age-driven radial breathing. Serialization, authoring undo/reset,
+  stage validation, culling lifecycle and native MSAA pipeline tests cover the path. Original
+  normals are retained (no automatic normal reconstruction). Tangent/UV1 inputs, ribbons/trails
+  and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual

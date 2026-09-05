@@ -6,13 +6,9 @@ struct MeshWireOutput {
 
 @vertex
 fn vertex_mesh_wireframe(
-    @location(0) position: vec3<f32>,
+    input: MeshVertexInput,
     @builtin(instance_index) instance_index: u32,
 ) -> MeshWireOutput {
-    var input: MeshVertexInput;
-    input.position = position;
-    input.normal = vec3<f32>(0.0, 0.0, 1.0);
-    input.uv = vec2<f32>(0.0);
     let mesh = aestra_mesh_vertex(input, instance_index);
     var output: MeshWireOutput;
     output.clip_position = mesh.particle.clip_position;

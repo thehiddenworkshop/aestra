@@ -262,7 +262,10 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
             }
         }
         let fragment_shader = if key.mesh_wireframe {
-            self.mesh_wireframe_shader.clone()
+            key.material.as_ref().map_or_else(
+                || self.mesh_wireframe_shader.clone(),
+                |material| material.shader.clone(),
+            )
         } else {
             key.material
                 .as_ref()
@@ -299,13 +302,25 @@ impl SpecializedRenderPipeline for GpuSpritePipeline {
                 ),
                 buffers: if key.mesh_wireframe {
                     vec![bevy::mesh::VertexBufferLayout {
-                        array_stride: 12,
+                        array_stride: 32,
                         step_mode: bevy::render::render_resource::VertexStepMode::Vertex,
-                        attributes: vec![bevy::render::render_resource::VertexAttribute {
-                            format: bevy::render::render_resource::VertexFormat::Float32x3,
-                            offset: 0,
-                            shader_location: 0,
-                        }],
+                        attributes: vec![
+                            bevy::render::render_resource::VertexAttribute {
+                                format: bevy::render::render_resource::VertexFormat::Float32x3,
+                                offset: 0,
+                                shader_location: 0,
+                            },
+                            bevy::render::render_resource::VertexAttribute {
+                                format: bevy::render::render_resource::VertexFormat::Float32x3,
+                                offset: 12,
+                                shader_location: 1,
+                            },
+                            bevy::render::render_resource::VertexAttribute {
+                                format: bevy::render::render_resource::VertexFormat::Float32x2,
+                                offset: 24,
+                                shader_location: 2,
+                            },
+                        ],
                     }]
                 } else {
                     key.mesh_layout
@@ -417,7 +432,7 @@ fn prepare_mesh_draws(
                 continue;
             }
             let positions = geometry
-                .positions
+                .vertices
                 .iter()
                 .flatten()
                 .flat_map(|v| v.to_le_bytes())
@@ -730,15 +745,7 @@ fn queue_gpu_sprites(
             {
                 continue;
             }
-            let material = semantic_pipeline_key(
-                effect
-                    .semantic_material
-                    .as_ref()
-                    .filter(|_| effect.render_mode == GpuRenderMode::Rendered),
-                view.target_format,
-                msaa.samples(),
-                0,
-            );
+            let material = draw_pipeline_key(effect, view.target_format, msaa.samples(), 0);
             // Scene-depth materials require the 3D depth prepass. Keeping this
             // unsupported in 2D is preferable to sampling the active depth
             // attachment, which is invalid on portable WebGPU backends.
@@ -765,9 +772,7 @@ fn queue_gpu_sprites(
                 sort_key: FloatOrd(effect.renderer_order as f32),
                 entity: (*render_entity, *main_entity),
                 pipeline: pipeline_id,
-                draw_function: if effect.semantic_material.is_some()
-                    && effect.render_mode == GpuRenderMode::Rendered
-                {
+                draw_function: if material_for_draw(effect).is_some() {
                     semantic_draw_function
                 } else {
                     legacy_draw_function
@@ -816,15 +821,8 @@ fn queue_gpu_sprites_3d(
             {
                 continue;
             }
-            let material = semantic_pipeline_key(
-                effect
-                    .semantic_material
-                    .as_ref()
-                    .filter(|_| effect.render_mode == GpuRenderMode::Rendered),
-                view.target_format,
-                mesh_key.msaa_samples(),
-                1,
-            );
+            let material =
+                draw_pipeline_key(effect, view.target_format, mesh_key.msaa_samples(), 1);
             let requires_scene_depth = material
                 .as_ref()
                 .is_some_and(|material| material.requires_scene_depth);
@@ -849,9 +847,7 @@ fn queue_gpu_sprites_3d(
                     && effect.render_mode == GpuRenderMode::Rendered
                 {
                     semantic_depth_draw_function
-                } else if effect.semantic_material.is_some()
-                    && effect.render_mode == GpuRenderMode::Rendered
-                {
+                } else if material_for_draw(effect).is_some() {
                     semantic_draw_function
                 } else {
                     legacy_draw_function
@@ -863,6 +859,32 @@ fn queue_gpu_sprites_3d(
             });
         }
     }
+}
+
+fn material_for_draw(effect: &GpuDrawInstance) -> Option<&GpuSemanticMaterialBinding> {
+    effect.semantic_material.as_ref().filter(|material| {
+        effect.render_mode == GpuRenderMode::Rendered
+            || (effect.mesh.is_some() && material.program.has_vertex_offset)
+    })
+}
+
+fn draw_pipeline_key(
+    effect: &GpuDrawInstance,
+    target_format: TextureFormat,
+    sample_count: u32,
+    feature_bits: u64,
+) -> Option<GpuSemanticPipelineKey> {
+    let mut key = semantic_pipeline_key(
+        material_for_draw(effect),
+        target_format,
+        sample_count,
+        feature_bits,
+    )?;
+    if effect.render_mode == GpuRenderMode::Wireframe {
+        // The diagnostic fragment never samples scene depth, even when the rendered fragment does.
+        key.requires_scene_depth = false;
+    }
+    Some(key)
 }
 
 fn semantic_pipeline_key(

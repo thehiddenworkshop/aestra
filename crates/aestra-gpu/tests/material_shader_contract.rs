@@ -549,7 +549,7 @@ fn additive_flame_generates_valid_wesl_and_deterministic_resource_reflection() {
     );
     assert_eq!(
         compiled.program_fingerprint.to_string(),
-        "736112089e39658f463d6fe498aff44a84ed7b138db5b6c797f9d3b670e253a6"
+        "de6b6b4ddb05c9c7b19b94d7e10c519a03cf9ca3ac3c0b5525dbe84280983202"
     );
     assert_eq!(
         compiled.reflection.required_vertex_inputs,

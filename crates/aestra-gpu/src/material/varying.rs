@@ -152,7 +152,7 @@ impl MaterialVaryingLayout {
             .collect()
     }
 
-    pub(super) fn vertex_wesl(&self) -> String {
+    pub(super) fn vertex_wesl(&self, vertex_offset: bool) -> String {
         let mut source = if self.domain == MaterialDomain::Mesh {
             crate::shader::mesh_vertex_wesl()
         } else {
@@ -175,6 +175,28 @@ impl MaterialVaryingLayout {
             source.push_str(&format!("    output.{name} = {expression};\n"));
         }
         source.push_str("    return output;\n}\n\n");
+        if vertex_offset {
+            let mut context = String::from(
+                "let initial_mesh = aestra_mesh_vertex(vertex_input, instance_index);\n    let initial_sprite = initial_mesh.particle;\n    var context: MaterialVertexOutput;\n    context.clip_position = initial_sprite.clip_position;\n",
+            );
+            for slot in &self.slots {
+                let (name, _, _, expression) = slot.varying.fields();
+                let expression = expression
+                    .replace("mesh.", "initial_mesh.")
+                    .replace("sprite.", "initial_sprite.");
+                context.push_str(&format!("    context.{name} = {expression};\n"));
+            }
+            context.push_str("    var displaced = vertex_input;\n    displaced.position += aestra_vertex_offset(context);\n    let mesh = aestra_mesh_vertex(displaced, instance_index);");
+            source = source.replace(
+                "let mesh = aestra_mesh_vertex(vertex_input, instance_index);",
+                &context,
+            );
+            source = source.replace("@vertex\nfn vertex(vertex_input: MeshVertexInput, @builtin(instance_index) instance_index: u32)",
+                "fn aestra_material_vertex(vertex_input: MeshVertexInput, instance_index: u32)");
+            for entry in ["vertex", "vertex_mesh_wireframe"] {
+                source.push_str(&format!("@vertex\nfn {entry}(vertex_input: MeshVertexInput, @builtin(instance_index) instance_index: u32) -> MaterialVertexOutput {{\n    return aestra_material_vertex(vertex_input, instance_index);\n}}\n"));
+            }
+        }
         source
     }
 }

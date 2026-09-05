@@ -455,6 +455,8 @@ pub struct MaterialIrParameter {
 pub struct MaterialIrOutputs {
     pub color: MaterialIrValueId,
     pub alpha: MaterialIrValueId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertex_offset: Option<MaterialIrValueId>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -512,6 +514,16 @@ pub struct MaterialIrProgram {
 }
 
 impl MaterialIrProgram {
+    pub fn live_values(
+        &self,
+        roots: impl IntoIterator<Item = MaterialIrValueId>,
+    ) -> BTreeSet<MaterialIrValueId> {
+        let mut live = BTreeSet::new();
+        for root in roots {
+            collect_live(root, &self.values, &mut live);
+        }
+        live
+    }
     pub fn value(&self, id: MaterialIrValueId) -> Option<&MaterialIrValue> {
         self.values
             .get(id.0 as usize)
@@ -575,6 +587,7 @@ impl MaterialCompiler {
         };
         let color = builder.lower(normalized.outputs.color);
         let alpha = builder.lower(normalized.outputs.alpha);
+        let vertex_offset = normalized.outputs.vertex_offset.map(|id| builder.lower(id));
         let unreachable = normalized
             .expressions
             .iter()
@@ -587,8 +600,11 @@ impl MaterialCompiler {
             .extend(unreachable.iter().copied());
         builder.optimizations.eliminated_expressions += unreachable.len();
 
-        let (values, outputs, source_map, mut optimizations) =
-            builder.finish(MaterialIrOutputs { color, alpha });
+        let (values, outputs, source_map, mut optimizations) = builder.finish(MaterialIrOutputs {
+            color,
+            alpha,
+            vertex_offset,
+        });
         optimizations.pruned_features = semantic_features
             .total
             .saturating_sub(ir_feature_count(&values));
@@ -652,7 +668,7 @@ fn semantic_feature_stats(program: &MaterialProgram) -> SemanticFeatureStats {
                 )
         })
         .count();
-    let mut pending = vec![program.outputs.color, program.outputs.alpha];
+    let mut pending = program.outputs.roots().collect::<Vec<_>>();
     let mut visited = BTreeSet::new();
     let mut inputs = BTreeSet::new();
     let mut dynamic_parameters = BTreeSet::new();
@@ -1100,6 +1116,9 @@ impl MaterialIrBuilder<'_> {
         let mut live = BTreeSet::new();
         collect_live(outputs.color, &self.values, &mut live);
         collect_live(outputs.alpha, &self.values, &mut live);
+        if let Some(offset) = outputs.vertex_offset {
+            collect_live(offset, &self.values, &mut live);
+        }
         let mut remap = BTreeMap::new();
         let mut values = Vec::with_capacity(live.len());
         for value in &self.values {
@@ -1135,6 +1154,7 @@ impl MaterialIrBuilder<'_> {
             MaterialIrOutputs {
                 color: remap[&outputs.color],
                 alpha: remap[&outputs.alpha],
+                vertex_offset: outputs.vertex_offset.map(|id| remap[&id]),
             },
             self.source_map,
             self.optimizations,

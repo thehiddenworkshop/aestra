@@ -56,6 +56,27 @@ fn minimized_material_and_legacy_stages_link_on_the_native_backend() {
         "../../../assets/materials/mesh_material_lab.aestra.material.ron"
     ))
     .unwrap();
+    // Both display modes use the exact same deformed vertex entry implementation.
+    let breathing = MaterialShaderCompiler
+        .compile(
+            &MaterialCompiler.compile(&mesh_program).unwrap(),
+            &MaterialBackendCapabilities::portable_minimum(),
+        )
+        .unwrap();
+    for samples in [1, 4] {
+        assert_pipeline(
+            &device,
+            &breathing.shader.wgsl,
+            MATERIAL_FRAGMENT_ENTRY_POINT,
+            samples,
+        );
+        assert_pipeline(
+            &device,
+            &breathing.shader.wgsl,
+            "fragment_mesh_wireframe",
+            samples,
+        );
+    }
     // Exercise geometry position, normal, UV and view direction interfaces in native pipelines.
     for input in [
         MaterialInput::Normal,
@@ -135,9 +156,9 @@ fn assert_pipeline(device: &wgpu::Device, wgsl: &str, fragment: &str, samples: u
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &mesh_attributes,
     }];
-    let line_attributes = wgpu::vertex_attr_array![0 => Float32x3];
+    let line_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
     let line_layout = [wgpu::VertexBufferLayout {
-        array_stride: 12,
+        array_stride: 32,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &line_attributes,
     }];

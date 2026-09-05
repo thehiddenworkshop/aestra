@@ -393,6 +393,7 @@ fn migrate_group(
         disabled_expressions: Vec::new(),
         inline_constants: Vec::new(),
         outputs: aestra_core::material::MaterialOutputs {
+            vertex_offset: None,
             color: color_expression,
             alpha: alpha_expression,
         },
