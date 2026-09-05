@@ -157,6 +157,39 @@ fn compiled_effect_round_trip_preserves_runtime_and_gpu_behavior() {
 }
 
 #[test]
+fn trail_lab_round_trip_preserves_bounded_history_contract() {
+    let effect =
+        EffectAsset::from_ron(include_str!("../../../assets/effects/trail_lab.aestra.ron"))
+            .unwrap();
+    let program = MaterialProgram::from_ron(include_str!(
+        "../../../assets/materials/ribbon_lab.aestra.material.ron"
+    ))
+    .unwrap();
+    let compiled = EffectCompiler::default()
+        .compile_with_material_programs(
+            &effect,
+            &std::collections::BTreeMap::from([(program.id, program)]),
+        )
+        .unwrap();
+    let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+    assert_eq!(restored, compiled);
+    assert!(matches!(
+        restored.emitters[0].renderers[0].kind,
+        RendererPlanKind::Trail { max_points: 32, .. }
+    ));
+    let instance = EffectInstance::new(std::sync::Arc::new(restored));
+    let gpu = GpuEffectArtifact::from_instance(&instance).unwrap();
+    let dynamic = GpuEffectArtifact::dynamics_from_instance(&instance).unwrap();
+    assert_eq!(gpu.particles.len(), 32 + 1 + 32 * 32);
+    assert_eq!(dynamic.storage_records as usize, gpu.particles.len());
+    assert_eq!(gpu.total_slots, 32);
+    assert_eq!(gpu.emitters[0].trail_offset, 32);
+    assert_eq!(gpu.renderers[0].attribute_flags.z, 32);
+    assert_eq!(gpu.renderers[0].renderer_kind, 4);
+    assert_eq!(gpu.renderers[0].frame_count, 32);
+}
+
+#[test]
 fn current_artifacts_without_material_optimizer_statistics_decode_with_zero_defaults() {
     let mut compiled = compiled_fixture();
     compiled.optimizations.material_function_calls_authored = 9;

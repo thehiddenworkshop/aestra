@@ -125,6 +125,7 @@ fn aestra_sprite_vertex(
     instance_index: u32,
 ) -> SpriteVertexData {
     if renderers[params.renderer_index].renderer_kind == 3u { return aestra_ribbon_vertex(vertex_index, instance_index); }
+    if renderers[params.renderer_index].renderer_kind == 4u { return aestra_trail_vertex(vertex_index, instance_index); }
     let corners = array<vec2<f32>, 6>(
         vec2<f32>(-1.0, -1.0),
         vec2<f32>(1.0, -1.0),

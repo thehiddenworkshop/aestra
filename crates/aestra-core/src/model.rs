@@ -22,6 +22,7 @@ pub const MODULE_APPEARANCE: &str = "aestra.update.appearance";
 pub const RENDERER_SPRITE: &str = "aestra.renderer.sprite";
 pub const RENDERER_FLIPBOOK: &str = "aestra.renderer.flipbook";
 pub const RENDERER_RIBBON: &str = "aestra.renderer.ribbon";
+pub const RENDERER_TRAIL: &str = "aestra.renderer.trail";
 pub const RENDERER_MESH: &str = "aestra.renderer.mesh";
 pub const DEFAULT_SPRITE_MATERIAL_ID: MaterialId =
     MaterialId::from_u128(0xa357_4a00_0000_4000_8000_0000_0000_0001);
@@ -235,7 +236,7 @@ impl EffectAsset {
                         if matches!(
                             (&renderer.properties, &material.properties),
                             (
-                                RendererProperties::Sprite,
+                                RendererProperties::Sprite | RendererProperties::Trail { .. },
                                 MaterialProperties::Sprite { .. }
                             ) | (
                                 RendererProperties::Flipbook { .. },
@@ -2536,6 +2537,28 @@ impl RendererInstance {
                 }
                 Some(RENDERER_RIBBON)
             }
+            RendererProperties::Trail {
+                width,
+                sample_interval,
+                lifetime,
+                max_points,
+            } => {
+                if !width.is_finite()
+                    || *width <= 0.0
+                    || !sample_interval.is_finite()
+                    || *sample_interval < 1.0 / 240.0
+                    || !lifetime.is_finite()
+                    || *lifetime <= 0.0
+                    || !(2..=64).contains(max_points)
+                {
+                    invalid_value(
+                        report,
+                        path,
+                        "trail requires positive finite width/lifetime, a sample interval of at least 1/240s and 2–64 points",
+                    );
+                }
+                Some(RENDERER_TRAIL)
+            }
             RendererProperties::Mesh { asset } => {
                 if asset.is_nil() {
                     invalid_value(report, path, "mesh renderer asset cannot be nil");
@@ -2588,6 +2611,12 @@ pub enum RendererProperties {
         asset: AssetId,
     },
     Custom(BTreeMap<String, Value>),
+    Trail {
+        width: f32,
+        sample_interval: f32,
+        lifetime: f32,
+        max_points: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

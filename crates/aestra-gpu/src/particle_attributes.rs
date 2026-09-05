@@ -44,6 +44,10 @@ impl GpuParticleAttributes {
         material: Option<(&[MaterialInput], bool)>,
         wireframe: bool,
     ) -> Self {
+        // History may outlive its current material binding. Preserve recorded attributes.
+        if renderer.renderer_kind == 4 {
+            return Self::ALL;
+        }
         let mut required = Self::POSITION | Self::SIZE | Self::ROTATION;
         let needs_uv = if wireframe {
             if renderer.particle_color != 0 {

@@ -451,6 +451,7 @@ fn set_capture_mode(target: &mut Option<CaptureMode>, mode: CaptureMode) -> Resu
 
 #[derive(Resource)]
 struct CapturePlan {
+    history_frame: Option<u64>,
     mode: CaptureMode,
     sample_frames: Vec<u64>,
     next_frame: usize,
@@ -474,6 +475,7 @@ impl CapturePlan {
         let frame_count = sample_frames.len();
         Ok(Self {
             mode,
+            history_frame: None,
             sample_frames,
             next_frame: 0,
             // Let the window, glyph atlas, sprite pipelines, and particle pool reach the render
@@ -866,7 +868,37 @@ fn drive_capture(
     if !capture.positioned {
         for mut player in &mut players {
             let sample_frame = capture.sample_frames[capture.next_frame];
-            player.seek_frame(sample_frame);
+            let has_trails = player
+                .effect()
+                .emitters
+                .iter()
+                .filter(|e| e.enabled)
+                .any(|e| {
+                    e.renderers
+                        .iter()
+                        .any(|r| matches!(r.kind, aestra_bevy::RendererPlanKind::Trail { .. }))
+                });
+            if has_trails {
+                // History cannot be captured by a stateless seek: replay one 60 Hz
+                // observation per rendered frame, keeping the real GPU tail alive.
+                let Some(frame) = capture.history_frame.filter(|frame| *frame <= sample_frame)
+                else {
+                    player.restart();
+                    player.playing = false;
+                    capture.history_frame = Some(0);
+                    return;
+                };
+                if frame < sample_frame {
+                    player
+                        .instance
+                        .set_playback_time((frame + 1) as f32 / DEFAULT_PLAYBACK_TICK_RATE as f32);
+                    player.playing = false;
+                    capture.history_frame = Some(frame + 1);
+                    return;
+                }
+            } else {
+                player.seek_frame(sample_frame);
+            }
             player.playing = false;
             capture.sampled_frames.push(sample_frame);
         }

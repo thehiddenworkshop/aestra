@@ -11,17 +11,23 @@ pub const SPRITE_RENDER_MODULE: &str = "package::aestra_sprite_render";
 pub const SIMULATION_WESL: &str = concat!(
     include_str!("shaders/aestra_simulation.wesl"),
     "\n",
-    include_str!("shaders/aestra_ribbon_link.wesl")
+    include_str!("shaders/aestra_ribbon_link.wesl"),
+    "\n",
+    include_str!("shaders/aestra_trail_history.wesl")
 );
 pub const SPRITE_VERTEX_WESL: &str = concat!(
     include_str!("shaders/aestra_sprite_vertex.wesl"),
     "\n",
-    include_str!("shaders/aestra_ribbon_vertex.wesl")
+    include_str!("shaders/aestra_ribbon_vertex.wesl"),
+    "\n",
+    include_str!("shaders/aestra_trail_vertex.wesl")
 );
 pub const SPRITE_RENDER_WESL: &str = concat!(
     include_str!("shaders/aestra_sprite_vertex.wesl"),
     "\n",
     include_str!("shaders/aestra_ribbon_vertex.wesl"),
+    "\n",
+    include_str!("shaders/aestra_trail_vertex.wesl"),
     "\n",
     include_str!("shaders/aestra_sprite_render.wesl"),
 );
@@ -105,7 +111,7 @@ impl GpuShaderKind {
 
     const fn required_entry_points(self) -> &'static [&'static str] {
         match self {
-            Self::Simulation => &["reset", "simulate", "link_ribbons"],
+            Self::Simulation => &["reset", "simulate", "link_ribbons", "update_trails"],
             Self::SpriteRender => &[
                 "vertex",
                 "fragment_alpha",

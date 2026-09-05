@@ -190,6 +190,7 @@ pub(crate) enum PropertiesAction {
     CloseModulePalette,
     AddModule(usize),
     AddSpriteRenderer,
+    AddTrailRenderer,
     AddFlipbookRenderer,
     MoveModule(ModuleId, i8),
     DuplicateModule(ModuleId),
@@ -814,6 +815,7 @@ fn handle_properties_actions(
                     | PropertiesAction::ToggleModuleInputPublic { .. }
                     | PropertiesAction::SetModuleInputSource { .. } => unreachable!(),
                     PropertiesAction::AddSpriteRenderer
+                    | PropertiesAction::AddTrailRenderer
                     | PropertiesAction::AddFlipbookRenderer
                     | PropertiesAction::SetRendererMaterial(_, _)
                     | PropertiesAction::SetRendererBlend(_, _)
@@ -4993,6 +4995,7 @@ fn normalize_numeric_scrub_value_with_multiplier(
         },
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(_)) => value.max(0.0),
         NumericScrubTarget::Renderer(RendererNumberControl::RibbonWidth(_)) => value.max(0.001),
+        NumericScrubTarget::Renderer(RendererNumberControl::Trail(_, field)) => field.clamp(value),
         NumericScrubTarget::Renderer(RendererNumberControl::Uv(renderer, component)) => {
             normalize_renderer_uv_scrub_value(session, renderer, component, value)
         }
@@ -5148,9 +5151,11 @@ fn commit_numeric_scrub(
                 );
             }
         }
-        NumericScrubTarget::Renderer(RendererNumberControl::RibbonWidth(_)) => {
+        NumericScrubTarget::Renderer(
+            RendererNumberControl::RibbonWidth(_) | RendererNumberControl::Trail(_, _),
+        ) => {
             if let Some(command) = numeric_scrub_command(session, target, value) {
-                session.execute("Changed ribbon width", command, false);
+                session.execute("Changed strip renderer", command, false);
             }
         }
         NumericScrubTarget::Renderer(RendererNumberControl::Softness(renderer)) => {
@@ -5206,6 +5211,9 @@ fn commit_bounded_slider(
         }
         NumericScrubTarget::Renderer(RendererNumberControl::RibbonWidth(_)) => {
             "Changed ribbon width".into()
+        }
+        NumericScrubTarget::Renderer(RendererNumberControl::Trail(_, _)) => {
+            "Changed trail renderer".into()
         }
         NumericScrubTarget::Emitter(_) => "Changed emitter value".into(),
         NumericScrubTarget::EffectClip(_) => "Changed effect clip transform".into(),
@@ -8141,6 +8149,17 @@ fn spawn_module_palette(
             ));
             let query = palette.query.to_lowercase();
             let mut results = 0;
+            if palette.stage == StackStage::Render
+                && (query.is_empty() || "trail renderer history render".contains(&query))
+            {
+                palette_result(
+                    popup,
+                    "Trail Renderer",
+                    "Render · GPU particle position history",
+                    PropertiesAction::AddTrailRenderer,
+                );
+                results += 1;
+            }
             if palette.stage == StackStage::Render
                 && (query.is_empty() || "sprite renderer render".contains(&query))
             {

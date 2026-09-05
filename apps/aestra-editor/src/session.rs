@@ -285,7 +285,7 @@ impl EditorSession {
             return;
         };
         if mode == SimulationSeekMode::StatelessDirect {
-            preview.seek(time);
+            preview.set_playback_time(time);
         }
         preview.evaluate(output);
         self.record_checkpoint_if_due();
@@ -1641,6 +1641,57 @@ impl EditorSession {
         }
     }
 
+    pub fn add_trail_renderer(&mut self) {
+        let emitter = self.selected_layer();
+        if emitter.max_particles > 256
+            || emitter.renderers.iter().any(|r| {
+                r.enabled && matches!(r.properties, aestra_core::RendererProperties::Trail { .. })
+            })
+        {
+            self.status =
+                "Trails support at most 256 parents and one enabled Trail renderer per emitter"
+                    .into();
+            return;
+        }
+        let material = self.effect.materials.first().map(|m| m.id).or_else(|| {
+            emitter
+                .renderers
+                .iter()
+                .find(|r| {
+                    matches!(
+                        r.properties,
+                        aestra_core::RendererProperties::Ribbon { .. }
+                            | aestra_core::RendererProperties::Trail { .. }
+                    )
+                })
+                .map(|r| r.material)
+        });
+        let Some(material) = material else {
+            self.status = "Add a sprite material before adding a Trail renderer".into();
+            return;
+        };
+        let mut renderer = RendererInstance::sprite(material);
+        renderer.renderer_type = aestra_core::RendererTypeId(aestra_core::RENDERER_TRAIL.into());
+        renderer.properties = aestra_core::RendererProperties::Trail {
+            width: 1.0,
+            sample_interval: 0.025,
+            lifetime: 0.65,
+            max_points: 32,
+        };
+        let id = renderer.id;
+        if self.execute(
+            "Added trail renderer",
+            EffectCommand::AddRenderer {
+                emitter: emitter.id,
+                renderer,
+                index: emitter.renderers.len(),
+            },
+            true,
+        ) {
+            self.selection.primary = aestra_authoring::SemanticTarget::Renderer(id);
+        }
+    }
+
     pub fn add_grid_flipbook(&mut self) {
         let Some(texture) = self
             .effect
@@ -2696,6 +2747,20 @@ mod tests {
         session.step_frame(-1);
         assert_eq!(session.frame(), 59);
         assert!(!session.playing);
+    }
+
+    #[test]
+    fn normal_preview_evaluation_preserves_history_but_scrubbing_invalidates_it() {
+        let mut session = test_support::session_with_timing_slack();
+        session.restart();
+        let epoch = session.preview.as_ref().unwrap().history_epoch();
+        for _ in 0..20 {
+            session.advance_playback(1.0 / 60.0);
+            session.evaluate_preview(&mut Vec::new());
+        }
+        assert_eq!(session.preview.as_ref().unwrap().history_epoch(), epoch);
+        session.seek_time(0.75);
+        assert_ne!(session.preview.as_ref().unwrap().history_epoch(), epoch);
     }
 
     #[test]

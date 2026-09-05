@@ -35,7 +35,8 @@ fn particle_color(input: VertexOutput) -> vec4<f32> {
         sampled = textureSample(sprite_texture, sprite_sampler, input.uv);
     }
     if (input.textured & 2u) != 0u { distance = abs(input.quad_position.x); }
-    let coverage = 1.0 - smoothstep(1.0 - feather, 1.0, distance);
+    var coverage = 1.0 - smoothstep(1.0 - feather, 1.0, distance);
+    if (input.textured & 4u) != 0u { coverage *= input.quad_position.y; }
     return vec4<f32>(input.color.rgb * sampled.rgb, input.color.a * sampled.a * coverage);
 }
 
@@ -69,9 +70,11 @@ fn fragment_wireframe(input: VertexOutput) -> @location(0) vec4<f32> {
     if input.visible == 0u {
         discard;
     }
-    let edge_distance = max(abs(input.quad_position.x), abs(input.quad_position.y));
+    var edge_distance = max(abs(input.quad_position.x), abs(input.quad_position.y));
+    if (input.textured & 4u) != 0u { edge_distance = abs(input.quad_position.x); }
     let line_width = max(fwidth(edge_distance) * 1.35, 0.012);
-    let coverage = smoothstep(1.0 - line_width, 1.0, edge_distance);
+    var coverage = smoothstep(1.0 - line_width, 1.0, edge_distance);
+    if (input.textured & 4u) != 0u { coverage *= input.quad_position.y; }
     if coverage <= 0.01 {
         discard;
     }

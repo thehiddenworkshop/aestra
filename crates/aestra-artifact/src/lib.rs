@@ -288,6 +288,12 @@ enum RendererPlanKindV1 {
     Ribbon {
         width: f32,
     },
+    Trail {
+        width: f32,
+        sample_interval: f32,
+        lifetime: f32,
+        max_points: u32,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1405,6 +1411,17 @@ impl From<&RendererPlan> for RendererPlanV1 {
                 RendererPlanKind::Sprite => RendererPlanKindV1::Sprite,
                 RendererPlanKind::Mesh { asset } => RendererPlanKindV1::Mesh { asset },
                 RendererPlanKind::Ribbon { width } => RendererPlanKindV1::Ribbon { width },
+                RendererPlanKind::Trail {
+                    width,
+                    sample_interval,
+                    lifetime,
+                    max_points,
+                } => RendererPlanKindV1::Trail {
+                    width,
+                    sample_interval,
+                    lifetime,
+                    max_points,
+                },
                 RendererPlanKind::Flipbook {
                     flipbook,
                     time_source,
@@ -1430,6 +1447,17 @@ impl From<RendererPlanV1> for RendererPlan {
                 RendererPlanKindV1::Sprite => RendererPlanKind::Sprite,
                 RendererPlanKindV1::Mesh { asset } => RendererPlanKind::Mesh { asset },
                 RendererPlanKindV1::Ribbon { width } => RendererPlanKind::Ribbon { width },
+                RendererPlanKindV1::Trail {
+                    width,
+                    sample_interval,
+                    lifetime,
+                    max_points,
+                } => RendererPlanKind::Trail {
+                    width,
+                    sample_interval,
+                    lifetime,
+                    max_points,
+                },
                 RendererPlanKindV1::Flipbook {
                     flipbook,
                     time_source,

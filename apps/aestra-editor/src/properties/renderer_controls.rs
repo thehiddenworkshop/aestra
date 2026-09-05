@@ -9,8 +9,43 @@ pub(super) struct RendererEnabledControl(pub(super) RendererId);
 pub(super) enum RendererNumberControl {
     Softness(RendererId),
     RibbonWidth(RendererId),
+    Trail(RendererId, TrailField),
     Uv(RendererId, u8),
     FlipbookFrameRate(RendererId),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum TrailField {
+    Width,
+    Interval,
+    Lifetime,
+    Points,
+}
+
+impl TrailField {
+    pub(super) fn bounds(self) -> (f32, f32) {
+        match self {
+            Self::Width | Self::Lifetime => (0.001, f32::MAX),
+            Self::Interval => (1.0 / 240.0, f32::MAX),
+            Self::Points => (2.0, 64.0),
+        }
+    }
+    pub(super) fn clamp(self, value: f32) -> f32 {
+        let (min, max) = self.bounds();
+        let value = value.clamp(min, max);
+        if matches!(self, Self::Points) {
+            value.round()
+        } else {
+            value
+        }
+    }
+    pub(super) fn step(self) -> f32 {
+        match self {
+            Self::Points => 1.0,
+            Self::Interval => 0.005,
+            _ => 0.1,
+        }
+    }
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -70,6 +105,10 @@ pub(super) fn handle_renderer_action(
     layout: &mut WorkspaceLayout,
 ) -> bool {
     match action {
+        PropertiesAction::AddTrailRenderer => {
+            session.add_trail_renderer();
+            palette.open = false;
+        }
         PropertiesAction::AddSpriteRenderer => {
             session.add_sprite_renderer();
             palette.open = false;
@@ -714,6 +753,7 @@ pub(super) fn renderer_number_input_value(
     let renderer_id = match control {
         RendererNumberControl::Softness(renderer)
         | RendererNumberControl::RibbonWidth(renderer)
+        | RendererNumberControl::Trail(renderer, _)
         | RendererNumberControl::Uv(renderer, _)
         | RendererNumberControl::FlipbookFrameRate(renderer) => renderer,
     };
@@ -723,6 +763,20 @@ pub(super) fn renderer_number_input_value(
         .iter()
         .find(|renderer| renderer.id == renderer_id)?;
     match control {
+        RendererNumberControl::Trail(_, field) => match renderer.properties {
+            RendererProperties::Trail {
+                width,
+                sample_interval,
+                lifetime,
+                max_points,
+            } => Some(match field {
+                TrailField::Width => width,
+                TrailField::Interval => sample_interval,
+                TrailField::Lifetime => lifetime,
+                TrailField::Points => max_points as f32,
+            }),
+            _ => None,
+        },
         RendererNumberControl::RibbonWidth(_) => match renderer.properties {
             RendererProperties::Ribbon { width } => Some(width),
             _ => None,
@@ -770,6 +824,7 @@ pub(super) fn renderer_number_input_value(
 
 pub(super) fn renderer_number_step(control: RendererNumberControl) -> f32 {
     match control {
+        RendererNumberControl::Trail(_, field) => field.step(),
         RendererNumberControl::Softness(_) | RendererNumberControl::RibbonWidth(_) => 0.1,
         RendererNumberControl::Uv(_, _) => 0.05,
         RendererNumberControl::FlipbookFrameRate(_) => 1.0,
@@ -815,6 +870,7 @@ pub(super) fn renderer_numeric_scrub_command(
     let renderer_id = match control {
         RendererNumberControl::Softness(id)
         | RendererNumberControl::RibbonWidth(id)
+        | RendererNumberControl::Trail(id, _)
         | RendererNumberControl::Uv(id, _)
         | RendererNumberControl::FlipbookFrameRate(id) => id,
     };
@@ -824,6 +880,33 @@ pub(super) fn renderer_numeric_scrub_command(
         .iter()
         .find(|renderer| renderer.id == renderer_id)?;
     match control {
+        RendererNumberControl::Trail(_, field) => {
+            if !value.is_finite() {
+                return None;
+            }
+            let mut properties = renderer.properties.clone();
+            let RendererProperties::Trail {
+                width,
+                sample_interval,
+                lifetime,
+                max_points,
+            } = &mut properties
+            else {
+                return None;
+            };
+            let value = field.clamp(value);
+            match field {
+                TrailField::Width => *width = value,
+                TrailField::Interval => *sample_interval = value,
+                TrailField::Lifetime => *lifetime = value,
+                TrailField::Points => *max_points = value as u32,
+            }
+            Some(EffectCommand::SetRendererProperties {
+                emitter: session.selected_layer().id,
+                renderer: renderer.id,
+                properties,
+            })
+        }
         RendererNumberControl::RibbonWidth(_) => {
             if !value.is_finite()
                 || !matches!(renderer.properties, RendererProperties::Ribbon { .. })
@@ -861,6 +944,7 @@ pub(super) fn renderer_numeric_scrub_command(
                     _ => return None,
                 },
                 RendererNumberControl::FlipbookFrameRate(_)
+                | RendererNumberControl::Trail(_, _)
                 | RendererNumberControl::RibbonWidth(_) => unreachable!(),
             }
             Some(EffectCommand::SetMaterial {
@@ -940,11 +1024,11 @@ pub(super) fn handle_renderer_scalar_change(
         return;
     }
     match *control {
-        RendererNumberControl::RibbonWidth(_) => {
+        RendererNumberControl::RibbonWidth(_) | RendererNumberControl::Trail(_, _) => {
             if let Some(command) = renderer_numeric_scrub_command(&session, *control, change.value)
             {
                 session.execute_transaction(
-                    EffectTransaction::single("Changed ribbon width", command),
+                    EffectTransaction::single("Changed strip renderer", command),
                     false,
                 );
             }
@@ -1028,6 +1112,7 @@ pub(super) fn properties_renderer_card_memory(
 pub(super) fn properties_renderer_key(renderer: &aestra_core::RendererInstance) -> String {
     match renderer.properties {
         RendererProperties::Ribbon { .. } => "renderer/ribbon",
+        RendererProperties::Trail { .. } => "renderer/trail",
         RendererProperties::Sprite => "renderer/sprite",
         RendererProperties::Flipbook { .. } => "renderer/flipbook",
         _ => "renderer/unknown",
@@ -1047,7 +1132,9 @@ fn spawn_renderer_scalar_control(
         let (min, max, step) = match control {
             RendererNumberControl::Uv(_, _) => (0.0, 1.0, renderer_number_step(control)),
             RendererNumberControl::FlipbookFrameRate(_) => (1.0, 120.0, 1.0),
-            RendererNumberControl::Softness(_) | RendererNumberControl::RibbonWidth(_) => {
+            RendererNumberControl::Softness(_)
+            | RendererNumberControl::RibbonWidth(_)
+            | RendererNumberControl::Trail(_, _) => {
                 return None;
             }
         };
@@ -1109,10 +1196,12 @@ fn renderer_scrubbable_number(
     use crate::feathers::number_input::ScrubbableNumber;
 
     let value = renderer_number_input_value(session, control).unwrap_or(match control {
+        RendererNumberControl::Trail(_, field) => field.bounds().0,
         RendererNumberControl::FlipbookFrameRate(_) | RendererNumberControl::RibbonWidth(_) => 1.0,
         RendererNumberControl::Softness(_) | RendererNumberControl::Uv(_, _) => 0.0,
     });
     let (min, max) = match control {
+        RendererNumberControl::Trail(_, field) => field.bounds(),
         RendererNumberControl::Softness(_) => (0.0, f32::MAX),
         RendererNumberControl::RibbonWidth(_) => (0.001, f32::MAX),
         RendererNumberControl::Uv(renderer, 0) => (
@@ -2295,6 +2384,7 @@ pub(super) fn spawn_renderer_card(
 ) {
     let display_name = match renderer.properties {
         RendererProperties::Ribbon { .. } => "Ribbon Renderer",
+        RendererProperties::Trail { .. } => "Trail Renderer",
         RendererProperties::Sprite => "Sprite Renderer",
         RendererProperties::Flipbook { .. } => "Flipbook Renderer",
         _ => "Renderer",
@@ -2344,6 +2434,22 @@ pub(super) fn spawn_renderer_card(
             );
         },
         |card| {
+            if matches!(renderer.properties, RendererProperties::Trail { .. }) {
+                for (label, unit, field) in [
+                    ("Width multiplier", None, TrailField::Width),
+                    ("Sample interval", Some("s"), TrailField::Interval),
+                    ("Trail lifetime", Some("s"), TrailField::Lifetime),
+                    ("History points", None, TrailField::Points),
+                ] {
+                    spawn_renderer_scalar_control(
+                        card,
+                        label,
+                        unit,
+                        RendererNumberControl::Trail(renderer.id, field),
+                        session,
+                    );
+                }
+            }
             if matches!(renderer.properties, RendererProperties::Ribbon { .. }) {
                 spawn_renderer_scalar_control(
                     card,
@@ -2643,6 +2749,43 @@ mod tests {
         assert!(
             matches!(command, EffectCommand::SetRendererProperties { properties: RendererProperties::Ribbon { width }, .. } if width == 0.001)
         );
+        assert!(renderer_numeric_scrub_command(&session, control, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn trail_controls_preserve_sibling_values_and_clamp_history_budget() {
+        let mut session = test_support::session_with_timing_slack();
+        let emitter = session.selected_layer().id;
+        let renderer = session.selected_layer().renderers[0].id;
+        session
+            .effect
+            .emitters
+            .iter_mut()
+            .find(|e| e.id == emitter)
+            .unwrap()
+            .renderers[0]
+            .properties = RendererProperties::Trail {
+            width: 2.0,
+            sample_interval: 0.025,
+            lifetime: 0.5,
+            max_points: 32,
+        };
+        let control = RendererNumberControl::Trail(renderer, TrailField::Points);
+        let widget = renderer_scrubbable_number(&session, control);
+        assert_eq!((widget.min, widget.max, widget.step), (2.0, 64.0, 1.0));
+        let command = renderer_numeric_scrub_command(&session, control, 500.0).unwrap();
+        assert!(matches!(
+            command,
+            EffectCommand::SetRendererProperties {
+                properties: RendererProperties::Trail {
+                    width: 2.0,
+                    sample_interval: 0.025,
+                    lifetime: 0.5,
+                    max_points: 64
+                },
+                ..
+            }
+        ));
         assert!(renderer_numeric_scrub_command(&session, control, f32::NAN).is_none());
     }
 

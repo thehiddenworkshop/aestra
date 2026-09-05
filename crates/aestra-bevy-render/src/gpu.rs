@@ -90,6 +90,7 @@ pub(crate) struct GpuEffectBuffers {
     render_globals: Handle<ShaderBuffer>,
     workgroups: u32,
     has_ribbons: bool,
+    has_trails: bool,
     ribbon_workgroups: u32,
     total_slots: u32,
 }
@@ -111,6 +112,7 @@ struct GpuDrawInstance {
     renderer_order: u32,
     emitter_index: u32,
     indirect_offset: u64,
+    trail_instances: Option<u32>,
     blend: GpuBlend,
     material: MaterialId,
     semantic_material: Option<GpuSemanticMaterialBinding>,
@@ -242,6 +244,7 @@ struct SimulationPipeline {
     reset: CachedComputePipelineId,
     simulate: CachedComputePipelineId,
     link_ribbons: CachedComputePipelineId,
+    update_trails: CachedComputePipelineId,
 }
 
 pub(crate) fn install(app: &mut App) {
@@ -330,6 +333,7 @@ fn init_fallback_textures(mut commands: Commands, mut images: ResMut<Assets<Imag
 
 pub(crate) fn prepare_gpu_effects(
     mut commands: Commands,
+    capabilities: Res<GpuCapabilities>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut material_resources: MaterialPreparationParams,
     mut players: UnpreparedPlayers,
@@ -343,7 +347,14 @@ pub(crate) fn prepare_gpu_effects(
             continue;
         }
         player.refresh_automatic_material_bindings();
-        let mut artifact = match GpuEffectArtifact::from_instance(&player.instance) {
+        let artifact_result =
+            GpuEffectArtifact::dynamics_from_instance(&player.instance).and_then(|d| {
+                if d.storage_records > capabilities.max_particles {
+                    return Err(GpuArtifactError::TrailLimit);
+                }
+                GpuEffectArtifact::from_instance(&player.instance)
+            });
+        let mut artifact = match artifact_result {
             Ok(artifact) => artifact,
             Err(error) => {
                 let message =
@@ -402,7 +413,7 @@ pub(crate) fn prepare_gpu_effects(
                     .flatten();
                 let texture = match &plan.kind {
                     RendererPlanKind::Mesh { .. } => None,
-                    RendererPlanKind::Ribbon { .. } => {
+                    RendererPlanKind::Ribbon { .. } | RendererPlanKind::Trail { .. } => {
                         material.and_then(|material| material.texture)
                     }
                     RendererPlanKind::Sprite => material.and_then(|material| material.texture),
@@ -502,7 +513,21 @@ pub(crate) fn prepare_gpu_effects(
             .enumerate()
             .filter_map(|(index, r)| (r.renderer_kind == 3).then_some(index as u32))
             .collect::<Vec<_>>();
-        let has_ribbons = !ribbon_renderers.is_empty();
+        let trail_renderers: BTreeMap<_, _> = artifact
+            .renderers
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.renderer_kind == 4)
+            .map(|(index, r)| {
+                (
+                    index as u32,
+                    player.effect().emitters[r.emitter_index as usize].max_particles
+                        * (r.frame_count - 1),
+                )
+            })
+            .collect();
+        let has_trails = !trail_renderers.is_empty();
+        let has_ribbons = !ribbon_renderers.is_empty() || has_trails;
         let ribbon_workgroups = player
             .effect()
             .emitters
@@ -530,6 +555,7 @@ pub(crate) fn prepare_gpu_effects(
             duration: player.effect().duration,
             continuous: u32::from(player.effect().playback_mode.is_continuous()),
             _padding: UVec2::ZERO,
+            world_from_effect: Mat4::IDENTITY,
         }));
         let render_globals = buffers.add(ShaderBuffer::from(GpuRenderGlobals {
             world_from_effect: Mat4::IDENTITY,
@@ -550,6 +576,7 @@ pub(crate) fn prepare_gpu_effects(
                 render_globals: render_globals.clone(),
                 workgroups: artifact.total_slots.div_ceil(WORKGROUP_SIZE),
                 has_ribbons,
+                has_trails,
                 ribbon_workgroups,
                 total_slots: artifact.total_slots,
             },
@@ -596,6 +623,7 @@ pub(crate) fn prepare_gpu_effects(
                                 renderer_order: renderer_index,
                                 emitter_index,
                                 indirect_offset: indirect_draw_offset(emitter_index),
+                                trail_instances: trail_renderers.get(&renderer_index).copied(),
                                 blend,
                                 material,
                                 semantic_material,
@@ -618,6 +646,10 @@ pub(crate) fn prepare_gpu_effects(
                                 ribbon_bounds::RibbonBoundsSource::default(),
                                 visibility::NoFrustumCulling,
                             ));
+                        }
+                        // World-space history can be far outside current emitter bounds.
+                        if trail_renderers.contains_key(&renderer_index) {
+                            draw.insert(visibility::NoFrustumCulling);
                         }
                     }
                 }
@@ -815,17 +847,6 @@ fn update_gpu_inputs(
         // Only emitter and renderer inputs change per frame; use the dynamics
         // builder so we never reallocate the capacity-sized particle scratch buffer
         // here (its cost scales with capacity, not with what actually changed).
-        if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
-            buffer.set_data(GpuGlobals {
-                time: player.simulation_time(),
-                total_slots: gpu.total_slots,
-                seed: fold_seed(player.instance.seed()),
-                emitter_count: player.effect().emitters.len() as u32,
-                duration: player.effect().duration,
-                continuous: u32::from(player.effect().playback_mode.is_continuous()),
-                _padding: UVec2::ZERO,
-            });
-        }
         if let Some(children) = children {
             let render_mode = gpu_render_mode(player.render_mode());
             for child in children.iter() {
@@ -871,7 +892,10 @@ fn update_gpu_inputs(
             if gpu.ribbon_workgroups != ribbon_workgroups {
                 gpu.ribbon_workgroups = ribbon_workgroups;
             }
-            let has_ribbons = dynamics.renderers.iter().any(|r| r.renderer_kind == 3);
+            let has_ribbons = dynamics
+                .renderers
+                .iter()
+                .any(|r| matches!(r.renderer_kind, 3 | 4));
             if gpu.has_ribbons != has_ribbons {
                 gpu.has_ribbons = has_ribbons;
             }
@@ -961,6 +985,18 @@ fn sync_gpu_render_transforms(
     players: Query<(&PresentedEffect, &GlobalTransform, &GpuEffectBuffers)>,
 ) {
     for (player, transform, gpu) in &players {
+        if let Some(mut buffer) = buffers.get_mut(&gpu.globals) {
+            buffer.set_data(GpuGlobals {
+                time: player.simulation_time(),
+                total_slots: gpu.total_slots,
+                seed: fold_seed(player.instance.seed()),
+                emitter_count: player.effect().emitters.len() as u32,
+                duration: player.effect().duration,
+                continuous: u32::from(player.effect().playback_mode.is_continuous()),
+                _padding: UVec2::new(player.instance.history_epoch(), 0),
+                world_from_effect: Mat4::from(transform.affine()),
+            });
+        }
         if let Some(mut buffer) = buffers.get_mut(&gpu.render_globals) {
             buffer.set_data(GpuRenderGlobals {
                 world_from_effect: Mat4::from(transform.affine()),
@@ -1109,8 +1145,15 @@ fn init_pipeline(
     let link_ribbons = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
         label: Some("aestra link ribbons".into()),
         layout: vec![layout.clone()],
-        shader,
+        shader: shader.clone(),
         entry_point: Some("link_ribbons".into()),
+        ..default()
+    });
+    let update_trails = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+        label: Some("aestra record trail history".into()),
+        layout: vec![layout.clone()],
+        shader,
+        entry_point: Some("update_trails".into()),
         ..default()
     });
     commands.insert_resource(SimulationPipeline {
@@ -1118,6 +1161,7 @@ fn init_pipeline(
         reset,
         simulate,
         link_ribbons,
+        update_trails,
     });
 }
 
@@ -1179,6 +1223,7 @@ fn run_simulation(
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
     let link_ribbons = pipeline_cache.get_compute_pipeline(pipeline.link_ribbons);
+    let update_trails = pipeline_cache.get_compute_pipeline(pipeline.update_trails);
     let (Some(reset), Some(simulate)) = (
         pipeline_cache.get_compute_pipeline(pipeline.reset),
         pipeline_cache.get_compute_pipeline(pipeline.simulate),
@@ -1192,7 +1237,9 @@ fn run_simulation(
     let diagnostics = diagnostics.as_deref();
     let gpu_span = diagnostics.time_span(render_context.command_encoder(), "aestra::gpu::simulate");
     for (effect, bind_group) in &effects {
-        if effect.has_ribbons && link_ribbons.is_none() {
+        if (effect.has_ribbons && link_ribbons.is_none())
+            || (effect.has_trails && update_trails.is_none())
+        {
             continue;
         }
         let mut pass =
@@ -1211,6 +1258,12 @@ fn run_simulation(
             && let Some(link_ribbons) = link_ribbons
         {
             pass.set_pipeline(link_ribbons);
+            pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
+        }
+        if effect.has_trails
+            && let Some(update_trails) = update_trails
+        {
+            pass.set_pipeline(update_trails);
             pass.dispatch_workgroups(effect.ribbon_workgroups, 1, 1);
         }
     }
@@ -1298,6 +1351,7 @@ mod tests {
                     render_globals: handle.clone(),
                     workgroups: 1,
                     has_ribbons: true,
+                    has_trails: false,
                     ribbon_workgroups: 1,
                     total_slots: 1,
                 },

@@ -70,6 +70,10 @@ struct Emitter {
     spawn_inverse: array<f32, 32>,
     spawn_inverse_total: f32,
     _spawn_inverse_padding: vec3<f32>,
+    trail_offset: u32,
+    trail_points: u32,
+    trail_interval: f32,
+    trail_lifetime: f32,
 }
 
 struct Particle {
@@ -94,6 +98,7 @@ struct Globals {
     duration: f32,
     continuous: u32,
     _padding: vec2<u32>,
+    world_from_effect: mat4x4<f32>,
 }
 
 @group(0) @binding(0) var<storage, read> emitters: array<Emitter>;

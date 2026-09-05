@@ -2646,6 +2646,47 @@ The same geometry supports diagnostic wireframe. CPU and GPU-readback presentati
 requirements explicitly. No point history, trail IDs, discontinuity markers, caps, or distance UVs
 are introduced by this slice; particle death reconnects surviving neighbors.
 
+### Native history-based trails (first slice)
+
+Trail is a separate renderer; live-particle Ribbon behavior remains unchanged. Trail Lab uses
+the Ribbon-domain material and records each parent's past **world-space** positions, size and
+color. The editor exposes width, sample interval, lifetime and history-point budget through
+the reusable Feather scrub controls, and offers Trail Renderer in the Render-stage palette.
+
+History is a persistent tail of the existing 64-byte particle storage buffer: one emitter
+header, followed by one head and a sample ring per parent. No CPU readback or new shader
+bindings are needed. One Trail renderer per emitter, at most 256 parents and 2–64 points per
+parent are supported. Lowering bounds the complete buffer to 1,048,576 records for trail
+effects, and the adapter checks its physical binding limit before allocating. Profiler memory
+and dispatch estimates include history. Existing artifact variants keep their ordering.
+
+After simulation and stable-ID sorting, a bounded GPU pass matches owners by spawn identity,
+not physical slots (which can move at continuous-loop boundaries). Living owners are reserved
+before admitting new parents. Retired tails remain until lifetime expiry; if the owner pool
+is full, the oldest retired owner is evicted deterministically. Ring samples use a fixed time
+interval, interpolating observed heads when frames skip sample ticks. Thus the same observation
+sequence is deterministic; this is not yet frame-rate-independent trajectory reconstruction.
+The effective tail length is limited by both lifetime and `(points - 1) * sample interval`.
+
+The live head follows the current particle; stored points do not follow subsequent effect
+transforms. Width and opacity fade with sample age. `RibbonUv`/`Uv0` use U=0 at lifetime expiry
+and U=1 at a fresh head, V across the strip; `RibbonDirection` is the shared world-space tangent.
+Expired/coincident segments are hidden. Frustum culling is disabled for this first world-history
+slice, because current-emitter bounds cannot safely contain past positions; render layers and
+ordinary visibility still apply.
+
+Continuous playback preserves history; pause freezes observations. Explicit seek, restart,
+seed/parameter changes, backward time or a forward gap longer than the trail lifetime start
+fresh at the target, without bridging discontinuities. `EffectInstance::set_playback_time`
+is for normal external-clock synchronization; `seek` explicitly invalidates history. GPU
+history is not part of CPU checkpoints. Viewer captures replay trail effects at 60 Hz instead
+of stateless jumping. Native GPU tests cover slot reuse, world transforms, loop survivors,
+retirement, expiry and reset. CPU/reference-readback presentation rejects the strip capability.
+
+Remaining trail work: adaptive spatial sampling, independent retired-owner capacity, exact
+trajectory replay/checkpoint serialization, caps and distance-based UVs, conservative world
+history culling and larger parallel owner maps.
+
 ### Add inputs
 
 ```text

@@ -26,7 +26,7 @@ use std::{
 use thiserror::Error;
 
 pub const MATERIAL_ABI_VERSION: u32 = 3;
-pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 23;
+pub const MATERIAL_SHADER_GENERATOR_VERSION: u32 = 24;
 pub const MATERIAL_BIND_GROUP: u32 = 2;
 /// Renderer-owned scene inputs used by fragment operations such as `DepthFade`.
 pub const MATERIAL_SCENE_BIND_GROUP: u32 = 3;
@@ -809,7 +809,7 @@ fn generate_wesl(
         return Ok((source, lines));
     }
     source.push_str(&format!(
-        "@fragment\nfn {MATERIAL_FRAGMENT_ENTRY_POINT}(input: MaterialFragmentInput) -> @location(0) vec4<f32> {{\n    if input.visible == 0u {{\n        discard;\n    }}\n    let output = aestra_evaluate_material(input);\n    let feather = clamp(input.softness, 0.001, 1.0);\n    var distance = select(length(input.quad_position), max(abs(input.quad_position.x), abs(input.quad_position.y)), input.textured != 0u);\n    if (input.textured & 2u) != 0u {{ distance = abs(input.quad_position.x); }}\n    let coverage = 1.0 - smoothstep(1.0 - feather, 1.0, distance);\n    return vec4<f32>(output.rgb, clamp(output.a, 0.0, 1.0) * coverage);\n}}\n"
+        "@fragment\nfn {MATERIAL_FRAGMENT_ENTRY_POINT}(input: MaterialFragmentInput) -> @location(0) vec4<f32> {{\n    if input.visible == 0u {{\n        discard;\n    }}\n    let output = aestra_evaluate_material(input);\n    let feather = clamp(input.softness, 0.001, 1.0);\n    var distance = select(length(input.quad_position), max(abs(input.quad_position.x), abs(input.quad_position.y)), input.textured != 0u);\n    if (input.textured & 2u) != 0u {{ distance = abs(input.quad_position.x); }}\n    var coverage = 1.0 - smoothstep(1.0 - feather, 1.0, distance);\n    if (input.textured & 4u) != 0u {{ coverage *= input.quad_position.y; }}\n    return vec4<f32>(output.rgb, clamp(output.a, 0.0, 1.0) * coverage);\n}}\n"
     ));
     Ok((source, lines))
 }

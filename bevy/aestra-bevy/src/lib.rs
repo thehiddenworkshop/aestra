@@ -14,8 +14,8 @@ pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
     CompiledEffect, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent, EffectInstance,
     EffectProfile, EmitterProfile, ParameterError, ParticleSample, PlaybackCheckpoint,
-    PlaybackClock, ProfileValue, ProfileValueSource, RuntimeValue, SeekOrigin, SeekPlan,
-    SimulationSeekMode,
+    PlaybackClock, ProfileValue, ProfileValueSource, RendererPlanKind, RuntimeValue, SeekOrigin,
+    SeekPlan, SimulationSeekMode,
 };
 
 use bevy::asset::LoadState;
@@ -191,6 +191,7 @@ impl EffectPlayer {
     /// Seeks continuous playback using absolute simulation time while leaving the playhead
     /// wrapped to the authored effect duration.
     pub fn seek_simulation_time(&mut self, time: f32) {
+        self.instance.invalidate_history();
         let duration = self.effect().duration;
         if self.effect().playback_mode.is_continuous() {
             self.clock.seek_elapsed_seconds(time, duration);
@@ -201,6 +202,7 @@ impl EffectPlayer {
     }
 
     pub fn seek_frame(&mut self, frame: u64) {
+        self.instance.invalidate_history();
         let duration = self.effect().duration;
         let target = frame.min(self.clock.maximum_frame(duration));
         if self.seek_mode() == SimulationSeekMode::StatelessDirect {
@@ -303,7 +305,7 @@ impl EffectPlayer {
         } else {
             self.clock.time(self.instance.effect().duration)
         };
-        self.instance.seek(time);
+        self.instance.set_playback_time(time);
     }
 }
 

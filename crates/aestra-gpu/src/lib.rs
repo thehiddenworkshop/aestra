@@ -34,6 +34,10 @@ pub const INDIRECT_DRAW_BYTES: u64 = (INDIRECT_DRAW_WORDS * std::mem::size_of::<
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum GpuArtifactError {
+    #[error(
+        "trail history supports one renderer per emitter, at most 256 parents, 2–64 points, and 1,048,576 total particle/history records"
+    )]
+    TrailLimit,
     #[error("emitter '{0}' has no {1} instruction")]
     MissingInstruction(String, &'static str),
     #[error("{kind} has {actual} keys; the GPU profile supports at most {maximum}")]
@@ -127,6 +131,10 @@ pub struct GpuEmitter {
     /// spawn-inverse fraction. Zero when the table is unused.
     pub spawn_inverse_total: f32,
     pub _spawn_inverse_padding: Vec3,
+    pub trail_offset: u32,
+    pub trail_points: u32,
+    pub trail_interval: f32,
+    pub trail_lifetime: f32,
 }
 
 /// One authored presentation path for an emitter.
@@ -145,7 +153,7 @@ pub struct GpuRenderer {
     pub playback_mode: u32,
     pub flipbook_flags: u32,
     pub frame_rate: f32,
-    /// x: omitted particle reads; y: ribbon width (f32 bits); z: reserved.
+    /// x: omitted particle reads; y: strip width (f32 bits); z: trail history offset.
     pub attribute_flags: UVec3,
     pub frames: [Vec4; MAX_FLIPBOOK_FRAMES],
 }
@@ -169,6 +177,8 @@ pub struct GpuGlobals {
     pub duration: f32,
     pub continuous: u32,
     pub _padding: UVec2,
+    /// World-space trail recording. `_padding.x` is the discontinuity epoch.
+    pub world_from_effect: Mat4,
 }
 
 #[derive(Debug, Clone, Copy, Default, ShaderType)]
@@ -225,6 +235,7 @@ pub struct GpuEffectDynamics {
     pub emitters: Vec<GpuEmitter>,
     pub renderers: Vec<GpuRenderer>,
     pub total_slots: u32,
+    pub storage_records: u32,
     pub bounds_half_extents: Vec3,
 }
 
@@ -236,7 +247,7 @@ impl GpuEffectArtifact {
     pub fn from_instance(instance: &EffectInstance) -> Result<Self, GpuArtifactError> {
         let dynamics = Self::dynamics_from_instance(instance)?;
         Ok(Self {
-            particles: vec![GpuParticle::default(); dynamics.total_slots as usize],
+            particles: vec![GpuParticle::default(); dynamics.storage_records as usize],
             emitters: dynamics.emitters,
             renderers: dynamics.renderers,
             total_slots: dynamics.total_slots,
@@ -265,7 +276,43 @@ impl GpuEffectArtifact {
         let mut ribbon_bounds = Vec::new();
         let mut emitters = Vec::with_capacity(instance.effect().emitters.len());
         let mut renderers = Vec::new();
+        let mut history_offset = instance
+            .effect()
+            .emitters
+            .iter()
+            .try_fold(0u32, |total, e| total.checked_add(e.max_particles))
+            .ok_or(GpuArtifactError::TrailLimit)?;
         for (emitter_index, emitter) in instance.effect().emitters.iter().enumerate() {
+            let trails: Vec<_> = emitter
+                .renderers
+                .iter()
+                .filter_map(|r| match r.kind {
+                    RendererPlanKind::Trail {
+                        sample_interval,
+                        lifetime,
+                        max_points,
+                        ..
+                    } if emitter.enabled => Some((sample_interval, lifetime, max_points)),
+                    _ => None,
+                })
+                .collect();
+            let trail_offset = history_offset;
+            let (trail_interval, trail_lifetime, trail_points) =
+                trails.first().copied().unwrap_or_default();
+            if !trails.is_empty() {
+                if trails.len() > 1
+                    || emitter.max_particles > 256
+                    || !(2..=64).contains(&trail_points)
+                {
+                    return Err(GpuArtifactError::TrailLimit);
+                }
+                history_offset = history_offset
+                    .checked_add(1 + emitter.max_particles * trail_points)
+                    .ok_or(GpuArtifactError::TrailLimit)?;
+                if history_offset > 1_048_576 {
+                    return Err(GpuArtifactError::TrailLimit);
+                }
+            }
             let (spawn_rate, burst_count) =
                 emission(&emitter.execution, parameters).ok_or_else(|| {
                     GpuArtifactError::MissingInstruction(emitter.name.clone(), "Emit")
@@ -336,6 +383,11 @@ impl GpuEffectArtifact {
                     ) = match &renderer.kind {
                         RendererPlanKind::Sprite => (0, 1, 0, 0, 0.0, material_texture),
                         RendererPlanKind::Ribbon { .. } => (3, 1, 0, 0, 0.0, material_texture),
+                        RendererPlanKind::Trail {
+                            max_points,
+                            lifetime,
+                            ..
+                        } => (4, *max_points, 0, 0, *lifetime, material_texture),
                         RendererPlanKind::Mesh { .. } => (2, 1, 0, 0, 0.0, material_texture),
                         RendererPlanKind::Flipbook {
                             flipbook,
@@ -400,10 +452,11 @@ impl GpuEffectArtifact {
                         attribute_flags: UVec3::new(
                             0,
                             match renderer.kind {
-                                RendererPlanKind::Ribbon { width } => width.to_bits(),
+                                RendererPlanKind::Ribbon { width }
+                                | RendererPlanKind::Trail { width, .. } => width.to_bits(),
                                 _ => 0,
                             },
-                            0,
+                            if renderer_kind == 4 { trail_offset } else { 0 },
                         ),
                         frames,
                     }
@@ -525,12 +578,12 @@ impl GpuEffectArtifact {
                 gravity_curves,
                 turbulence,
                 turbulence_source,
-                _turbulence_padding: u32::from(
-                    emitter
-                        .renderers
-                        .iter()
-                        .any(|r| matches!(r.kind, RendererPlanKind::Ribbon { .. })),
-                ),
+                _turbulence_padding: u32::from(emitter.renderers.iter().any(|r| {
+                    matches!(
+                        r.kind,
+                        RendererPlanKind::Ribbon { .. } | RendererPlanKind::Trail { .. }
+                    )
+                })),
                 turbulence_curve,
                 translation: Vec3::from_array(emitter.transform.translation),
                 max_scale: scale.max_element(),
@@ -543,6 +596,10 @@ impl GpuEffectArtifact {
                 spawn_inverse,
                 spawn_inverse_total,
                 _spawn_inverse_padding: Vec3::ZERO,
+                trail_offset,
+                trail_points,
+                trail_interval,
+                trail_lifetime,
             });
             slot_offset = slot_offset.saturating_add(emitter.max_particles);
         }
@@ -552,6 +609,7 @@ impl GpuEffectArtifact {
             emitters,
             renderers,
             total_slots: slot_offset,
+            storage_records: history_offset,
             bounds_half_extents,
         })
     }

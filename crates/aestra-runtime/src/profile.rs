@@ -88,11 +88,20 @@ impl EffectProfile {
             .count()
             .min(u32::MAX as usize) as u32;
         let has_ribbons = effect.emitters.iter().filter(|e| e.enabled).any(|e| {
+            e.renderers.iter().any(|r| {
+                matches!(
+                    r.kind,
+                    crate::RendererPlanKind::Ribbon { .. } | crate::RendererPlanKind::Trail { .. }
+                )
+            })
+        });
+        let has_trails = effect.emitters.iter().filter(|e| e.enabled).any(|e| {
             e.renderers
                 .iter()
-                .any(|r| matches!(r.kind, crate::RendererPlanKind::Ribbon { .. }))
+                .any(|r| matches!(r.kind, crate::RendererPlanKind::Trail { .. }))
         });
-        let dispatch_count = u32::from(effect.max_particles > 0) * (2 + u32::from(has_ribbons));
+        let dispatch_count = u32::from(effect.max_particles > 0)
+            * (2 + u32::from(has_ribbons) + u32::from(has_trails));
         Self {
             cpu_time_ns: ProfileValue::Unavailable,
             gpu_time_ns: ProfileValue::Unavailable,
@@ -199,10 +208,25 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
         .sum::<u64>();
     let particle_count = effect.max_particles as u64;
     let particle_storage = particle_count.saturating_mul(attribute_bytes);
+    // Native history uses the fixed 64-byte particle ABI, independently of live attributes.
+    let history_storage = effect
+        .emitters
+        .iter()
+        .filter(|e| e.enabled)
+        .flat_map(|e| {
+            e.renderers.iter().filter_map(move |r| match r.kind {
+                crate::RendererPlanKind::Trail { max_points, .. } => {
+                    Some((1 + u64::from(e.max_particles) * u64::from(max_points)) * 64)
+                }
+                _ => None,
+            })
+        })
+        .sum::<u64>();
     let alive_and_dead_indices = particle_count.saturating_mul(2 * size_of::<u32>() as u64);
     let counters = 2 * size_of::<u32>() as u64;
     let indirect_commands = effect.emitters.len() as u64 * 4 * size_of::<u32>() as u64;
     particle_storage
+        .saturating_add(history_storage)
         .saturating_add(alive_and_dead_indices)
         .saturating_add(counters)
         .saturating_add(indirect_commands)

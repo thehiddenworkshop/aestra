@@ -2574,6 +2574,7 @@ fn sync_rendered_preview(
     session: Res<EditorSession>,
     preview: Res<EditorPreviewProject>,
     timeline: Res<TimelineState>,
+    mut previous_history_epoch: Local<Option<u32>>,
     mut players: Query<
         (
             Entity,
@@ -2584,6 +2585,9 @@ fn sync_rendered_preview(
         With<PreviewPresentedEffect>,
     >,
 ) {
+    let epoch = session.preview.as_ref().map(|p| p.history_epoch());
+    let discontinuity = *previous_history_epoch != epoch;
+    *previous_history_epoch = epoch;
     let mut desired = desired_preview_instances(
         &preview,
         &timeline,
@@ -2618,10 +2622,12 @@ fn sync_rendered_preview(
         if player.instance.seed() != instance.seed {
             player.instance.set_seed(instance.seed);
         }
-        if (player.simulation_time() - instance.time).abs()
+        if discontinuity {
+            player.instance.seek(instance.time);
+        } else if (player.simulation_time() - instance.time).abs()
             > 0.5 / DEFAULT_PLAYBACK_TICK_RATE as f32
         {
-            player.instance.seek(instance.time);
+            player.instance.set_playback_time(instance.time);
         }
     }
     for instance in desired {

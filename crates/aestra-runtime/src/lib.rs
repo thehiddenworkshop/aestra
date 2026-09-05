@@ -459,6 +459,12 @@ pub struct RendererPlan {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RendererPlanKind {
+    Trail {
+        width: f32,
+        sample_interval: f32,
+        lifetime: f32,
+        max_points: u32,
+    },
     Ribbon {
         width: f32,
     },
@@ -970,6 +976,7 @@ pub struct EffectInstance {
     parameters: Vec<RuntimeValue>,
     overridden: BTreeSet<ParameterSlot>,
     choreography_started: bool,
+    history_epoch: u32,
 }
 
 impl EffectInstance {
@@ -986,6 +993,7 @@ impl EffectInstance {
             parameters,
             overridden: BTreeSet::new(),
             choreography_started: false,
+            history_epoch: 0,
         }
     }
 
@@ -1009,6 +1017,9 @@ impl EffectInstance {
     }
 
     pub fn set_seed(&mut self, seed: u64) {
+        if self.seed != seed {
+            self.invalidate_history();
+        }
         self.seed = seed;
     }
 
@@ -1030,6 +1041,9 @@ impl EffectInstance {
             expected,
             actual,
         })?;
+        if self.parameters[slot.0] != compiled {
+            self.invalidate_history();
+        }
         self.parameters[slot.0] = compiled;
         self.overridden.insert(slot);
         Ok(())
@@ -1037,6 +1051,9 @@ impl EffectInstance {
 
     /// Applies compiler-validated values authored on a reusable effect clip.
     pub fn apply_compiled_parameter_overrides(&mut self, overrides: &[CompiledParameterOverride]) {
+        if !overrides.is_empty() {
+            self.invalidate_history();
+        }
         apply_compiled_parameter_overrides(&self.effect, overrides, &mut self.parameters);
         self.overridden
             .extend(overrides.iter().map(|parameter| parameter.slot));
@@ -1046,6 +1063,9 @@ impl EffectInstance {
         let Some(slot) = self.effect.parameter_slots.get(&id).copied() else {
             return Err(ParameterError::Unknown(id));
         };
+        if self.overridden.contains(&slot) {
+            self.invalidate_history();
+        }
         self.parameters[slot.0] = self.effect.parameters[slot.0].default.clone();
         self.overridden.remove(&slot);
         Ok(())
@@ -1072,6 +1092,24 @@ impl EffectInstance {
     }
 
     pub fn seek(&mut self, time: f32) {
+        self.invalidate_history();
+        self.set_playback_time(time);
+    }
+
+    /// Discontinuity token consumed by history-based presentation (for example trails).
+    pub fn history_epoch(&self) -> u32 {
+        self.history_epoch
+    }
+
+    pub fn invalidate_history(&mut self) {
+        self.history_epoch = self.history_epoch.wrapping_add(1);
+    }
+
+    /// Synchronize normal playback to an external clock without treating every frame as a seek.
+    pub fn set_playback_time(&mut self, time: f32) {
+        if time < self.time {
+            self.invalidate_history();
+        }
         self.time = if self.effect.playback_mode.is_continuous() {
             time.max(0.0)
         } else {
@@ -1081,12 +1119,19 @@ impl EffectInstance {
     }
 
     pub fn restart(&mut self) {
+        self.invalidate_history();
         self.time = 0.0;
         self.choreography_started = false;
     }
 
     pub fn advance(&mut self, delta_seconds: f32) {
         let next = self.time + delta_seconds;
+        if delta_seconds < 0.0
+            || (self.effect.playback_mode == EffectPlaybackMode::LoopRestart
+                && next >= self.effect.duration)
+        {
+            self.invalidate_history();
+        }
         self.time = match self.effect.playback_mode {
             EffectPlaybackMode::Once => next.clamp(0.0, self.effect.duration),
             EffectPlaybackMode::LoopRestart => next.rem_euclid(self.effect.duration),
@@ -1111,6 +1156,9 @@ impl EffectInstance {
             let previous_phase = previous.rem_euclid(duration);
             let total = previous_phase + delta_seconds;
             let wraps = (total / duration).floor() as u64;
+            if wraps > 0 && self.effect.playback_mode == EffectPlaybackMode::LoopRestart {
+                self.invalidate_history();
+            }
             let next = total.rem_euclid(duration);
             if wraps == 0 {
                 append_choreography_window(

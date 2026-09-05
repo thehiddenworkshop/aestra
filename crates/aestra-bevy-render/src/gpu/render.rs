@@ -1094,7 +1094,11 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         let Some(indirect) = buffers.into_inner().get(&effect.indirect) else {
             return RenderCommandResult::Skip;
         };
-        pass.draw_indirect(&indirect.buffer, effect.indirect_offset);
+        if let Some(count) = effect.trail_instances {
+            pass.draw(0..6, 0..count);
+        } else {
+            pass.draw_indirect(&indirect.buffer, effect.indirect_offset);
+        }
         RenderCommandResult::Success
     }
 }

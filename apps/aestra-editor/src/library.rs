@@ -3764,7 +3764,9 @@ fn remap_emitter_resources(
                     remap_value(value, resources)?;
                 }
             }
-            RendererProperties::Sprite | RendererProperties::Ribbon { .. } => {}
+            RendererProperties::Sprite
+            | RendererProperties::Ribbon { .. }
+            | RendererProperties::Trail { .. } => {}
         }
     }
     Ok(())
