@@ -111,7 +111,7 @@ fn normal_maps_match_reference_across_mirrors_handedness_strength_and_convention
         .unwrap()
         .unwrap();
     let mapped = readback.slice(..).get_mapped_range();
-    for (index, (bytes, expected)) in mapped.chunks_exact(16).zip(expected).enumerate() {
+    for (index, (bytes, expected)) in mapped.as_chunks::<16>().0.iter().zip(expected).enumerate() {
         let actual: [f32; 3] = std::array::from_fn(|i| {
             f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())
         });

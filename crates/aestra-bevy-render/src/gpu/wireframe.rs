@@ -83,7 +83,7 @@ fn mesh_edges(mesh: &Mesh) -> Option<WireframeGeometry> {
     }
     let mut seen = HashSet::new();
     let mut indices = Vec::new();
-    for triangle in triangles.chunks_exact(3) {
+    for triangle in triangles.as_chunks::<3>().0 {
         for (a, b) in [
             (triangle[0], triangle[1]),
             (triangle[1], triangle[2]),

@@ -341,8 +341,10 @@ fn assert_tangent_transform(device: &wgpu::Device, queue: &wgpu::Queue) {
         .unwrap();
     let mapped = readback.slice(..).get_mapped_range();
     let values = mapped
-        .chunks_exact(4)
-        .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|bytes| f32::from_le_bytes(*bytes))
         .collect::<Vec<_>>();
     let length = 13.0_f32.sqrt();
     assert_eq!(values.len(), 32);
