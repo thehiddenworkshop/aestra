@@ -257,7 +257,8 @@ same scheduler. See [nested motion and playback](docs/host_motion_tracks.md#nest
 `AestraSet::Profile`; `EffectProfiler` remains root-only for existing integrations.
 The editor Profiler and viewer capture reports use project totals. Native-GPU live counts
 use lightweight asynchronous per-emitter telemetry, with stale results rejected after
-playback/context changes. Missing measurements and GPU timing remain unavailable, and shared
+playback/context changes. GPU simulation timestamps provide per-instance and project costs
+on supported devices, separately from rendering. Missing measurements remain unavailable, and shared
 texture memory is not double-counted.
 Timed semantic notifications from the root
 and nested clips are emitted as `AestraChoreographyEvent` observer events. `player` identifies the

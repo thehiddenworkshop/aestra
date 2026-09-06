@@ -30,6 +30,7 @@ impl Default for ProjectProfile {
                 truncated_trails: M(0),
                 cpu_time_ns: M(0),
                 gpu_time_ns: U,
+                gpu_simulation_time_ns: U,
                 alive_particles: M(0),
                 submitted_instances: M(0),
                 peak_particles: M(0),
@@ -113,6 +114,8 @@ impl ProjectProfile {
                 instance.profile.alive_particles = ProfileValue::Measured(0);
                 instance.profile.peak_particles = ProfileValue::Measured(0);
                 instance.profile.submitted_instances = ProfileValue::Measured(0);
+                // No simulation dispatch exists for an empty choreography carrier.
+                instance.profile.gpu_simulation_time_ns = ProfileValue::Measured(0);
             }
         }
         let mut total = Self::default().total;
@@ -131,6 +134,7 @@ impl ProjectProfile {
             truncated_trails,
             cpu_time_ns,
             gpu_time_ns,
+            gpu_simulation_time_ns,
             alive_particles,
             submitted_instances,
             particle_capacity,
@@ -239,6 +243,26 @@ mod tests {
             name: "Effect".into(),
             profile,
         }
+    }
+
+    #[test]
+    fn simulation_timing_totals_ignore_empty_carriers_but_not_missing_measurements() {
+        let source = EffectId::new();
+        let mut carrier = entry(vec![], source, 0);
+        carrier.profile.particle_capacity = M(0);
+        let mut child = entry(vec![EffectClipId::new()], source, 1);
+        let mut project = ProjectProfile::default();
+        project.update(vec![carrier.clone(), child.clone()]);
+        assert_eq!(project.total.gpu_simulation_time_ns, U);
+        child.profile.gpu_simulation_time_ns = M(1234);
+        project.update(vec![carrier, child.clone()]);
+        assert_eq!(project.total.gpu_simulation_time_ns, M(1234));
+        assert_eq!(project.total.gpu_time_ns, U);
+        child.profile.gpu_simulation_time_ns = M(u64::MAX);
+        let mut other = child.clone();
+        other.path.push(EffectClipId::new());
+        project.update(vec![child, other]);
+        assert_eq!(project.total.gpu_simulation_time_ns, M(u64::MAX));
     }
 
     #[test]

@@ -18,6 +18,7 @@ pub(super) fn update_project_profiles(
         Option<&mut ProjectProfiler>,
         Option<&gpu::GpuTrailStatistics>,
         Option<&gpu::GpuParticleStatistics>,
+        Option<&gpu::GpuSimulationTiming>,
     )>,
     children: Query<
         (
@@ -26,6 +27,7 @@ pub(super) fn update_project_profiles(
             Option<&EffectRuntimeStatus>,
             Option<&gpu::GpuTrailStatistics>,
             Option<&gpu::GpuParticleStatistics>,
+            Option<&gpu::GpuSimulationTiming>,
         ),
         Without<EffectPlayer>,
     >,
@@ -36,7 +38,7 @@ pub(super) fn update_project_profiles(
         commands.entity(entity).remove::<ProjectProfiler>();
     }
     let mut by_root: BTreeMap<Entity, Vec<ProjectInstanceProfile>> = BTreeMap::new();
-    for (child, presented, runtime, trails, particles) in &children {
+    for (child, presented, runtime, trails, particles, timing) in &children {
         let mut profile = runtime.map_or_else(
             || EffectProfile::from_compiled(presented.effect()),
             |runtime| bevy_profile(presented.effect(), &capabilities, runtime),
@@ -51,6 +53,12 @@ pub(super) fn update_project_profiles(
             );
         }
         profile.record_trail_usage(trails.and_then(|s| s.usage(&presented.instance)));
+        if runtime
+            .is_some_and(|r| matches!(r.active, ActiveBackend::Gpu | ActiveBackend::GpuReadback))
+            && let Some((timing, context)) = timing.zip(particles)
+        {
+            profile.gpu_simulation_time_ns = timing.time_ns(&presented.instance, context);
+        }
         if runtime.is_some_and(|runtime| runtime.active == ActiveBackend::Gpu)
             && let Some(particles) = particles
         {
@@ -66,8 +74,17 @@ pub(super) fn update_project_profiles(
                 profile,
             });
     }
-    for (entity, player, presented, runtime, mut root_profile, project, trails, particles) in
-        &mut roots
+    for (
+        entity,
+        player,
+        presented,
+        runtime,
+        mut root_profile,
+        project,
+        trails,
+        particles,
+        timing,
+    ) in &mut roots
     {
         record_presented_profile(
             &mut root_profile.0,
@@ -79,6 +96,13 @@ pub(super) fn update_project_profiles(
         root_profile
             .0
             .record_trail_usage(trails.and_then(|s| s.usage(&presented.instance)));
+        if matches!(
+            runtime.active,
+            ActiveBackend::Gpu | ActiveBackend::GpuReadback
+        ) && let Some((timing, context)) = timing.zip(particles)
+        {
+            root_profile.0.gpu_simulation_time_ns = timing.time_ns(&presented.instance, context);
+        }
         if runtime.active == ActiveBackend::Gpu
             && let Some(particles) = particles
         {

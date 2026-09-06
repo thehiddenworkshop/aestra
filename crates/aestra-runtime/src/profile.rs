@@ -65,6 +65,8 @@ pub struct EffectProfile {
     pub truncated_trails: ProfileValue<u32>,
     pub cpu_time_ns: ProfileValue<u64>,
     pub gpu_time_ns: ProfileValue<u64>,
+    /// GPU reset/simulation/ribbon/trail work only; excludes rendering.
+    pub gpu_simulation_time_ns: ProfileValue<u64>,
     pub alive_particles: ProfileValue<u32>,
     pub submitted_instances: ProfileValue<u32>,
     pub peak_particles: ProfileValue<u32>,
@@ -141,6 +143,7 @@ impl EffectProfile {
             truncated_trails: ProfileValue::Unavailable,
             cpu_time_ns: ProfileValue::Unavailable,
             gpu_time_ns: ProfileValue::Unavailable,
+            gpu_simulation_time_ns: ProfileValue::Unavailable,
             alive_particles: ProfileValue::Unavailable,
             submitted_instances: ProfileValue::Unavailable,
             peak_particles: ProfileValue::Unavailable,

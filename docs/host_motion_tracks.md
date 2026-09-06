@@ -215,22 +215,23 @@ continues describing the root alone. Child activation, expiry, seeks and loop wr
 reconcile the active set; separate root players never share counters.
 
 The editor Profiler uses the same aggregation and shows an active-instance breakdown.
-Its CPU measurements describe reference evaluation of every audible instance, including
-clip parameter overrides, not GPU execution time. Native-GPU live counts and trail counters
+Its CPU measurements describe actual CPU-reference evaluation, including clip parameter
+overrides, not GPU execution time; native-GPU previews do not run duplicate CPU simulations.
+Native-GPU live counts and trail counters
 are asynchronous observations. Live counts reuse per-emitter draw-command counts, reading
 only `16 * emitter_count + 16` bytes per observation, never particle records. The optional
 trailer carries a context token, epoch and simulation time. Seeks, restarts, seed/parameter
 edits, recompilation and rebuilt owners invalidate observations; late, out-of-order results
 cannot replace newer counts. `GpuParticleStatistics::observation` exposes the observed time
 and counts. During bounded trail replay this time can precede the requested seek target.
-Invalidated telemetry stays unavailable until a matching observation arrives. Editor CPU
-timing still measures reference evaluation, while native-GPU live counts come from readback.
+Invalidated telemetry stays unavailable until a matching observation arrives. CPU timing
+is unavailable when no CPU evaluation ran; native-GPU live counts come from readback.
 The viewer's `preview-report.json` uses project-wide `metrics`, adds per-path `instances`,
 and includes trail capacity, occupied/retired owners, evictions and truncated histories.
 
 Additive totals retain measured/estimated provenance; any missing contributor makes
 that total unavailable. Non-trail instances contribute known zero trail usage. Native
-GPU timings and submitted geometry remain unavailable rather than being inferred from counts.
+GPU rendering time and submitted geometry remain unavailable rather than being inferred from counts.
 Capacity and buffer memory cover active instances, not the entire dependency library.
 Texture memory and overdraw remain unavailable for compositions because shared assets
 and overlapping draws cannot be summed accurately without further measurement.
@@ -239,6 +240,32 @@ Project peak particles are the maximum observed simultaneous total, not the sum 
 independent instance peaks. Missing observations mark retained peaks as estimated
 lower bounds until reset. Per-instance peaks are retained only while that path stays
 active; replacement root effects reset project history. Reset Peaks resets both levels.
+
+### GPU simulation timing
+
+`EffectProfile::gpu_simulation_time_ns` measures the GPU simulation window for one
+instance: counter reset, particle simulation, ribbon linking and trail-history updates.
+When replay needs several observations in one frame, the window spans the first through
+last compute pass (including intervening replay copies). It excludes draw calls, CPU
+evaluation, timestamp readback and final checkpoint copies. The existing `gpu_time_ns`
+field is **not** populated with this partial cost. The editor labels the new metric
+**GPU SIMULATION**; viewer reports add `gpu_simulation_time_ns` to totals and each instance.
+
+The renderer checks the enabled device's `TIMESTAMP_QUERY` feature and timestamp period.
+Pass-boundary queries do not require the optional inside-encoder timestamp feature or
+`RenderDiagnosticsPlugin`. The existing aggregate diagnostics/Tracy span is unchanged.
+Unsupported devices or pending/invalid observations report unavailable, not a CPU estimate.
+Empty choreography carriers contribute known zero simulation work to project totals.
+
+At most three timestamp batches are in flight, with at most 256 effect instances per
+batch (two timestamps per instance). Backpressure skips sampling without waiting for the
+GPU; no blocking poll is used. Query resolve/readback storage is bounded to 24 KiB plus
+driver query storage. Only the latest completed frame reaches the main world, and missing
+contributors keep project totals unavailable. Context tokens reject seeks, restarts,
+parameter/seed edits, rebuilt owners and recompilation; frame sequence numbers reject
+out-of-order callbacks. Despawned owners cannot receive timing data. Results are delayed
+observations rather than same-frame guarantees, and project totals sum the active
+instances' valid simulation windows, not the application's total GPU frame time.
 
 ## Scope
 

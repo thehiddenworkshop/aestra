@@ -14,9 +14,9 @@ aestra-gpu = { path = "../aestra-gpu" }
 aestra-runtime = { path = "../aestra-runtime" }
 bevy.workspace = true
 tracing.workspace = true
+wgpu.workspace = true
 
 [dev-dependencies]
 aestra-core = { path = "../aestra-core" }
 encase.workspace = true
 pollster.workspace = true
-wgpu.workspace = true

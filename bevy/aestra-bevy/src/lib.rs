@@ -591,6 +591,7 @@ fn record_presented_profile(
     backend: ActiveBackend,
 ) {
     profile.cpu_time_ns = ProfileValue::Unavailable;
+    profile.gpu_simulation_time_ns = ProfileValue::Unavailable;
     profile.alive_particles = ProfileValue::Unavailable;
     profile.submitted_instances = ProfileValue::Unavailable;
     for emitter in &mut profile.emitters {

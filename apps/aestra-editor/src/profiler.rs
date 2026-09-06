@@ -369,7 +369,7 @@ fn project_profile_text(state: &ProfilerState, localizer: &Localizer) -> String 
         .map(|instance| {
             let profile = &instance.profile;
             format!(
-                "{}\n  {}: {} / {} · {}: {} / {}\n  {}: {} · {}: {} ({})",
+                "{}\n  {}: {} / {} · {}: {} / {}\n  {}: {} · {}: {}\n  {}: {} ({})",
                 instance.label(),
                 localizer.text("profiler-metric-live-particles"),
                 format_profile_count(profile.alive_particles).0,
@@ -379,6 +379,8 @@ fn project_profile_text(state: &ProfilerState, localizer: &Localizer) -> String 
                 format_profile_count(profile.trail_capacity).0,
                 localizer.text("profiler-metric-cpu-update"),
                 format_profile_duration(profile.cpu_time_ns).0,
+                localizer.text("profiler-metric-gpu-time"),
+                format_profile_duration(profile.gpu_simulation_time_ns).0,
                 localizer.text("profiler-metric-buffer-memory"),
                 format_profile_memory(profile.buffer_memory_bytes).0,
                 profile_source_label(profile.buffer_memory_bytes.source(), localizer)
@@ -646,7 +648,7 @@ fn spawn_profiler_availability(
                 &localizer.text("profiler-source-estimated"),
                 &localizer.text("profiler-estimated-description"),
             );
-            if profile.gpu_time_ns.source() == ProfileValueSource::Unavailable {
+            if profile.gpu_simulation_time_ns.source() == ProfileValueSource::Unavailable {
                 spawn_panel_label_value(
                     section,
                     &localizer.text("profiler-source-unavailable"),
@@ -703,7 +705,7 @@ fn profiler_metric_display(
 ) -> (String, ProfileValueSource) {
     match metric {
         ProfilerMetric::CpuTime => format_profile_duration(profile.cpu_time_ns),
-        ProfilerMetric::GpuTime => format_profile_duration(profile.gpu_time_ns),
+        ProfilerMetric::GpuTime => format_profile_duration(profile.gpu_simulation_time_ns),
         ProfilerMetric::AliveParticles => format_profile_count(profile.alive_particles),
         ProfilerMetric::SubmittedInstances => format_profile_count(profile.submitted_instances),
         ProfilerMetric::PeakParticles => format_profile_count(profile.peak_particles),
@@ -929,6 +931,7 @@ mod tests {
             let localizer = Localizer::new(locale).unwrap();
             let text = project_profile_text(&state, &localizer);
             assert!(text.contains(&localizer.text("profiler-metric-live-particles")));
+            assert!(text.contains(&localizer.text("profiler-metric-gpu-time")));
             assert!(text.contains(&state.project.instances[1].path[0].to_string()));
         }
         assert!(state.ingest_project(vec![root]).profile_rebuilt());

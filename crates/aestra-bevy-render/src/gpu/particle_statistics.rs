@@ -37,6 +37,10 @@ impl GpuParticleStatistics {
             && self.seed == instance.seed()
     }
 
+    pub(super) fn context_token(&self, instance: &EffectInstance) -> Option<u32> {
+        self.matches(instance).then_some(self.token)
+    }
+
     pub(super) fn sync(&mut self, instance: &EffectInstance) -> u32 {
         if !self.matches(instance) {
             *self = Self::new(instance);

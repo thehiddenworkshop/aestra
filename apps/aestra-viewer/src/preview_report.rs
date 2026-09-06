@@ -529,6 +529,7 @@ struct PreviewMetrics {
     truncated_trails: PreviewMetric<u32>,
     cpu_time_ns: PreviewMetric<u64>,
     gpu_time_ns: PreviewMetric<u64>,
+    gpu_simulation_time_ns: PreviewMetric<u64>,
     alive_particles: PreviewMetric<u32>,
     submitted_instances: PreviewMetric<u32>,
     peak_particles: PreviewMetric<u32>,
@@ -555,6 +556,7 @@ impl From<&EffectProfile> for PreviewMetrics {
             truncated_trails: profile.truncated_trails.into(),
             cpu_time_ns: profile.cpu_time_ns.into(),
             gpu_time_ns: profile.gpu_time_ns.into(),
+            gpu_simulation_time_ns: profile.gpu_simulation_time_ns.into(),
             alive_particles: profile.alive_particles.into(),
             submitted_instances: profile.submitted_instances.into(),
             peak_particles: profile.peak_particles.into(),
@@ -674,7 +676,8 @@ mod tests {
         compiled.optimizations.material_function_calls_eliminated = 4;
         compiled.optimizations.material_function_calls_live = 5;
         let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
-        let profile = EffectProfile::from_compiled(&compiled);
+        let mut profile = EffectProfile::from_compiled(&compiled);
+        profile.gpu_simulation_time_ns = ProfileValue::Measured(100);
         let mut project = aestra_bevy::ProjectProfile::default();
         let root = aestra_bevy::ProjectInstanceProfile {
             path: Vec::new(),
@@ -686,6 +689,7 @@ mod tests {
         child.path.push(aestra_bevy::EffectClipId::new());
         let path = child.path[0].to_string();
         child.profile.trail_capacity = ProfileValue::Measured(4);
+        child.profile.gpu_simulation_time_ns = ProfileValue::Measured(200);
         child.profile.record_trail_usage(Some(Default::default()));
         project.update(vec![root, child]);
 
@@ -722,6 +726,16 @@ mod tests {
         assert_eq!(value["instances"][0]["clip_path"], serde_json::json!([]));
         assert_eq!(value["instances"][1]["clip_path"][0], path);
         assert_eq!(value["metrics"]["trail_capacity"]["value"], 4);
+        assert_eq!(
+            value["metrics"]["gpu_simulation_time_ns"]["source"],
+            "measured"
+        );
+        assert_eq!(value["metrics"]["gpu_simulation_time_ns"]["value"], 300);
+        assert_eq!(
+            value["instances"][1]["metrics"]["gpu_simulation_time_ns"]["value"],
+            200
+        );
+        assert_eq!(value["metrics"]["gpu_time_ns"]["source"], "unavailable");
         assert_eq!(
             value["metrics"]["particle_capacity"]["value"],
             2 * compiled.max_particles

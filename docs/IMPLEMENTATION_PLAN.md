@@ -650,7 +650,13 @@ the current sprite-material path until the native-GPU compatibility gate approve
   without particle-buffer copies. Root/project/editor profiles consume valid counts;
   seeks, restarts, edits, rebuilt buffers and out-of-order observations reject stale data.
   GPU conformance checks telemetry against particle records, with owner/nested-root
-  isolation and invalidation regressions. GPU timing and submitted geometry remain separate.
+  isolation and invalidation regressions. Native GPU simulation timing now uses bounded,
+  asynchronous per-instance pass-boundary timestamp queries (three batches, 256 instances
+  each), with feature detection, context/sequence validation and no blocking GPU waits.
+  Editor and viewer profiles expose `gpu_simulation_time_ns` and project sums, separately
+  from total GPU/rendering cost. Nested-owner isolation, stale/missing measurements,
+  timestamp conversion and report provenance are covered by regressions. Rendering timing
+  and submitted geometry remain separate work.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

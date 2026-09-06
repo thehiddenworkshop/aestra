@@ -5,6 +5,7 @@ mod mesh_inputs;
 mod particle_statistics;
 mod render;
 mod ribbon_bounds;
+mod simulation_timing;
 mod trail_checkpoints;
 mod trail_culling;
 mod trail_replay;
@@ -64,6 +65,7 @@ use bevy::{
     },
 };
 pub use particle_statistics::GpuParticleStatistics;
+pub use simulation_timing::GpuSimulationTiming;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -104,6 +106,7 @@ pub(crate) struct GpuEffectBuffers {
     total_slots: u32,
     simulation_time: f32,
     history_epoch: u32,
+    statistics_token: u32,
     checkpoint_context: Arc<trail_checkpoints::TrailContext>,
     trail_roots: Vec<(u32, u32)>,
 }
@@ -263,6 +266,9 @@ struct SimulationPipeline {
 
 pub(crate) fn install(app: &mut App) {
     install_shader_assets(app);
+    let timing_mailbox = simulation_timing::TimingMailbox::default();
+    app.insert_resource(timing_mailbox.clone())
+        .add_systems(PreUpdate, simulation_timing::receive_timings);
     app.add_plugins((
         ExtractComponentPlugin::<GpuEffectBuffers>::default(),
         ExtractComponentPlugin::<GpuDrawInstance>::default(),
@@ -279,6 +285,7 @@ pub(crate) fn install(app: &mut App) {
         return;
     };
     render_app
+        .insert_resource(timing_mailbox)
         .add_systems(ExtractSchedule, publish_gpu_capabilities)
         .add_systems(RenderStartup, init_pipeline)
         .add_systems(
@@ -622,6 +629,7 @@ pub(crate) fn prepare_gpu_effects(
                 has_trails,
                 simulation_time: player.simulation_time(),
                 history_epoch: player.instance.history_epoch(),
+                statistics_token: 0,
                 checkpoint_context: default(),
                 trail_roots,
                 ribbon_workgroups,
@@ -629,6 +637,7 @@ pub(crate) fn prepare_gpu_effects(
             },
             GpuPresentationPrepared,
             particle_statistics,
+            GpuSimulationTiming::default(),
         ));
         commands.entity(entity).with_children(|parent| {
             parent
@@ -1167,6 +1176,7 @@ fn sync_gpu_render_transforms(
 ) {
     for (player, transform, mut gpu, mut statistics) in &mut players {
         let statistics_token = statistics.sync(&player.instance);
+        gpu.statistics_token = statistics_token;
         let placement = Mat4::from(transform.affine());
         let world = placement
             * Mat4::from_cols_array(
@@ -1528,16 +1538,30 @@ fn run_simulation(
     mut render_context: RenderContext,
     pipeline_cache: Res<PipelineCache>,
     pipeline: Option<Res<SimulationPipeline>>,
-    effects: Query<(Entity, &GpuEffectBuffers, &GpuBindGroup)>,
+    effects: Query<(
+        Entity,
+        &bevy::render::sync_world::MainEntity,
+        &GpuEffectBuffers,
+        &GpuBindGroup,
+    )>,
     mesh_draws: Query<(&GpuDrawInstance, &render::PreparedMeshDraw)>,
-    gpu_resources: (Res<RenderAssets<GpuShaderBuffer>>, Res<RenderDevice>),
-    mut histories: Local<TrailHistories>,
+    gpu_resources: (
+        Res<RenderAssets<GpuShaderBuffer>>,
+        Res<RenderDevice>,
+        Res<bevy::render::renderer::RenderQueue>,
+        Res<simulation_timing::TimingMailbox>,
+    ),
+    state: (
+        Local<TrailHistories>,
+        Local<simulation_timing::SimulationTimer>,
+    ),
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
     let Some(pipeline) = pipeline else {
         return;
     };
-    let (buffers, render_device) = gpu_resources;
+    let (buffers, render_device, queue, timing_mailbox) = gpu_resources;
+    let (mut histories, mut timer) = state;
     let link_ribbons = pipeline_cache.get_compute_pipeline(pipeline.link_ribbons);
     let update_trails = pipeline_cache.get_compute_pipeline(pipeline.update_trails);
     let (Some(reset), Some(simulate)) = (
@@ -1552,9 +1576,10 @@ fn run_simulation(
     let diagnostics = render_context.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let gpu_span = diagnostics.time_span(render_context.command_encoder(), "aestra::gpu::simulate");
-    histories.retain(|entity, _| effects.get(*entity).is_ok_and(|(_, e, _)| e.has_trails));
+    let mut timing_batch = timer.begin(&render_device, queue.get_timestamp_period());
+    histories.retain(|entity, _| effects.get(*entity).is_ok_and(|(_, _, e, _)| e.has_trails));
     let mut allocated: u64 = histories.values().map(|h| h.2.checkpoints.bytes()).sum();
-    for (entity, effect, bind_group) in &effects {
+    for (entity, main_entity, effect, bind_group) in &effects {
         if (effect.has_ribbons && link_ribbons.is_none())
             || (effect.has_trails && update_trails.is_none())
         {
@@ -1679,7 +1704,16 @@ fn run_simulation(
         } else {
             None
         };
-        for observation in 0..replay.as_ref().map_or(1, |(_, times, _, _)| times.len()) {
+        let observation_count = replay.as_ref().map_or(1, |(_, times, _, _)| times.len());
+        let observed_time = replay
+            .as_ref()
+            .map_or(effect.simulation_time, |(_, times, _, _)| {
+                *times.last().unwrap()
+            });
+        let timing_index = timing_batch.as_mut().and_then(|batch| {
+            batch.instance(main_entity.id(), effect.statistics_token, observed_time)
+        });
+        for observation in 0..observation_count {
             if let Some((times, _, globals, _)) = &replay {
                 render_context.command_encoder().copy_buffer_to_buffer(
                     times,
@@ -1701,7 +1735,15 @@ fn run_simulation(
                     .command_encoder()
                     .begin_compute_pass(&ComputePassDescriptor {
                         label: Some("aestra simulation"),
-                        ..default()
+                        timestamp_writes: timing_batch.as_ref().zip(timing_index).and_then(
+                            |(batch, index)| {
+                                batch.writes(
+                                    index,
+                                    observation == 0,
+                                    observation + 1 == observation_count,
+                                )
+                            },
+                        ),
                     });
             pass.set_bind_group(0, &bind_group.0, &[]);
             pass.set_pipeline(reset);
@@ -1752,6 +1794,9 @@ fn run_simulation(
         }
     }
     gpu_span.end(render_context.command_encoder());
+    if let Some(batch) = timing_batch {
+        batch.finish(render_context.command_encoder(), timing_mailbox.clone());
+    }
 }
 
 fn mesh_from_emitter(transform: aestra_core::EmitterTransform) -> Mat4 {
@@ -1854,6 +1899,7 @@ mod tests {
                     total_slots: 1,
                     simulation_time: 0.0,
                     history_epoch: 0,
+                    statistics_token: 0,
                     checkpoint_context: default(),
                     trail_roots: vec![],
                 },
