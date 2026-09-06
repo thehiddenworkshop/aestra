@@ -1,7 +1,7 @@
 //! `aestra-bench` — a headless, deterministic benchmark harness for the Aestra
-//! runtime and GPU-artifact preparation path.
+//! runtime, GPU-artifact preparation and opt-in native GPU experiments.
 //!
-//! This first slice measures the CPU cost of three real per-frame stages without a
+//! The default mode measures the CPU cost of three real per-frame stages without a
 //! window or GPU, so it runs on ordinary CI (the strategy's PR CPU lane):
 //!
 //! * `runtime advance`       — `EffectInstance::advance` (clock + choreography)
@@ -10,9 +10,12 @@
 //!
 //! It records distribution statistics (median/p95/p99/max/stddev), measured
 //! occupancy, and normalized ratios, then prints a summary and optionally writes
-//! machine-readable JSON (strategy §15). GPU timings are deferred to the native
-//! GPU lane and reported as explicitly unavailable.
+//! machine-readable JSON (strategy §15). CPU runs report GPU timings as unavailable.
+//! With `--features gpu`, `--gpu-trails preparation|rendering` runs the native
+//! timestamped trail experiments and writes reports under `benchmarks/gpu-baselines/`.
 
+#[cfg(feature = "gpu")]
+mod gpu_trails;
 mod metrics;
 mod scenario;
 
@@ -35,13 +38,29 @@ fn main() {
         Err(message) => {
             eprintln!("aestra-bench: {message}");
             eprintln!(
-                "usage: aestra-bench (--scenario <name> | --all) [--frames N] [--warmup N] \
+                "usage: aestra-bench (--scenario <name> | --all | --gpu-trails preparation|rendering) [--frames N] [--warmup N] \
                  [--seed <dec-or-0xhex>] [--out results.json] [--commit <sha>]"
             );
             eprintln!("scenarios: {}", scenario::names());
             std::process::exit(2);
         }
     };
+
+    if let Some(kind) = config.gpu_trails.as_deref() {
+        #[cfg(feature = "gpu")]
+        if let Err(error) = gpu_trails::run(&config, kind) {
+            eprintln!("aestra-bench: {error}");
+            std::process::exit(1);
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            let _ = kind;
+            eprintln!("aestra-bench: --gpu-trails requires --features gpu");
+            std::process::exit(2);
+        }
+        #[cfg(feature = "gpu")]
+        return;
+    }
 
     let scenarios: Vec<&scenario::Scenario> = if config.all {
         scenario::SCENARIOS.iter().collect()
@@ -99,6 +118,7 @@ fn main() {
 }
 
 struct Config {
+    gpu_trails: Option<String>,
     scenario: Option<String>,
     all: bool,
     frames: usize,
@@ -110,6 +130,11 @@ struct Config {
 
 impl Config {
     fn from_args() -> Result<Self, String> {
+        Self::parse(std::env::args().skip(1))
+    }
+
+    fn parse(mut args: impl Iterator<Item = String>) -> Result<Self, String> {
+        let mut gpu_trails = None;
         let mut scenario = None;
         let mut all = false;
         let mut frames = 64usize;
@@ -118,9 +143,15 @@ impl Config {
         let mut out = None;
         let mut commit = default_commit();
 
-        let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
+                "--gpu-trails" => {
+                    let kind = next_value(&mut args, "--gpu-trails")?;
+                    if !matches!(kind.as_str(), "preparation" | "rendering") {
+                        return Err("--gpu-trails expects preparation or rendering".into());
+                    }
+                    gpu_trails = Some(kind);
+                }
                 "--scenario" => {
                     scenario = Some(next_value(&mut args, "--scenario")?);
                 }
@@ -140,13 +171,20 @@ impl Config {
             }
         }
 
-        if !all && scenario.is_none() {
-            return Err("expected --scenario <name> or --all".into());
+        if gpu_trails.is_some() && (all || scenario.is_some()) {
+            return Err("--gpu-trails cannot be combined with --scenario or --all".into());
+        }
+        if !all && scenario.is_none() && gpu_trails.is_none() {
+            return Err("expected --scenario <name>, --all or --gpu-trails <kind>".into());
         }
         if frames == 0 {
             return Err("--frames must be greater than zero".into());
         }
+        if frames.checked_add(warmup).is_none() {
+            return Err("--frames plus --warmup is too large".into());
+        }
         Ok(Self {
+            gpu_trails,
             scenario,
             all,
             frames,
@@ -346,4 +384,54 @@ fn parse_seed(value: &str) -> Result<u64, String> {
         .or_else(|| value.strip_prefix("0X"))
         .map_or_else(|| value.parse::<u64>(), |hex| u64::from_str_radix(hex, 16));
     parsed.map_err(|_| format!("--seed expects a decimal or 0x-prefixed hex value, got {value:?}"))
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    fn config(args: &[&str]) -> Result<Config, String> {
+        Config::parse(args.iter().map(|arg| (*arg).to_owned()))
+    }
+
+    #[test]
+    fn gpu_experiments_use_common_sampling_and_output_options() {
+        let cfg = config(&[
+            "--gpu-trails",
+            "rendering",
+            "--frames",
+            "1",
+            "--warmup",
+            "0",
+            "--seed",
+            "7",
+            "--out",
+            "benchmarks/gpu-baselines/test.json",
+            "--commit",
+            "test",
+        ])
+        .unwrap();
+        assert_eq!(cfg.gpu_trails.as_deref(), Some("rendering"));
+        assert_eq!((cfg.frames, cfg.warmup, cfg.seed), (1, 0, 7));
+        assert_eq!(
+            cfg.out.as_deref(),
+            Some("benchmarks/gpu-baselines/test.json")
+        );
+        assert_eq!(cfg.commit, "test");
+        assert!(config(&["--gpu-trails", "preparation"]).is_ok());
+    }
+
+    #[test]
+    fn reject_invalid_or_mixed_gpu_experiments() {
+        for args in [
+            vec!["--gpu-trails"],
+            vec!["--gpu-trails", "unknown"],
+            vec!["--gpu-trails", "rendering", "--all"],
+            vec!["--gpu-trails", "rendering", "--scenario", "B001"],
+            vec!["--gpu-trails", "rendering", "--frames", "0"],
+        ] {
+            assert!(config(&args).is_err());
+        }
+        assert!(config(&["--all"]).unwrap().gpu_trails.is_none());
+    }
 }

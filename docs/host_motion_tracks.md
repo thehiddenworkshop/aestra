@@ -328,7 +328,7 @@ asynchronously and must not be added together as if they were a synchronized tot
 Run the opt-in native preparation benchmark on an otherwise idle GPU:
 
 ```powershell
-cargo test -p aestra-bevy-render --test trail_preparation_benchmark --locked -- --ignored --nocapture
+cargo run -p aestra-bench --features gpu --locked -- --gpu-trails preparation --seed 7
 ```
 
 The harness requires timestamp queries, warms up eight iterations, then reports median and
@@ -349,6 +349,63 @@ Example on AMD Radeon integrated graphics, Vulkan, driver 26.3.1 (2026-09-06):
 
 Dense histories can incur compaction cost with no reduction in submitted geometry. These
 results motivate measuring draw cost and any adaptive bypass before claiming a net win.
+
+### Full-range versus compacted trail rendering
+
+The opt-in A/B benchmark now includes the production trail vertex/alpha fragment shaders,
+per-view culling, indirect drawing and target clears. It compares the full candidate range
+against compaction plus drawing, with the same 1,024 owner slots and 64-point histories.
+Sparse owners are noncontiguous; dense histories overlap differently colored alpha-blended
+trails to detect ordering changes. Each of one/four views renders a 1,024 × 512 RGBA8 target.
+Eight paired warmups precede 64 measured pairs, alternating A/B and B/A order. One synchronized
+GPU timestamp window spans preparation through the last draw, with separate compaction,
+culling and summed render-pass windows. Stage medians need not add up to the total median.
+This measures a controlled rendering workload, not application frame time or CPU overhead.
+
+On Windows, run with the explicit MSVC toolchain and choose a backend:
+
+```powershell
+$env:WGPU_BACKEND = 'dx12'
+cargo +1.98.1-x86_64-pc-windows-msvc run -p aestra-bench --features gpu --locked -- --gpu-trails rendering --seed 7
+Remove-Item Env:WGPU_BACKEND
+```
+
+The benchmark asserts indirect counts every iteration and byte-identical, nonblank images
+for every case/view after warmup. Image copies, CPU comparisons and blocking map waits are
+outside the GPU measurement window. Query/readback storage is reused. Incomplete or
+non-monotonic timestamps fail the experiment rather than becoming zero/underflowed timings.
+`WGPU_BACKEND` selects the adapter backend; absent that override it uses primary backends.
+Both experiments live in `apps/aestra-bench/src/gpu_trails/`, not renderer integration
+tests. The optional `gpu` feature leaves the normal CPU runner GPU-independent. Common
+`--frames` (default 64), `--warmup` (8), `--seed`, `--commit` and `--out` options apply.
+The supplied seed's low 32 bits populate GPU globals and are recorded explicitly. Successful
+runs write JSON under `benchmarks/gpu-baselines/trails-<timestamp>/` by default; `--out`
+selects a specific report path. Reports include adapter/backend/driver metadata, raw samples,
+median/p95, indirect counts and image-check outcomes. Failed experiments do not write a new
+report. Renderer correctness remains covered by `trail_compaction_conformance.rs` and
+`trail_culling_conformance.rs`, without timing thresholds or benchmark loops.
+
+Example on AMD Radeon integrated graphics, DirectX 12, driver 32.0.21043.5001 (2026-09-06):
+
+| Case | Views | Full total median / p95 | Compact total median / p95 | Full / compact draw median |
+| --- | ---: | ---: | ---: | ---: |
+| Sparse | 1 | 0.376 / 0.417 ms | 0.908 / 0.957 ms | 0.358 / 0.046 ms |
+| Sparse | 4 | 1.268 / 1.439 ms | 1.039 / 2.736 ms | 1.218 / 0.165 ms |
+| Dense | 1 | 1.617 / 1.693 ms | 3.242 / 5.160 ms | 1.597 / 1.469 ms |
+| Dense | 4 | 6.036 / 9.783 ms | 7.997 / 12.753 ms | 5.909 / 5.940 ms |
+
+All four image comparisons passed. Sparse draws drop from 64,512 to 1,008 instances per
+view; dense draws remain 64,512. Compaction reduced sparse four-view median total time by
+about 18%, but its p95 was worse, and all other total medians regressed. This supports
+investigating occupancy/view-aware bypass, not enabling a threshold from one adapter run.
+Repeated runs and other GPUs/backends are needed before selecting a policy. No runtime
+adaptive bypass or whole-frame profiler timing is introduced by this benchmark.
+
+The same adapter's Vulkan mixed compute/render experiment produced zero or non-monotonic
+timestamp sequences, including with fresh buffers and separate compute/render query sets.
+Those runs are rejected; no Vulkan A/B speedup is claimed. The preparation-only Vulkan
+results above do not establish valid mixed-pipeline timings. The root cause of that backend
+timing anomaly remains unresolved; the successful DirectX 12 experiment is the baseline.
 
 ## Scope
 

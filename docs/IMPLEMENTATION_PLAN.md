@@ -681,7 +681,17 @@ the current sprite-material path until the native-GPU compatibility gate approve
   late-result, failed/omitted snapshot and project aggregation tests cover the contract.
   An opt-in native sparse/dense benchmark validates indirect counts and reports median/p95
   preparation times at one/four views. Nested viewport captures remain byte-identical.
-  Rendering timing remains separate work.
+  A native full-range/compacted A/B benchmark now measures preparation-through-draw GPU
+  windows and stage costs for sparse/dense alpha-blended trails at one/four views, with
+  byte-identical nonblank image checks. The DirectX 12 baseline shows a sparse four-view
+  median win but single-view/dense regressions and variable tails; mixed-pipeline Vulkan
+  timestamps on the test adapter are invalid and rejected. Results and reproduction are
+  recorded in `docs/host_motion_tracks.md`. Occupancy/view-aware bypass needs broader
+  measurements before a policy is selected; runtime adaptive bypass and whole-frame
+  profiler timing remain follow-up work.
+  Preparation and rendering experiments are hosted by `aestra-bench --features gpu`,
+  with shared CLI sampling controls and JSON metadata/raw-sample reports under
+  `benchmarks/gpu-baselines/`. Renderer tests retain native correctness conformance only.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

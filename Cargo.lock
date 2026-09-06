@@ -127,8 +127,12 @@ dependencies = [
  "aestra-core",
  "aestra-gpu",
  "aestra-runtime",
+ "encase",
+ "glam",
+ "pollster",
  "serde",
  "serde_json",
+ "wgpu",
 ]
 
 [[package]]

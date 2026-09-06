@@ -1,41 +1,13 @@
-//! Opt-in native GPU microbenchmark; CPU waits are deliberately confined to this harness.
-//! Run with `cargo test -p aestra-bevy-render --test trail_preparation_benchmark -- --ignored --nocapture`.
-//! Reports preparation cost, not draw time or an end-to-end speedup.
+//! Preparation-only experiment; deliberately blocking, never part of runtime profiling.
+use super::{CaseReport, Report, Timing, encode, group};
+use crate::Config;
 use aestra_gpu::{GpuParticle, GpuRenderGlobals, GpuTrailCullParams, shader};
-use bevy::math::{Mat4, UVec4, Vec3, Vec4};
-use encase::ShaderType;
+use glam::{Mat4, UVec4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
-fn encode<T: ShaderType + encase::internal::WriteInto>(value: &T) -> Vec<u8> {
-    let mut buffer = encase::StorageBuffer::new(Vec::new());
-    buffer.write(value).unwrap();
-    buffer.into_inner()
-}
-
-fn group(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    buffers: &[&wgpu::Buffer],
-) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout,
-        entries: &buffers
-            .iter()
-            .enumerate()
-            .map(|(binding, buffer)| wgpu::BindGroupEntry {
-                binding: binding as u32,
-                resource: buffer.as_entire_binding(),
-            })
-            .collect::<Vec<_>>(),
-    })
-}
-
-#[test]
-#[ignore = "GPU performance experiment; run explicitly on an idle timestamp-capable adapter"]
-fn dense_and_sparse_trail_preparation() {
+pub(super) fn run(config: &Config) -> Report {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-    descriptor.backends = wgpu::Backends::PRIMARY;
+    descriptor.backends = wgpu::Backends::from_env().unwrap_or(wgpu::Backends::PRIMARY);
     let instance = wgpu::Instance::new(descriptor);
     let adapter = pollster::block_on(instance.request_adapter(&Default::default()))
         .expect("native GPU required");
@@ -46,6 +18,7 @@ fn dense_and_sparse_trail_preparation() {
     }))
     .expect("timestamp queries required");
     println!("adapter={:?}", adapter.get_info());
+    let mut report = Report::new("trail-preparation", config, adapter.get_info());
     let period = f64::from(queue.get_timestamp_period());
     let compact_source = shader::compile_wesl(
         "package::compact",
@@ -143,7 +116,7 @@ fn dense_and_sparse_trail_preparation() {
     let globals = make_buffer(
         encode(&GpuRenderGlobals {
             time: 1.0,
-            seed: 7,
+            seed: config.seed as u32,
             ..Default::default()
         }),
         false,
@@ -184,7 +157,7 @@ fn dense_and_sparse_trail_preparation() {
         records[0] = GpuParticle {
             packed_emitter_alive: 1,
             rotation: 1.0,
-            particle_index: 7,
+            particle_index: config.seed as u32,
             size: 1.0,
             position: Vec3::splat(-0.5),
             color: Vec4::splat(0.5),
@@ -244,7 +217,7 @@ fn dense_and_sparse_trail_preparation() {
         for views in [1, 4] {
             let mut compact_times = Vec::new();
             let mut cull_times = Vec::new();
-            for frame in 0..72 {
+            for frame in 0..config.warmup + config.frames {
                 let mut encoder = device.create_command_encoder(&Default::default());
                 for (stage, pipeline) in passes.iter().enumerate() {
                     let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -314,7 +287,11 @@ fn dense_and_sparse_trail_preparation() {
                     u32::from_le_bytes(bytes[36..40].try_into().unwrap()),
                     active * (POINTS - 1)
                 );
-                if frame >= 8 {
+                assert!(
+                    ticks.iter().all(|tick| *tick != 0),
+                    "incomplete GPU timestamps"
+                );
+                if frame >= config.warmup {
                     compact_times.push(
                         (ticks[1].checked_sub(ticks[0]).unwrap() as f64 * period).round() as u64,
                     );
@@ -325,16 +302,29 @@ fn dense_and_sparse_trail_preparation() {
                 drop(bytes);
                 readback.unmap();
             }
-            compact_times.sort_unstable();
-            cull_times.sort_unstable();
+            let compaction = Timing::new(compact_times);
+            let culling = Timing::new(cull_times);
             println!(
                 "{name},{views},{CANDIDATES},{},{},{},{},{}",
                 active * (POINTS - 1),
-                compact_times[32],
-                compact_times[60],
-                cull_times[32],
-                cull_times[60]
+                compaction.median_ns,
+                compaction.p95_ns,
+                culling.median_ns,
+                culling.p95_ns
             );
+            report.cases.push(CaseReport {
+                case: name.into(),
+                views,
+                path: "compact".into(),
+                candidates_per_view: CANDIDATES,
+                submitted_per_view: active * (POINTS - 1),
+                compaction,
+                culling,
+                total: None,
+                drawing: None,
+                image_equivalence: None,
+            });
         }
     }
+    report
 }

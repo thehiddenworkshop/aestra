@@ -1,13 +1,20 @@
 [package]
 name = "aestra-bench"
-description = "Headless deterministic benchmark harness for the Aestra runtime and GPU-artifact preparation path"
+description = "Headless deterministic CPU and opt-in native GPU benchmark harness for Aestra"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+gpu = ["dep:wgpu", "dep:pollster", "dep:encase", "dep:glam"]
+
 [dependencies]
+wgpu = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
+encase = { workspace = true, optional = true }
+glam = { workspace = true, optional = true }
 aestra-compiler = { path = "../../crates/aestra-compiler" }
 aestra-core = { path = "../../crates/aestra-core" }
 aestra-gpu = { path = "../../crates/aestra-gpu" }
