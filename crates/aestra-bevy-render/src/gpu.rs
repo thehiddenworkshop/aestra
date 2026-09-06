@@ -1831,7 +1831,7 @@ fn run_simulation(
     }
     gpu_span.end(render_context.command_encoder());
     if let Some(batch) = timing_batch {
-        batch.finish(render_context.command_encoder(), timing_mailbox.clone());
+        batch.finish(&mut render_context, timing_mailbox.clone());
     }
 }
 

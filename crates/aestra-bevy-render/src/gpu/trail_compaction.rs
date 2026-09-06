@@ -257,10 +257,7 @@ fn compact(
         }
     }
     if let Some(batch) = batch {
-        batch.finish(
-            context.command_encoder(),
-            timing.mailboxes.compaction.clone(),
-        );
+        batch.finish(&mut context, timing.mailboxes.compaction.clone());
     }
     state.dispatched = true;
 }

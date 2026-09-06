@@ -1,6 +1,7 @@
 //! Opt-in native GPU experiments. The ordinary CPU benchmark has no GPU dependency.
 mod preparation;
 mod rendering;
+mod timestamps;
 
 use crate::Config;
 use encase::ShaderType;
@@ -33,6 +34,7 @@ pub(crate) fn run(config: &Config, kind: &str) -> Result<(), String> {
 #[derive(Serialize)]
 struct Report {
     schema_version: u32,
+    timestamp_readback: &'static str,
     experiment: String,
     commit: String,
     captured_at_unix_ns: u128,
@@ -53,6 +55,7 @@ impl Report {
     fn new(experiment: &str, config: &Config, adapter: wgpu::AdapterInfo) -> Self {
         Self {
             schema_version: 1,
+            timestamp_readback: "separate_command_buffer",
             experiment: experiment.into(),
             commit: config.commit.clone(),
             captured_at_unix_ns: std::time::SystemTime::now()

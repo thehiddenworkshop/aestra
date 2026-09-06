@@ -261,7 +261,7 @@ fn cull(
         }
     }
     if let Some(batch) = batch {
-        batch.finish(context.command_encoder(), timing.mailboxes.culling.clone());
+        batch.finish(&mut context, timing.mailboxes.culling.clone());
     }
     culling.dispatched = true;
 }

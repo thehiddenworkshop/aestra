@@ -207,15 +207,35 @@ impl TimingBatch {
         })
     }
 
-    pub(super) fn finish(self, encoder: &mut wgpu::CommandEncoder, mailbox: TimingMailbox) {
+    pub(super) fn finish(self, context: &mut RenderContext, mailbox: TimingMailbox) {
+        let device = context.render_device().clone();
+        if let Some(copy) = self.resolve_and_copy(context.command_encoder(), &device, mailbox) {
+            // add_command_buffer flushes the current (resolve) encoder first.
+            // This preserves ordering without a queue submission or blocking CPU wait.
+            context.add_command_buffer(copy);
+        }
+    }
+
+    fn resolve_and_copy(
+        self,
+        encoder: &mut wgpu::CommandEncoder,
+        device: &RenderDevice,
+        mailbox: TimingMailbox,
+    ) -> Option<wgpu::CommandBuffer> {
         if self.samples.is_empty() {
             self.slot.busy.store(false, Ordering::Release);
             mailbox.publish(self.sequence, Vec::new());
-            return;
+            return None;
         }
         let count = self.samples.len() as u32 * 2;
         let size = u64::from(count) * 8;
         encoder.resolve_query_set(&self.slot.queries, 0..count, &self.slot.resolve, 0);
+        // Vulkan can copy zero/stale query results when resolve and copy share an
+        // encoder (https://github.com/gfx-rs/wgpu/issues/6406). Keep the copy in a
+        // subsequent command buffer, also used by the native benchmark harness.
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("aestra timestamp readback copy"),
+        });
         encoder.copy_buffer_to_buffer(&self.slot.resolve, 0, &self.slot.readback, 0, size);
         let readback = self.slot.readback.clone();
         encoder.map_buffer_on_submit(
@@ -246,12 +266,16 @@ impl TimingBatch {
                 self.slot.busy.store(false, Ordering::Release);
             },
         );
+        Some(encoder.finish())
     }
 }
 
 fn elapsed_ns(start: u64, end: u64, period: f32) -> Option<u64> {
     // Subtract integer ticks first: converting absolute timestamps to f64 loses
     // short intervals on long-running devices. Counter reset/wrap is unknown.
+    if start == 0 || end == 0 {
+        return None;
+    }
     let ticks = end.checked_sub(start)?;
     let ns = ticks as f64 * f64::from(period);
     (period.is_finite() && period > 0.0 && ns.is_finite() && ns >= 0.0 && ns < u64::MAX as f64)
@@ -270,6 +294,8 @@ mod tests {
         assert_eq!(elapsed_ns(u64::MAX - 20, u64::MAX - 10, 2.5), Some(25));
         assert_eq!(elapsed_ns(10, 10, 1.0), Some(0));
         assert_eq!(elapsed_ns(10, 9, 1.0), None);
+        assert_eq!(elapsed_ns(0, 0, 1.0), None);
+        assert_eq!(elapsed_ns(0, 9, 1.0), None);
         assert_eq!(elapsed_ns(0, 9, f32::NAN), None);
         assert_eq!(elapsed_ns(0, u64::MAX, 2.0), None);
     }
@@ -313,8 +339,10 @@ mod tests {
             });
             drop(pass);
         }
-        batch.finish(&mut encoder, mailbox.clone());
-        let submission = queue.submit([encoder.finish()]);
+        let copy = batch
+            .resolve_and_copy(&mut encoder, &device, mailbox.clone())
+            .unwrap();
+        let submission = queue.submit([encoder.finish(), copy]);
         // Blocking is confined to this regression test, never production profiling.
         device
             .poll(wgpu::PollType::Wait {
@@ -335,14 +363,24 @@ mod tests {
         assert!(recycled.instance(Entity::PLACEHOLDER, 42, 1.0).is_none());
         // These reservations intentionally have no GPU work.
         recycled.samples.clear();
-        recycled.finish(
-            &mut device.create_command_encoder(&Default::default()),
-            mailbox.clone(),
+        assert!(
+            recycled
+                .resolve_and_copy(
+                    &mut device.create_command_encoder(&Default::default()),
+                    &device,
+                    mailbox.clone(),
+                )
+                .is_none()
         );
         for batch in batches {
-            batch.finish(
-                &mut device.create_command_encoder(&Default::default()),
-                mailbox.clone(),
+            assert!(
+                batch
+                    .resolve_and_copy(
+                        &mut device.create_command_encoder(&Default::default()),
+                        &device,
+                        mailbox.clone(),
+                    )
+                    .is_none()
             );
         }
     }

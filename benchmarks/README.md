@@ -35,8 +35,8 @@ image comparison must be exact and nonblank. Invalid timing/count/image observat
 the run before writing a new report. Existing files are not removed on failure.
 
 Run on an idle GPU and compare repeated runs on the same backend. These are controlled
-workloads, not whole-application speedups. The Vulkan mixed compute/render timestamp anomaly
-and the current DirectX 12 baseline are described in
+workloads, not whole-application speedups. The Vulkan timestamp readback correction and
+repeated Vulkan/DirectX 12 baselines are described in
 [host motion tracks](../docs/host_motion_tracks.md#full-range-versus-compacted-trail-rendering).
 
 Native renderer correctness tests remain in `crates/aestra-bevy-render/tests/`; performance
@@ -55,3 +55,23 @@ experiments at 8 warmups / 64 samples / seed 7, measured from `fdd02ea+worktree`
 
 Different backends were used deliberately because of the mixed-pipeline Vulkan timing
 anomaly. Do not subtract or combine measurements between these two reports.
+
+## Timestamp correction validation
+
+The [corrected captures](gpu-baselines/trails-timestamp-fix-2026-09-06/) include three
+8-warmup/64-sample rendering runs per backend from `8c87956+worktree`, seed 7.
+All reports passed exact nonblank image comparisons, indirect-count checks and monotonic
+timestamp validation. Reports identify `timestamp_readback: "separate_command_buffer"`.
+Historical reports above predate that fix and are not silently replaced.
+
+The reduced native timestamp correctness probe is opt-in:
+
+```powershell
+$env:WGPU_BACKEND = 'vulkan' # also validate 'dx12'
+cargo +1.98.1-x86_64-pc-windows-msvc test -p aestra-bench --features gpu --locked mixed_pass_queries -- --ignored --nocapture
+Remove-Item Env:WGPU_BACKEND
+```
+
+Unlike the benchmark commands, this checks correctness only and publishes no performance
+report. The same-encoder resolve/copy control failed immediately with six zero timestamps;
+the corrected split-copy version passes repeated mixed compute/render submissions.

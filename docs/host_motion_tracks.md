@@ -324,6 +324,10 @@ Owner/context tokens reject stale results after seeks, restarts and edits; seque
 reject out-of-order completions independently for each stage. Project totals sum active paths,
 preserving missing measurements rather than presenting partial totals. Stages arrive
 asynchronously and must not be added together as if they were a synchronized total frame time.
+Query resolution stays in the measured-work command buffer; the readback copy is submitted
+in the following command buffer. This avoids stale Vulkan query copies without adding CPU
+waits. Empty batches create no copy buffer, and the existing three-slot backpressure remains.
+Zero timestamp endpoints are rejected as unavailable, rather than reported as zero cost.
 
 Run the opt-in native preparation benchmark on an otherwise idle GPU:
 
@@ -401,11 +405,43 @@ investigating occupancy/view-aware bypass, not enabling a threshold from one ada
 Repeated runs and other GPUs/backends are needed before selecting a policy. No runtime
 adaptive bypass or whole-frame profiler timing is introduced by this benchmark.
 
-The same adapter's Vulkan mixed compute/render experiment produced zero or non-monotonic
-timestamp sequences, including with fresh buffers and separate compute/render query sets.
-Those runs are rejected; no Vulkan A/B speedup is claimed. The preparation-only Vulkan
-results above do not establish valid mixed-pipeline timings. The root cause of that backend
-timing anomaly remains unresolved; the successful DirectX 12 experiment is the baseline.
+### Vulkan timestamp readback correction
+
+The original Vulkan experiment returned zero/stale timestamps when query resolution and the
+resolve-buffer-to-readback copy shared a command encoder. A reduced compute/clear/compute
+probe reproduces six zero timestamps without any Aestra shaders. Moving only query resolution
+to another encoder did not help; placing the **copy after resolution in a second command
+buffer** fixes both the reduced probe and the full experiment. Reintroducing the original
+copy placement makes the probe fail on its first iteration. This matches the synchronization
+failure reported in [wgpu issue #6406](https://github.com/gfx-rs/wgpu/issues/6406); it is not
+an error in trail geometry or timestamp-index arithmetic.
+
+The fix is shared by the preparation/rendering benchmark paths and applied to the live
+simulation/preparation profiler. It does not change the timed passes, insert CPU waits,
+disable timestamp validation or introduce automatic backend switching. Reports now record
+`timestamp_readback: "separate_command_buffer"`. Previously captured files remain historical
+observations; rejected Vulkan samples were never published as valid baseline data.
+
+Three new 8-warmup/64-sample A/B runs on **each** backend are archived in
+[`benchmarks/gpu-baselines/trails-timestamp-fix-2026-09-06/`](../benchmarks/gpu-baselines/trails-timestamp-fix-2026-09-06/).
+All timestamp sequences, indirect counts and exact nonblank image comparisons passed.
+Sparse four-view median savings range from 1.3–2.7% on Vulkan and 17.5–20.8% on DirectX 12
+on this adapter. Vulkan compact p95 is worse in all three runs. Single-view sparse and both
+dense cases remain slower with compaction on both backends. These observations argue against
+a universal threshold; more occupancy/view-count/adapter coverage is needed before bypass.
+
+Run the reduced native **correctness** probe independently of benchmark sampling:
+
+```powershell
+$env:WGPU_BACKEND = 'vulkan' # repeat with 'dx12'
+cargo +1.98.1-x86_64-pc-windows-msvc test -p aestra-bench --features gpu --locked mixed_pass_queries -- --ignored --nocapture
+Remove-Item Env:WGPU_BACKEND
+```
+
+The probe checks first-use and recycled query buffers across eight submissions; it has no
+performance threshold. Unsupported adapters fail this explicitly requested diagnostic; normal
+CPU-only CI does not run it. Other invalid/non-monotonic observations still fail the benchmark
+without writing a report, and failed live-profiler measurements remain unavailable.
 
 ## Scope
 

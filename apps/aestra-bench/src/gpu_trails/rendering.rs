@@ -526,10 +526,10 @@ impl Scene {
         let first = if path == Path::Compact { 0 } else { 2 };
         let end = 4 + views as u32 * 2;
         let bytes = u64::from(end - first) * 8;
-        encoder.resolve_query_set(queries, first..end, resolve, 0);
-        encoder.copy_buffer_to_buffer(resolve, 0, readback, 0, bytes);
         encoder.copy_buffer_to_buffer(&self.views[0].indirect[path.index()], 0, readback, 96, 16);
-        let data = h.map(readback, h.queue.submit([encoder.finish()]));
+        let commands =
+            super::timestamps::finish(&h.device, encoder, queries, first..end, resolve, readback);
+        let data = h.map(readback, h.queue.submit(commands));
         let count = u32::from_le_bytes(data[100..104].try_into().unwrap());
         assert_eq!(
             count,
@@ -548,13 +548,13 @@ impl Scene {
         // Reject incomplete/reordered observations, rather than publishing zero or
         // underflowed durations. Backend timestamp ordering is not universally guaranteed.
         assert!(
-            ticks.iter().all(|tick| *tick != 0) && ticks.windows(2).all(|pair| pair[0] <= pair[1]),
-            "invalid GPU timestamp sequence for {path:?}: {ticks:?}; timing is unavailable on this backend (try WGPU_BACKEND=dx12 on Windows)"
+            super::timestamps::valid_sequence(&ticks),
+            "invalid GPU timestamp sequence for {path:?}: {ticks:?}; timing is unavailable on this adapter/backend"
         );
         let duration = |start: u32, end: u32| {
             (ticks[(end - first) as usize]
                 .checked_sub(ticks[(start - first) as usize])
-                .expect("non-monotonic GPU timestamps: benchmark timing is unavailable on this backend; try WGPU_BACKEND=dx12 on Windows") as f64
+                .expect("validated timestamp sequence") as f64
                 * f64::from(h.queue.get_timestamp_period()))
             .round() as u64
         };

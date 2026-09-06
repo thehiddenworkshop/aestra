@@ -685,13 +685,20 @@ the current sprite-material path until the native-GPU compatibility gate approve
   windows and stage costs for sparse/dense alpha-blended trails at one/four views, with
   byte-identical nonblank image checks. The DirectX 12 baseline shows a sparse four-view
   median win but single-view/dense regressions and variable tails; mixed-pipeline Vulkan
-  timestamps on the test adapter are invalid and rejected. Results and reproduction are
+  timestamps initially failed and were rejected. Results and reproduction are
   recorded in `docs/host_motion_tracks.md`. Occupancy/view-aware bypass needs broader
   measurements before a policy is selected; runtime adaptive bypass and whole-frame
   profiler timing remain follow-up work.
   Preparation and rendering experiments are hosted by `aestra-bench --features gpu`,
   with shared CLI sampling controls and JSON metadata/raw-sample reports under
   `benchmarks/gpu-baselines/`. Renderer tests retain native correctness conformance only.
+  The Vulkan timing anomaly is now isolated to copying query results in the same command
+  encoder as resolution (wgpu #6406). A subsequent copy command buffer fixes the reduced
+  mixed-pass probe and full A/B workload. The live profiler uses the same boundary with
+  no blocking CPU waits and rejects zero timestamp endpoints. Three repeated runs per
+  Vulkan/DirectX 12 backend pass exact image/count/timestamp checks; archived reports show
+  backend-dependent sparse four-view wins and single-view/dense regressions. No adaptive
+  compaction policy has been introduced.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

@@ -257,10 +257,15 @@ pub(super) fn run(config: &Config) -> Report {
                         pass.dispatch_workgroups(1, 1, 1);
                     }
                 }
-                encoder.resolve_query_set(&queries, 0..4, &resolve, 0);
-                encoder.copy_buffer_to_buffer(&resolve, 0, &readback, 0, 32);
                 encoder.copy_buffer_to_buffer(&output, 0, &readback, 32, 16);
-                let submission = queue.submit([encoder.finish()]);
+                let submission = queue.submit(super::timestamps::finish(
+                    &device,
+                    encoder,
+                    &queries,
+                    0..4,
+                    &resolve,
+                    &readback,
+                ));
                 let (tx, rx) = std::sync::mpsc::channel();
                 readback
                     .slice(..)
@@ -288,8 +293,8 @@ pub(super) fn run(config: &Config) -> Report {
                     active * (POINTS - 1)
                 );
                 assert!(
-                    ticks.iter().all(|tick| *tick != 0),
-                    "incomplete GPU timestamps"
+                    super::timestamps::valid_sequence(&ticks),
+                    "invalid GPU timestamps: {ticks:?}"
                 );
                 if frame >= config.warmup {
                     compact_times.push(
