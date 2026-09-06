@@ -385,7 +385,13 @@ fn initialize_document_persistence(
 ) {
     let (mut recovery, candidate, recovery_diagnostic) = RecoveryPersistence::discover();
     if let Some(candidate) = candidate {
-        recover_startup_session(&mut session, &mut recovery, candidate, &localizer);
+        recover_startup_session(
+            &mut session,
+            &mut recovery,
+            candidate,
+            &localizer,
+            &mut catalog,
+        );
         if let Some(path) = session.source_path.as_deref()
             && !crate::project::contains_source(&catalog, path)
         {
@@ -513,7 +519,7 @@ fn execute_document_action(
             &mut session,
             matches!(*action, DocumentAction::SaveAs),
             &localizer,
-            catalog.effect_root(),
+            &mut catalog,
         );
         return;
     }
@@ -576,7 +582,9 @@ fn execute_protected_document_action(
     mut timeline: Option<&mut TimelineState>,
     mut navigation: Option<&mut SourceNavigationState>,
 ) {
-    match action {
+    let drafts = std::mem::take(&mut catalog.material_drafts);
+    let generation = session.history_generation();
+    (|| match action {
         DocumentAction::New => {
             if let Some(navigation) = navigation.as_deref_mut() {
                 navigation.clear();
@@ -711,7 +719,11 @@ fn execute_protected_document_action(
             commands.write_message(AppExit::Success);
         }
         DocumentAction::Save | DocumentAction::SaveAs => {}
+    })();
+    if session.history_generation() == generation && action != DocumentAction::Exit {
+        catalog.material_drafts = drafts;
     }
+    session.set_material_drafts(catalog.material_drafts.clone());
 }
 
 fn document_action_requires_confirmation(
@@ -745,7 +757,7 @@ fn resolve_document_protection(
         return;
     }
     if *action == DocumentProtectionAction::Save
-        && !save_session(&mut session, false, &localizer, catalog.effect_root())
+        && !save_session(&mut session, false, &localizer, &mut catalog)
     {
         return;
     }
@@ -772,6 +784,7 @@ fn recover_startup_session(
     persistence: &mut RecoveryPersistence,
     candidate: RecoveryCandidate,
     localizer: &Localizer,
+    catalog: &mut ProjectEffectCatalog,
 ) {
     let source = candidate.source_path().map_or_else(
         || localizer.text("persistence-dialog-recovery-unsaved-source"),
@@ -789,10 +802,40 @@ fn recover_startup_session(
         MessageDialogResult::Yes
     );
     if restore {
+        let drafts = candidate.material_drafts().clone();
+        if !drafts.is_empty() {
+            let project = drafts
+                .root
+                .as_deref()
+                .ok_or_else(|| "Recovery has no material project root".to_string())
+                .and_then(crate::project::catalog_for_folder)
+                .and_then(|mut project| {
+                    if !drafts.validate_root(project.root()) {
+                        return Err("Recovery material paths are outside their project".into());
+                    }
+                    project.material_drafts = drafts.clone();
+                    Ok(project)
+                });
+            match project {
+                Ok(project) => *catalog = project,
+                Err(error) => {
+                    set_persistence_status(
+                        session,
+                        localizer,
+                        PersistenceStatus::RecoveryDiagnostic(error),
+                    );
+                    return;
+                }
+            }
+        }
         session.restore_recovery(
             candidate.effect().clone(),
             candidate.source_path().map(Path::to_owned),
         );
+        session.set_material_drafts(drafts);
+        if let Ok(project) = catalog.compile_project(&session.effect) {
+            let _ = session.install_compiled_project_root(project.root);
+        }
         persistence.activate(&candidate);
         set_persistence_status(
             session,
@@ -903,7 +946,11 @@ fn autosave_recovery_at(
         return;
     }
 
-    match persistence.persist(&session.effect, session.source_path.as_deref()) {
+    match persistence.persist_with_materials(
+        &session.effect,
+        session.source_path.as_deref(),
+        &session.material_drafts,
+    ) {
         Ok(_) => {
             state.written_revision = Some(revision);
             state.first_unwritten_edit = None;
@@ -1344,8 +1391,12 @@ fn save_session(
     session: &mut EditorSession,
     save_as: bool,
     localizer: &Localizer,
-    effect_root: &Path,
+    catalog: &mut ProjectEffectCatalog,
 ) -> bool {
+    if let Err(error) = catalog.material_drafts.preflight() {
+        set_persistence_status(session, localizer, PersistenceStatus::SaveFailed(error));
+        return false;
+    }
     if !save_as && session.source_path.is_some() {
         let path = session
             .source_path
@@ -1353,11 +1404,12 @@ fn save_session(
             .unwrap()
             .display()
             .to_string();
-        return match session.save() {
-            Ok(()) => {
-                set_persistence_status(session, localizer, PersistenceStatus::Saved(path));
-                true
-            }
+        return match if session.effect_is_dirty() {
+            session.save()
+        } else {
+            Ok(())
+        } {
+            Ok(()) => finish_material_save(session, catalog, localizer, path),
             Err(error) => {
                 set_persistence_status(
                     session,
@@ -1373,7 +1425,7 @@ fn save_session(
     let mut dialog = FileDialog::new()
         .add_filter(localizer.text("persistence-file-filter-effect"), &["ron"])
         .set_file_name(file_name)
-        .set_directory(effect_root);
+        .set_directory(catalog.effect_root());
     if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
         dialog = dialog.set_directory(directory);
     }
@@ -1383,15 +1435,38 @@ fn save_session(
     };
     let display_path = path.display().to_string();
     match session.save_as(path) {
+        Ok(()) => finish_material_save(session, catalog, localizer, display_path),
+        Err(error) => {
+            set_persistence_status(
+                session,
+                localizer,
+                PersistenceStatus::SaveFailed(error.to_string()),
+            );
+            false
+        }
+    }
+}
+
+fn finish_material_save(
+    session: &mut EditorSession,
+    catalog: &mut ProjectEffectCatalog,
+    localizer: &Localizer,
+    path: String,
+) -> bool {
+    let result = catalog.save_material_drafts();
+    session.set_material_drafts(catalog.material_drafts.clone());
+    match result {
         Ok(()) => {
-            set_persistence_status(session, localizer, PersistenceStatus::Saved(display_path));
+            set_persistence_status(session, localizer, PersistenceStatus::Saved(path));
             true
         }
         Err(error) => {
             set_persistence_status(
                 session,
                 localizer,
-                PersistenceStatus::SaveFailed(error.to_string()),
+                PersistenceStatus::SaveFailed(format!(
+                    "The effect is saved. Some material changes remain unsaved: {error}"
+                )),
             );
             false
         }
@@ -1443,6 +1518,115 @@ mod tests {
     use super::*;
     use crate::menus::MenuKind;
     use crate::test_support;
+
+    fn pending_material_edit(
+        root: &Path,
+    ) -> (
+        EditorSession,
+        ProjectEffectCatalog,
+        aestra_core::material::MaterialProgram,
+    ) {
+        let effect_path = root.join("effect.aestra.ron");
+        let program_path = root.join("program.aestra.material.ron");
+        fs::write(&effect_path, crate::MATERIAL_GRAPH_LAB_EFFECT_SOURCE).unwrap();
+        fs::write(&program_path, crate::MATERIAL_GRAPH_LAB_PROGRAM_SOURCE).unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(root);
+        let mut session = test_support::session_with_timing_slack();
+        assert!(open_effect_path(
+            &mut session,
+            &effect_path,
+            &EditorSettings::default(),
+            &catalog,
+            &Localizer::new("en-US").unwrap()
+        ));
+        let original = aestra_core::material::MaterialProgram::load_ron(&program_path).unwrap();
+        let mut replacement = original.clone();
+        replacement.name = "Unsaved shared program".into();
+        crate::history::MaterialProgramEditHistory::default()
+            .execute_replacement(
+                &mut session,
+                &mut catalog,
+                "Rename program",
+                original,
+                replacement.clone(),
+            )
+            .unwrap();
+        (session, catalog, replacement)
+    }
+
+    #[test]
+    fn save_commits_material_only_changes_without_rewriting_the_clean_effect() {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut session, mut catalog, replacement) = pending_material_edit(directory.path());
+        assert!(session.dirty);
+        assert!(!session.effect_is_dirty());
+        assert!(document_action_requires_confirmation(
+            &session,
+            &EditorSettings::default()
+        ));
+        let path = directory.path().join("effect.aestra.ron");
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        assert!(save_session(
+            &mut session,
+            false,
+            &Localizer::new("en-US").unwrap(),
+            &mut catalog
+        ));
+        assert!(!session.dirty);
+        assert!(catalog.material_drafts.is_empty());
+        assert_eq!(
+            aestra_core::material::MaterialProgram::load_ron(
+                directory.path().join("program.aestra.material.ron")
+            )
+            .unwrap(),
+            replacement
+        );
+        assert_eq!(fs::metadata(path).unwrap().modified().unwrap(), modified);
+    }
+
+    #[test]
+    fn failed_navigation_keeps_material_drafts_and_discarded_new_document_drops_them() {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut session, mut catalog, _) = pending_material_edit(directory.path());
+        let original = fs::read(directory.path().join("program.aestra.material.ron")).unwrap();
+        let mut world = World::new();
+        let mut queue = bevy::ecs::world::CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, &world);
+        let mut workspace = CurvesState::default();
+        let mut recovery = RecoveryPersistence::for_test(directory.path().join("recovery"), None);
+        let mut autosave = AutosaveState::new(&session, true);
+        for action in [
+            DocumentAction::OpenCatalog(EffectAssetRef::new(aestra_core::EffectId::new())),
+            DocumentAction::New,
+        ] {
+            execute_protected_document_action(
+                action,
+                &mut commands,
+                &mut session,
+                &EditorSettings::default(),
+                &mut catalog,
+                &mut workspace,
+                &mut recovery,
+                &mut autosave,
+                &Localizer::new("en-US").unwrap(),
+                None,
+                None,
+            );
+            assert_eq!(
+                catalog.material_drafts.is_empty(),
+                action == DocumentAction::New
+            );
+            assert_eq!(
+                session.material_drafts.is_empty(),
+                action == DocumentAction::New
+            );
+        }
+        queue.apply(&mut world);
+        assert_eq!(
+            fs::read(directory.path().join("program.aestra.material.ron")).unwrap(),
+            original
+        );
+    }
 
     #[test]
     fn external_open_switches_to_its_material_project_only_after_success() {

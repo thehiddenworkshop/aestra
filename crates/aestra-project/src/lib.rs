@@ -905,10 +905,20 @@ impl ProjectAssetIndex {
         &self,
         root: &EffectAsset,
     ) -> Result<ResolvedEffectProject, ProjectDependencyReport> {
+        self.resolve_effect_project_with_materials(root, BTreeMap::new())
+    }
+
+    /// Resolves against unsaved material programs supplied by an authoring host. Overrides are
+    /// validated against every referencing instance, including nested effects.
+    pub fn resolve_effect_project_with_materials(
+        &self,
+        root: &EffectAsset,
+        programs: BTreeMap<MaterialProgramId, MaterialProgram>,
+    ) -> Result<ResolvedEffectProject, ProjectDependencyReport> {
         let mut resolver = DependencyResolver {
             index: self,
             resolved: BTreeMap::new(),
-            material_programs: BTreeMap::new(),
+            material_programs: programs,
             visiting: Vec::new(),
             visited: BTreeSet::new(),
             diagnostics: Vec::new(),

@@ -74,6 +74,7 @@ impl MaterialProgramEditHistory {
     ) -> Result<(), String> {
         let label = label.into();
         apply_material_program_replacement(session, catalog, &label, &before, &after)?;
+        session.set_material_drafts(catalog.material_drafts.clone());
         self.undo.push_back(MaterialProgramHistoryEntry {
             label,
             before,
@@ -98,6 +99,7 @@ impl MaterialProgramEditHistory {
     ) -> Result<(), String> {
         let label = label.into();
         apply_material_function_extraction(session, catalog, &label, &before, &after, &function)?;
+        session.set_material_drafts(catalog.material_drafts.clone());
         self.undo.push_back(MaterialProgramHistoryEntry {
             label,
             before,
@@ -132,6 +134,7 @@ impl MaterialProgramEditHistory {
         };
         match result {
             Ok(()) => {
+                session.set_material_drafts(catalog.material_drafts.clone());
                 let label = entry.label.clone();
                 self.redo.push(entry);
                 Ok(Some(label))
@@ -171,6 +174,7 @@ impl MaterialProgramEditHistory {
         };
         match result {
             Ok(()) => {
+                session.set_material_drafts(catalog.material_drafts.clone());
                 let label = entry.label.clone();
                 self.undo.push_back(entry);
                 Ok(Some(label))
@@ -815,7 +819,7 @@ mod tests {
             app.world().resource::<EditorSession>().effect.duration,
             changed_duration
         );
-        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), replacement);
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), original);
 
         app.world_mut().trigger(HistoryAction::Undo);
         app.update();
@@ -835,7 +839,7 @@ mod tests {
 
         app.world_mut().trigger(HistoryAction::Redo);
         app.update();
-        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), replacement);
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), original);
         assert_eq!(
             app.world()
                 .resource::<EditorSession>()
@@ -931,6 +935,16 @@ mod tests {
 
         history.redo(&mut session, &mut catalog).unwrap();
         assert_eq!(catalog.material_functions().unwrap(), vec![function]);
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), before);
+        assert!(session.dirty);
+        catalog.save_material_drafts().unwrap();
+        session.set_material_drafts(catalog.material_drafts.clone());
         assert_eq!(MaterialProgram::load_ron(&path).unwrap(), after);
+        history.undo(&mut session, &mut catalog).unwrap();
+        assert!(session.dirty);
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), after);
+        assert!(catalog.material_functions().unwrap().is_empty());
+        history.redo(&mut session, &mut catalog).unwrap();
+        assert!(catalog.material_drafts.is_empty());
     }
 }

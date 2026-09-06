@@ -10,9 +10,9 @@ use aestra_compiler::{
     EffectCompiler, MaterialCompiler, MaterialFunctionLibrary, MaterialPresetCatalog,
     MaterialPresetCategory, ProjectCompileError,
 };
-use aestra_core::material::{
-    MaterialFunction, MaterialFunctionRef, MaterialProgram, MaterialProgramRef,
-};
+#[cfg(test)]
+use aestra_core::material::MaterialProgramRef;
+use aestra_core::material::{MaterialFunction, MaterialProgram};
 use aestra_core::{
     AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectAsset,
     EffectAssetRef, EffectClip, EffectClipId, EffectId, EffectParameter, Emitter, EmitterId,
@@ -117,6 +117,7 @@ impl Plugin for EditorLibraryPlugin {
 pub(crate) struct ProjectEffectCatalog {
     index: ProjectAssetIndex,
     effect_root: PathBuf,
+    pub(crate) material_drafts: crate::material_drafts::MaterialDrafts,
 }
 
 fn sync_project_texture_root(
@@ -164,6 +165,7 @@ impl ProjectEffectCatalog {
         Self {
             index: ProjectAssetIndex::scan(project_root),
             effect_root: effect_root.as_ref().to_owned(),
+            material_drafts: default(),
         }
     }
 
@@ -225,8 +227,7 @@ impl ProjectEffectCatalog {
             .load_effect(reference)
             .map_err(|error| error.to_string())?;
         let project = self
-            .index
-            .resolve_effect_project(&source)
+            .resolve_project(&source)
             .map_err(|error| error.to_string())?;
         if project.effect(owner.id).is_some() {
             return Err("placing this effect would create a reference cycle".into());
@@ -261,19 +262,36 @@ impl ProjectEffectCatalog {
                 continue;
             }
             programs.push(
-                self.index
-                    .load_material_program(instance.program)
-                    .map_err(|error| error.to_string())?,
+                match self
+                    .material_drafts
+                    .programs
+                    .get(&instance.program.id())
+                    .and_then(|draft| draft.current.clone())
+                {
+                    Some(program) => program,
+                    None => self
+                        .index
+                        .load_material_program(instance.program)
+                        .map_err(|error| error.to_string())?,
+                },
             );
         }
         Ok(programs)
     }
 
     pub(crate) fn material_functions(&self) -> Result<Vec<MaterialFunction>, String> {
-        self.index
+        let mut functions = self
+            .index
             .load_material_functions()
-            .map(|functions| functions.into_values().collect())
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        for (id, draft) in &self.material_drafts.functions {
+            if let Some(function) = &draft.current {
+                functions.insert(*id, function.clone());
+            } else {
+                functions.remove(id);
+            }
+        }
+        Ok(functions.into_values().collect())
     }
 
     pub(crate) fn material_function_library(&self) -> Result<MaterialFunctionLibrary, String> {
@@ -293,27 +311,21 @@ impl ProjectEffectCatalog {
         &mut self,
         function: &MaterialFunction,
     ) -> Result<(), String> {
-        self.index
-            .create_material_function_source(function)
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+        self.material_drafts.create_function(&self.index, function)
     }
 
     pub(crate) fn delete_material_function(
         &mut self,
         function: &MaterialFunction,
     ) -> Result<(), String> {
-        self.index
-            .delete_material_function_source(MaterialFunctionRef::Project(function.id), function)
-            .map_err(|error| error.to_string())
+        self.material_drafts.delete_function(&self.index, function)
     }
 
     pub(crate) fn next_material_function_name(&self, base: &str) -> String {
-        let names = self
-            .index
-            .material_functions()
+        let functions = self.material_functions().unwrap_or_default();
+        let names = functions
             .iter()
-            .map(|entry| entry.display_name.as_str())
+            .map(|function| function.name.as_str())
             .collect::<BTreeSet<_>>();
         if !names.contains(base) {
             return base.to_owned();
@@ -329,23 +341,47 @@ impl ProjectEffectCatalog {
         expected: &MaterialProgram,
         replacement: &MaterialProgram,
     ) -> Result<(), String> {
-        let source = self
+        self.material_drafts
+            .replace_program(&self.index, expected, replacement)
+    }
+
+    fn resolve_project(
+        &self,
+        root: &EffectAsset,
+    ) -> Result<aestra_project::ResolvedEffectProject, aestra_project::ProjectDependencyReport>
+    {
+        let overrides = self
+            .material_drafts
+            .programs
+            .iter()
+            .filter_map(|(id, draft)| draft.current.clone().map(|program| (*id, program)))
+            .collect();
+        let mut resolved = self
             .index
-            .resolve_material_program(MaterialProgramRef::Project(expected.id))
-            .map_err(|error| error.to_string())?
-            .id;
-        self.index
-            .replace_material_program_source(source, expected, replacement)
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+            .resolve_effect_project_with_materials(root, overrides)?;
+        for (id, draft) in &self.material_drafts.functions {
+            if let Some(function) = &draft.current {
+                resolved.material_functions.insert(*id, function.clone());
+            } else {
+                resolved.material_functions.remove(id);
+            }
+        }
+        Ok(resolved)
+    }
+
+    pub(crate) fn save_material_drafts(&mut self) -> Result<(), String> {
+        let result = self.material_drafts.save();
+        self.index.refresh();
+        result
     }
 
     pub(crate) fn compile_project(
         &self,
         root: &EffectAsset,
     ) -> Result<CompiledEffectProject, String> {
-        EffectCompiler::default()
-            .compile_project(root, &self.index)
+        self.resolve_project(root)
+            .map_err(ProjectCompileError::Dependencies)
+            .and_then(|resolved| EffectCompiler::default().compile_resolved_project(&resolved))
             .map_err(|error| match error {
                 ProjectCompileError::Dependencies(report) => report
                     .diagnostics
@@ -365,7 +401,7 @@ impl ProjectEffectCatalog {
 
     pub(crate) fn dependency_validation_report(&self, effect: &EffectAsset) -> ValidationReport {
         let mut validation = ValidationReport::default();
-        let Err(report) = self.index.resolve_effect_project(effect) else {
+        let Err(report) = self.resolve_project(effect) else {
             return validation;
         };
         for diagnostic in report
@@ -501,6 +537,7 @@ impl ProjectEffectCatalog {
         Self {
             index: ProjectAssetIndex::from_entries("virtual", entries),
             effect_root: PathBuf::from("virtual"),
+            material_drafts: default(),
         }
     }
 }

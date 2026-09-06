@@ -3369,6 +3369,40 @@ pub(crate) fn spawn_material_graph_workspace(
                 );
                 return;
             };
+            if session.effect.material_instances.iter().any(|material| {
+                material.id == instance
+                    && matches!(
+                        material.program,
+                        aestra_core::material::MaterialProgramRef::Project(_)
+                    )
+            }) {
+                let state = if catalog
+                    .material_drafts
+                    .programs
+                    .contains_key(&projection.program)
+                {
+                    "save-state-unsaved"
+                } else {
+                    "save-state-saved"
+                };
+                panel.spawn((
+                    Text::new(format!(
+                        "{} · {}\n{}",
+                        localizer.text("save-shared-material"),
+                        localizer.text(state),
+                        localizer.text("save-shared-material-description")
+                    )),
+                    TextFont {
+                        font_size: FontSize::Px(11.0),
+                        ..default()
+                    },
+                    TextColor(theme::TEXT),
+                    Node {
+                        margin: UiRect::all(Val::Px(8.0)),
+                        ..default()
+                    },
+                ));
+            }
             let layout = layout_graph(&projection, previews);
             let graph_key = material_graph_view_key(projection.program);
             let selection_bounds = selected_graph_node_bounds(
@@ -5760,7 +5794,7 @@ mod tests {
     }
 
     #[test]
-    fn graph_extraction_persists_a_function_and_recompiles_the_call() {
+    fn graph_extraction_stages_a_function_and_recompiles_the_call() {
         let temporary = tempfile::tempdir().unwrap();
         let path = temporary.path().join("extract.aestra.material.ron");
         let effect =
@@ -5800,7 +5834,13 @@ mod tests {
                 .iter()
                 .any(|candidate| candidate.id == function)
         );
-        let replacement = MaterialProgram::load_ron(&path).unwrap();
+        assert_eq!(MaterialProgram::load_ron(&path).unwrap(), program);
+        let replacement = catalog
+            .material_programs_for_effect(&session.effect)
+            .unwrap()
+            .into_iter()
+            .find(|candidate| candidate.id == program.id)
+            .unwrap();
         assert!(matches!(
             replacement
                 .expressions

@@ -9,8 +9,13 @@ file-open-project = Ouvrir un projet…
 project-open-title = Choisir un dossier de projet ou de ressources
 project-active = PROJET ACTIF
 project-opened = Projet ouvert. Sélectionnez un effet dans la bibliothèque ou enregistrez un nouvel effet dans ce projet.
-file-save = Enregistrer
-file-save-as = Enregistrer sous…
+file-save = Enregistrer toutes les modifications
+file-save-as = Enregistrer l’effet sous…
+save-state-saved = Enregistré
+save-state-unsaved = Non enregistré
+save-status = Effet : { $effect } · Matériaux partagés : { $count } non enregistrés
+save-shared-material = PROGRAMME DE MATÉRIAU PARTAGÉ
+save-shared-material-description = Enregistrer modifie ce programme pour tous les effets qui l’utilisent. Enregistrer l’effet sous enregistre aussi les matériaux partagés, sans créer de copies privées.
 file-settings = Paramètres
 file-exit = Quitter
 
@@ -108,7 +113,7 @@ dock-relation-after = après
 
 persistence-file-filter-effect = Effet Aestra
 persistence-dialog-unsaved-title = Modifications non enregistrées
-persistence-dialog-unsaved-description = Ignorer les modifications non enregistrées de l’effet courant ?
+persistence-dialog-unsaved-description = Enregistrer conserve l’effet et les modifications des matériaux partagés. Abandonner annule toutes les modifications non enregistrées. Les ressources partagées déjà enregistrées sont conservées.
 persistence-dialog-recovery-title = Récupérer l’effet non enregistré
 persistence-dialog-recovery-description = Un instantané de récupération plus récent a été trouvé pour {$source}. Le restaurer pour reprendre le travail non enregistré ? Refuser supprime l’instantané.
 persistence-dialog-recovery-unsaved-source = un effet non enregistré

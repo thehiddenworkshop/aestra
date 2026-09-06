@@ -1424,6 +1424,7 @@ fn spawn_semantic_material_controls(
     catalog: &ProjectEffectCatalog,
     inspector: &MaterialStackInspectorState,
     asset_server: &AssetServer,
+    localizer: &Localizer,
 ) -> Result<bool, String> {
     let Some(instance) = session
         .effect
@@ -1446,6 +1447,21 @@ fn spawn_semantic_material_controls(
         .map_err(|error| error.to_string())?;
 
     spawn_properties_read_only_control(parent, "Material", &controls.name);
+    if matches!(
+        instance.program,
+        aestra_core::material::MaterialProgramRef::Project(_)
+    ) {
+        let state = if catalog.material_drafts.programs.contains_key(&program.id) {
+            "save-state-unsaved"
+        } else {
+            "save-state-saved"
+        };
+        spawn_properties_read_only_control(
+            parent,
+            &localizer.text("save-shared-material"),
+            &localizer.text(state),
+        );
+    }
     spawn_semantic_material_stack(parent, program, &stack, inspector, catalog);
     for descriptor in &controls.parameters {
         spawn_semantic_material_parameter(parent, descriptor, instance.id, session, asset_server);
@@ -2538,6 +2554,7 @@ pub(super) fn spawn_renderer_card(
     collapsed: bool,
     material_stack_inspector: &MaterialStackInspectorState,
     asset_server: &AssetServer,
+    localizer: &Localizer,
 ) {
     let display_name = match renderer.properties {
         RendererProperties::Ribbon { .. } => "Ribbon Renderer",
@@ -2716,6 +2733,7 @@ pub(super) fn spawn_renderer_card(
                 catalog,
                 material_stack_inspector,
                 asset_server,
+                localizer,
             ) {
                 Ok(true) => {
                     spawn_inline_diagnostics(card, diagnostic_path, session);

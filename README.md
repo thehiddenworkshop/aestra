@@ -38,6 +38,18 @@ switches only after dependencies compile successfully. For other folder layouts,
 the project root explicitly before opening the effect. Project selection lasts for the
 current editor session.
 
+Effect edits, shared material-program edits, and extracted material functions remain
+unsaved until **Save All Changes** (`Ctrl+S`). The status bar separates effect state from
+pending shared-material changes. Material Graph identifies shared programs explicitly:
+saving one updates every effect that uses it. **Save Effect As…** also saves pending shared
+materials; it does not duplicate them. Discard abandons unsaved effect and material changes,
+while already saved changes remain on disk. Undo after Save creates new unsaved changes.
+
+Recovery snapshots include material drafts and their original source bytes. Save checks
+all material sources for external changes before writing. Files are saved atomically one
+at a time; an I/O failure reports remaining unsaved changes, which can be retried without
+reverting files already saved.
+
 ## Workspace
 
 ```text

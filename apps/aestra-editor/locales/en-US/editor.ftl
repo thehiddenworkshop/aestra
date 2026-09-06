@@ -9,8 +9,13 @@ file-open-project = Open Project…
 project-open-title = Choose a project or asset folder
 project-active = ACTIVE PROJECT
 project-opened = Project opened. Select an effect in the Library, or save a new effect in this project.
-file-save = Save
-file-save-as = Save As…
+file-save = Save All Changes
+file-save-as = Save Effect As…
+save-state-saved = Saved
+save-state-unsaved = Unsaved
+save-status = Effect: { $effect } · Shared materials: { $count } unsaved
+save-shared-material = SHARED MATERIAL PROGRAM
+save-shared-material-description = Save writes this program for every effect that uses it. Save Effect As also saves shared material changes; it does not create private copies.
 file-settings = Settings
 file-exit = Exit
 
@@ -108,7 +113,7 @@ dock-relation-after = after
 
 persistence-file-filter-effect = Aestra effect
 persistence-dialog-unsaved-title = Unsaved changes
-persistence-dialog-unsaved-description = Discard the unsaved changes to the current effect?
+persistence-dialog-unsaved-description = Save writes the effect and pending shared material changes. Discard abandons all unsaved changes. Changes already saved to shared assets are kept.
 persistence-dialog-recovery-title = Recover unsaved effect
 persistence-dialog-recovery-description = A newer recovery snapshot was found for {$source}. Restore it to continue the unsaved work? Declining discards the snapshot.
 persistence-dialog-recovery-unsaved-source = an unsaved effect

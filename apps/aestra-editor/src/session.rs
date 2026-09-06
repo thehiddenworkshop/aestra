@@ -65,6 +65,7 @@ pub(crate) struct EditorSession {
     pub playing: bool,
     pub speed: f32,
     pub dirty: bool,
+    pub(crate) material_drafts: crate::material_drafts::MaterialDrafts,
     pub status: String,
     pub samples: Vec<aestra_runtime::ParticleSample>,
     pub preview: Option<EffectInstance>,
@@ -111,6 +112,7 @@ impl EditorSession {
             playing: true,
             speed: 1.0,
             dirty: false,
+            material_drafts: Default::default(),
             status,
             samples: Vec::with_capacity(384),
             preview: Some(preview),
@@ -448,6 +450,7 @@ impl EditorSession {
     }
 
     pub fn new_effect(&mut self) {
+        self.material_drafts = Default::default();
         self.interaction_source = None;
         self.saved_source_bytes = None;
         self.effect = blank_effect();
@@ -526,6 +529,7 @@ impl EditorSession {
     }
 
     fn install_open_document(&mut self, path: &Path, effect: EffectAsset, preview: EffectInstance) {
+        self.material_drafts = Default::default();
         self.interaction_source = None;
         self.saved_source_bytes = std::fs::read(path).ok();
         self.saved_effect = Some(effect.clone());
@@ -549,6 +553,7 @@ impl EditorSession {
     }
 
     pub fn restore_recovery(&mut self, effect: EffectAsset, source_path: Option<PathBuf>) {
+        self.material_drafts = Default::default();
         self.interaction_source = None;
         self.saved_source_bytes = source_path
             .as_deref()
@@ -2328,10 +2333,23 @@ impl EditorSession {
     }
 
     fn update_dirty_state(&mut self) {
-        self.dirty = self
-            .saved_effect
+        self.dirty = !self.material_drafts.is_empty()
+            || self
+                .saved_effect
+                .as_ref()
+                .is_none_or(|saved| saved != &self.effect);
+    }
+
+    pub(crate) fn set_material_drafts(&mut self, drafts: crate::material_drafts::MaterialDrafts) {
+        self.material_drafts = drafts;
+        self.update_dirty_state();
+        self.ui_revision += 1;
+    }
+
+    pub(crate) fn effect_is_dirty(&self) -> bool {
+        self.saved_effect
             .as_ref()
-            .is_none_or(|saved| saved != &self.effect);
+            .is_none_or(|saved| saved != &self.effect)
     }
 }
 

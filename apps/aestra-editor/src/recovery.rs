@@ -11,7 +11,7 @@ use tempfile::NamedTempFile;
 
 use crate::settings::config_dir;
 
-const RECOVERY_FORMAT_VERSION: u32 = 1;
+const RECOVERY_FORMAT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -20,6 +20,8 @@ struct RecoverySnapshot {
     saved_at_unix_millis: u64,
     source_path: Option<PathBuf>,
     effect: EffectAsset,
+    #[serde(default)]
+    material_drafts: crate::material_drafts::MaterialDrafts,
 }
 
 #[derive(Debug)]
@@ -30,6 +32,9 @@ pub(crate) struct RecoveryCandidate {
 }
 
 impl RecoveryCandidate {
+    pub(crate) fn material_drafts(&self) -> &crate::material_drafts::MaterialDrafts {
+        &self.snapshot.material_drafts
+    }
     pub(crate) fn effect(&self) -> &EffectAsset {
         &self.snapshot.effect
     }
@@ -104,16 +109,27 @@ impl RecoveryPersistence {
         self.active_path = Some(candidate.path.clone());
     }
 
+    #[cfg(test)]
     pub(crate) fn persist(
         &mut self,
         effect: &EffectAsset,
         source_path: Option<&Path>,
+    ) -> io::Result<PathBuf> {
+        self.persist_with_materials(effect, source_path, &Default::default())
+    }
+
+    pub(crate) fn persist_with_materials(
+        &mut self,
+        effect: &EffectAsset,
+        source_path: Option<&Path>,
+        material_drafts: &crate::material_drafts::MaterialDrafts,
     ) -> io::Result<PathBuf> {
         let snapshot = RecoverySnapshot {
             version: RECOVERY_FORMAT_VERSION,
             saved_at_unix_millis: unix_millis(SystemTime::now()),
             source_path: source_path.map(Path::to_owned),
             effect: effect.clone(),
+            material_drafts: material_drafts.clone(),
         };
         let source = ron::ser::to_string_pretty(&snapshot, ron::ser::PrettyConfig::default())
             .map_err(io::Error::other)?;
@@ -170,7 +186,7 @@ fn is_recovery_path(path: &Path) -> bool {
 fn load_candidate(path: &Path) -> io::Result<RecoveryCandidate> {
     let source = fs::read_to_string(path)?;
     let snapshot: RecoverySnapshot = ron::from_str(&source).map_err(io::Error::other)?;
-    if snapshot.version != RECOVERY_FORMAT_VERSION {
+    if snapshot.version != 1 && snapshot.version != RECOVERY_FORMAT_VERSION {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
@@ -198,6 +214,9 @@ fn load_candidate(path: &Path) -> io::Result<RecoveryCandidate> {
 }
 
 fn candidate_is_newer_than_source(candidate: &RecoveryCandidate) -> bool {
+    if !candidate.material_drafts().is_empty() {
+        return true;
+    }
     let Some(source_path) = candidate.source_path() else {
         return true;
     };
@@ -242,6 +261,46 @@ fn remove_if_present(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovery_retains_unsaved_materials_and_their_conflict_baselines() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("program.aestra.material.ron");
+        let original = aestra_core::material::MaterialProgram::additive_sprite("Original");
+        original.save_ron(&path).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        let mut changed = original.clone();
+        changed.name = "Recovered draft".into();
+        let mut drafts = crate::material_drafts::MaterialDrafts::default();
+        drafts
+            .replace_program(
+                &aestra_project::ProjectAssetIndex::scan(temporary.path()),
+                &original,
+                &changed,
+            )
+            .unwrap();
+        let mut persistence =
+            RecoveryPersistence::for_test(temporary.path().join("recovery"), None);
+        let snapshot = persistence
+            .persist_with_materials(&EffectAsset::new("Recovery", 1.0), None, &drafts)
+            .unwrap();
+        let recovered = load_candidate(&snapshot).unwrap();
+        assert_eq!(recovered.material_drafts().count(), 1);
+        assert!(recovered.material_drafts().validate_root(temporary.path()));
+        assert_eq!(
+            recovered.material_drafts().programs[&original.id]
+                .current
+                .as_ref(),
+            Some(&changed.normalized())
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        fs::write(
+            &path,
+            format!("// external\n{}", String::from_utf8(bytes).unwrap()),
+        )
+        .unwrap();
+        assert!(recovered.material_drafts().preflight().is_err());
+    }
     use std::thread;
     use std::time::Duration;
 
@@ -345,6 +404,7 @@ mod tests {
                 saved_at_unix_millis: unix_millis(SystemTime::now()),
                 source_path: None,
                 effect: EffectAsset::new("Discarded recovery", 1.0),
+                material_drafts: Default::default(),
             },
             modified: SystemTime::now(),
         };

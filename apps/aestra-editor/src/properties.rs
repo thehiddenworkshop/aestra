@@ -5951,6 +5951,7 @@ pub(crate) fn spawn_properties(
                                     properties_renderer_collapsed(settings, renderer),
                                     material_stack_inspector,
                                     asset_server,
+                                    localizer,
                                 );
                             }
                             spawn_stage_diagnostics(

@@ -38,7 +38,11 @@ impl Plugin for EditorShellPlugin {
                     (apply_editor_fonts, keyboard_shortcuts, handle_buttons)
                         .chain()
                         .in_set(EditorSet::PreViewport),
-                    (update_editor_labels, sync_global_source_navigation)
+                    (
+                        update_editor_labels,
+                        sync_global_source_navigation,
+                        sync_document_save_status,
+                    )
                         .in_set(EditorSet::MainUpdate),
                     (remember_scroll_positions, stage_editor_ui_rebuild)
                         .chain()
@@ -649,7 +653,52 @@ fn spawn_status_bar(
 ) {
     parent
         .spawn(feathers::status_bar::status_bar())
-        .with_children(|bar| spawn_compile_status(bar, session, localizer));
+        .with_children(|bar| {
+            spawn_compile_status(bar, session, localizer);
+            bar.spawn((
+                Text::new(document_save_status(session, localizer)),
+                DocumentSaveStatus,
+                TextFont {
+                    font_size: FontSize::Px(11.0),
+                    ..default()
+                },
+                TextColor(theme::TEXT),
+                Node {
+                    margin: UiRect::left(Val::Px(16.0)),
+                    ..default()
+                },
+            ));
+        });
+}
+
+#[derive(Component)]
+struct DocumentSaveStatus;
+
+fn document_save_status(session: &EditorSession, localizer: &Localizer) -> String {
+    let mut args = fluent_bundle::FluentArgs::new();
+    args.set(
+        "effect",
+        localizer.text(if session.effect_is_dirty() {
+            "save-state-unsaved"
+        } else {
+            "save-state-saved"
+        }),
+    );
+    args.set("count", session.material_drafts.count() as i64);
+    localizer.text_with("save-status", &args)
+}
+
+fn sync_document_save_status(
+    session: Res<EditorSession>,
+    localizer: Res<Localizer>,
+    mut labels: Query<&mut Text, With<DocumentSaveStatus>>,
+) {
+    if !session.is_changed() && !localizer.is_changed() {
+        return;
+    }
+    for mut text in &mut labels {
+        text.0 = document_save_status(&session, &localizer);
+    }
 }
 
 pub(crate) fn properties_action_button<A: Component>(
