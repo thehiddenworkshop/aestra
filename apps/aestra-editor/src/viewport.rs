@@ -488,6 +488,7 @@ struct DesiredPreviewInstance {
     time: f32,
     seed: u64,
     transform: Transform,
+    inherited: Arc<aestra_runtime::InheritedHostTransform>,
     parameter_overrides: Vec<CompiledParameterOverride>,
 }
 
@@ -2543,29 +2544,21 @@ fn desired_preview_instances(
             time,
             seed,
             transform: Transform::IDENTITY,
+            inherited: Arc::default(),
             parameter_overrides: Vec::new(),
         });
     }
-    let hierarchy_time = playback_phase(&project.root, time);
     collect_effect_clip_instances(
         project,
         &project.root,
         timeline,
-        hierarchy_time,
+        time,
         seed,
-        Transform::IDENTITY,
+        Arc::default(),
         &mut path,
         &mut desired,
     );
     desired
-}
-
-fn playback_phase(effect: &CompiledEffect, time: f32) -> f32 {
-    if effect.playback_mode.is_looping() && effect.duration > 0.0 {
-        time.rem_euclid(effect.duration)
-    } else {
-        time.clamp(0.0, effect.duration.max(0.0))
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2575,7 +2568,7 @@ fn collect_effect_clip_instances(
     timeline: &TimelineState,
     parent_time: f32,
     parent_seed: u64,
-    parent_transform: Transform,
+    inherited: Arc<aestra_runtime::InheritedHostTransform>,
     path: &mut Vec<EffectClipId>,
     desired: &mut Vec<DesiredPreviewInstance>,
 ) {
@@ -2597,59 +2590,55 @@ fn collect_effect_clip_instances(
         } else {
             (clip.start_time, clip.source_offset, clip.duration)
         };
-        let Some(child_time) =
-            map_effect_clip_time(parent_time, start_time, source_offset, duration, child)
+        let mut timing = clip.clone();
+        timing.start_time = start_time;
+        timing.source_offset = source_offset;
+        timing.duration = duration;
+        let Some((child_time, parent_offset)) =
+            timing.map_instance_time(parent_time, effect, child)
         else {
             continue;
         };
         let seed = clip.seed.resolve(parent_seed, clip.source_clip);
-        let local_transform = bevy_transform_from_emitter(clip.transform);
-        let transform =
-            Transform::from_matrix(parent_transform.to_matrix() * local_transform.to_matrix());
+        let child_inherited = Arc::new(inherited.for_child(
+            effect.host_transform_track.clone(),
+            clip.transform,
+            parent_offset,
+        ));
         path.push(clip.source_clip);
         desired.push(DesiredPreviewInstance {
             path: path.clone(),
             effect: child.clone(),
             time: child_time,
             seed,
-            transform,
+            transform: Transform::IDENTITY,
+            inherited: child_inherited.clone(),
             parameter_overrides: clip.parameter_overrides.clone(),
         });
         collect_effect_clip_instances(
-            project, child, timeline, child_time, seed, transform, path, desired,
+            project,
+            child,
+            timeline,
+            child_time,
+            seed,
+            child_inherited,
+            path,
+            desired,
         );
         path.pop();
     }
 }
 
-fn map_effect_clip_time(
-    parent_time: f32,
-    start_time: f32,
-    source_offset: f32,
-    duration: f32,
-    child: &CompiledEffect,
-) -> Option<f32> {
-    let elapsed = parent_time - start_time;
-    if elapsed < 0.0 || elapsed > duration {
-        return None;
-    }
-    let local = source_offset + elapsed;
-    Some(
-        if child.playback_mode.is_looping() && child.duration > 0.0 {
-            local.rem_euclid(child.duration)
-        } else {
-            local.clamp(0.0, child.duration.max(0.0))
-        },
-    )
-}
-
 fn spawn_preview_instance(commands: &mut Commands, desired: DesiredPreviewInstance) {
-    let player = configured_preview_instance(
+    let mut player = configured_preview_instance(
         desired.effect,
         desired.time,
         desired.seed,
         &desired.parameter_overrides,
     );
+    player
+        .instance
+        .set_inherited_host_transform(desired.inherited);
     commands.spawn((
         PreviewPresentedEffect,
         PreviewEffectInstancePath(desired.path),
@@ -2709,6 +2698,9 @@ fn sync_rendered_preview(
             }
         }
 
+        player
+            .instance
+            .set_inherited_host_transform(instance.inherited);
         if player.instance.seed() != instance.seed {
             player.instance.set_seed(instance.seed);
         }
@@ -3490,7 +3482,16 @@ mod tests {
         assert_eq!(active[1].effect.source, child.id);
         assert!((active[1].time - 0.35).abs() < 0.000_1);
         assert_eq!(active[1].seed, 77);
-        assert_eq!(active[1].transform.translation, Vec3::new(5.0, 2.0, -1.0));
+        let context = aestra_runtime::HostTransformContext {
+            motion: active[1].effect.host_transform_track.clone(),
+            inherited: active[1].inherited.clone(),
+        };
+        assert_eq!(
+            Mat4::from_cols_array(&context.matrix_at(active[1].time))
+                .w_axis
+                .truncate(),
+            Vec3::new(5.0, 2.0, -1.0)
+        );
         assert_eq!(active[1].parameter_overrides.len(), 1);
         let player = configured_preview_instance(
             active[1].effect.clone(),
@@ -3507,6 +3508,54 @@ mod tests {
         assert_eq!(repeated.len(), 2);
         assert_eq!(repeated[0].time, 2.75);
         assert!((repeated[1].time - 0.35).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn nested_preview_matches_reference_motion_across_parent_loops_and_retiming() {
+        let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let mut root = aestra_core::EffectAsset::load_ron(
+            assets.join("effects/nested_moving_trail_lab.aestra.ron"),
+        )
+        .unwrap();
+        let catalog = ProjectEffectCatalog::scan(&assets);
+        let timeline = TimelineState::framed(root.duration);
+        let mut previous_context = None;
+        for offset in [0.75, 1.0] {
+            root.effect_clips[0].source_offset = offset;
+            let project = Arc::new(catalog.compile_project(&root).unwrap());
+            let preview = EditorPreviewProject {
+                source_root: Some(project.root.clone()),
+                project: Some(project.clone()),
+                ..default()
+            };
+            for time in [1.0, 3.0, 5.0, 7.0, 9.0, 1.0] {
+                let desired = desired_preview_instances(&preview, &timeline, time, 23);
+                let leaf = desired.last().unwrap();
+                assert_eq!(leaf.path.len(), 2);
+                assert_eq!(leaf.transform, Transform::IDENTITY);
+                let context = aestra_runtime::HostTransformContext {
+                    motion: leaf.effect.host_transform_track.clone(),
+                    inherited: leaf.inherited.clone(),
+                };
+                let mut samples = Vec::new();
+                project.evaluate(time, 23, &mut samples);
+                assert!(!samples.is_empty());
+                for sample in samples {
+                    assert_eq!(sample.instance_path, leaf.path);
+                    assert_eq!(sample.world_from_effect, context.matrix_at(leaf.time));
+                }
+                if time == 1.0 && offset == 1.0 {
+                    assert_ne!(
+                        previous_context.as_ref(),
+                        Some(&context),
+                        "retiming changes replay ancestry"
+                    );
+                }
+                if offset == 0.75 {
+                    previous_context = Some(context);
+                }
+            }
+        }
     }
 
     #[test]

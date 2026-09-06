@@ -610,7 +610,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
   drag previews, endpoint guards and Escape cancellation. Scalar sampling, emission integration,
   compiled artifacts and GPU packing carry the same interpolation choice; rotation retains
   shortest-arc interpolation. Viewport gizmos update only affected channels.
-  Arbitrary per-particle ribbon-ID authoring, composed parent/clip trajectories, unrecorded live-motion replay,
+  Nested clips now inherit historical parent motion through an immutable clock-mapped
+  transform chain. Continuous child clocks stay unwrapped; clip scheduling retains parent
+  phase. CPU/GPU presentation and bounds preserve full affine composition, including shear;
+  trail replay samples all ancestors at each observation. Ancestor track, placement and
+  timing edits invalidate checkpoints, while equivalent contexts preserve them.
+  Nested Moving Trail Lab exercises two levels of animated clips; clock, project/editor
+  composition, history invalidation and native trail replay tests cover the contract.
+  Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 
 The first release gate is the two-texture animated additive-flame slice: stable IDs and normalized

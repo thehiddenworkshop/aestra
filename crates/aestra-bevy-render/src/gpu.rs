@@ -1026,6 +1026,15 @@ fn update_gpu_inputs(
 fn install_visibility_updates(app: &mut App) {
     app.add_systems(
         PostUpdate,
+        sync_host_motion_draw_globals
+            .after(bevy::transform::TransformSystems::Propagate)
+            .before(bounds::sync_mesh_bounds)
+            .before(ribbon_bounds::sync_ribbon_bounds)
+            .before(wireframe::prepare_wireframe_geometry)
+            .before(sync_gpu_render_transforms),
+    );
+    app.add_systems(
+        PostUpdate,
         sync_host_motion_draw_transforms.before(bevy::transform::TransformSystems::Propagate),
     );
     app.add_systems(
@@ -1054,6 +1063,24 @@ struct HostMotionDraw;
 #[derive(Component)]
 struct HostMotionReplayCulling;
 
+fn sync_host_motion_draw_globals(
+    players: Query<(&PresentedEffect, &GlobalTransform), Without<HostMotionDraw>>,
+    mut draws: Query<(&ChildOf, &mut GlobalTransform), With<HostMotionDraw>>,
+) {
+    for (parent, mut global) in &mut draws {
+        if let Ok((player, placement)) = players.get(parent.parent()) {
+            let matrix = Mat4::from(placement.affine())
+                * Mat4::from_cols_array(
+                    &player
+                        .instance
+                        .host_transform_context()
+                        .matrix_at(player.simulation_time()),
+                );
+            global.set_if_neq(GlobalTransform::from(matrix));
+        }
+    }
+}
+
 // During a bounded multi-frame seek the processed pose can lag the requested pose.
 // Do not cull mixed sprite/mesh/ribbon draws at the future pose. Trails have their
 // own per-camera world-history culling; ordinary bounds resume when motion is removed.
@@ -1072,7 +1099,7 @@ fn sync_host_motion_replay_culling(
 ) {
     for (entity, parent, draw, uncullable, was_forced, ribbon) in &draws {
         let forced = players.get(parent.parent()).is_ok_and(|(player, gpu)| {
-            gpu.has_trails && player.instance.host_transform_track().is_some()
+            gpu.has_trails && !player.instance.host_transform_context().is_identity()
         });
         if forced {
             if !uncullable || !was_forced {
@@ -1099,9 +1126,12 @@ fn sync_host_motion_draw_transforms(
 ) {
     for (parent, mut transform) in &mut draws {
         if let Ok(player) = players.get(parent.parent()) {
-            let desired = crate::host_transform::transform(
-                player.instance.host_transform_at(player.simulation_time()),
-            );
+            let desired = Transform::from_matrix(Mat4::from_cols_array(
+                &player
+                    .instance
+                    .host_transform_context()
+                    .matrix_at(player.simulation_time()),
+            ));
             if *transform != desired {
                 *transform = desired;
             }
@@ -1117,14 +1147,19 @@ fn sync_gpu_render_transforms(
     for (player, transform, mut gpu) in &mut players {
         let placement = Mat4::from(transform.affine());
         let world = placement
-            * crate::host_transform::matrix(
-                player.instance.host_transform_at(player.simulation_time()),
+            * Mat4::from_cols_array(
+                &player
+                    .instance
+                    .host_transform_context()
+                    .matrix_at(player.simulation_time()),
             );
         gpu.simulation_time = player.simulation_time();
         gpu.history_epoch = player.instance.history_epoch();
         if gpu.has_trails {
             let seed = player.instance.seed();
             let revision = player.instance.history_revision();
+            let context = player.instance.host_transform_context();
+            let motion = (!context.is_identity()).then(|| Arc::new(context));
             let mut key = [0; 22];
             key[..6].copy_from_slice(&[
                 seed as u32,
@@ -1142,13 +1177,12 @@ fn sync_gpu_render_transforms(
             if let Some(data) = buffers.get(&gpu.emitters).and_then(|b| b.data.as_ref())
                 && (gpu.checkpoint_context.key != key
                     || gpu.checkpoint_context.emitters != *data
-                    || gpu.checkpoint_context.motion.as_ref()
-                        != player.instance.host_transform_track())
+                    || gpu.checkpoint_context.motion != motion)
             {
                 gpu.checkpoint_context = Arc::new(trail_checkpoints::TrailContext {
                     emitters: data.clone(),
                     key,
-                    motion: player.instance.host_transform_track().cloned(),
+                    motion,
                 });
             }
         }
@@ -1854,7 +1888,23 @@ mod tests {
             .get_mut::<PresentedEffect>(player)
             .unwrap()
             .instance
-            .set_host_transform_track(Some(Arc::new(track)));
+            .set_host_transform_track(Some(Arc::new(track.clone())));
+        let clip = aestra_core::EmitterTransform {
+            rotation: Quat::from_rotation_z(0.7).to_array(),
+            scale: [2.0, 0.5, 1.0],
+            ..default()
+        };
+        app.world_mut()
+            .get_mut::<PresentedEffect>(player)
+            .unwrap()
+            .instance
+            .set_inherited_host_transform(Arc::new(
+                aestra_runtime::InheritedHostTransform::default().for_child(
+                    Some(Arc::new(track.clone())),
+                    clip,
+                    0.25,
+                ),
+            ));
         for time in [0.0, 0.5, 1.0, 0.25, 0.25] {
             app.world_mut()
                 .get_mut::<PresentedEffect>(player)
@@ -1870,7 +1920,10 @@ mod tests {
                 .unwrap()
                 .instance
                 .host_transform_at(time);
-            let expected = placement * crate::host_transform::matrix(pose);
+            let expected = placement
+                * crate::host_transform::matrix(track.sample(time + 0.25))
+                * crate::host_transform::matrix(clip)
+                * crate::host_transform::matrix(pose);
             let actual = Mat4::from(app.world().get::<GlobalTransform>(draw).unwrap().affine());
             assert!(actual.abs_diff_eq(expected, 1e-5));
             let bytes = app

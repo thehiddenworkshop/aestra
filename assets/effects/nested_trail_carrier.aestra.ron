@@ -1,0 +1,21 @@
+(
+    format_version: 3,
+    id: "a3574a00-0000-4000-8000-00000000d501",
+    name: "Nested Trail Carrier",
+    duration: 4.0,
+    playback_mode: LoopContinuous,
+    host_transform_track: Some((repeat: true, keys: [
+        (time: 0.0, transform: (translation: (0.0, 0.0, 0.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0))),
+        (time: 2.0, transform: (translation: (0.0, 20.0, 0.0), rotation: (0.0, 0.0, 0.38268343, 0.9238795), scale: (1.2, 0.8, 1.0))),
+        (time: 4.0, transform: (translation: (0.0, 0.0, 0.0), rotation: (0.0, 0.0, 0.0, 1.0), scale: (1.0, 1.0, 1.0))),
+    ])),
+    assets: [], parameters: [], emitters: [],
+    effect_clips: [(
+        id: "a3574a00-0000-4000-8000-00000000d511",
+        source: "a3574a00-0000-4000-8000-00000000d001",
+        start_time: 0.25, source_offset: 0.5, duration: 3.75,
+        transform: (translation: (15.0, 0.0, 0.0), rotation: (0.0, 0.0, 0.25881904, 0.9659258), scale: (0.5, 0.5, 0.5)),
+        seed: Fixed(47),
+    )],
+    dependencies: [], metadata: {},
+)

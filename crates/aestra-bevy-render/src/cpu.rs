@@ -200,12 +200,37 @@ pub(crate) fn present_cpu_effects(
             transform.translation = Vec3::from_array(sample.position);
             transform.rotation = Quat::from_rotation_z(sample.rotation);
             transform.scale = Vec3::ONE;
-            *transform = crate::host_transform::transform(
-                effect.instance.host_transform_at(effect.simulation_time()),
-            ) * *transform;
             *visibility = Visibility::Visible;
         }
         restore_samples(&mut effect, uses_gpu_readback, samples);
+    }
+}
+
+/// Compose after propagation so nonuniform parent scale retains the full affine
+/// transform rather than a lossy TRS decomposition on each pooled particle.
+pub(crate) fn sync_particle_globals(
+    effects: Query<(&PresentedEffect, &bevy::prelude::GlobalTransform), Without<PresentedParticle>>,
+    mut particles: Query<
+        (
+            &bevy::prelude::ChildOf,
+            &Transform,
+            &mut bevy::prelude::GlobalTransform,
+        ),
+        bevy::prelude::With<PresentedParticle>,
+    >,
+) {
+    for (parent, local, mut global) in &mut particles {
+        if let Ok((effect, placement)) = effects.get(parent.parent()) {
+            let matrix = bevy::prelude::Mat4::from(placement.affine())
+                * bevy::prelude::Mat4::from_cols_array(
+                    &effect
+                        .instance
+                        .host_transform_context()
+                        .matrix_at(effect.simulation_time()),
+                )
+                * local.to_matrix();
+            *global = bevy::prelude::GlobalTransform::from(matrix);
+        }
     }
 }
 
@@ -229,5 +254,70 @@ fn playhead_time(effect: &PresentedEffect) -> f32 {
         effect
             .simulation_time()
             .clamp(0.0, compiled.duration.max(0.0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::prelude::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn cpu_particles_keep_composed_affine_transform_after_propagation() {
+        let effect = aestra_core::EffectAsset::new("CPU nested placement", 2.0);
+        let compiled = Arc::new(
+            aestra_compiler::EffectCompiler::default()
+                .compile(&effect)
+                .unwrap(),
+        );
+        let mut player = PresentedEffect::new(compiled);
+        let a = aestra_core::EmitterTransform {
+            scale: [2.0, 0.5, 1.0],
+            ..default()
+        };
+        let b = aestra_core::EmitterTransform {
+            rotation: Quat::from_rotation_z(0.7).to_array(),
+            ..default()
+        };
+        player.instance.set_inherited_host_transform(Arc::new(
+            aestra_runtime::InheritedHostTransform::default()
+                .for_child(None, a, 0.0)
+                .for_child(None, b, 0.0),
+        ));
+        let mut app = App::new();
+        app.add_plugins(bevy::transform::TransformPlugin)
+            .add_systems(
+                PostUpdate,
+                sync_particle_globals.after(bevy::transform::TransformSystems::Propagate),
+            );
+        let placement = Transform::from_xyz(10.0, 20.0, 30.0);
+        let host = app.world_mut().spawn((player, placement)).id();
+        let local = Transform::from_xyz(1.0, 2.0, 3.0);
+        let particle = app
+            .world_mut()
+            .spawn((
+                ChildOf(host),
+                local,
+                PresentedParticle {
+                    sample_index: 0,
+                    renderer_index: 0,
+                },
+            ))
+            .id();
+        for _ in 0..3 {
+            app.update();
+            let expected = placement.to_matrix()
+                * crate::host_transform::matrix(a)
+                * crate::host_transform::matrix(b)
+                * local.to_matrix();
+            let actual = Mat4::from(
+                app.world()
+                    .get::<GlobalTransform>(particle)
+                    .unwrap()
+                    .affine(),
+            );
+            assert!(actual.abs_diff_eq(expected, 1e-5));
+        }
     }
 }

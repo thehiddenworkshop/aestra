@@ -110,7 +110,13 @@ fn expand_legacy(packed: &[u8], aux: &[u8], counters: &[u8], records: usize) -> 
 
 // Exercise the real simulation as well as history: a direct jump has live
 // particles but only coincident head/anchor pairs, which cannot draw a trail.
-fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, sampling: u32, moving: bool) {
+fn check_seek_replay(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    sampling: u32,
+    moving: bool,
+    nested: bool,
+) {
     let effect = aestra_core::EffectAsset::from_ron(if moving {
         include_str!("../../../assets/effects/moving_trail_lab.aestra.ron")
     } else {
@@ -127,7 +133,18 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, sampling: u32, 
             &std::collections::BTreeMap::from([(program.id, program)]),
         )
         .unwrap();
-    let instance = aestra_runtime::EffectInstance::new(std::sync::Arc::new(effect));
+    let mut instance = aestra_runtime::EffectInstance::new(std::sync::Arc::new(effect));
+    if nested {
+        let placement = aestra_core::EmitterTransform {
+            translation: [12.0, -7.0, 3.0],
+            rotation: bevy::math::Quat::from_rotation_z(0.7).to_array(),
+            scale: [2.0, 0.75, 1.0],
+        };
+        let inherited = aestra_runtime::InheritedHostTransform::default()
+            .for_child(instance.host_transform_track().cloned(), placement, 0.75)
+            .for_child(instance.host_transform_track().cloned(), placement, -0.25);
+        instance.set_inherited_host_transform(std::sync::Arc::new(inherited));
+    }
     let mut artifact = aestra_gpu::GpuEffectArtifact::from_instance(&instance).unwrap();
     artifact.emitters[0].trail_sampling = sampling;
     let e = artifact.emitters[0];
@@ -235,7 +252,7 @@ fn check_seek_replay(device: &wgpu::Device, queue: &wgpu::Queue, sampling: u32, 
             contents: &host_transform::observation_bytes(
                 times,
                 Mat4::from_translation(Vec3::new(4.0, -2.0, 7.0)),
-                instance.host_transform_track().map(|t| t.as_ref()),
+                Some(&instance.host_transform_context()),
             ),
             usage: wgpu::BufferUsages::COPY_SRC,
         });
@@ -587,7 +604,10 @@ fn check_pool(max_trails: u32, sampling: u32) {
     if sampling == 1 {
         for moving in [false, true] {
             for sampling in 0..3 {
-                check_seek_replay(&device, &queue, sampling, moving);
+                check_seek_replay(&device, &queue, sampling, moving, false);
+                if moving {
+                    check_seek_replay(&device, &queue, sampling, moving, true);
+                }
             }
         }
     }

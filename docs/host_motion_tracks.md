@@ -123,17 +123,45 @@ Hosts can validate an immutable `aestra_runtime::CompiledHostTransformTrack` and
 replace it through `EffectInstance::set_host_transform_track` or the Bevy
 `EffectPlayer` method of the same name. Instances share data, not clocks or
 history state. Engine-neutral particle samples remain local-space; other engine
-adapters must apply `host_transform_at(time)` when presenting them.
+adapters apply `host_transform_context().matrix_at(time)` when presenting them.
+`host_transform_at(time)` returns only the instance's own track, not its ancestry.
+
+## Nested clips
+
+Open **Nested Moving Trail Lab** in the editor to try a two-level composition:
+the root moves and rotates a carrier, which moves and rotates Moving Trail Lab.
+Nonuniform scale and rotated clip placements exercise the complete affine chain.
+
+Each presented child composes the ancestor motion, its clip placement, and its
+own motion in that order. Composition stays in matrix form, preserving shear
+from rotated, nonuniformly scaled parents. CPU presentation, GPU rendering and
+bounds use the same full transform. `CompiledEffectProject::evaluate` exposes it
+as `ProjectParticleSample::world_from_effect`; the particle itself stays local.
+
+Clip scheduling uses the parent's loop phase. Continuous child clocks retain
+unwrapped source time; restart children wrap at their own duration. Clip start,
+source offset and the current loop occurrence determine a fixed inverse clock
+offset for each ancestor. Every historical trail observation samples the entire
+chain at those historical times, never at the parent's current pose. Source-offset
+pre-roll follows that same inverse mapping, holding a track's first pose before
+time zero. A new parent occurrence or child restart starts a new replay context.
+
+Engine integrations can construct `InheritedHostTransform` with `for_child`,
+using the offset returned by `CompiledEffectClip::map_instance_time`, and attach
+it with `EffectInstance::set_inherited_host_transform`. The editor does this
+automatically; the Bevy adapter forwards the instance context to the shared
+renderer. It does not add automatic project/child entity spawning to EffectPlayer.
+Changing any ancestor track, clip placement or clock offset invalidates the
+child's history. Equivalent chains and ordinary seeks retain compatible checkpoints.
 
 ## Scope
 
 This is explicit supplied motion, not a recorder of arbitrary live entity motion.
 Seeking without a track still reconstructs history at the current placement.
 Changing that placement repositions the supplied trajectory and invalidates its
-checkpoints. The track animates the presented effect instance's own emitters;
-choreography child clips keep their own placements and tracks, rather than
-implicitly inheriting an animated parent track. Composed parent/clip trajectories,
-teleport markers, parameter history and scene-dependent forces remain separate work.
+checkpoints. Choreography children inherit explicit ancestor tracks, not an
+unrecorded history of arbitrary external entity movement. Teleport markers,
+parameter history and scene-dependent forces remain separate work.
 
 Trail history is still sampled at 60 Hz and bounded by renderer capacities and
 the shared checkpoint budget. This reconstructs the sampled trajectory, not an

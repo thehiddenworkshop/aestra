@@ -150,6 +150,14 @@ impl EffectPlayer {
         self.instance.set_host_transform_track(track);
     }
 
+    /// Historical ancestor motion and clip placements, supplied by a project host.
+    pub fn set_inherited_host_transform(
+        &mut self,
+        inherited: Arc<aestra_runtime::InheritedHostTransform>,
+    ) {
+        self.instance.set_inherited_host_transform(inherited);
+    }
+
     pub fn render_mode(&self) -> EffectRenderMode {
         self.render_mode
     }
@@ -538,6 +546,25 @@ mod tests {
             let presented = app.world().get::<PresentedEffect>(entity).unwrap();
             assert_eq!(presented.instance.history_revision(), revision + 1);
             assert!(presented.instance.host_transform_track().is_none());
+            let inherited = Arc::new(aestra_runtime::InheritedHostTransform::default().for_child(
+                None,
+                aestra_core::EmitterTransform {
+                    translation: [5.0, 2.0, 1.0],
+                    ..Default::default()
+                },
+                0.25,
+            ));
+            app.world_mut()
+                .get_mut::<EffectPlayer>(entity)
+                .unwrap()
+                .set_inherited_host_transform(inherited.clone());
+            app.update();
+            let presented = app.world().get::<PresentedEffect>(entity).unwrap();
+            assert_eq!(presented.instance.history_revision(), revision + 2);
+            assert_eq!(
+                presented.instance.host_transform_context().inherited,
+                inherited
+            );
         }
     }
 

@@ -255,6 +255,12 @@ pub struct AestraRenderPlugin;
 
 impl Plugin for AestraRenderPlugin {
     fn build(&self, app: &mut App) {
+        app.add_systems(
+            bevy::prelude::PostUpdate,
+            cpu::sync_particle_globals
+                .after(bevy::transform::TransformSystems::Propagate)
+                .before(bevy::camera::visibility::VisibilitySystems::CheckVisibility),
+        );
         app.init_resource::<AestraRenderSettings>()
             .init_resource::<GpuCapabilities>()
             .init_resource::<AestraRuntimeStatus>()

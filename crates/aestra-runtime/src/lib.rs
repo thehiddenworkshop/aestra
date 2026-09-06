@@ -3,6 +3,8 @@
 mod checkpoint;
 mod compatibility;
 mod host_transform;
+mod transform_context;
+pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod profile;
 pub use host_transform::CompiledHostTransformTrack;
 
@@ -692,19 +694,51 @@ pub struct CompiledParameterOverride {
 }
 
 impl CompiledEffectClip {
+    /// Active child clock and an inverse clock offset for historical parent poses.
+    /// Continuous children retain unwrapped source time; scheduling uses parent phase.
+    pub fn map_instance_time(
+        &self,
+        parent_time: f32,
+        parent: &CompiledEffect,
+        child: &CompiledEffect,
+    ) -> Option<(f32, f32)> {
+        let phase = if parent.playback_mode.is_looping() && parent.duration > 0.0 {
+            parent_time.rem_euclid(parent.duration)
+        } else {
+            parent_time
+        };
+        let child_time = self.map_time(phase, child)?;
+        let parent_cycle = if parent.playback_mode.is_continuous() && parent.duration > 0.0 {
+            (parent_time / parent.duration).floor() * parent.duration
+        } else {
+            0.0
+        };
+        let raw = self.source_offset + (phase - self.start_time);
+        let child_cycle =
+            if child.playback_mode == EffectPlaybackMode::LoopRestart && child.duration > 0.0 {
+                (raw / child.duration).floor() * child.duration
+            } else {
+                0.0
+            };
+        Some((
+            child_time,
+            parent_cycle + self.start_time - self.source_offset + child_cycle,
+        ))
+    }
+
     pub fn map_time(&self, parent_time: f32, child: &CompiledEffect) -> Option<f32> {
         let elapsed = parent_time - self.start_time;
         if elapsed < 0.0 || elapsed > self.duration {
             return None;
         }
         let local = self.source_offset + elapsed;
-        Some(
-            if child.playback_mode.is_looping() && child.duration > 0.0 {
-                local.rem_euclid(child.duration)
-            } else {
-                local.clamp(0.0, child.duration.max(0.0))
-            },
-        )
+        Some(if child.playback_mode.is_continuous() {
+            local.max(0.0)
+        } else if child.playback_mode.is_looping() && child.duration > 0.0 {
+            local.rem_euclid(child.duration)
+        } else {
+            local.clamp(0.0, child.duration.max(0.0))
+        })
     }
 }
 
@@ -729,7 +763,16 @@ impl CompiledEffectProject {
         output.clear();
         let mut path = Vec::new();
         let parameters = default_parameter_values(&self.root);
-        evaluate_project_effect(self, &self.root, time, seed, &parameters, &mut path, output);
+        evaluate_project_effect(
+            self,
+            &self.root,
+            time,
+            seed,
+            &parameters,
+            &mut path,
+            Arc::default(),
+            output,
+        );
     }
 }
 
@@ -739,8 +782,11 @@ pub struct ProjectParticleSample {
     pub effect: EffectId,
     pub instance_path: Vec<EffectClipId>,
     pub particle: ParticleSample,
+    /// Full presentation matrix; `particle` remains in effect-local space.
+    pub world_from_effect: [f32; 16],
 }
 
+#[allow(clippy::too_many_arguments)]
 fn evaluate_project_effect(
     project: &CompiledEffectProject,
     effect: &CompiledEffect,
@@ -748,6 +794,7 @@ fn evaluate_project_effect(
     seed: u64,
     parameters: &[RuntimeValue],
     path: &mut Vec<EffectClipId>,
+    inherited: Arc<InheritedHostTransform>,
     output: &mut Vec<ProjectParticleSample>,
 ) {
     // Project compilation rejects dependency cycles. Keep manually assembled runtime projects
@@ -761,6 +808,11 @@ fn evaluate_project_effect(
         EffectPlaybackMode::LoopContinuous => time.max(0.0),
     };
     let mut local_samples = Vec::new();
+    let context = HostTransformContext {
+        motion: effect.host_transform_track.clone(),
+        inherited: inherited.clone(),
+    };
+    let world_from_effect = context.matrix_at(effect_time);
     evaluate_with_parameters(effect, effect_time, seed, parameters, &mut local_samples);
     output.extend(
         local_samples
@@ -769,6 +821,7 @@ fn evaluate_project_effect(
                 effect: effect.source,
                 instance_path: path.clone(),
                 particle,
+                world_from_effect,
             }),
     );
 
@@ -776,7 +829,8 @@ fn evaluate_project_effect(
         let Some(child) = project.dependencies.get(&clip.source.id) else {
             continue;
         };
-        let Some(child_time) = clip.map_time(effect_time, child) else {
+        let Some((child_time, parent_offset)) = clip.map_instance_time(effect_time, effect, child)
+        else {
             continue;
         };
         let mut child_parameters = default_parameter_values(child);
@@ -789,6 +843,11 @@ fn evaluate_project_effect(
             clip.seed.resolve(seed, clip.source_clip),
             &child_parameters,
             path,
+            Arc::new(inherited.for_child(
+                effect.host_transform_track.clone(),
+                clip.transform,
+                parent_offset,
+            )),
             output,
         );
         path.pop();
@@ -1012,6 +1071,7 @@ pub struct EffectInstance {
     history_epoch: u32,
     history_revision: u64,
     host_transform_track: Option<Arc<CompiledHostTransformTrack>>,
+    inherited_host_transform: Arc<InheritedHostTransform>,
 }
 
 impl EffectInstance {
@@ -1025,6 +1085,7 @@ impl EffectInstance {
         Self {
             effect,
             host_transform_track,
+            inherited_host_transform: Arc::default(),
             time: 0.0,
             seed: 0,
             parameters,
@@ -1164,10 +1225,28 @@ impl EffectInstance {
         }
     }
 
+    /// This instance's own animated pose, without inherited clip transforms.
+    /// Use `host_transform_context().matrix_at(time)` for the full presentation pose.
     pub fn host_transform_at(&self, time: f32) -> EmitterTransform {
         self.host_transform_track
             .as_ref()
             .map_or_else(EmitterTransform::default, |track| track.sample(time))
+    }
+
+    /// Replace historical ancestry. Equivalent chains preserve replay checkpoints;
+    /// changed tracks, placements or clock offsets invalidate them.
+    pub fn set_inherited_host_transform(&mut self, inherited: Arc<InheritedHostTransform>) {
+        if self.inherited_host_transform != inherited {
+            self.inherited_host_transform = inherited;
+            self.invalidate_history();
+        }
+    }
+
+    pub fn host_transform_context(&self) -> HostTransformContext {
+        HostTransformContext {
+            motion: self.host_transform_track.clone(),
+            inherited: self.inherited_host_transform.clone(),
+        }
     }
 
     /// Start a new observation sequence without invalidating compatible checkpoints.
