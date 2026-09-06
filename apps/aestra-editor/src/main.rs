@@ -17,6 +17,7 @@ mod material_graph;
 mod menus;
 mod persistence;
 mod profiler;
+mod project;
 mod properties;
 mod recovery;
 mod session;
@@ -204,6 +205,7 @@ fn main() {
             DefaultPlugins
                 .set(AssetPlugin {
                     file_path: EDITOR_ASSET_ROOT.into(),
+                    unapproved_path_mode: bevy::asset::UnapprovedPathMode::Deny,
                     ..default()
                 })
                 .set(WindowPlugin {

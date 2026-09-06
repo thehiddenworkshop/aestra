@@ -59,6 +59,7 @@ impl Plugin for EditorPersistencePlugin {
 pub(crate) enum DocumentAction {
     New,
     Open,
+    OpenProject,
     OpenCatalog(EffectAssetRef),
     OpenCatalogClip(EffectAssetRef, EffectClipId),
     OpenSource(EffectAssetRef),
@@ -379,11 +380,35 @@ fn initialize_document_persistence(
     mut session: ResMut<EditorSession>,
     settings: Res<EditorSettings>,
     settings_persistence: Res<SettingsPersistence>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
     localizer: Res<Localizer>,
 ) {
     let (mut recovery, candidate, recovery_diagnostic) = RecoveryPersistence::discover();
     if let Some(candidate) = candidate {
         recover_startup_session(&mut session, &mut recovery, candidate, &localizer);
+        if let Some(path) = session.source_path.as_deref()
+            && !crate::project::contains_source(&catalog, path)
+        {
+            let project = crate::project::folder_for_source(path)
+                .and_then(|folder| crate::project::catalog_for_folder(&folder))
+                .and_then(|catalog| {
+                    catalog
+                        .compile_project(&session.effect)
+                        .map(|compiled| (catalog, compiled.root))
+                });
+            match project {
+                Ok((project, compiled)) => {
+                    if session.install_compiled_project_root(compiled).is_ok() {
+                        *catalog = project;
+                    }
+                }
+                Err(error) => set_persistence_status(
+                    &mut session,
+                    &localizer,
+                    PersistenceStatus::RecoveryDiagnostic(error),
+                ),
+            }
+        }
     } else if let Some(diagnostic) = recovery_diagnostic {
         set_persistence_status(
             &mut session,
@@ -471,7 +496,7 @@ fn execute_document_action(
     mut commands: Commands,
     mut session: ResMut<EditorSession>,
     settings: Res<EditorSettings>,
-    catalog: Res<ProjectEffectCatalog>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
     mut workspace: ResMut<CurvesState>,
     mut recovery: ResMut<RecoveryPersistence>,
     mut autosave: ResMut<AutosaveState>,
@@ -488,6 +513,7 @@ fn execute_document_action(
             &mut session,
             matches!(*action, DocumentAction::SaveAs),
             &localizer,
+            catalog.effect_root(),
         );
         return;
     }
@@ -500,7 +526,7 @@ fn execute_document_action(
         &mut commands,
         &mut session,
         &settings,
-        &catalog,
+        &mut catalog,
         &mut workspace,
         &mut recovery,
         &mut autosave,
@@ -542,7 +568,7 @@ fn execute_protected_document_action(
     commands: &mut Commands,
     session: &mut EditorSession,
     settings: &EditorSettings,
-    catalog: &ProjectEffectCatalog,
+    catalog: &mut ProjectEffectCatalog,
     workspace: &mut CurvesState,
     recovery: &mut RecoveryPersistence,
     autosave: &mut AutosaveState,
@@ -572,6 +598,31 @@ fn execute_protected_document_action(
                     *timeline = TimelineState::framed(session.playback_duration());
                 }
                 workspace.clear();
+            }
+        }
+        DocumentAction::OpenProject => {
+            let Some(folder) = FileDialog::new()
+                .set_title(localizer.text("project-open-title"))
+                .set_directory(catalog.root())
+                .pick_folder()
+            else {
+                return;
+            };
+            match crate::project::open_folder(session, catalog, &folder) {
+                Ok(()) => {
+                    session.playing = settings.preview.play_on_open;
+                    if let Some(navigation) = navigation.as_deref_mut() {
+                        navigation.clear();
+                    }
+                    if let Some(timeline) = timeline.as_deref_mut() {
+                        *timeline = TimelineState::framed(session.playback_duration());
+                    }
+                    workspace.clear();
+                    session.status = localizer.text("project-opened");
+                }
+                Err(error) => {
+                    set_persistence_status(session, localizer, PersistenceStatus::OpenFailed(error))
+                }
             }
         }
         DocumentAction::OpenCatalog(id) => {
@@ -677,7 +728,7 @@ fn resolve_document_protection(
     mut commands: Commands,
     mut session: ResMut<EditorSession>,
     settings: Res<EditorSettings>,
-    catalog: Res<ProjectEffectCatalog>,
+    mut catalog: ResMut<ProjectEffectCatalog>,
     mut workspace: ResMut<CurvesState>,
     mut recovery: ResMut<RecoveryPersistence>,
     mut autosave: ResMut<AutosaveState>,
@@ -693,7 +744,9 @@ fn resolve_document_protection(
         protection.pending = None;
         return;
     }
-    if *action == DocumentProtectionAction::Save && !save_session(&mut session, false, &localizer) {
+    if *action == DocumentProtectionAction::Save
+        && !save_session(&mut session, false, &localizer, catalog.effect_root())
+    {
         return;
     }
     let Some(pending) = protection.pending.take() else {
@@ -704,7 +757,7 @@ fn resolve_document_protection(
         &mut commands,
         &mut session,
         &settings,
-        &catalog,
+        &mut catalog,
         &mut workspace,
         &mut recovery,
         &mut autosave,
@@ -1070,19 +1123,49 @@ fn restore_source_navigation_entry(
 fn open_effect_dialog(
     session: &mut EditorSession,
     settings: &EditorSettings,
-    catalog: &ProjectEffectCatalog,
+    catalog: &mut ProjectEffectCatalog,
     localizer: &Localizer,
 ) -> bool {
     let mut dialog =
         FileDialog::new().add_filter(localizer.text("persistence-file-filter-effect"), &["ron"]);
     if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
         dialog = dialog.set_directory(directory);
+    } else {
+        dialog = dialog.set_directory(catalog.effect_root());
     }
     let Some(path) = dialog.pick_file() else {
         set_persistence_status(session, localizer, PersistenceStatus::OpenCancelled);
         return false;
     };
-    open_effect_path(session, &path, settings, catalog, localizer)
+    open_effect_in_project(session, &path, settings, catalog, localizer)
+}
+
+/// Stage the new catalog and document together; failed opens leave the current project intact.
+fn open_effect_in_project(
+    session: &mut EditorSession,
+    path: &Path,
+    settings: &EditorSettings,
+    catalog: &mut ProjectEffectCatalog,
+    localizer: &Localizer,
+) -> bool {
+    if crate::project::contains_source(catalog, path) {
+        return open_effect_path(session, path, settings, catalog, localizer);
+    }
+    let candidate = crate::project::folder_for_source(path)
+        .and_then(|folder| crate::project::catalog_for_folder(&folder));
+    match candidate {
+        Ok(candidate) => {
+            if !open_effect_path(session, path, settings, &candidate, localizer) {
+                return false;
+            }
+            *catalog = candidate;
+            true
+        }
+        Err(error) => {
+            set_persistence_status(session, localizer, PersistenceStatus::OpenFailed(error));
+            false
+        }
+    }
 }
 
 fn open_effect_path(
@@ -1257,7 +1340,12 @@ pub(crate) fn persist_editor_settings(
     }
 }
 
-fn save_session(session: &mut EditorSession, save_as: bool, localizer: &Localizer) -> bool {
+fn save_session(
+    session: &mut EditorSession,
+    save_as: bool,
+    localizer: &Localizer,
+    effect_root: &Path,
+) -> bool {
     if !save_as && session.source_path.is_some() {
         let path = session
             .source_path
@@ -1284,7 +1372,8 @@ fn save_session(session: &mut EditorSession, save_as: bool, localizer: &Localize
     let file_name = format!("{}.aestra.ron", session.effect.id);
     let mut dialog = FileDialog::new()
         .add_filter(localizer.text("persistence-file-filter-effect"), &["ron"])
-        .set_file_name(file_name);
+        .set_file_name(file_name)
+        .set_directory(effect_root);
     if let Some(directory) = session.source_path.as_ref().and_then(|path| path.parent()) {
         dialog = dialog.set_directory(directory);
     }
@@ -1354,6 +1443,89 @@ mod tests {
     use super::*;
     use crate::menus::MenuKind;
     use crate::test_support;
+
+    #[test]
+    fn external_open_switches_to_its_material_project_only_after_success() {
+        let old = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let effects = external.path().join("assets/effects");
+        let materials = external.path().join("assets/materials");
+        fs::create_dir_all(&effects).unwrap();
+        fs::create_dir_all(&materials).unwrap();
+        let path = effects.join("lab.aestra.ron");
+        fs::write(&path, crate::MATERIAL_GRAPH_LAB_EFFECT_SOURCE).unwrap();
+        let mut catalog = crate::project::catalog_for_folder(old.path()).unwrap();
+        let old_root = catalog.root().to_owned();
+        let mut session = test_support::session_with_timing_slack();
+        let original = session.effect.clone();
+        let settings = EditorSettings::default();
+        let localizer = Localizer::new("en-US").unwrap();
+
+        assert!(!open_effect_in_project(
+            &mut session,
+            &path,
+            &settings,
+            &mut catalog,
+            &localizer
+        ));
+        assert_eq!(catalog.root(), old_root);
+        assert_eq!(session.effect, original);
+        fs::write(
+            materials.join("lab.aestra.material.ron"),
+            crate::MATERIAL_GRAPH_LAB_PROGRAM_SOURCE,
+        )
+        .unwrap();
+        assert!(open_effect_in_project(
+            &mut session,
+            &path,
+            &settings,
+            &mut catalog,
+            &localizer
+        ));
+        assert_eq!(
+            catalog.root(),
+            external.path().join("assets").canonicalize().unwrap()
+        );
+        assert_eq!(session.source_path.as_deref(), Some(path.as_path()));
+        assert!(
+            !session
+                .preview
+                .as_ref()
+                .unwrap()
+                .effect()
+                .material_programs
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn explicit_project_root_is_retained_for_effects_in_nested_folders() {
+        let temporary = tempfile::tempdir().unwrap();
+        let nested = temporary.path().join("scenes/deep");
+        fs::create_dir_all(&nested).unwrap();
+        let child = EffectAsset::new("Child", 1.0);
+        child
+            .save_ron(temporary.path().join("child.aestra.ron"))
+            .unwrap();
+        let mut parent = EffectAsset::new("Parent", 1.0);
+        parent
+            .effect_clips
+            .push(aestra_core::EffectClip::new(child.id, 0.0, 1.0));
+        let path = nested.join("parent.aestra.ron");
+        parent.save_ron(&path).unwrap();
+        let mut catalog = crate::project::catalog_for_folder(temporary.path()).unwrap();
+        let root = catalog.root().to_owned();
+        let mut session = test_support::session_with_timing_slack();
+        assert!(open_effect_in_project(
+            &mut session,
+            &path,
+            &EditorSettings::default(),
+            &mut catalog,
+            &Localizer::new("en-US").unwrap()
+        ));
+        assert_eq!(catalog.root(), root);
+        assert_eq!(session.effect.id, parent.id);
+    }
 
     #[test]
     fn document_protection_overlay_visibility_syncs_without_rebuilding_the_editor() {
@@ -1879,6 +2051,16 @@ mod tests {
         assert_eq!(
             app.world().resource::<DocumentProtectionState>().pending,
             Some(DocumentAction::OpenCatalog(reference))
+        );
+        app.world_mut()
+            .resource_mut::<DocumentProtectionState>()
+            .pending = None;
+        app.world_mut().trigger(DocumentAction::OpenProject);
+        app.update();
+        assert_eq!(app.world().resource::<EditorSession>().effect.id, original);
+        assert_eq!(
+            app.world().resource::<DocumentProtectionState>().pending,
+            Some(DocumentAction::OpenProject)
         );
     }
 

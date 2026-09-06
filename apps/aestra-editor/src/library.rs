@@ -45,8 +45,6 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-const DEFAULT_PROJECT_ASSET_ROOT: &str = "assets";
-const DEFAULT_PROJECT_EFFECT_ROOT: &str = "assets/effects";
 const PROJECT_EFFECT_POLL_INTERVAL_SECONDS: f32 = 0.25;
 const PROJECT_EFFECT_STABLE_OBSERVATIONS: u8 = 2;
 
@@ -66,6 +64,13 @@ impl Plugin for EditorLibraryPlugin {
             .init_resource::<LibraryState>()
             .init_resource::<LibraryAssetOperationState>()
             .init_resource::<RenderedLibraryRelationOverlay>()
+            .init_resource::<aestra_bevy_render::AestraTextureRoot>()
+            .add_systems(
+                Update,
+                sync_project_texture_root
+                    .after(PersistenceSet::Actions)
+                    .before(aestra_bevy_render::AestraRenderSet::Prepare),
+            )
             .add_observer(queue_library_action_activation)
             .add_observer(activate_library_list_entry)
             .add_observer(execute_library_action)
@@ -114,13 +119,38 @@ pub(crate) struct ProjectEffectCatalog {
     effect_root: PathBuf,
 }
 
+fn sync_project_texture_root(
+    catalog: Res<ProjectEffectCatalog>,
+    mut textures: ResMut<aestra_bevy_render::AestraTextureRoot>,
+    mut library: ResMut<LibraryState>,
+) {
+    if textures.0.as_deref() != Some(catalog.root()) {
+        textures.0 = Some(catalog.root().to_owned());
+        *library = LibraryState::default();
+    }
+}
+
 impl Default for ProjectEffectCatalog {
     fn default() -> Self {
-        Self::scan_project(DEFAULT_PROJECT_ASSET_ROOT, DEFAULT_PROJECT_EFFECT_ROOT)
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let root = root.canonicalize().unwrap_or(root);
+        Self::scan_project(&root, root.join("effects"))
     }
 }
 
 impl ProjectEffectCatalog {
+    pub(crate) fn try_scan_project(
+        project_root: impl AsRef<Path>,
+        effect_root: impl AsRef<Path>,
+    ) -> Result<Self, String> {
+        let catalog = Self::scan_project(project_root, effect_root);
+        if let ProjectAssetIndexAvailability::Unavailable { message, .. } =
+            catalog.index.availability()
+        {
+            return Err(message.clone());
+        }
+        Ok(catalog)
+    }
     #[cfg(test)]
     pub(crate) fn scan(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref();
@@ -517,6 +547,7 @@ impl ProjectEffectTreeSnapshot {
 
 #[derive(Resource)]
 struct ProjectEffectWatchState {
+    root: PathBuf,
     poll: Timer,
     committed: ProjectEffectTreeSnapshot,
     pending: Option<(ProjectEffectTreeSnapshot, u8)>,
@@ -529,6 +560,7 @@ impl FromWorld for ProjectEffectWatchState {
             poll: Timer::from_seconds(PROJECT_EFFECT_POLL_INTERVAL_SECONDS, TimerMode::Repeating),
             committed: ProjectEffectTreeSnapshot::scan(&root),
             pending: None,
+            root,
         }
     }
 }
@@ -557,6 +589,7 @@ impl ProjectEffectWatchState {
     }
 
     fn accept_current(&mut self, root: &Path) {
+        self.root = root.to_owned();
         self.committed = ProjectEffectTreeSnapshot::scan(root);
         self.pending = None;
         self.poll.reset();
@@ -604,6 +637,10 @@ fn poll_project_effect_catalog(
     mut session: ResMut<EditorSession>,
     localizer: Res<Localizer>,
 ) {
+    if watch.root != catalog.root() {
+        watch.accept_current(catalog.root());
+        return;
+    }
     let Some(time) = time else {
         return;
     };
@@ -2482,7 +2519,7 @@ fn spawn_project_effects(
     let (unavailable_message, unavailable_tooltip) = match catalog.availability() {
         ProjectAssetIndexAvailability::Ready => {
             let mut args = FluentArgs::new();
-            args.set("path", DEFAULT_PROJECT_ASSET_ROOT);
+            args.set("path", catalog.root().display().to_string());
             let message = localizer.text_with("library-unavailable-message", &args);
             (message.clone(), EditorTooltip::description(message))
         }
@@ -2810,6 +2847,28 @@ pub(crate) fn spawn_library(
                     ..default()
                 },
                 |panel| {
+                    panel.spawn((
+                        Text::new(format!(
+                            "{}\n{}",
+                            localizer.text("project-active"),
+                            crate::project::display_name(catalog.root())
+                        )),
+                        TextFont {
+                            font_size: FontSize::Px(11.0),
+                            ..default()
+                        },
+                        TextColor(theme::TEXT),
+                        Node {
+                            margin: UiRect::all(Val::Px(8.0)),
+                            ..default()
+                        },
+                        EditorTooltip::description(catalog.root().display().to_string()),
+                    ));
+                    library_toolbar_button(
+                        panel,
+                        &localizer.text("file-open-project"),
+                        DocumentAction::OpenProject,
+                    );
                     spawn_project_effects(panel, catalog, state, localizer);
                     spawn_material_presets(panel, catalog, state, localizer);
                     spawn_current_document_resources(panel, session, localizer);
@@ -5516,6 +5575,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let initial = ProjectEffectTreeSnapshot::scan(temporary.path());
         let mut watch = ProjectEffectWatchState {
+            root: temporary.path().to_owned(),
             poll: Timer::from_seconds(PROJECT_EFFECT_POLL_INTERVAL_SECONDS, TimerMode::Repeating),
             committed: initial,
             pending: None,
@@ -5526,6 +5586,31 @@ mod tests {
         assert!(!watch.observe(changed.clone()));
         assert!(watch.observe(changed.clone()));
         assert!(!watch.observe(changed));
+    }
+
+    #[test]
+    fn project_switch_replaces_the_watch_baseline_without_reloading_the_document() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        write_effect(&second.path().join("new.aestra.ron"), "New project");
+        let session = test_support::session_with_timing_slack();
+        let original = session.effect.clone();
+        let mut app = App::new();
+        app.insert_resource(ProjectEffectCatalog::scan(first.path()))
+            .init_resource::<ProjectEffectWatchState>()
+            .insert_resource(session)
+            .insert_resource(Localizer::new("en-US").unwrap())
+            .add_systems(Update, poll_project_effect_catalog);
+        app.insert_resource(ProjectEffectCatalog::scan(second.path()));
+        app.update();
+        let watch = app.world().resource::<ProjectEffectWatchState>();
+        assert_eq!(watch.root, second.path());
+        assert_eq!(
+            watch.committed,
+            ProjectEffectTreeSnapshot::scan(second.path())
+        );
+        assert!(watch.pending.is_none());
+        assert_eq!(app.world().resource::<EditorSession>().effect, original);
     }
 
     #[test]

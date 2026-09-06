@@ -280,6 +280,7 @@ fn spawn_file_menu(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
                     for (message_id, shortcut, action) in [
                         ("file-new-effect", "Ctrl+N", DocumentAction::New),
                         ("file-open", "Ctrl+O", DocumentAction::Open),
+                        ("file-open-project", "", DocumentAction::OpenProject),
                         ("file-save", "Ctrl+S", DocumentAction::Save),
                         ("file-save-as", "Ctrl+Shift+S", DocumentAction::SaveAs),
                     ] {

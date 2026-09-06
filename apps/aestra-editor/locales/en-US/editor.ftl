@@ -5,6 +5,10 @@ menu-help = Help
 
 file-new-effect = New Effect
 file-open = Open…
+file-open-project = Open Project…
+project-open-title = Choose a project or asset folder
+project-active = ACTIVE PROJECT
+project-opened = Project opened. Select an effect in the Library, or save a new effect in this project.
 file-save = Save
 file-save-as = Save As…
 file-settings = Settings

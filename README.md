@@ -26,6 +26,18 @@ The editor starts with an embedded, untitled copy. Use Save As to create a docum
 the project source from the library. Saving an open document refuses to overwrite external
 changes; save a separate copy or reopen the disk version to resolve the conflict.
 
+Use **File → Open Project…** (also available in the Library) to select an asset folder,
+or a project containing an `assets/` folder. The Library shows the active asset root.
+Effects, referenced effects, material programs, functions, presets, and textures resolve
+within that root; new effects default to its `effects/` folder when present. Switching
+projects uses the unsaved-document prompt and starts an untitled document.
+
+Opening an effect outside the active project stages a new project from its nearest
+`assets/` ancestor, the parent of an `effects/` folder, or its own directory. The editor
+switches only after dependencies compile successfully. For other folder layouts, choose
+the project root explicitly before opening the effect. Project selection lasts for the
+current editor session.
+
 ## Workspace
 
 ```text

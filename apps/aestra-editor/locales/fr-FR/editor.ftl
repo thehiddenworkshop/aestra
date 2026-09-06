@@ -5,6 +5,10 @@ menu-help = Aide
 
 file-new-effect = Nouvel effet
 file-open = Ouvrir…
+file-open-project = Ouvrir un projet…
+project-open-title = Choisir un dossier de projet ou de ressources
+project-active = PROJET ACTIF
+project-opened = Projet ouvert. Sélectionnez un effet dans la bibliothèque ou enregistrez un nouvel effet dans ce projet.
 file-save = Enregistrer
 file-save-as = Enregistrer sous…
 file-settings = Paramètres
