@@ -33,6 +33,7 @@ struct Entry {
     params: Buffer,
     indirect: Buffer,
     bindings: BindGroup,
+    compact_bindings: BindGroup,
 }
 
 #[derive(Resource, Default)]
@@ -53,10 +54,16 @@ impl TrailCulling {
 pub(super) fn install(app: &mut SubApp) {
     app.init_resource::<TrailCulling>()
         .add_systems(RenderStartup, init_pipeline)
-        .add_systems(Render, prepare.in_set(RenderSystems::PrepareBindGroups))
+        .add_systems(
+            Render,
+            prepare
+                .in_set(RenderSystems::PrepareBindGroups)
+                .after(super::trail_compaction::TrailCompactionSystems::Prepare),
+        )
         .add_systems(
             RenderGraph,
             cull.after(super::run_simulation)
+                .after(super::trail_compaction::TrailCompactionSystems::Compact)
                 .before(RenderGraphSystems::Render),
         );
 }
@@ -72,6 +79,7 @@ fn init_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: Res<Pi
                 uniform_buffer::<GpuTrailCullParams>(false),
                 storage_buffer::<Vec<u32>>(false),
                 storage_buffer_read_only::<GpuRenderGlobals>(false),
+                storage_buffer_read_only::<Vec<u32>>(false),
                 storage_buffer_read_only::<Vec<u32>>(false),
             ),
         ),
@@ -97,6 +105,7 @@ fn prepare(
     pipeline: Res<TrailCullPipeline>,
     cache: Res<PipelineCache>,
     mut culling: ResMut<TrailCulling>,
+    compaction: Res<super::trail_compaction::TrailCompaction>,
 ) {
     culling.dispatched = false;
     let mut retained = BTreeSet::new();
@@ -117,6 +126,9 @@ fn prepare(
         }
         for (draw_entity, draw) in &draws {
             let Some(instance_count) = draw.trail_instances else {
+                continue;
+            };
+            let Some(compact) = compaction.entries.get(&draw_entity) else {
                 continue;
             };
             // Future vertex displacement cannot be bounded by trail positions alone.
@@ -175,6 +187,20 @@ fn prepare(
                     indirect.as_entire_buffer_binding(),
                     globals.buffer.as_entire_buffer_binding(),
                     aux.buffer.as_entire_buffer_binding(),
+                    compact.fallback.as_entire_buffer_binding(),
+                )),
+            );
+            let compact_bindings = device.create_bind_group(
+                Some("aestra compact trail culling"),
+                &cache.get_bind_group_layout(&pipeline.layout),
+                &BindGroupEntries::sequential((
+                    particles.buffer.as_entire_buffer_binding(),
+                    renderers.buffer.as_entire_buffer_binding(),
+                    params_buffer.as_entire_buffer_binding(),
+                    indirect.as_entire_buffer_binding(),
+                    globals.buffer.as_entire_buffer_binding(),
+                    aux.buffer.as_entire_buffer_binding(),
+                    compact.output.as_entire_buffer_binding(),
                 )),
             );
             culling.entries.insert(
@@ -183,6 +209,7 @@ fn prepare(
                     params: params_buffer,
                     indirect,
                     bindings,
+                    compact_bindings,
                 },
             );
             retained.insert(key);
@@ -197,6 +224,7 @@ fn cull(
     cache: Res<PipelineCache>,
     pipeline: Res<TrailCullPipeline>,
     mut culling: ResMut<TrailCulling>,
+    compaction: Res<super::trail_compaction::TrailCompaction>,
 ) {
     let Some(pipeline) = cache.get_compute_pipeline(pipeline.pipeline) else {
         return;
@@ -209,7 +237,15 @@ fn cull(
         });
     pass.set_pipeline(pipeline);
     for entry in culling.entries.values() {
-        pass.set_bind_group(0, &entry.bindings, &[]);
+        pass.set_bind_group(
+            0,
+            if compaction.dispatched {
+                &entry.compact_bindings
+            } else {
+                &entry.bindings
+            },
+            &[],
+        );
         pass.dispatch_workgroups(1, 1, 1);
     }
     drop(pass);

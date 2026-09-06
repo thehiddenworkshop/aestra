@@ -280,13 +280,23 @@ effects remain isolated by their presentation owner and project clip path.
 the same vertex. `submitted_primitives` counts triangles, or lines for mesh wireframe.
 `draw_calls` includes issued zero-instance indirect commands. These values describe geometry
 submitted before shader rejection, clipping, depth testing and rasterization; degenerate
-ribbons or empty trail segments may still be submitted. They are not visible-pixel counts,
+ribbons may still be submitted. They are not visible-pixel counts,
 unique vertex counts, overdraw estimates or GPU timings. CPU-reference geometry remains
 unavailable rather than borrowing native-GPU observations.
 
+Trails compact valid segments and rounded caps on the GPU after history reconstruction.
+The compact list preserves owner/primitive order for alpha blending and uses the same
+expiry and zero-length rules as the vertex shader, including retired tails and partially
+expired anchors. Per-view culling then preserves that count or sets it to zero. Views
+without bounds culling still use the compact list. While compaction pipelines load, draws
+fall back to the full candidate range, which may include empty segments.
+Compaction adds three render-preparation dispatches per trail renderer, shared across views;
+the profiler's dispatch and buffer estimates include this cost. Simulation GPU timestamps
+exclude compaction, so fewer submitted instances alone do not establish a GPU-time speedup.
+
 The renderer copies only the first eight bytes of each indirect command and each owner's
-16-byte simulation context trailer. Trail commands use the actual per-view culling buffer;
-fallback direct draws use their exact CPU-issued ranges. Sampling is bounded to 256 owners,
+16-byte simulation context trailer. Trail commands use the actual per-view culling or
+compaction buffer; fallback direct draws use their exact CPU-issued ranges. Sampling is bounded to 256 owners,
 2048 draws and three 20 KiB readback buffers. A draw-budget overflow invalidates the entire
 observation; omitted owners are unavailable, never a partial measured total. Backpressure
 skips sampling without blocking rendering. Only the latest completed frame is delivered.

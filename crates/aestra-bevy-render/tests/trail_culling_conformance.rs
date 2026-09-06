@@ -85,6 +85,7 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
         encode(&vec![0u32; 4]),
         encode(&globals),
         encode(&vec![9u32, 0, 0]),
+        encode(&vec![4u32, 79, 0, 0]),
     ]
     .into_iter()
     .enumerate()
@@ -192,6 +193,16 @@ fn gpu_trail_culling_is_conservative_current_and_specific_to_each_camera() {
         "another camera sees the same world history"
     );
     assert_eq!(run(outside, params, renderer), 0);
+    queue.write_buffer(&buffers[6], 0, &encode(&vec![4u32, 17, 0, 0]));
+    assert_eq!(
+        run(header, params, renderer),
+        17,
+        "preserve compacted count"
+    );
+    assert_eq!(run(outside, params, renderer), 0, "cull compacted geometry");
+    queue.write_buffer(&buffers[6], 0, &encode(&vec![4u32, 0, 0, 0]));
+    assert_eq!(run(header, params, renderer), 0, "empty compacted history");
+    queue.write_buffer(&buffers[6], 0, &encode(&vec![4u32, 79, 0, 0]));
     assert_eq!(
         run(header, params, renderer),
         79,

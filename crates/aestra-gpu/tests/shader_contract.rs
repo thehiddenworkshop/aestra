@@ -107,6 +107,22 @@ fn generated_wgsl_matches_reviewable_snapshots() {
 }
 
 #[test]
+fn trail_compaction_is_portable_and_keeps_existing_vertex_binding_budget() {
+    let source = aestra_gpu::shader::trail_compact_wesl();
+    assert!(!source.contains("bevy::"));
+    let shader = aestra_gpu::shader::compile_wesl(
+        "package::aestra_trail_compact",
+        &source,
+        &["classify_trail", "prefix_trail", "scatter_trail"],
+    )
+    .unwrap();
+    assert_translates_to_spirv(&shader.wgsl);
+    assert_translates_to_hlsl(&shader.wgsl);
+    assert!(SPRITE_RENDER_WESL.contains("alive_indices[4u + draw_index]"));
+    assert!(!SPRITE_RENDER_WESL.contains("@binding(8)"));
+}
+
+#[test]
 fn trail_history_culling_uses_portable_compute_and_shared_particle_abi() {
     let source = aestra_gpu::shader::trail_cull_wesl();
     assert!(!source.contains("bevy::"));

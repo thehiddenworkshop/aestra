@@ -137,8 +137,16 @@ impl EffectProfile {
                 .iter()
                 .any(|r| matches!(r.kind, crate::RendererPlanKind::Trail { .. }))
         });
+        let trail_renderers = effect
+            .emitters
+            .iter()
+            .filter(|e| e.enabled)
+            .flat_map(|e| &e.renderers)
+            .filter(|r| matches!(r.kind, crate::RendererPlanKind::Trail { .. }))
+            .count() as u32;
+        // Three stable compaction dispatches per trail renderer; view culling remains separate.
         let dispatch_count = u32::from(effect.max_particles > 0)
-            * (2 + u32::from(has_ribbons) + u32::from(has_trails));
+            * (2 + u32::from(has_ribbons) + u32::from(has_trails) + 3 * trail_renderers);
         Self {
             trail_capacity: ProfileValue::Measured(trail_capacity(effect)),
             occupied_trails: ProfileValue::Unavailable,
@@ -308,6 +316,7 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
                 crate::RendererPlanKind::Trail {
                     max_points,
                     max_trails,
+                    end_cap,
                     ..
                 } => {
                     let capacity = if max_trails == 0 {
@@ -315,7 +324,16 @@ fn estimated_buffer_memory(effect: &CompiledEffect) -> u64 {
                     } else {
                         max_trails
                     };
-                    Some((1 + u64::from(capacity) * u64::from(max_points)) * 64)
+                    let candidates = u64::from(capacity)
+                        * (u64::from(max_points.saturating_sub(1))
+                            + if end_cap == aestra_core::TrailEndCap::Rounded {
+                                16
+                            } else {
+                                0
+                            });
+                    // Compact indices, local ranks, owner offsets, indirect/header and parameters.
+                    let compaction = 8 * candidates + 4 * u64::from(capacity) + 128;
+                    Some((1 + u64::from(capacity) * u64::from(max_points)) * 64 + compaction)
                 }
                 _ => None,
             })

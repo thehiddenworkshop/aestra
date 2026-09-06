@@ -150,7 +150,7 @@ fn independent_pool_capacity_is_serialized_validated_and_profiled() {
     assert_eq!(profile.trail_capacity.value(), Some(24));
     assert_eq!(
         profile.buffer_memory_bytes.value().unwrap() - old_memory,
-        16 * 32 * 64
+        16 * (32 * 64 + 8 * 31 + 4)
     );
     profile.record_trail_usage(Some(aestra_runtime::TrailUsage {
         occupied: 20,

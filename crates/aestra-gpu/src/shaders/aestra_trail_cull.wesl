@@ -11,6 +11,7 @@ struct TrailCullParams {
 @group(0) @binding(3) var<storage, read_write> draw: array<u32>;
 @group(0) @binding(4) var<storage, read> globals: RenderGlobals;
 @group(0) @binding(5) var<storage, read> aux: array<u32>;
+@group(0) @binding(6) var<storage, read> source_draw: array<u32>;
 
 fn finite4(value: vec4<f32>) -> bool {
     return all((bitcast<vec4<u32>>(value) & vec4<u32>(0x7f800000u)) != vec4<u32>(0x7f800000u));
@@ -59,7 +60,7 @@ fn trail_outside() -> bool {
 @compute @workgroup_size(1)
 fn cull_trail() {
     draw[0] = 4u;
-    draw[1] = select(cull.instance_count, 0u, trail_outside());
+    draw[1] = select(min(cull.instance_count, source_draw[1]), 0u, trail_outside());
     draw[2] = 0u;
     draw[3] = 0u;
 }

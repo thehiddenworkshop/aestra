@@ -1,16 +1,11 @@
-fn trail_slot(base: u32, capacity: u32, index: u32) -> u32 {
-    // Ring state (head, count) lives in the shared aux buffer, off the particle ABI.
-    let count = aux[base * 3u + 1u];
-    if index == count { return base; }
-    return base + 1u + (aux[base * 3u] + capacity - count + index) % capacity;
-}
-
 fn trail_path_distance(base: u32, slot: u32) -> f32 {
     if slot == base { return bitcast<f32>(aux[(base + 1u) * 3u + 1u]); }
     return bitcast<f32>(aux[slot * 3u]);
 }
 
-fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexData {
+fn aestra_trail_vertex(vertex_index: u32, draw_index: u32) -> SpriteVertexData {
+    var instance_index = draw_index;
+    if params._padding.x != 0u { instance_index = alive_indices[4u + draw_index]; }
     var output: SpriteVertexData;
     output.clip_position = vec4<f32>(0.0, 0.0, 0.0, 1.0);
     let r = renderers[params.renderer_index];
@@ -29,17 +24,7 @@ fn aestra_trail_vertex(vertex_index: u32, instance_index: u32) -> SpriteVertexDa
     if segment >= count { return output; }
     let start = trail_slot(base, capacity, segment);
     let end = trail_slot(base, capacity, segment + 1u);
-    var delta = particles[end].position - particles[start].position;
-    // A fresh sample can coincide with the live head. Find the nearest
-    // distinct anchor for the cap without drawing zero-length body segments.
-    if cap && dot(delta, delta) < 1e-12 {
-        for (var step = 1u; step <= count; step += 1u) {
-            let other = trail_slot(base, capacity, select(step, count - step, head_cap));
-            delta = select(particles[other].position - particles[start].position,
-                particles[end].position - particles[other].position, head_cap);
-            if dot(delta, delta) >= 1e-12 { break; }
-        }
-    }
+    let delta = trail_segment_delta(base, capacity, count, start, end, cap, head_cap);
     if dot(delta, delta) < 1e-12 || globals.time - particles[end].rotation >= r.frame_rate { return output; }
     // Four-vertex triangle strip (see aestra_sprite_vertex): same corner set/winding.
     let corners = array<vec2<f32>, 4>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 1.0));

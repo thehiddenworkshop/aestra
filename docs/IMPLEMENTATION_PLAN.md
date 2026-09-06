@@ -664,6 +664,15 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Native indirect-copy regression covers readback backpressure/recycling, indexed and strip
   commands, direct fallback ranges, zero-draw frames and stale contexts. Sprite, mesh, ribbon
   and nested-trail viewport captures validate the reported native counts.
+  GPU trail-segment compaction now classifies valid body segments and rounded caps, prefixes
+  bounded owner counts and scatters stable owner/primitive indices into an indirect draw list.
+  Shared vertex rejection rules preserve retired tails, partial lifetime fades and cap tangents;
+  per-view culling consumes the compact count, with full-capacity fallback while pipelines load.
+  Three render-preparation dispatches and bounded scratch/index storage are included in profile
+  estimates, separately from measured simulation time. Native regressions cover sparse owners,
+  cap/UV modes, expired/coincident history, repeated rebuilds and per-camera compact counts.
+  Nested-trail captures are byte-identical at 1/3/5 seconds; the final draw drops from 4,032
+  candidate instances to 189 segments (95.3% fewer submitted instances).
   Rendering timing remains separate work.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.

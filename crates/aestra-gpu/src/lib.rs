@@ -193,6 +193,7 @@ pub struct GpuRenderer {
 pub struct GpuRenderParams {
     pub renderer_index: u32,
     pub alive_offset: u32,
+    /// x enables the trail compact-index list in the existing alive-index binding.
     pub _padding: UVec2,
     /// Emitter rotation and relative scale; particle size already includes maximum emitter scale.
     pub mesh_from_local: Mat4,

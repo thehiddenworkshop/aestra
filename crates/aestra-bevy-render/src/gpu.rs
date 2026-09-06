@@ -8,6 +8,7 @@ mod render;
 mod ribbon_bounds;
 mod simulation_timing;
 mod trail_checkpoints;
+mod trail_compaction;
 mod trail_culling;
 mod trail_replay;
 mod wireframe;
@@ -132,6 +133,7 @@ struct GpuDrawInstance {
     emitter_index: u32,
     indirect_offset: u64,
     trail_instances: Option<u32>,
+    trail_owners: u32,
     blend: GpuBlend,
     material: MaterialId,
     semantic_material: Option<GpuSemanticMaterialBinding>,
@@ -321,11 +323,17 @@ pub(crate) fn install(app: &mut App) {
         );
     render::install(render_app);
     trail_culling::install(render_app);
+    trail_compaction::install(render_app);
 }
 
 fn install_shader_assets(app: &App) {
     let registry = app.world().resource::<EmbeddedAssetRegistry>();
     let shader_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../aestra-gpu/src/shaders");
+    registry.insert_asset(
+        shader_root.join("aestra_trail_compact.wesl"),
+        Path::new("aestra_bevy_render/shaders/aestra_trail_compact.wesl"),
+        aestra_gpu::shader::trail_compact_wesl().into_bytes(),
+    );
     registry.insert_asset(
         shader_root.join("aestra_trail_cull.wesl"),
         Path::new("aestra_bevy_render/shaders/aestra_trail_cull.wesl"),
@@ -580,6 +588,7 @@ pub(crate) fn prepare_gpu_effects(
             .emitters
             .len()
             .div_ceil(WORKGROUP_SIZE as usize) as u32;
+        let renderer_owners: Vec<_> = artifact.renderers.iter().map(|r| r.playback_mode).collect();
         let renderers = buffers.add(ShaderBuffer::from(artifact.renderers));
         // Full record count, including the trail-history storage region past
         // total_slots, so aux (indexed by slot) covers trail head/record slots.
@@ -723,6 +732,7 @@ pub(crate) fn prepare_gpu_effects(
                                 emitter_index,
                                 indirect_offset: indirect_draw_offset(emitter_index),
                                 trail_instances: trail_renderers.get(&renderer_index).copied(),
+                                trail_owners: renderer_owners[renderer_index as usize],
                                 blend,
                                 material,
                                 semantic_material,

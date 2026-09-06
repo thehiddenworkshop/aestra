@@ -81,7 +81,9 @@ pub(super) fn install(render_app: &mut SubApp) {
         .add_systems(
             Render,
             (
-                prepare_render_bind_groups.in_set(RenderSystems::PrepareBindGroups),
+                prepare_render_bind_groups
+                    .in_set(RenderSystems::PrepareBindGroups)
+                    .after(super::trail_compaction::TrailCompactionSystems::Prepare),
                 prepare_scene_depth_bind_groups.in_set(RenderSystems::PrepareBindGroups),
                 queue_gpu_sprites.in_set(RenderSystems::QueueMeshes),
                 queue_gpu_sprites_3d.in_set(RenderSystems::QueueMeshes),
@@ -561,7 +563,7 @@ fn prepare_mesh_draws(
 }
 
 #[derive(Component)]
-struct GpuRenderBindGroup(BindGroup);
+struct GpuRenderBindGroup(BindGroup, Option<BindGroup>);
 
 #[derive(Component)]
 struct GpuMaterialBindGroup(BindGroup);
@@ -609,6 +611,7 @@ fn prepare_scene_depth_bind_groups(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn prepare_render_bind_groups(
     mut commands: Commands,
     pipeline: Res<GpuSpritePipeline>,
@@ -617,6 +620,7 @@ fn prepare_render_bind_groups(
     buffers: Res<RenderAssets<GpuShaderBuffer>>,
     images: Res<RenderAssets<GpuImage>>,
     effects: Query<(Entity, &GpuDrawInstance)>,
+    compaction: Res<super::trail_compaction::TrailCompaction>,
 ) {
     for (entity, effect) in &effects {
         let Some(renderers) = buffers.get(&effect.renderers) else {
@@ -657,9 +661,25 @@ fn prepare_render_bind_groups(
                 aux.buffer.as_entire_buffer_binding(),
             )),
         );
+        let compact_group = compaction.entries.get(&entity).map(|entry| {
+            render_device.create_bind_group(
+                Some("aestra compact trail vertex"),
+                &pipeline_cache.get_bind_group_layout(&pipeline.effect_layout),
+                &BindGroupEntries::sequential((
+                    renderers.buffer.as_entire_buffer_binding(),
+                    particles.buffer.as_entire_buffer_binding(),
+                    entry.output.as_entire_buffer_binding(),
+                    globals.buffer.as_entire_buffer_binding(),
+                    entry.render_params.as_entire_buffer_binding(),
+                    &image.texture_view,
+                    &image.sampler,
+                    aux.buffer.as_entire_buffer_binding(),
+                )),
+            )
+        });
         commands
             .entity(entity)
-            .insert(GpuRenderBindGroup(bind_group));
+            .insert(GpuRenderBindGroup(bind_group, compact_group));
         let Some(material) = &effect.semantic_material else {
             commands.entity(entity).remove::<GpuMaterialBindGroup>();
             continue;
@@ -1012,7 +1032,7 @@ type DrawSemanticDepthGpuSprites3d = (
 struct SetGpuRenderBindGroup<const I: usize>;
 
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGpuRenderBindGroup<I> {
-    type Param = ();
+    type Param = SRes<super::trail_compaction::TrailCompaction>;
     type ViewQuery = ();
     type ItemQuery = Read<GpuRenderBindGroup>;
 
@@ -1020,13 +1040,18 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetGpuRenderBindGroup<I>
         _item: &P,
         _view: ROQueryItem<'w, '_, Self::ViewQuery>,
         bind_group: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
-        _param: SystemParamItem<'w, '_, Self::Param>,
+        compaction: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let Some(bind_group) = bind_group else {
             return RenderCommandResult::Skip;
         };
-        pass.set_bind_group(I, &bind_group.0, &[]);
+        let group = if compaction.into_inner().dispatched {
+            bind_group.1.as_ref().unwrap_or(&bind_group.0)
+        } else {
+            &bind_group.0
+        };
+        pass.set_bind_group(I, group, &[]);
         RenderCommandResult::Success
     }
 }
@@ -1079,6 +1104,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         SRes<RenderAssets<GpuShaderBuffer>>,
         SRes<super::trail_culling::TrailCulling>,
         SRes<super::geometry_statistics::Submissions>,
+        SRes<super::trail_compaction::TrailCompaction>,
     );
     type ViewQuery = Entity;
     type ItemQuery = (Read<GpuDrawInstance>, Option<Read<PreparedMeshDraw>>);
@@ -1093,7 +1119,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         let Some((effect, mesh)) = effect else {
             return RenderCommandResult::Skip;
         };
-        let (buffers, culling, submissions) = buffers;
+        let (buffers, culling, submissions, compaction) = buffers;
         let submissions = submissions.into_inner();
         use super::geometry_statistics::Topology;
         if let Some(mesh) = mesh {
@@ -1124,6 +1150,9 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         };
         if let Some(count) = effect.trail_instances {
             if let Some(indirect) = culling.into_inner().indirect(view, item.entity()) {
+                pass.draw_indirect(indirect, 0);
+                submissions.record(effect.owner, Some((indirect, 0)), [0; 2], Topology::Strip);
+            } else if let Some(indirect) = compaction.into_inner().output(item.entity()) {
                 pass.draw_indirect(indirect, 0);
                 submissions.record(effect.owner, Some((indirect, 0)), [0; 2], Topology::Strip);
             } else {

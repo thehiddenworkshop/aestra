@@ -242,6 +242,7 @@ mod tests {
             .resource_mut::<Assets<Mesh>>()
             .reserve_handle();
         let draw = GpuDrawInstance {
+            trail_owners: 0,
             owner: Entity::PLACEHOLDER,
             trail_instances: None,
             mesh: Some(handle.clone()),
