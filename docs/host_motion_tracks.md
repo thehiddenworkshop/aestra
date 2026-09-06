@@ -216,14 +216,21 @@ reconcile the active set; separate root players never share counters.
 
 The editor Profiler uses the same aggregation and shows an active-instance breakdown.
 Its CPU measurements describe reference evaluation of every audible instance, including
-clip parameter overrides, not GPU execution time. Trail counters are asynchronous native
-observations; invalidated telemetry stays unavailable until a matching epoch arrives.
+clip parameter overrides, not GPU execution time. Native-GPU live counts and trail counters
+are asynchronous observations. Live counts reuse per-emitter draw-command counts, reading
+only `16 * emitter_count + 16` bytes per observation, never particle records. The optional
+trailer carries a context token, epoch and simulation time. Seeks, restarts, seed/parameter
+edits, recompilation and rebuilt owners invalidate observations; late, out-of-order results
+cannot replace newer counts. `GpuParticleStatistics::observation` exposes the observed time
+and counts. During bounded trail replay this time can precede the requested seek target.
+Invalidated telemetry stays unavailable until a matching observation arrives. Editor CPU
+timing still measures reference evaluation, while native-GPU live counts come from readback.
 The viewer's `preview-report.json` uses project-wide `metrics`, adds per-path `instances`,
 and includes trail capacity, occupied/retired owners, evictions and truncated histories.
 
 Additive totals retain measured/estimated provenance; any missing contributor makes
 that total unavailable. Non-trail instances contribute known zero trail usage. Native
-GPU particle counts and timings are not fabricated from empty CPU sample arrays.
+GPU timings and submitted geometry remain unavailable rather than being inferred from counts.
 Capacity and buffer memory cover active instances, not the entire dependency library.
 Texture memory and overdraw remain unavailable for compositions because shared assets
 and overlapping draws cannot be summed accurately without further measurement.

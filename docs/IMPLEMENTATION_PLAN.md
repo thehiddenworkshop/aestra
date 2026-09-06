@@ -645,7 +645,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   and trail usage. Unknown GPU observations remain unavailable; texture memory and
   overdraw are not blindly summed across shared resources. Lifecycle, repeated-source,
   multi-root, peak, telemetry-availability and report serialization regressions cover
-  the slice. Native GPU timing/readback expansion remains separate work.
+  the slice. Lightweight native-GPU live-particle telemetry now reads per-emitter
+  indirect counts plus a context/epoch/time trailer (16 bytes per emitter + 16 bytes),
+  without particle-buffer copies. Root/project/editor profiles consume valid counts;
+  seeks, restarts, edits, rebuilt buffers and out-of-order observations reject stale data.
+  GPU conformance checks telemetry against particle records, with owner/nested-root
+  isolation and invalidation regressions. GPU timing and submitted geometry remain separate.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

@@ -360,6 +360,13 @@ fn append_dead(slot: u32) {
 fn reset() {
     atomicStore(&counters[0], 0u);
     atomicStore(&counters[1], 0u);
+    let telemetry = globals.emitter_count * 4u;
+    if arrayLength(&indirect) >= telemetry + 4u {
+        atomicStore(&indirect[telemetry], 2924978177u);
+        atomicStore(&indirect[telemetry + 1u], globals._padding.y);
+        atomicStore(&indirect[telemetry + 2u], globals._padding.x);
+        atomicStore(&indirect[telemetry + 3u], bitcast<u32>(globals.time));
+    }
     var emitter_index = 0u;
     loop {
         if emitter_index >= globals.emitter_count {

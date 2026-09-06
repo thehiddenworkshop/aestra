@@ -2700,11 +2700,13 @@ fn update_preview(
     mut profiler: ResMut<ProfilerState>,
     mut preview: ResMut<EditorPreviewProject>,
     timeline: Res<TimelineState>,
-    trail_stats: Query<
+    gpu_stats: Query<
         (
             &PresentedEffect,
-            &aestra_bevy_render::gpu::GpuTrailStatistics,
+            Option<&aestra_bevy_render::gpu::GpuTrailStatistics>,
             &PreviewEffectInstancePath,
+            Option<&aestra_bevy_render::gpu::GpuParticleStatistics>,
+            Option<&aestra_bevy_render::EffectRuntimeStatus>,
         ),
         With<PreviewPresentedEffect>,
     >,
@@ -2733,14 +2735,29 @@ fn update_preview(
         let mut profile = aestra_runtime::EffectProfile::from_compiled(&desired.effect);
         profile.record_cpu_frame(elapsed, &instance_samples);
         profile.record_submitted_frame(&desired.effect, &instance_samples);
+        let observed = gpu_stats.iter().find(|(p, _, path, _, _)| {
+            path.0 == desired.path && Arc::ptr_eq(p.effect(), &desired.effect)
+        });
         profile.record_trail_usage(
-            trail_stats
-                .iter()
-                .find(|(p, _, path)| {
-                    path.0 == desired.path && Arc::ptr_eq(p.effect(), &desired.effect)
-                })
-                .and_then(|(p, stats, _)| stats.usage(&p.instance)),
+            observed
+                .and_then(|(p, stats, _, _, _)| stats.and_then(|stats| stats.usage(&p.instance))),
         );
+        if let Some((p, _, _, particles, Some(runtime))) = observed
+            && runtime.active == aestra_bevy_render::ActiveBackend::Gpu
+        {
+            // Keep the measured CPU-reference evaluation time, but do not label
+            // reference counts as native-GPU observations while readback is pending.
+            profile.alive_particles = aestra_runtime::ProfileValue::Unavailable;
+            profile.peak_particles = aestra_runtime::ProfileValue::Unavailable;
+            profile.submitted_instances = aestra_runtime::ProfileValue::Unavailable;
+            for emitter in &mut profile.emitters {
+                emitter.alive_particles = 0;
+                emitter.peak_particles = 0;
+            }
+            if let Some(particles) = particles {
+                particles.record_profile(&p.instance, &mut profile);
+            }
+        }
         profiles.push(aestra_runtime::ProjectInstanceProfile {
             path: desired.path,
             effect: desired.effect.source,

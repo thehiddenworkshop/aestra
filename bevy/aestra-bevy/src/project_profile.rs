@@ -17,6 +17,7 @@ pub(super) fn update_project_profiles(
         &mut EffectProfiler,
         Option<&mut ProjectProfiler>,
         Option<&gpu::GpuTrailStatistics>,
+        Option<&gpu::GpuParticleStatistics>,
     )>,
     children: Query<
         (
@@ -24,6 +25,7 @@ pub(super) fn update_project_profiles(
             &PresentedEffect,
             Option<&EffectRuntimeStatus>,
             Option<&gpu::GpuTrailStatistics>,
+            Option<&gpu::GpuParticleStatistics>,
         ),
         Without<EffectPlayer>,
     >,
@@ -34,7 +36,7 @@ pub(super) fn update_project_profiles(
         commands.entity(entity).remove::<ProjectProfiler>();
     }
     let mut by_root: BTreeMap<Entity, Vec<ProjectInstanceProfile>> = BTreeMap::new();
-    for (child, presented, runtime, trails) in &children {
+    for (child, presented, runtime, trails, particles) in &children {
         let mut profile = runtime.map_or_else(
             || EffectProfile::from_compiled(presented.effect()),
             |runtime| bevy_profile(presented.effect(), &capabilities, runtime),
@@ -49,6 +51,11 @@ pub(super) fn update_project_profiles(
             );
         }
         profile.record_trail_usage(trails.and_then(|s| s.usage(&presented.instance)));
+        if runtime.is_some_and(|runtime| runtime.active == ActiveBackend::Gpu)
+            && let Some(particles) = particles
+        {
+            particles.record_profile(&presented.instance, &mut profile);
+        }
         by_root
             .entry(child.root)
             .or_default()
@@ -59,7 +66,9 @@ pub(super) fn update_project_profiles(
                 profile,
             });
     }
-    for (entity, player, presented, runtime, mut root_profile, project, trails) in &mut roots {
+    for (entity, player, presented, runtime, mut root_profile, project, trails, particles) in
+        &mut roots
+    {
         record_presented_profile(
             &mut root_profile.0,
             presented.effect(),
@@ -70,6 +79,11 @@ pub(super) fn update_project_profiles(
         root_profile
             .0
             .record_trail_usage(trails.and_then(|s| s.usage(&presented.instance)));
+        if runtime.active == ActiveBackend::Gpu
+            && let Some(particles) = particles
+        {
+            particles.record_profile(&presented.instance, &mut root_profile.0);
+        }
         let mut entries = vec![ProjectInstanceProfile {
             path: Vec::new(),
             effect: player.effect().source,

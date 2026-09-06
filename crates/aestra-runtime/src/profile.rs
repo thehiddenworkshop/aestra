@@ -227,6 +227,30 @@ impl EffectProfile {
         self.submitted_instances = ProfileValue::Measured(submitted);
     }
 
+    /// Ingests a complete per-emitter GPU observation without fabricating particle samples.
+    /// Invalid/incomplete observations leave the profile unchanged. Timings and
+    /// submitted geometry are independent measurements and are not inferred here.
+    pub fn record_particle_counts(&mut self, counts: &[u32]) -> bool {
+        if counts.len() != self.emitters.len()
+            || counts
+                .iter()
+                .zip(&self.emitters)
+                .any(|(&count, emitter)| count > emitter.particle_capacity)
+        {
+            return false;
+        }
+        let mut alive = 0_u32;
+        for (&count, emitter) in counts.iter().zip(&mut self.emitters) {
+            emitter.alive_particles = count;
+            emitter.peak_particles = emitter.peak_particles.max(count);
+            alive = alive.saturating_add(count);
+        }
+        self.alive_particles = ProfileValue::Measured(alive);
+        self.peak_particles =
+            ProfileValue::Measured(self.peak_particles.value().unwrap_or_default().max(alive));
+        true
+    }
+
     pub fn reset_peaks(&mut self) {
         self.peak_particles = self.alive_particles;
         for emitter in &mut self.emitters {
@@ -319,6 +343,29 @@ const fn particle_attribute_bytes(attribute: ParticleAttribute) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_counts_preserve_peaks_and_reject_incomplete_observations() {
+        let mut profile = crate::ProjectProfile::default().total;
+        for capacity in [10, 20] {
+            profile.emitters.push(EmitterProfile {
+                source: aestra_core::EmitterId::new(),
+                name: "Emitter".into(),
+                alive_particles: 0,
+                peak_particles: 0,
+                particle_capacity: capacity,
+            });
+        }
+        assert!(profile.record_particle_counts(&[5, 7]));
+        assert_eq!(profile.alive_particles, ProfileValue::Measured(12));
+        assert!(profile.record_particle_counts(&[2, 0]));
+        assert_eq!(profile.peak_particles, ProfileValue::Measured(12));
+        assert_eq!(profile.emitters[1].peak_particles, 7);
+        assert!(!profile.record_particle_counts(&[1]));
+        assert!(!profile.record_particle_counts(&[11, 0]));
+        assert_eq!(profile.alive_particles, ProfileValue::Measured(2));
+        assert_eq!(profile.gpu_time_ns, ProfileValue::Unavailable);
+    }
 
     #[test]
     fn profile_values_keep_measurement_provenance() {

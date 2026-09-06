@@ -593,6 +593,9 @@ fn record_presented_profile(
     profile.cpu_time_ns = ProfileValue::Unavailable;
     profile.alive_particles = ProfileValue::Unavailable;
     profile.submitted_instances = ProfileValue::Unavailable;
+    for emitter in &mut profile.emitters {
+        emitter.alive_particles = 0;
+    }
     if let Some(elapsed) = cpu_evaluation_time {
         profile.record_cpu_frame(elapsed, samples);
         profile.record_submitted_frame(effect, samples);
@@ -781,6 +784,11 @@ mod tests {
         assert_eq!(profile.alive_particles, ProfileValue::Unavailable);
         assert_eq!(profile.submitted_instances, ProfileValue::Unavailable);
         assert_eq!(profile.peak_particles, ProfileValue::Unavailable);
+        assert!(profile.record_particle_counts(&[7]));
+        record_presented_profile(&mut profile, &compiled, &[], None, ActiveBackend::Gpu);
+        assert_eq!(profile.alive_particles, ProfileValue::Unavailable);
+        assert_eq!(profile.emitters[0].alive_particles, 0);
+        assert_eq!(profile.emitters[0].peak_particles, 7);
     }
 
     #[test]

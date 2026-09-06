@@ -2,6 +2,7 @@
 
 mod bounds;
 mod mesh_inputs;
+mod particle_statistics;
 mod render;
 mod ribbon_bounds;
 mod trail_checkpoints;
@@ -29,7 +30,8 @@ pub use aestra_gpu::{
     MAX_FLIPBOOK_FRAMES,
 };
 use aestra_gpu::{
-    GpuBlend, WORKGROUP_SIZE, fold_seed, indirect_draw_commands, indirect_draw_offset,
+    GpuBlend, WORKGROUP_SIZE, fold_seed, indirect_draw_commands_with_statistics,
+    indirect_draw_offset,
 };
 use aestra_runtime::RendererPlanKind;
 use bevy::{
@@ -61,6 +63,7 @@ use bevy::{
         sync_component::SyncComponent,
     },
 };
+pub use particle_statistics::GpuParticleStatistics;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -522,7 +525,8 @@ pub(crate) fn prepare_gpu_effects(
             center: Vec3A::ZERO,
             half_extents: Vec3A::from(artifact.bounds_half_extents),
         };
-        let indirect_draw_commands = indirect_draw_commands(&artifact.emitters);
+        let indirect_draw_commands = indirect_draw_commands_with_statistics(&artifact.emitters);
+        let particle_statistics = GpuParticleStatistics::new(&player.instance);
         let trail_roots = artifact
             .emitters
             .iter()
@@ -624,7 +628,16 @@ pub(crate) fn prepare_gpu_effects(
                 total_slots: artifact.total_slots,
             },
             GpuPresentationPrepared,
+            particle_statistics,
         ));
+        commands.entity(entity).with_children(|parent| {
+            parent
+                .spawn((
+                    Readback::buffer(indirect.clone()),
+                    particle_statistics::ParticleStatisticsOwner(entity),
+                ))
+                .observe(particle_statistics::receive_particle_statistics);
+        });
         if has_trails {
             commands
                 .entity(entity)
@@ -1142,9 +1155,15 @@ fn sync_host_motion_draw_transforms(
 // Rendering and culling must see the same frame's propagated effect transform.
 fn sync_gpu_render_transforms(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    mut players: Query<(&PresentedEffect, &GlobalTransform, &mut GpuEffectBuffers)>,
+    mut players: Query<(
+        &PresentedEffect,
+        &GlobalTransform,
+        &mut GpuEffectBuffers,
+        &mut GpuParticleStatistics,
+    )>,
 ) {
-    for (player, transform, mut gpu) in &mut players {
+    for (player, transform, mut gpu, mut statistics) in &mut players {
+        let statistics_token = statistics.sync(&player.instance);
         let placement = Mat4::from(transform.affine());
         let world = placement
             * Mat4::from_cols_array(
@@ -1194,7 +1213,7 @@ fn sync_gpu_render_transforms(
                 emitter_count: player.effect().emitters.len() as u32,
                 duration: player.effect().duration,
                 continuous: u32::from(player.effect().playback_mode.is_continuous()),
-                _padding: UVec2::new(player.instance.history_epoch(), 0),
+                _padding: UVec2::new(player.instance.history_epoch(), statistics_token),
                 world_from_effect: world,
             });
         }
@@ -1743,6 +1762,7 @@ mod tests {
         PropertySourceValue, RendererInstance, ScalarRange, UvRect, Value, Vec3Curve, Vec3Range,
     };
     use aestra_gpu::INDIRECT_DRAW_BYTES;
+    use aestra_gpu::indirect_draw_commands;
     use aestra_runtime::EffectInstance;
     use std::sync::Arc;
 
@@ -1790,6 +1810,7 @@ mod tests {
             .spawn((
                 ChildOf(parent),
                 Transform::IDENTITY,
+                GpuParticleStatistics::new(&EffectInstance::new(compiled.clone())),
                 PresentedEffect::new(compiled),
                 GpuEffectBuffers {
                     emitters: default(),

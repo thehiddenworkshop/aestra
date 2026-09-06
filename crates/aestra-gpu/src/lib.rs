@@ -711,6 +711,16 @@ pub fn indirect_draw_commands(emitters: &[GpuEmitter]) -> Vec<u32> {
     emitters.iter().flat_map(|_| [6, 0, 0, 0]).collect()
 }
 
+/// Optional readback trailer: magic, context token, history epoch, simulation-time bits.
+/// The original four-word draw commands (and their offsets) stay unchanged.
+pub const PARTICLE_STATISTICS_MAGIC: u32 = 0xae57_a001;
+
+pub fn indirect_draw_commands_with_statistics(emitters: &[GpuEmitter]) -> Vec<u32> {
+    let mut words = indirect_draw_commands(emitters);
+    words.extend([0; 4]);
+    words
+}
+
 pub const fn indirect_draw_offset(emitter_index: u32) -> u64 {
     emitter_index as u64 * INDIRECT_DRAW_BYTES
 }
@@ -1230,6 +1240,10 @@ mod tests {
         );
         assert_eq!(indirect_draw_offset(0), 0);
         assert_eq!(indirect_draw_offset(1), INDIRECT_DRAW_BYTES);
+        let telemetry = indirect_draw_commands_with_statistics(&emitters);
+        assert_eq!(telemetry.len() * size_of::<u32>(), 16 * emitters.len() + 16);
+        assert_eq!(&telemetry[..8], indirect_draw_commands(&emitters));
+        assert_eq!(&telemetry[8..], &[0; 4]);
     }
 
     #[test]

@@ -6,8 +6,7 @@ use aestra_core::{
     PropertySource, PropertySourceValue, ScalarRange, Value, Vec3Curve, Vec3Range,
 };
 use aestra_gpu::{
-    GpuEffectArtifact, GpuGlobals, GpuParticle, WORKGROUP_SIZE, fold_seed, indirect_draw_commands,
-    shader::GpuShaderPackage,
+    GpuEffectArtifact, GpuGlobals, GpuParticle, WORKGROUP_SIZE, fold_seed, shader::GpuShaderPackage,
 };
 use aestra_runtime::{CompiledParameterOverride, EffectInstance, ParticleSample, RuntimeValue};
 use encase::{ShaderType, StorageBuffer, internal::WriteInto};
@@ -1088,6 +1087,12 @@ impl GpuHarness {
         artifact: &GpuEffectArtifact,
         globals: GpuGlobals,
     ) -> Result<Vec<ParticleSample>, String> {
+        let expected_telemetry = [
+            aestra_gpu::PARTICLE_STATISTICS_MAGIC,
+            globals._padding.y,
+            globals._padding.x,
+            globals.time.to_bits(),
+        ];
         let emitters = self.read_only_buffer("emitters", &encode(&artifact.emitters)?);
         let particles_bytes = encode(&artifact.particles)?;
         let particles = self.read_write_buffer("particles", &particles_bytes, true);
@@ -1097,8 +1102,10 @@ impl GpuHarness {
         let counters = self.read_write_buffer("counters", &encode(&vec![0_u32; 2])?, false);
         let indirect = self.read_write_buffer(
             "indirect",
-            &encode(&indirect_draw_commands(&artifact.emitters))?,
-            false,
+            &encode(&aestra_gpu::indirect_draw_commands_with_statistics(
+                &artifact.emitters,
+            ))?,
+            true,
         );
         let globals = self.read_only_buffer("globals", &encode(&globals)?);
         // Read the actual link output after simulation for ribbon fixtures.
@@ -1123,7 +1130,7 @@ impl GpuHarness {
         });
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Aestra CPU GPU conformance readback"),
-            size: particles_bytes.len() as u64 + aux.size(),
+            size: particles_bytes.len() as u64 + aux.size() + indirect.size(),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -1147,6 +1154,8 @@ impl GpuHarness {
         }
         encoder.copy_buffer_to_buffer(&particles, 0, &staging, 0, particles_bytes.len() as u64);
         encoder.copy_buffer_to_buffer(&aux, 0, &staging, particles_bytes.len() as u64, aux.size());
+        let telemetry_offset = particles_bytes.len() as u64 + aux.size();
+        encoder.copy_buffer_to_buffer(&indirect, 0, &staging, telemetry_offset, indirect.size());
         let submission = self.queue.submit([encoder.finish()]);
         let slice = staging.slice(..);
         let (sender, receiver) = mpsc::channel();
@@ -1179,10 +1188,30 @@ impl GpuHarness {
         let particles: Vec<GpuParticle> = StorageBuffer::new(&bytes[..particles_bytes.len()])
             .create()
             .map_err(|error| error.to_string())?;
-        let links: Vec<u32> = StorageBuffer::new(&bytes[particles_bytes.len()..])
+        let links: Vec<u32> =
+            StorageBuffer::new(&bytes[particles_bytes.len()..telemetry_offset as usize])
+                .create()
+                .map_err(|error| error.to_string())?;
+        let telemetry: Vec<u32> = StorageBuffer::new(&bytes[telemetry_offset as usize..])
             .create()
             .map_err(|error| error.to_string())?;
+        assert_eq!(
+            &telemetry[artifact.emitters.len() * 4..],
+            &expected_telemetry
+        );
         for (emitter_index, emitter) in artifact.emitters.iter().enumerate() {
+            let alive = particles
+                .iter()
+                .filter(|particle| {
+                    particle.packed_emitter_alive & 0xffff != 0
+                        && particle.packed_emitter_alive >> 16 == emitter_index as u32
+                })
+                .count() as u32;
+            assert_eq!(
+                telemetry[emitter_index * 4 + 1],
+                alive,
+                "per-emitter GPU telemetry"
+            );
             let strands = emitter._turbulence_padding;
             if strands == 0 {
                 continue;
