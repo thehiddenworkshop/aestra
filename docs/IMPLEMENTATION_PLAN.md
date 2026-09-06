@@ -8,8 +8,10 @@ architecture vision; this file is the shorter delivery plan.
 
 ## Current delivery status
 
-- Asset Browser track: reviewed and planned; no implementation started. The repository-specific
-  milestones and gates are in [`ASSET_BROWSER_IMPLEMENTATION_PLAN.md`](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
+- Asset Browser track: AB0 contracts/inventory recorded and AB1 read-only source tree
+  and semantic join implemented; no UI migration yet. Next is AB2 coherent refresh.
+  Milestones and platform-verification caveats are in
+  [`ASSET_BROWSER_IMPLEMENTATION_PLAN.md`](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 - M0 reference behavior and architecture decisions: complete.
 - M1 semantic core and format v3 foundation: complete for the native 3D module set.
 - M2 deterministic authoring operations: complete for current editor operations.
@@ -752,9 +754,11 @@ authoritative delivery sequence and acceptance gates; preserve the proposal as U
 - AB9 (P2): asynchronous bounded thumbnails, favorites/recent, then saved searches and
   collections; full importers/multiple browsers/native watchers remain separate scope.
 
-Status: review complete; all implementation gates pending. First PR is AB0 test gaps
-and AB1 project-content model, not a Library rename or graph/editor rewrite. The editor
-must remain independent of the `bevy/aestra-bevy` runtime integration.
+Status: AB0 inventory/contracts and AB1 project-content model implemented, including
+generic files/folders, duplicate-safe semantic joins and legacy-index compatibility.
+Native link/Unix acceptance caveats are tracked in the migration checklist. AB2–AB9
+are pending; there is no Library rename or graph/editor rewrite in this first slice.
+The editor must remain independent of the `bevy/aestra-bevy` runtime integration.
 
 ## Stability-hardening milestone
 

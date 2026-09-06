@@ -1,6 +1,8 @@
 # Asset Browser delivery plan
 
-Status: reviewed and planned, 2026-09-06. **No browser implementation started.**
+Status: implementation started, 2026-09-06. AB0 contracts/inventory recorded and AB1
+read-only content model implemented. Platform verification caveats are recorded in
+[the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md). No browser UI yet.
 
 This is the repository-specific delivery plan for
 [`aestra_asset_browser_plan.md`](aestra_asset_browser_plan.md). That proposal remains
@@ -74,12 +76,13 @@ The first browser will not offer a warning-only “unsafe” bypass.
 ## Milestone sequence
 
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
-**P1** usable migration, **P2** subsequent polish. Only AB0's review is complete.
+**P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
+slice; AB2–AB9 are pending. Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
 | --- | --- | --- | --- |
-| AB0 — Contracts and migration inventory | P0 | — | Decisions below frozen; existing tests characterized; Library parity checklist. Review complete, tests/inventory still to implement. |
-| AB1 — Project content model | P0 | AB0 | Generic source tree joined to the existing semantic index, deterministic tests, no UI replacement. |
+| AB0 — Contracts and migration inventory | P0 | — | Contracts, characterization coverage and Library parity inventory recorded in the migration checklist. |
+| AB1 — Project content model | P0 | AB0 | Implemented: source tree joined to the existing semantic index, deterministic tests, no UI replacement. Native link/Unix verification caveats remain. |
 | AB2 — Coherent refresh and editor adapter | P0 | AB1 | One background/polled refresh path; external changes and dirty drafts handled safely. |
 | AB3 — Read-only Asset Browser | P1 | AB2 | Tree/grid/list/navigation/search/inspection and existing effect opening usable through retained Feathers UI. |
 | AB4 — Standalone material programs | P1 | AB3 | Open/edit/undo/save a project material without an effect prerequisite. |
@@ -333,6 +336,7 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step:** AB0 characterization gaps + AB1 source-tree/content-join PR.
-Do not begin by renaming `library.rs`, implementing thumbnails, or rewriting material
-editing. The first PR should demonstrate generic project discovery without any UI change.
+**Immediate next step:** AB2 coherent refresh and the editor adapter, after reviewing
+the AB0/AB1 slice. Preserve the native-platform test caveats in the checklist until
+verified on capable hosts. Do not begin by renaming `library.rs`, implementing
+thumbnails, or rewriting material editing; the browser UI starts in AB3.

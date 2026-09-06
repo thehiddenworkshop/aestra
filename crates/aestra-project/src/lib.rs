@@ -1,12 +1,15 @@
 //! Engine-independent discovery and resolution of project-level Aestra assets.
 //!
-//! Source paths are locations, not semantic identity. Valid effect and material-program references
-//! use persisted semantic IDs, so moving or renaming a file cannot break a reference.
-//! [`ProjectSourceId`] exists only to identify rows and diagnostics for source files that may be
-//! invalid and therefore have no readable semantic ID.
+//! Source paths are locations, not semantic identity. Typed asset references use persisted
+//! semantic IDs, so moving or renaming a file does not change those references.
+//! [`ProjectSourceId`] identifies filesystem rows and diagnostics, including folders, generic
+//! files and invalid sources without readable semantic IDs. [`ProjectContent`] joins this
+//! source hierarchy to the existing semantic index without inventing new asset identities.
 
+pub mod content;
 mod editor_layout;
 
+pub use content::*;
 pub use editor_layout::*;
 
 pub use aestra_core::EffectAssetRef;
@@ -62,10 +65,11 @@ impl From<MaterialPresetId> for ProjectAssetId {
     }
 }
 
-/// A deterministic identity for one source location inside an index.
+/// A deterministic identity for one source location inside a discovery snapshot/index.
 ///
 /// This is deliberately not serializable and must never be stored as an effect dependency. Its
-/// only purpose is to keep UI rows and invalid-file diagnostics addressable.
+/// only purpose is to keep filesystem rows (including folders) and diagnostics addressable.
+/// It may change on moves; persist validated relative paths or semantic IDs instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProjectSourceId(u64);
 
@@ -276,72 +280,69 @@ pub struct ProjectAssetIndex {
 }
 
 impl ProjectAssetIndex {
+    /// Compatibility discovery: every RON source remains a semantic candidate. New content
+    /// consumers should use ProjectContent, which separates generic RON from invalid assets.
     pub fn scan(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref().to_owned();
-        let mut paths = Vec::new();
-        let mut diagnostics = Vec::new();
-        if let Err(error) = collect_effect_sources(&root, &mut paths, &mut diagnostics, true) {
-            let message = error.to_string();
-            diagnostics.push(ProjectAssetDiagnostic {
-                code: ProjectAssetDiagnosticCode::SourceUnavailable,
-                path: Some(root.clone()),
-                message: message.clone(),
-            });
-            return Self {
-                root: root.clone(),
-                effects: Vec::new(),
-                material_programs: Vec::new(),
-                material_functions: Vec::new(),
-                material_presets: Vec::new(),
-                availability: ProjectAssetIndexAvailability::Unavailable { root, message },
-                diagnostics,
-                effect_sources: BTreeMap::new(),
-                material_program_sources: BTreeMap::new(),
-                material_function_sources: BTreeMap::new(),
-                material_preset_sources: BTreeMap::new(),
-            };
-        }
-        paths.sort();
-        paths.dedup();
+        Self::from_source_tree(&ProjectSourceTree::scan(root), true)
+    }
 
-        let mut material_paths = Vec::new();
-        let mut function_paths = Vec::new();
-        let mut preset_paths = Vec::new();
-        let mut effect_paths = Vec::new();
-        for path in paths {
-            if is_material_preset_source(&path) {
-                preset_paths.push(path);
-            } else if is_material_function_source(&path) {
-                function_paths.push(path);
-            } else if is_material_program_source(&path) {
-                material_paths.push(path);
-            } else {
-                effect_paths.push(path);
+    fn from_source_tree(tree: &ProjectSourceTree, legacy_ron_candidates: bool) -> Self {
+        let root = tree.root_path().to_owned();
+        let mut diagnostics = tree.diagnostics().to_vec();
+        let mut effects = Vec::new();
+        let mut material_programs = Vec::new();
+        let mut material_functions = Vec::new();
+        let mut material_presets = Vec::new();
+        for source in tree.entries() {
+            let ProjectSourceKind::File(file) = &source.kind else {
+                continue;
+            };
+            // A file passed as the root is an unavailable project, not an asset candidate.
+            if source.parent.is_none() || !is_project_asset_source(&source.path) {
+                continue;
+            }
+            let path = source.path.clone();
+            match file.classification {
+                ProjectFileClassification::MaterialPreset => {
+                    let mut entry = index_material_preset_source(&root, path, &mut diagnostics);
+                    entry.id = source.id;
+                    material_presets.push(entry);
+                }
+                ProjectFileClassification::MaterialFunction => {
+                    let mut entry = index_material_function_source(&root, path, &mut diagnostics);
+                    entry.id = source.id;
+                    material_functions.push(entry);
+                }
+                ProjectFileClassification::MaterialProgram => {
+                    let mut entry = index_material_program_source(&root, path, &mut diagnostics);
+                    entry.id = source.id;
+                    material_programs.push(entry);
+                }
+                _ => {
+                    let before = diagnostics.len();
+                    let mut entry = index_effect_source(&root, path, &mut diagnostics);
+                    entry.id = source.id;
+                    if legacy_ron_candidates
+                        || file.classification == ProjectFileClassification::Effect
+                        || entry.reference.is_some()
+                        || matches!(entry.status, ProjectEffectStatus::Unsupported { .. })
+                    {
+                        effects.push(entry);
+                    } else {
+                        // Valid legacy .ron effects still join. Failed unknown RON parsing is
+                        // not an asset diagnostic; the file remains a generic source row.
+                        diagnostics.truncate(before);
+                    }
+                }
             }
         }
-        let effects = effect_paths
-            .into_iter()
-            .map(|path| index_effect_source(&root, path, &mut diagnostics))
-            .collect();
-        let material_programs = material_paths
-            .into_iter()
-            .map(|path| index_material_program_source(&root, path, &mut diagnostics))
-            .collect();
-        let material_functions = function_paths
-            .into_iter()
-            .map(|path| index_material_function_source(&root, path, &mut diagnostics))
-            .collect();
-        let material_presets = preset_paths
-            .into_iter()
-            .map(|path| index_material_preset_source(&root, path, &mut diagnostics))
-            .collect();
         Self::from_parts(
             root,
             effects,
             material_programs,
             material_functions,
             material_presets,
-            ProjectAssetIndexAvailability::Ready,
+            tree.availability().clone(),
             diagnostics,
         )
     }
@@ -2099,80 +2100,10 @@ fn material_dependency_code(
     }
 }
 
-fn collect_effect_sources(
-    directory: &Path,
-    paths: &mut Vec<PathBuf>,
-    diagnostics: &mut Vec<ProjectAssetDiagnostic>,
-    root: bool,
-) -> std::io::Result<()> {
-    let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(error) if !root => {
-            diagnostics.push(ProjectAssetDiagnostic {
-                code: ProjectAssetDiagnosticCode::SourceUnavailable,
-                path: Some(directory.to_owned()),
-                message: error.to_string(),
-            });
-            return Ok(());
-        }
-        Err(error) => return Err(error),
-    };
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(error) => {
-                diagnostics.push(ProjectAssetDiagnostic {
-                    code: ProjectAssetDiagnosticCode::SourceUnavailable,
-                    path: Some(directory.to_owned()),
-                    message: error.to_string(),
-                });
-                continue;
-            }
-        };
-        let path = entry.path();
-        match entry.file_type() {
-            Ok(kind) if kind.is_dir() && path.file_name().is_some_and(|name| name == ".aestra") => {
-            }
-            Ok(kind) if kind.is_dir() => {
-                collect_effect_sources(&path, paths, diagnostics, false)?;
-            }
-            Ok(kind) if kind.is_file() && is_project_asset_source(&path) => paths.push(path),
-            Ok(_) => {}
-            Err(error) => diagnostics.push(ProjectAssetDiagnostic {
-                code: ProjectAssetDiagnosticCode::SourceUnavailable,
-                path: Some(path),
-                message: error.to_string(),
-            }),
-        }
-    }
-    Ok(())
-}
-
 /// Source-file filter shared by project indexing and editor filesystem watching.
 pub fn is_project_asset_source(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("ron"))
-}
-
-fn is_material_program_source(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.to_lowercase().ends_with(".aestra.material.ron"))
-}
-
-fn is_material_function_source(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            name.to_lowercase()
-                .ends_with(".aestra.material-function.ron")
-        })
-}
-
-fn is_material_preset_source(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.to_lowercase().ends_with(".aestra.material-preset.ron"))
 }
 
 fn index_effect_source(
