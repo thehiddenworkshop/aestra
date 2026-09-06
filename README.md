@@ -223,7 +223,11 @@ commands.spawn(EffectPlayer::from_project(std::sync::Arc::new(project)));
 Control the root player normally; the plugin manages active child presentations,
 clip timing, seeds, parameters and inherited motion. The editor and viewer use the
 same scheduler. See [nested motion and playback](docs/host_motion_tracks.md#nested-clips).
-Profile summaries currently describe the root player. Timed semantic notifications from the root
+`ProjectProfiler` exposes active root-and-child totals and per-clip breakdowns after
+`AestraSet::Profile`; `EffectProfiler` remains root-only for existing integrations.
+The editor Profiler and viewer capture reports use project totals. Missing GPU measurements
+remain unavailable, and shared texture memory is not double-counted.
+Timed semantic notifications from the root
 and nested clips are emitted as `AestraChoreographyEvent` observer events. `player` identifies the
 root entity, `clip_path` identifies the source instance (empty for the root), and `effect` identifies
 the compiled source. Seeks, frame stepping, and external clock synchronization are silent;

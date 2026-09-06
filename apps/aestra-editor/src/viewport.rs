@@ -7,7 +7,7 @@ use crate::{
     feathers::tooltip::EditorTooltip,
     localization::Localizer,
     persistence::persist_editor_settings,
-    profiler::{ProfilerFrameSample, ProfilerState},
+    profiler::ProfilerState,
     properties::{ModulePaletteState, module_parameter},
     session::EditorSession,
     settings::{EditorSettings, SettingsPersistence},
@@ -2704,18 +2704,13 @@ fn update_preview(
         (
             &PresentedEffect,
             &aestra_bevy_render::gpu::GpuTrailStatistics,
+            &PreviewEffectInstancePath,
         ),
         With<PreviewPresentedEffect>,
     >,
 ) {
-    let compiled = session
-        .preview
-        .as_ref()
-        .map(|preview| preview.effect().clone());
     let mut samples = std::mem::take(&mut session.samples);
-    let started = Instant::now();
     session.evaluate_preview(&mut samples);
-    let elapsed = started.elapsed();
     session.samples = samples;
     let desired = desired_preview_instances(
         &preview,
@@ -2724,30 +2719,36 @@ fn update_preview(
         session.preview_seed,
     );
     let mut instance_samples = Vec::new();
-    preview.live_particle_count = desired
-        .iter()
-        .map(|instance| {
-            aestra_runtime::evaluate(
-                &instance.effect,
-                instance.time,
-                instance.seed,
-                &mut instance_samples,
-            );
-            instance_samples.len()
-        })
-        .sum();
-    if let Some(compiled) = compiled
-        && profiler
-            .ingest(
-                ProfilerFrameSample::new(&compiled, &session.samples, elapsed).with_trails(
-                    trail_stats
-                        .iter()
-                        .find(|(p, _)| std::sync::Arc::ptr_eq(p.effect(), &compiled))
-                        .and_then(|(p, s)| s.usage(&p.instance)),
-                ),
-            )
-            .profile_rebuilt()
-    {
+    let mut profiles = Vec::new();
+    preview.live_particle_count = 0;
+    for desired in desired {
+        let mut instance = aestra_runtime::EffectInstance::new(desired.effect.clone());
+        instance.set_seed(desired.seed);
+        instance.apply_compiled_parameter_overrides(&desired.parameter_overrides);
+        instance.set_playback_time(desired.time);
+        let started = Instant::now();
+        instance.evaluate(&mut instance_samples);
+        let elapsed = started.elapsed();
+        preview.live_particle_count += instance_samples.len();
+        let mut profile = aestra_runtime::EffectProfile::from_compiled(&desired.effect);
+        profile.record_cpu_frame(elapsed, &instance_samples);
+        profile.record_submitted_frame(&desired.effect, &instance_samples);
+        profile.record_trail_usage(
+            trail_stats
+                .iter()
+                .find(|(p, _, path)| {
+                    path.0 == desired.path && Arc::ptr_eq(p.effect(), &desired.effect)
+                })
+                .and_then(|(p, stats, _)| stats.usage(&p.instance)),
+        );
+        profiles.push(aestra_runtime::ProjectInstanceProfile {
+            path: desired.path,
+            effect: desired.effect.source,
+            name: desired.effect.name.clone(),
+            profile,
+        });
+    }
+    if profiler.ingest_project(profiles).profile_rebuilt() {
         session.ui_revision += 1;
     }
 }

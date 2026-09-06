@@ -636,8 +636,16 @@ the current sprite-material path until the native-GPU compatibility gate approve
   ordering and frame-aligned root restart boundaries preserve deterministic dispatch.
   Regression tests cover nested windows, short clips, source-offset pre-roll, all
   playback/seek modes, coarse/fine advances, speed, pause, repeated sources and
-  multi-root observer isolation. Aggregate project profiling remains a follow-up;
-  current profile summaries are root scoped.
+  multi-root observer isolation. Shared project profiling now aggregates active
+  instance snapshots by clip path/source ID, preserving measured/estimated/unavailable
+  provenance and simultaneous peaks. Bevy exposes a separate `ProjectProfiler` after
+  presentation preparation, preserving the root-only `EffectProfiler` contract.
+  The editor profiles every audible instance with parameter overrides and displays
+  project totals plus active-instance costs. Viewer reports include per-path metrics
+  and trail usage. Unknown GPU observations remain unavailable; texture memory and
+  overdraw are not blindly summed across shared resources. Lifecycle, repeated-source,
+  multi-root, peak, telemetry-availability and report serialization regressions cover
+  the slice. Native GPU timing/readback expansion remains separate work.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

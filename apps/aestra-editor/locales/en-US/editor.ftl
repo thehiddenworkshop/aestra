@@ -676,7 +676,8 @@ diagnostics-code-missing-resource-declaration = Missing resource declaration
 diagnostics-code-invalid-render-state = Invalid render state
 diagnostics-code-unreachable-expression = Unreachable expression
 
-profiler-effect-profile = EFFECT PROFILE
+profiler-effect-profile = PROJECT PROFILE
+profiler-project-instances = ACTIVE EFFECT INSTANCES
 profiler-status-last-valid = CPU REFERENCE  ·  LAST VALID EFFECT
 profiler-status-live = CPU REFERENCE  ·  LIVE
 profiler-reset-peaks = RESET PEAKS

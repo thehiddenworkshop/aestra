@@ -100,6 +100,7 @@ pub struct PreviewRuntimeData<'a> {
     pub settings: &'a AestraSettings,
     pub capabilities: &'a GpuCapabilities,
     pub profile: Option<&'a EffectProfile>,
+    pub project: Option<&'a aestra_bevy::ProjectProfile>,
 }
 
 pub fn write_preview_report(
@@ -197,6 +198,18 @@ pub fn write_preview_report(
                 .min(runtime.settings.max_gpu_particles),
         }),
         metrics: runtime.profile.map(PreviewMetrics::from),
+        instances: runtime.project.map(|project| {
+            project
+                .instances
+                .iter()
+                .map(|instance| PreviewInstanceMetrics {
+                    clip_path: instance.path.iter().map(ToString::to_string).collect(),
+                    effect: instance.effect.to_string(),
+                    name: instance.name.clone(),
+                    metrics: (&instance.profile).into(),
+                })
+                .collect()
+        }),
     };
     write_json(output_directory, &report)
 }
@@ -222,6 +235,7 @@ pub fn write_preview_failure_report(
         comparison: None,
         runtime: None,
         metrics: None,
+        instances: None,
     };
     write_json(output_directory, &report)
 }
@@ -259,6 +273,16 @@ struct PreviewReport {
     runtime: Option<PreviewRuntime>,
     #[serde(skip_serializing_if = "Option::is_none")]
     metrics: Option<PreviewMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instances: Option<Vec<PreviewInstanceMetrics>>,
+}
+
+#[derive(Serialize)]
+struct PreviewInstanceMetrics {
+    clip_path: Vec<String>,
+    effect: String,
+    name: String,
+    metrics: PreviewMetrics,
 }
 
 #[derive(Serialize)]
@@ -498,6 +522,11 @@ struct PreviewAdapter {
 
 #[derive(Serialize)]
 struct PreviewMetrics {
+    trail_capacity: PreviewMetric<u32>,
+    occupied_trails: PreviewMetric<u32>,
+    retired_trails: PreviewMetric<u32>,
+    trail_evictions: PreviewMetric<u32>,
+    truncated_trails: PreviewMetric<u32>,
     cpu_time_ns: PreviewMetric<u64>,
     gpu_time_ns: PreviewMetric<u64>,
     alive_particles: PreviewMetric<u32>,
@@ -519,6 +548,11 @@ struct PreviewMetrics {
 impl From<&EffectProfile> for PreviewMetrics {
     fn from(profile: &EffectProfile) -> Self {
         Self {
+            trail_capacity: profile.trail_capacity.into(),
+            occupied_trails: profile.occupied_trails.into(),
+            retired_trails: profile.retired_trails.into(),
+            trail_evictions: profile.trail_evictions.into(),
+            truncated_trails: profile.truncated_trails.into(),
             cpu_time_ns: profile.cpu_time_ns.into(),
             gpu_time_ns: profile.gpu_time_ns.into(),
             alive_particles: profile.alive_particles.into(),
@@ -641,6 +675,19 @@ mod tests {
         compiled.optimizations.material_function_calls_live = 5;
         let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
         let profile = EffectProfile::from_compiled(&compiled);
+        let mut project = aestra_bevy::ProjectProfile::default();
+        let root = aestra_bevy::ProjectInstanceProfile {
+            path: Vec::new(),
+            effect: compiled.source,
+            name: compiled.name.clone(),
+            profile,
+        };
+        let mut child = root.clone();
+        child.path.push(aestra_bevy::EffectClipId::new());
+        let path = child.path[0].to_string();
+        child.profile.trail_capacity = ProfileValue::Measured(4);
+        child.profile.record_trail_usage(Some(Default::default()));
+        project.update(vec![root, child]);
 
         write_preview_report(
             directory.path(),
@@ -659,7 +706,8 @@ mod tests {
                 effect_runtime: None,
                 settings: &AestraSettings::default(),
                 capabilities: &GpuCapabilities::default(),
-                profile: Some(&profile),
+                profile: Some(&project.total),
+                project: Some(&project),
             },
             None,
             None,
@@ -670,6 +718,14 @@ mod tests {
             serde_json::from_slice(&fs::read(directory.path().join(PREVIEW_REPORT_FILE)).unwrap())
                 .unwrap();
         assert_eq!(value["status"], "succeeded");
+        assert_eq!(value["instances"].as_array().unwrap().len(), 2);
+        assert_eq!(value["instances"][0]["clip_path"], serde_json::json!([]));
+        assert_eq!(value["instances"][1]["clip_path"][0], path);
+        assert_eq!(value["metrics"]["trail_capacity"]["value"], 4);
+        assert_eq!(
+            value["metrics"]["particle_capacity"]["value"],
+            2 * compiled.max_particles
+        );
         assert_eq!(
             value["compiler"]["optimizations"]["material_function_calls_authored"],
             9
@@ -760,6 +816,7 @@ mod tests {
                 settings: &AestraSettings::default(),
                 capabilities: &GpuCapabilities::default(),
                 profile: None,
+                project: None,
             },
             Some(&comparison),
             Some("visual regression failed"),

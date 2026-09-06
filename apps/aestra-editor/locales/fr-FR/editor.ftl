@@ -676,7 +676,8 @@ diagnostics-code-missing-resource-declaration = Déclaration de ressource manqua
 diagnostics-code-invalid-render-state = État de rendu non valide
 diagnostics-code-unreachable-expression = Expression inaccessible
 
-profiler-effect-profile = PROFIL DE L’EFFET
+profiler-effect-profile = PROFIL DU PROJET
+profiler-project-instances = INSTANCES D’EFFET ACTIVES
 profiler-status-last-valid = RÉFÉRENCE CPU  ·  DERNIER EFFET VALIDE
 profiler-status-live = RÉFÉRENCE CPU  ·  DIRECT
 profiler-reset-peaks = RÉINITIALISER LES MAXIMA

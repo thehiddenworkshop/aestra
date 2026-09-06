@@ -2,7 +2,9 @@
 #[cfg(test)]
 mod choreography_tests;
 mod project;
+mod project_profile;
 pub use project::EffectClipInstance;
+pub use project_profile::ProjectProfiler;
 
 pub use aestra_bevy_render::material::{MaterialRuntimeBinding, compile_material_program};
 pub use aestra_bevy_render::{
@@ -19,7 +21,8 @@ pub use aestra_runtime::{
     CompiledEffect, CompiledEffectProject, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent,
     EffectInstance, EffectProfile, EmitterProfile, ParameterError, ParticleSample,
     PlaybackCheckpoint, PlaybackClock, ProfileValue, ProfileValueSource, ProjectChoreographyEvent,
-    RendererPlanKind, RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
+    ProjectInstanceProfile, ProjectProfile, RendererPlanKind, RuntimeValue, SeekOrigin, SeekPlan,
+    SimulationSeekMode,
 };
 
 use bevy::asset::LoadState;
@@ -43,6 +46,8 @@ pub struct AestraPlugin;
 pub enum AestraSet {
     /// Advances effect clocks and updates their presentation for the current frame.
     Playback,
+    /// Current presentation snapshots and project totals, after render preparation.
+    Profile,
 }
 
 /// Fired after an [`EffectPlayer`] crosses a compiled choreography event during normal playback.
@@ -75,6 +80,12 @@ impl Plugin for AestraPlugin {
             )
                 .chain()
                 .in_set(AestraSet::Playback),
+        );
+        app.add_systems(
+            Update,
+            project_profile::update_project_profiles
+                .after(AestraRenderSet::Prepare)
+                .in_set(AestraSet::Profile),
         );
     }
 }
@@ -579,6 +590,9 @@ fn record_presented_profile(
     cpu_evaluation_time: Option<std::time::Duration>,
     backend: ActiveBackend,
 ) {
+    profile.cpu_time_ns = ProfileValue::Unavailable;
+    profile.alive_particles = ProfileValue::Unavailable;
+    profile.submitted_instances = ProfileValue::Unavailable;
     if let Some(elapsed) = cpu_evaluation_time {
         profile.record_cpu_frame(elapsed, samples);
         profile.record_submitted_frame(effect, samples);

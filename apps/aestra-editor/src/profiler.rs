@@ -4,12 +4,16 @@ use crate::feathers::panel::{
     spawn_panel_empty_state, spawn_panel_label_value, spawn_panel_section,
 };
 use crate::*;
+#[cfg(test)]
+use aestra_runtime::{CompiledEffect, ParticleSample};
 use aestra_runtime::{
-    CompiledEffect, EffectProfile, ParticleSample, ProfileValue, ProfileValueSource,
+    EffectProfile, ProfileValue, ProfileValueSource, ProjectInstanceProfile, ProjectProfile,
 };
 use bevy::ui_widgets::Activate;
 use fluent_bundle::FluentArgs;
-use std::{collections::VecDeque, time::Duration};
+use std::collections::VecDeque;
+#[cfg(test)]
+use std::time::Duration;
 
 const PROFILER_HISTORY_SAMPLES: usize = 96;
 
@@ -29,7 +33,7 @@ impl Plugin for EditorProfilerPlugin {
                 Update,
                 (
                     handle_profiler_actions.in_set(ProfilerSet::Actions),
-                    update_profiler_labels.in_set(ProfilerSet::Sync),
+                    (update_profiler_labels, update_project_profile_text).in_set(ProfilerSet::Sync),
                 ),
             );
     }
@@ -40,6 +44,7 @@ impl Plugin for EditorProfilerPlugin {
 /// The producer owns simulation and timing. The Profiler exclusively owns aggregation,
 /// compiler estimates, peak tracking, and bounded history.
 #[derive(Debug, Clone, Copy)]
+#[cfg(test)]
 pub(crate) struct ProfilerFrameSample<'a> {
     effect: &'a CompiledEffect,
     particles: &'a [ParticleSample],
@@ -47,6 +52,7 @@ pub(crate) struct ProfilerFrameSample<'a> {
     trails: Option<aestra_runtime::TrailUsage>,
 }
 
+#[cfg(test)]
 impl<'a> ProfilerFrameSample<'a> {
     pub(crate) const fn new(
         effect: &'a CompiledEffect,
@@ -59,11 +65,6 @@ impl<'a> ProfilerFrameSample<'a> {
             cpu_time,
             trails: None,
         }
-    }
-
-    pub(crate) fn with_trails(mut self, usage: Option<aestra_runtime::TrailUsage>) -> Self {
-        self.trails = usage;
-        self
     }
 }
 
@@ -82,36 +83,52 @@ impl ProfilerIngestOutcome {
 #[derive(Resource, Default)]
 pub(crate) struct ProfilerState {
     profile: Option<EffectProfile>,
+    project: ProjectProfile,
     cpu_history_ns: VecDeque<u64>,
 }
 
 impl ProfilerState {
-    pub(crate) fn ingest(&mut self, sample: ProfilerFrameSample<'_>) -> ProfilerIngestOutcome {
-        let rebuilt = self
-            .profile
-            .as_ref()
-            .is_none_or(|profile| !profile.matches_compiled(sample.effect));
-        if rebuilt {
-            self.profile = Some(EffectProfile::from_compiled(sample.effect));
+    pub(crate) fn ingest_project(
+        &mut self,
+        instances: Vec<ProjectInstanceProfile>,
+    ) -> ProfilerIngestOutcome {
+        let initial = self.profile.is_none();
+        let changed = self.project.update(instances);
+        if changed {
             self.cpu_history_ns.clear();
         }
-        let profile = self.profile.as_mut().expect("profile was initialized");
-        profile.record_cpu_frame(sample.cpu_time, sample.particles);
-        profile.record_submitted_frame(sample.effect, sample.particles);
-        profile.record_trail_usage(sample.trails);
-        self.cpu_history_ns
-            .push_back(sample.cpu_time.as_nanos().min(u128::from(u64::MAX)) as u64);
-        while self.cpu_history_ns.len() > PROFILER_HISTORY_SAMPLES {
-            self.cpu_history_ns.pop_front();
+        self.profile = Some(self.project.total.clone());
+        if let Some(cpu) = self.project.total.cpu_time_ns.value() {
+            self.cpu_history_ns.push_back(cpu);
+            while self.cpu_history_ns.len() > PROFILER_HISTORY_SAMPLES {
+                self.cpu_history_ns.pop_front();
+            }
+        } else {
+            self.cpu_history_ns.clear();
         }
-        if rebuilt {
+        if initial || changed {
             ProfilerIngestOutcome::ProfileRebuilt
         } else {
             ProfilerIngestOutcome::Updated
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn ingest(&mut self, sample: ProfilerFrameSample<'_>) -> ProfilerIngestOutcome {
+        let mut profile = EffectProfile::from_compiled(sample.effect);
+        profile.record_cpu_frame(sample.cpu_time, sample.particles);
+        profile.record_submitted_frame(sample.effect, sample.particles);
+        profile.record_trail_usage(sample.trails);
+        self.ingest_project(vec![ProjectInstanceProfile {
+            path: Vec::new(),
+            effect: sample.effect.source,
+            name: sample.effect.name.clone(),
+            profile,
+        }])
+    }
+
     fn reset_peaks(&mut self) {
+        self.project.reset_peaks();
         if let Some(profile) = &mut self.profile {
             profile.reset_peaks();
         }
@@ -313,12 +330,69 @@ pub(crate) fn spawn_profiler_workspace(
                         |content| {
                             spawn_profiler_metric_grid(content, profile, localizer);
                             spawn_profiler_history(content, state, localizer);
+                            spawn_panel_section(
+                                content,
+                                &localizer.text("profiler-project-instances"),
+                                |section| {
+                                    section.spawn((
+                                        ProjectProfileText,
+                                        Text::new(project_profile_text(state, localizer)),
+                                        TextFont {
+                                            font_size: FontSize::Px(9.0),
+                                            ..default()
+                                        },
+                                        TextColor(theme::TEXT),
+                                    ));
+                                },
+                            );
                             spawn_profiler_emitters(content, profile, localizer);
                             spawn_profiler_availability(content, profile, localizer);
                         },
                     );
                 });
         });
+}
+
+#[derive(Component)]
+struct ProjectProfileText;
+
+fn project_profile_text(state: &ProfilerState, localizer: &Localizer) -> String {
+    state
+        .project
+        .instances
+        .iter()
+        .map(|instance| {
+            let profile = &instance.profile;
+            format!(
+                "{}\n  {}: {} / {} · {}: {} / {}\n  {}: {} · {}: {} ({})",
+                instance.label(),
+                localizer.text("profiler-metric-live-particles"),
+                format_profile_count(profile.alive_particles).0,
+                format_profile_count(profile.particle_capacity).0,
+                localizer.text("profiler-metric-trails-occupied"),
+                format_profile_count(profile.occupied_trails).0,
+                format_profile_count(profile.trail_capacity).0,
+                localizer.text("profiler-metric-cpu-update"),
+                format_profile_duration(profile.cpu_time_ns).0,
+                localizer.text("profiler-metric-buffer-memory"),
+                format_profile_memory(profile.buffer_memory_bytes).0,
+                profile_source_label(profile.buffer_memory_bytes.source(), localizer)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn update_project_profile_text(
+    state: Res<ProfilerState>,
+    localizer: Res<Localizer>,
+    mut texts: Query<&mut Text, With<ProjectProfileText>>,
+) {
+    if state.is_changed() || localizer.is_changed() {
+        for mut text in &mut texts {
+            text.0 = project_profile_text(&state, &localizer);
+        }
+    }
 }
 
 fn spawn_profiler_reset_button(parent: &mut ChildSpawnerCommands, localizer: &Localizer) {
@@ -806,6 +880,63 @@ fn update_profiler_labels(
 mod tests {
     use super::*;
     use crate::test_support;
+
+    #[test]
+    fn project_ingestion_tracks_active_paths_and_rebuilds_only_on_structure_changes() {
+        let session = test_support::session_with_timing_slack();
+        let compiled = session.preview.as_ref().unwrap().effect();
+        let root = ProjectInstanceProfile {
+            path: Vec::new(),
+            effect: compiled.source,
+            name: compiled.name.clone(),
+            profile: EffectProfile::from_compiled(compiled),
+        };
+        let mut child = root.clone();
+        child.path.push(aestra_core::EffectClipId::new());
+        child.profile.trail_capacity = ProfileValue::Measured(4);
+        child
+            .profile
+            .record_trail_usage(Some(aestra_runtime::TrailUsage {
+                occupied: 3,
+                retired: 1,
+                truncated: 1,
+                evictions: 2,
+            }));
+        let mut state = ProfilerState::default();
+        assert!(
+            state
+                .ingest_project(vec![root.clone(), child.clone()])
+                .profile_rebuilt()
+        );
+        let profile = state.profile.as_ref().unwrap();
+        assert_eq!(
+            profile.particle_capacity.value(),
+            Some(2 * compiled.max_particles as u32)
+        );
+        assert_eq!(profile.occupied_trails, ProfileValue::Measured(3));
+        assert_eq!(profile.truncated_trails, ProfileValue::Measured(1));
+        assert!(
+            !state
+                .ingest_project(vec![child, root.clone()])
+                .profile_rebuilt()
+        );
+        for locale in ["en-US", "fr-FR"] {
+            let localizer = Localizer::new(locale).unwrap();
+            let text = project_profile_text(&state, &localizer);
+            assert!(text.contains(&localizer.text("profiler-metric-live-particles")));
+            assert!(text.contains(&state.project.instances[1].path[0].to_string()));
+        }
+        assert!(state.ingest_project(vec![root]).profile_rebuilt());
+        assert_eq!(
+            state.profile.as_ref().unwrap().occupied_trails,
+            ProfileValue::Measured(0)
+        );
+        state.ingest_project(Vec::new());
+        assert_eq!(
+            state.profile.as_ref().unwrap().particle_capacity,
+            ProfileValue::Measured(0)
+        );
+    }
 
     #[test]
     fn point_budget_warning_is_actionable_and_clears_with_telemetry() {

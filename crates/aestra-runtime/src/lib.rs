@@ -4,6 +4,8 @@ mod checkpoint;
 mod compatibility;
 mod host_transform;
 mod project;
+mod project_profile;
+pub use project_profile::{ProjectInstanceProfile, ProjectProfile};
 mod transform_context;
 pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};

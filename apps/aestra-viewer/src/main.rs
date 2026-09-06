@@ -963,7 +963,15 @@ struct CaptureReportContext<'w, 's> {
     settings: Res<'w, AestraSettings>,
     capabilities: Res<'w, GpuCapabilities>,
     prepared: Res<'w, PreparedViewer>,
-    effects: Query<'w, 's, (&'static EffectRuntimeStatus, &'static EffectProfiler)>,
+    effects: Query<
+        'w,
+        's,
+        (
+            &'static EffectRuntimeStatus,
+            &'static EffectProfiler,
+            Option<&'static aestra_bevy::ProjectProfiler>,
+        ),
+    >,
 }
 
 fn receive_capture(
@@ -992,7 +1000,7 @@ fn receive_capture(
 
     if capture.next_frame == capture.frame_count() {
         let effect_status = report.effects.single().ok();
-        let effect_runtime = effect_status.map(|(runtime, _)| runtime);
+        let effect_runtime = effect_status.map(|(runtime, _, _)| runtime);
         write_contact_sheet(
             &capture,
             &report.runtime,
@@ -1026,7 +1034,9 @@ fn receive_capture(
                 effect_runtime,
                 settings: &report.settings,
                 capabilities: &report.capabilities,
-                profile: effect_status.map(|(_, profile)| &profile.0),
+                profile: effect_status
+                    .map(|(_, profile, project)| project.map_or(&profile.0, |p| &p.0.total)),
+                project: effect_status.and_then(|(_, _, project)| project.map(|p| &p.0)),
             },
             completion.comparison.as_ref(),
             completion.result.as_ref().err().map(String::as_str),

@@ -206,7 +206,32 @@ The portable `CompiledEffectProject::choreography_events_between` API exposes th
 same interval traversal; fixed-clock hosts can use `choreography_events_for_clock_advance`.
 Neither API spawns child effects or plays sounds automatically: observers interpret
 the typed payloads. Particle lifecycle links continue executing within each effect.
-The viewer's numeric profile summary is still root scoped; aggregation is separate work.
+### Project profiling
+
+`ProjectProfiler` on each Bevy root exposes `ProjectProfile::total` and an active
+`instances` list, identified by clip path and source effect ID. Read it after
+`AestraSet::Profile`, following presentation preparation. The existing `EffectProfiler`
+continues describing the root alone. Child activation, expiry, seeks and loop wraps
+reconcile the active set; separate root players never share counters.
+
+The editor Profiler uses the same aggregation and shows an active-instance breakdown.
+Its CPU measurements describe reference evaluation of every audible instance, including
+clip parameter overrides, not GPU execution time. Trail counters are asynchronous native
+observations; invalidated telemetry stays unavailable until a matching epoch arrives.
+The viewer's `preview-report.json` uses project-wide `metrics`, adds per-path `instances`,
+and includes trail capacity, occupied/retired owners, evictions and truncated histories.
+
+Additive totals retain measured/estimated provenance; any missing contributor makes
+that total unavailable. Non-trail instances contribute known zero trail usage. Native
+GPU particle counts and timings are not fabricated from empty CPU sample arrays.
+Capacity and buffer memory cover active instances, not the entire dependency library.
+Texture memory and overdraw remain unavailable for compositions because shared assets
+and overlapping draws cannot be summed accurately without further measurement.
+
+Project peak particles are the maximum observed simultaneous total, not the sum of
+independent instance peaks. Missing observations mark retained peaks as estimated
+lower bounds until reset. Per-instance peaks are retained only while that path stays
+active; replacement root effects reset project history. Reset Peaks resets both levels.
 
 ## Scope
 
