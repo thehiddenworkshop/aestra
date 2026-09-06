@@ -8,6 +8,8 @@ architecture vision; this file is the shorter delivery plan.
 
 ## Current delivery status
 
+- Asset Browser track: reviewed and planned; no implementation started. The repository-specific
+  milestones and gates are in [`ASSET_BROWSER_IMPLEMENTATION_PLAN.md`](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 - M0 reference behavior and architecture decisions: complete.
 - M1 semantic core and format v3 foundation: complete for the native 3D module set.
 - M2 deterministic authoring operations: complete for current editor operations.
@@ -727,6 +729,32 @@ The first release gate is the two-texture animated additive-flame slice: stable 
 RON, command-only edits, deterministic resource layout and artifact round trip, native-GPU visual
 approval, and ordinary instance updates without shader recompilation. A node graph is explicitly
 outside this gate.
+
+## Asset Browser delivery track
+
+The product proposal in `aestra_asset_browser_plan.md` has been reviewed against the
+existing project index, Library/catalog/watch code, material authoring/drafts/history,
+and persisted Assets dock slot. Follow
+[`ASSET_BROWSER_IMPLEMENTATION_PLAN.md`](ASSET_BROWSER_IMPLEMENTATION_PLAN.md) for the
+authoritative delivery sequence and acceptance gates; preserve the proposal as UX vision.
+
+- AB0–AB2 (P0): characterize identity/root/reference contracts, add the generic source
+  tree joined to `ProjectAssetIndex`, and publish coherent content refresh snapshots.
+- AB3 (P1): read-only Feathers Asset Browser with tree/grid/list, search/filtering,
+  inspection/relations and existing guarded effect opening. Reuse `DockPanel::Assets`.
+- AB4–AB5 (P1): standalone material-program then function editing with document-targeted
+  history, validation, save/recovery and external-change protection.
+- AB6 (P0): centralized preflighted operations, identity-safe duplication, audited path
+  rewrites and recoverable folder/file mutation. Incomplete dependency knowledge blocks
+  unsafe actions; usage analysis is a prerequisite, not a later optional tool.
+- AB7–AB8 (P1): typed drops/pickers, document-local resource migration, parity acceptance
+  and legacy Library removal without breaking persisted docking or existing workflows.
+- AB9 (P2): asynchronous bounded thumbnails, favorites/recent, then saved searches and
+  collections; full importers/multiple browsers/native watchers remain separate scope.
+
+Status: review complete; all implementation gates pending. First PR is AB0 test gaps
+and AB1 project-content model, not a Library rename or graph/editor rewrite. The editor
+must remain independent of the `bevy/aestra-bevy` runtime integration.
 
 ## Stability-hardening milestone
 
