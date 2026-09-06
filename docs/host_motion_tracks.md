@@ -178,9 +178,35 @@ detect trails anywhere in the dependency tree and advance the root and children
 together; sequential external hosts may use `EffectPlayer::set_playback_time`,
 while discontinuous jumps should use `seek_simulation_time`.
 
-This slice covers particle presentation and replay. Gameplay choreography event
-notifications and the viewer's numeric profile summary remain root-player scoped;
-child particle lifecycle links still execute normally within each compiled effect.
+### Gameplay notifications
+
+`AestraChoreographyEvent` includes notifications from the root and every nested clip.
+Its `player` is always the root entity, `clip_path` is the stable sequence of clip IDs
+(empty for root events), and `effect` identifies the compiled source. The payload's
+event ID and time remain source-local. A repeated source in two clips therefore has
+two distinct paths; no transient presentation entity is needed to identify it.
+
+Events are collected from crossed intervals, not from active children at the end of
+the frame. Clips that start and finish in one update still notify. Clip activation
+includes an event exactly at the source offset, but never replays earlier source
+events. Clip ends are inclusive. Both Restart and Continuous loops notify at each
+crossed occurrence, including end events followed by time-zero events at a boundary.
+Ordering is root crossing time, then clip path, with stable source order for ties.
+Restart roots follow fixed-clock frame boundaries even for non-frame-aligned durations.
+
+Normal forward playback dispatches; pause, zero speed and sub-tick updates do not.
+Seeking, stepping, checkpoint restoration and `set_playback_time` clear pending
+notifications and stay silent. Resuming excludes the seek target itself. Explicit
+`restart()` starts a fresh sequence, including time-zero events on the first tick.
+This avoids triggering gameplay/audio while scrubbing or generating captures.
+
+Manual project integrations can use `drain_project_choreography_events` (including
+root events) instead of the legacy root-only `drain_choreography_events` queue.
+The portable `CompiledEffectProject::choreography_events_between` API exposes the
+same interval traversal; fixed-clock hosts can use `choreography_events_for_clock_advance`.
+Neither API spawns child effects or plays sounds automatically: observers interpret
+the typed payloads. Particle lifecycle links continue executing within each effect.
+The viewer's numeric profile summary is still root scoped; aggregation is separate work.
 
 ## Scope
 

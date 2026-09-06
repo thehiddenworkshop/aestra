@@ -1,4 +1,6 @@
 //! Bevy integration for compiled Aestra effects.
+#[cfg(test)]
+mod choreography_tests;
 mod project;
 pub use project::EffectClipInstance;
 
@@ -16,8 +18,8 @@ pub use aestra_runtime::{
     CheckpointBackendId, CheckpointContext, CheckpointPolicy, CheckpointStore, ClockAdvance,
     CompiledEffect, CompiledEffectProject, DEFAULT_PLAYBACK_TICK_RATE, DispatchedChoreographyEvent,
     EffectInstance, EffectProfile, EmitterProfile, ParameterError, ParticleSample,
-    PlaybackCheckpoint, PlaybackClock, ProfileValue, ProfileValueSource, RendererPlanKind,
-    RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
+    PlaybackCheckpoint, PlaybackClock, ProfileValue, ProfileValueSource, ProjectChoreographyEvent,
+    RendererPlanKind, RuntimeValue, SeekOrigin, SeekPlan, SimulationSeekMode,
 };
 
 use bevy::asset::LoadState;
@@ -48,7 +50,11 @@ pub enum AestraSet {
 /// lifecycle links or polling the player timeline.
 #[derive(Event, Debug, Clone)]
 pub struct AestraChoreographyEvent {
+    /// Root player, including when the source is a nested clip.
     pub player: Entity,
+    /// Empty for a root event. Does not depend on transient child entities.
+    pub clip_path: Vec<EffectClipId>,
+    pub effect: EffectId,
     pub event: DispatchedChoreographyEvent,
 }
 
@@ -118,6 +124,8 @@ pub struct EffectPlayer {
     render_mode: EffectRenderMode,
     clock: PlaybackClock,
     choreography_events: Vec<DispatchedChoreographyEvent>,
+    project_choreography_events: Vec<ProjectChoreographyEvent>,
+    choreography_started: bool,
     project: Option<Arc<CompiledEffectProject>>,
 }
 
@@ -139,6 +147,8 @@ impl EffectPlayer {
             render_mode: EffectRenderMode::Rendered,
             clock: PlaybackClock::default(),
             choreography_events: Vec::new(),
+            project_choreography_events: Vec::new(),
+            choreography_started: false,
             project: None,
         }
     }
@@ -208,6 +218,8 @@ impl EffectPlayer {
     }
 
     pub fn restart(&mut self) {
+        self.silence_choreography_events();
+        self.choreography_started = false;
         self.clock.restart();
         self.instance.restart();
         self.playing = true;
@@ -223,6 +235,7 @@ impl EffectPlayer {
     /// Seeks continuous playback using absolute simulation time while leaving the playhead
     /// wrapped to the authored effect duration.
     pub fn seek_simulation_time(&mut self, time: f32) {
+        self.silence_choreography_events();
         self.instance.mark_history_discontinuity();
         let duration = self.effect().duration;
         if self.effect().playback_mode.is_continuous() {
@@ -236,6 +249,7 @@ impl EffectPlayer {
     /// Synchronize sequential playback driven by an external clock without
     /// treating every frame as a seek. Use `seek_simulation_time` for jumps.
     pub fn set_playback_time(&mut self, time: f32) {
+        self.silence_choreography_events();
         let duration = self.effect().duration;
         if self.effect().playback_mode.is_continuous() {
             self.clock.seek_elapsed_seconds(time, duration);
@@ -246,6 +260,7 @@ impl EffectPlayer {
     }
 
     pub fn seek_frame(&mut self, frame: u64) {
+        self.silence_choreography_events();
         self.instance.mark_history_discontinuity();
         let duration = self.effect().duration;
         let target = frame.min(self.clock.maximum_frame(duration));
@@ -263,6 +278,9 @@ impl EffectPlayer {
             self.clock.step_forward(duration);
             self.instance.advance(tick_seconds);
         }
+        // Replay is silent, including a backward seek to zero. Mark the source
+        // event cursor as positioned without disturbing replayed state.
+        self.instance.set_playback_time(self.instance.time());
     }
 
     pub fn step_forward(&mut self) {
@@ -299,7 +317,7 @@ impl EffectPlayer {
         self.instance.clear_parameter(id)
     }
 
-    /// Drains choreography events produced by the most recent clock advance. The plugin drains
+    /// Drains root choreography events produced by the most recent clock advance. The plugin drains
     /// this automatically and emits [`AestraChoreographyEvent`]; manual player integrations can
     /// use the same queue directly.
     pub fn drain_choreography_events(
@@ -308,16 +326,44 @@ impl EffectPlayer {
         self.choreography_events.drain(..)
     }
 
+    /// Project notifications, including the root, ordered by crossing time then
+    /// clip path. Empty for single-effect players. Use this instead of the root
+    /// queue for manual project integrations to avoid dispatching roots twice.
+    pub fn drain_project_choreography_events(
+        &mut self,
+    ) -> impl Iterator<Item = ProjectChoreographyEvent> + '_ {
+        self.project_choreography_events.drain(..)
+    }
+
+    fn silence_choreography_events(&mut self) {
+        self.choreography_events.clear();
+        self.project_choreography_events.clear();
+        self.choreography_started = true;
+    }
+
     fn advance_clock(&mut self, delta_seconds: f32) -> ClockAdvance {
         let duration = self.effect().duration;
         let playback_mode = self.effect().playback_mode;
         let looping = playback_mode.is_looping();
         let previous_frame = self.clock.frame();
+        let previous_clock = self.clock;
         let result = self
             .clock
             .advance(delta_seconds, self.speed, duration, looping);
         self.choreography_events.clear();
+        self.project_choreography_events.clear();
+        if result.ticks == 0 {
+            return result;
+        }
         let tick_seconds = 1.0 / self.clock.tick_rate() as f32;
+        if let Some(project) = &self.project {
+            self.project_choreography_events = project.choreography_events_for_clock_advance(
+                previous_clock,
+                self.clock,
+                !self.choreography_started,
+            );
+        }
+        self.choreography_started = true;
         match self.seek_mode() {
             SimulationSeekMode::StatelessDirect => {
                 self.instance.advance_with_choreography_events(
@@ -339,6 +385,14 @@ impl EffectPlayer {
                     self.choreography_events.append(&mut events);
                 }
             }
+        }
+        if self.project.is_some() {
+            self.choreography_events = self
+                .project_choreography_events
+                .iter()
+                .filter(|event| event.path.is_empty())
+                .map(|event| event.event.clone())
+                .collect();
         }
         result
     }
@@ -480,12 +534,7 @@ fn play_effects(
                 player.playing = false;
             }
         }
-        for event in player.drain_choreography_events() {
-            commands.trigger(AestraChoreographyEvent {
-                player: player_entity,
-                event,
-            });
-        }
+        dispatch_choreography_events(&mut commands, player_entity, &mut player);
         record_presented_profile(
             &mut profiler.0,
             player.effect(),
@@ -496,6 +545,30 @@ fn play_effects(
         profiler
             .0
             .record_trail_usage(trails.and_then(|s| s.usage(&presented.instance)));
+    }
+}
+
+fn dispatch_choreography_events(commands: &mut Commands, root: Entity, player: &mut EffectPlayer) {
+    if player.project().is_some() {
+        player.choreography_events.clear();
+        for event in player.drain_project_choreography_events() {
+            commands.trigger(AestraChoreographyEvent {
+                player: root,
+                clip_path: event.path,
+                effect: event.effect,
+                event: event.event,
+            });
+        }
+    } else {
+        let effect = player.effect().source;
+        for event in player.drain_choreography_events() {
+            commands.trigger(AestraChoreographyEvent {
+                player: root,
+                clip_path: Vec::new(),
+                effect,
+                event,
+            });
+        }
     }
 }
 

@@ -627,8 +627,17 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Native nested 3D viewport smoke now runs in GPU visual validation. Prism Bloom's
   reference intentionally includes its previously omitted Ember Sigil child; a fresh
   eight-frame comparison matches the updated reference exactly.
-  Nested gameplay choreography notifications and aggregate project profiling remain
-  separate follow-ups; current notifications/profile summaries are root scoped.
+  Nested gameplay choreography notifications now use portable crossed-interval
+  traversal, preserving clip paths, source IDs, offsets, inclusive clip endpoints
+  and loop occurrences even for clips crossed entirely within one update. Bevy
+  observers identify the root player without depending on child presentation entities.
+  Seeks, steps, checkpoint restores and external clock synchronization clear queues
+  and stay silent; restart enables initial events again. Stable crossing-time/path
+  ordering and frame-aligned root restart boundaries preserve deterministic dispatch.
+  Regression tests cover nested windows, short clips, source-offset pre-roll, all
+  playback/seek modes, coarse/fine advances, speed, pause, repeated sources and
+  multi-root observer isolation. Aggregate project profiling remains a follow-up;
+  current profile summaries are root scoped.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

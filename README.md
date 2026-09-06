@@ -223,8 +223,11 @@ commands.spawn(EffectPlayer::from_project(std::sync::Arc::new(project)));
 Control the root player normally; the plugin manages active child presentations,
 clip timing, seeds, parameters and inherited motion. The editor and viewer use the
 same scheduler. See [nested motion and playback](docs/host_motion_tracks.md#nested-clips).
-Profile summaries and gameplay choreography notifications currently describe the root player.
-Timed semantic notifications are emitted as `AestraChoreographyEvent` observer events. Their
+Profile summaries currently describe the root player. Timed semantic notifications from the root
+and nested clips are emitted as `AestraChoreographyEvent` observer events. `player` identifies the
+root entity, `clip_path` identifies the source instance (empty for the root), and `effect` identifies
+the compiled source. Seeks, frame stepping, and external clock synchronization are silent;
+normal forward playback emits crossed events, including short clips and loop boundaries. Their
 typed payloads are intentionally distinct from emitter-to-emitter particle lifecycle links, so
 gameplay, audio, and camera systems can subscribe without polling playback time.
 Texture paths in an effect's asset registry are relative to the consuming Bevy

@@ -5,7 +5,7 @@ mod compatibility;
 mod host_transform;
 mod project;
 mod transform_context;
-pub use project::ScheduledEffectInstance;
+pub use project::{ProjectChoreographyEvent, ScheduledEffectInstance};
 pub use transform_context::{HostTransformContext, InheritedHostTransform};
 mod profile;
 pub use host_transform::CompiledHostTransformTrack;
