@@ -11,7 +11,7 @@
 //! It records distribution statistics (median/p95/p99/max/stddev), measured
 //! occupancy, and normalized ratios, then prints a summary and optionally writes
 //! machine-readable JSON (strategy §15). CPU runs report GPU timings as unavailable.
-//! With `--features gpu`, `--gpu-trails preparation|rendering` runs the native
+//! With `--features gpu`, `--gpu-trails preparation|rendering|sweep` runs the native
 //! timestamped trail experiments and writes reports under `benchmarks/gpu-baselines/`.
 
 #[cfg(feature = "gpu")]
@@ -31,6 +31,8 @@ use aestra_runtime::{EffectInstance, ParticleSample};
 use metrics::{BenchReport, Content, CpuStages, Hardware, Normalized, StageAccumulator, Stats};
 
 const TICK_HZ: f32 = 60.0;
+const TRAIL_OWNER_CAPACITY: u32 = 1024;
+const MAX_TRAIL_VIEWS: usize = 8;
 
 fn main() {
     let config = match Config::from_args() {
@@ -38,7 +40,8 @@ fn main() {
         Err(message) => {
             eprintln!("aestra-bench: {message}");
             eprintln!(
-                "usage: aestra-bench (--scenario <name> | --all | --gpu-trails preparation|rendering) [--frames N] [--warmup N] \
+                "usage: aestra-bench (--scenario <name> | --all | --gpu-trails preparation|rendering|sweep) [--frames N] [--warmup N] \
+                 [--occupancies 1,2,5,10,25,50,75,100] [--views 1,2,4,8] \
                  [--seed <dec-or-0xhex>] [--out results.json] [--commit <sha>]"
             );
             eprintln!("scenarios: {}", scenario::names());
@@ -119,6 +122,10 @@ fn main() {
 
 struct Config {
     gpu_trails: Option<String>,
+    #[cfg(feature = "gpu")]
+    trail_owners: Vec<u32>,
+    #[cfg(feature = "gpu")]
+    trail_views: Vec<usize>,
     scenario: Option<String>,
     all: bool,
     frames: usize,
@@ -135,6 +142,8 @@ impl Config {
 
     fn parse(mut args: impl Iterator<Item = String>) -> Result<Self, String> {
         let mut gpu_trails = None;
+        let mut trail_owners = None;
+        let mut trail_views = None;
         let mut scenario = None;
         let mut all = false;
         let mut frames = 64usize;
@@ -147,10 +156,17 @@ impl Config {
             match arg.as_str() {
                 "--gpu-trails" => {
                     let kind = next_value(&mut args, "--gpu-trails")?;
-                    if !matches!(kind.as_str(), "preparation" | "rendering") {
-                        return Err("--gpu-trails expects preparation or rendering".into());
+                    if !matches!(kind.as_str(), "preparation" | "rendering" | "sweep") {
+                        return Err("--gpu-trails expects preparation, rendering or sweep".into());
                     }
                     gpu_trails = Some(kind);
+                }
+                "--occupancies" => {
+                    trail_owners =
+                        Some(parse_occupancies(&next_value(&mut args, "--occupancies")?)?);
+                }
+                "--views" => {
+                    trail_views = Some(parse_views(&next_value(&mut args, "--views")?)?);
                 }
                 "--scenario" => {
                     scenario = Some(next_value(&mut args, "--scenario")?);
@@ -174,6 +190,11 @@ impl Config {
         if gpu_trails.is_some() && (all || scenario.is_some()) {
             return Err("--gpu-trails cannot be combined with --scenario or --all".into());
         }
+        if (trail_owners.is_some() || trail_views.is_some())
+            && !matches!(gpu_trails.as_deref(), Some("rendering" | "sweep"))
+        {
+            return Err("--occupancies and --views require --gpu-trails rendering or sweep".into());
+        }
         if !all && scenario.is_none() && gpu_trails.is_none() {
             return Err("expected --scenario <name>, --all or --gpu-trails <kind>".into());
         }
@@ -184,6 +205,22 @@ impl Config {
             return Err("--frames plus --warmup is too large".into());
         }
         Ok(Self {
+            #[cfg(feature = "gpu")]
+            trail_owners: trail_owners.unwrap_or_else(|| {
+                if gpu_trails.as_deref() == Some("sweep") {
+                    parse_occupancies("1,2,5,10,25,50,75,100").unwrap()
+                } else {
+                    vec![16, TRAIL_OWNER_CAPACITY]
+                }
+            }),
+            #[cfg(feature = "gpu")]
+            trail_views: trail_views.unwrap_or_else(|| {
+                if gpu_trails.as_deref() == Some("sweep") {
+                    vec![1, 2, 4, 8]
+                } else {
+                    vec![1, 4]
+                }
+            }),
             gpu_trails,
             scenario,
             all,
@@ -386,6 +423,39 @@ fn parse_seed(value: &str) -> Result<u64, String> {
     parsed.map_err(|_| format!("--seed expects a decimal or 0x-prefixed hex value, got {value:?}"))
 }
 
+fn parse_occupancies(value: &str) -> Result<Vec<u32>, String> {
+    let mut owners = Vec::new();
+    for entry in value.split(',') {
+        let percent: f64 = entry
+            .trim()
+            .parse()
+            .map_err(|_| "--occupancies expects percentages in (0,100]".to_owned())?;
+        if !percent.is_finite() || percent <= 0.0 || percent > 100.0 {
+            return Err("--occupancies expects finite percentages in (0,100]".into());
+        }
+        let count = (percent * f64::from(TRAIL_OWNER_CAPACITY) / 100.0)
+            .round()
+            .max(1.0) as u32;
+        if owners.contains(&count) {
+            return Err("--occupancies contains levels mapping to the same owner count".into());
+        }
+        owners.push(count);
+    }
+    Ok(owners)
+}
+
+fn parse_views(value: &str) -> Result<Vec<usize>, String> {
+    let mut views = Vec::new();
+    for entry in value.split(',') {
+        let count = parse_usize(entry.trim(), "--views")?;
+        if !(1..=MAX_TRAIL_VIEWS).contains(&count) || views.contains(&count) {
+            return Err("--views expects distinct counts between 1 and 8".into());
+        }
+        views.push(count);
+    }
+    Ok(views)
+}
+
 #[cfg(test)]
 mod cli_tests {
     use super::*;
@@ -433,5 +503,32 @@ mod cli_tests {
             assert!(config(&args).is_err());
         }
         assert!(config(&["--all"]).unwrap().gpu_trails.is_none());
+    }
+
+    #[test]
+    fn sweep_arguments_are_bounded_and_unambiguous() {
+        assert_eq!(
+            parse_occupancies("1,5,50,100").unwrap(),
+            vec![10, 51, 512, 1024]
+        );
+        assert_eq!(parse_occupancies("0.01").unwrap(), vec![1]);
+        assert_eq!(parse_views("1,2,4,8").unwrap(), vec![1, 2, 4, 8]);
+        for value in ["", "0", "-1", "101", "NaN", "inf", "1,1", "1,1.01", "1,"] {
+            assert!(parse_occupancies(value).is_err(), "{value}");
+        }
+        for value in ["", "0", "9", "1,1", "1.5", "1,"] {
+            assert!(parse_views(value).is_err(), "{value}");
+        }
+        assert!(config(&["--all", "--views", "1"]).is_err());
+        assert!(config(&["--gpu-trails", "preparation", "--occupancies", "50"]).is_err());
+        let _cfg = config(&["--gpu-trails", "sweep"]).unwrap();
+        #[cfg(feature = "gpu")]
+        {
+            assert_eq!(_cfg.trail_views, vec![1, 2, 4, 8]);
+            assert_eq!(
+                _cfg.trail_owners,
+                vec![10, 20, 51, 102, 256, 512, 768, 1024]
+            );
+        }
     }
 }

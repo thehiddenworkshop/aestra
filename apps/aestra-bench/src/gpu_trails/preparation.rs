@@ -319,6 +319,8 @@ pub(super) fn run(config: &Config) -> Report {
             );
             report.cases.push(CaseReport {
                 case: name.into(),
+                active_owners: active,
+                occupancy_percent: f64::from(active) * 100.0 / f64::from(OWNERS),
                 views,
                 path: "compact".into(),
                 candidates_per_view: CANDIDATES,

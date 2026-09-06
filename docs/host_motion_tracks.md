@@ -443,6 +443,20 @@ performance threshold. Unsupported adapters fail this explicitly requested diagn
 CPU-only CI does not run it. Other invalid/non-monotonic observations still fail the benchmark
 without writing a report, and failed live-profiler measurements remain unavailable.
 
+### Occupancy / view-count measurements
+
+`aestra-bench --features gpu -- --gpu-trails sweep` extends the A/B fixture to eight
+occupancy levels and one/two/four/eight views. `--occupancies` and `--views` allow
+focused refinement. Reports retain actual owner counts, raw paired samples, median/p95
+savings and exact nonblank image checks, with every view's draw command validated.
+
+The [six-run results](../benchmarks/gpu-baselines/trails-break-even-2026-09-06/README.md)
+show backend-dependent four-view median crossover brackets (~2–5% Vulkan, 25–50% DX12).
+Eight-view compaction helps at low occupancy but becomes marginal around 50%; one/two
+views favor full-range drawing throughout the sampled matrix. Variable tails and
+fixed capacity/history/pixel workload prevent promoting these brackets to a runtime
+policy. Cross-adapter and capacity/history-fill measurements remain the next gate.
+
 ## Scope
 
 This is explicit supplied motion, not a recorder of arbitrary live entity motion.

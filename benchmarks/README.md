@@ -75,3 +75,42 @@ Remove-Item Env:WGPU_BACKEND
 Unlike the benchmark commands, this checks correctness only and publishes no performance
 report. The same-encoder resolve/copy control failed immediately with six zero timestamps;
 the corrected split-copy version passes repeated mixed compute/render submissions.
+
+## Occupancy / view-count sweep
+
+```powershell
+$env:WGPU_BACKEND = 'vulkan' # repeat with 'dx12'
+cargo +1.98.1-x86_64-pc-windows-msvc run -p aestra-bench --features gpu --locked -- --gpu-trails sweep --seed 7 --commit <revision> --out benchmarks/gpu-baselines/<run>/sweep-vulkan.json
+Remove-Item Env:WGPU_BACKEND
+```
+
+`sweep` defaults to requested occupancies **1, 2, 5, 10, 25, 50, 75, 100%** and
+**1, 2, 4, 8 views**, with the same 8 warmups and 64 paired samples. Override with
+`--occupancies 2,3,4,5 --views 4,8` to refine a crossover. These flags also work with
+`--gpu-trails rendering`; without them `rendering` retains its original 16/1,024-owner
+and one/four-view matrix. The flags are rejected for preparation-only and CPU modes.
+
+Occupancy means **active trail owners out of 1,024**, each with all 63 valid segments;
+it does not vary history length or capacity. Percentages must be finite in `(0,100]`,
+are rounded to the nearest owner (minimum one), and levels mapping to the same count
+are rejected. Reports record actual counts and occupancy percentages, not rounded labels.
+Views must be distinct integers in `[1,8]`. Owner slots are spread across the pool even
+for non-divisor occupancies. Dense cases overlap colored alpha layers, so this experiment
+also changes pixel workload as occupancy increases; it is not an isolated vertex-cost test.
+
+Schema v2 adds actual occupancy to each path result and a `comparisons` row for each
+occupancy/view pair. `median_saving_percent` and `p95_saving_percent` compare full-path
+and compact-path total percentiles; positive means compaction saves time. Ratios are null
+if the full-path percentile is zero. `paired_median_saving_ns` is the median of
+`full[i] - compact[i]` from the alternating A/B pairs; it need not equal the difference
+between two independently computed medians. Raw samples remain in acquisition order.
+
+Every iteration checks the complete indirect draw command for **every view**. Each matrix
+cell compares exact, nonblank images after warmup; timing queries and readback storage are
+bounded for eight views. These are observations, not an automatic runtime threshold.
+Treat sign changes as sampled brackets, not proof of a monotonic break-even function.
+
+The [first six sweeps and measured crossover brackets](gpu-baselines/trails-break-even-2026-09-06/README.md)
+cover three runs per backend. All 192 A/B image comparisons passed. One/two-view
+medians favor full-range drawing; four/eight-view crossover ranges differ by backend
+and have marginal/noisy cases. No runtime bypass is selected from these results.

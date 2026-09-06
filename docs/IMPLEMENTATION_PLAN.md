@@ -699,6 +699,16 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Vulkan/DirectX 12 backend pass exact image/count/timestamp checks; archived reports show
   backend-dependent sparse four-view wins and single-view/dense regressions. No adaptive
   compaction policy has been introduced.
+  The P2 occupancy/view-count measurement slice is complete: `aestra-bench --gpu-trails sweep`
+  covers eight occupancy levels and one/two/four/eight views, with configurable refinement,
+  actual owner counts and signed paired/percentile savings in schema-v2 reports. Three
+  runs per backend pass all 192 A/B image comparisons and per-view draw/timestamp checks.
+  Four-view median crossover brackets differ (~2–5% Vulkan versus 25–50% DX12);
+  eight-view results become marginal around 50%, and one/two views favor full-range draws.
+  Raw evidence and tail caveats live in `benchmarks/gpu-baselines/trails-break-even-2026-09-06/`.
+  Follow-up: vary capacity/history fill and adapter coverage, refine marginal brackets,
+  then evaluate a conservative bypass with total-time and tail safeguards. No runtime
+  policy is part of the completed measurement slice.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

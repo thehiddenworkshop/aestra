@@ -1,11 +1,13 @@
 //! Controlled A/B rendering experiment, not a claim about whole application frame time.
-use super::{CaseReport, Report, Timing, encode, group};
+use super::{CaseReport, Comparison, Report, Timing, encode, group};
 use crate::Config;
 use aestra_gpu::{GpuParticle, GpuRenderGlobals, GpuTrailCullParams, shader};
 use glam::{Mat4, UVec4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
-const OWNERS: u32 = 1024;
+const OWNERS: u32 = crate::TRAIL_OWNER_CAPACITY;
+const QUERY_COUNT: u32 = 4 + 2 * crate::MAX_TRAIL_VIEWS as u32;
+const TIMESTAMP_BYTES: u64 = QUERY_COUNT as u64 * 8;
 const POINTS: u32 = 64;
 const CANDIDATES: u32 = OWNERS * (POINTS - 1);
 const WIDTH: u32 = 1024;
@@ -167,17 +169,17 @@ impl Harness {
         let queries = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: None,
             ty: wgpu::QueryType::Timestamp,
-            count: 12,
+            count: QUERY_COUNT,
         });
         let resolve = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: 96,
+            size: TIMESTAMP_BYTES,
             usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let readback = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: 112,
+            size: TIMESTAMP_BYTES + crate::MAX_TRAIL_VIEWS as u64 * 16,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -248,7 +250,7 @@ struct Scene {
 }
 
 impl Scene {
-    fn new(h: &Harness, active: u32, seed: u32) -> Self {
+    fn new(h: &Harness, active: u32, seed: u32, view_count: usize) -> Self {
         let mut asset = aestra_core::EffectAsset::new("Render benchmark", 3.0);
         asset
             .emitters
@@ -296,7 +298,7 @@ impl Scene {
         for i in 0..active {
             // Non-contiguous sparse owners exercise prefix offsets. Dense owners overlap in
             // four differently colored layers, making ordering errors visible with alpha blending.
-            let owner = i * (OWNERS / active);
+            let owner = owner_slot(i, active);
             let base = (1 + owner * POINTS) as usize;
             let tile = i % 256;
             let origin = Vec3::new(
@@ -385,7 +387,7 @@ impl Scene {
                 ],
             })
         });
-        let views = (0..4)
+        let views = (0..view_count)
             .map(|v| {
                 let clip = Mat4::from_scale(Vec3::new(0.9, 0.9, 1.0))
                     * Mat4::from_rotation_z(v as f32 * 0.025);
@@ -526,19 +528,41 @@ impl Scene {
         let first = if path == Path::Compact { 0 } else { 2 };
         let end = 4 + views as u32 * 2;
         let bytes = u64::from(end - first) * 8;
-        encoder.copy_buffer_to_buffer(&self.views[0].indirect[path.index()], 0, readback, 96, 16);
+        for (index, view) in self.views.iter().take(views).enumerate() {
+            encoder.copy_buffer_to_buffer(
+                &view.indirect[path.index()],
+                0,
+                readback,
+                TIMESTAMP_BYTES + index as u64 * 16,
+                16,
+            );
+        }
         let commands =
             super::timestamps::finish(&h.device, encoder, queries, first..end, resolve, readback);
         let data = h.map(readback, h.queue.submit(commands));
-        let count = u32::from_le_bytes(data[100..104].try_into().unwrap());
-        assert_eq!(
-            count,
-            if path == Path::Compact {
-                self.expected
-            } else {
-                CANDIDATES
-            }
-        );
+        for view in 0..views {
+            let offset = TIMESTAMP_BYTES as usize + view * 16;
+            let draw: Vec<_> = data[offset..offset + 16]
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| u32::from_le_bytes(*bytes))
+                .collect();
+            assert_eq!(
+                draw,
+                [
+                    4,
+                    if path == Path::Compact {
+                        self.expected
+                    } else {
+                        CANDIDATES
+                    },
+                    0,
+                    0
+                ],
+                "{path:?}, view {view}: incorrect draw command"
+            );
+        }
         let ticks: Vec<_> = data[..bytes as usize]
             .as_chunks::<8>()
             .0
@@ -603,7 +627,12 @@ impl Scene {
 
 pub(super) fn run(config: &Config) -> Report {
     let h = Harness::new();
-    let mut report = Report::new("trail-rendering-ab", config, h.adapter.clone());
+    let experiment = if config.gpu_trails.as_deref() == Some("sweep") {
+        "trail-occupancy-view-sweep"
+    } else {
+        "trail-rendering-ab"
+    };
+    let mut report = Report::new(experiment, config, h.adapter.clone());
     report.target_size = Some([WIDTH, HEIGHT]);
     println!(
         "render_ab,width={WIDTH},height={HEIGHT},warmup={},samples={},alpha_blending=true",
@@ -612,9 +641,15 @@ pub(super) fn run(config: &Config) -> Report {
     println!(
         "case,views,path,candidates_per_view,submitted_per_view,total_median_ns,total_p95_ns,compaction_median_ns,culling_median_ns,draw_sum_median_ns"
     );
-    for (case, active) in [("sparse", 16), ("dense", OWNERS)] {
-        let scene = Scene::new(&h, active, config.seed as u32);
-        for views in [1, 4] {
+    for &active in &config.trail_owners {
+        let case = format!("owners-{active}");
+        let scene = Scene::new(
+            &h,
+            active,
+            config.seed as u32,
+            *config.trail_views.iter().max().unwrap(),
+        );
+        for &views in &config.trail_views {
             let mut samples: [Vec<[u64; 4]>; 2] = Default::default();
             let mut images: [Option<Vec<u8>>; 2] = Default::default();
             for frame in 0..config.warmup + config.frames {
@@ -670,7 +705,9 @@ pub(super) fn run(config: &Config) -> Report {
                     drawing.median_ns
                 );
                 report.cases.push(CaseReport {
-                    case: case.into(),
+                    case: case.clone(),
+                    active_owners: active,
+                    occupancy_percent: f64::from(active) * 100.0 / f64::from(OWNERS),
                     views,
                     path: format!("{path:?}").to_lowercase(),
                     candidates_per_view: CANDIDATES,
@@ -682,8 +719,40 @@ pub(super) fn run(config: &Config) -> Report {
                     image_equivalence: Some(true),
                 });
             }
+            let comparison = Comparison::new(active, OWNERS, views, &samples[0], &samples[1]);
+            println!(
+                "comparison,{active},{views},median_saving_percent={:?},p95_saving_percent={:?},paired_median_saving_ns={}",
+                comparison.median_saving_percent,
+                comparison.p95_saving_percent,
+                comparison.paired_median_saving_ns
+            );
+            report.comparisons.push(comparison);
             println!("image_equivalence,{case},{views},identical_nonblank=true");
         }
     }
     report
+}
+
+fn owner_slot(index: u32, active: u32) -> u32 {
+    index * OWNERS / active
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn arbitrary_occupancies_spread_unique_owners_across_the_pool() {
+        for active in 1..=OWNERS {
+            let slots: Vec<_> = (0..active).map(|i| owner_slot(i, active)).collect();
+            assert!(slots.iter().all(|slot| *slot < OWNERS));
+            assert!(slots.windows(2).all(|pair| pair[0] < pair[1]));
+        }
+        assert_eq!(owner_slot(50, 51), 1003);
+    }
+    #[test]
+    fn eight_views_fit_the_timestamp_and_indirect_readback_regions() {
+        assert_eq!(QUERY_COUNT, 20);
+        assert_eq!(TIMESTAMP_BYTES, 160);
+        assert_eq!(4 + 2 * crate::MAX_TRAIL_VIEWS as u32, QUERY_COUNT);
+    }
 }

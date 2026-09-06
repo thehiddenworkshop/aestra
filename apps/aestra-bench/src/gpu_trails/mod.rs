@@ -13,7 +13,7 @@ pub(crate) fn run(config: &Config, kind: &str) -> Result<(), String> {
     // Generate/write the report only after all count, image and timing checks pass.
     let report = match kind {
         "preparation" => preparation::run(config),
-        "rendering" => rendering::run(config),
+        "rendering" | "sweep" => rendering::run(config),
         _ => return Err(format!("unknown GPU trail experiment {kind:?}")),
     };
     let path = config.out.as_ref().map(PathBuf::from).unwrap_or_else(|| {
@@ -49,12 +49,13 @@ struct Report {
     owner_capacity: u32,
     history_points: u32,
     cases: Vec<CaseReport>,
+    comparisons: Vec<Comparison>,
 }
 
 impl Report {
     fn new(experiment: &str, config: &Config, adapter: wgpu::AdapterInfo) -> Self {
         Self {
-            schema_version: 1,
+            schema_version: 2,
             timestamp_readback: "separate_command_buffer",
             experiment: experiment.into(),
             commit: config.commit.clone(),
@@ -78,9 +79,10 @@ impl Report {
             seed: config.seed,
             gpu_seed: config.seed as u32,
             target_size: None,
-            owner_capacity: 1024,
+            owner_capacity: crate::TRAIL_OWNER_CAPACITY,
             history_points: 64,
             cases: Vec::new(),
+            comparisons: Vec::new(),
         }
     }
 }
@@ -88,6 +90,8 @@ impl Report {
 #[derive(Serialize)]
 struct CaseReport {
     case: String,
+    active_owners: u32,
+    occupancy_percent: f64,
     views: usize,
     path: String,
     candidates_per_view: u32,
@@ -98,6 +102,49 @@ struct CaseReport {
     drawing: Option<Timing>,
     /// None for preparation-only; true only after exact, nonblank image comparison.
     image_equivalence: Option<bool>,
+}
+
+/// Per-cell evidence, not a runtime policy or an assumed monotonic crossover.
+#[derive(Serialize)]
+struct Comparison {
+    active_owners: u32,
+    occupancy_percent: f64,
+    views: usize,
+    /// Positive means compaction is faster; None means a zero baseline prevents division.
+    median_saving_percent: Option<f64>,
+    p95_saving_percent: Option<f64>,
+    paired_median_saving_ns: f64,
+}
+
+impl Comparison {
+    fn new(
+        active: u32,
+        capacity: u32,
+        views: usize,
+        full: &[[u64; 4]],
+        compact: &[[u64; 4]],
+    ) -> Self {
+        assert_eq!(full.len(), compact.len());
+        let full_total = Timing::new(full.iter().map(|s| s[0]).collect());
+        let compact_total = Timing::new(compact.iter().map(|s| s[0]).collect());
+        let saving = |base: u64, candidate: u64| {
+            (base > 0).then(|| 100.0 * (base as f64 - candidate as f64) / base as f64)
+        };
+        let mut paired: Vec<_> = full
+            .iter()
+            .zip(compact)
+            .map(|(a, b)| i128::from(a[0]) - i128::from(b[0]))
+            .collect();
+        paired.sort_unstable();
+        Self {
+            active_owners: active,
+            occupancy_percent: f64::from(active) * 100.0 / f64::from(capacity),
+            views,
+            median_saving_percent: saving(full_total.median_ns, compact_total.median_ns),
+            p95_saving_percent: saving(full_total.p95_ns, compact_total.p95_ns),
+            paired_median_saving_ns: paired[paired.len() / 2] as f64,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -163,6 +210,8 @@ mod tests {
     fn preparation_report_does_not_claim_rendering_measurements() {
         let case = CaseReport {
             case: "sparse".into(),
+            active_owners: 16,
+            occupancy_percent: 1.5625,
             views: 1,
             path: "compact".into(),
             candidates_per_view: 64512,
@@ -178,5 +227,25 @@ mod tests {
         assert!(json["drawing"].is_null());
         assert!(json["image_equivalence"].is_null());
         assert_eq!(json["compaction"]["samples_ns"][0], 123);
+    }
+
+    #[test]
+    fn comparisons_preserve_signed_savings_and_unavailable_ratios() {
+        let result = Comparison::new(512, 1024, 4, &[[100, 0, 0, 0]], &[[150, 0, 0, 0]]);
+        assert_eq!(result.occupancy_percent, 50.0);
+        assert_eq!(result.median_saving_percent, Some(-50.0));
+        assert_eq!(result.paired_median_saving_ns, -50.0);
+        let result = Comparison::new(1, 1024, 1, &[[0; 4]], &[[0; 4]]);
+        assert_eq!(result.median_saving_percent, None);
+        assert_eq!(result.p95_saving_percent, None);
+        let result = Comparison::new(
+            1,
+            1024,
+            1,
+            &[[1, 0, 0, 0], [2, 0, 0, 0], [100, 0, 0, 0]],
+            &[[1, 0, 0, 0], [50, 0, 0, 0], [51, 0, 0, 0]],
+        );
+        assert_eq!(result.paired_median_saving_ns, 0.0);
+        assert_eq!(result.median_saving_percent, Some(-2400.0));
     }
 }
