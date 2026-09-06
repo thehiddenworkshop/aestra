@@ -51,6 +51,17 @@ away from zero also creates the required time-zero anchor.
 - Edit position, XYZ rotation in degrees, and positive scale using the shared
   draggable Feather numeric controls. Intermediate values update the preview;
   releasing commits one undoable edit. Escape cancels the preview.
+- While inspecting Host Motion, the viewport shows the host trajectory and pose
+  markers. Click an unselected marker to select the same key in the timeline and
+  Properties without moving the playhead. The selected marker is white. Overlapping
+  loop endpoints can be selected in turn; coincident interior poses are also
+  directly accessible through the timeline.
+- Use the viewport's Move, Rotate or Scale tools on the selected pose. These edit
+  that existing key, not the emitter transform, and do not insert keys implicitly.
+  Shift enables precision and Ctrl enables snapping, as with emitter gizmos.
+  The path and effect preview update during the drag; release commits one undo
+  step, and Escape restores the original pose. Changing selection or the document
+  during a drag cancels it instead of applying it to a different key.
 - **Hold** keeps the final pose after the endpoint. **Repeat** requires a positive
   period and matching endpoint poses. **Close loop** explicitly copies the first
   pose to the last and enables Repeat; a one-key track gains an endpoint at the
@@ -66,6 +77,12 @@ away from zero also creates the required time-zero anchor.
 Motion edits invalidate preview history, so subsequent scrubbing rebuilds trails
 from the new trajectory. Undo/redo restores the track and its replay inputs.
 To try it, open Moving Trail Lab, edit the middle pose, scrub backward, then undo.
+
+The viewport line represents host translation relative to the editor's stable
+placement, not an individual particle's trail. Rotation and scale are edited with
+the gizmo but do not bend this line. Very large imported tracks use a decimated
+path/marker display (at most 513 keys), always retaining both endpoints and the
+selected key; the authored track and playback are never decimated.
 
 Hosts can validate an immutable `aestra_runtime::CompiledHostTransformTrack` and
 replace it through `EffectInstance::set_host_transform_track` or the Bevy

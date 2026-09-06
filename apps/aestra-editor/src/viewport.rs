@@ -48,6 +48,8 @@ use bevy_resvg::prelude::{SvgColor, UiSvg};
 use fluent_bundle::FluentArgs;
 use std::{sync::Arc, time::Instant};
 
+mod host_motion;
+
 const DEFAULT_PREVIEW_PITCH: f32 = -0.35;
 const PREVIEW_GRID_SHADER_PATH: &str = "shaders/preview_grid.wesl";
 const PREVIEW_GRID_Y: f32 = -0.05;
@@ -82,6 +84,7 @@ impl Plugin for ViewportPlugin {
             .init_resource::<EditorPreviewProject>()
             .init_resource::<ShapeGizmoState>()
             .init_resource::<EmitterTransformGizmoInteraction>()
+            .init_resource::<host_motion::HostMotionViewport>()
             .add_observer(queue_viewport_action_activation)
             .add_observer(execute_viewport_action)
             .add_systems(
@@ -115,6 +118,7 @@ impl Plugin for ViewportPlugin {
                     sync_preview_display_mode,
                     update_preview_display_controls,
                     update_transform_gizmo_controls,
+                    host_motion::pick_pose,
                     sync_emitter_transform_proxy,
                     interact_shape_gizmo,
                     sync_transform_gizmo_focus,
@@ -137,6 +141,7 @@ impl Plugin for ViewportPlugin {
                         .after(TransformGizmoRenderStep)
                         .after(update_emitter_transform_gizmo),
                     update_transform_gizmo_value_label.after(update_emitter_transform_gizmo),
+                    host_motion::draw_path.after(update_emitter_transform_gizmo),
                 ),
             )
             .configure_sets(
@@ -492,10 +497,11 @@ pub(crate) struct EmitterTransformGizmoProxy;
 #[derive(Component)]
 struct TransformGizmoVisualRoot;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreviewTransformTarget {
     Emitter(EmitterId),
     EffectClip(EffectClipId),
+    HostPose(aestra_core::EffectId, usize),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -506,11 +512,14 @@ struct ActiveEmitterTransformGizmo {
     raw_anchor: EmitterTransform,
     output_anchor: EmitterTransform,
     precision: bool,
+    effect: aestra_core::EffectId,
+    revision: u64,
 }
 
 #[derive(Resource, Default)]
 pub(crate) struct EmitterTransformGizmoInteraction {
     active: Option<ActiveEmitterTransformGizmo>,
+    cancelled: bool,
 }
 
 impl EmitterTransformGizmoInteraction {
@@ -825,10 +834,20 @@ fn sync_transform_gizmo_focus(
     mut commands: Commands,
     session: Res<EditorSession>,
     shape_gizmo: Res<ShapeGizmoState>,
+    timeline: Option<Res<TimelineState>>,
+    motion: Option<Res<host_motion::HostMotionViewport>>,
+    interaction: Res<EmitterTransformGizmoInteraction>,
     proxies: Query<(Entity, Has<TransformGizmoFocus>), With<EmitterTransformGizmoProxy>>,
 ) {
-    let target = selected_preview_transform(&session);
+    let target = selected_gizmo_transform(&session, timeline.as_deref());
     let allowed = target.is_some()
+        && !interaction.cancelled
+        && motion
+            .as_ref()
+            .is_none_or(|motion| motion.hovered.is_none())
+        && timeline
+            .as_ref()
+            .is_none_or(|timeline| !crate::timeline::host_motion::busy(timeline))
         && session.pending_change.is_none()
         && shape_gizmo.hovered.is_none()
         && shape_gizmo.active.is_none()
@@ -840,6 +859,7 @@ fn sync_transform_gizmo_focus(
             |(target, _)| match target {
                 PreviewTransformTarget::Emitter(id) => SemanticTarget::Emitter(id),
                 PreviewTransformTarget::EffectClip(id) => SemanticTarget::EffectClip(id),
+                PreviewTransformTarget::HostPose(id, _) => SemanticTarget::Effect(id),
             },
         ));
     for (entity, has_focus) in &proxies {
@@ -853,6 +873,7 @@ fn sync_transform_gizmo_focus(
 
 fn sync_emitter_transform_proxy(
     session: Res<EditorSession>,
+    timeline: Option<Res<TimelineState>>,
     gizmo: Res<TransformGizmoState>,
     interaction: Res<EmitterTransformGizmoInteraction>,
     mut proxies: Query<&mut Transform, With<EmitterTransformGizmoProxy>>,
@@ -860,7 +881,7 @@ fn sync_emitter_transform_proxy(
     if gizmo.active || interaction.active.is_some() {
         return;
     }
-    let Some((_, authored)) = selected_preview_transform(&session) else {
+    let Some((_, authored)) = selected_gizmo_transform(&session, timeline.as_deref()) else {
         return;
     };
     let desired = bevy_transform_from_emitter(authored);
@@ -878,13 +899,42 @@ fn update_emitter_transform_gizmo(
     mut interaction: ResMut<EmitterTransformGizmoInteraction>,
     mut proxies: Query<&mut Transform, With<EmitterTransformGizmoProxy>>,
     mut session: ResMut<EditorSession>,
+    timeline: Option<Res<TimelineState>>,
 ) {
     let Ok(mut transform) = proxies.single_mut() else {
         return;
     };
     let raw_current = emitter_transform_from_bevy(&transform);
+    let selected = selected_gizmo_transform(&session, timeline.as_deref());
+    if interaction.cancelled {
+        if let Some((_, pose)) = selected {
+            *transform = bevy_transform_from_emitter(pose);
+        }
+        if !gizmo.active {
+            interaction.cancelled = false;
+        }
+        return;
+    }
+    if let Some(active) = interaction.active
+        && (keys.just_pressed(KeyCode::Escape)
+            || active.effect != session.effect.id
+            || active.revision != session.document_revision()
+            || selected.map(|(target, _)| target) != Some(active.target)
+            || session.pending_change.is_some()
+            || session
+                .locks
+                .is_locked(SemanticTarget::Effect(session.effect.id)))
+    {
+        interaction.active = None;
+        interaction.cancelled = gizmo.active;
+        session.restore_interaction_preview();
+        if let Some((_, pose)) = selected {
+            *transform = bevy_transform_from_emitter(pose);
+        }
+        return;
+    }
     if gizmo.active {
-        let Some((target, authored)) = selected_preview_transform(&session) else {
+        let Some((target, authored)) = selected else {
             return;
         };
         let precision = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
@@ -897,6 +947,8 @@ fn update_emitter_transform_gizmo(
                 raw_anchor: authored,
                 output_anchor: authored,
                 precision,
+                effect: session.effect.id,
+                revision: session.document_revision(),
             });
         if active.precision != precision {
             active.raw_anchor = raw_current;
@@ -922,11 +974,14 @@ fn update_emitter_transform_gizmo(
         };
         *transform = bevy_transform_from_emitter(current);
         if active.current != current {
-            active.current = current;
-            session.preview_interaction(EffectTransaction::single(
-                "Preview transform",
-                preview_transform_command(active.target, current),
-            ));
+            if let Some(command) = preview_transform_command(active.target, current, &session)
+                && session
+                    .preview_interaction(EffectTransaction::single("Preview transform", command))
+            {
+                active.current = current;
+            } else {
+                *transform = bevy_transform_from_emitter(active.current);
+            }
         }
         return;
     }
@@ -934,13 +989,16 @@ fn update_emitter_transform_gizmo(
     let Some(active) = interaction.active.take() else {
         return;
     };
-    if active.current != active.original {
+    if active.current != active.original
+        && let Some(command) = preview_transform_command(active.target, active.current, &session)
+    {
         if !session.execute(
             match active.target {
                 PreviewTransformTarget::Emitter(_) => "Transformed emitter",
                 PreviewTransformTarget::EffectClip(_) => "Transformed effect clip",
+                PreviewTransformTarget::HostPose(_, _) => "Transformed host pose",
             },
-            preview_transform_command(active.target, active.current),
+            command,
             true,
         ) {
             session.restore_interaction_preview();
@@ -1215,16 +1273,48 @@ fn selected_preview_transform(
     ))
 }
 
+fn selected_gizmo_transform(
+    session: &EditorSession,
+    timeline: Option<&TimelineState>,
+) -> Option<(PreviewTransformTarget, EmitterTransform)> {
+    if let Some(timeline) = timeline
+        && crate::timeline::host_motion::active(session, timeline)
+    {
+        return crate::timeline::host_motion::selected_pose(session, timeline).map(
+            |(index, transform)| {
+                (
+                    PreviewTransformTarget::HostPose(session.effect.id, index),
+                    transform,
+                )
+            },
+        );
+    }
+    selected_preview_transform(session)
+}
+
 fn preview_transform_command(
     target: PreviewTransformTarget,
     transform: EmitterTransform,
-) -> EffectCommand {
-    match target {
+    session: &EditorSession,
+) -> Option<EffectCommand> {
+    Some(match target {
         PreviewTransformTarget::Emitter(id) => EffectCommand::SetEmitterTransform { id, transform },
         PreviewTransformTarget::EffectClip(id) => {
             EffectCommand::SetEffectClipTransform { id, transform }
         }
-    }
+        PreviewTransformTarget::HostPose(effect, index) => {
+            if effect != session.effect.id {
+                return None;
+            }
+            let track = crate::timeline::host_motion::replace_pose(
+                session.effect.host_transform_track.as_ref()?,
+                index,
+                transform,
+            )
+            .ok()?;
+            EffectCommand::SetHostTransformTrack { track: Some(track) }
+        }
+    })
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -3201,6 +3291,7 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(session)
             .init_resource::<ShapeGizmoState>()
+            .init_resource::<EmitterTransformGizmoInteraction>()
             .add_systems(Update, sync_transform_gizmo_focus);
         let player = app.world_mut().spawn(EmitterTransformGizmoProxy).id();
 

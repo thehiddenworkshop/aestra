@@ -596,7 +596,12 @@ the current sprite-material path until the native-GPU compatibility gate approve
   retiming, deletion, shared Feather TRS scrubbing, Hold/Repeat and explicit loop closure.
   Preview-only interactions commit once on release, cancel on Escape, and retain transactional
   undo/redo and history invalidation. Timeline framing includes longer motion periods without
-  changing playback length. See `docs/host_motion_tracks.md` for the workflow and limits.
+  changing playback length. Host Motion selection also displays a bounded viewport trajectory
+  with selectable pose markers synchronized with the timeline and Properties. The shared
+  move/rotate/scale gizmo edits existing pose keys with precision/snapping, live path/effect
+  preview, loop-seam mirroring, one undo step per drag and Escape/stale-selection cancellation.
+  Regression tests cover TRS preview/commit/undo/redo, cancellation, invalid poses and bounded
+  marker picking. See `docs/host_motion_tracks.md` for the workflow and limits.
   Arbitrary per-particle ribbon-ID authoring, composed parent/clip trajectories, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

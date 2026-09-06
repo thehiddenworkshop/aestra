@@ -99,10 +99,65 @@ pub(super) fn timeline_duration(session: &EditorSession) -> f32 {
         })
 }
 
-fn active(session: &EditorSession, state: &TimelineState) -> bool {
+pub(crate) fn active(session: &EditorSession, state: &TimelineState) -> bool {
     state.host_motion.effect == Some(session.effect.id)
         && session.selection.primary == SemanticTarget::Effect(session.effect.id)
         && state.inspected_child.is_none()
+}
+
+pub(crate) fn selected_pose(
+    session: &EditorSession,
+    state: &TimelineState,
+) -> Option<(usize, EmitterTransform)> {
+    if !active(session, state) {
+        return None;
+    }
+    let index = state.host_motion.selected?;
+    let key = session
+        .effect
+        .host_transform_track
+        .as_ref()?
+        .keys
+        .get(index)?;
+    Some((index, key.transform))
+}
+
+pub(crate) fn busy(state: &TimelineState) -> bool {
+    state.host_motion.drag.is_some() || state.host_motion.number_preview.is_some()
+}
+
+pub(crate) fn select_pose(session: &mut EditorSession, state: &mut TimelineState, index: usize) {
+    if session
+        .effect
+        .host_transform_track
+        .as_ref()
+        .is_some_and(|track| index < track.keys.len())
+    {
+        select(session, state, Some(index));
+    }
+}
+
+pub(crate) fn replace_pose(
+    track: &HostTransformTrack,
+    index: usize,
+    transform: EmitterTransform,
+) -> Result<HostTransformTrack, String> {
+    let mut candidate = track.clone();
+    candidate
+        .keys
+        .get_mut(index)
+        .ok_or("The pose key no longer exists")?
+        .transform = transform;
+    if candidate.repeat && (index == 0 || index == candidate.keys.len() - 1) {
+        let other = if index == 0 {
+            candidate.keys.len() - 1
+        } else {
+            0
+        };
+        candidate.keys[other].transform = transform;
+    }
+    candidate.validate().map_err(|e| e.to_string())?;
+    Ok(candidate)
 }
 
 pub(super) fn keyboard_input(
@@ -399,6 +454,20 @@ fn execute(
     }
 }
 
+fn text_action(parent: &mut ChildSpawnerCommands, label: &str, action: Action) -> Entity {
+    let entity = mini_button(parent, label, action);
+    parent.commands().entity(entity).insert(Node {
+        width: Val::Auto,
+        height: Val::Px(24.0),
+        flex_shrink: 0.0,
+        padding: UiRect::horizontal(Val::Px(8.0)),
+        align_items: AlignItems::Center,
+        justify_content: JustifyContent::Center,
+        ..default()
+    });
+    entity
+}
+
 pub(super) fn spawn_header(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn(Node {
@@ -410,7 +479,7 @@ pub(super) fn spawn_header(parent: &mut ChildSpawnerCommands) {
             ..default()
         })
         .with_children(|row| {
-            let inspect = mini_button(row, "Host Motion", Action::Inspect);
+            let inspect = text_action(row, "Host Motion", Action::Inspect);
             let add = mini_button(row, "+", Action::Add);
             for entity in [inspect, add] {
                 row.commands()
@@ -791,9 +860,9 @@ pub(crate) fn spawn_inspector(
                     ..default()
                 })
                 .with_children(|row| {
-                    mini_button(row, "Key at playhead", Action::Add);
-                    mini_button(row, "Delete key", Action::Delete);
-                    mini_button(row, "Clear motion", Action::Clear);
+                    text_action(row, "Key at playhead", Action::Add);
+                    text_action(row, "Delete key", Action::Delete);
+                    text_action(row, "Clear motion", Action::Clear);
                 });
             let Some(track) = &session.effect.host_transform_track else {
                 label(
@@ -807,9 +876,9 @@ pub(crate) fn spawn_inspector(
                 column_gap: Val::Px(5.0),
                 ..default()
             }).with_children(|row| {
-                mini_button(row, if track.repeat { "Hold" } else { "● Hold" }, Action::Repeat(false));
-                mini_button(row, if track.repeat { "● Repeat" } else { "Repeat" }, Action::Repeat(true));
-                let close = mini_button(row, "Close loop", Action::CloseLoop);
+                text_action(row, if track.repeat { "Hold" } else { "● Hold" }, Action::Repeat(false));
+                text_action(row, if track.repeat { "● Repeat" } else { "Repeat" }, Action::Repeat(true));
+                let close = text_action(row, "Close loop", Action::CloseLoop);
                 row.commands().entity(close).insert(EditorTooltip::description(
                     "Copy the first pose to the final key and enable Repeat. A single-key track gains an endpoint at the effect duration."
                 ));
@@ -1497,6 +1566,17 @@ mod tests {
         );
         app.update();
         let world = app.world_mut();
+        let mut actions = world.query_filtered::<(&Node, &AccessibleLabel), With<Action>>();
+        for (node, label) in actions.iter(world) {
+            if label.0 != "+" {
+                assert_eq!(
+                    node.width,
+                    Val::Auto,
+                    "text actions must not use icon widths"
+                );
+                assert_eq!(node.flex_shrink, 0.0);
+            }
+        }
         let mut inputs = world.query::<(Entity, &NumberControl, &ScrubbableNumber)>();
         assert_eq!(inputs.iter(world).count(), 10);
         for (entity, control, scrub) in inputs.iter(world) {
