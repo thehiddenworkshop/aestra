@@ -189,7 +189,10 @@ pub(super) fn handle_renderer_action(
 }
 
 fn preview_renderer_deletion(session: &mut EditorSession, renderer: RendererId) -> bool {
-    let emitter = session.selected_layer().id;
+    let Some(selected_layer) = session.selected_layer() else {
+        return false;
+    };
+    let emitter = selected_layer.id;
     session.preview_transaction(EffectTransaction::single(
         "Delete renderer",
         EffectCommand::RemoveRenderer { emitter, renderer },
@@ -782,7 +785,7 @@ pub(super) fn renderer_number_input_value(
         | RendererNumberControl::FlipbookFrameRate(renderer) => renderer,
     };
     let renderer = session
-        .selected_layer()
+        .selected_layer()?
         .renderers
         .iter()
         .find(|renderer| renderer.id == renderer_id)?;
@@ -808,7 +811,7 @@ pub(super) fn renderer_number_input_value(
                 TrailField::Points => max_points as f32,
                 TrailField::Capacity => {
                     (if max_trails == 0 {
-                        session.selected_layer().max_particles
+                        session.selected_layer()?.max_particles
                     } else {
                         max_trails
                     }) as f32
@@ -882,8 +885,10 @@ pub(super) fn normalize_renderer_uv_scrub_value(
     component: u8,
     value: f32,
 ) -> f32 {
-    let Some(material) = session
-        .selected_layer()
+    let Some(selected_layer) = session.selected_layer() else {
+        return value;
+    };
+    let Some(material) = selected_layer
         .renderers
         .iter()
         .find(|candidate| candidate.id == renderer)
@@ -913,7 +918,7 @@ fn trail_end_cap_command(
     value: aestra_core::TrailEndCap,
 ) -> Option<EffectCommand> {
     let renderer = session
-        .selected_layer()
+        .selected_layer()?
         .renderers
         .iter()
         .find(|r| r.id == id)?;
@@ -923,7 +928,7 @@ fn trail_end_cap_command(
     };
     *end_cap = value;
     Some(EffectCommand::SetRendererProperties {
-        emitter: session.selected_layer().id,
+        emitter: session.selected_layer()?.id,
         renderer: id,
         properties,
     })
@@ -935,7 +940,7 @@ fn trail_uv_command(
     value: aestra_core::TrailUvMode,
 ) -> Option<EffectCommand> {
     let renderer = session
-        .selected_layer()
+        .selected_layer()?
         .renderers
         .iter()
         .find(|r| r.id == id)?;
@@ -945,7 +950,7 @@ fn trail_uv_command(
     };
     *uv_mode = value;
     Some(EffectCommand::SetRendererProperties {
-        emitter: session.selected_layer().id,
+        emitter: session.selected_layer()?.id,
         renderer: id,
         properties,
     })
@@ -957,7 +962,7 @@ fn trail_sampling_command(
     value: aestra_core::TrailSamplingMode,
 ) -> Option<EffectCommand> {
     let renderer = session
-        .selected_layer()
+        .selected_layer()?
         .renderers
         .iter()
         .find(|r| r.id == id)?;
@@ -967,7 +972,7 @@ fn trail_sampling_command(
     };
     *sampling = value;
     Some(EffectCommand::SetRendererProperties {
-        emitter: session.selected_layer().id,
+        emitter: session.selected_layer()?.id,
         renderer: id,
         properties,
     })
@@ -987,7 +992,7 @@ pub(super) fn renderer_numeric_scrub_command(
         | RendererNumberControl::FlipbookFrameRate(id) => id,
     };
     let renderer = session
-        .selected_layer()
+        .selected_layer()?
         .renderers
         .iter()
         .find(|renderer| renderer.id == renderer_id)?;
@@ -1021,11 +1026,11 @@ pub(super) fn renderer_numeric_scrub_command(
                 TrailField::Lifetime => *lifetime = value,
                 TrailField::Points => *max_points = value as u32,
                 TrailField::Capacity => {
-                    *max_trails = (value as u32).max(session.selected_layer().max_particles)
+                    *max_trails = (value as u32).max(session.selected_layer()?.max_particles)
                 }
             }
             Some(EffectCommand::SetRendererProperties {
-                emitter: session.selected_layer().id,
+                emitter: session.selected_layer()?.id,
                 renderer: renderer.id,
                 properties,
             })
@@ -1052,7 +1057,7 @@ pub(super) fn renderer_numeric_scrub_command(
                 _ => unreachable!(),
             }
             Some(EffectCommand::SetRendererProperties {
-                emitter: session.selected_layer().id,
+                emitter: session.selected_layer()?.id,
                 renderer: renderer.id,
                 properties,
             })
@@ -1114,6 +1119,9 @@ pub(super) fn handle_renderer_enabled_change(
     mut commands: Commands,
     mut session: ResMut<EditorSession>,
 ) {
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
     if !change.is_final {
         return;
     }
@@ -1125,8 +1133,7 @@ pub(super) fn handle_renderer_enabled_change(
     } else {
         commands.entity(change.source).remove::<Checked>();
     }
-    let enabled = session
-        .selected_layer()
+    let enabled = selected_layer
         .renderers
         .iter()
         .find(|renderer| renderer.id == control.0)
@@ -1190,6 +1197,9 @@ pub(super) fn handle_renderer_toggle_change(
     mut commands: Commands,
     mut session: ResMut<EditorSession>,
 ) {
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
     let Ok(control) = controls.get(change.source) else {
         return;
     };
@@ -1200,8 +1210,7 @@ pub(super) fn handle_renderer_toggle_change(
     }
     match *control {
         RendererToggleControl::FlipbookLooping(renderer_id) => {
-            let current = session
-                .selected_layer()
+            let current = selected_layer
                 .renderers
                 .iter()
                 .find(|renderer| renderer.id == renderer_id)
@@ -1219,8 +1228,7 @@ pub(super) fn handle_renderer_toggle_change(
             }
         }
         RendererToggleControl::FlipbookRandomStart(renderer_id) => {
-            let current = session
-                .selected_layer()
+            let current = selected_layer
                 .renderers
                 .iter()
                 .find(|renderer| renderer.id == renderer_id)
@@ -1343,9 +1351,12 @@ fn renderer_scrubbable_number(
         RendererNumberControl::Softness(_) | RendererNumberControl::Uv(_, _) => 0.0,
     });
     let (min, max) = match control {
-        RendererNumberControl::Trail(_, TrailField::Capacity) => {
-            (session.selected_layer().max_particles as f32, 1024.0)
-        }
+        RendererNumberControl::Trail(_, TrailField::Capacity) => (
+            session
+                .selected_layer()
+                .map_or(1.0, |emitter| emitter.max_particles as f32),
+            1024.0,
+        ),
         RendererNumberControl::Trail(_, field) => field.bounds(),
         RendererNumberControl::Softness(_) => (0.0, f32::MAX),
         RendererNumberControl::RibbonWidth(_) => (0.001, f32::MAX),
@@ -2927,7 +2938,7 @@ mod tests {
     #[test]
     fn renderer_action_handler_owns_renderer_creation_only() {
         let mut session = test_support::session_with_timing_slack();
-        let initial = session.selected_layer().renderers.len();
+        let initial = session.selected_layer().unwrap().renderers.len();
         let mut palette = ModulePaletteState {
             open: true,
             ..default()
@@ -2942,7 +2953,10 @@ mod tests {
             &mut curves,
             &mut layout,
         ));
-        assert_eq!(session.selected_layer().renderers.len(), initial + 1);
+        assert_eq!(
+            session.selected_layer().unwrap().renderers.len(),
+            initial + 1
+        );
         assert!(!palette.open);
         assert!(!handle_renderer_action(
             PropertiesAction::CloseModulePalette,
@@ -2970,8 +2984,8 @@ mod tests {
     #[test]
     fn ribbon_width_uses_feather_scrubbing_and_transactional_properties() {
         let mut session = test_support::session_with_timing_slack();
-        let emitter = session.selected_layer().id;
-        let renderer = session.selected_layer().renderers[0].id;
+        let emitter = session.selected_layer().unwrap().id;
+        let renderer = session.selected_layer().unwrap().renderers[0].id;
         session
             .effect
             .emitters
@@ -3035,8 +3049,8 @@ mod tests {
     #[test]
     fn trail_controls_preserve_sibling_values_and_clamp_history_budget() {
         let mut session = test_support::session_with_timing_slack();
-        let emitter = session.selected_layer().id;
-        let renderer = session.selected_layer().renderers[0].id;
+        let emitter = session.selected_layer().unwrap().id;
+        let renderer = session.selected_layer().unwrap().renderers[0].id;
         session
             .effect
             .emitters
@@ -3086,8 +3100,8 @@ mod tests {
     #[test]
     fn trail_capacity_uses_parent_minimum_and_rounds_without_changing_other_properties() {
         let mut session = test_support::session_with_timing_slack();
-        let emitter = session.selected_layer().id;
-        let renderer = session.selected_layer().renderers[0].id;
+        let emitter = session.selected_layer().unwrap().id;
+        let renderer = session.selected_layer().unwrap().renderers[0].id;
         session
             .effect
             .emitters
@@ -3110,7 +3124,7 @@ mod tests {
         };
         let control = RendererNumberControl::Trail(renderer, TrailField::Capacity);
         let widget = renderer_scrubbable_number(&session, control);
-        let parents = session.selected_layer().max_particles;
+        let parents = session.selected_layer().unwrap().max_particles;
         assert_eq!(
             (widget.value, widget.min, widget.max, widget.step),
             (parents as f32, parents as f32, 1024.0, 1.0)
@@ -3126,8 +3140,8 @@ mod tests {
     #[test]
     fn trail_sampling_mode_and_distance_are_transactional_and_preserve_time_settings() {
         let mut session = test_support::session_with_timing_slack();
-        let emitter = session.selected_layer().id;
-        let renderer = session.selected_layer().renderers[0].id;
+        let emitter = session.selected_layer().unwrap().id;
+        let renderer = session.selected_layer().unwrap().renderers[0].id;
         let target = &mut session
             .effect
             .emitters
@@ -3236,7 +3250,7 @@ mod tests {
         session.redo();
         assert_eq!(renderer_number_input_value(&session, control), Some(0.05));
         assert!(matches!(
-            session.selected_layer().renderers[0].properties,
+            session.selected_layer().unwrap().renderers[0].properties,
             RendererProperties::Trail {
                 sampling: aestra_core::TrailSamplingMode::Adaptive,
                 sample_interval: 0.025,
@@ -3251,7 +3265,7 @@ mod tests {
     #[test]
     fn sprite_renderer_softness_uses_the_shared_scrubbable_number_contract() {
         let session = test_support::session_with_timing_slack();
-        let renderer = session.selected_layer().renderers[0].id;
+        let renderer = session.selected_layer().unwrap().renderers[0].id;
 
         let input = renderer_scrubbable_number(&session, RendererNumberControl::Softness(renderer));
 
@@ -3268,8 +3282,8 @@ mod tests {
     #[test]
     fn trail_uv_mode_and_tile_length_use_undoable_shared_controls() {
         let mut session = test_support::session_with_timing_slack();
-        let emitter = session.selected_layer().id;
-        let renderer = session.selected_layer().renderers[0].id;
+        let emitter = session.selected_layer().unwrap().id;
+        let renderer = session.selected_layer().unwrap().renderers[0].id;
         let target = &mut session
             .effect
             .emitters
@@ -3301,7 +3315,7 @@ mod tests {
         let command = renderer_numeric_scrub_command(&session, control, -1.0).unwrap();
         assert!(session.execute("Tile length", command, true));
         assert!(matches!(
-            session.selected_layer().renderers[0].properties,
+            session.selected_layer().unwrap().renderers[0].properties,
             RendererProperties::Trail {
                 uv_mode: aestra_core::TrailUvMode::Tile,
                 tile_length: 0.001,
@@ -3313,12 +3327,15 @@ mod tests {
         ));
         session.undo();
         session.undo();
-        assert_eq!(session.selected_layer().renderers[0].properties, before);
+        assert_eq!(
+            session.selected_layer().unwrap().renderers[0].properties,
+            before
+        );
         let command =
             trail_end_cap_command(&session, renderer, aestra_core::TrailEndCap::Rounded).unwrap();
         assert!(session.execute("Rounded caps", command, true));
         assert!(matches!(
-            session.selected_layer().renderers[0].properties,
+            session.selected_layer().unwrap().renderers[0].properties,
             RendererProperties::Trail {
                 end_cap: aestra_core::TrailEndCap::Rounded,
                 tile_length: 8.0,
@@ -3328,7 +3345,10 @@ mod tests {
             }
         ));
         session.undo();
-        assert_eq!(session.selected_layer().renderers[0].properties, before);
+        assert_eq!(
+            session.selected_layer().unwrap().renderers[0].properties,
+            before
+        );
     }
 
     #[test]

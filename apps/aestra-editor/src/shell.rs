@@ -927,7 +927,7 @@ fn update_editor_labels(
     let layer = session.selected_layer();
     for (mut text, title, document_menu) in &mut labels {
         if title.is_some() {
-            text.0 = layer.name.clone();
+            text.0 = layer.map_or_else(|| session.effect.name.clone(), |layer| layer.name.clone());
         } else if document_menu.is_some() {
             let file = session
                 .source_path
@@ -952,10 +952,36 @@ mod tests {
     use bevy::{asset::AssetPlugin, scene::ScenePlugin};
 
     #[test]
+    fn empty_effect_labels_update_without_an_emitter() {
+        let mut app = App::new();
+        app.insert_resource(EditorSession::from_test_effect(
+            aestra_core::EffectAsset::new("Empty", 4.0),
+        ))
+        .add_systems(Update, update_editor_labels);
+        let title = app
+            .world_mut()
+            .spawn((Text::default(), PropertiesTitle))
+            .id();
+        let document = app
+            .world_mut()
+            .spawn((Text::default(), DocumentMenuLabel))
+            .id();
+        app.update();
+        assert_eq!(app.world().get::<Text>(title).unwrap().0, "Empty");
+        assert!(
+            app.world()
+                .get::<Text>(document)
+                .unwrap()
+                .0
+                .contains("Empty")
+        );
+    }
+
+    #[test]
     fn source_breadcrumb_ends_with_the_inspected_emitter() {
         let temporary = tempfile::tempdir().unwrap();
         let session = test_support::session_with_timing_slack();
-        let expected = session.selected_layer().name.clone();
+        let expected = session.selected_layer().unwrap().name.clone();
         let timeline = TimelineState::framed(session.playback_duration());
         let navigation = SourceNavigationState::default();
         let catalog = ProjectEffectCatalog::scan(temporary.path());

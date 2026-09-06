@@ -29,9 +29,9 @@ const FLIPBOOK_SAMPLE: &str = include_str!("../../../assets/effects/plasma_burst
 
 #[test]
 fn compiler_derives_portable_effect_requirements() {
-    let sprite = EffectCompiler::default()
-        .compile(&EffectAsset::from_ron(SAMPLE).unwrap())
-        .unwrap();
+    let sample = EffectAsset::from_ron(SAMPLE).unwrap();
+    assert!(sample.validation_report().diagnostics.is_empty());
+    let sprite = EffectCompiler::default().compile(&sample).unwrap();
     assert!(sprite.requirements.gpu_simulation);
     assert!(sprite.requirements.native_gpu_presentation);
     assert!(

@@ -217,6 +217,7 @@ properties-input-opacity-description = Particle opacity. The selected source con
 properties-input-color = Color
 properties-input-color-description = Particle color and alpha. The selected source controls how they vary.
 
+properties-no-emitter = This effect has no local emitters. Add an emitter in the Timeline, or select a referenced effect to inspect it.
 properties-effect = Effect
 properties-effect-name = Name
 properties-effect-name-description = Display name stored in the effect asset.

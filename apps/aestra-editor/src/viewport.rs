@@ -316,7 +316,11 @@ fn setup_preview_scene(
     commands.spawn((
         EmitterTransformGizmoProxy,
         TransformGizmoFocus,
-        bevy_transform_from_emitter(session.selected_layer().transform),
+        session
+            .selected_layer()
+            .map_or(Transform::IDENTITY, |emitter| {
+                bevy_transform_from_emitter(emitter.transform)
+            }),
     ));
 }
 
@@ -1269,7 +1273,7 @@ fn selected_preview_transform(
             .find(|clip| clip.id == id)
             .map(|clip| (PreviewTransformTarget::EffectClip(id), clip.transform));
     }
-    let emitter = session.selected_layer();
+    let emitter = session.selected_layer()?;
     Some((
         PreviewTransformTarget::Emitter(emitter.id),
         emitter.transform,
@@ -2467,7 +2471,7 @@ fn selected_shape_module(session: &EditorSession) -> Option<SelectedShapeModule>
     let SemanticTarget::Module(module_id) = session.selection.primary else {
         return None;
     };
-    let emitter = session.selected_layer();
+    let emitter = session.selected_layer()?;
     let module = emitter
         .modules
         .iter()
@@ -3274,10 +3278,39 @@ mod tests {
     }
 
     #[test]
+    fn empty_effect_disables_emitter_gizmo_but_keeps_clip_transforms() {
+        let session = EditorSession::from_test_effect(aestra_core::EffectAsset::new("Empty", 4.0));
+        assert!(selected_preview_transform(&session).is_none());
+        let mut app = App::new();
+        app.insert_resource(session)
+            .init_resource::<ShapeGizmoState>()
+            .init_resource::<EmitterTransformGizmoInteraction>()
+            .add_systems(Update, sync_transform_gizmo_focus);
+        let proxy = app
+            .world_mut()
+            .spawn((EmitterTransformGizmoProxy, TransformGizmoFocus))
+            .id();
+        app.update();
+        assert!(app.world().get::<TransformGizmoFocus>(proxy).is_none());
+        let mut clip = aestra_core::EffectClip::new(aestra_core::EffectId::new(), 0.0, 1.0);
+        clip.transform.translation = [1.0, 2.0, 3.0];
+        let id = clip.id;
+        let mut session = app.world_mut().resource_mut::<EditorSession>();
+        session.effect.effect_clips.push(clip);
+        session.selection.select_effect_clip(id);
+        let (target, transform) = selected_preview_transform(&session).unwrap();
+        assert!(matches!(target, PreviewTransformTarget::EffectClip(selected) if selected == id));
+        assert_eq!(transform.translation, [1.0, 2.0, 3.0]);
+        app.update();
+        assert!(app.world().get::<TransformGizmoFocus>(proxy).is_some());
+    }
+
+    #[test]
     fn selecting_shape_module_keeps_root_transform_gizmo_available() {
         let mut session = test_support::session_with_timing_slack();
         let shape_module = session
             .selected_layer()
+            .unwrap()
             .module_by_type(aestra_core::MODULE_SHAPE)
             .unwrap()
             .id;
@@ -3316,7 +3349,7 @@ mod tests {
         app.update();
         let session = app.world().resource::<EditorSession>();
         assert_eq!(
-            session.selected_layer().transform,
+            session.selected_layer().unwrap().transform,
             EmitterTransform::default()
         );
         assert_eq!(
@@ -3331,7 +3364,7 @@ mod tests {
         app.update();
         let session = app.world().resource::<EditorSession>();
         assert_eq!(
-            session.selected_layer().transform.translation,
+            session.selected_layer().unwrap().transform.translation,
             [4.0, 5.0, 6.0]
         );
 
@@ -3340,6 +3373,7 @@ mod tests {
             app.world()
                 .resource::<EditorSession>()
                 .selected_layer()
+                .unwrap()
                 .transform,
             EmitterTransform::default()
         );
@@ -3365,7 +3399,7 @@ mod tests {
     fn transform_only_preview_updates_the_existing_player_in_place() {
         let mut session = test_support::session_with_timing_slack();
         let player = configured_preview_player(&session).unwrap();
-        let emitter = session.selected_layer().id;
+        let emitter = session.selected_layer().unwrap().id;
         let transform = EmitterTransform {
             translation: [7.0, -3.0, 2.0],
             ..default()
@@ -3838,7 +3872,7 @@ mod tests {
         session
             .install_compiled_project_root(catalog.compile_project(&session.effect).unwrap().root)
             .unwrap();
-        let emitter = session.selected_layer().id;
+        let emitter = session.selected_layer().unwrap().id;
         let transform = EmitterTransform {
             translation: [9.0, 0.0, 0.0],
             ..default()

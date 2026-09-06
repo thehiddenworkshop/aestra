@@ -886,7 +886,7 @@ mod tests {
             0,
         ));
         assert_eq!(session.selection.primary, SemanticTarget::Module(expected));
-        assert_eq!(session.selected_layer_index(), 2);
+        assert_eq!(session.selected_layer_index().unwrap(), 2);
     }
 
     #[test]

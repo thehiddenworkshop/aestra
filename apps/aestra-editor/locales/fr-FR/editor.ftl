@@ -217,6 +217,7 @@ properties-input-opacity-description = Opacité des particules. La source sélec
 properties-input-color = Couleur
 properties-input-color-description = Couleur et alpha des particules. La source sélectionnée contrôle leurs variations.
 
+properties-no-emitter = Cet effet ne contient aucun émetteur local. Ajoutez un émetteur dans la Timeline ou sélectionnez un effet référencé pour l’inspecter.
 properties-effect = Effet
 properties-effect-name = Nom
 properties-effect-name-description = Nom d’affichage enregistré dans la ressource d’effet.

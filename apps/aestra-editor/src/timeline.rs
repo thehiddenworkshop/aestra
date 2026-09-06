@@ -669,11 +669,14 @@ fn select_choreography_target(session: &mut EditorSession, target: Option<Emitte
 }
 
 fn preview_selected_emitter_deletion(session: &mut EditorSession, localizer: &Localizer) -> bool {
+    let Some(selected_layer) = session.selected_layer() else {
+        return false;
+    };
     if session.effect.emitters.len() <= 1 {
         session.status = localizer.text("assets-status-minimum-emitter");
         return false;
     }
-    let id = session.selected_layer().id;
+    let id = selected_layer.id;
     session.preview_transaction(EffectTransaction::single(
         localizer.text("assets-change-delete-emitter"),
         EffectCommand::RemoveEmitter { id },
@@ -1718,7 +1721,7 @@ mod tests {
         ));
         assert!(session.select_effect_clip(id));
         assert_eq!(session.selection.primary, SemanticTarget::EffectClip(id));
-        assert_eq!(session.selected_layer().id, fallback_emitter);
+        assert_eq!(session.selected_layer().unwrap().id, fallback_emitter);
         assert!(!select_choreography_target(&mut session, None));
         assert_eq!(session.effect.emitters[0].id, fallback_emitter);
 
@@ -2036,7 +2039,7 @@ mod tests {
             true,
         ));
         assert_eq!(session.effect.emitters[2].id, moved);
-        assert_eq!(session.selected_layer().id, moved);
+        assert_eq!(session.selected_layer().unwrap().id, moved);
         for emitter in &session.effect.emitters {
             let original_color = automatic_colors
                 .iter()
@@ -2429,7 +2432,7 @@ mod tests {
         assert!((trimmed.regions[0].duration - (emitter.duration - trim)).abs() < 0.000_1);
 
         session.undo();
-        assert!(session.selected_layer().regions.is_empty());
+        assert!(session.selected_layer().unwrap().regions.is_empty());
     }
 
     #[test]
@@ -2863,7 +2866,7 @@ mod tests {
             .effect
             .markers
             .push(EffectMarker::new("Impact", 0.75));
-        let emitter = session.selected_layer().id;
+        let emitter = session.selected_layer().unwrap().id;
         let authored_color = [0.28, 0.78, 0.45, 1.0];
         assert!(session.set_emitter_display_color(emitter, Some(authored_color)));
         let duration = session.playback_duration();
@@ -3021,7 +3024,11 @@ mod tests {
             Some(emitter)
         );
         assert_eq!(
-            app.world().resource::<EditorSession>().selected_layer().id,
+            app.world()
+                .resource::<EditorSession>()
+                .selected_layer()
+                .unwrap()
+                .id,
             emitter
         );
 
@@ -3051,6 +3058,7 @@ mod tests {
             app.world()
                 .resource::<EditorSession>()
                 .selected_layer()
+                .unwrap()
                 .display_color,
             None
         );
@@ -3064,10 +3072,10 @@ mod tests {
         app.update();
 
         let mut session = app.world_mut().resource_mut::<EditorSession>();
-        assert_eq!(session.selected_layer().display_color, Some(color));
+        assert_eq!(session.selected_layer().unwrap().display_color, Some(color));
         assert!(session.can_undo());
         session.undo();
-        assert_eq!(session.selected_layer().display_color, None);
+        assert_eq!(session.selected_layer().unwrap().display_color, None);
     }
 
     #[test]

@@ -626,20 +626,7 @@
             ],
         ),
     ],
-    events: [
-        (
-            id: "7d9c7578-0110-4bc6-b77a-91186edb56f5",
-            source: "19ea9132-e094-4daa-b0a5-3dc435cd9431",
-            trigger: OnSpawn,
-            target: "f1747de9-8ba2-4f70-beb0-596ba023b956",
-        ),
-        (
-            id: "22b29823-d56e-4d3c-9c77-95aec2e3ac85",
-            source: "f1747de9-8ba2-4f70-beb0-596ba023b956",
-            trigger: OnDeath,
-            target: "5a8a1c6e-fb49-4486-a0dd-41a2d2257fbb",
-        ),
-    ],
+    events: [],
     markers: [
         (
             id: "33ae820c-4af2-4d3d-91e6-b40838e91b5a",

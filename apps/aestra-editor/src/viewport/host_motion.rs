@@ -270,7 +270,7 @@ mod tests {
                 expected
             );
             assert_eq!(
-                session.selected_layer().transform,
+                session.selected_layer().unwrap().transform,
                 EmitterTransform::default()
             );
             session.undo();

@@ -69,7 +69,10 @@ pub(super) fn handle_module_action(
 }
 
 pub(super) fn preview_module_deletion(session: &mut EditorSession, module: ModuleId) -> bool {
-    let emitter = session.selected_layer().id;
+    let Some(selected_layer) = session.selected_layer() else {
+        return false;
+    };
+    let emitter = selected_layer.id;
     session.preview_transaction(EffectTransaction::single(
         "Delete module",
         EffectCommand::RemoveModule { emitter, module },

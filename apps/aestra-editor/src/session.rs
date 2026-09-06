@@ -771,10 +771,13 @@ impl EditorSession {
         transform: EmitterTransform,
         rebuild_ui: bool,
     ) -> bool {
+        let Some(selected_layer) = self.selected_layer() else {
+            return false;
+        };
         self.execute(
             "Transformed emitter",
             EffectCommand::SetEmitterTransform {
-                id: self.selected_layer().id,
+                id: selected_layer.id,
                 transform,
             },
             rebuild_ui,
@@ -979,21 +982,20 @@ impl EditorSession {
         self.history.clear_redo();
     }
 
-    pub fn selected_layer_index(&self) -> usize {
+    pub fn selected_layer_index(&self) -> Option<usize> {
         let id = self
             .selection
             .emitter(&self.effect)
-            .or_else(|| self.effect.emitters.first().map(|emitter| emitter.id))
-            .expect("the editor always contains at least one emitter");
+            .filter(|id| self.effect.emitters.iter().any(|emitter| emitter.id == *id))
+            .or_else(|| self.effect.emitters.first().map(|emitter| emitter.id))?;
         self.effect
             .emitters
             .iter()
             .position(|emitter| emitter.id == id)
-            .expect("selected emitter must exist")
     }
 
-    pub fn selected_layer(&self) -> &Emitter {
-        &self.effect.emitters[self.selected_layer_index()]
+    pub fn selected_layer(&self) -> Option<&Emitter> {
+        self.effect.emitters.get(self.selected_layer_index()?)
     }
 
     pub fn select_emitter(&mut self, id: EmitterId) -> bool {
@@ -1034,11 +1036,13 @@ impl EditorSession {
         changed
     }
 
-    pub fn selected_emitter_region(&self) -> EmitterRegion {
-        let emitter = self.selected_layer();
-        self.selected_emitter_region
-            .and_then(|region| emitter.timeline_region(region))
-            .unwrap_or_else(|| emitter.timeline_regions()[0])
+    pub fn selected_emitter_region(&self) -> Option<EmitterRegion> {
+        let emitter = self.selected_layer()?;
+        Some(
+            self.selected_emitter_region
+                .and_then(|region| emitter.timeline_region(region))
+                .unwrap_or_else(|| emitter.timeline_regions()[0]),
+        )
     }
 
     fn repair_emitter_region_selection(&mut self) {
@@ -1159,7 +1163,10 @@ impl EditorSession {
     }
 
     pub fn set_selected_emitter_name(&mut self, name: impl Into<String>) -> bool {
-        self.set_emitter_name(self.selected_layer().id, name)
+        let Some(selected_layer) = self.selected_layer() else {
+            return false;
+        };
+        self.set_emitter_name(selected_layer.id, name)
     }
 
     pub fn set_emitter_name(&mut self, id: EmitterId, name: impl Into<String>) -> bool {
@@ -1181,7 +1188,10 @@ impl EditorSession {
     }
 
     pub fn set_selected_emitter_enabled(&mut self, enabled: bool) -> bool {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return false;
+        };
+        let emitter = selected_layer;
         if emitter.enabled == enabled {
             return false;
         }
@@ -1213,7 +1223,10 @@ impl EditorSession {
     }
 
     pub fn set_selected_emitter_capacity(&mut self, max_particles: u32) -> bool {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return false;
+        };
+        let emitter = selected_layer;
         if emitter.max_particles == max_particles {
             return false;
         }
@@ -1232,7 +1245,10 @@ impl EditorSession {
         trigger: EventTrigger,
         target: EmitterId,
     ) -> Result<EventId, EventLinkError> {
-        let source = self.selected_layer().id;
+        let Some(selected_layer) = self.selected_layer() else {
+            return Err(EventLinkError::TargetMissing);
+        };
+        let source = selected_layer.id;
         if source == target {
             return Err(EventLinkError::SameEmitter);
         }
@@ -1282,7 +1298,10 @@ impl EditorSession {
     }
 
     pub fn duplicate_selected_layer(&mut self) {
-        let id = self.selected_layer().id;
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let id = selected_layer.id;
         let Some(command) = EffectCommand::duplicate_emitter(&self.effect, id) else {
             self.status = "Selected emitter no longer exists".into();
             return;
@@ -1297,7 +1316,10 @@ impl EditorSession {
     }
 
     pub fn add_module(&mut self, module: ModuleInstance) {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer;
         let emitter_id = emitter.id;
         let index = emitter
             .modules
@@ -1320,7 +1342,10 @@ impl EditorSession {
 
     #[cfg(test)]
     pub fn set_module_parameter(&mut self, module: ModuleId, parameter: &str, value: Value) {
-        let emitter = self.selected_layer().id;
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer.id;
         self.execute(
             format!("Changed {parameter}"),
             EffectCommand::SetModuleParameter {
@@ -1340,6 +1365,9 @@ impl EditorSession {
         value: Value,
         label: impl Into<String>,
     ) -> bool {
+        let Some(selected_layer) = self.selected_layer() else {
+            return false;
+        };
         if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
             let id = effect_parameter.id;
             effect_parameter.default = value;
@@ -1352,9 +1380,8 @@ impl EditorSession {
                 true,
             );
         }
-        let emitter = self.selected_layer().id;
-        let Some(module_instance) = self
-            .selected_layer()
+        let emitter = selected_layer.id;
+        let Some(module_instance) = selected_layer
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -1393,6 +1420,9 @@ impl EditorSession {
         index: usize,
         key: CurveKey,
     ) {
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
         if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
             let Value::Curve(curve) = &mut effect_parameter.default else {
                 return;
@@ -1412,7 +1442,7 @@ impl EditorSession {
             );
             return;
         }
-        let emitter = self.selected_layer().id;
+        let emitter = selected_layer.id;
         self.execute(
             format!("Added {parameter} curve key"),
             EffectCommand::AddCurveKey {
@@ -1433,6 +1463,9 @@ impl EditorSession {
         index: usize,
         key: CurveKey,
     ) {
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
         if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
             let Value::Curve(curve) = &mut effect_parameter.default else {
                 return;
@@ -1452,7 +1485,7 @@ impl EditorSession {
             );
             return;
         }
-        let emitter = self.selected_layer().id;
+        let emitter = selected_layer.id;
         self.execute(
             format!("Changed {parameter} curve key"),
             EffectCommand::SetCurveKey {
@@ -1467,6 +1500,9 @@ impl EditorSession {
     }
 
     pub fn remove_curve_key(&mut self, module: ModuleId, parameter: &str, index: usize) {
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
         if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
             let Value::Curve(curve) = &mut effect_parameter.default else {
                 return;
@@ -1486,7 +1522,7 @@ impl EditorSession {
             );
             return;
         }
-        let emitter = self.selected_layer().id;
+        let emitter = selected_layer.id;
         self.execute(
             format!("Removed {parameter} curve key"),
             EffectCommand::RemoveCurveKey {
@@ -1506,6 +1542,9 @@ impl EditorSession {
         index: usize,
         key: ColorKey,
     ) {
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
         if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
             let Value::Gradient(gradient) = &mut effect_parameter.default else {
                 return;
@@ -1525,7 +1564,7 @@ impl EditorSession {
             );
             return;
         }
-        let emitter = self.selected_layer().id;
+        let emitter = selected_layer.id;
         self.execute(
             format!("Added {parameter} gradient key"),
             EffectCommand::AddGradientKey {
@@ -1546,6 +1585,9 @@ impl EditorSession {
         index: usize,
         key: ColorKey,
     ) {
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
         if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
             let Value::Gradient(gradient) = &mut effect_parameter.default else {
                 return;
@@ -1565,7 +1607,7 @@ impl EditorSession {
             );
             return;
         }
-        let emitter = self.selected_layer().id;
+        let emitter = selected_layer.id;
         self.execute(
             format!("Changed {parameter} gradient key"),
             EffectCommand::SetGradientKey {
@@ -1580,6 +1622,9 @@ impl EditorSession {
     }
 
     pub fn remove_gradient_key(&mut self, module: ModuleId, parameter: &str, index: usize) {
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
         if let Some(mut effect_parameter) = self.bound_effect_parameter(module, parameter) {
             let Value::Gradient(gradient) = &mut effect_parameter.default else {
                 return;
@@ -1599,7 +1644,7 @@ impl EditorSession {
             );
             return;
         }
-        let emitter = self.selected_layer().id;
+        let emitter = selected_layer.id;
         self.execute(
             format!("Removed {parameter} gradient key"),
             EffectCommand::RemoveGradientKey {
@@ -1614,7 +1659,7 @@ impl EditorSession {
 
     fn bound_effect_parameter(&self, module: ModuleId, input: &str) -> Option<EffectParameter> {
         let parameter_id = self
-            .selected_layer()
+            .selected_layer()?
             .modules
             .iter()
             .find(|candidate| candidate.id == module)?
@@ -1628,7 +1673,10 @@ impl EditorSession {
     }
 
     pub fn toggle_module(&mut self, id: ModuleId) {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer;
         let Some(module) = emitter.modules.iter().find(|module| module.id == id) else {
             self.status = "Module no longer exists".into();
             return;
@@ -1645,7 +1693,10 @@ impl EditorSession {
     }
 
     pub fn move_module(&mut self, id: ModuleId, direction: i8) {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer;
         let Some(index) = emitter.modules.iter().position(|module| module.id == id) else {
             self.status = "Module no longer exists".into();
             return;
@@ -1677,7 +1728,10 @@ impl EditorSession {
     }
 
     pub fn duplicate_module(&mut self, id: ModuleId) {
-        let emitter = self.selected_layer().id;
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer.id;
         let Some(command) = EffectCommand::duplicate_module(&self.effect, emitter, id) else {
             self.status = "Module no longer exists".into();
             return;
@@ -1692,7 +1746,10 @@ impl EditorSession {
     }
 
     pub fn add_sprite_renderer(&mut self) {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer;
         let Some(material) = self.effect.materials.first().map(|material| material.id) else {
             self.status = "This effect has no sprite material".into();
             return;
@@ -1713,7 +1770,10 @@ impl EditorSession {
     }
 
     pub fn add_trail_renderer(&mut self) {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer;
         if emitter.max_particles > 256
             || emitter.renderers.iter().any(|r| {
                 r.enabled && matches!(r.properties, aestra_core::RendererProperties::Trail { .. })
@@ -1802,7 +1862,10 @@ impl EditorSession {
     }
 
     pub fn add_flipbook_renderer(&mut self) {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer;
         let Some(material) = self.effect.materials.first().map(|material| material.id) else {
             self.status = "This effect has no sprite material".into();
             return;
@@ -1838,12 +1901,10 @@ impl EditorSession {
     }
 
     pub fn set_flipbook_frame_rate(&mut self, id: RendererId, value: f32) {
-        let Some(renderer) = self
-            .selected_layer()
-            .renderers
-            .iter()
-            .find(|item| item.id == id)
-        else {
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let Some(renderer) = selected_layer.renderers.iter().find(|item| item.id == id) else {
             return;
         };
         let RendererProperties::Flipbook { flipbook, .. } = renderer.properties else {
@@ -1874,12 +1935,10 @@ impl EditorSession {
     }
 
     pub fn toggle_flipbook_looping(&mut self, id: RendererId) {
-        let Some(renderer) = self
-            .selected_layer()
-            .renderers
-            .iter()
-            .find(|item| item.id == id)
-        else {
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let Some(renderer) = selected_layer.renderers.iter().find(|item| item.id == id) else {
             return;
         };
         let RendererProperties::Flipbook { flipbook, .. } = renderer.properties else {
@@ -1935,7 +1994,10 @@ impl EditorSession {
         label: &str,
         update: impl FnOnce(&mut RendererProperties),
     ) {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer;
         let emitter_id = emitter.id;
         let Some(mut properties) = emitter
             .renderers
@@ -1977,7 +2039,10 @@ impl EditorSession {
     }
 
     pub fn toggle_renderer(&mut self, id: RendererId) {
-        let emitter = self.selected_layer();
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer;
         let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
             self.status = "Renderer no longer exists".into();
             return;
@@ -1994,9 +2059,11 @@ impl EditorSession {
     }
 
     pub fn set_renderer_material(&mut self, id: RendererId, material: MaterialId) {
-        let emitter = self.selected_layer().id;
-        let Some(renderer) = self
-            .selected_layer()
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer.id;
+        let Some(renderer) = selected_layer
             .renderers
             .iter()
             .find(|renderer| renderer.id == id)
@@ -2083,7 +2150,7 @@ impl EditorSession {
 
     fn renderer_material(&self, id: RendererId) -> Option<&MaterialDefinition> {
         let renderer = self
-            .selected_layer()
+            .selected_layer()?
             .renderers
             .iter()
             .find(|renderer| renderer.id == id)?;
@@ -2105,7 +2172,10 @@ impl EditorSession {
     }
 
     pub fn duplicate_renderer(&mut self, id: RendererId) {
-        let emitter = self.selected_layer().id;
+        let Some(selected_layer) = self.selected_layer() else {
+            return;
+        };
+        let emitter = selected_layer.id;
         let Some(command) = EffectCommand::duplicate_renderer(&self.effect, emitter, id) else {
             self.status = "Renderer no longer exists".into();
             return;
@@ -2338,9 +2408,10 @@ mod tests {
     fn interaction_preview_does_not_mutate_document_or_history() {
         let mut session = test_support::session_with_timing_slack();
         let original = session.effect.clone();
-        let emitter = session.selected_layer().id;
+        let emitter = session.selected_layer().unwrap().id;
         let module = session
             .selected_layer()
+            .unwrap()
             .module_by_type(aestra_core::MODULE_SHAPE)
             .unwrap()
             .id;
@@ -2401,8 +2472,8 @@ mod tests {
             effect,
             Arc::new(compiled),
         );
-        let emitter = session.selected_layer().id;
-        let mut transform = session.selected_layer().transform;
+        let emitter = session.selected_layer().unwrap().id;
+        let mut transform = session.selected_layer().unwrap().transform;
         transform.translation[1] = 7.0;
 
         let command = EffectCommand::SetEmitterTransform {
@@ -2453,6 +2524,37 @@ mod tests {
         session.redo();
         assert!(!session.dirty);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn empty_effect_open_edit_undo_and_save_preserve_the_document() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("empty.aestra.ron");
+        let effect = EffectAsset::new("Empty composition", 4.0);
+        effect.save_ron(&path).unwrap();
+        let mut session = test_support::session_with_timing_slack();
+        session.open(&path).unwrap();
+        assert!(session.selected_layer().is_none());
+        assert!(session.selected_layer_index().is_none());
+        assert!(session.selected_emitter_region().is_none());
+        assert!(!session.set_selected_emitter_name("Missing"));
+        assert!(!session.set_selected_emitter_enabled(false));
+        assert!(!session.set_selected_emitter_capacity(10));
+        assert!(!session.set_selected_emitter_transform(EmitterTransform::default(), true));
+        session.duplicate_selected_layer();
+        session.add_sprite_renderer();
+        assert_eq!(session.effect, effect);
+        assert!(!session.dirty);
+        session.add_layer();
+        assert!(session.selected_layer().is_some());
+        session.undo();
+        assert!(session.selected_layer().is_none());
+        assert_eq!(session.effect, effect);
+        session.redo();
+        assert!(session.selected_layer().is_some());
+        session.undo();
+        session.save().unwrap();
+        assert_eq!(EffectAsset::load_ron(path).unwrap(), effect);
     }
 
     #[test]
@@ -2534,14 +2636,14 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         session.new_effect();
         let blank = session.effect.clone();
-        let primary = session.selected_layer().id;
+        let primary = session.selected_layer().unwrap().id;
 
         assert!(session.set_effect_name("Impact Burst"));
         assert!(session.set_effect_playback_mode(EffectPlaybackMode::Once));
         assert!(session.set_selected_emitter_name("Core"));
         assert!(session.set_selected_emitter_capacity(256));
         session.add_layer();
-        let secondary = session.selected_layer().id;
+        let secondary = session.selected_layer().unwrap().id;
         assert!(session.set_selected_emitter_name("Sparks"));
         assert!(session.set_selected_emitter_capacity(512));
         assert!(session.execute(
@@ -2600,13 +2702,13 @@ mod tests {
     fn event_links_reject_self_targets_and_duplicates() {
         let mut session = test_support::session_with_timing_slack();
         session.new_effect();
-        let first = session.selected_layer().id;
+        let first = session.selected_layer().unwrap().id;
         assert_eq!(
             session.add_event_link(EventTrigger::OnSpawn, first),
             Err(EventLinkError::SameEmitter)
         );
         session.add_layer();
-        let second = session.selected_layer().id;
+        let second = session.selected_layer().unwrap().id;
         assert!(session.add_event_link(EventTrigger::OnSpawn, first).is_ok());
         assert_eq!(
             session.add_event_link(EventTrigger::OnSpawn, first),
@@ -2620,7 +2722,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         session.new_effect();
         session.add_layer();
-        let added = session.selected_layer().id;
+        let added = session.selected_layer().unwrap().id;
         assert_eq!(session.effect.emitters.len(), 2);
         session.undo();
         assert_eq!(session.effect.emitters.len(), 1);
@@ -2733,14 +2835,14 @@ mod tests {
     #[test]
     fn module_stack_edits_recompile_and_are_reversible() {
         let mut session = test_support::session_with_timing_slack();
-        let original = session.selected_layer().modules[0].id;
+        let original = session.selected_layer().unwrap().modules[0].id;
         session.duplicate_module(original);
-        assert_eq!(session.selected_layer().modules.len(), 6);
+        assert_eq!(session.selected_layer().unwrap().modules.len(), 6);
         assert!(session.preview.is_some());
         session.undo();
-        assert_eq!(session.selected_layer().modules.len(), 5);
+        assert_eq!(session.selected_layer().unwrap().modules.len(), 5);
 
-        let emitter = session.selected_layer().id;
+        let emitter = session.selected_layer().unwrap().id;
         session.execute(
             "Deleted module",
             EffectCommand::RemoveModule {
@@ -2749,11 +2851,11 @@ mod tests {
             },
             true,
         );
-        assert_eq!(session.selected_layer().modules.len(), 4);
+        assert_eq!(session.selected_layer().unwrap().modules.len(), 4);
         assert!(session.preview.is_none());
         assert!(!session.diagnostics.is_valid());
         session.undo();
-        assert_eq!(session.selected_layer().modules.len(), 5);
+        assert_eq!(session.selected_layer().unwrap().modules.len(), 5);
         assert!(session.preview.is_some());
     }
 

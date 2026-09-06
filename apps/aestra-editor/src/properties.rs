@@ -963,6 +963,59 @@ mod tests {
         Localizer::new("en-US").unwrap()
     }
 
+    #[test]
+    fn empty_effect_properties_keep_document_controls_and_explain_next_step() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin::default(),
+            bevy::scene::ScenePlugin,
+            bevy::text::TextPlugin,
+        ));
+        let assets = app.world().resource::<AssetServer>().clone();
+        let session = EditorSession::from_test_effect(aestra_core::EffectAsset::new("Empty", 4.0));
+        let localizer = test_localizer();
+        app.world_mut()
+            .commands()
+            .spawn(Node::default())
+            .with_children(|parent| {
+                spawn_properties(
+                    parent,
+                    &session,
+                    &EditorModuleRegistry::default(),
+                    &ModulePaletteState::default(),
+                    &localizer,
+                    &EditorSettings::default(),
+                    &ProjectEffectCatalog::default(),
+                    &TimelineState::default(),
+                    &EffectClipRepairState::default(),
+                    &MaterialStackInspectorState::default(),
+                    None,
+                    &assets,
+                );
+            });
+        app.world_mut().flush();
+        let world = app.world_mut();
+        assert!(
+            world
+                .query::<&Text>()
+                .iter(world)
+                .any(|text| text.0 == localizer.text("properties-no-emitter"))
+        );
+        assert!(
+            world
+                .query::<&DocumentTextControl>()
+                .iter(world)
+                .any(|control| matches!(control, DocumentTextControl::Effect))
+        );
+        assert!(
+            !world
+                .query::<&DocumentTextControl>()
+                .iter(world)
+                .any(|control| matches!(control, DocumentTextControl::Emitter))
+        );
+    }
+
     fn clear_effect_parameters_and_bindings(session: &mut EditorSession) {
         session.effect.parameters.clear();
         for emitter in &mut session.effect.emitters {
@@ -1221,8 +1274,10 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
-        let module = session.selected_layer().modules[0].id;
-        let module_type = session.selected_layer().modules[0].module_type.clone();
+        let module = session.selected_layer().unwrap().modules[0].id;
+        let module_type = session.selected_layer().unwrap().modules[0]
+            .module_type
+            .clone();
         let input = registry
             .get(&module_type)
             .unwrap()
@@ -1253,7 +1308,7 @@ mod tests {
         assert_eq!(session.effect.parameters[0].default, default);
         assert!(!session.effect.parameters[0].exposed);
         assert_eq!(
-            session.selected_layer().modules[0].bindings["spawn_rate"],
+            session.selected_layer().unwrap().modules[0].bindings["spawn_rate"],
             parameter_id
         );
 
@@ -1268,6 +1323,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "size").is_some())
@@ -1275,6 +1331,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -1309,6 +1366,7 @@ mod tests {
         assert_eq!(
             session
                 .selected_layer()
+                .unwrap()
                 .modules
                 .iter()
                 .find(|candidate| candidate.id == module)
@@ -1333,6 +1391,7 @@ mod tests {
         assert_eq!(
             session
                 .selected_layer()
+                .unwrap()
                 .modules
                 .iter()
                 .find(|candidate| candidate.id == module)
@@ -1353,6 +1412,7 @@ mod tests {
         assert_eq!(
             session
                 .selected_layer()
+                .unwrap()
                 .modules
                 .iter()
                 .find(|candidate| candidate.id == module)
@@ -1368,6 +1428,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "opacity").is_some())
@@ -1375,6 +1436,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -1447,6 +1509,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.parameter_value("opacity").is_some())
@@ -1454,6 +1517,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -1470,6 +1534,7 @@ mod tests {
         let Value::Curve(local) = module_parameter(
             session
                 .selected_layer()
+                .unwrap()
                 .modules
                 .iter()
                 .find(|candidate| candidate.id == module)
@@ -1500,6 +1565,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "lifetime").is_some())
@@ -1507,6 +1573,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -1565,6 +1632,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.parameter_value("spawn_rate").is_some())
@@ -1572,6 +1640,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -1662,6 +1731,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.parameter_value("drag").is_some())
@@ -1669,6 +1739,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -1753,6 +1824,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.parameter_value("turbulence").is_some())
@@ -1760,6 +1832,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -1843,6 +1916,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.parameter_value("spawn_rate").is_some())
@@ -1850,6 +1924,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -1938,6 +2013,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.parameter_value("gravity").is_some())
@@ -1945,6 +2021,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -2061,6 +2138,7 @@ mod tests {
         let registry = ModuleRegistry::builtin();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.parameter_value("spawn_rate").is_some())
@@ -2068,6 +2146,7 @@ mod tests {
             .id;
         let module_type = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|candidate| candidate.id == module)
@@ -2127,8 +2206,10 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
-        let module = session.selected_layer().modules[0].id;
-        let module_type = session.selected_layer().modules[0].module_type.clone();
+        let module = session.selected_layer().unwrap().modules[0].id;
+        let module_type = session.selected_layer().unwrap().modules[0]
+            .module_type
+            .clone();
         let input = registry
             .get(&module_type)
             .unwrap()
@@ -2136,7 +2217,8 @@ mod tests {
             .iter()
             .position(|input| input.name == "spawn_rate")
             .unwrap() as u8;
-        let local = module_parameter(&session.selected_layer().modules[0], "spawn_rate").unwrap();
+        let local =
+            module_parameter(&session.selected_layer().unwrap().modules[0], "spawn_rate").unwrap();
         assert!(expose_module_input(
             &mut session,
             &registry,
@@ -2166,7 +2248,7 @@ mod tests {
             Some(Value::Scalar(42.0))
         );
         assert_eq!(
-            module_parameter(&session.selected_layer().modules[0], "spawn_rate"),
+            module_parameter(&session.selected_layer().unwrap().modules[0], "spawn_rate"),
             Some(local.clone()),
             "the hidden local value is not a second source of truth once bound"
         );
@@ -2179,15 +2261,18 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         clear_effect_parameters_and_bindings(&mut session);
         let registry = ModuleRegistry::builtin();
-        let module = session.selected_layer().modules[0].id;
-        let module_type = session.selected_layer().modules[0].module_type.clone();
+        let module = session.selected_layer().unwrap().modules[0].id;
+        let module_type = session.selected_layer().unwrap().modules[0]
+            .module_type
+            .clone();
         let metadata = registry.get(&module_type).unwrap();
         let input = metadata
             .inputs
             .iter()
             .position(|input| input.name == "spawn_rate")
             .unwrap() as u8;
-        let local_value = module_parameter(&session.selected_layer().modules[0], "spawn_rate");
+        let local_value =
+            module_parameter(&session.selected_layer().unwrap().modules[0], "spawn_rate");
 
         assert!(expose_module_input(
             &mut session,
@@ -2202,12 +2287,16 @@ mod tests {
         assert!(parameter.exposed);
         assert_eq!(Some(parameter.default.clone()), local_value);
         assert_eq!(
-            session.selected_layer().modules[0].bindings["spawn_rate"],
+            session.selected_layer().unwrap().modules[0].bindings["spawn_rate"],
             parameter.id
         );
         session.undo();
         assert!(session.effect.parameters.is_empty());
-        assert!(session.selected_layer().modules[0].bindings.is_empty());
+        assert!(
+            session.selected_layer().unwrap().modules[0]
+                .bindings
+                .is_empty()
+        );
     }
 
     #[test]
@@ -2323,7 +2412,7 @@ mod tests {
     fn effect_and_emitter_names_are_editable_semantic_fields() {
         let session = test_support::session_with_timing_slack();
         let original_effect_name = session.effect.name.clone();
-        let original_emitter_name = session.selected_layer().name.clone();
+        let original_emitter_name = session.selected_layer().unwrap().name.clone();
         let mut app = App::new();
         app.insert_resource(session)
             .insert_resource(test_localizer())
@@ -2345,13 +2434,16 @@ mod tests {
 
         let mut session = app.world_mut().resource_mut::<EditorSession>();
         assert_eq!(session.effect.name, "Renamed Effect");
-        assert_eq!(session.selected_layer().name, "Renamed Emitter");
+        assert_eq!(session.selected_layer().unwrap().name, "Renamed Emitter");
         assert!(session.dirty);
         assert!(session.can_undo());
         session.undo();
         session.undo();
         assert_eq!(session.effect.name, original_effect_name);
-        assert_eq!(session.selected_layer().name, original_emitter_name);
+        assert_eq!(
+            session.selected_layer().unwrap().name,
+            original_emitter_name
+        );
     }
 
     #[test]
@@ -2409,7 +2501,7 @@ mod tests {
     fn properties_disclosure_persists_without_requesting_a_ui_rebuild() {
         let temporary = tempfile::tempdir().unwrap();
         let session = test_support::session_with_timing_slack();
-        let module = session.selected_layer().modules[0].id;
+        let module = session.selected_layer().unwrap().modules[0].id;
         let revision = session.ui_revision;
         let mut app = App::new();
         app.insert_resource(session)
@@ -2445,9 +2537,9 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let mut session = test_support::session_with_timing_slack();
         session.new_effect();
-        let target = session.selected_layer().id;
+        let target = session.selected_layer().unwrap().id;
         session.add_layer();
-        let source = session.selected_layer().id;
+        let source = session.selected_layer().unwrap().id;
         let mut app = App::new();
         app.insert_resource(session)
             .insert_resource(MenuState::default())
@@ -2507,20 +2599,29 @@ mod tests {
     #[test]
     fn module_deletion_preview_remains_one_undoable_transaction() {
         let mut session = test_support::session_with_timing_slack();
-        let source = session.selected_layer().modules[0].id;
+        let source = session.selected_layer().unwrap().modules[0].id;
         session.duplicate_module(source);
         let SemanticTarget::Module(module) = session.selection.primary else {
             panic!("duplicating a module should select the duplicate");
         };
-        let original_count = session.selected_layer().modules.len();
+        let original_count = session.selected_layer().unwrap().modules.len();
 
         assert!(preview_module_deletion(&mut session, module));
-        assert_eq!(session.selected_layer().modules.len(), original_count);
+        assert_eq!(
+            session.selected_layer().unwrap().modules.len(),
+            original_count
+        );
         assert!(session.pending_change.is_some());
         session.apply_pending_change();
-        assert_eq!(session.selected_layer().modules.len(), original_count - 1);
+        assert_eq!(
+            session.selected_layer().unwrap().modules.len(),
+            original_count - 1
+        );
         session.undo();
-        assert_eq!(session.selected_layer().modules.len(), original_count);
+        assert_eq!(
+            session.selected_layer().unwrap().modules.len(),
+            original_count
+        );
     }
 
     // Properties domain tests.
@@ -2541,7 +2642,7 @@ mod tests {
         assert_eq!(focus.wait_frames, 2);
         assert_eq!(focus.highlight, Some(target));
         assert_eq!(focus.highlight_remaining, PROPERTIES_HIGHLIGHT_DURATION);
-        assert_eq!(session.selected_layer_index(), 3);
+        assert_eq!(session.selected_layer_index().unwrap(), 3);
     }
 
     #[test]
@@ -2601,6 +2702,7 @@ mod tests {
         let session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "spawn_rate").is_some())
@@ -2645,6 +2747,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "lifetime").is_some())
@@ -2679,6 +2782,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "spawn_rate").is_some())
@@ -2716,27 +2820,27 @@ mod tests {
     #[test]
     fn emitter_duration_editor_can_grow_the_source_within_the_effect() {
         let mut session = test_support::session_with_timing_slack();
-        let original = session.selected_layer().clone();
+        let original = session.selected_layer().unwrap().clone();
         let available = session.effect.duration - original.start_time;
         assert!(available > original.duration);
         let desired = (original.duration + 0.4).min(available);
         let target = NumericScrubTarget::Emitter(EmitterNumberControl::Duration);
 
         assert!(preview_numeric_scrub(&mut session, target, desired));
-        assert_eq!(session.selected_layer(), &original);
+        assert_eq!(session.selected_layer().unwrap(), &original);
         commit_numeric_scrub(&mut session, target, desired, &test_localizer());
 
-        let grown = session.selected_layer();
+        let grown = session.selected_layer().unwrap();
         assert!((grown.duration - desired).abs() <= 0.000_1);
         assert!((grown.timeline_regions()[0].duration - desired).abs() <= 0.000_1);
         session.undo();
-        assert_eq!(session.selected_layer(), &original);
+        assert_eq!(session.selected_layer().unwrap(), &original);
     }
 
     #[test]
     fn marker_offset_scrub_preserves_binding_and_commits_one_undoable_edit() {
         let mut session = test_support::session_with_timing_slack();
-        let emitter = session.selected_layer().id;
+        let emitter = session.selected_layer().unwrap().id;
         assert!(session.execute(
             "Shorten emitter",
             EffectCommand::SetEmitterTiming {
@@ -2762,21 +2866,32 @@ mod tests {
         let target = NumericScrubTarget::StartReferenceOffset(StartReferenceOffsetControl {
             target: StartReferenceTarget::Emitter(emitter),
         });
-        let original = session.selected_layer().start_reference.unwrap();
+        let original = session.selected_layer().unwrap().start_reference.unwrap();
 
         assert_eq!(numeric_scrub_step(target), 0.05);
         assert!(preview_numeric_scrub(&mut session, target, 0.25));
-        assert_eq!(session.selected_layer().start_reference, Some(original));
+        assert_eq!(
+            session.selected_layer().unwrap().start_reference,
+            Some(original)
+        );
         commit_numeric_scrub(&mut session, target, 0.25, &test_localizer());
         assert_eq!(
-            session.selected_layer().start_reference.unwrap().offset,
+            session
+                .selected_layer()
+                .unwrap()
+                .start_reference
+                .unwrap()
+                .offset,
             0.25
         );
-        assert_eq!(session.selected_layer().start_time, 0.75);
+        assert_eq!(session.selected_layer().unwrap().start_time, 0.75);
 
         session.undo();
-        assert_eq!(session.selected_layer().start_reference, Some(original));
-        assert_eq!(session.selected_layer().start_time, 0.0);
+        assert_eq!(
+            session.selected_layer().unwrap().start_reference,
+            Some(original)
+        );
+        assert_eq!(session.selected_layer().unwrap().start_time, 0.0);
     }
 
     #[test]
@@ -2784,6 +2899,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "spread_degrees").is_some())
@@ -2821,6 +2937,7 @@ mod tests {
         let session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "spawn_rate").is_some())
@@ -2874,17 +2991,19 @@ mod tests {
         let mut settings = EditorSettings::default();
         let emission = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.stage == StageKind::EmitterUpdate)
             .unwrap();
         let motion = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.stage == StageKind::ParticleUpdate)
             .unwrap();
-        let renderer = session.selected_layer().renderers.first().unwrap();
+        let renderer = session.selected_layer().unwrap().renderers.first().unwrap();
 
         assert!(!properties_module_collapsed(&settings, emission));
         assert!(properties_module_collapsed(&settings, motion));
@@ -2924,6 +3043,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "spawn_rate").is_some())
@@ -2964,6 +3084,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "shape").is_some())
@@ -3000,6 +3121,7 @@ mod tests {
         let mut session = test_support::session_with_timing_slack();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module_parameter(module, "shape").is_some())
@@ -3027,10 +3149,13 @@ mod tests {
             12.5,
             false,
         ));
-        assert_eq!(session.selected_layer().transform.translation[2], 12.5);
+        assert_eq!(
+            session.selected_layer().unwrap().transform.translation[2],
+            12.5
+        );
         session.undo();
         assert_eq!(
-            session.selected_layer().transform,
+            session.selected_layer().unwrap().transform,
             EmitterTransform::default()
         );
     }
@@ -3174,8 +3299,10 @@ pub(crate) fn set_module_choice(
     choice: u8,
     localizer: &Localizer,
 ) {
-    let Some(module) = session
-        .selected_layer()
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
+    let Some(module) = selected_layer
         .modules
         .iter()
         .find(|module| module.id == module_id)
@@ -3306,7 +3433,10 @@ fn sync_emitter_capacity_inputs(
     session: Res<EditorSession>,
     controls: Query<Entity, Added<EmitterCapacityControl>>,
 ) {
-    let value = session.selected_layer().max_particles.min(i32::MAX as u32) as i32;
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
+    let value = selected_layer.max_particles.min(i32::MAX as u32) as i32;
     for entity in &controls {
         commands.trigger(UpdateNumberInput {
             entity,
@@ -3469,8 +3599,14 @@ fn sync_effect_clip_parameter_number_inputs(
 }
 
 fn emitter_number_input_value(session: &EditorSession, control: EmitterNumberControl) -> f32 {
-    let transform = session.selected_layer().transform;
-    let region = session.selected_emitter_region();
+    let Some(selected_region) = session.selected_emitter_region() else {
+        return 0.0;
+    };
+    let Some(selected_layer) = session.selected_layer() else {
+        return 0.0;
+    };
+    let transform = selected_layer.transform;
+    let region = selected_region;
     match control {
         EmitterNumberControl::Start => region.start_time,
         EmitterNumberControl::Duration => region.duration,
@@ -3537,10 +3673,13 @@ fn set_emitter_transform_component(
     value: f32,
     rebuild_ui: bool,
 ) -> bool {
+    let Some(selected_layer) = session.selected_layer() else {
+        return false;
+    };
     if !value.is_finite() {
         return false;
     }
-    let mut transform = session.selected_layer().transform;
+    let mut transform = selected_layer.transform;
     if set_emitter_transform_value(&mut transform, control, value).is_none() {
         return false;
     }
@@ -3584,7 +3723,7 @@ fn selected_emitter_region_timing_transaction(
     start_time: f32,
     duration: f32,
 ) -> Option<EffectTransaction> {
-    let emitter = session.selected_layer();
+    let emitter = session.selected_layer()?;
     let selected = session
         .selected_emitter_region
         .unwrap_or_else(|| emitter.implicit_region_id());
@@ -3592,7 +3731,7 @@ fn selected_emitter_region_timing_transaction(
         emitter.id,
         selected,
         start_time,
-        session.selected_emitter_region().source_offset,
+        session.selected_emitter_region()?.source_offset,
         duration,
         "Changed emitter region timing",
     )
@@ -3603,7 +3742,10 @@ fn normalized_emitter_region_timing(
     control: EmitterNumberControl,
     value: f32,
 ) -> (f32, f32) {
-    let region = session.selected_emitter_region();
+    let Some(selected_region) = session.selected_emitter_region() else {
+        return (0.0, 0.05);
+    };
+    let region = selected_region;
     let minimum = 0.05;
     match control {
         EmitterNumberControl::Start => {
@@ -4197,6 +4339,9 @@ fn handle_module_enabled_change(
     mut commands: Commands,
     mut session: ResMut<EditorSession>,
 ) {
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
     if !change.is_final {
         return;
     }
@@ -4208,8 +4353,7 @@ fn handle_module_enabled_change(
     } else {
         commands.entity(change.source).remove::<Checked>();
     }
-    let enabled = session
-        .selected_layer()
+    let enabled = selected_layer
         .modules
         .iter()
         .find(|module| module.id == control.0)
@@ -5067,10 +5211,10 @@ fn numeric_scrub_command(
             | EmitterNumberControl::End),
         ) => None,
         NumericScrubTarget::Emitter(control) => {
-            let mut transform = session.selected_layer().transform;
+            let mut transform = session.selected_layer()?.transform;
             set_emitter_transform_value(&mut transform, control, value)?;
             Some(EffectCommand::SetEmitterTransform {
-                id: session.selected_layer().id,
+                id: session.selected_layer()?.id,
                 transform,
             })
         }
@@ -5285,7 +5429,7 @@ fn properties_module_parameter(
     parameter: &str,
 ) -> Option<Value> {
     let module = session
-        .selected_layer()
+        .selected_layer()?
         .modules
         .iter()
         .find(|candidate| candidate.id == module)?;
@@ -5307,7 +5451,7 @@ fn properties_module_parameter_command(
     value: Value,
 ) -> Option<EffectCommand> {
     let module_instance = session
-        .selected_layer()
+        .selected_layer()?
         .modules
         .iter()
         .find(|candidate| candidate.id == module)?;
@@ -5332,7 +5476,7 @@ fn properties_module_parameter_command(
             .is_some_and(|values| values.iter().any(|value| value.source == source))
     {
         return Some(EffectCommand::SetModulePropertySourceValue {
-            emitter: session.selected_layer().id,
+            emitter: session.selected_layer()?.id,
             module,
             parameter: input.to_owned(),
             source,
@@ -5340,7 +5484,7 @@ fn properties_module_parameter_command(
         });
     }
     Some(EffectCommand::SetModuleParameter {
-        emitter: session.selected_layer().id,
+        emitter: session.selected_layer()?.id,
         module,
         parameter: input.to_owned(),
         value,
@@ -5725,8 +5869,25 @@ pub(crate) fn spawn_properties(
     {
         return;
     }
-    let layer = session.selected_layer();
-    let emitter_index = session.selected_layer_index();
+    let Some(layer) = session.selected_layer() else {
+        spawn_document_controls(parent, session, localizer);
+        parent.spawn((
+            Text::new(localizer.text("properties-no-emitter")),
+            TextFont {
+                font_size: FontSize::Px(13.0),
+                ..default()
+            },
+            TextColor(theme::TEXT),
+            Node {
+                margin: UiRect::all(Val::Px(14.0)),
+                ..default()
+            },
+        ));
+        return;
+    };
+    let Some(emitter_index) = session.selected_layer_index() else {
+        return;
+    };
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -6141,7 +6302,9 @@ fn spawn_document_controls(
             );
         });
 
-    let emitter = session.selected_layer();
+    let Some(emitter) = session.selected_layer() else {
+        return;
+    };
     parent
         .spawn((
             PropertiesSemanticTarget {
@@ -6249,10 +6412,13 @@ fn spawn_event_links(
     session: &EditorSession,
     localizer: &Localizer,
 ) {
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
     parent
         .spawn_empty()
         .apply_scene(label_dim(localizer.text("properties-events-unsupported")));
-    let source = session.selected_layer().id;
+    let source = selected_layer.id;
     parent.spawn((
         Text::new(localizer.text("properties-events")),
         TextFont {
@@ -6390,25 +6556,18 @@ pub(crate) fn toggle_persisted_properties_section(
     settings: &mut EditorSettings,
     section: PropertiesSection,
 ) -> bool {
+    let Some(emitter) = session.selected_layer() else {
+        return false;
+    };
     let card = match section {
         PropertiesSection::Module(id) => {
-            let Some(module) = session
-                .selected_layer()
-                .modules
-                .iter()
-                .find(|module| module.id == id)
-            else {
+            let Some(module) = emitter.modules.iter().find(|module| module.id == id) else {
                 return false;
             };
             properties_module_card_memory(module)
         }
         PropertiesSection::Renderer(id) => {
-            let Some(renderer) = session
-                .selected_layer()
-                .renderers
-                .iter()
-                .find(|renderer| renderer.id == id)
-            else {
+            let Some(renderer) = emitter.renderers.iter().find(|renderer| renderer.id == id) else {
                 return false;
             };
             properties_renderer_card_memory(renderer)
@@ -6513,11 +6672,14 @@ fn spawn_emitter_timing_controls(
     session: &EditorSession,
     localizer: &Localizer,
 ) {
-    if session.selected_layer().regions.is_empty() {
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
+    if selected_layer.regions.is_empty() {
         spawn_start_reference_controls(
             parent,
             session,
-            StartReferenceTarget::Emitter(session.selected_layer().id),
+            StartReferenceTarget::Emitter(selected_layer.id),
             localizer,
         );
     }

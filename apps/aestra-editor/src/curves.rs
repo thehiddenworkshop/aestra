@@ -474,6 +474,9 @@ fn spawn_complex_input_list(
     workspace: &CurvesState,
     localizer: &Localizer,
 ) {
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
     parent
         .spawn((
             Node {
@@ -499,7 +502,7 @@ fn spawn_complex_input_list(
                     ..default()
                 },
                 |list| {
-                    for module in &session.selected_layer().modules {
+                    for module in &selected_layer.modules {
                         let Some(metadata) = registry.0.get(&module.module_type) else {
                             continue;
                         };
@@ -620,8 +623,8 @@ fn resolve_complex_input<'a>(
     registry: &'a EditorModuleRegistry,
     selection: ComplexSelection,
 ) -> Option<(&'a ModuleInstance, &'a InputMetadata, Value)> {
-    let module = session
-        .selected_layer()
+    let selected_layer = session.selected_layer()?;
+    let module = selected_layer
         .modules
         .iter()
         .find(|module| module.id == selection.module)?;
@@ -657,7 +660,7 @@ fn editable_curve(
     vector_channel: Option<u8>,
 ) -> Option<aestra_core::Curve> {
     let module = session
-        .selected_layer()
+        .selected_layer()?
         .modules
         .iter()
         .find(|candidate| candidate.id == module)?;
@@ -681,8 +684,10 @@ fn update_vector_curve(
     label: &str,
     edit: impl FnOnce(&mut aestra_core::Curve) -> bool,
 ) -> bool {
-    let Some(module_instance) = session
-        .selected_layer()
+    let Some(selected_layer) = session.selected_layer() else {
+        return false;
+    };
+    let Some(module_instance) = selected_layer
         .modules
         .iter()
         .find(|candidate| candidate.id == module)
@@ -1362,8 +1367,8 @@ fn spawn_gradient_graph(
                             }
                             let (computed, children) = *graph;
                             let width = computed.size().x * computed.inverse_scale_factor;
-                            let Some(Value::Gradient(gradient)) = session
-                                .selected_layer()
+                            let Some(emitter) = session.selected_layer() else { return; };
+                            let Some(Value::Gradient(gradient)) = emitter
                                 .modules
                                 .iter()
                                 .find(|item| item.id == module)
@@ -1400,8 +1405,8 @@ fn spawn_gradient_graph(
                                 return;
                             }
                             let width = graph.size().x * graph.inverse_scale_factor;
-                            let Some(Value::Gradient(gradient)) = session
-                                .selected_layer()
+                            let Some(emitter) = session.selected_layer() else { return; };
+                            let Some(Value::Gradient(gradient)) = emitter
                                 .modules
                                 .iter()
                                 .find(|item| item.id == module)
@@ -1527,12 +1532,14 @@ fn add_complex_key_at_pointer(
     workspace: &mut CurvesState,
     cursor: Vec2,
 ) {
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
     let Some(selection) = workspace.complex else {
         session.status = "Select a curve or gradient first".into();
         return;
     };
-    let Some(module) = session
-        .selected_layer()
+    let Some(module) = selected_layer
         .modules
         .iter()
         .find(|module| module.id == selection.module)
@@ -1681,12 +1688,14 @@ fn edit_complex_key(
     workspace: &mut CurvesState,
     edit: ComplexKeyEdit,
 ) {
+    let Some(selected_layer) = session.selected_layer() else {
+        return;
+    };
     let Some(selection) = workspace.complex else {
         session.status = "Select a curve or gradient first".into();
         return;
     };
-    let Some(module) = session
-        .selected_layer()
+    let Some(module) = selected_layer
         .modules
         .iter()
         .find(|module| module.id == selection.module)
@@ -1967,7 +1976,7 @@ mod tests {
         session: &EditorSession,
         registry: &EditorModuleRegistry,
     ) -> ComplexSelection {
-        for module in &session.selected_layer().modules {
+        for module in &session.selected_layer().unwrap().modules {
             let Some(metadata) = registry.0.get(&module.module_type) else {
                 continue;
             };
@@ -1995,6 +2004,7 @@ mod tests {
     ) -> usize {
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.id == selection.module)
@@ -2204,6 +2214,7 @@ mod tests {
         let registry = EditorModuleRegistry::default();
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.parameter_value("gravity").is_some())
@@ -2319,6 +2330,7 @@ mod tests {
 
         let module = session
             .selected_layer()
+            .unwrap()
             .modules
             .iter()
             .find(|module| module.id == selection.module)
