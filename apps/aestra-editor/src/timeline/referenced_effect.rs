@@ -128,14 +128,14 @@ pub(crate) fn resolve_effect_clip_path(
         .iter()
         .find(|clip| clip.id == *root)?
         .clone();
-    let mut source = catalog.load_effect(clip.source).ok()?;
+    let mut source = catalog.cached_effect(clip.source).ok()?;
     for id in descendants {
         clip = source
             .effect_clips
             .iter()
             .find(|clip| clip.id == *id)?
             .clone();
-        source = catalog.load_effect(clip.source).ok()?;
+        source = catalog.cached_effect(clip.source).ok()?;
     }
     Some((clip, source))
 }
@@ -177,7 +177,7 @@ fn append_referenced_track_projections(
                 let mapped = context.and_then(|context| {
                     map_referenced_interval(context, clip.start_time, clip.duration)
                 });
-                let child_source = catalog.load_effect(clip.source).ok();
+                let child_source = catalog.cached_effect(clip.source).ok();
                 let child_count = child_source.as_ref().map_or(0, |effect| {
                     effect.effect_clips.len() + effect.emitters.len()
                 });
@@ -241,7 +241,7 @@ pub(super) fn referenced_track_projections(
     if !state.expanded_effect_clips.contains(&path) {
         return Vec::new();
     }
-    let Ok(source) = catalog.load_effect(clip.source) else {
+    let Ok(source) = catalog.cached_effect(clip.source) else {
         return Vec::new();
     };
     let mut rows = Vec::new();

@@ -5732,7 +5732,7 @@ pub(crate) fn spawn_timeline(
                                         ChoreographyTrackId::EffectClip(clip.id),
                                     );
                                     let source_name = effect_clip_source_name(catalog, clip.source);
-                                    let source = catalog.load_effect(clip.source).ok();
+                                    let source = catalog.cached_effect(clip.source).ok();
                                     spawn_effect_clip_track_header(
                                         headers,
                                         session,
@@ -9274,7 +9274,7 @@ fn begin_effect_clip_timeline_drag(
     else {
         return;
     };
-    let source = catalog.load_effect(clip.source).ok();
+    let source = catalog.cached_effect(clip.source).ok();
     state.drag = None;
     state.effect_clip_drag = Some(EffectClipTimelineDrag {
         clip: clip.id,

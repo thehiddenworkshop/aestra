@@ -3624,6 +3624,7 @@ mod tests {
 
     #[test]
     fn project_preview_error_identifies_a_missing_effect_reference() {
+        let directory = tempfile::tempdir().unwrap();
         let mut session = test_support::session_with_timing_slack();
         let missing = aestra_core::EffectId::from_u128(0xfeed_cafe);
         session
@@ -3632,7 +3633,7 @@ mod tests {
             .push(aestra_core::EffectClip::new(missing, 0.0, 0.5));
         let mut app = App::new();
         app.insert_resource(session)
-            .insert_resource(ProjectEffectCatalog::from_entries(Vec::new()))
+            .insert_resource(ProjectEffectCatalog::scan(directory.path()))
             .init_resource::<EditorPreviewProject>()
             .add_systems(Update, sync_project_preview);
 

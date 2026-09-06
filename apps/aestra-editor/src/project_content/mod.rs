@@ -124,10 +124,7 @@ impl EditorProjectContent {
         if reference.id == owner.id {
             return Err("an effect cannot reference itself".into());
         }
-        let source = self
-            .index()
-            .load_effect(reference)
-            .map_err(|error| error.to_string())?;
+        let source = self.cached_effect(reference)?;
         let project = self
             .resolve_project(&source)
             .map_err(|error| error.to_string())?;
@@ -140,6 +137,14 @@ impl EditorProjectContent {
     pub(crate) fn load_effect(&self, reference: EffectAssetRef) -> Result<EffectAsset, String> {
         self.index()
             .load_effect(reference)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Presentation/authoring query at the published content revision, without disk I/O.
+    pub(crate) fn cached_effect(&self, reference: EffectAssetRef) -> Result<EffectAsset, String> {
+        self.snapshot
+            .content
+            .cached_effect(reference)
             .map_err(|error| error.to_string())
     }
 
@@ -172,8 +177,9 @@ impl EditorProjectContent {
                 {
                     Some(program) => program,
                     None => self
-                        .index()
-                        .load_material_program(instance.program)
+                        .snapshot
+                        .content
+                        .cached_material_program(instance.program)
                         .map_err(|error| error.to_string())?,
                 },
             );
@@ -183,8 +189,9 @@ impl EditorProjectContent {
 
     pub(crate) fn material_functions(&self) -> Result<Vec<MaterialFunction>, String> {
         let mut functions = self
-            .index()
-            .load_material_functions()
+            .snapshot
+            .content
+            .cached_material_functions()
             .map_err(|error| error.to_string())?;
         for (id, draft) in &self.material_drafts.functions {
             if let Some(function) = &draft.current {
@@ -202,8 +209,9 @@ impl EditorProjectContent {
 
     pub(crate) fn material_preset_catalog(&self) -> Result<MaterialPresetCatalog, String> {
         let presets = self
-            .index()
-            .load_material_presets()
+            .snapshot
+            .content
+            .cached_material_presets()
             .map_err(|error| error.to_string())?;
         MaterialPresetCatalog::with_project_presets(presets.into_values())
             .map_err(|error| error.to_string())
@@ -264,8 +272,9 @@ impl EditorProjectContent {
             .filter_map(|(id, draft)| draft.current.clone().map(|program| (*id, program)))
             .collect();
         let mut resolved = self
-            .index()
-            .resolve_effect_project_with_materials(root, overrides)?;
+            .snapshot
+            .content
+            .cached_effect_project_with_materials(root, overrides)?;
         for (id, draft) in &self.material_drafts.functions {
             if let Some(function) = &draft.current {
                 resolved.material_functions.insert(*id, function.clone());
@@ -430,6 +439,16 @@ impl EditorProjectContent {
             .map_err(|error| error.to_string())
     }
 
+    pub(crate) fn cached_effect_usage_graph(
+        &self,
+        reference: EffectAssetRef,
+    ) -> Result<ProjectEffectUsageGraph, String> {
+        self.snapshot
+            .content
+            .cached_effect_usage_graph(reference)
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn delete_effect_source(
         &mut self,
         source: ProjectEffectEntryId,
@@ -447,6 +466,8 @@ impl EditorProjectContent {
     }
 
     #[cfg(test)]
+    // Metadata-only UI fixtures. Semantic query tests should scan a temporary project so
+    // the source tree, index availability and parsed documents agree as they do in production.
     pub(crate) fn from_entries(entries: Vec<ProjectEffectEntry>) -> Self {
         Self {
             snapshot: ProjectContentSnapshot::scan(Path::new("virtual")),

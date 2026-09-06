@@ -278,7 +278,7 @@ mod tests {
         assert_eq!(tree.children(source.id).count(), 0);
         assert!(tree.at_relative_path("visible.txt").is_some());
         assert_eq!(tree.diagnostics().len(), 1);
-        let index = crate::ProjectAssetIndex::from_source_tree(&tree, false);
+        let (index, _) = crate::ProjectAssetIndex::from_source_tree(&tree, false);
         assert_eq!(index.diagnostics(), tree.diagnostics());
     }
 
@@ -293,7 +293,9 @@ mod tests {
             ProjectAssetIndexAvailability::Unavailable { .. }
         ));
         assert_eq!(
-            crate::ProjectAssetIndex::from_source_tree(&tree, true).availability(),
+            crate::ProjectAssetIndex::from_source_tree(&tree, true)
+                .0
+                .availability(),
             tree.availability()
         );
     }

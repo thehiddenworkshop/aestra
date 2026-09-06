@@ -1,5 +1,147 @@
 use super::*;
 
+#[test]
+fn cached_panel_graph_timeline_and_compile_queries_do_not_reopen_sources() {
+    use aestra_core::{
+        EffectClip, MaterialId,
+        material::{MaterialInstance, MaterialProgramRef, MaterialRenderState},
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let (mut world, _) = fixture(directory.path());
+    let mut child = world.resource::<EditorSession>().effect.clone();
+    child.id = aestra_core::EffectId::new();
+    child.name = "Child".into();
+    child
+        .save_ron(directory.path().join("child.aestra.ron"))
+        .unwrap();
+    let program = MaterialProgram::additive_sprite("Program").normalized();
+    program
+        .save_ron(directory.path().join("program.aestra.material.ron"))
+        .unwrap();
+    world.resource_mut::<EditorProjectContent>().refresh();
+    let mut root = world.resource::<EditorSession>().effect.clone();
+    root.effect_clips
+        .push(EffectClip::new(child.id, 0.0, child.duration));
+    root.material_instances.push(MaterialInstance {
+        id: MaterialId::new(),
+        program: MaterialProgramRef::Project(program.id),
+        values: default(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let catalog = world.resource::<EditorProjectContent>();
+    let graph = catalog.cached_effect_usage_graph(child.id.into()).unwrap();
+    assert!(catalog.prepared.is_none());
+    for name in [
+        "open.aestra.ron",
+        "child.aestra.ron",
+        "program.aestra.material.ron",
+    ] {
+        fs::remove_file(directory.path().join(name)).unwrap();
+    }
+    assert_eq!(catalog.cached_effect(child.id.into()).unwrap(), child);
+    assert_eq!(
+        catalog
+            .effect_for_placement(&root, child.id.into())
+            .unwrap(),
+        child
+    );
+    assert_eq!(
+        catalog.material_programs_for_effect(&root).unwrap(),
+        vec![program]
+    );
+    assert!(catalog.material_function_library().is_ok());
+    assert!(catalog.material_preset_catalog().is_ok());
+    assert!(catalog.dependency_validation_report(&root).is_valid());
+    assert_eq!(
+        catalog.cached_effect_usage_graph(child.id.into()).unwrap(),
+        graph
+    );
+    assert!(catalog.compile_project(&root).is_ok());
+    // Commands keep the latest-source policy, especially deletion confirmation.
+    assert!(catalog.load_effect(child.id.into()).is_err());
+    assert!(catalog.effect_usage_graph(child.id.into()).is_err());
+}
+
+#[test]
+fn cached_program_never_authorizes_editing_over_an_external_change() {
+    use aestra_core::{
+        MaterialId,
+        material::{MaterialInstance, MaterialProgramRef, MaterialRenderState},
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("program.aestra.material.ron");
+    let original = MaterialProgram::additive_sprite("Original").normalized();
+    original.save_ron(&path).unwrap();
+    let mut catalog = EditorProjectContent::scan(directory.path());
+    let mut root = EffectAsset::new("Root", 1.0);
+    root.material_instances.push(MaterialInstance {
+        id: MaterialId::new(),
+        program: MaterialProgramRef::Project(original.id),
+        values: default(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let mut external = original.clone();
+    external.name = "External".into();
+    external.save_ron(&path).unwrap();
+    let mut local = original.clone();
+    local.name = "Local".into();
+    assert_eq!(
+        catalog.material_programs_for_effect(&root).unwrap(),
+        vec![original.clone()]
+    );
+    assert!(catalog.replace_material_program(&original, &local).is_err());
+    assert!(catalog.material_drafts.is_empty());
+    assert_eq!(MaterialProgram::load_ron(&path).unwrap(), external);
+}
+
+#[test]
+fn published_material_refresh_updates_cached_queries_but_keeps_draft_overlay() {
+    use aestra_core::{
+        MaterialId,
+        material::{MaterialInstance, MaterialProgramRef, MaterialRenderState},
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let (mut world, mut watch) = fixture(directory.path());
+    let path = directory.path().join("program.aestra.material.ron");
+    let original = MaterialProgram::additive_sprite("Original").normalized();
+    original.save_ron(&path).unwrap();
+    world.resource_mut::<EditorProjectContent>().refresh();
+    watch.accept_current(world.resource::<EditorProjectContent>());
+    let mut root = world.resource::<EditorSession>().effect.clone();
+    root.material_instances.push(MaterialInstance {
+        id: MaterialId::new(),
+        program: MaterialProgramRef::Project(original.id),
+        values: default(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let mut updated = original.clone();
+    updated.name = "Updated".into();
+    updated.save_ron(&path).unwrap();
+    settle(&mut world, &mut watch);
+    assert_eq!(
+        world
+            .resource::<EditorProjectContent>()
+            .material_programs_for_effect(&root)
+            .unwrap(),
+        vec![updated.clone()]
+    );
+    let mut draft = updated.clone();
+    draft.name = "Unsaved".into();
+    world
+        .resource_mut::<EditorProjectContent>()
+        .replace_material_program(&updated, &draft)
+        .unwrap();
+    updated.name = "Second external edit".into();
+    updated.save_ron(&path).unwrap();
+    settle(&mut world, &mut watch);
+    let catalog = world.resource::<EditorProjectContent>();
+    assert_eq!(
+        catalog.material_programs_for_effect(&root).unwrap(),
+        vec![draft]
+    );
+    assert!(catalog.material_drafts.preflight().is_err());
+}
+
 fn fixture(root: &Path) -> (World, ProjectEffectWatchState) {
     let path = root.join("open.aestra.ron");
     let session = crate::test_support::session_with_source_path(&path);

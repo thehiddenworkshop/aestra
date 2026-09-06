@@ -283,12 +283,19 @@ impl ProjectAssetIndex {
     /// Compatibility discovery: every RON source remains a semantic candidate. New content
     /// consumers should use ProjectContent, which separates generic RON from invalid assets.
     pub fn scan(root: impl AsRef<Path>) -> Self {
-        Self::from_source_tree(&ProjectSourceTree::scan(root), true)
+        Self::from_source_tree(&ProjectSourceTree::scan(root), true).0
     }
 
-    fn from_source_tree(tree: &ProjectSourceTree, legacy_ron_candidates: bool) -> Self {
+    fn from_source_tree(
+        tree: &ProjectSourceTree,
+        legacy_ron_candidates: bool,
+    ) -> (
+        Self,
+        BTreeMap<ProjectSourceId, content::ProjectSourceDocument>,
+    ) {
         let root = tree.root_path().to_owned();
         let mut diagnostics = tree.diagnostics().to_vec();
+        let mut documents = BTreeMap::new();
         let mut effects = Vec::new();
         let mut material_programs = Vec::new();
         let mut material_functions = Vec::new();
@@ -302,25 +309,34 @@ impl ProjectAssetIndex {
                 continue;
             }
             let path = source.path.clone();
+            let mut document = None;
             match file.classification {
                 ProjectFileClassification::MaterialPreset => {
-                    let mut entry = index_material_preset_source(&root, path, &mut diagnostics);
+                    let mut entry =
+                        index_material_preset_source(&root, path, &mut diagnostics, &mut document);
                     entry.id = source.id;
                     material_presets.push(entry);
                 }
                 ProjectFileClassification::MaterialFunction => {
-                    let mut entry = index_material_function_source(&root, path, &mut diagnostics);
+                    let mut entry = index_material_function_source(
+                        &root,
+                        path,
+                        &mut diagnostics,
+                        &mut document,
+                    );
                     entry.id = source.id;
                     material_functions.push(entry);
                 }
                 ProjectFileClassification::MaterialProgram => {
-                    let mut entry = index_material_program_source(&root, path, &mut diagnostics);
+                    let mut entry =
+                        index_material_program_source(&root, path, &mut diagnostics, &mut document);
                     entry.id = source.id;
                     material_programs.push(entry);
                 }
                 _ => {
                     let before = diagnostics.len();
-                    let mut entry = index_effect_source(&root, path, &mut diagnostics);
+                    let mut entry =
+                        index_effect_source(&root, path, &mut diagnostics, &mut document);
                     entry.id = source.id;
                     if legacy_ron_candidates
                         || file.classification == ProjectFileClassification::Effect
@@ -335,15 +351,21 @@ impl ProjectAssetIndex {
                     }
                 }
             }
+            if let Some(document) = document {
+                documents.insert(source.id, document);
+            }
         }
-        Self::from_parts(
-            root,
-            effects,
-            material_programs,
-            material_functions,
-            material_presets,
-            tree.availability().clone(),
-            diagnostics,
+        (
+            Self::from_parts(
+                root,
+                effects,
+                material_programs,
+                material_functions,
+                material_presets,
+                tree.availability().clone(),
+                diagnostics,
+            ),
+            documents,
         )
     }
 
@@ -916,36 +938,7 @@ impl ProjectAssetIndex {
         root: &EffectAsset,
         programs: BTreeMap<MaterialProgramId, MaterialProgram>,
     ) -> Result<ResolvedEffectProject, ProjectDependencyReport> {
-        let mut resolver = DependencyResolver {
-            index: self,
-            resolved: BTreeMap::new(),
-            material_programs: programs,
-            visiting: Vec::new(),
-            visited: BTreeSet::new(),
-            diagnostics: Vec::new(),
-            material_diagnostics: Vec::new(),
-        };
-        resolver.visit(root);
-        if resolver.diagnostics.is_empty() && resolver.material_diagnostics.is_empty() {
-            let material_functions = self
-                .material_functions
-                .iter()
-                .filter_map(|entry| entry.reference)
-                .filter_map(|reference| self.load_material_function(reference).ok())
-                .map(|function| (function.id, function))
-                .collect();
-            Ok(ResolvedEffectProject {
-                root: root.clone(),
-                dependencies: resolver.resolved,
-                material_programs: resolver.material_programs,
-                material_functions,
-            })
-        } else {
-            Err(ProjectDependencyReport {
-                diagnostics: resolver.diagnostics,
-                material_diagnostics: resolver.material_diagnostics,
-            })
-        }
+        content::queries::resolve_project(self, root, programs)
     }
 
     /// Builds the forward dependency and reverse usage graph for one project effect.
@@ -1507,30 +1500,7 @@ impl ProjectAssetIndex {
     }
 
     fn effect_relation_edges(&self) -> Result<Vec<ProjectEffectRelation>, ResolveEffectError> {
-        let mut edges = Vec::new();
-        for entry in self
-            .effects
-            .iter()
-            .filter(|entry| entry.status.is_resolvable())
-        {
-            let Some(reference) = entry.reference else {
-                continue;
-            };
-            let effect = self.load_effect(reference)?;
-            edges.extend(
-                effect
-                    .effect_clips
-                    .into_iter()
-                    .map(|clip| ProjectEffectRelation {
-                        owner: reference,
-                        owner_source: entry.id,
-                        clip: clip.id,
-                        dependency: clip.source,
-                        depth: 1,
-                    }),
-            );
-        }
-        Ok(edges)
+        content::queries::effect_relation_edges(self)
     }
 
     fn effect_source_for_operation(
@@ -1946,7 +1916,7 @@ pub struct ProjectDependencyReport {
 }
 
 struct DependencyResolver<'a> {
-    index: &'a ProjectAssetIndex,
+    reader: &'a dyn content::queries::ProjectRead,
     resolved: BTreeMap<EffectId, EffectAsset>,
     material_programs: BTreeMap<MaterialProgramId, MaterialProgram>,
     visiting: Vec<EffectId>,
@@ -1969,7 +1939,7 @@ impl DependencyResolver<'_> {
             let program = if let Some(program) = self.material_programs.get(&program_id) {
                 program.clone()
             } else {
-                match self.index.load_material_program(reference) {
+                match self.reader.material_program(reference) {
                     Ok(program) => {
                         self.material_programs.insert(program.id, program.clone());
                         program
@@ -2023,7 +1993,7 @@ impl DependencyResolver<'_> {
                 continue;
             }
 
-            let child = match self.index.load_effect(reference) {
+            let child = match self.reader.effect(reference) {
                 Ok(child) => child,
                 Err(error) => {
                     self.diagnostics.push(ProjectDependencyDiagnostic {
@@ -2110,6 +2080,7 @@ fn index_effect_source(
     root: &Path,
     path: PathBuf,
     diagnostics: &mut Vec<ProjectAssetDiagnostic>,
+    document: &mut Option<content::ProjectSourceDocument>,
 ) -> ProjectEffectEntry {
     let id = source_id(root, &path);
     let fallback_name = path
@@ -2119,13 +2090,17 @@ fn index_effect_source(
         .trim_end_matches(".aestra")
         .replace(['_', '-'], " ");
     match EffectAsset::load_ron(&path) {
-        Ok(effect) => ProjectEffectEntry {
-            id,
-            reference: Some(effect.id.into()),
-            display_name: effect.name,
-            path,
-            status: ProjectEffectStatus::Valid,
-        },
+        Ok(effect) => {
+            let entry = ProjectEffectEntry {
+                id,
+                reference: Some(effect.id.into()),
+                display_name: effect.name.clone(),
+                path,
+                status: ProjectEffectStatus::Valid,
+            };
+            *document = Some(content::ProjectSourceDocument::Effect(Box::new(effect)));
+            entry
+        }
         Err(AssetError::UnsupportedFormat { found, current }) => {
             diagnostics.push(ProjectAssetDiagnostic {
                 code: ProjectAssetDiagnosticCode::UnsupportedFormat,
@@ -2164,6 +2139,7 @@ fn index_material_program_source(
     root: &Path,
     path: PathBuf,
     diagnostics: &mut Vec<ProjectAssetDiagnostic>,
+    document: &mut Option<content::ProjectSourceDocument>,
 ) -> ProjectMaterialProgramEntry {
     let id = source_id(root, &path);
     let fallback_name = path
@@ -2175,13 +2151,19 @@ fn index_material_program_source(
         .trim_end_matches(".aestra")
         .replace(['_', '-'], " ");
     match MaterialProgram::load_ron(&path) {
-        Ok(program) => ProjectMaterialProgramEntry {
-            id,
-            reference: Some(MaterialProgramRef::Project(program.id)),
-            display_name: program.name,
-            path,
-            status: ProjectMaterialProgramStatus::Valid,
-        },
+        Ok(program) => {
+            let entry = ProjectMaterialProgramEntry {
+                id,
+                reference: Some(MaterialProgramRef::Project(program.id)),
+                display_name: program.name.clone(),
+                path,
+                status: ProjectMaterialProgramStatus::Valid,
+            };
+            *document = Some(content::ProjectSourceDocument::MaterialProgram(Box::new(
+                program,
+            )));
+            entry
+        }
         Err(error @ MaterialProgramError::Validation(_))
         | Err(error @ MaterialProgramError::Parse(_))
         | Err(error @ MaterialProgramError::Io(_))
@@ -2207,6 +2189,7 @@ fn index_material_function_source(
     root: &Path,
     path: PathBuf,
     diagnostics: &mut Vec<ProjectAssetDiagnostic>,
+    document: &mut Option<content::ProjectSourceDocument>,
 ) -> ProjectMaterialFunctionEntry {
     let id = source_id(root, &path);
     let fallback_name = path
@@ -2218,13 +2201,19 @@ fn index_material_function_source(
         .trim_end_matches(".aestra")
         .replace(['_', '-'], " ");
     match MaterialFunction::load_ron(&path) {
-        Ok(function) => ProjectMaterialFunctionEntry {
-            id,
-            reference: Some(MaterialFunctionRef::Project(function.id)),
-            display_name: function.name,
-            path,
-            status: ProjectMaterialFunctionStatus::Valid,
-        },
+        Ok(function) => {
+            let entry = ProjectMaterialFunctionEntry {
+                id,
+                reference: Some(MaterialFunctionRef::Project(function.id)),
+                display_name: function.name.clone(),
+                path,
+                status: ProjectMaterialFunctionStatus::Valid,
+            };
+            *document = Some(content::ProjectSourceDocument::MaterialFunction(Box::new(
+                function,
+            )));
+            entry
+        }
         Err(error @ MaterialFunctionError::Validation(_))
         | Err(error @ MaterialFunctionError::Parse(_))
         | Err(error @ MaterialFunctionError::Io(_))
@@ -2250,6 +2239,7 @@ fn index_material_preset_source(
     root: &Path,
     path: PathBuf,
     diagnostics: &mut Vec<ProjectAssetDiagnostic>,
+    document: &mut Option<content::ProjectSourceDocument>,
 ) -> ProjectMaterialPresetEntry {
     let id = source_id(root, &path);
     let fallback_name = path
@@ -2261,13 +2251,19 @@ fn index_material_preset_source(
         .trim_end_matches(".aestra")
         .replace(['_', '-'], " ");
     match MaterialPresetDescriptor::load_ron(&path) {
-        Ok(preset) => ProjectMaterialPresetEntry {
-            id,
-            preset: Some(preset.id),
-            display_name: preset.display_name,
-            path,
-            status: ProjectMaterialPresetStatus::Valid,
-        },
+        Ok(preset) => {
+            let entry = ProjectMaterialPresetEntry {
+                id,
+                preset: Some(preset.id),
+                display_name: preset.display_name.clone(),
+                path,
+                status: ProjectMaterialPresetStatus::Valid,
+            };
+            *document = Some(content::ProjectSourceDocument::MaterialPreset(Box::new(
+                preset,
+            )));
+            entry
+        }
         Err(MaterialPresetError::UnsupportedFormat { found, current }) => {
             diagnostics.push(ProjectAssetDiagnostic {
                 code: ProjectAssetDiagnosticCode::UnsupportedFormat,

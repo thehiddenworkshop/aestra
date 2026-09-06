@@ -800,7 +800,7 @@ fn relation_meta(
         return localizer.text("library-dependencies-direct");
     }
     let clip_index = catalog
-        .load_effect(relation.owner)
+        .cached_effect(relation.owner)
         .ok()
         .and_then(|effect| {
             effect
@@ -2474,7 +2474,7 @@ fn execute_library_action(
                 session.status = localizer.text("library-status-source-unresolvable");
                 return;
             };
-            match catalog.effect_usage_graph(reference) {
+            match catalog.cached_effect_usage_graph(reference) {
                 Ok(graph) => {
                     operation.close_all();
                     operation.dependency_inspector =

@@ -126,7 +126,7 @@ pub(super) fn effect_clip_breadcrumbs(
             effect_clip_catalog_name(catalog, clip.source),
             Some(DocumentAction::OpenSource(clip.source)),
         ));
-        let Ok(source) = catalog.load_effect(clip.source) else {
+        let Ok(source) = catalog.cached_effect(clip.source) else {
             break;
         };
         effect = source;
@@ -716,7 +716,7 @@ pub(super) fn spawn_effect_clip_properties(
         return false;
     };
     let source_name = effect_clip_catalog_name(catalog, clip.source);
-    let source = catalog.load_effect(clip.source).ok();
+    let source = catalog.cached_effect(clip.source).ok();
     let dependency_error = catalog.effect_clip_dependency_error(&session.effect, clip.id);
     spawn_read_only_properties_shell(parent, &source_name, localizer, true, |stack| {
         spawn_edit_source_navigation(

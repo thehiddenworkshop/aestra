@@ -15,6 +15,265 @@ use aestra_project::{
 };
 use std::{fs, path::Path};
 
+#[test]
+fn cached_documents_and_queries_survive_disk_removal_but_operation_loaders_do_not() {
+    use aestra_core::{
+        EffectClip, MaterialId,
+        material::{
+            MaterialFunctionRef, MaterialInstance, MaterialProgramRef, MaterialRenderState,
+        },
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let child = EffectAsset::new("Child", 1.0);
+    let mut owner = EffectAsset::new("Owner", 2.0);
+    owner.effect_clips.push(EffectClip::new(child.id, 0.0, 1.0));
+    let material = MaterialProgram::additive_sprite("Material").normalized();
+    owner.material_instances.push(MaterialInstance {
+        id: MaterialId::new(),
+        program: MaterialProgramRef::Project(material.id),
+        values: Default::default(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let function = function();
+    let preset = preset();
+    child.save_ron(root.join("child.aestra.ron")).unwrap();
+    owner.save_ron(root.join("owner.aestra.ron")).unwrap();
+    material
+        .save_ron(root.join("material.aestra.material.ron"))
+        .unwrap();
+    function
+        .save_ron(root.join("function.aestra.material-function.ron"))
+        .unwrap();
+    preset
+        .save_ron(root.join("preset.aestra.material-preset.ron"))
+        .unwrap();
+
+    let content = ProjectContent::scan(root);
+    let expected_graph = content
+        .asset_index()
+        .effect_usage_graph(child.id.into())
+        .unwrap();
+    let expected_project = content
+        .asset_index()
+        .resolve_effect_project(&owner)
+        .unwrap();
+    for source in content
+        .source_tree()
+        .entries()
+        .filter(|source| matches!(source.kind, ProjectSourceKind::File(_)))
+    {
+        fs::remove_file(&source.path).unwrap();
+    }
+    assert_eq!(content.cached_effect(child.id.into()).unwrap(), child);
+    assert_eq!(
+        content
+            .cached_material_program(MaterialProgramRef::Project(material.id))
+            .unwrap(),
+        material
+    );
+    assert_eq!(
+        content
+            .cached_material_function(MaterialFunctionRef::Project(function.id))
+            .unwrap(),
+        function
+    );
+    assert_eq!(content.cached_material_preset(preset.id).unwrap(), preset);
+    assert_eq!(
+        content
+            .cached_material_functions()
+            .unwrap()
+            .get(&function.id),
+        Some(&function)
+    );
+    assert_eq!(
+        content.cached_material_presets().unwrap().get(&preset.id),
+        Some(&preset)
+    );
+    assert_eq!(
+        content.cached_effect_usage_graph(child.id.into()).unwrap(),
+        expected_graph
+    );
+    let resolved = content
+        .cached_effect_project_with_materials(&owner, Default::default())
+        .unwrap();
+    assert_eq!(resolved.dependencies, expected_project.dependencies);
+    assert_eq!(
+        resolved.material_programs,
+        expected_project.material_programs
+    );
+    assert_eq!(
+        resolved.material_functions,
+        expected_project.material_functions
+    );
+    assert!(content.asset_index().load_effect(child.id.into()).is_err());
+    assert!(
+        content
+            .asset_index()
+            .load_material_program(MaterialProgramRef::Project(material.id))
+            .is_err()
+    );
+    assert!(
+        content
+            .asset_index()
+            .load_material_function(MaterialFunctionRef::Project(function.id))
+            .is_err()
+    );
+    assert!(
+        content
+            .asset_index()
+            .load_material_preset(preset.id)
+            .is_err()
+    );
+    assert!(
+        content
+            .asset_index()
+            .effect_usage_graph(child.id.into())
+            .is_err()
+    );
+}
+
+#[test]
+fn cached_reads_reject_duplicates_for_every_semantic_type() {
+    use aestra_core::material::{MaterialFunctionRef, MaterialProgramRef};
+    use aestra_project::{
+        ResolveEffectError, ResolveMaterialFunctionError, ResolveMaterialPresetError,
+        ResolveMaterialProgramError,
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let effect = EffectAsset::new("Effect", 1.0);
+    let material = MaterialProgram::additive_sprite("Material");
+    let function = function();
+    let preset = preset();
+    for name in ["one", "two"] {
+        effect
+            .save_ron(directory.path().join(format!("{name}.aestra.ron")))
+            .unwrap();
+        material
+            .save_ron(directory.path().join(format!("{name}.aestra.material.ron")))
+            .unwrap();
+        function
+            .save_ron(
+                directory
+                    .path()
+                    .join(format!("{name}.aestra.material-function.ron")),
+            )
+            .unwrap();
+        preset
+            .save_ron(
+                directory
+                    .path()
+                    .join(format!("{name}.aestra.material-preset.ron")),
+            )
+            .unwrap();
+    }
+    let content = ProjectContent::scan(directory.path());
+    assert!(matches!(
+        content.cached_effect(effect.id.into()),
+        Err(ResolveEffectError::Duplicate { .. })
+    ));
+    assert!(matches!(
+        content.cached_material_program(MaterialProgramRef::Project(material.id)),
+        Err(ResolveMaterialProgramError::Duplicate { .. })
+    ));
+    assert!(matches!(
+        content.cached_material_function(MaterialFunctionRef::Project(function.id)),
+        Err(ResolveMaterialFunctionError::Duplicate { .. })
+    ));
+    assert!(matches!(
+        content.cached_material_preset(preset.id),
+        Err(ResolveMaterialPresetError::Duplicate { .. })
+    ));
+    assert!(content.cached_material_functions().is_err());
+    assert!(content.cached_material_presets().is_err());
+}
+
+#[test]
+fn cached_dependency_validation_matches_disk_policy_for_cycles_timing_and_overrides() {
+    use aestra_core::{
+        EffectClip, MaterialId,
+        material::{MaterialInstance, MaterialProgramRef, MaterialRenderState},
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let mut child = EffectAsset::new("Child", 1.0);
+    child.playback_mode = aestra_core::EffectPlaybackMode::Once;
+    child
+        .save_ron(directory.path().join("child.aestra.ron"))
+        .unwrap();
+    let content = ProjectContent::scan(directory.path());
+    let mut root = EffectAsset::new("Unsaved", 2.0);
+    root.effect_clips.push(EffectClip::new(child.id, 0.0, 2.0));
+    // The same traversal implements both policies, including invalid source timing.
+    assert_eq!(
+        content
+            .cached_effect_project_with_materials(&root, Default::default())
+            .unwrap_err(),
+        content
+            .asset_index()
+            .resolve_effect_project(&root)
+            .unwrap_err()
+    );
+    root.effect_clips[0].source = root.id.into();
+    assert_eq!(
+        content
+            .cached_effect_project_with_materials(&root, Default::default())
+            .unwrap_err(),
+        content
+            .asset_index()
+            .resolve_effect_project(&root)
+            .unwrap_err()
+    );
+    root.effect_clips.clear();
+    let program = MaterialProgram::additive_sprite("Unsaved material").normalized();
+    root.material_instances.push(MaterialInstance {
+        id: MaterialId::new(),
+        program: MaterialProgramRef::Project(program.id),
+        values: Default::default(),
+        render_state: MaterialRenderState::additive_sprite(),
+    });
+    let overrides = [(program.id, program.clone())].into();
+    let resolved = content
+        .cached_effect_project_with_materials(&root, overrides)
+        .unwrap();
+    assert_eq!(resolved.material_programs.get(&program.id), Some(&program));
+}
+
+#[test]
+fn new_snapshot_replaces_cached_documents_without_mutating_old_readers() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("effect.aestra.ron");
+    let mut effect = EffectAsset::new("Original", 1.0);
+    effect.save_ron(&path).unwrap();
+    let original = ProjectContent::scan(directory.path());
+    effect.name = "Changed".into();
+    effect.save_ron(&path).unwrap();
+    let updated = ProjectContent::scan(directory.path());
+    assert_eq!(
+        original.cached_effect(effect.id.into()).unwrap().name,
+        "Original"
+    );
+    assert_eq!(updated.cached_effect(effect.id.into()).unwrap(), effect);
+    fs::write(&path, "invalid").unwrap();
+    let invalid = ProjectContent::scan(directory.path());
+    assert!(invalid.cached_effect(effect.id.into()).is_err());
+    assert_eq!(
+        invalid
+            .source_tree()
+            .at_relative_path("effect.aestra.ron")
+            .unwrap()
+            .id,
+        original
+            .source_tree()
+            .at_relative_path("effect.aestra.ron")
+            .unwrap()
+            .id
+    );
+    let unavailable = ProjectContent::scan(directory.path().join("missing"));
+    assert!(matches!(
+        unavailable.cached_effect(effect.id.into()),
+        Err(aestra_project::ResolveEffectError::IndexUnavailable { .. })
+    ));
+}
 fn classification(content: &ProjectContent, path: &str) -> Class {
     let source = content.source_tree().at_relative_path(path).unwrap();
     let ProjectSourceKind::File(file) = &source.kind else {

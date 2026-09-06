@@ -1,5 +1,6 @@
 //! Read-only project content. Paths locate sources; typed asset IDs identify semantic assets.
 mod classification;
+pub(crate) mod queries;
 mod refresh;
 mod source_tree;
 
@@ -13,6 +14,7 @@ use std::{collections::BTreeMap, path::Path};
 pub struct ProjectContent {
     source_tree: ProjectSourceTree,
     asset_index: ProjectAssetIndex,
+    documents: BTreeMap<ProjectSourceId, ProjectSourceDocument>,
     sources_by_asset: BTreeMap<ProjectAssetId, Vec<ProjectSourceId>>,
 }
 
@@ -23,7 +25,7 @@ impl ProjectContent {
 
     /// Build the semantic join from an existing discovery, without walking the root again.
     pub fn from_source_tree(mut source_tree: ProjectSourceTree) -> Self {
-        let asset_index = ProjectAssetIndex::from_source_tree(&source_tree, false);
+        let (asset_index, documents) = ProjectAssetIndex::from_source_tree(&source_tree, false);
         for entry in asset_index.effects() {
             source_tree
                 .file_mut(entry.id)
@@ -77,6 +79,7 @@ impl ProjectContent {
         Self {
             source_tree,
             asset_index,
+            documents,
             sources_by_asset,
         }
     }
@@ -102,7 +105,8 @@ impl ProjectContent {
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
-    /// Unique location lookup only. Use the typed index resolver/loader to validate/open content.
+    /// Unique location lookup only. Cached typed reads validate snapshot identity/status;
+    /// index loaders additionally check current disk contents.
     pub fn unique_source_for_asset(
         &self,
         asset: ProjectAssetId,
@@ -124,6 +128,16 @@ impl ProjectContent {
             }),
         }
     }
+}
+
+/// Documents are retained by source, not a second semantic registry. All identity/ambiguity
+/// decisions go through the single index built from these exact parses.
+#[derive(Debug, Clone)]
+pub(crate) enum ProjectSourceDocument {
+    Effect(Box<aestra_core::EffectAsset>),
+    MaterialProgram(Box<aestra_core::material::MaterialProgram>),
+    MaterialFunction(Box<aestra_core::material::MaterialFunction>),
+    MaterialPreset(Box<aestra_core::material::MaterialPresetDescriptor>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
