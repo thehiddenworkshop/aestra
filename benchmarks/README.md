@@ -90,8 +90,8 @@ Remove-Item Env:WGPU_BACKEND
 `--gpu-trails rendering`; without them `rendering` retains its original 16/1,024-owner
 and one/four-view matrix. The flags are rejected for preparation-only and CPU modes.
 
-Occupancy means **active trail owners out of 1,024**, each with all 63 valid segments;
-it does not vary history length or capacity. Percentages must be finite in `(0,100]`,
+By default, occupancy means **active trail owners out of 1,024**, each with all 63 valid
+segments; the shape controls below can vary this fixture. Percentages must be finite in `(0,100]`,
 are rounded to the nearest owner (minimum one), and levels mapping to the same count
 are rejected. Reports record actual counts and occupancy percentages, not rounded labels.
 Views must be distinct integers in `[1,8]`. Owner slots are spread across the pool even
@@ -114,3 +114,45 @@ The [first six sweeps and measured crossover brackets](gpu-baselines/trails-brea
 cover three runs per backend. All 192 A/B image comparisons passed. One/two-view
 medians favor full-range drawing; four/eight-view crossover ranges differ by backend
 and have marginal/noisy cases. No runtime bypass is selected from these results.
+
+## Capacity and partially filled history
+
+Rendering and sweep modes additionally accept one fixture shape per report:
+
+```powershell
+$env:WGPU_BACKEND = 'vulkan' # repeat with 'dx12'
+cargo +1.98.1-x86_64-pc-windows-msvc run -p aestra-bench --features gpu --locked -- --gpu-trails sweep --owner-capacity 128 --history-points 16 --history-fill 25 --occupancies 5,50,100 --views 1,4,8 --seed 7 --commit <revision> --out benchmarks/gpu-baselines/<run>/history-fill.json
+Remove-Item Env:WGPU_BACKEND
+```
+
+- `--owner-capacity`: 1–1,024 allocated owner slots (default 1,024).
+- `--history-points`: 2–64 records per owner **including the live head** (default 64).
+- `--history-fill`: percentage of the remaining historical sample slots to populate,
+  finite in `(0,100]` (default 100). It rounds to the nearest sample, minimum one.
+
+These bounds match current runtime trail limits. All three flags are rejected for
+CPU and preparation-only modes. Occupancy percentages are converted **after** parsing
+capacity, regardless of argument order. If levels round to duplicate owner counts
+(including default levels at very small capacities), provide a distinct explicit
+`--occupancies` list; for capacity one, use `--occupancies 100`.
+
+Schema v3 records `owner_capacity`, `history_points`, `retained_history_samples` and
+the actual `history_fill_percent`. The last two are null for preparation-only reports.
+For example, 16 points at requested 25% fill means 4 historical samples plus the head
+(26.67% of the 15 sample slots). Full-range drawing submits `capacity * (points - 1)`
+candidates; compacted drawing submits `active_owners * retained_history_samples`.
+Actual counts, image equality, per-view indirect commands and timings are checked as before.
+Every view must contain visible pixels, even for a one-segment fixture.
+
+Partial histories retain the newest samples with unchanged sample spacing, using
+the production ring-buffer indexing. Their visible tails are therefore shorter;
+changing fill also changes pixel coverage, not just compaction work. Changing point
+capacity changes sampling density along the same full trajectory. This is a controlled
+fixture with uniform fill across live owners, flat caps, no expiry and all owners in
+view—not a simulation of mixed-age histories or whole-application frame time.
+
+The [48 capacity/history reports and findings](gpu-baselines/trails-history-fill-2026-09-06/README.md)
+contain three runs per shape/backend and 432 successful image comparisons. Full owner
+occupancy can favor compaction with partial histories while losing with full histories;
+allocation size, point capacity and backend also change the result. No runtime rule
+is selected from these single-adapter measurements.

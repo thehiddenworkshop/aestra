@@ -42,6 +42,7 @@ fn main() {
             eprintln!(
                 "usage: aestra-bench (--scenario <name> | --all | --gpu-trails preparation|rendering|sweep) [--frames N] [--warmup N] \
                  [--occupancies 1,2,5,10,25,50,75,100] [--views 1,2,4,8] \
+                 [--owner-capacity 1024] [--history-points 64] [--history-fill 100] \
                  [--seed <dec-or-0xhex>] [--out results.json] [--commit <sha>]"
             );
             eprintln!("scenarios: {}", scenario::names());
@@ -126,6 +127,8 @@ struct Config {
     trail_owners: Vec<u32>,
     #[cfg(feature = "gpu")]
     trail_views: Vec<usize>,
+    #[cfg(feature = "gpu")]
+    trail_shape: [u32; 3], // Owner capacity, points including head, retained history samples.
     scenario: Option<String>,
     all: bool,
     frames: usize,
@@ -144,6 +147,9 @@ impl Config {
         let mut gpu_trails = None;
         let mut trail_owners = None;
         let mut trail_views = None;
+        let mut owner_capacity = None;
+        let mut history_points = None;
+        let mut history_fill = None;
         let mut scenario = None;
         let mut all = false;
         let mut frames = 64usize;
@@ -162,9 +168,15 @@ impl Config {
                     gpu_trails = Some(kind);
                 }
                 "--occupancies" => {
-                    trail_owners =
-                        Some(parse_occupancies(&next_value(&mut args, "--occupancies")?)?);
+                    trail_owners = Some(next_value(&mut args, "--occupancies")?);
                 }
+                "--owner-capacity" => {
+                    owner_capacity = Some(next_value(&mut args, "--owner-capacity")?)
+                }
+                "--history-points" => {
+                    history_points = Some(next_value(&mut args, "--history-points")?)
+                }
+                "--history-fill" => history_fill = Some(next_value(&mut args, "--history-fill")?),
                 "--views" => {
                     trail_views = Some(parse_views(&next_value(&mut args, "--views")?)?);
                 }
@@ -190,10 +202,14 @@ impl Config {
         if gpu_trails.is_some() && (all || scenario.is_some()) {
             return Err("--gpu-trails cannot be combined with --scenario or --all".into());
         }
-        if (trail_owners.is_some() || trail_views.is_some())
+        if (trail_owners.is_some()
+            || trail_views.is_some()
+            || owner_capacity.is_some()
+            || history_points.is_some()
+            || history_fill.is_some())
             && !matches!(gpu_trails.as_deref(), Some("rendering" | "sweep"))
         {
-            return Err("--occupancies and --views require --gpu-trails rendering or sweep".into());
+            return Err("trail geometry, occupancy and view options require --gpu-trails rendering or sweep".into());
         }
         if !all && scenario.is_none() && gpu_trails.is_none() {
             return Err("expected --scenario <name>, --all or --gpu-trails <kind>".into());
@@ -204,15 +220,28 @@ impl Config {
         if frames.checked_add(warmup).is_none() {
             return Err("--frames plus --warmup is too large".into());
         }
+        let trail_shape = parse_trail_shape(
+            owner_capacity.as_deref(),
+            history_points.as_deref(),
+            history_fill.as_deref(),
+        )?;
+        let trail_owners = parse_occupancies(
+            trail_owners
+                .as_deref()
+                .unwrap_or(if gpu_trails.as_deref() == Some("sweep") {
+                    "1,2,5,10,25,50,75,100"
+                } else {
+                    "1.5625,100"
+                }),
+            trail_shape[0],
+        )?;
+        #[cfg(not(feature = "gpu"))]
+        let _ = trail_owners;
         Ok(Self {
             #[cfg(feature = "gpu")]
-            trail_owners: trail_owners.unwrap_or_else(|| {
-                if gpu_trails.as_deref() == Some("sweep") {
-                    parse_occupancies("1,2,5,10,25,50,75,100").unwrap()
-                } else {
-                    vec![16, TRAIL_OWNER_CAPACITY]
-                }
-            }),
+            trail_owners,
+            #[cfg(feature = "gpu")]
+            trail_shape,
             #[cfg(feature = "gpu")]
             trail_views: trail_views.unwrap_or_else(|| {
                 if gpu_trails.as_deref() == Some("sweep") {
@@ -423,7 +452,25 @@ fn parse_seed(value: &str) -> Result<u64, String> {
     parsed.map_err(|_| format!("--seed expects a decimal or 0x-prefixed hex value, got {value:?}"))
 }
 
-fn parse_occupancies(value: &str) -> Result<Vec<u32>, String> {
+fn parse_trail_shape(
+    owners: Option<&str>,
+    points: Option<&str>,
+    fill: Option<&str>,
+) -> Result<[u32; 3], String> {
+    let owners = parse_usize(owners.unwrap_or("1024"), "--owner-capacity")?;
+    let points = parse_usize(points.unwrap_or("64"), "--history-points")?;
+    if !(1..=TRAIL_OWNER_CAPACITY as usize).contains(&owners) || !(2..=64).contains(&points) {
+        return Err("--owner-capacity must be 1–1024 and --history-points must be 2–64 (including the head)".into());
+    }
+    let samples = parse_occupancies(fill.unwrap_or("100"), (points - 1) as u32)
+        .map_err(|error| error.replace("--occupancies", "--history-fill"))?;
+    if samples.len() != 1 {
+        return Err("--history-fill expects one percentage in (0,100]".into());
+    }
+    Ok([owners as u32, points as u32, samples[0]])
+}
+
+fn parse_occupancies(value: &str, capacity: u32) -> Result<Vec<u32>, String> {
     let mut owners = Vec::new();
     for entry in value.split(',') {
         let percent: f64 = entry
@@ -433,9 +480,7 @@ fn parse_occupancies(value: &str) -> Result<Vec<u32>, String> {
         if !percent.is_finite() || percent <= 0.0 || percent > 100.0 {
             return Err("--occupancies expects finite percentages in (0,100]".into());
         }
-        let count = (percent * f64::from(TRAIL_OWNER_CAPACITY) / 100.0)
-            .round()
-            .max(1.0) as u32;
+        let count = (percent * f64::from(capacity) / 100.0).round().max(1.0) as u32;
         if owners.contains(&count) {
             return Err("--occupancies contains levels mapping to the same owner count".into());
         }
@@ -459,6 +504,81 @@ fn parse_views(value: &str) -> Result<Vec<usize>, String> {
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+
+    #[test]
+    fn trail_shape_options_are_bounded_and_order_independent() {
+        assert_eq!(parse_trail_shape(None, None, None).unwrap(), [1024, 64, 63]);
+        assert_eq!(
+            parse_trail_shape(Some("128"), Some("16"), Some("25")).unwrap(),
+            [128, 16, 4]
+        );
+        assert_eq!(
+            parse_trail_shape(Some("1"), Some("2"), Some("0.01")).unwrap(),
+            [1, 2, 1]
+        );
+        for owners in ["0", "1025", "-1", "1.5", ""] {
+            assert!(parse_trail_shape(Some(owners), None, None).is_err());
+        }
+        for points in ["0", "1", "65", "-1", ""] {
+            assert!(parse_trail_shape(None, Some(points), None).is_err());
+        }
+        for fill in ["0", "101", "NaN", "inf", "25,50", ""] {
+            assert!(parse_trail_shape(None, None, Some(fill)).is_err());
+        }
+        for flag in ["--owner-capacity", "--history-points", "--history-fill"] {
+            assert!(config(&["--all", flag, "16"]).is_err());
+            assert!(config(&["--gpu-trails", "preparation", flag, "16"]).is_err());
+        }
+        let _first = config(&[
+            "--gpu-trails",
+            "sweep",
+            "--occupancies",
+            "25,100",
+            "--owner-capacity",
+            "128",
+            "--history-points",
+            "16",
+            "--history-fill",
+            "25",
+        ])
+        .unwrap();
+        let _last = config(&[
+            "--owner-capacity",
+            "128",
+            "--history-points",
+            "16",
+            "--history-fill",
+            "25",
+            "--gpu-trails",
+            "sweep",
+            "--occupancies",
+            "25,100",
+        ])
+        .unwrap();
+        #[cfg(feature = "gpu")]
+        {
+            assert_eq!(_first.trail_owners, vec![32, 128]);
+            assert_eq!(_first.trail_owners, _last.trail_owners);
+            assert_eq!(_first.trail_shape, [128, 16, 4]);
+            assert_eq!(_first.trail_shape, _last.trail_shape);
+            assert_eq!(
+                config(&["--gpu-trails", "rendering"]).unwrap().trail_owners,
+                vec![16, 1024]
+            );
+        }
+        // Percentages must remain distinct after rounding at the chosen capacity.
+        assert!(
+            config(&[
+                "--gpu-trails",
+                "sweep",
+                "--owner-capacity",
+                "1",
+                "--occupancies",
+                "25,100"
+            ])
+            .is_err()
+        );
+    }
 
     fn config(args: &[&str]) -> Result<Config, String> {
         Config::parse(args.iter().map(|arg| (*arg).to_owned()))
@@ -508,13 +628,13 @@ mod cli_tests {
     #[test]
     fn sweep_arguments_are_bounded_and_unambiguous() {
         assert_eq!(
-            parse_occupancies("1,5,50,100").unwrap(),
+            parse_occupancies("1,5,50,100", 1024).unwrap(),
             vec![10, 51, 512, 1024]
         );
-        assert_eq!(parse_occupancies("0.01").unwrap(), vec![1]);
+        assert_eq!(parse_occupancies("0.01", 1024).unwrap(), vec![1]);
         assert_eq!(parse_views("1,2,4,8").unwrap(), vec![1, 2, 4, 8]);
         for value in ["", "0", "-1", "101", "NaN", "inf", "1,1", "1,1.01", "1,"] {
-            assert!(parse_occupancies(value).is_err(), "{value}");
+            assert!(parse_occupancies(value, 1024).is_err(), "{value}");
         }
         for value in ["", "0", "9", "1,1", "1.5", "1,"] {
             assert!(parse_views(value).is_err(), "{value}");

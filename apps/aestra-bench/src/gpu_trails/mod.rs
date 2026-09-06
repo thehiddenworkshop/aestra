@@ -48,6 +48,9 @@ struct Report {
     target_size: Option<[u32; 2]>,
     owner_capacity: u32,
     history_points: u32,
+    /// Rendering only: historical samples per live owner, excluding the live head.
+    retained_history_samples: Option<u32>,
+    history_fill_percent: Option<f64>,
     cases: Vec<CaseReport>,
     comparisons: Vec<Comparison>,
 }
@@ -55,7 +58,7 @@ struct Report {
 impl Report {
     fn new(experiment: &str, config: &Config, adapter: wgpu::AdapterInfo) -> Self {
         Self {
-            schema_version: 2,
+            schema_version: 3,
             timestamp_readback: "separate_command_buffer",
             experiment: experiment.into(),
             commit: config.commit.clone(),
@@ -81,6 +84,8 @@ impl Report {
             target_size: None,
             owner_capacity: crate::TRAIL_OWNER_CAPACITY,
             history_points: 64,
+            retained_history_samples: None,
+            history_fill_percent: None,
             cases: Vec::new(),
             comparisons: Vec::new(),
         }

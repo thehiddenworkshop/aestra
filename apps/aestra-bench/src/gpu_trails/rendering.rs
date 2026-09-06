@@ -5,11 +5,8 @@ use aestra_gpu::{GpuParticle, GpuRenderGlobals, GpuTrailCullParams, shader};
 use glam::{Mat4, UVec4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
-const OWNERS: u32 = crate::TRAIL_OWNER_CAPACITY;
 const QUERY_COUNT: u32 = 4 + 2 * crate::MAX_TRAIL_VIEWS as u32;
 const TIMESTAMP_BYTES: u64 = QUERY_COUNT as u64 * 8;
-const POINTS: u32 = 64;
-const CANDIDATES: u32 = OWNERS * (POINTS - 1);
 const WIDTH: u32 = 1024;
 const HEIGHT: u32 = 512;
 
@@ -247,10 +244,14 @@ struct Scene {
     rendering: [wgpu::BindGroup; 2],
     views: Vec<View>,
     expected: u32,
+    owners: u32,
+    candidates: u32,
 }
 
 impl Scene {
-    fn new(h: &Harness, active: u32, seed: u32, view_count: usize) -> Self {
+    fn new(h: &Harness, active: u32, seed: u32, view_count: usize, shape: [u32; 3]) -> Self {
+        let [owners, points, retained] = shape;
+        let candidates = owners * (points - 1);
         let mut asset = aestra_core::EffectAsset::new("Render benchmark", 3.0);
         asset
             .emitters
@@ -264,9 +265,9 @@ impl Scene {
             .unwrap()
             .renderers[0];
         renderer.renderer_kind = 4;
-        renderer.frame_count = POINTS;
+        renderer.frame_count = points;
         renderer.frame_rate = 1.0;
-        renderer.playback_mode = OWNERS;
+        renderer.playback_mode = owners;
         renderer.flipbook_flags = 0;
         renderer.attribute_flags.z = 0;
         renderer.attribute_flags.y = 0.012f32.to_bits();
@@ -283,7 +284,7 @@ impl Scene {
             }),
             false,
         );
-        let mut records = vec![GpuParticle::default(); (1 + OWNERS * POINTS) as usize];
+        let mut records = vec![GpuParticle::default(); (1 + owners * points) as usize];
         records[0] = GpuParticle {
             packed_emitter_alive: 1,
             rotation: 1.0,
@@ -298,8 +299,8 @@ impl Scene {
         for i in 0..active {
             // Non-contiguous sparse owners exercise prefix offsets. Dense owners overlap in
             // four differently colored layers, making ordering errors visible with alpha blending.
-            let owner = owner_slot(i, active);
-            let base = (1 + owner * POINTS) as usize;
+            let owner = owner_slot(i, active, owners);
+            let base = (1 + owner * points) as usize;
             let tile = i % 256;
             let origin = Vec3::new(
                 (tile % 16) as f32 * 0.11 - 0.88,
@@ -321,20 +322,21 @@ impl Scene {
                 ..Default::default()
             };
             records[base] = point(1.0);
-            words[base * 3 + 1] = POINTS - 1;
-            for p in 1..POINTS as usize {
-                let t = (p - 1) as f32 / (POINTS - 1) as f32;
-                records[base + p] = point(t);
-                words[(base + p) * 3] = t.to_bits();
+            // A zero next-write cursor puts the newest retained samples at the end
+            // of the ring. Earlier slots remain empty, as with partially filled history.
+            words[base * 3 + 1] = retained;
+            for (slot, t) in history_samples(points, retained) {
+                records[base + slot as usize] = point(t);
+                words[(base + slot as usize) * 3] = t.to_bits();
             }
             words[(base + 1) * 3 + 1] = 1.0f32.to_bits();
         }
         let particles = h.buffer(encode(&records), false);
         let aux = h.buffer(encode(&words), false);
-        let params = h.buffer(encode(&UVec4::new(0, CANDIDATES, OWNERS, POINTS - 1)), true);
-        let scratch = h.buffer(encode(&vec![0u32; (CANDIDATES + OWNERS) as usize]), false);
-        let full = h.buffer(encode(&vec![4u32, CANDIDATES, 0, 0]), false);
-        let output = h.buffer(encode(&vec![0u32; (CANDIDATES + 4) as usize]), false);
+        let params = h.buffer(encode(&UVec4::new(0, candidates, owners, points - 1)), true);
+        let scratch = h.buffer(encode(&vec![0u32; (candidates + owners) as usize]), false);
+        let full = h.buffer(encode(&vec![4u32, candidates, 0, 0]), false);
+        let output = h.buffer(encode(&vec![0u32; (candidates + 4) as usize]), false);
         let compact = group(
             &h.device,
             &h.compact_layout,
@@ -397,7 +399,7 @@ impl Scene {
                     encode(&GpuTrailCullParams {
                         clip_from_world: clip,
                         renderer_index: 0,
-                        instance_count: CANDIDATES,
+                        instance_count: candidates,
                         epoch: 1,
                         _padding: 0,
                     }),
@@ -451,7 +453,9 @@ impl Scene {
             compact,
             rendering,
             views,
-            expected: active * (POINTS - 1),
+            expected: active * retained,
+            owners,
+            candidates,
         }
     }
 
@@ -474,9 +478,9 @@ impl Scene {
                 pass.set_bind_group(0, &self.compact, &[]);
                 pass.dispatch_workgroups(
                     match stage {
-                        0 => OWNERS.div_ceil(64),
+                        0 => self.owners.div_ceil(64),
                         1 => 1,
-                        _ => CANDIDATES.div_ceil(64),
+                        _ => self.candidates.div_ceil(64),
                     },
                     1,
                     1,
@@ -555,7 +559,7 @@ impl Scene {
                     if path == Path::Compact {
                         self.expected
                     } else {
-                        CANDIDATES
+                        self.candidates
                     },
                     0,
                     0
@@ -634,6 +638,11 @@ pub(super) fn run(config: &Config) -> Report {
     };
     let mut report = Report::new(experiment, config, h.adapter.clone());
     report.target_size = Some([WIDTH, HEIGHT]);
+    let [owners, points, retained] = config.trail_shape;
+    report.owner_capacity = owners;
+    report.history_points = points;
+    report.retained_history_samples = Some(retained);
+    report.history_fill_percent = Some(f64::from(retained) * 100.0 / f64::from(points - 1));
     println!(
         "render_ab,width={WIDTH},height={HEIGHT},warmup={},samples={},alpha_blending=true",
         config.warmup, config.frames
@@ -648,6 +657,7 @@ pub(super) fn run(config: &Config) -> Report {
             active,
             config.seed as u32,
             *config.trail_views.iter().max().unwrap(),
+            config.trail_shape,
         );
         for &views in &config.trail_views {
             let mut samples: [Vec<[u64; 4]>; 2] = Default::default();
@@ -681,7 +691,7 @@ pub(super) fn run(config: &Config) -> Report {
                     .iter()
                     .filter(|p| p[3] > 0 && p[..3].iter().any(|v| *v > 0))
                     .count();
-                assert!(visible > 100, "comparison must not accept blank rendering");
+                assert!(visible > 0, "comparison must not accept blank rendering");
             }
             for path in [Path::Full, Path::Compact] {
                 let timing =
@@ -691,12 +701,13 @@ pub(super) fn run(config: &Config) -> Report {
                 let culling = timing(2);
                 let drawing = timing(3);
                 let submitted = if path == Path::Full {
-                    CANDIDATES
+                    scene.candidates
                 } else {
                     scene.expected
                 };
                 println!(
-                    "{case},{views},{path:?},{CANDIDATES},{},{},{},{},{},{}",
+                    "{case},{views},{path:?},{},{},{},{},{},{},{}",
+                    scene.candidates,
                     submitted,
                     total.median_ns,
                     total.p95_ns,
@@ -707,10 +718,10 @@ pub(super) fn run(config: &Config) -> Report {
                 report.cases.push(CaseReport {
                     case: case.clone(),
                     active_owners: active,
-                    occupancy_percent: f64::from(active) * 100.0 / f64::from(OWNERS),
+                    occupancy_percent: f64::from(active) * 100.0 / f64::from(owners),
                     views,
                     path: format!("{path:?}").to_lowercase(),
-                    candidates_per_view: CANDIDATES,
+                    candidates_per_view: scene.candidates,
                     submitted_per_view: submitted,
                     total: Some(total),
                     compaction,
@@ -719,7 +730,7 @@ pub(super) fn run(config: &Config) -> Report {
                     image_equivalence: Some(true),
                 });
             }
-            let comparison = Comparison::new(active, OWNERS, views, &samples[0], &samples[1]);
+            let comparison = Comparison::new(active, owners, views, &samples[0], &samples[1]);
             println!(
                 "comparison,{active},{views},median_saving_percent={:?},p95_saving_percent={:?},paired_median_saving_ns={}",
                 comparison.median_saving_percent,
@@ -733,8 +744,13 @@ pub(super) fn run(config: &Config) -> Report {
     report
 }
 
-fn owner_slot(index: u32, active: u32) -> u32 {
-    index * OWNERS / active
+fn owner_slot(index: u32, active: u32, capacity: u32) -> u32 {
+    index * capacity / active
+}
+
+fn history_samples(points: u32, retained: u32) -> impl Iterator<Item = (u32, f32)> {
+    let capacity = points - 1;
+    (capacity - retained..capacity).map(move |index| (index + 1, index as f32 / capacity as f32))
 }
 
 #[cfg(test)]
@@ -742,12 +758,36 @@ mod tests {
     use super::*;
     #[test]
     fn arbitrary_occupancies_spread_unique_owners_across_the_pool() {
-        for active in 1..=OWNERS {
-            let slots: Vec<_> = (0..active).map(|i| owner_slot(i, active)).collect();
-            assert!(slots.iter().all(|slot| *slot < OWNERS));
+        for active in 1..=crate::TRAIL_OWNER_CAPACITY {
+            let slots: Vec<_> = (0..active)
+                .map(|i| owner_slot(i, active, crate::TRAIL_OWNER_CAPACITY))
+                .collect();
+            assert!(slots.iter().all(|slot| *slot < crate::TRAIL_OWNER_CAPACITY));
             assert!(slots.windows(2).all(|pair| pair[0] < pair[1]));
         }
-        assert_eq!(owner_slot(50, 51), 1003);
+        assert_eq!(owner_slot(50, 51, 1024), 1003);
+        assert_eq!(owner_slot(2, 3, 128), 85);
+    }
+
+    #[test]
+    fn partial_history_matches_ring_lookup_and_preserves_sample_spacing() {
+        for points in 2..=64 {
+            let capacity = points - 1;
+            for retained in 1..=capacity {
+                let samples: Vec<_> = history_samples(points, retained).collect();
+                assert_eq!(samples.len(), retained as usize);
+                for (index, &(slot, t)) in samples.iter().enumerate() {
+                    // Mirror trail_slot with next-write cursor zero and a separate live head.
+                    assert_eq!(slot, 1 + (capacity - retained + index as u32) % capacity);
+                    assert!((0.0..1.0).contains(&t));
+                }
+                assert_eq!(samples.last().unwrap().0, capacity);
+                assert_eq!(
+                    samples.last().unwrap().1,
+                    (capacity - 1) as f32 / capacity as f32
+                );
+            }
+        }
     }
     #[test]
     fn eight_views_fit_the_timestamp_and_indirect_readback_regions() {

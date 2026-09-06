@@ -709,6 +709,17 @@ the current sprite-material path until the native-GPU compatibility gate approve
   Follow-up: vary capacity/history fill and adapter coverage, refine marginal brackets,
   then evaluate a conservative bypass with total-time and tail safeguards. No runtime
   policy is part of the completed measurement slice.
+  The P2 capacity/history-fill measurement slice is also complete. Rendering/sweep CLI
+  controls cover 1–1,024 owner slots, 2–64 points and rounded nonzero history fill;
+  schema-v3 reports distinguish owner occupancy from retained historical samples.
+  Production ring indexing and all-view draw/image checks cover partial histories.
+  Three runs of 128/1,024-owner × 16/64-point × quarter/full-history fixtures on both
+  backends pass 432 A/B comparisons (864 path results). Fully occupied owners can
+  favor compaction when histories are partial; capacity/backend-dependent sign changes
+  and variable tails remain. Evidence is archived under
+  `benchmarks/gpu-baselines/trails-history-fill-2026-09-06/`. Runtime behavior is unchanged.
+  Cross-hardware validation is still pending; mixed history fill/expiry and visibility
+  around measured crossover cases should follow before adopting a bypass policy.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

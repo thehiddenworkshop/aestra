@@ -457,6 +457,21 @@ views favor full-range drawing throughout the sampled matrix. Variable tails and
 fixed capacity/history/pixel workload prevent promoting these brackets to a runtime
 policy. Cross-adapter and capacity/history-fill measurements remain the next gate.
 
+### Capacity and partial histories
+
+Rendering/sweep modes now accept `--owner-capacity`, `--history-points` (including
+the head) and `--history-fill` (historical sample occupancy, rounded to at least one).
+The bounds match runtime limits: 1–1,024 owners and 2–64 points. Reports record actual
+dimensions and retained sample counts; partial histories use production ring indexing.
+
+The [48 repeated shape/backend reports](../benchmarks/gpu-baselines/trails-history-fill-2026-09-06/README.md)
+pass all 432 image comparisons and show that fully occupied owners can benefit from
+compaction with partial histories while losing with full histories. Smaller allocation
+and point capacities change the tradeoff; even a small one-view DX12 win appears.
+Large-capacity Vulkan has marginal/sign-changing cases and p95 remains variable.
+This refines the earlier fixed-shape observations, not a runtime policy. Another
+physical GPU plus mixed-fill/expiry/visibility coverage remains necessary.
+
 ## Scope
 
 This is explicit supplied motion, not a recorder of arbitrary live entity motion.
