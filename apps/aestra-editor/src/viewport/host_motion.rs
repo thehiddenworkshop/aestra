@@ -101,14 +101,15 @@ pub(super) fn pick_pose(
         return;
     };
     let selected = timeline_motion::selected_pose(&session, &timeline).map(|(index, _)| index);
+    let keys = track.keys();
     state.hovered = hit_pose(
-        displayed_keys(track.keys.len(), selected)
+        displayed_keys(keys.len(), selected)
             .into_iter()
             .filter_map(|index| {
                 camera
                     .world_to_viewport(
                         transform,
-                        Vec3::from_array(track.keys[index].transform.translation),
+                        Vec3::from_array(keys[index].transform.translation),
                     )
                     .ok()
                     .filter(|point| rect.contains(*point))
@@ -144,14 +145,23 @@ pub(super) fn draw_path(
         return;
     };
     let selected = timeline_motion::selected_pose(&session, &timeline).map(|(index, _)| index);
-    let indices = displayed_keys(track.keys.len(), selected);
-    let position = |index: usize| Vec3::from_array(track.keys[index].transform.translation);
+    let keys = track.keys();
+    let indices = displayed_keys(keys.len(), selected);
+    let position = |index: usize| Vec3::from_array(keys[index].transform.translation);
     for pair in indices.windows(2) {
-        gizmos.line(
-            position(pair[0]),
-            position(pair[1]),
-            Color::srgb(0.58, 0.42, 1.0),
-        );
+        let (start, end) = (keys[pair[0]].time, keys[pair[1]].time);
+        let mut previous = position(pair[0]);
+        for sample in 1..=4 {
+            // Do not draw a false bridge over a Step discontinuity at a key.
+            let time = if sample == 4 {
+                end.next_down().max(start)
+            } else {
+                start + (end - start) * sample as f32 / 4.0
+            };
+            let point = Vec3::from_array(track.curves.sample_at(time).translation);
+            gizmos.line(previous, point, Color::srgb(0.58, 0.42, 1.0));
+            previous = point;
+        }
     }
     for index in indices {
         let center = position(index);
@@ -186,16 +196,16 @@ mod tests {
 
     fn pose_app(mode: TransformGizmoMode) -> (App, Entity) {
         let mut effect = crate::test_support::effect_with_timing_slack();
-        effect.host_transform_track = Some(HostTransformTrack {
-            keys: [0.0, 1.0, 2.0]
+        effect.host_transform_track = Some(HostTransformTrack::from_pose_keys(
+            [0.0, 1.0, 2.0]
                 .into_iter()
                 .map(|time| aestra_core::HostTransformKey {
                     time,
                     transform: EmitterTransform::default(),
                 })
                 .collect(),
-            repeat: true,
-        });
+            true,
+        ));
         let mut session = EditorSession::from_test_effect(effect);
         let mut timeline = TimelineState::default();
         timeline_motion::select_pose(&mut session, &mut timeline, 0);
@@ -244,19 +254,19 @@ mod tests {
             let expected = emitter_transform_from_bevy(&transform);
             let session = app.world().resource::<EditorSession>();
             assert_eq!(
-                session.effect.host_transform_track.as_ref().unwrap().keys[0].transform,
+                session.effect.host_transform_track.as_ref().unwrap().keys()[0].transform,
                 EmitterTransform::default()
             );
             assert!(!session.can_undo());
             let preview = displayed_track(session).unwrap();
-            assert_eq!(preview.keys[0].transform, expected);
-            assert_eq!(preview.keys[2].transform, expected);
+            assert_eq!(preview.keys()[0].transform, expected);
+            assert_eq!(preview.keys()[2].transform, expected);
 
             app.world_mut().resource_mut::<TransformGizmoState>().active = false;
             app.update();
             let mut session = app.world_mut().resource_mut::<EditorSession>();
             assert_eq!(
-                session.effect.host_transform_track.as_ref().unwrap().keys[0].transform,
+                session.effect.host_transform_track.as_ref().unwrap().keys()[0].transform,
                 expected
             );
             assert_eq!(
@@ -266,12 +276,12 @@ mod tests {
             session.undo();
             assert!(!session.can_undo(), "a whole drag is one undo step");
             assert_eq!(
-                session.effect.host_transform_track.as_ref().unwrap().keys[0].transform,
+                session.effect.host_transform_track.as_ref().unwrap().keys()[0].transform,
                 EmitterTransform::default()
             );
             session.redo();
             assert_eq!(
-                session.effect.host_transform_track.as_ref().unwrap().keys[2].transform,
+                session.effect.host_transform_track.as_ref().unwrap().keys()[2].transform,
                 expected
             );
         }
@@ -300,7 +310,7 @@ mod tests {
         let session = app.world().resource::<EditorSession>();
         assert!(!session.can_undo());
         assert_eq!(
-            displayed_track(session).unwrap().keys[0].transform,
+            displayed_track(session).unwrap().keys()[0].transform,
             EmitterTransform::default()
         );
         assert_eq!(
@@ -331,7 +341,7 @@ mod tests {
         assert!(
             displayed_track(session)
                 .unwrap()
-                .keys
+                .keys()
                 .iter()
                 .all(|key| key.transform == EmitterTransform::default())
         );

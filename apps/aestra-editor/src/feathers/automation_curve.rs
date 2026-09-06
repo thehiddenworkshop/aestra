@@ -43,6 +43,7 @@ pub(crate) enum AutomationCurveData {
     Curve {
         points: Vec<AutomationCurvePoint>,
         value_bounds: Option<(f32, f32)>,
+        interpolation: aestra_core::CurveInterpolation,
     },
     Gradient(Vec<AutomationGradientPoint>),
 }
@@ -53,6 +54,7 @@ impl AutomationCurveData {
             Self::Curve {
                 points,
                 value_bounds,
+                ..
             } => {
                 let bounds = resolved_curve_bounds(points, *value_bounds);
                 points
@@ -68,6 +70,7 @@ impl AutomationCurveData {
             Self::Curve {
                 points,
                 value_bounds,
+                ..
             } => Some(curve_top_percent(
                 value,
                 resolved_curve_bounds(points, *value_bounds),
@@ -80,6 +83,7 @@ impl AutomationCurveData {
         let Self::Curve {
             points,
             value_bounds,
+            ..
         } = self
         else {
             return None;
@@ -95,8 +99,10 @@ impl AutomationCurveData {
             Self::Curve {
                 points,
                 value_bounds,
+                interpolation,
             } => {
                 0_u8.hash(&mut hasher);
+                interpolation.hash(&mut hasher);
                 value_bounds
                     .map(|bounds| (bounds.0.to_bits(), bounds.1.to_bits()))
                     .hash(&mut hasher);
@@ -175,7 +181,11 @@ fn curve_top_percent(value: f32, bounds: (f32, f32)) -> f32 {
     8.0 + (1.0 - normalized) * 84.0
 }
 
-fn sample_curve(keys: &[AutomationCurvePoint], time: f32) -> f32 {
+fn sample_curve(
+    keys: &[AutomationCurvePoint],
+    time: f32,
+    interpolation: aestra_core::CurveInterpolation,
+) -> f32 {
     let Some(first) = keys.first() else {
         return 0.0;
     };
@@ -187,8 +197,7 @@ fn sample_curve(keys: &[AutomationCurvePoint], time: f32) -> f32 {
         if time <= right.time {
             let span = (right.time - left.time).max(f32::EPSILON);
             let x = ((time - left.time) / span).clamp(0.0, 1.0);
-            let smooth = x * x * (3.0 - 2.0 * x);
-            return left.value + (right.value - left.value) * smooth;
+            return left.value + (right.value - left.value) * interpolation.weight(x);
         }
     }
     keys.last().map_or(0.0, |key| key.value)
@@ -275,7 +284,8 @@ fn render_image(data: &AutomationCurveData) -> Image {
         AutomationCurveData::Curve {
             points,
             value_bounds,
-        } => render_curve(&mut pixmap, points, *value_bounds),
+            interpolation,
+        } => render_curve(&mut pixmap, points, *value_bounds, *interpolation),
         AutomationCurveData::Gradient(keys) => render_gradient(&mut pixmap, keys),
     }
     let mut rgba = Vec::with_capacity((RASTER_WIDTH * RASTER_HEIGHT * 4) as usize);
@@ -309,6 +319,7 @@ fn render_curve(
     pixmap: &mut Pixmap,
     keys: &[AutomationCurvePoint],
     value_bounds: Option<(f32, f32)>,
+    interpolation: aestra_core::CurveInterpolation,
 ) {
     let width = RASTER_WIDTH as f32;
     let height = RASTER_HEIGHT as f32;
@@ -334,7 +345,7 @@ fn render_curve(
     for sample in 0..SAMPLE_COUNT {
         let time = sample as f32 / (SAMPLE_COUNT - 1) as f32;
         let x = time * (width - 1.0);
-        let y = curve_top_percent(sample_curve(keys, time), bounds) / 100.0 * height;
+        let y = curve_top_percent(sample_curve(keys, time, interpolation), bounds) / 100.0 * height;
         if sample == 0 {
             line.move_to(x, y);
         } else {
@@ -407,8 +418,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn interpolation_changes_the_plot_and_its_raster_cache_identity() {
+        let points = vec![
+            AutomationCurvePoint {
+                time: 0.0,
+                value: 0.0,
+            },
+            AutomationCurvePoint {
+                time: 1.0,
+                value: 1.0,
+            },
+        ];
+        let mut hashes = Vec::new();
+        for (mode, expected) in [
+            (aestra_core::CurveInterpolation::Step, 0.0),
+            (aestra_core::CurveInterpolation::Linear, 0.25),
+            (aestra_core::CurveInterpolation::Smooth, 0.15625),
+        ] {
+            assert_eq!(sample_curve(&points, 0.25, mode), expected);
+            assert_eq!(sample_curve(&points, 1.0, mode), 1.0);
+            hashes.push(
+                AutomationCurveData::Curve {
+                    points: points.clone(),
+                    value_bounds: None,
+                    interpolation: mode,
+                }
+                .cache_key(),
+            );
+        }
+        hashes.sort();
+        hashes.dedup();
+        assert_eq!(hashes.len(), 3);
+    }
+
+    #[test]
     fn curve_keys_map_high_values_above_low_values_with_padding() {
         let data = AutomationCurveData::Curve {
+            interpolation: Default::default(),
             points: vec![
                 AutomationCurvePoint {
                     time: 0.0,
@@ -430,6 +476,7 @@ mod tests {
     #[test]
     fn value_projection_round_trips_through_the_curve_area() {
         let data = AutomationCurveData::Curve {
+            interpolation: Default::default(),
             points: vec![
                 AutomationCurvePoint {
                     time: 0.0,
@@ -449,6 +496,7 @@ mod tests {
     #[test]
     fn explicit_value_bounds_keep_normalized_curves_on_a_fixed_ordinate() {
         let data = AutomationCurveData::Curve {
+            interpolation: Default::default(),
             points: vec![
                 AutomationCurvePoint {
                     time: 0.0,
@@ -480,6 +528,7 @@ mod tests {
             },
         ];
         let data = AutomationCurveData::Curve {
+            interpolation: Default::default(),
             points: keys,
             value_bounds: None,
         };
@@ -497,6 +546,7 @@ mod tests {
         let entity = app
             .world_mut()
             .spawn(AutomationCurveRaster(AutomationCurveData::Curve {
+                interpolation: Default::default(),
                 points: vec![
                     AutomationCurvePoint {
                         time: 0.0,
@@ -517,6 +567,7 @@ mod tests {
             .get_mut::<AutomationCurveRaster>(entity)
             .unwrap()
             .set_data(AutomationCurveData::Curve {
+                interpolation: Default::default(),
                 points: vec![
                     AutomationCurvePoint {
                         time: 0.0,

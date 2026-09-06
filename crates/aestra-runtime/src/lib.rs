@@ -106,6 +106,7 @@ pub struct CurveSegment {
 /// Curve data stripped of authoring IDs and lowered into interpolation segments.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledCurve {
+    interpolation: aestra_core::CurveInterpolation,
     first: Option<(f32, f32)>,
     last_value: f32,
     segments: Vec<CurveSegment>,
@@ -114,6 +115,7 @@ pub struct CompiledCurve {
 impl CompiledCurve {
     pub fn compile(curve: &Curve) -> Self {
         Self {
+            interpolation: curve.interpolation,
             first: curve
                 .keys
                 .first()
@@ -136,20 +138,37 @@ impl CompiledCurve {
     }
 
     pub fn sample(&self, time: f32) -> f32 {
+        self.sample_at(self.interpolation.normalized_sample_time(time))
+    }
+
+    pub fn interpolation(&self) -> aestra_core::CurveInterpolation {
+        self.interpolation
+    }
+
+    /// Sample in authored time units (including effect-transform seconds).
+    pub fn sample_at(&self, time: f32) -> f32 {
         let Some((first_time, first_value)) = self.first else {
             return 0.0;
         };
-        let time = time.clamp(0.0, 1.0);
         if time <= first_time {
             return first_value;
         }
-        for segment in &self.segments {
-            if time <= segment.end_time {
-                let span = (segment.end_time - segment.start_time).max(f32::EPSILON);
-                let x = ((time - segment.start_time) / span).clamp(0.0, 1.0);
-                let smooth = x * x * (3.0 - 2.0 * x);
-                return segment.start_value + (segment.end_value - segment.start_value) * smooth;
+        if let Some(segment) = self.segments.get(
+            self.segments
+                .partition_point(|segment| segment.end_time < time),
+        ) {
+            if self.interpolation == aestra_core::CurveInterpolation::Step {
+                return if time < segment.end_time {
+                    segment.start_value
+                } else {
+                    segment.end_value
+                };
             }
+            let span = segment.end_time - segment.start_time;
+            let span = if span > 0.0 { span } else { f32::EPSILON };
+            let x = ((time - segment.start_time) / span).clamp(0.0, 1.0);
+            return segment.start_value
+                + (segment.end_value - segment.start_value) * self.interpolation.weight(x);
         }
         self.last_value
     }
@@ -168,10 +187,12 @@ impl CompiledCurve {
             if time <= segment.start_time {
                 break;
             }
-            let span = (segment.end_time - segment.start_time).max(f32::EPSILON);
+            let span = segment.end_time - segment.start_time;
+            let span = if span > 0.0 { span } else { f32::EPSILON };
             let x = ((time.min(segment.end_time) - segment.start_time) / span).clamp(0.0, 1.0);
             let delta = segment.end_value - segment.start_value;
-            area += span * (segment.start_value * x + delta * (x * x * x - 0.5 * x.powi(4)));
+            area +=
+                span * (segment.start_value * x + delta * self.interpolation.integrated_weight(x));
             if time <= segment.end_time {
                 return area;
             }

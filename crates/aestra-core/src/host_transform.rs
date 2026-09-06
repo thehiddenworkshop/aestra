@@ -1,70 +1,182 @@
-//! Portable, explicitly supplied host motion. This is not an implicit live-motion recorder.
-use crate::EmitterTransform;
+//! Effect-transform target and playback policy for shared animation curves.
+use crate::{EmitterTransform, TransformCurve};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Legacy source/pose-editing view, not stored alongside the canonical curves.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HostTransformKey {
     pub time: f32,
     pub transform: EmitterTransform,
 }
 
-/// Motion relative to a stable host placement, sampled in effect simulation seconds.
-/// Outside the key range, hold the endpoint unless `repeat` is set.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct HostTransformTrack {
-    pub keys: Vec<HostTransformKey>,
-    #[serde(default)]
+    pub curves: TransformCurve,
     pub repeat: bool,
+}
+
+impl<'de> Deserialize<'de> for HostTransformTrack {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize, Default)]
+        #[serde(default, deny_unknown_fields)]
+        struct Source {
+            keys: Vec<HostTransformKey>,
+            curves: TransformCurve,
+            repeat: bool,
+        }
+        let source = Source::deserialize(deserializer)?;
+        if !source.keys.is_empty() {
+            if !source.curves.key_times().is_empty() {
+                return Err(serde::de::Error::custom(
+                    "motion cannot contain both pose keys and curves",
+                ));
+            }
+            Ok(Self::from_pose_keys(source.keys, source.repeat))
+        } else {
+            Ok(Self {
+                curves: source.curves,
+                repeat: source.repeat,
+            })
+        }
+    }
 }
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum HostTransformError {
-    #[error("host transform track needs 1–65536 keys starting at time zero")]
+    #[error("transform channels need 1–65536 keys starting at time zero")]
     Keys,
     #[error(
-        "host transform key {0} must have increasing finite time and a finite transform with positive scale and normalized rotation"
+        "transform key {0} must have increasing finite time, finite values, positive scale and normalized rotation"
     )]
     Key(usize),
     #[error(
-        "repeating host transform track needs a positive period and matching endpoint transforms"
+        "repeating transform animation needs a positive period and matching endpoint transforms"
     )]
     Repeat,
 }
 
 impl HostTransformTrack {
-    pub fn validate(&self) -> Result<(), HostTransformError> {
-        if self.keys.is_empty() || self.keys.len() > 65536 || self.keys[0].time != 0.0 {
-            return Err(HostTransformError::Keys);
+    pub fn from_pose_keys(keys: Vec<HostTransformKey>, repeat: bool) -> Self {
+        // Preserve order/duplicates: malformed legacy tracks must fail validation.
+        let mut curves = TransformCurve::default();
+        for key in keys {
+            for axis in 0..3 {
+                curves.translation[axis].keys.push(crate::CurveKey::new(
+                    key.time,
+                    key.transform.translation[axis],
+                ));
+                curves.scale[axis]
+                    .keys
+                    .push(crate::CurveKey::new(key.time, key.transform.scale[axis]));
+            }
+            curves.rotation.keys.push(crate::QuaternionKey {
+                time: key.time,
+                value: key.transform.rotation,
+            });
         }
-        for (index, key) in self.keys.iter().enumerate() {
-            if !key.time.is_finite()
-                || !key.transform.is_valid()
-                || (index > 0 && key.time <= self.keys[index - 1].time)
+        Self { curves, repeat }
+    }
+    pub fn keys(&self) -> Vec<HostTransformKey> {
+        self.curves
+            .key_times()
+            .into_iter()
+            .map(|time| HostTransformKey {
+                time,
+                transform: self.curves.sample_at(time),
+            })
+            .collect()
+    }
+    pub fn end_time(&self) -> f32 {
+        self.curves.end_time()
+    }
+    pub fn sample_time(&self, time: f32) -> f32 {
+        let time = if time.is_finite() { time.max(0.0) } else { 0.0 };
+        if self.repeat && self.end_time() > 0.0 {
+            time.rem_euclid(self.end_time())
+        } else {
+            time.min(self.end_time())
+        }
+    }
+    pub fn set_pose(&mut self, time: f32, pose: EmitterTransform) {
+        let end = self.end_time();
+        self.curves.set_pose(time, pose, false);
+        if self.repeat && (time == 0.0 || time == end) {
+            self.curves
+                .set_pose(if time == 0.0 { end } else { 0.0 }, pose, false);
+        }
+    }
+    pub fn validate(&self) -> Result<(), HostTransformError> {
+        fn times(values: &[f32]) -> Result<(), HostTransformError> {
+            if values.is_empty() || values.len() > 65536 || values[0] != 0.0 {
+                return Err(HostTransformError::Keys);
+            }
+            for (index, time) in values.iter().enumerate() {
+                if !time.is_finite() || (index > 0 && *time <= values[index - 1]) {
+                    return Err(HostTransformError::Key(index));
+                }
+            }
+            Ok(())
+        }
+        for (channel, curve) in self
+            .curves
+            .translation
+            .iter()
+            .chain(&self.curves.scale)
+            .enumerate()
+        {
+            times(&curve.keys.iter().map(|key| key.time).collect::<Vec<_>>())?;
+            if let Some(range) = curve.output_range
+                && (!range.min.is_finite() || !range.max.is_finite() || range.min > range.max)
+            {
+                return Err(HostTransformError::Key(0));
+            }
+            for (index, key) in curve.keys.iter().enumerate() {
+                let value = curve.output_value(key.value);
+                if !key.value.is_finite() || !value.is_finite() || (channel >= 3 && value <= 0.0) {
+                    return Err(HostTransformError::Key(index));
+                }
+            }
+        }
+        times(
+            &self
+                .curves
+                .rotation
+                .keys
+                .iter()
+                .map(|key| key.time)
+                .collect::<Vec<_>>(),
+        )?;
+        for (index, key) in self.curves.rotation.keys.iter().enumerate() {
+            if !(EmitterTransform {
+                rotation: key.value,
+                ..Default::default()
+            })
+            .is_valid()
             {
                 return Err(HostTransformError::Key(index));
             }
         }
         if self.repeat {
-            let first = self.keys[0].transform;
-            let last = self.keys.last().unwrap();
-            let rotation_dot: f32 = first
+            let first = self.curves.sample_at(0.0);
+            let last = self.curves.sample_at(self.end_time());
+            let dot: f32 = first
                 .rotation
                 .iter()
-                .zip(last.transform.rotation)
+                .zip(last.rotation)
                 .map(|(a, b)| a * b)
                 .sum();
-            if last.time <= 0.0
-                || (rotation_dot.abs() - 1.0).abs() > 1e-4
+            if self.end_time() <= 0.0
+                || (dot.abs() - 1.0).abs() > 1e-4
                 || first
                     .translation
                     .iter()
-                    .zip(last.transform.translation)
+                    .zip(last.translation)
                     .any(|(a, b)| (a - b).abs() > 1e-4)
                 || first
                     .scale
                     .iter()
-                    .zip(last.transform.scale)
+                    .zip(last.scale)
                     .any(|(a, b)| (a - b).abs() > 1e-4)
             {
                 return Err(HostTransformError::Repeat);
@@ -87,10 +199,7 @@ mod tests {
 
     #[test]
     fn validates_order_transforms_and_continuous_repeat_seam() {
-        let valid = HostTransformTrack {
-            keys: vec![key(0.0), key(1.0)],
-            repeat: true,
-        };
+        let valid = HostTransformTrack::from_pose_keys(vec![key(0.0), key(1.0)], true);
         assert!(valid.validate().is_ok());
         for keys in [
             vec![],
@@ -99,21 +208,15 @@ mod tests {
             vec![key(0.0), key(f32::NAN)],
         ] {
             assert!(
-                HostTransformTrack {
-                    keys,
-                    repeat: false
-                }
-                .validate()
-                .is_err()
+                HostTransformTrack::from_pose_keys(keys, false)
+                    .validate()
+                    .is_err()
             );
         }
         assert!(
-            HostTransformTrack {
-                keys: vec![key(0.0)],
-                repeat: true
-            }
-            .validate()
-            .is_err()
+            HostTransformTrack::from_pose_keys(vec![key(0.0)], true)
+                .validate()
+                .is_err()
         );
         for transform in [
             EmitterTransform {
@@ -130,22 +233,22 @@ mod tests {
             },
         ] {
             assert!(
-                HostTransformTrack {
-                    keys: vec![HostTransformKey {
+                HostTransformTrack::from_pose_keys(
+                    vec![HostTransformKey {
                         time: 0.0,
                         transform
                     }],
-                    repeat: false
-                }
+                    false
+                )
                 .validate()
                 .is_err()
             );
         }
         let mut seam = valid.clone();
-        seam.keys[1].transform.translation[0] = 1.0;
+        seam.curves.translation[0].keys[1].value = 1.0;
         assert_eq!(seam.validate(), Err(HostTransformError::Repeat));
         seam = valid;
-        seam.keys[1].transform.rotation[3] = -1.0;
+        seam.curves.rotation.keys[1].value[3] = -1.0;
         assert!(
             seam.validate().is_ok(),
             "quaternion sign does not change the pose"

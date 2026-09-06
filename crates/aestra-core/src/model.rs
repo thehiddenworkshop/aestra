@@ -1053,7 +1053,7 @@ impl EmitterTransform {
         *self == Self::default()
     }
 
-    pub(crate) fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         let rotation_length_squared = self.rotation.iter().map(|value| value * value).sum::<f32>();
         self.translation
             .iter()
@@ -2795,10 +2795,63 @@ impl Vec3Curve {
     }
 }
 
+/// Interpolation between keys. Step holds the left value until the next key.
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum CurveInterpolation {
+    #[default]
+    Smooth = 0,
+    Linear = 1,
+    Step = 2,
+}
+
+impl CurveInterpolation {
+    pub fn is_default(&self) -> bool {
+        *self == Self::Smooth
+    }
+
+    /// Normalized Step boundaries include one f32 epsilon on the preceding side.
+    /// Division by lifetime can otherwise put CPU/GPU samples on opposite sides
+    /// of a discontinuity. Authored-seconds sampling retains exact key times.
+    pub fn normalized_sample_time(self, time: f32) -> f32 {
+        let time = time.clamp(0.0, 1.0);
+        if self == Self::Step {
+            (time + f32::EPSILON).min(1.0)
+        } else {
+            time
+        }
+    }
+
+    pub fn weight(self, x: f32) -> f32 {
+        let x = x.clamp(0.0, 1.0);
+        match self {
+            Self::Smooth => x * x * (3.0 - 2.0 * x),
+            Self::Linear => x,
+            Self::Step => {
+                if x >= 1.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+
+    pub fn integrated_weight(self, x: f32) -> f32 {
+        match self {
+            Self::Smooth => x * x * x - 0.5 * x.powi(4),
+            Self::Linear => 0.5 * x * x,
+            Self::Step => 0.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Curve {
     pub id: CurveId,
     pub keys: Vec<CurveKey>,
+    #[serde(default, skip_serializing_if = "CurveInterpolation::is_default")]
+    pub interpolation: CurveInterpolation,
     /// Maps normalized key values into authored output units. Missing on legacy curves whose keys
     /// already contain output values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2810,6 +2863,7 @@ impl Curve {
         Self {
             id: CurveId::new(),
             keys,
+            interpolation: CurveInterpolation::default(),
             output_range: None,
         }
     }
@@ -2820,6 +2874,7 @@ impl Curve {
         Self {
             id: CurveId::new(),
             keys,
+            interpolation: CurveInterpolation::default(),
             output_range: Some(output_range),
         }
     }
@@ -2866,25 +2921,31 @@ impl Curve {
     }
 
     pub fn sample(&self, time: f32) -> f32 {
+        self.sample_at(self.interpolation.normalized_sample_time(time))
+    }
+
+    /// Sample in authored key-time units, holding endpoints. Transform animation
+    /// uses seconds; particle/property callers retain normalized `sample`.
+    pub fn sample_at(&self, time: f32) -> f32 {
         let Some(first) = self.keys.first() else {
             return 0.0;
         };
-        let time = time.clamp(0.0, 1.0);
         let value = if time <= first.time {
             first.value
         } else {
-            let mut sampled = None;
-            for pair in self.keys.windows(2) {
-                let (a, b) = (&pair[0], &pair[1]);
-                if time <= b.time {
-                    let span = (b.time - a.time).max(f32::EPSILON);
-                    let x = ((time - a.time) / span).clamp(0.0, 1.0);
-                    let smooth = x * x * (3.0 - 2.0 * x);
-                    sampled = Some(a.value + (b.value - a.value) * smooth);
-                    break;
+            let index = self.keys.partition_point(|key| key.time < time);
+            if let Some(b) = self.keys.get(index) {
+                let a = &self.keys[index.saturating_sub(1)];
+                if self.interpolation == CurveInterpolation::Step {
+                    return self.output_value(if time < b.time { a.value } else { b.value });
                 }
+                let span = b.time - a.time;
+                let x = ((time - a.time) / if span > 0.0 { span } else { f32::EPSILON })
+                    .clamp(0.0, 1.0);
+                a.value + (b.value - a.value) * self.interpolation.weight(x)
+            } else {
+                self.keys.last().unwrap().value
             }
-            sampled.unwrap_or_else(|| self.keys.last().map_or(0.0, |key| key.value))
         };
         self.output_value(value)
     }

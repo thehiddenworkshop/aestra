@@ -49,35 +49,36 @@ pub(super) struct EmitterAutomationVisibilityMenuAnchor;
 
 #[derive(Clone)]
 pub(super) enum AutomationLaneKeys {
-    Curve(Vec<CurveKey>),
+    Curve(Vec<CurveKey>, aestra_core::CurveInterpolation),
     Gradient(Vec<ColorKey>),
 }
 
 impl AutomationLaneKeys {
     pub(super) fn times(&self) -> impl Iterator<Item = f32> + '_ {
         match self {
-            Self::Curve(keys) => EitherAutomationTimes::Curve(keys.iter()),
+            Self::Curve(keys, _) => EitherAutomationTimes::Curve(keys.iter()),
             Self::Gradient(keys) => EitherAutomationTimes::Gradient(keys.iter()),
         }
     }
 
     pub(super) fn len(&self) -> usize {
         match self {
-            Self::Curve(keys) => keys.len(),
+            Self::Curve(keys, _) => keys.len(),
             Self::Gradient(keys) => keys.len(),
         }
     }
 
     fn curve_value(&self, key: usize) -> Option<f32> {
         match self {
-            Self::Curve(keys) => keys.get(key).map(|key| key.value),
+            Self::Curve(keys, _) => keys.get(key).map(|key| key.value),
             Self::Gradient(_) => None,
         }
     }
 
     pub(super) fn graph_data(&self) -> AutomationCurveData {
         match self {
-            Self::Curve(keys) => AutomationCurveData::Curve {
+            Self::Curve(keys, interpolation) => AutomationCurveData::Curve {
+                interpolation: *interpolation,
                 points: keys
                     .iter()
                     .map(|key| AutomationCurvePoint {
@@ -156,7 +157,7 @@ pub(super) fn emitter_automation_lanes(
                     lanes.push(AutomationLaneProjection {
                         id: lane_id(None),
                         label: display_name,
-                        keys: AutomationLaneKeys::Curve(curve.keys),
+                        keys: AutomationLaneKeys::Curve(curve.keys, curve.interpolation),
                     });
                 }
                 (Some(aestra_core::PropertySource::Curve(_)), Some(Value::Vec3Curve(curves))) => {
@@ -164,7 +165,7 @@ pub(super) fn emitter_automation_lanes(
                         lanes.push(AutomationLaneProjection {
                             id: lane_id(Some(channel as u8)),
                             label: format!("{display_name} {}", ["X", "Y", "Z"][channel]),
-                            keys: AutomationLaneKeys::Curve(curve.keys),
+                            keys: AutomationLaneKeys::Curve(curve.keys, curve.interpolation),
                         });
                     }
                 }
@@ -374,11 +375,11 @@ pub(super) fn automation_lane_keys(
     lane: &AutomationLaneId,
 ) -> Option<AutomationLaneKeys> {
     match automation_lane_value(effect, lane)? {
-        Value::Curve(curve) => Some(AutomationLaneKeys::Curve(curve.keys)),
+        Value::Curve(curve) => Some(AutomationLaneKeys::Curve(curve.keys, curve.interpolation)),
         Value::Vec3Curve(curves) => lane
             .channel
             .and_then(|channel| curves.curves.get(channel as usize))
-            .map(|curve| AutomationLaneKeys::Curve(curve.keys.clone())),
+            .map(|curve| AutomationLaneKeys::Curve(curve.keys.clone(), curve.interpolation)),
         Value::Gradient(gradient) => Some(AutomationLaneKeys::Gradient(gradient.keys)),
         _ => None,
     }

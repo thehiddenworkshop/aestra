@@ -4,6 +4,7 @@ use crate::feathers::automation_curve::{
     self, AutomationCurveData, AutomationCurvePoint, AutomationGradientPoint,
 };
 use crate::*;
+mod host_motion;
 use aestra_compiler::{InputControl, InputMetadata, ModuleRegistry};
 use aestra_core::{ColorKey, CurveKey, ModuleId, ModuleInstance, Value};
 use bevy::{
@@ -20,6 +21,7 @@ pub(crate) enum CurvesSet {
 
 impl Plugin for EditorCurvesPlugin {
     fn build(&self, app: &mut App) {
+        host_motion::install(app);
         app.init_resource::<CurvesState>()
             .add_observer(queue_curves_action_activation)
             .add_systems(
@@ -33,8 +35,12 @@ impl Plugin for EditorCurvesPlugin {
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CurvesAction {
+    OpenHost(u8),
+    HostAddKey,
+    HostDeleteKey,
     OpenInput(ModuleId, u8),
     SelectVectorChannel(u8),
+    SetInterpolation(aestra_core::CurveInterpolation),
     AddKey,
     DeleteKey,
     AdjustTime(i8),
@@ -51,12 +57,18 @@ pub(crate) struct ComplexSelection {
 
 #[derive(Resource, Default)]
 pub(crate) struct CurvesState {
+    host: Option<host_motion::Selection>,
+    host_drag: Option<host_motion::DragState>,
+    host_released: Option<Entity>,
     complex: Option<ComplexSelection>,
     vector_channel: u8,
 }
 
 impl CurvesState {
     pub(crate) fn clear(&mut self) {
+        self.host = None;
+        self.host_drag = None;
+        self.host_released = None;
         self.complex = None;
         self.vector_channel = 0;
     }
@@ -68,6 +80,7 @@ impl CurvesState {
         key: usize,
         vector_channel: Option<u8>,
     ) {
+        self.host = None;
         self.complex = Some(ComplexSelection { module, input, key });
         self.vector_channel = vector_channel.unwrap_or(0).min(2);
     }
@@ -170,6 +183,7 @@ fn handle_curves_actions(
     registry: Res<EditorModuleRegistry>,
     mut state: ResMut<CurvesState>,
     mut layout: ResMut<WorkspaceLayout>,
+    mut timeline: ResMut<crate::timeline::TimelineState>,
 ) {
     for (entity, interaction, action, feathers, pending, mut background) in &mut actions {
         match *interaction {
@@ -188,7 +202,18 @@ fn handle_curves_actions(
                     background.0 = theme::ACCENT_DIM;
                 }
                 match *action {
+                    CurvesAction::OpenHost(channel) => {
+                        host_motion::open(&mut session, &mut state, &mut timeline, channel);
+                        reveal_dock_panel(&mut layout, &mut session, DockPanel::Curves);
+                    }
+                    CurvesAction::HostAddKey => {
+                        host_motion::add_key(&mut session, &mut state, &mut timeline)
+                    }
+                    CurvesAction::HostDeleteKey => {
+                        host_motion::delete_key(&mut session, &mut state, &mut timeline)
+                    }
                     CurvesAction::OpenInput(module, input) => {
+                        state.host = None;
                         reveal_dock_panel(&mut layout, &mut session, DockPanel::Curves);
                         state.complex = Some(ComplexSelection {
                             module,
@@ -207,6 +232,41 @@ fn handle_curves_actions(
                     }
                     CurvesAction::AddKey => {
                         edit_complex_key(&mut session, &registry.0, &mut state, ComplexKeyEdit::Add)
+                    }
+                    CurvesAction::SetInterpolation(interpolation) => {
+                        if state.host.is_some() {
+                            host_motion::set_interpolation(
+                                &mut session,
+                                &mut state,
+                                &mut timeline,
+                                interpolation,
+                            );
+                            continue;
+                        }
+                        if let Some(selection) = state.complex
+                            && let Some((module, input, mut value)) =
+                                resolve_complex_input(&session, &registry, selection)
+                        {
+                            let (module, parameter) = (module.id, input.name);
+                            let curve = match &mut value {
+                                Value::Curve(curve) => Some(curve),
+                                Value::Vec3Curve(curves) => {
+                                    curves.curves.get_mut(state.vector_channel as usize)
+                                }
+                                _ => None,
+                            };
+                            if let Some(curve) = curve
+                                && curve.interpolation != interpolation
+                            {
+                                curve.interpolation = interpolation;
+                                session.set_active_module_property_value(
+                                    module,
+                                    parameter,
+                                    value,
+                                    "Changed curve interpolation",
+                                );
+                            }
+                        }
                     }
                     CurvesAction::DeleteKey => edit_complex_key(
                         &mut session,
@@ -246,6 +306,9 @@ pub(crate) fn spawn_curves_workspace(
     workspace: &CurvesState,
     localizer: &Localizer,
 ) {
+    if host_motion::spawn(parent, session, workspace) {
+        return;
+    }
     parent
         .spawn(Node {
             width: Val::Percent(100.0),
@@ -723,6 +786,7 @@ fn curve_graph_data(curve: &aestra_core::Curve) -> AutomationCurveData {
         Some((output_range.min, output_range.max))
     };
     AutomationCurveData::Curve {
+        interpolation: curve.interpolation,
         points: curve
             .keys
             .iter()
@@ -926,6 +990,27 @@ fn spawn_curve_graph(
     ));
     let graph_data = curve_graph_data(curve);
     let output_range = curve.output_range();
+    parent
+        .spawn(Node {
+            flex_wrap: FlexWrap::Wrap,
+            column_gap: Val::Px(5.0),
+            flex_shrink: 0.0,
+            ..default()
+        })
+        .with_children(|row| {
+            for (label, mode) in [
+                ("Step", aestra_core::CurveInterpolation::Step),
+                ("Linear", aestra_core::CurveInterpolation::Linear),
+                ("Smooth", aestra_core::CurveInterpolation::Smooth),
+            ] {
+                crate::spawn_feathers_action_button(
+                    row,
+                    label,
+                    CurvesAction::SetInterpolation(mode),
+                    curve.interpolation == mode,
+                );
+            }
+        });
     parent
         .spawn((
             Node {
@@ -1876,6 +1961,7 @@ fn bounded_key_time(times: &[f32], index: usize, value: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::test_support;
+    use crate::timeline::TimelineState;
 
     fn first_curve_selection(
         session: &EditorSession,
@@ -1929,6 +2015,7 @@ mod tests {
         app.insert_resource(session)
             .insert_resource(registry)
             .init_resource::<WorkspaceLayout>()
+            .init_resource::<TimelineState>()
             .add_plugins(EditorCurvesPlugin);
         let control = app
             .world_mut()
@@ -1965,6 +2052,7 @@ mod tests {
             .insert_resource(registry)
             .insert_resource(state)
             .init_resource::<WorkspaceLayout>()
+            .init_resource::<TimelineState>()
             .add_plugins(EditorCurvesPlugin);
         app.world_mut().spawn((
             Button,
@@ -1985,6 +2073,52 @@ mod tests {
     }
 
     #[test]
+    fn property_curve_interpolation_is_an_undoable_semantic_edit() {
+        let session = test_support::session_with_timing_slack();
+        let registry = EditorModuleRegistry::default();
+        let selection = first_curve_selection(&session, &registry);
+        let original = resolve_complex_input(&session, &registry, selection)
+            .unwrap()
+            .2;
+        let mut state = CurvesState::default();
+        state.select_for_test(selection.module, selection.input, 0);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(registry)
+            .insert_resource(state)
+            .init_resource::<WorkspaceLayout>()
+            .init_resource::<TimelineState>()
+            .add_plugins(EditorCurvesPlugin);
+        app.world_mut().spawn((
+            Button,
+            Interaction::Pressed,
+            CurvesAction::SetInterpolation(aestra_core::CurveInterpolation::Step),
+            BackgroundColor::default(),
+        ));
+        app.update();
+        let value = resolve_complex_input(
+            app.world().resource::<EditorSession>(),
+            app.world().resource::<EditorModuleRegistry>(),
+            selection,
+        )
+        .unwrap()
+        .2;
+        let Value::Curve(curve) = value else {
+            panic!("curve fixture");
+        };
+        assert_eq!(curve.interpolation, aestra_core::CurveInterpolation::Step);
+        app.world_mut().resource_mut::<EditorSession>().undo();
+        let value = resolve_complex_input(
+            app.world().resource::<EditorSession>(),
+            app.world().resource::<EditorModuleRegistry>(),
+            selection,
+        )
+        .unwrap()
+        .2;
+        assert_eq!(value, original);
+    }
+
+    #[test]
     fn insert_and_delete_shortcuts_edit_the_curve_under_the_pointer() {
         let session = test_support::session_with_timing_slack();
         let registry = EditorModuleRegistry::default();
@@ -1997,6 +2131,7 @@ mod tests {
             .insert_resource(registry)
             .insert_resource(state)
             .init_resource::<WorkspaceLayout>()
+            .init_resource::<TimelineState>()
             .init_resource::<ButtonInput<KeyCode>>()
             .add_plugins(EditorCurvesPlugin);
         app.world_mut().spawn((
@@ -2107,6 +2242,7 @@ mod tests {
         let mut state = CurvesState {
             complex: Some(selection),
             vector_channel: 1,
+            ..default()
         };
 
         edit_complex_key(&mut session, &registry.0, &mut state, ComplexKeyEdit::Add);

@@ -602,6 +602,14 @@ the current sprite-material path until the native-GPU compatibility gate approve
   preview, loop-seam mirroring, one undo step per drag and Escape/stale-selection cancellation.
   Regression tests cover TRS preview/commit/undo/redo, cancellation, invalid poses and bounded
   marker picking. See `docs/host_motion_tracks.md` for the workflow and limits.
+  Host Motion is now a target/view over shared animation curves, with independent position/scale
+  channels and one linked quaternion rotation curve. Legacy pose-key assets migrate on load
+  without changing their linear timing; pose markers derive from channel key times rather than
+  duplicating stored animation. The Curves panel exposes channel keys and Step/Linear/Smooth
+  interpolation for transform and ordinary property curves, with undoable edits, fixed-axis
+  drag previews, endpoint guards and Escape cancellation. Scalar sampling, emission integration,
+  compiled artifacts and GPU packing carry the same interpolation choice; rotation retains
+  shortest-arc interpolation. Viewport gizmos update only affected channels.
   Arbitrary per-particle ribbon-ID authoring, composed parent/clip trajectories, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

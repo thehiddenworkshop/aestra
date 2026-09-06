@@ -190,6 +190,11 @@ enum RuntimeValueV1 {
 #[derive(Debug, Serialize, Deserialize)]
 struct CurveV1 {
     keys: Vec<CurveKey>,
+    #[serde(
+        default,
+        skip_serializing_if = "aestra_core::CurveInterpolation::is_default"
+    )]
+    interpolation: aestra_core::CurveInterpolation,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -932,14 +937,19 @@ impl From<&CompiledCurve> for CurveV1 {
                     .map(|segment| CurveKey::new(segment.end_time, segment.end_value)),
             );
         }
-        Self { keys }
+        Self {
+            keys,
+            interpolation: curve.interpolation(),
+        }
     }
 }
 
 impl CurveV1 {
     fn decode(self, path: &str) -> Result<CompiledCurve, ArtifactError> {
         validate_curve_keys(&self.keys, path)?;
-        Ok(CompiledCurve::compile(&Curve::new(self.keys)))
+        let mut curve = Curve::new(self.keys);
+        curve.interpolation = self.interpolation;
+        Ok(CompiledCurve::compile(&curve))
     }
 }
 

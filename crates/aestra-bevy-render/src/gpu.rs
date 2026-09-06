@@ -1830,10 +1830,9 @@ mod tests {
                     .contains::<visibility::NoFrustumCulling>()
             );
         }
-        let track =
-            aestra_runtime::CompiledHostTransformTrack::new(aestra_core::HostTransformTrack {
-                repeat: false,
-                keys: vec![
+        let track = aestra_runtime::CompiledHostTransformTrack::new(
+            aestra_core::HostTransformTrack::from_pose_keys(
+                vec![
                     aestra_core::HostTransformKey {
                         time: 0.0,
                         transform: default(),
@@ -1847,8 +1846,10 @@ mod tests {
                         },
                     },
                 ],
-            })
-            .unwrap();
+                false,
+            ),
+        )
+        .unwrap();
         app.world_mut()
             .get_mut::<PresentedEffect>(player)
             .unwrap()

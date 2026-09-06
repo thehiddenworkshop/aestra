@@ -496,9 +496,8 @@ mod tests {
             let mut effect = EffectAsset::new("Motion", 2.0);
             effect.playback_mode = mode;
             effect.emitters.push(Emitter::basic_sprite("Sparks", 2.0));
-            effect.host_transform_track = Some(aestra_core::HostTransformTrack {
-                repeat: false,
-                keys: vec![
+            effect.host_transform_track = Some(aestra_core::HostTransformTrack::from_pose_keys(
+                vec![
                     aestra_core::HostTransformKey {
                         time: 0.0,
                         transform: Default::default(),
@@ -511,7 +510,8 @@ mod tests {
                         },
                     },
                 ],
-            });
+                false,
+            ));
             let mut player = EffectPlayer::new(&effect);
             player.seek_simulation_time(3.0);
             let expected_time = player.simulation_time();

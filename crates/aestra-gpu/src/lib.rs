@@ -78,6 +78,7 @@ pub enum GpuArtifactError {
 pub struct GpuCurve {
     pub keys: [Vec2; MAX_CURVE_KEYS],
     pub count: u32,
+    /// x encodes CurveInterpolation (0 smooth, 1 linear, 2 step); y/z reserved.
     pub _padding: Vec3,
 }
 
@@ -781,6 +782,7 @@ fn pack_curve(curve: &CompiledCurve) -> Result<GpuCurve, GpuArtifactError> {
     }
     let mut packed = GpuCurve {
         count: points.len() as u32,
+        _padding: Vec3::new(curve.interpolation() as u32 as f32, 0.0, 0.0),
         ..Default::default()
     };
     for (target, (time, value)) in packed.keys.iter_mut().zip(points) {
@@ -1114,6 +1116,22 @@ mod tests {
         PropertySource, PropertySourceValue, ScalarRange, Value,
     };
     use std::sync::Arc;
+
+    #[test]
+    fn curve_interpolation_is_packed_without_changing_the_gpu_layout() {
+        for mode in [
+            aestra_core::CurveInterpolation::Smooth,
+            aestra_core::CurveInterpolation::Linear,
+            aestra_core::CurveInterpolation::Step,
+        ] {
+            let mut source = Curve::new(vec![CurveKey::new(0.0, 2.0), CurveKey::new(1.0, 9.0)]);
+            source.interpolation = mode;
+            let packed = pack_curve(&CompiledCurve::compile(&source)).unwrap();
+            assert_eq!(packed._padding, Vec3::new(mode as u32 as f32, 0.0, 0.0));
+            assert_eq!(packed.count, 2);
+            assert_eq!(packed.keys[1], Vec2::new(1.0, 9.0));
+        }
+    }
 
     #[test]
     fn artifact_capacity_matches_authored_bounds() {

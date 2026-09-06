@@ -93,9 +93,8 @@ pub(super) fn timeline_duration(session: &EditorSession) -> f32 {
         .effect
         .host_transform_track
         .as_ref()
-        .and_then(|track| track.keys.last())
-        .map_or(session.playback_duration(), |key| {
-            session.playback_duration().max(key.time)
+        .map_or(session.playback_duration(), |track| {
+            session.playback_duration().max(track.end_time())
         })
 }
 
@@ -117,8 +116,9 @@ pub(crate) fn selected_pose(
         .effect
         .host_transform_track
         .as_ref()?
-        .keys
-        .get(index)?;
+        .keys()
+        .get(index)?
+        .clone();
     Some((index, key.transform))
 }
 
@@ -131,7 +131,7 @@ pub(crate) fn select_pose(session: &mut EditorSession, state: &mut TimelineState
         .effect
         .host_transform_track
         .as_ref()
-        .is_some_and(|track| index < track.keys.len())
+        .is_some_and(|track| index < track.keys().len())
     {
         select(session, state, Some(index));
     }
@@ -143,19 +143,15 @@ pub(crate) fn replace_pose(
     transform: EmitterTransform,
 ) -> Result<HostTransformTrack, String> {
     let mut candidate = track.clone();
-    candidate
-        .keys
-        .get_mut(index)
-        .ok_or("The pose key no longer exists")?
-        .transform = transform;
-    if candidate.repeat && (index == 0 || index == candidate.keys.len() - 1) {
-        let other = if index == 0 {
-            candidate.keys.len() - 1
-        } else {
-            0
-        };
-        candidate.keys[other].transform = transform;
+    if !transform.is_valid() {
+        return Err("Invalid transform pose".into());
     }
+    let time = candidate
+        .keys()
+        .get(index)
+        .ok_or("The pose key no longer exists")?
+        .time;
+    candidate.set_pose(time, transform);
     candidate.validate().map_err(|e| e.to_string())?;
     Ok(candidate)
 }
@@ -233,16 +229,16 @@ fn add_key(track: Option<&HostTransformTrack>, time: f32) -> (HostTransformTrack
     let transform = track
         .and_then(|track| aestra_runtime::CompiledHostTransformTrack::new(track.clone()).ok())
         .map_or_else(EmitterTransform::default, |track| track.sample(time));
-    let mut track = track.cloned().unwrap_or(HostTransformTrack {
-        keys: vec![HostTransformKey {
+    let mut track = track.cloned().unwrap_or(HostTransformTrack::from_pose_keys(
+        vec![HostTransformKey {
             time: 0.0,
             transform,
         }],
-        repeat: false,
-    });
+        false,
+    ));
     // Continuous playback addresses a repeating trajectory by its own period.
     let time = if track.repeat {
-        let end = track.keys.last().unwrap().time;
+        let end = track.keys().last().unwrap().time;
         if time > end {
             time.rem_euclid(end)
         } else {
@@ -252,15 +248,18 @@ fn add_key(track: Option<&HostTransformTrack>, time: f32) -> (HostTransformTrack
         time.max(0.0)
     };
     if let Some(index) = track
-        .keys
+        .keys()
         .iter()
         .position(|key| (key.time - time).abs() < 1e-5)
     {
         return (track, index);
     }
-    track.keys.push(HostTransformKey { time, transform });
-    track.keys.sort_by(|a, b| a.time.total_cmp(&b.time));
-    let index = track.keys.iter().position(|key| key.time == time).unwrap();
+    track.curves.set_pose(time, transform, true);
+    let index = track
+        .keys()
+        .iter()
+        .position(|key| key.time == time)
+        .unwrap();
     (track, index)
 }
 
@@ -269,32 +268,32 @@ fn move_key(
     index: usize,
     time: f32,
 ) -> Result<(HostTransformTrack, usize), String> {
-    if index >= track.keys.len() || !time.is_finite() || time < 0.0 {
+    if index >= track.keys().len() || !time.is_finite() || time < 0.0 {
         return Err("Invalid key time".into());
     }
     if index == 0 && time != 0.0 {
         return Err("The first pose key must stay at zero".into());
     }
     if track
-        .keys
+        .keys()
         .iter()
         .enumerate()
         .any(|(i, key)| i != index && (key.time - time).abs() < 1e-5)
     {
         return Err("A pose key already exists at that time".into());
     }
-    if track.repeat && index != track.keys.len() - 1 && time >= track.keys.last().unwrap().time {
+    if track.repeat && index != track.keys().len() - 1 && time >= track.keys().last().unwrap().time
+    {
         return Err("An interior key must stay before the loop endpoint".into());
     }
-    if track.repeat && index == track.keys.len() - 1 && time <= track.keys[index - 1].time {
+    if track.repeat && index == track.keys().len() - 1 && time <= track.keys()[index - 1].time {
         return Err("The loop endpoint must stay after all interior keys".into());
     }
     let mut candidate = track.clone();
-    candidate.keys[index].time = time;
-    candidate.keys.sort_by(|a, b| a.time.total_cmp(&b.time));
+    candidate.curves.retime(track.keys()[index].time, time);
     candidate.validate().map_err(|e| e.to_string())?;
     let selected = candidate
-        .keys
+        .keys()
         .iter()
         .position(|key| key.time == time)
         .unwrap();
@@ -307,11 +306,11 @@ fn edit_pose(
     field: Field,
     value: f32,
 ) -> Result<HostTransformTrack, String> {
-    let mut candidate = track.clone();
-    let key = candidate
-        .keys
-        .get_mut(index)
-        .ok_or("The pose key no longer exists")?;
+    let mut key = track
+        .keys()
+        .get(index)
+        .ok_or("The pose key no longer exists")?
+        .clone();
     match field {
         Field::Position(axis) => key.transform.translation[axis] = value,
         Field::Scale(axis) => key.transform.scale[axis] = value,
@@ -324,16 +323,7 @@ fn edit_pose(
         }
         Field::Time => return Err("Use the key-time editor to retime a pose".into()),
     }
-    if candidate.repeat && (index == 0 || index == candidate.keys.len() - 1) {
-        let other = if index == 0 {
-            candidate.keys.len() - 1
-        } else {
-            0
-        };
-        candidate.keys[other].transform = candidate.keys[index].transform;
-    }
-    candidate.validate().map_err(|e| e.to_string())?;
-    Ok(candidate)
+    replace_pose(track, index, key.transform)
 }
 
 fn activate(
@@ -375,7 +365,7 @@ fn execute(
     match *event {
         Action::Inspect => {
             let index = current.as_ref().and_then(|t| {
-                t.keys
+                t.keys()
                     .iter()
                     .enumerate()
                     .min_by(|(_, a), (_, b)| {
@@ -388,7 +378,7 @@ fn execute(
             select(&mut session, &mut state, index);
         }
         Action::Select(index) => {
-            if current.as_ref().is_some_and(|t| index < t.keys.len()) {
+            if current.as_ref().is_some_and(|t| index < t.keys().len()) {
                 select(&mut session, &mut state, Some(index));
             }
         }
@@ -401,10 +391,14 @@ fn execute(
             let Some(mut track) = current else {
                 return;
             };
-            let Some(index) = state.host_motion.selected.filter(|i| *i < track.keys.len()) else {
+            let Some(index) = state
+                .host_motion
+                .selected
+                .filter(|i| *i < track.keys().len())
+            else {
                 return;
             };
-            if track.keys.len() == 1 {
+            if track.keys().len() == 1 {
                 commit(&mut session, &mut state, None, None);
             } else if index == 0 {
                 fail(
@@ -413,8 +407,8 @@ fn execute(
                     "The first key anchors time zero. Use Clear motion to remove the track.",
                 );
             } else {
-                track.keys.remove(index);
-                let index = index.min(track.keys.len() - 1);
+                track.curves.remove_time(track.keys()[index].time);
+                let index = index.min(track.keys().len() - 1);
                 commit(&mut session, &mut state, Some(track), Some(index));
             }
         }
@@ -438,14 +432,11 @@ fn execute(
             let Some(mut track) = current else {
                 return;
             };
-            let first = track.keys[0].transform;
-            if track.keys.len() == 1 {
-                track.keys.push(HostTransformKey {
-                    time: session.effect.duration,
-                    transform: first,
-                });
+            let first = track.keys()[0].transform;
+            if track.keys().len() == 1 {
+                track.curves.set_pose(session.effect.duration, first, true);
             } else {
-                track.keys.last_mut().unwrap().transform = first;
+                track.curves.set_pose(track.end_time(), first, false);
             }
             track.repeat = true;
             let index = state.host_motion.selected;
@@ -514,7 +505,7 @@ pub(super) fn spawn_lane(parent: &mut ChildSpawnerCommands, session: &EditorSess
                 .effect
                 .host_transform_track
                 .iter()
-                .flat_map(|track| track.keys.iter().enumerate())
+                .flat_map(|track| track.keys().into_iter().enumerate())
             {
                 lane.spawn((
                 Button,
@@ -597,7 +588,7 @@ fn begin_drag(
     let Some(original) = session.effect.host_transform_track.clone() else {
         return;
     };
-    let Some(pose) = original.keys.get(key.index) else {
+    let Some(pose) = original.keys().get(key.index).cloned() else {
         return;
     };
     // Selection visuals update in place: rebuilding here would despawn the drag target.
@@ -767,20 +758,35 @@ fn update_keys(
     state: Res<TimelineState>,
     mut controls: Query<(&KeyControl, &mut Node, &mut BackgroundColor)>,
 ) {
-    for (key, mut node, mut color) in &mut controls {
-        let time = if let Some(drag) = &state.host_motion.drag {
-            if key.index == drag.index {
-                Some(drag.candidate.keys[drag.selected].time)
-            } else {
-                drag.original.keys.get(key.index).map(|k| k.time)
-            }
-        } else {
+    let times = state
+        .host_motion
+        .drag
+        .as_ref()
+        .map(|drag| drag.original.curves.key_times())
+        .or_else(|| {
             session
                 .effect
                 .host_transform_track
                 .as_ref()
-                .and_then(|t| t.keys.get(key.index))
-                .map(|k| k.time)
+                .map(|track| track.curves.key_times())
+        })
+        .unwrap_or_default();
+    let dragged_time = state.host_motion.drag.as_ref().and_then(|drag| {
+        drag.candidate
+            .curves
+            .key_times()
+            .get(drag.selected)
+            .copied()
+    });
+    for (key, mut node, mut color) in &mut controls {
+        let time = if let Some(drag) = &state.host_motion.drag {
+            if key.index == drag.index {
+                dragged_time
+            } else {
+                times.get(key.index).copied()
+            }
+        } else {
+            times.get(key.index).copied()
         };
         let position = time.map(|t| state.view.normalized_time(t));
         let display = if key.effect == session.effect.id
@@ -851,6 +857,7 @@ pub(crate) fn spawn_inspector(
         },
         |panel| {
             label(panel, "Host Motion");
+            crate::spawn_feathers_action_button(panel, "Edit transform curves", crate::curves::CurvesAction::OpenHost(0), false);
             label(panel, "Effect-level pose keys · rotation in degrees (XYZ)");
             panel
                 .spawn(Node {
@@ -887,18 +894,18 @@ pub(crate) fn spawn_inspector(
                 panel,
                 format!(
                     "{} keys · End / period {:.3}s",
-                    track.keys.len(),
-                    track.keys.last().unwrap().time
+                    track.keys().len(),
+                    track.keys().last().unwrap().time
                 ),
             );
             if let Some(error) = &state.host_motion.error {
                 label(panel, error.clone());
             }
-            let Some(index) = state.host_motion.selected.filter(|i| *i < track.keys.len()) else {
+            let Some(index) = state.host_motion.selected.filter(|i| *i < track.keys().len()) else {
                 label(panel, "Select a pose key in the Host Motion lane.");
                 return;
             };
-            let key = &track.keys[index];
+            let key = &track.keys()[index];
             if index == 0 {
                 label(panel, "Time: 0 s (anchor)");
             } else {
@@ -1088,9 +1095,8 @@ mod tests {
     use super::*;
 
     fn track() -> HostTransformTrack {
-        HostTransformTrack {
-            repeat: false,
-            keys: [0.0, 1.0, 2.0]
+        HostTransformTrack::from_pose_keys(
+            [0.0, 1.0, 2.0]
                 .into_iter()
                 .map(|time| HostTransformKey {
                     time,
@@ -1100,7 +1106,8 @@ mod tests {
                     },
                 })
                 .collect(),
-        }
+            false,
+        )
     }
 
     fn app() -> App {
@@ -1141,11 +1148,14 @@ mod tests {
     fn add_creates_anchor_and_samples_existing_motion_without_duplicates() {
         let (created, index) = add_key(None, 0.75);
         assert_eq!(index, 1);
-        assert_eq!(created.keys[0].time, 0.0);
+        assert_eq!(created.keys()[0].time, 0.0);
         created.validate().unwrap();
         let (inserted, index) = add_key(Some(&track()), 0.5);
         assert_eq!(index, 1);
-        assert_eq!(inserted.keys[index].transform.translation, [5.0, 0.0, 0.0]);
+        assert_eq!(
+            inserted.keys()[index].transform.translation,
+            [5.0, 0.0, 0.0]
+        );
         let (again, same) = add_key(Some(&inserted), 0.5);
         assert_eq!(same, index);
         assert_eq!(again, inserted);
@@ -1159,9 +1169,12 @@ mod tests {
         assert!(move_key(&original, 1, f32::NAN).is_err());
         let (moved, selected) = move_key(&original, 1, 3.0).unwrap();
         assert_eq!(selected, 2);
-        assert_eq!(moved.keys[selected].transform, original.keys[1].transform);
         assert_eq!(
-            moved.keys.iter().map(|k| k.time).collect::<Vec<_>>(),
+            moved.keys()[selected].transform,
+            original.keys()[1].transform
+        );
+        assert_eq!(
+            moved.keys().iter().map(|k| k.time).collect::<Vec<_>>(),
             [0.0, 2.0, 3.0]
         );
     }
@@ -1169,17 +1182,19 @@ mod tests {
     #[test]
     fn repeat_endpoint_edits_keep_the_seam_closed() {
         let mut closed = track();
-        closed.keys[2].transform = closed.keys[0].transform;
+        closed
+            .curves
+            .set_pose(closed.end_time(), closed.keys()[0].transform, false);
         closed.repeat = true;
         for field in [Field::Position(0), Field::Rotation(2), Field::Scale(1)] {
             closed = edit_pose(&closed, 0, field, 2.5).unwrap();
-            assert_eq!(closed.keys[0].transform, closed.keys[2].transform);
+            assert_eq!(closed.keys()[0].transform, closed.keys()[2].transform);
             closed.validate().unwrap();
         }
         assert!(move_key(&closed, 2, 0.5).is_err());
         assert!(move_key(&closed, 1, 2.5).is_err());
         let (inserted, index) = add_key(Some(&closed), 2.5);
-        assert_eq!(inserted.keys[index].time, 0.5);
+        assert_eq!(inserted.keys()[index].time, 0.5);
         assert!(edit_pose(&closed, 1, Field::Scale(0), 0.0).is_err());
         assert!(edit_pose(&closed, 1, Field::Position(0), f32::INFINITY).is_err());
     }
@@ -1342,7 +1357,7 @@ mod tests {
             .clone()
             .unwrap();
         assert!(closed.repeat);
-        assert_eq!(closed.keys[0].transform, closed.keys[2].transform);
+        assert_eq!(closed.keys()[0].transform, closed.keys()[2].transform);
         app.world_mut().trigger(Action::Delete);
         assert_eq!(
             app.world()
@@ -1351,7 +1366,7 @@ mod tests {
                 .host_transform_track
                 .as_ref()
                 .unwrap()
-                .keys
+                .keys()
                 .len(),
             2
         );
@@ -1385,7 +1400,7 @@ mod tests {
                 .host_transform_track
                 .as_ref()
                 .unwrap()
-                .keys
+                .keys()
                 .len(),
             4
         );
@@ -1518,7 +1533,7 @@ mod tests {
         );
         let mut session = app.world_mut().resource_mut::<EditorSession>();
         assert_eq!(
-            session.effect.host_transform_track.as_ref().unwrap().keys[2].time,
+            session.effect.host_transform_track.as_ref().unwrap().keys()[2].time,
             3.0
         );
         session.undo();

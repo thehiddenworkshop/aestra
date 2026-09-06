@@ -179,7 +179,10 @@ fn sample_curve(curve: Curve, time: f32) -> f32 {
     if curve.count == 0u {
         return 0.0;
     }
-    let t = clamp(time, 0.0, 1.0);
+    var t = clamp(time, 0.0, 1.0);
+    if curve._padding.x == 2.0 {
+        t = min(t + 1.1920928955078125e-7, 1.0);
+    }
     if t <= curve.keys[0].x {
         return curve.keys[0].y;
     }
@@ -191,9 +194,16 @@ fn sample_curve(curve: Curve, time: f32) -> f32 {
         let end = curve.keys[index];
         if t <= end.x {
             let start = curve.keys[index - 1u];
-            let x = clamp((t - start.x) / max(end.x - start.x, 1.19e-7), 0.0, 1.0);
-            let smoothed = x * x * (3.0 - 2.0 * x);
-            return mix(start.y, end.y, smoothed);
+            let span = select(1.1920928955078125e-7, end.x - start.x, end.x > start.x);
+            let x = clamp((t - start.x) / span, 0.0, 1.0);
+            var weight = x * x * (3.0 - 2.0 * x);
+            if curve._padding.x == 1.0 {
+                weight = x;
+            }
+            if curve._padding.x == 2.0 {
+                return select(start.y, end.y, t >= end.x);
+            }
+            return mix(start.y, end.y, weight);
         }
         index += 1u;
     }
@@ -218,11 +228,18 @@ fn curve_integral(curve: Curve, time: f32) -> f32 {
         let start = curve.keys[index - 1u];
         let end = curve.keys[index];
         if t > start.x {
-            let span = max(end.x - start.x, 1.19e-7);
+            let span = select(1.1920928955078125e-7, end.x - start.x, end.x > start.x);
             let x = clamp((min(t, end.x) - start.x) / span, 0.0, 1.0);
             let x3 = x * x * x;
             let x4 = x3 * x;
-            area += span * (start.y * x + (end.y - start.y) * (x3 - 0.5 * x4));
+            var weight_area = x3 - 0.5 * x4;
+            if curve._padding.x == 1.0 {
+                weight_area = 0.5 * x * x;
+            }
+            if curve._padding.x == 2.0 {
+                weight_area = 0.0;
+            }
+            area += span * (start.y * x + (end.y - start.y) * weight_area);
         }
         if t <= end.x {
             return area;

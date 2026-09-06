@@ -25,13 +25,13 @@ fn test_effect() -> EffectAsset {
 fn host_motion_edits_validate_diff_and_undo_atomically() {
     let mut effect = test_effect();
     let original = effect.clone();
-    let track = aestra_core::HostTransformTrack {
-        keys: vec![aestra_core::HostTransformKey {
+    let track = aestra_core::HostTransformTrack::from_pose_keys(
+        vec![aestra_core::HostTransformKey {
             time: 0.0,
             transform: EmitterTransform::default(),
         }],
-        repeat: false,
-    };
+        false,
+    );
     let mut history = CommandHistory::default();
     let diff = history
         .execute(

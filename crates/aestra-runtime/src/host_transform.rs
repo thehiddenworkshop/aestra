@@ -1,71 +1,33 @@
+use crate::CompiledCurve;
 use aestra_core::{EmitterTransform, HostTransformError, HostTransformTrack};
 
-/// Validated, immutable motion data. Sharing it across instances does not share playback state.
+/// Effect-transform target using the same scalar evaluator as property curves.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompiledHostTransformTrack(HostTransformTrack);
-
+pub struct CompiledHostTransformTrack {
+    source: HostTransformTrack,
+    translation: [CompiledCurve; 3],
+    scale: [CompiledCurve; 3],
+}
 impl CompiledHostTransformTrack {
-    pub fn new(track: HostTransformTrack) -> Result<Self, HostTransformError> {
-        track.validate()?;
-        Ok(Self(track))
-    }
-
-    pub fn source(&self) -> &HostTransformTrack {
-        &self.0
-    }
-
-    /// Linear translation/scale, shortest-arc quaternion slerp. Repeating tracks
-    /// use their own period even during continuous effect playback.
-    pub fn sample(&self, time: f32) -> EmitterTransform {
-        let keys = &self.0.keys;
-        let end = keys.last().unwrap();
-        let time = if time.is_finite() { time.max(0.0) } else { 0.0 };
-        let time = if self.0.repeat {
-            time.rem_euclid(end.time)
-        } else {
-            time.min(end.time)
-        };
-        let after = keys.partition_point(|key| key.time <= time);
-        if after == 0 {
-            return keys[0].transform;
-        }
-        if after == keys.len() {
-            return end.transform;
-        }
-        let a = &keys[after - 1];
-        let b = &keys[after];
-        let t = (time - a.time) / (b.time - a.time);
-        let lerp = |x: f32, y: f32| x * (1.0 - t) + y * t;
-        let mut rotation_b = b.transform.rotation;
-        let mut dot: f32 = a
-            .transform
-            .rotation
-            .iter()
-            .zip(rotation_b)
-            .map(|(x, y)| x * y)
-            .sum();
-        if dot < 0.0 {
-            rotation_b = rotation_b.map(|x| -x);
-            dot = -dot;
-        }
-        let (wa, wb) = if dot > 0.9995 {
-            (1.0 - t, t)
-        } else {
-            let angle = dot.clamp(-1.0, 1.0).acos();
-            (
-                ((1.0 - t) * angle).sin() / angle.sin(),
-                (t * angle).sin() / angle.sin(),
-            )
-        };
-        let rotation: [f32; 4] =
-            std::array::from_fn(|i| a.transform.rotation[i] * wa + rotation_b[i] * wb);
-        let length = rotation.iter().map(|x| x * x).sum::<f32>().sqrt();
-        EmitterTransform {
+    pub fn new(source: HostTransformTrack) -> Result<Self, HostTransformError> {
+        source.validate()?;
+        Ok(Self {
             translation: std::array::from_fn(|i| {
-                lerp(a.transform.translation[i], b.transform.translation[i])
+                CompiledCurve::compile(&source.curves.translation[i])
             }),
-            scale: std::array::from_fn(|i| lerp(a.transform.scale[i], b.transform.scale[i])),
-            rotation: rotation.map(|x| x / length),
+            scale: std::array::from_fn(|i| CompiledCurve::compile(&source.curves.scale[i])),
+            source,
+        })
+    }
+    pub fn source(&self) -> &HostTransformTrack {
+        &self.source
+    }
+    pub fn sample(&self, time: f32) -> EmitterTransform {
+        let time = self.source.sample_time(time);
+        EmitterTransform {
+            translation: std::array::from_fn(|i| self.translation[i].sample_at(time)),
+            scale: std::array::from_fn(|i| self.scale[i].sample_at(time)),
+            rotation: self.source.curves.rotation.sample_at(time),
         }
     }
 }
@@ -88,8 +50,8 @@ mod tests {
                 -std::f32::consts::FRAC_1_SQRT_2,
             ],
         };
-        let mut source = HostTransformTrack {
-            keys: vec![
+        let mut source = HostTransformTrack::from_pose_keys(
+            vec![
                 HostTransformKey {
                     time: 0.0,
                     transform: start,
@@ -99,8 +61,8 @@ mod tests {
                     transform: end,
                 },
             ],
-            repeat: false,
-        };
+            false,
+        );
         let track = CompiledHostTransformTrack::new(source.clone()).unwrap();
         let mid = track.sample(1.0);
         assert_eq!(mid.translation, [5.0, -3.0, 1.0]);
@@ -110,10 +72,7 @@ mod tests {
         assert_eq!(track.sample(10.0), end);
         assert_eq!(track.sample(-1.0), start);
         assert_eq!(track.sample(f32::NAN), start);
-        source.keys.push(HostTransformKey {
-            time: 4.0,
-            transform: start,
-        });
+        source.curves.set_pose(4.0, start, true);
         source.repeat = true;
         let looping = CompiledHostTransformTrack::new(source).unwrap();
         assert_eq!(looping.sample(4.0), start);

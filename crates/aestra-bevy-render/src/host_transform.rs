@@ -43,10 +43,9 @@ mod tests {
     use super::*;
     #[test]
     fn each_upload_contains_its_own_historical_pose_and_stable_placement() {
-        let track =
-            aestra_runtime::CompiledHostTransformTrack::new(aestra_core::HostTransformTrack {
-                repeat: false,
-                keys: vec![
+        let track = aestra_runtime::CompiledHostTransformTrack::new(
+            aestra_core::HostTransformTrack::from_pose_keys(
+                vec![
                     aestra_core::HostTransformKey {
                         time: 0.0,
                         transform: EmitterTransform::default(),
@@ -60,8 +59,10 @@ mod tests {
                         },
                     },
                 ],
-            })
-            .unwrap();
+                false,
+            ),
+        )
+        .unwrap();
         let placement = Mat4::from_translation(Vec3::new(10.0, 20.0, 30.0));
         for motion in [None, Some(&track)] {
             let bytes = observation_bytes(&[0.0, 0.5, 1.0], placement, motion);

@@ -119,11 +119,18 @@ fn deterministic_gpu_particles_match_the_cpu_reference_across_playback_sources_a
         conformance_effect(EffectPlaybackMode::LoopContinuous, true),
         &CONTINUOUS_SAMPLE_TIMES,
     );
-    assert_effect_matches_at_times(
-        &harness,
-        source_conformance_effect(EffectPlaybackMode::Once, SourceFixture::Curves),
-        &SOURCE_SAMPLE_TIMES,
-    );
+    for mode in [
+        aestra_core::CurveInterpolation::Smooth,
+        aestra_core::CurveInterpolation::Linear,
+        aestra_core::CurveInterpolation::Step,
+    ] {
+        eprintln!("Checking property curves with {mode:?} interpolation");
+        assert_effect_matches_at_times(
+            &harness,
+            source_conformance_effect(EffectPlaybackMode::Once, SourceFixture::Curves(mode)),
+            &SOURCE_SAMPLE_TIMES,
+        );
+    }
     assert_effect_matches_at_times(
         &harness,
         source_conformance_effect(EffectPlaybackMode::Once, SourceFixture::RandomRanges),
@@ -649,7 +656,7 @@ fn conformance_asset(playback_mode: EffectPlaybackMode, use_emitter_region: bool
 
 #[derive(Clone, Copy)]
 enum SourceFixture {
-    Curves,
+    Curves(aestra_core::CurveInterpolation),
     RandomRanges,
 }
 
@@ -670,7 +677,7 @@ fn source_conformance_effect(
                 *spawn_rate = 5.0;
                 *burst_count = 2;
                 match fixture {
-                    SourceFixture::Curves => set_source(
+                    SourceFixture::Curves(_) => set_source(
                         module,
                         "spawn_rate",
                         PropertySource::Curve(PropertyEvaluationDomain::EmitterTime),
@@ -692,7 +699,7 @@ fn source_conformance_effect(
                 *lifetime = ScalarRange::new(3.5, 3.5);
             }
             ModuleParameters::Motion { .. } => match fixture {
-                SourceFixture::Curves => {
+                SourceFixture::Curves(_) => {
                     let particle_curve =
                         PropertySource::Curve(PropertyEvaluationDomain::ParticleLife);
                     set_source(
@@ -754,6 +761,28 @@ fn source_conformance_effect(
                 }
             },
             _ => {}
+        }
+    }
+
+    if let SourceFixture::Curves(mode) = fixture {
+        for module in &mut emitter.modules {
+            for sources in module.property_source_values.values_mut() {
+                for source in sources {
+                    match &mut source.value {
+                        Value::Curve(curve) => curve.interpolation = mode,
+                        Value::Vec3Curve(curves) => {
+                            for curve in &mut curves.curves {
+                                curve.interpolation = mode;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if let ModuleParameters::Appearance { size, opacity, .. } = &mut module.parameters {
+                size.interpolation = mode;
+                opacity.interpolation = mode;
+            }
         }
     }
 

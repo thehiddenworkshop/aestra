@@ -1342,7 +1342,7 @@ mod tests {
         let emitter = session.effect.emitters[0].clone();
         let lane = emitter_automation_lanes(&session.effect, &emitter, &registry, &localizer)
             .into_iter()
-            .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(_)))
+            .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(..)))
             .unwrap();
         let original_len = lane.keys.len();
         session.seek_time(emitter.start_time + emitter.duration * 0.5);
@@ -1399,7 +1399,7 @@ mod tests {
         let emitter = session.effect.emitters[0].clone();
         let lane = emitter_automation_lanes(&session.effect, &emitter, &registry, &localizer)
             .into_iter()
-            .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(_)))
+            .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(..)))
             .unwrap();
         let mut app = choreography_app(session);
 
@@ -1413,7 +1413,7 @@ mod tests {
 
         let keys = automation_lane_keys(&app.world().resource::<EditorSession>().effect, &lane.id)
             .unwrap();
-        let AutomationLaneKeys::Curve(keys) = keys else {
+        let AutomationLaneKeys::Curve(keys, _) = keys else {
             panic!("expected curve lane");
         };
         let inserted = keys
@@ -4068,7 +4068,7 @@ mod tests {
         let emitter = session.effect.emitters[0].clone();
         let lane = emitter_automation_lanes(&session.effect, &emitter, &registry, &localizer)
             .into_iter()
-            .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(_)))
+            .find(|lane| matches!(lane.keys, AutomationLaneKeys::Curve(..)))
             .unwrap();
         let original_len = lane.keys.len();
         session.seek_time(emitter.start_time + emitter.duration * 0.43);

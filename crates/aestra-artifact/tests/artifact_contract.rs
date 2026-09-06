@@ -72,7 +72,7 @@ fn host_motion_round_trips_and_edits_invalidate_only_affected_instance_history()
 
     let malformed = String::from_utf8(encode_effect(&compiled).unwrap())
         .unwrap()
-        .replace("time:1.5,transform:", "time:0.0,transform:");
+        .replace("time:1.5,value:", "time:0.0,value:");
     assert!(
         matches!(decode_effect(malformed.as_bytes()), Err(ArtifactError::InvalidData { path, .. }) if path == "effect.host_transform_track")
     );
@@ -85,6 +85,47 @@ fn host_motion_round_trips_and_edits_invalidate_only_affected_instance_history()
             .contains("host_transform_track")
     );
     assert_eq!(decode_effect(&bytes).unwrap(), legacy);
+}
+
+#[test]
+fn interpolation_modes_survive_compiled_artifact_round_trips() {
+    for mode in [
+        aestra_core::CurveInterpolation::Step,
+        aestra_core::CurveInterpolation::Linear,
+        aestra_core::CurveInterpolation::Smooth,
+    ] {
+        let mut effect = EffectAsset::new("Curve interpolation", 2.0);
+        let mut emitter = Emitter::basic_sprite("Emitter", 2.0);
+        for module in &mut emitter.modules {
+            if let ModuleParameters::Appearance { size, opacity, .. } = &mut module.parameters {
+                size.interpolation = mode;
+                opacity.interpolation = mode;
+            }
+        }
+        effect.emitters.push(emitter);
+        let mut track = aestra_core::HostTransformTrack::from_pose_keys(
+            vec![
+                aestra_core::HostTransformKey {
+                    time: 0.0,
+                    transform: Default::default(),
+                },
+                aestra_core::HostTransformKey {
+                    time: 2.0,
+                    transform: aestra_core::EmitterTransform {
+                        translation: [4.0, 0.0, 0.0],
+                        ..Default::default()
+                    },
+                },
+            ],
+            false,
+        );
+        track.curves.translation[0].interpolation = mode;
+        track.curves.rotation.interpolation = mode;
+        effect.host_transform_track = Some(track);
+        let compiled = EffectCompiler::default().compile(&effect).unwrap();
+        let restored = decode_effect(&encode_effect(&compiled).unwrap()).unwrap();
+        assert_eq!(restored, compiled);
+    }
 }
 
 #[test]

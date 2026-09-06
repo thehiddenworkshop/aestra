@@ -1930,6 +1930,7 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
                 "Particle size. The selected source controls how it varies.",
                 aestra_core::Value::Curve(Curve {
                     id: CurveId::from_u128(0),
+                    interpolation: Default::default(),
                     keys: vec![
                         CurveKey::new(0.0, 4.0),
                         CurveKey::new(0.35, 10.0),
@@ -1949,6 +1950,7 @@ fn builtin_modules() -> Vec<ModuleMetadata> {
                 "Particle opacity. The selected source controls how it varies.",
                 aestra_core::Value::Curve(Curve {
                     id: CurveId::from_u128(0),
+                    interpolation: Default::default(),
                     keys: vec![
                         CurveKey::new(0.0, 0.0),
                         CurveKey::new(0.12, 1.0),

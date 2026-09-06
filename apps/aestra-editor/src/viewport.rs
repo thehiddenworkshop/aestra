@@ -3561,16 +3561,16 @@ mod tests {
             );
             assert_eq!(player.simulation_time(), time);
         }
-        let replacement = aestra_core::HostTransformTrack {
-            keys: vec![aestra_core::HostTransformKey {
+        let replacement = aestra_core::HostTransformTrack::from_pose_keys(
+            vec![aestra_core::HostTransformKey {
                 time: 0.0,
                 transform: aestra_core::EmitterTransform {
                     translation: [50.0, 0.0, 0.0],
                     ..default()
                 },
             }],
-            repeat: false,
-        };
+            false,
+        );
         let undo = aestra_authoring::CommandExecutor::execute(
             &mut effect,
             &default(),
