@@ -258,7 +258,9 @@ same scheduler. See [nested motion and playback](docs/host_motion_tracks.md#nest
 The editor Profiler and viewer capture reports use project totals. Native-GPU live counts
 use lightweight asynchronous per-emitter telemetry, with stale results rejected after
 playback/context changes. GPU simulation timestamps provide per-instance and project costs
-on supported devices, separately from rendering. Missing measurements remain unavailable, and shared
+on supported devices, separately from rendering. Actual draw-command telemetry reports submitted
+instances, vertex/index references, primitives and draw calls, including per-view costs.
+Missing measurements remain unavailable, and shared
 texture memory is not double-counted.
 Timed semantic notifications from the root
 and nested clips are emitted as `AestraChoreographyEvent` observer events. `player` identifies the

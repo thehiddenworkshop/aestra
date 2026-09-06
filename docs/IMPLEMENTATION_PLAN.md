@@ -655,8 +655,16 @@ the current sprite-material path until the native-GPU compatibility gate approve
   each), with feature detection, context/sequence validation and no blocking GPU waits.
   Editor and viewer profiles expose `gpu_simulation_time_ns` and project sums, separately
   from total GPU/rendering cost. Nested-owner isolation, stale/missing measurements,
-  timestamp conversion and report provenance are covered by regressions. Rendering timing
-  and submitted geometry remain separate work.
+  timestamp conversion and report provenance are covered by regressions. Native submitted
+  geometry now records actual render-pass commands per view, with bounded asynchronous
+  readback of indirect headers and context trailers. Profiles expose submitted instances,
+  vertex/index references, primitives and draw calls for sprites, meshes, ribbons and trails,
+  including culled zeroes and repeated-view costs. Owner/context/sequence validation prevents
+  stale or partial totals; editor and viewer expose per-instance and project values.
+  Native indirect-copy regression covers readback backpressure/recycling, indexed and strip
+  commands, direct fallback ranges, zero-draw frames and stale contexts. Sprite, mesh, ribbon
+  and nested-trail viewport captures validate the reported native counts.
+  Rendering timing remains separate work.
   Arbitrary per-particle ribbon-ID authoring, unrecorded live-motion replay,
   a dedicated Normal output and PBR remain follow-up work.
 

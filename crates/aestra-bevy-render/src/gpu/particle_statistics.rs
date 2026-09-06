@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 // Unique across owners and rebuilt buffers, not merely across seeks of one player.
 static NEXT_CONTEXT: AtomicU32 = AtomicU32::new(1);
 
-/// Latest asynchronous native-GPU live counts. No particle records are read back.
+/// Latest asynchronous native-GPU live counts and actual draw submissions.
+/// No particle records are read back.
 /// Counts can lag playback; context edits invalidate them immediately, even before
 /// the render-world upload has caught up. GPU timings are not implied by this data.
 #[derive(Component, Debug)]
@@ -16,6 +17,7 @@ pub struct GpuParticleStatistics {
     seed: u64,
     token: u32,
     observation: Option<(f32, Vec<u32>)>,
+    pub(super) geometry: Option<super::geometry_statistics::Sample>,
 }
 
 impl GpuParticleStatistics {
@@ -27,6 +29,7 @@ impl GpuParticleStatistics {
             seed: instance.seed(),
             token: NEXT_CONTEXT.fetch_add(1, Ordering::Relaxed),
             observation: None,
+            geometry: None,
         }
     }
 
@@ -61,6 +64,25 @@ impl GpuParticleStatistics {
     pub fn record_profile(&self, instance: &EffectInstance, profile: &mut EffectProfile) -> bool {
         self.observation(instance)
             .is_some_and(|(_, counts)| profile.record_particle_counts(counts))
+    }
+
+    /// Updates actual submissions independently from live counts. Missing or stale
+    /// frames clear the metrics; indexed vertices count references, not unique vertices.
+    pub fn record_geometry_profile(&self, instance: &EffectInstance, profile: &mut EffectProfile) {
+        use aestra_runtime::ProfileValue::{Measured, Unavailable};
+        profile.submitted_instances = Unavailable;
+        profile.submitted_vertices = Unavailable;
+        profile.submitted_primitives = Unavailable;
+        profile.draw_calls = Unavailable;
+        if let Some(sample) = &self.geometry
+            && self.context_token(instance) == Some(sample.token)
+            && sample.time <= instance.time()
+        {
+            profile.submitted_instances = Measured(sample.instances);
+            profile.submitted_vertices = Measured(sample.vertices);
+            profile.submitted_primitives = Measured(sample.primitives);
+            profile.draw_calls = Measured(sample.draws);
+        }
     }
 
     fn receive(&mut self, instance: &EffectInstance, words: &[u32]) {

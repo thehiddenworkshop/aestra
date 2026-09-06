@@ -33,6 +33,8 @@ impl Default for ProjectProfile {
                 gpu_simulation_time_ns: U,
                 alive_particles: M(0),
                 submitted_instances: M(0),
+                submitted_vertices: M(0),
+                submitted_primitives: M(0),
                 peak_particles: M(0),
                 particle_capacity: M(0),
                 emitter_count: M(0),
@@ -114,6 +116,9 @@ impl ProjectProfile {
                 instance.profile.alive_particles = ProfileValue::Measured(0);
                 instance.profile.peak_particles = ProfileValue::Measured(0);
                 instance.profile.submitted_instances = ProfileValue::Measured(0);
+                instance.profile.submitted_vertices = ProfileValue::Measured(0);
+                instance.profile.submitted_primitives = ProfileValue::Measured(0);
+                instance.profile.draw_calls = ProfileValue::Measured(0);
                 // No simulation dispatch exists for an empty choreography carrier.
                 instance.profile.gpu_simulation_time_ns = ProfileValue::Measured(0);
             }
@@ -137,6 +142,8 @@ impl ProjectProfile {
             gpu_simulation_time_ns,
             alive_particles,
             submitted_instances,
+            submitted_vertices,
+            submitted_primitives,
             particle_capacity,
             emitter_count,
             draw_calls,
@@ -243,6 +250,36 @@ mod tests {
             name: "Effect".into(),
             profile,
         }
+    }
+
+    #[test]
+    fn geometry_totals_preserve_missing_values_and_empty_carrier_zeroes() {
+        let source = EffectId::new();
+        let mut carrier = entry(vec![], source, 0);
+        carrier.profile.particle_capacity = M(0);
+        carrier.profile.draw_calls = E(0);
+        carrier.profile.submitted_vertices = U;
+        carrier.profile.submitted_primitives = U;
+        let mut child = entry(vec![EffectClipId::new()], source, 1);
+        child.profile.submitted_instances = M(2);
+        child.profile.submitted_vertices = M(8);
+        child.profile.submitted_primitives = M(4);
+        child.profile.draw_calls = M(1);
+        let mut project = ProjectProfile::default();
+        project.update(vec![carrier.clone(), child.clone()]);
+        assert_eq!(project.total.submitted_vertices, M(8));
+        assert_eq!(project.total.submitted_primitives, M(4));
+        assert_eq!(project.total.draw_calls, M(1));
+        child.profile.submitted_vertices = U;
+        project.update(vec![carrier, child.clone()]);
+        assert_eq!(project.total.submitted_vertices, U);
+        child.profile.submitted_vertices = M(u64::MAX);
+        child.profile.submitted_primitives = M(u64::MAX);
+        let mut other = child.clone();
+        other.path.push(EffectClipId::new());
+        project.update(vec![child, other]);
+        assert_eq!(project.total.submitted_vertices, M(u64::MAX));
+        assert_eq!(project.total.submitted_primitives, M(u64::MAX));
     }
 
     #[test]

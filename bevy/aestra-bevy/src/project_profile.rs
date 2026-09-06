@@ -64,6 +64,12 @@ pub(super) fn update_project_profiles(
         {
             particles.record_profile(&presented.instance, &mut profile);
         }
+        if runtime
+            .is_some_and(|r| matches!(r.active, ActiveBackend::Gpu | ActiveBackend::GpuReadback))
+            && let Some(particles) = particles
+        {
+            particles.record_geometry_profile(&presented.instance, &mut profile);
+        }
         by_root
             .entry(child.root)
             .or_default()
@@ -107,6 +113,13 @@ pub(super) fn update_project_profiles(
             && let Some(particles) = particles
         {
             particles.record_profile(&presented.instance, &mut root_profile.0);
+        }
+        if matches!(
+            runtime.active,
+            ActiveBackend::Gpu | ActiveBackend::GpuReadback
+        ) && let Some(particles) = particles
+        {
+            particles.record_geometry_profile(&presented.instance, &mut root_profile.0);
         }
         let mut entries = vec![ProjectInstanceProfile {
             path: Vec::new(),

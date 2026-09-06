@@ -159,7 +159,9 @@ fn prepare(
                     device.create_buffer_with_data(&BufferInitDescriptor {
                         label: Some("aestra culled trail draw"),
                         contents: &[0; 16],
-                        usage: BufferUsages::STORAGE | BufferUsages::INDIRECT,
+                        usage: BufferUsages::STORAGE
+                            | BufferUsages::INDIRECT
+                            | BufferUsages::COPY_SRC,
                     }),
                 )
             };

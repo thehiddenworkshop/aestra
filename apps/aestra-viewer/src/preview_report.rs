@@ -532,6 +532,8 @@ struct PreviewMetrics {
     gpu_simulation_time_ns: PreviewMetric<u64>,
     alive_particles: PreviewMetric<u32>,
     submitted_instances: PreviewMetric<u32>,
+    submitted_vertices: PreviewMetric<u64>,
+    submitted_primitives: PreviewMetric<u64>,
     peak_particles: PreviewMetric<u32>,
     particle_capacity: PreviewMetric<u32>,
     emitter_count: PreviewMetric<u32>,
@@ -559,6 +561,8 @@ impl From<&EffectProfile> for PreviewMetrics {
             gpu_simulation_time_ns: profile.gpu_simulation_time_ns.into(),
             alive_particles: profile.alive_particles.into(),
             submitted_instances: profile.submitted_instances.into(),
+            submitted_vertices: profile.submitted_vertices.into(),
+            submitted_primitives: profile.submitted_primitives.into(),
             peak_particles: profile.peak_particles.into(),
             particle_capacity: profile.particle_capacity.into(),
             emitter_count: profile.emitter_count.into(),
@@ -678,6 +682,9 @@ mod tests {
         let compiler = CompilerPreviewData::new(&compiled, Vec::new(), Vec::new());
         let mut profile = EffectProfile::from_compiled(&compiled);
         profile.gpu_simulation_time_ns = ProfileValue::Measured(100);
+        profile.submitted_instances = ProfileValue::Measured(5);
+        profile.submitted_vertices = ProfileValue::Measured(20);
+        profile.submitted_primitives = ProfileValue::Measured(10);
         let mut project = aestra_bevy::ProjectProfile::default();
         let root = aestra_bevy::ProjectInstanceProfile {
             path: Vec::new(),
@@ -736,6 +743,17 @@ mod tests {
             200
         );
         assert_eq!(value["metrics"]["gpu_time_ns"]["source"], "unavailable");
+        assert_eq!(value["metrics"]["submitted_instances"]["value"], 10);
+        assert_eq!(value["metrics"]["submitted_vertices"]["value"], 40);
+        assert_eq!(value["metrics"]["submitted_primitives"]["value"], 20);
+        assert_eq!(
+            value["instances"][1]["metrics"]["submitted_vertices"]["source"],
+            "measured"
+        );
+        assert_eq!(
+            value["instances"][1]["metrics"]["submitted_vertices"]["value"],
+            20
+        );
         assert_eq!(
             value["metrics"]["particle_capacity"]["value"],
             2 * compiled.max_particles

@@ -2812,6 +2812,15 @@ fn update_preview(
             }
             preview.live_particle_count += profile.alive_particles.value().unwrap_or(0) as usize;
         }
+        if let Some((p, _, _, Some(particles), Some(runtime), _)) = observed
+            && matches!(
+                runtime.active,
+                aestra_bevy_render::ActiveBackend::Gpu
+                    | aestra_bevy_render::ActiveBackend::GpuReadback
+            )
+        {
+            particles.record_geometry_profile(&p.instance, &mut profile);
+        }
         profiles.push(aestra_runtime::ProjectInstanceProfile {
             path: desired.path,
             effect: desired.effect.source,

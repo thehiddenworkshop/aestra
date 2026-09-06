@@ -1,6 +1,7 @@
 //! Bevy render-world adapter for engine-neutral Aestra GPU artifacts.
 
 mod bounds;
+mod geometry_statistics;
 mod mesh_inputs;
 mod particle_statistics;
 mod render;
@@ -115,6 +116,7 @@ pub(crate) struct GpuEffectBuffers {
 #[require(Transform, Visibility, VisibilityClass)]
 #[component(on_add = visibility::add_visibility_class::<GpuDrawInstance>)]
 struct GpuDrawInstance {
+    owner: Entity,
     mesh: Option<Handle<Mesh>>,
     wireframe_geometry: Option<Arc<wireframe::WireframeGeometry>>,
     renderers: Handle<ShaderBuffer>,
@@ -267,6 +269,9 @@ struct SimulationPipeline {
 pub(crate) fn install(app: &mut App) {
     install_shader_assets(app);
     let timing_mailbox = simulation_timing::TimingMailbox::default();
+    let geometry_mailbox = geometry_statistics::GeometryMailbox::default();
+    app.insert_resource(geometry_mailbox.clone())
+        .add_systems(PreUpdate, geometry_statistics::receive);
     app.insert_resource(timing_mailbox.clone())
         .add_systems(PreUpdate, simulation_timing::receive_timings);
     app.add_plugins((
@@ -285,6 +290,19 @@ pub(crate) fn install(app: &mut App) {
         return;
     };
     render_app
+        .insert_resource(geometry_mailbox)
+        .init_resource::<geometry_statistics::Submissions>()
+        .add_systems(
+            RenderGraph,
+            (
+                geometry_statistics::begin
+                    .after(RenderGraphSystems::Begin)
+                    .before(RenderGraphSystems::Render),
+                geometry_statistics::finish
+                    .after(RenderGraphSystems::Render)
+                    .before(RenderGraphSystems::Submit),
+            ),
+        )
         .insert_resource(timing_mailbox)
         .add_systems(ExtractSchedule, publish_gpu_capabilities)
         .add_systems(RenderStartup, init_pipeline)
@@ -689,6 +707,7 @@ pub(crate) fn prepare_gpu_effects(
                         let mut draw = parent.spawn((
                             HostMotionDraw,
                             GpuDrawInstance {
+                                owner: entity,
                                 mesh,
                                 wireframe_geometry: None,
                                 renderers: renderers.clone(),

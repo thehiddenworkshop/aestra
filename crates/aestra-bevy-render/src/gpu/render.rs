@@ -471,7 +471,7 @@ fn prepare_mesh_draws(
                     .into_iter()
                     .flat_map(u32::to_le_bytes)
                     .collect::<Vec<_>>(),
-                usage: BufferUsages::INDIRECT | BufferUsages::COPY_DST,
+                usage: BufferUsages::INDIRECT | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             });
             commands.entity(entity).insert(PreparedMeshDraw {
                 indirect,
@@ -547,7 +547,7 @@ fn prepare_mesh_draws(
             device.create_buffer_with_data(&BufferInitDescriptor {
                 label: Some("aestra mesh indirect"),
                 contents: &bytes,
-                usage: BufferUsages::INDIRECT | BufferUsages::COPY_DST,
+                usage: BufferUsages::INDIRECT | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             })
         };
         commands.entity(entity).insert(PreparedMeshDraw {
@@ -1078,6 +1078,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
     type Param = (
         SRes<RenderAssets<GpuShaderBuffer>>,
         SRes<super::trail_culling::TrailCulling>,
+        SRes<super::geometry_statistics::Submissions>,
     );
     type ViewQuery = Entity;
     type ItemQuery = (Read<GpuDrawInstance>, Option<Read<PreparedMeshDraw>>);
@@ -1092,7 +1093,9 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         let Some((effect, mesh)) = effect else {
             return RenderCommandResult::Skip;
         };
-        let (buffers, culling) = buffers;
+        let (buffers, culling, submissions) = buffers;
+        let submissions = submissions.into_inner();
+        use super::geometry_statistics::Topology;
         if let Some(mesh) = mesh {
             pass.set_vertex_buffer(0, mesh.vertex.slice(..));
             if let Some((index, format)) = &mesh.index {
@@ -1101,6 +1104,16 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
             } else {
                 pass.draw_indirect(&mesh.indirect, 0);
             }
+            submissions.record(
+                effect.owner,
+                Some((&mesh.indirect, 0)),
+                [0; 2],
+                if mesh.wireframe.is_some() {
+                    Topology::Lines
+                } else {
+                    Topology::Triangles
+                },
+            );
             return RenderCommandResult::Success;
         }
         if effect.mesh.is_some() {
@@ -1112,11 +1125,19 @@ impl<P: PhaseItem> RenderCommand<P> for DrawGpuSpritesIndirect {
         if let Some(count) = effect.trail_instances {
             if let Some(indirect) = culling.into_inner().indirect(view, item.entity()) {
                 pass.draw_indirect(indirect, 0);
+                submissions.record(effect.owner, Some((indirect, 0)), [0; 2], Topology::Strip);
             } else {
                 pass.draw(0..4, 0..count);
+                submissions.record(effect.owner, None, [4, count], Topology::Strip);
             }
         } else {
             pass.draw_indirect(&indirect.buffer, effect.indirect_offset);
+            submissions.record(
+                effect.owner,
+                Some((&indirect.buffer, effect.indirect_offset)),
+                [0; 2],
+                Topology::Strip,
+            );
         }
         RenderCommandResult::Success
     }

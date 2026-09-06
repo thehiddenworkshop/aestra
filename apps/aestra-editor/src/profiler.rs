@@ -152,6 +152,8 @@ enum ProfilerMetric {
     GpuTime,
     AliveParticles,
     SubmittedInstances,
+    SubmittedVertices,
+    SubmittedPrimitives,
     PeakParticles,
     ParticleCapacity,
     TrailCapacity,
@@ -369,7 +371,7 @@ fn project_profile_text(state: &ProfilerState, localizer: &Localizer) -> String 
         .map(|instance| {
             let profile = &instance.profile;
             format!(
-                "{}\n  {}: {} / {} · {}: {} / {}\n  {}: {} · {}: {}\n  {}: {} ({})",
+                "{}\n  {}: {} / {} · {}: {} / {}\n  {}: {} · {}: {}\n  {}: {} · {}: {} · {}: {}\n  {}: {} ({})",
                 instance.label(),
                 localizer.text("profiler-metric-live-particles"),
                 format_profile_count(profile.alive_particles).0,
@@ -381,6 +383,12 @@ fn project_profile_text(state: &ProfilerState, localizer: &Localizer) -> String 
                 format_profile_duration(profile.cpu_time_ns).0,
                 localizer.text("profiler-metric-gpu-time"),
                 format_profile_duration(profile.gpu_simulation_time_ns).0,
+                localizer.text("profiler-metric-submitted-instances"),
+                format_profile_count(profile.submitted_instances).0,
+                localizer.text("profiler-metric-submitted-vertices"),
+                format_profile_count(profile.submitted_vertices).0,
+                localizer.text("profiler-metric-submitted-primitives"),
+                format_profile_count(profile.submitted_primitives).0,
                 localizer.text("profiler-metric-buffer-memory"),
                 format_profile_memory(profile.buffer_memory_bytes).0,
                 profile_source_label(profile.buffer_memory_bytes.source(), localizer)
@@ -452,6 +460,8 @@ fn spawn_profiler_metric_grid(
                 ProfilerMetric::GpuTime,
                 ProfilerMetric::AliveParticles,
                 ProfilerMetric::SubmittedInstances,
+                ProfilerMetric::SubmittedVertices,
+                ProfilerMetric::SubmittedPrimitives,
                 ProfilerMetric::PeakParticles,
                 ProfilerMetric::ParticleCapacity,
                 ProfilerMetric::TrailCapacity,
@@ -648,7 +658,9 @@ fn spawn_profiler_availability(
                 &localizer.text("profiler-source-estimated"),
                 &localizer.text("profiler-estimated-description"),
             );
-            if profile.gpu_simulation_time_ns.source() == ProfileValueSource::Unavailable {
+            if profile.gpu_simulation_time_ns.source() == ProfileValueSource::Unavailable
+                || profile.submitted_vertices.source() == ProfileValueSource::Unavailable
+            {
                 spawn_panel_label_value(
                     section,
                     &localizer.text("profiler-source-unavailable"),
@@ -685,6 +697,8 @@ fn profiler_metric_message(metric: ProfilerMetric) -> &'static str {
         ProfilerMetric::GpuTime => "profiler-metric-gpu-time",
         ProfilerMetric::AliveParticles => "profiler-metric-live-particles",
         ProfilerMetric::SubmittedInstances => "profiler-metric-submitted-instances",
+        ProfilerMetric::SubmittedVertices => "profiler-metric-submitted-vertices",
+        ProfilerMetric::SubmittedPrimitives => "profiler-metric-submitted-primitives",
         ProfilerMetric::PeakParticles => "profiler-metric-peak-particles",
         ProfilerMetric::ParticleCapacity => "profiler-metric-capacity",
         ProfilerMetric::TrailCapacity => "profiler-metric-trail-capacity",
@@ -708,6 +722,8 @@ fn profiler_metric_display(
         ProfilerMetric::GpuTime => format_profile_duration(profile.gpu_simulation_time_ns),
         ProfilerMetric::AliveParticles => format_profile_count(profile.alive_particles),
         ProfilerMetric::SubmittedInstances => format_profile_count(profile.submitted_instances),
+        ProfilerMetric::SubmittedVertices => format_profile_count(profile.submitted_vertices),
+        ProfilerMetric::SubmittedPrimitives => format_profile_count(profile.submitted_primitives),
         ProfilerMetric::PeakParticles => format_profile_count(profile.peak_particles),
         ProfilerMetric::ParticleCapacity => format_profile_count(profile.particle_capacity),
         ProfilerMetric::TrailCapacity => format_profile_count(profile.trail_capacity),
@@ -737,7 +753,9 @@ fn format_profile_duration(value: ProfileValue<u64>) -> (String, ProfileValueSou
     (display, source)
 }
 
-fn format_profile_count(value: ProfileValue<u32>) -> (String, ProfileValueSource) {
+fn format_profile_count<T: Copy + std::fmt::Display>(
+    value: ProfileValue<T>,
+) -> (String, ProfileValueSource) {
     (
         value
             .value()

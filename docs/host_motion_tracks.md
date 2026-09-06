@@ -231,7 +231,7 @@ and includes trail capacity, occupied/retired owners, evictions and truncated hi
 
 Additive totals retain measured/estimated provenance; any missing contributor makes
 that total unavailable. Non-trail instances contribute known zero trail usage. Native
-GPU rendering time and submitted geometry remain unavailable rather than being inferred from counts.
+GPU rendering time remains unavailable; submitted geometry uses independent draw-command telemetry.
 Capacity and buffer memory cover active instances, not the entire dependency library.
 Texture memory and overdraw remain unavailable for compositions because shared assets
 and overlapping draws cannot be summed accurately without further measurement.
@@ -266,6 +266,33 @@ parameter/seed edits, rebuilt owners and recompilation; frame sequence numbers r
 out-of-order callbacks. Despawned owners cannot receive timing data. Results are delayed
 observations rather than same-frame guarantees, and project totals sum the active
 instances' valid simulation windows, not the application's total GPU frame time.
+
+### Submitted geometry
+
+Native GPU profiles count commands that actually execute in the render pass, after view
+visibility, render layers, frustum culling and pipeline/binding readiness checks. A hidden
+instance contributes measured zero once its frame observation arrives. Multiple renderers
+and multiple views count separately: they submit real additional work. Repeated source
+effects remain isolated by their presentation owner and project clip path.
+
+`submitted_instances` counts draw instances (trail segments are not live particles).
+`submitted_vertices` counts vertex/index references: indexed mesh references can revisit
+the same vertex. `submitted_primitives` counts triangles, or lines for mesh wireframe.
+`draw_calls` includes issued zero-instance indirect commands. These values describe geometry
+submitted before shader rejection, clipping, depth testing and rasterization; degenerate
+ribbons or empty trail segments may still be submitted. They are not visible-pixel counts,
+unique vertex counts, overdraw estimates or GPU timings. CPU-reference geometry remains
+unavailable rather than borrowing native-GPU observations.
+
+The renderer copies only the first eight bytes of each indirect command and each owner's
+16-byte simulation context trailer. Trail commands use the actual per-view culling buffer;
+fallback direct draws use their exact CPU-issued ranges. Sampling is bounded to 256 owners,
+2048 draws and three 20 KiB readback buffers. A draw-budget overflow invalidates the entire
+observation; omitted owners are unavailable, never a partial measured total. Backpressure
+skips sampling without blocking rendering. Only the latest completed frame is delivered.
+Context tokens, sequence numbers and simulation times reject stale readbacks after seeks,
+restarts, edits or owner replacement. View changes appear asynchronously, not in the same
+frame as a visibility toggle. Totals sum the same frame's valid owner snapshots.
 
 ## Scope
 

@@ -594,6 +594,8 @@ fn record_presented_profile(
     profile.gpu_simulation_time_ns = ProfileValue::Unavailable;
     profile.alive_particles = ProfileValue::Unavailable;
     profile.submitted_instances = ProfileValue::Unavailable;
+    profile.submitted_vertices = ProfileValue::Unavailable;
+    profile.submitted_primitives = ProfileValue::Unavailable;
     for emitter in &mut profile.emitters {
         emitter.alive_particles = 0;
     }

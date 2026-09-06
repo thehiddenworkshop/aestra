@@ -69,6 +69,10 @@ pub struct EffectProfile {
     pub gpu_simulation_time_ns: ProfileValue<u64>,
     pub alive_particles: ProfileValue<u32>,
     pub submitted_instances: ProfileValue<u32>,
+    /// Submitted vertex/index references, not unique vertices or visible pixels.
+    pub submitted_vertices: ProfileValue<u64>,
+    /// Submitted triangles (or lines in wireframe mode), before shader rejection.
+    pub submitted_primitives: ProfileValue<u64>,
     pub peak_particles: ProfileValue<u32>,
     pub particle_capacity: ProfileValue<u32>,
     pub emitter_count: ProfileValue<u32>,
@@ -146,6 +150,8 @@ impl EffectProfile {
             gpu_simulation_time_ns: ProfileValue::Unavailable,
             alive_particles: ProfileValue::Unavailable,
             submitted_instances: ProfileValue::Unavailable,
+            submitted_vertices: ProfileValue::Unavailable,
+            submitted_primitives: ProfileValue::Unavailable,
             peak_particles: ProfileValue::Unavailable,
             particle_capacity: ProfileValue::Measured(
                 effect.max_particles.min(u32::MAX as usize) as u32
