@@ -691,12 +691,14 @@ fn choreography_keyboard_input(
     material_graphs: Query<&RelativeCursorPosition, With<MaterialGraphViewport>>,
     focus: Option<Res<InputFocus>>,
     editable_text: Query<(), With<EditableText>>,
+    shortcuts: crate::input::ShortcutContext,
 ) {
     let editing_text = focus
         .as_ref()
         .and_then(|focus| focus.get())
         .is_some_and(|entity| editable_text.contains(entity));
     if palette.open
+        || shortcuts.blocked()
         || timelines.is_empty()
         || editing_text
         || material_graphs

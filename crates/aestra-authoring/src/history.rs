@@ -24,6 +24,7 @@ pub struct CommandHistory {
     undo: VecDeque<HistoryEntry>,
     redo: Vec<HistoryEntry>,
     limit: usize,
+    edit_serial: u64,
 }
 
 impl Default for CommandHistory {
@@ -38,6 +39,7 @@ impl CommandHistory {
             undo: VecDeque::new(),
             redo: Vec::new(),
             limit: limit.max(1),
+            edit_serial: 0,
         }
     }
 
@@ -52,6 +54,7 @@ impl CommandHistory {
             return Ok(outcome.diff);
         }
         let label = transaction.label.clone();
+        self.edit_serial += 1;
         self.undo.push_back(HistoryEntry {
             label,
             forward: transaction,
@@ -132,6 +135,11 @@ impl CommandHistory {
 
     pub fn undo_len(&self) -> usize {
         self.undo.len()
+    }
+
+    /// Number of committed edits, independent of bounded history eviction and undo/redo.
+    pub fn edit_serial(&self) -> u64 {
+        self.edit_serial
     }
 
     pub fn redo_len(&self) -> usize {

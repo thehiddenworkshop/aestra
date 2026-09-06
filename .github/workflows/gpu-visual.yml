@@ -31,7 +31,16 @@ jobs:
       - name: Compare CPU and GPU particle semantics
         env:
           AESTRA_REQUIRE_GPU_CONFORMANCE: "1"
-        run: cargo test --locked -p aestra-bevy-render --test gpu_conformance -- --nocapture
+        run: >-
+          cargo test --locked -p aestra-bevy-render
+          --test gpu_conformance
+          --test material_pipeline_conformance
+          --test normal_map_conformance
+          --test ribbon_conformance
+          --test trail_conformance
+          --test trail_culling_conformance
+          --test trail_uv_conformance
+          -- --nocapture
 
       - name: Validate editor viewport composition
         run: >-

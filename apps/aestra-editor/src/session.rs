@@ -23,8 +23,10 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+#[cfg(test)]
 use thiserror::Error;
 
+#[cfg(test)]
 #[derive(Debug, Error)]
 pub(crate) enum SessionError {
     #[error(transparent)]
@@ -56,6 +58,7 @@ pub(crate) struct EditorSession {
     pub diagnostics: ValidationReport,
     pub last_diff: EffectDiff,
     pub pending_change: Option<PendingChange>,
+    interaction_source: Option<EffectAsset>,
     pub clock: PlaybackClock,
     pub preview_seed: u64,
     pub solo_emitter: Option<EmitterId>,
@@ -69,19 +72,20 @@ pub(crate) struct EditorSession {
     history: CommandHistory,
     history_generation: u64,
     saved_effect: Option<EffectAsset>,
+    saved_source_bytes: Option<Vec<u8>>,
     checkpoints: CheckpointStore<EffectInstance>,
     effect_revision: u64,
     last_seek: SeekPlan,
 }
 
 impl EditorSession {
-    pub fn from_embedded_sample(source: &str, path: impl Into<PathBuf>) -> Self {
+    pub fn from_embedded_sample(source: &str) -> Self {
         let effect = EffectAsset::from_ron(source)
             .expect("the bundled Prism Bloom sample must always be valid");
         Self::from_effect(
             effect,
-            Some(path.into()),
-            "Previewing embedded Prism Bloom".into(),
+            None,
+            "Previewing embedded Prism Bloom — use Save As to create a document".into(),
         )
     }
 
@@ -100,6 +104,7 @@ impl EditorSession {
             diagnostics,
             last_diff: EffectDiff::default(),
             pending_change: None,
+            interaction_source: None,
             clock: PlaybackClock::default(),
             preview_seed,
             solo_emitter: None,
@@ -113,6 +118,7 @@ impl EditorSession {
             history: CommandHistory::default(),
             history_generation: 0,
             saved_effect: Some(saved_effect),
+            saved_source_bytes: None,
             checkpoints: CheckpointStore::default(),
             effect_revision: 0,
             last_seek: direct_seek_plan(0),
@@ -294,6 +300,7 @@ impl EditorSession {
         }
     }
 
+    #[cfg(test)]
     pub fn evaluate_preview(&mut self, output: &mut Vec<aestra_runtime::ParticleSample>) {
         let time = self.simulation_time();
         let mode = self.seek_mode();
@@ -441,6 +448,8 @@ impl EditorSession {
     }
 
     pub fn new_effect(&mut self) {
+        self.interaction_source = None;
+        self.saved_source_bytes = None;
         self.effect = blank_effect();
         self.solo_emitter = None;
         self.invalidate_effect_checkpoints();
@@ -463,6 +472,7 @@ impl EditorSession {
         self.ui_revision += 1;
     }
 
+    #[cfg(test)]
     pub fn open(&mut self, path: impl AsRef<Path>) -> Result<(), SessionError> {
         let path = path.as_ref();
         let effect = EffectAsset::load_ron(path)?;
@@ -492,11 +502,17 @@ impl EditorSession {
         compiled: Arc<CompiledEffect>,
     ) -> Result<(), CompileError> {
         debug_assert_eq!(compiled.source, self.effect.id);
-        let preview = if self.solo_emitter.is_none() {
+        let candidate = self.interaction_source.as_ref().or_else(|| {
+            self.pending_change
+                .as_ref()
+                .filter(|pending| pending.can_apply)
+                .map(|pending| pending.preview.candidate())
+        });
+        let preview = if self.solo_emitter.is_none() && candidate.is_none() {
             EffectInstance::with_seed(compiled, self.preview_seed)
         } else {
             compile_preview_with_solo_and_material_programs(
-                &self.effect,
+                candidate.unwrap_or(&self.effect),
                 self.preview_seed,
                 self.solo_emitter,
                 &compiled.material_programs,
@@ -510,6 +526,8 @@ impl EditorSession {
     }
 
     fn install_open_document(&mut self, path: &Path, effect: EffectAsset, preview: EffectInstance) {
+        self.interaction_source = None;
+        self.saved_source_bytes = std::fs::read(path).ok();
         self.saved_effect = Some(effect.clone());
         self.effect = effect;
         self.solo_emitter = None;
@@ -531,6 +549,10 @@ impl EditorSession {
     }
 
     pub fn restore_recovery(&mut self, effect: EffectAsset, source_path: Option<PathBuf>) {
+        self.interaction_source = None;
+        self.saved_source_bytes = source_path
+            .as_deref()
+            .and_then(|path| std::fs::read(path).ok());
         let preview = compile_preview(&effect, self.preview_seed).ok();
         let saved_effect = source_path
             .as_deref()
@@ -568,7 +590,30 @@ impl EditorSession {
 
     pub fn save_as(&mut self, path: impl AsRef<Path>) -> Result<(), AssetError> {
         let path = path.as_ref();
+        let writing_source = self.source_path.as_deref().is_some_and(|source| {
+            source == path
+                || source
+                    .canonicalize()
+                    .ok()
+                    .zip(path.canonicalize().ok())
+                    .is_some_and(|(source, target)| source == target)
+        });
+        if writing_source
+            && (self
+                .saved_effect
+                .as_ref()
+                .is_none_or(|saved| EffectAsset::load_ron(path).ok().as_ref() != Some(saved))
+                || self
+                    .saved_source_bytes
+                    .as_ref()
+                    .is_some_and(|saved| std::fs::read(path).ok().as_ref() != Some(saved)))
+        {
+            return Err(std::io::Error::other(
+                "The source changed outside the editor. Use Save As to save a copy, or reopen the source before saving."
+            ).into());
+        }
         self.effect.save_ron(path)?;
+        self.saved_source_bytes = std::fs::read(path).ok();
         self.source_path = Some(path.to_owned());
         self.saved_effect = Some(self.effect.clone());
         self.update_dirty_state();
@@ -587,6 +632,10 @@ impl EditorSession {
     ) {
         self.effect.name = name.into();
         self.source_path = Some(path.into());
+        self.saved_source_bytes = self
+            .source_path
+            .as_deref()
+            .and_then(|path| std::fs::read(path).ok());
         self.saved_effect = Some(self.effect.clone());
         self.update_dirty_state();
         self.ui_revision += 1;
@@ -749,6 +798,7 @@ impl EditorSession {
             return false;
         };
         self.preview = Some(runtime_preview);
+        self.interaction_source = Some(preview.candidate().clone());
         self.samples.clear();
         self.checkpoints.clear();
         true
@@ -911,6 +961,10 @@ impl EditorSession {
 
     pub(crate) fn effect_undo_len(&self) -> usize {
         self.history.undo_len()
+    }
+
+    pub(crate) fn effect_edit_serial(&self) -> u64 {
+        self.history.edit_serial()
     }
 
     pub(crate) fn effect_redo_len(&self) -> usize {
@@ -2167,6 +2221,7 @@ impl EditorSession {
     }
 
     fn refresh_preview(&mut self) {
+        self.interaction_source = None;
         if self.solo_emitter.is_some_and(|solo| {
             !self
                 .effect
@@ -2401,6 +2456,44 @@ mod tests {
     }
 
     #[test]
+    fn embedded_sample_never_claims_an_existing_disk_source() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("sample.aestra.ron");
+        let mut disk = test_support::effect_with_timing_slack();
+        disk.name = "User's newer sample".into();
+        disk.save_ron(&path).unwrap();
+        let source = ron::ser::to_string(&test_support::effect_with_timing_slack()).unwrap();
+        let session = EditorSession::from_embedded_sample(&source);
+        assert!(session.source_path.is_none());
+        assert_eq!(EffectAsset::load_ron(&path).unwrap(), disk);
+    }
+
+    #[test]
+    fn save_preserves_external_edits_and_allows_a_separate_copy() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("source.aestra.ron");
+        let copy = temporary.path().join("copy.aestra.ron");
+        let mut session = test_support::session_with_timing_slack();
+        session.save_as(&path).unwrap();
+        let mut external = session.effect.clone();
+        external.name = "External edit".into();
+        external.save_ron(&path).unwrap();
+        assert!(session.set_effect_name("Local edit"));
+        assert!(session.save().is_err());
+        assert!(session.save_as(&path).is_err());
+        assert!(session.dirty);
+        assert_eq!(EffectAsset::load_ron(&path).unwrap(), external);
+        session.save_as(&copy).unwrap();
+        assert_eq!(EffectAsset::load_ron(&copy).unwrap().name, "Local edit");
+        assert!(!session.dirty);
+        let mut commented = std::fs::read_to_string(&copy).unwrap();
+        commented.push_str("\n// Added by an external editor\n");
+        std::fs::write(&copy, &commented).unwrap();
+        assert!(session.save().is_err());
+        assert_eq!(std::fs::read_to_string(&copy).unwrap(), commented);
+    }
+
+    #[test]
     fn recovered_document_preserves_source_identity_and_dirty_state() {
         let mut session = test_support::session_with_timing_slack();
         let path = std::env::temp_dir().join(format!(
@@ -2469,6 +2562,16 @@ mod tests {
         let authored = session.effect.clone();
         assert_eq!(authored.emitters.len(), 2);
         assert_eq!(authored.events.len(), 1);
+        assert!(
+            authored
+                .validation_report()
+                .diagnostics
+                .iter()
+                .any(|diagnostic| {
+                    diagnostic.code == aestra_core::DiagnosticCode::UnsupportedEventLink
+                        && diagnostic.severity == aestra_core::DiagnosticSeverity::Warning
+                })
+        );
         while session.can_undo() {
             session.undo();
         }

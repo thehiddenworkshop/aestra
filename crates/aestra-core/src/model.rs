@@ -357,6 +357,12 @@ impl EffectAsset {
         }
         for (index, event) in self.events.iter().enumerate() {
             let path = format!("effect.events[{index}]");
+            report.push(Diagnostic {
+                severity: crate::DiagnosticSeverity::Warning,
+                code: DiagnosticCode::UnsupportedEventLink,
+                path: path.clone(),
+                message: "Particle event links are preserved in the asset but are not executed by the current runtime.".into(),
+            });
             register_id(
                 &mut report,
                 &mut semantic_ids,

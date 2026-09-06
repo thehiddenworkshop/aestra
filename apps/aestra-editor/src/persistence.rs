@@ -352,6 +352,7 @@ struct AutosaveState {
     observed_revision: u64,
     written_revision: Option<u64>,
     write_after: Instant,
+    first_unwritten_edit: Option<Instant>,
     cleanup_after: Instant,
     enabled: bool,
     suspended: bool,
@@ -365,6 +366,7 @@ impl AutosaveState {
             observed_revision: session.document_revision(),
             written_revision: session.dirty.then_some(session.document_revision()),
             write_after: now,
+            first_unwritten_edit: None,
             cleanup_after: now,
             enabled,
             suspended: false,
@@ -800,6 +802,7 @@ fn autosave_recovery_at(
     let interval = Duration::from_secs(u64::from(settings.general.autosave_interval_seconds));
     if state.enabled != settings.general.autosave_enabled {
         state.enabled = settings.general.autosave_enabled;
+        state.first_unwritten_edit = None;
         state.write_after = now + interval;
         state.cleanup_after = now;
         if state.enabled {
@@ -821,12 +824,14 @@ fn autosave_recovery_at(
             return;
         }
         state.document_key = document_key;
+        state.first_unwritten_edit = None;
         state.observed_revision = session.document_revision();
         state.written_revision = None;
         state.write_after = now + interval;
     }
 
     if !session.dirty {
+        state.first_unwritten_edit = None;
         try_clear_tracked_recovery(persistence, state, now, "saved effect recovery snapshot");
         return;
     }
@@ -836,19 +841,24 @@ fn autosave_recovery_at(
         state.observed_revision = revision;
         state.written_revision = None;
         state.write_after = now + interval;
-        return;
+        state.first_unwritten_edit.get_or_insert(now);
     }
-    if state.written_revision == Some(revision) || now < state.write_after {
+    let deadline_due = state
+        .first_unwritten_edit
+        .is_some_and(|first| now >= first + interval * 4);
+    if state.written_revision == Some(revision) || (now < state.write_after && !deadline_due) {
         return;
     }
 
     match persistence.persist(&session.effect, session.source_path.as_deref()) {
         Ok(_) => {
             state.written_revision = Some(revision);
+            state.first_unwritten_edit = None;
             state.cleanup_after = now;
         }
         Err(error) => {
             error!("failed to write recovery snapshot: {error}");
+            state.first_unwritten_edit = Some(now);
             set_persistence_status(
                 session,
                 localizer,
@@ -1948,6 +1958,31 @@ mod tests {
         assert!(!recovery_path.exists());
         assert!(!persistence.has_active());
         assert!(state.written_revision.is_none());
+    }
+
+    #[test]
+    fn continuous_edits_cannot_postpone_recovery_forever() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut session = test_support::session_with_timing_slack();
+        let settings = EditorSettings::default();
+        let interval = u64::from(settings.general.autosave_interval_seconds);
+        let localizer = Localizer::new("en-US").unwrap();
+        let mut persistence = RecoveryPersistence::for_test(temporary.path().into(), None);
+        let mut state = AutosaveState::new(&session, true);
+        let start = Instant::now();
+        for second in 0..=interval * 4 {
+            assert!(session.set_effect_name(format!("Edit {second}")));
+            autosave_recovery_at(
+                &mut session,
+                &settings,
+                &mut persistence,
+                &mut state,
+                start + Duration::from_secs(second),
+                &localizer,
+            );
+        }
+        assert!(persistence.has_active());
+        assert_eq!(state.written_revision, Some(session.document_revision()));
     }
 
     #[test]

@@ -2126,7 +2126,7 @@ fn collect_effect_sources(
             Ok(kind) if kind.is_dir() => {
                 collect_effect_sources(&path, paths, diagnostics, false)?;
             }
-            Ok(kind) if kind.is_file() && is_ron_source(&path) => paths.push(path),
+            Ok(kind) if kind.is_file() && is_project_asset_source(&path) => paths.push(path),
             Ok(_) => {}
             Err(error) => diagnostics.push(ProjectAssetDiagnostic {
                 code: ProjectAssetDiagnosticCode::SourceUnavailable,
@@ -2138,7 +2138,8 @@ fn collect_effect_sources(
     Ok(())
 }
 
-fn is_ron_source(path: &Path) -> bool {
+/// Source-file filter shared by project indexing and editor filesystem watching.
+pub fn is_project_asset_source(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("ron"))
 }

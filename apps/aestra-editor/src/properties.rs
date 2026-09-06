@@ -6249,6 +6249,9 @@ fn spawn_event_links(
     session: &EditorSession,
     localizer: &Localizer,
 ) {
+    parent
+        .spawn_empty()
+        .apply_scene(label_dim(localizer.text("properties-events-unsupported")));
     let source = session.selected_layer().id;
     parent.spawn((
         Text::new(localizer.text("properties-events")),

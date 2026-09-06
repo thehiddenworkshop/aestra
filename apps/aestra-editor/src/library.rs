@@ -321,6 +321,12 @@ impl ProjectEffectCatalog {
                     .diagnostics
                     .into_iter()
                     .map(|diagnostic| diagnostic.message)
+                    .chain(
+                        report
+                            .material_diagnostics
+                            .into_iter()
+                            .map(|diagnostic| diagnostic.message),
+                    )
                     .collect::<Vec<_>>()
                     .join("; "),
                 error => error.to_string(),
@@ -358,6 +364,13 @@ impl ProjectEffectCatalog {
             validation.push(Diagnostic::error(
                 code,
                 format!("effect.effect_clips[{index}].source"),
+                diagnostic.message,
+            ));
+        }
+        for diagnostic in report.material_diagnostics {
+            validation.push(Diagnostic::error(
+                DiagnosticCode::InvalidReference,
+                diagnostic.path,
                 diagnostic.message,
             ));
         }
@@ -559,15 +572,13 @@ fn collect_project_effect_file_stamps(
         let file_type = entry.file_type()?;
         let path = entry.path();
         if file_type.is_dir() {
+            if path.file_name().is_some_and(|name| name == ".aestra") {
+                continue;
+            }
             collect_project_effect_file_stamps(&path, files)?;
             continue;
         }
-        let project_source = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| {
-                name.ends_with(".aestra.ron") || name.ends_with(".aestra.material.ron")
-            });
+        let project_source = aestra_project::is_project_asset_source(&path);
         if !file_type.is_file() || !project_source {
             continue;
         }
@@ -654,8 +665,16 @@ fn apply_project_effect_catalog_refresh(
             // An editor save changes the filesystem stamp too. When the session already owns
             // these exact bytes, retain its more useful save status and playback state.
             if !matches_clean_session {
-                match session.open(path) {
-                    Ok(()) => {
+                let reloaded = EffectAsset::load_ron(path)
+                    .map_err(|error| error.to_string())
+                    .and_then(|effect| {
+                        catalog
+                            .compile_project(&effect)
+                            .map(|project| (effect, project))
+                    });
+                match reloaded {
+                    Ok((effect, project)) => {
+                        session.open_compiled_effect(path, effect, project.root);
                         let mut args = FluentArgs::new();
                         args.set("path", path.display().to_string());
                         session.status =
@@ -4178,6 +4197,86 @@ mod tests {
         let snapshot = ProjectEffectTreeSnapshot::scan(temporary.path());
 
         assert!(snapshot.file(&material).is_some());
+        for name in [
+            "function.aestra.material-function.ron",
+            "preset.aestra.material-preset.ron",
+            "UPPER.AESTRA.MATERIAL.RON",
+        ] {
+            let path = temporary.path().join(name);
+            fs::write(&path, "source").unwrap();
+            assert!(
+                ProjectEffectTreeSnapshot::scan(temporary.path())
+                    .file(&path)
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn missing_material_dependencies_have_actionable_diagnostics() {
+        let temporary = tempfile::tempdir().unwrap();
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        let mut effect = test_support::effect_with_timing_slack();
+        effect
+            .material_instances
+            .push(aestra_core::material::MaterialInstance {
+                id: MaterialId::new(),
+                program: MaterialProgramRef::Project(aestra_core::MaterialProgramId::new()),
+                values: default(),
+                render_state: aestra_core::material::MaterialRenderState::additive_sprite(),
+            });
+        let error = catalog.compile_project(&effect).unwrap_err();
+        assert!(!error.trim().is_empty());
+        assert!(!catalog.dependency_validation_report(&effect).is_valid());
+    }
+
+    #[test]
+    fn clean_external_reload_resolves_project_materials() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("root.aestra.ron");
+        let program = MaterialProgram::additive_sprite("Project material");
+        program
+            .save_ron(temporary.path().join("material.aestra.material.ron"))
+            .unwrap();
+        let mut effect = test_support::effect_with_timing_slack();
+        effect
+            .material_instances
+            .push(aestra_core::material::MaterialInstance {
+                id: MaterialId::new(),
+                program: MaterialProgramRef::Project(program.id),
+                values: default(),
+                render_state: aestra_core::material::MaterialRenderState::additive_sprite(),
+            });
+        effect.save_ron(&path).unwrap();
+        let mut catalog = ProjectEffectCatalog::scan(temporary.path());
+        let mut session = test_support::session_with_timing_slack();
+        session.open_compiled_effect(
+            &path,
+            effect.clone(),
+            catalog.compile_project(&effect).unwrap().root,
+        );
+        let previous = ProjectEffectTreeSnapshot::scan(temporary.path());
+        effect.name = "Externally changed material effect".into();
+        effect.save_ron(&path).unwrap();
+        let current = ProjectEffectTreeSnapshot::scan(temporary.path());
+        apply_project_effect_catalog_refresh(
+            &mut catalog,
+            &mut session,
+            &previous,
+            &current,
+            &Localizer::new("en-US").unwrap(),
+        );
+        assert_eq!(session.effect.name, effect.name);
+        assert!(
+            session
+                .preview
+                .as_ref()
+                .unwrap()
+                .effect()
+                .material_program(program.id)
+                .is_some()
+        );
+        assert!(!session.dirty);
     }
 
     #[test]

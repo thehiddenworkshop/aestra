@@ -542,6 +542,7 @@ fn diagnostic_code_message(code: DiagnosticCode) -> &'static str {
         DiagnosticCode::ReferenceCycle => "diagnostics-code-reference-cycle",
         DiagnosticCode::UnknownModule => "diagnostics-code-unknown-module",
         DiagnosticCode::UnsupportedRenderer => "diagnostics-code-unsupported-renderer",
+        DiagnosticCode::UnsupportedEventLink => "diagnostics-code-unsupported-event-link",
         DiagnosticCode::MissingAttribute => "diagnostics-code-missing-attribute",
         DiagnosticCode::UnknownParameter => "diagnostics-code-unknown-parameter",
         DiagnosticCode::ParameterTypeMismatch => "diagnostics-code-parameter-type-mismatch",

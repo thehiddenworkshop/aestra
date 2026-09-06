@@ -10,6 +10,7 @@ mod dock_ui;
 mod docking;
 mod feathers;
 mod history;
+mod input;
 mod library;
 mod localization;
 mod material_graph;
@@ -155,7 +156,6 @@ const MATERIAL_GRAPH_LAB_EFFECT_SOURCE: &str =
 #[cfg(test)]
 const MATERIAL_GRAPH_LAB_PROGRAM_SOURCE: &str =
     include_str!("../../../assets/materials/material_graph_lab.aestra.material.ron");
-const EFFECT_PATH: &str = "assets/effects/prism_bloom.aestra.ron";
 const EDITOR_ASSET_ROOT: &str = "../../assets";
 const EDITOR_ICON: &[u8] = include_bytes!("../../../assets/project/icon.png");
 
@@ -191,7 +191,7 @@ fn main() {
     let (mut settings, persistence) = SettingsPersistence::load();
     let localization = EditorLocalizationPlugin::new(&settings.language.locale);
     settings.language.locale = localization.locale().into();
-    let session = EditorSession::from_embedded_sample(EFFECT_SOURCE, EFFECT_PATH);
+    let session = EditorSession::from_embedded_sample(EFFECT_SOURCE);
     let show_grid = settings.preview.show_grid;
     let ui_scale = settings.appearance.ui_scale;
     App::new()

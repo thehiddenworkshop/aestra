@@ -18,12 +18,21 @@ use bevy::{
     prelude::*,
     render::diagnostic::RenderDiagnosticsPlugin,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
+    render::{
+        ExtractSchedule, MainWorld, RenderApp,
+        render_resource::{CachedPipelineState, PipelineCache},
+    },
     window::WindowResolution,
 };
 use image::{Rgba, RgbaImage, imageops};
 #[cfg(test)]
 use std::collections::BTreeMap;
-use std::{env, fs, path::PathBuf, sync::Arc};
+use std::{
+    env, fs,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use preview_report::{
     CompilerPreviewData, PreviewCaptureData, PreviewRuntimeData, write_preview_failure_report,
@@ -125,7 +134,11 @@ fn main() {
             ),
         );
     if let Some(capture) = capture {
-        app.insert_resource(capture);
+        app.insert_resource(capture)
+            .init_resource::<CaptureRenderReadiness>();
+        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+            render_app.add_systems(ExtractSchedule, publish_capture_render_readiness);
+        }
     }
     if let Some(output) = gpu_bench_output {
         app.insert_resource(gpu_bench::GpuBenchPlan::new(
@@ -458,6 +471,7 @@ fn set_capture_mode(target: &mut Option<CaptureMode>, mode: CaptureMode) -> Resu
 
 #[derive(Resource)]
 struct CapturePlan {
+    waiting_since: Option<Instant>,
     history_frame: Option<u64>,
     mode: CaptureMode,
     sample_frames: Vec<u64>,
@@ -481,6 +495,7 @@ impl CapturePlan {
         let sample_frames = resolve_sample_frames(sampling, maximum_frame)?;
         let frame_count = sample_frames.len();
         Ok(Self {
+            waiting_since: None,
             mode,
             history_frame: None,
             sample_frames,
@@ -883,10 +898,37 @@ fn update_hud(
     );
 }
 
+#[derive(Resource, Default)]
+struct CaptureRenderReadiness {
+    ready: bool,
+    detail: String,
+}
+
+fn publish_capture_render_readiness(cache: Res<PipelineCache>, mut main_world: ResMut<MainWorld>) {
+    let mut total = 0;
+    let mut pending = 0;
+    let mut error = None;
+    for pipeline in cache.pipelines() {
+        total += 1;
+        if !matches!(pipeline.state, CachedPipelineState::Ok(_)) {
+            pending += 1;
+        }
+        if let CachedPipelineState::Err(reason) = &pipeline.state {
+            error.get_or_insert_with(|| reason.to_string());
+        }
+    }
+    main_world.insert_resource(CaptureRenderReadiness {
+        ready: total > 0 && pending == 0,
+        detail: error.unwrap_or_else(|| format!("{pending} of {total} render pipelines pending")),
+    });
+}
+
 fn drive_capture(
     capture: Option<ResMut<CapturePlan>>,
     mut players: Query<&mut EffectPlayer>,
     mut commands: Commands,
+    readiness: Option<Res<CaptureRenderReadiness>>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     let Some(mut capture) = capture else {
         return;
@@ -894,6 +936,25 @@ fn drive_capture(
     if capture.pending || capture.next_frame >= capture.frame_count() {
         return;
     }
+    if let Some(readiness) = readiness.as_ref().filter(|readiness| !readiness.ready) {
+        let waiting_since = capture.waiting_since.get_or_insert_with(Instant::now);
+        if waiting_since.elapsed() >= Duration::from_secs(60) {
+            let message = format!(
+                "capture timed out waiting for render pipelines: {}",
+                readiness.detail
+            );
+            eprintln!("aestra-viewer: {message}");
+            if let Err(error) =
+                write_preview_failure_report(capture.mode.output_directory(), &message, &[])
+            {
+                eprintln!("aestra-viewer: could not write capture failure report: {error}");
+            }
+            capture.pending = true;
+            exit.write(AppExit::error());
+        }
+        return;
+    }
+    capture.waiting_since = None;
     if capture.settle_frames > 0 {
         capture.settle_frames -= 1;
         return;
@@ -1245,6 +1306,33 @@ mod tests {
             .map(|index| capture_frame(120, index, 4))
             .collect::<Vec<_>>();
         assert_eq!(frames, vec![15, 45, 75, 105]);
+    }
+
+    #[test]
+    fn capture_waits_for_render_pipelines_before_positioning() {
+        let mut capture = CapturePlan::new(
+            CaptureMode::Standard {
+                output: PathBuf::from("unused-capture-test"),
+            },
+            &CaptureSampling::EvenlySpaced(1),
+            1,
+            1.0,
+        )
+        .unwrap();
+        capture.settle_frames = 0;
+        let mut app = App::new();
+        app.insert_resource(capture)
+            .init_resource::<CaptureRenderReadiness>()
+            .add_message::<AppExit>()
+            .add_systems(Update, drive_capture);
+        app.update();
+        assert!(!app.world().resource::<CapturePlan>().positioned);
+        assert!(!app.world().resource::<CapturePlan>().pending);
+        app.world_mut()
+            .resource_mut::<CaptureRenderReadiness>()
+            .ready = true;
+        app.update();
+        assert!(app.world().resource::<CapturePlan>().positioned);
     }
 
     #[test]

@@ -112,7 +112,7 @@ impl Plugin for ViewportPlugin {
                 (
                     sync_project_preview,
                     sync_rendered_preview,
-                    update_preview,
+                    update_preview.after(AestraRenderSet::Prepare),
                     navigate_preview_camera,
                     sync_preview_grid,
                     sync_preview_display_mode,
@@ -247,8 +247,9 @@ fn viewport_keyboard_input(
     keys: Res<ButtonInput<KeyCode>>,
     palette: Res<ModulePaletteState>,
     canvases: Query<&RelativeCursorPosition, With<PreviewCanvas>>,
+    shortcuts: crate::input::ShortcutContext,
 ) {
-    if palette.open {
+    if palette.open || shortcuts.blocked() {
         return;
     }
     let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
@@ -478,6 +479,7 @@ struct EditorPreviewProject {
     source_root: Option<Arc<CompiledEffect>>,
     project: Option<Arc<CompiledEffectProject>>,
     error: Option<String>,
+    failed_source_revision: Option<u64>,
     live_particle_count: usize,
 }
 
@@ -2481,45 +2483,61 @@ fn selected_shape_module(session: &EditorSession) -> Option<SelectedShapeModule>
 }
 
 fn sync_project_preview(
-    session: Res<EditorSession>,
+    mut session: ResMut<EditorSession>,
     catalog: Res<ProjectEffectCatalog>,
     mut preview: ResMut<EditorPreviewProject>,
 ) {
-    let Some(source_root) = session
+    let source_root = session
         .preview
         .as_ref()
-        .map(|preview| preview.effect().clone())
-    else {
-        preview.source_root = None;
-        preview.project = None;
-        preview.error = None;
-        preview.live_particle_count = 0;
+        .map(|preview| preview.effect().clone());
+    if source_root.is_none()
+        && preview.failed_source_revision == Some(session.document_revision())
+        && !catalog.is_changed()
+    {
         return;
-    };
+    }
     if preview
         .source_root
         .as_ref()
-        .is_some_and(|current| Arc::ptr_eq(current, &source_root))
+        .zip(source_root.as_ref())
+        .is_some_and(|(current, source)| Arc::ptr_eq(current, source))
         && !catalog.is_changed()
     {
         return;
     }
 
-    preview.source_root = Some(source_root.clone());
+    preview.source_root = source_root.clone();
     match catalog.compile_project(&session.effect) {
         Ok(mut project) => {
+            preview.failed_source_revision = None;
+            if (catalog.is_changed() || source_root.is_none())
+                && let Err(error) = session.install_compiled_project_root(project.root.clone())
+            {
+                preview.error = Some(error.to_string());
+                return;
+            }
             // The editor may be showing a transient root preview (for example a gizmo drag or
             // root-emitter solo). Dependencies still come from the resolved project, while the
             // root must remain exactly the artifact owned by the session.
-            project.root = source_root;
+            project.root = session
+                .preview
+                .as_ref()
+                .expect("preview was installed")
+                .effect()
+                .clone();
+            preview.source_root = Some(project.root.clone());
             preview.project = Some(Arc::new(project));
             preview.error = None;
         }
         Err(error) => {
-            preview.project = Some(Arc::new(CompiledEffectProject {
-                root: source_root,
-                dependencies: Default::default(),
-            }));
+            preview.failed_source_revision = Some(session.document_revision());
+            preview.project = source_root.map(|root| {
+                Arc::new(CompiledEffectProject {
+                    root,
+                    dependencies: Default::default(),
+                })
+            });
             preview.error = Some(error);
             preview.live_particle_count = 0;
         }
@@ -2711,9 +2729,7 @@ fn update_preview(
         With<PreviewPresentedEffect>,
     >,
 ) {
-    let mut samples = std::mem::take(&mut session.samples);
-    session.evaluate_preview(&mut samples);
-    session.samples = samples;
+    session.samples.clear();
     let desired = desired_preview_instances(
         &preview,
         &timeline,
@@ -2724,20 +2740,43 @@ fn update_preview(
     let mut profiles = Vec::new();
     preview.live_particle_count = 0;
     for desired in desired {
-        let mut instance = aestra_runtime::EffectInstance::new(desired.effect.clone());
-        instance.set_seed(desired.seed);
-        instance.apply_compiled_parameter_overrides(&desired.parameter_overrides);
-        instance.set_playback_time(desired.time);
-        let started = Instant::now();
-        instance.evaluate(&mut instance_samples);
-        let elapsed = started.elapsed();
-        preview.live_particle_count += instance_samples.len();
         let mut profile = aestra_runtime::EffectProfile::from_compiled(&desired.effect);
-        profile.record_cpu_frame(elapsed, &instance_samples);
-        profile.record_submitted_frame(&desired.effect, &instance_samples);
         let observed = gpu_stats.iter().find(|(p, _, path, _, _)| {
             path.0 == desired.path && Arc::ptr_eq(p.effect(), &desired.effect)
         });
+        let native_gpu = observed.is_some_and(|(_, _, _, _, runtime)| {
+            runtime.is_some_and(|runtime| runtime.active == aestra_bevy_render::ActiveBackend::Gpu)
+        });
+        if !native_gpu {
+            // Reuse the renderer's evaluation. Headless previews have no presentation entity.
+            let (samples, elapsed) = if let Some((presented, _, _, _, _)) = observed {
+                let elapsed = presented.cpu_evaluation_time();
+                let samples = if elapsed.is_some() {
+                    presented.cpu_samples()
+                } else {
+                    presented.gpu_samples()
+                };
+                (samples, elapsed)
+            } else {
+                let mut instance = aestra_runtime::EffectInstance::new(desired.effect.clone());
+                instance.set_seed(desired.seed);
+                instance.apply_compiled_parameter_overrides(&desired.parameter_overrides);
+                instance.set_playback_time(desired.time);
+                let started = Instant::now();
+                instance.evaluate(&mut instance_samples);
+                (instance_samples.as_slice(), Some(started.elapsed()))
+            };
+            if let Some(elapsed) = elapsed {
+                profile.record_cpu_frame(elapsed, samples);
+            } else {
+                profile.record_particle_frame(samples);
+            }
+            profile.record_submitted_frame(&desired.effect, samples);
+            preview.live_particle_count += samples.len();
+            if desired.path.is_empty() {
+                session.samples.extend_from_slice(samples);
+            }
+        }
         profile.record_trail_usage(
             observed
                 .and_then(|(p, stats, _, _, _)| stats.and_then(|stats| stats.usage(&p.instance))),
@@ -2745,8 +2784,7 @@ fn update_preview(
         if let Some((p, _, _, particles, Some(runtime))) = observed
             && runtime.active == aestra_bevy_render::ActiveBackend::Gpu
         {
-            // Keep the measured CPU-reference evaluation time, but do not label
-            // reference counts as native-GPU observations while readback is pending.
+            // Native metrics come only from GPU telemetry; no reference simulation runs here.
             profile.alive_particles = aestra_runtime::ProfileValue::Unavailable;
             profile.peak_particles = aestra_runtime::ProfileValue::Unavailable;
             profile.submitted_instances = aestra_runtime::ProfileValue::Unavailable;
@@ -2757,6 +2795,7 @@ fn update_preview(
             if let Some(particles) = particles {
                 particles.record_profile(&p.instance, &mut profile);
             }
+            preview.live_particle_count += profile.alive_particles.value().unwrap_or(0) as usize;
         }
         profiles.push(aestra_runtime::ProjectInstanceProfile {
             path: desired.path,
@@ -3777,5 +3816,138 @@ mod tests {
             .expect("the root preview player must exist");
         assert!((player.simulation_time() - expected_simulation_time).abs() < 0.000_1);
         assert!((presented_playhead_time(player) - expected_playhead).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn material_refresh_updates_root_without_losing_interaction_preview() {
+        use aestra_core::material::{
+            MaterialInstance, MaterialProgram, MaterialProgramRef, MaterialRenderState,
+        };
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("material.aestra.material.ron");
+        let mut program = MaterialProgram::additive_sprite("Before");
+        program.save_ron(&path).unwrap();
+        let mut session = test_support::session_with_timing_slack();
+        session.effect.material_instances.push(MaterialInstance {
+            id: aestra_core::MaterialId::new(),
+            program: MaterialProgramRef::Project(program.id),
+            values: default(),
+            render_state: MaterialRenderState::additive_sprite(),
+        });
+        let catalog = ProjectEffectCatalog::scan(temporary.path());
+        session
+            .install_compiled_project_root(catalog.compile_project(&session.effect).unwrap().root)
+            .unwrap();
+        let emitter = session.selected_layer().id;
+        let transform = EmitterTransform {
+            translation: [9.0, 0.0, 0.0],
+            ..default()
+        };
+        assert!(session.preview_interaction(EffectTransaction::single(
+            "Drag",
+            EffectCommand::SetEmitterTransform {
+                id: emitter,
+                transform
+            }
+        )));
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(catalog)
+            .init_resource::<EditorPreviewProject>()
+            .add_systems(Update, sync_project_preview);
+        app.update();
+        program.name = "After external save".into();
+        program.save_ron(&path).unwrap();
+        app.world_mut()
+            .resource_mut::<ProjectEffectCatalog>()
+            .refresh();
+        app.update();
+        let session = app.world().resource::<EditorSession>();
+        let root = session.preview.as_ref().unwrap().effect();
+        assert_eq!(
+            root.material_program(program.id).unwrap().name,
+            program.name
+        );
+        assert_eq!(root.emitters[0].transform, transform);
+        assert_ne!(session.effect.emitters[0].transform, transform);
+    }
+
+    #[test]
+    fn gpu_preview_uses_observations_without_cpu_reference_evaluation() {
+        let mut session = test_support::session_with_timing_slack();
+        session.seek_time(0.5);
+        let mut player = configured_preview_player(&session).unwrap();
+        let root = player.effect().clone();
+        let mut reference = Vec::new();
+        session.evaluate_preview(&mut reference);
+        assert!(!reference.is_empty());
+        let particle_count = reference.len();
+        player.restore_gpu_samples(reference);
+        let mut app = App::new();
+        app.insert_resource(session)
+            .init_resource::<ProfilerState>()
+            .init_resource::<TimelineState>()
+            .insert_resource(EditorPreviewProject {
+                source_root: Some(root.clone()),
+                project: Some(Arc::new(CompiledEffectProject {
+                    root,
+                    dependencies: default(),
+                })),
+                ..default()
+            })
+            .add_systems(Update, update_preview);
+        let player_entity = app
+            .world_mut()
+            .spawn((
+                PreviewPresentedEffect,
+                PreviewEffectInstancePath::default(),
+                player,
+                EffectRuntimeStatus {
+                    active: ActiveBackend::Gpu,
+                    reason: "Native test".into(),
+                    compatibility: aestra_runtime::CompatibilityReport::compatible(
+                        aestra_runtime::CompatibilityTarget::NativeGpu,
+                    ),
+                },
+            ))
+            .id();
+        app.update();
+        assert!(app.world().resource::<EditorSession>().samples.is_empty());
+        assert_eq!(
+            app.world()
+                .resource::<ProfilerState>()
+                .current_profile()
+                .unwrap()
+                .cpu_time_ns,
+            aestra_runtime::ProfileValue::Unavailable
+        );
+        assert_eq!(
+            app.world()
+                .resource::<EditorPreviewProject>()
+                .live_particle_count,
+            0
+        );
+        app.world_mut()
+            .get_mut::<EffectRuntimeStatus>(player_entity)
+            .unwrap()
+            .active = ActiveBackend::GpuReadback;
+        app.update();
+        let profile = app
+            .world()
+            .resource::<ProfilerState>()
+            .current_profile()
+            .unwrap();
+        assert_eq!(
+            profile.cpu_time_ns,
+            aestra_runtime::ProfileValue::Unavailable
+        );
+        assert_eq!(
+            profile.alive_particles,
+            aestra_runtime::ProfileValue::Measured(particle_count as u32)
+        );
+        assert_eq!(
+            app.world().resource::<EditorSession>().samples.len(),
+            particle_count
+        );
     }
 }

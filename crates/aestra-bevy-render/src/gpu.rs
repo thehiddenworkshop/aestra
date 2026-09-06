@@ -825,16 +825,18 @@ fn detect_gpu_capabilities(
             "compute workgroups cannot run {WORKGROUP_SIZE} invocations"
         ));
     }
-    if limits.max_storage_buffers_per_shader_stage < 8 {
+    if limits.max_storage_buffers_per_shader_stage < aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT {
         limitations.push(format!(
-            "{} storage buffers per shader stage are available; 8 are required",
-            limits.max_storage_buffers_per_shader_stage
+            "{} storage buffers per shader stage are available; {} are required",
+            limits.max_storage_buffers_per_shader_stage,
+            aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
         ));
     }
-    if limits.max_bindings_per_bind_group < 8 {
+    if limits.max_bindings_per_bind_group < aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT {
         limitations.push(format!(
-            "{} bindings per group are available; 8 are required",
-            limits.max_bindings_per_bind_group
+            "{} bindings per group are available; {} are required",
+            limits.max_bindings_per_bind_group,
+            aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
         ));
     }
     if max_particles == 0 {
@@ -843,8 +845,9 @@ fn detect_gpu_capabilities(
     let compute_pipeline_supported = compute_shaders
         && limits.max_compute_invocations_per_workgroup >= WORKGROUP_SIZE
         && limits.max_compute_workgroup_size_x >= WORKGROUP_SIZE
-        && limits.max_storage_buffers_per_shader_stage >= 8
-        && limits.max_bindings_per_bind_group >= 8
+        && limits.max_storage_buffers_per_shader_stage
+            >= aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
+        && limits.max_bindings_per_bind_group >= aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
         && max_particles > 0;
     if !indirect_execution {
         limitations.push("indirect execution is unavailable".into());
@@ -1387,7 +1390,22 @@ fn init_pipeline(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     pipeline_cache: Res<PipelineCache>,
+    render_device: Res<RenderDevice>,
+    adapter: Res<RenderAdapter>,
 ) {
+    let limits = render_device.limits();
+    if !adapter
+        .get_downlevel_capabilities()
+        .flags
+        .contains(DownlevelFlags::COMPUTE_SHADERS)
+        || limits.max_storage_buffers_per_shader_stage
+            < aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
+        || limits.max_bindings_per_bind_group < aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT
+        || limits.max_compute_invocations_per_workgroup < WORKGROUP_SIZE
+        || limits.max_compute_workgroup_size_x < WORKGROUP_SIZE
+    {
+        return;
+    }
     let layout = BindGroupLayoutDescriptor::new(
         "aestra_gpu_simulation",
         &BindGroupLayoutEntries::sequential(
@@ -1444,13 +1462,16 @@ fn init_pipeline(
 
 fn prepare_bind_groups(
     mut commands: Commands,
-    pipeline: Res<SimulationPipeline>,
+    pipeline: Option<Res<SimulationPipeline>>,
     render_device: Res<RenderDevice>,
     pipeline_cache: Res<PipelineCache>,
     buffers: Res<RenderAssets<GpuShaderBuffer>>,
     effects: Query<(Entity, &GpuEffectBuffers)>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::bind_groups").entered();
+    let Some(pipeline) = pipeline else {
+        return;
+    };
     for (entity, effect) in &effects {
         let Some(emitters) = buffers.get(&effect.emitters) else {
             continue;
@@ -1506,13 +1527,16 @@ type TrailHistories = BTreeMap<
 fn run_simulation(
     mut render_context: RenderContext,
     pipeline_cache: Res<PipelineCache>,
-    pipeline: Res<SimulationPipeline>,
+    pipeline: Option<Res<SimulationPipeline>>,
     effects: Query<(Entity, &GpuEffectBuffers, &GpuBindGroup)>,
     mesh_draws: Query<(&GpuDrawInstance, &render::PreparedMeshDraw)>,
     gpu_resources: (Res<RenderAssets<GpuShaderBuffer>>, Res<RenderDevice>),
     mut histories: Local<TrailHistories>,
 ) {
     let _span = tracing::info_span!("aestra::gpu::simulate").entered();
+    let Some(pipeline) = pipeline else {
+        return;
+    };
     let (buffers, render_device) = gpu_resources;
     let link_ribbons = pipeline_cache.get_compute_pipeline(pipeline.link_ribbons);
     let update_trails = pipeline_cache.get_compute_pipeline(pipeline.update_trails);

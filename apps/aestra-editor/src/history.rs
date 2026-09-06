@@ -321,6 +321,7 @@ pub(crate) struct EditorHistoryLedger {
     redo: Vec<HistoryDomain>,
     effect: Option<EffectId>,
     observed_generation: u64,
+    observed_edit_serial: u64,
     observed_effect_undo: usize,
     observed_effect_redo: usize,
 }
@@ -343,20 +344,28 @@ impl EditorHistoryLedger {
             session.effect_undo_len() < self.observed_effect_undo && session.effect_redo_len() == 0;
         if effect_changed || generation_changed || history_cleared {
             self.undo.clear();
+            self.undo.extend(std::iter::repeat_n(
+                HistoryDomain::Effect,
+                session.effect_undo_len(),
+            ));
             self.redo.clear();
             self.effect = Some(session.effect.id);
             self.observed_generation = session.history_generation();
+            self.observed_edit_serial = session.effect_edit_serial();
             self.observed_effect_undo = session.effect_undo_len();
             self.observed_effect_redo = session.effect_redo_len();
             return EffectHistoryChange::Reset;
         }
         self.effect.get_or_insert(session.effect.id);
         self.observed_generation = session.history_generation();
-        if session.effect_undo_len() > self.observed_effect_undo {
+        if session.effect_edit_serial() > self.observed_edit_serial {
             self.undo.extend(std::iter::repeat_n(
                 HistoryDomain::Effect,
-                session.effect_undo_len() - self.observed_effect_undo,
+                ((session.effect_edit_serial() - self.observed_edit_serial) as usize)
+                    .min(session.effect_undo_len()),
             ));
+            self.trim_domain(HistoryDomain::Effect, session.effect_undo_len());
+            self.observed_edit_serial = session.effect_edit_serial();
             self.redo.clear();
             self.observed_effect_undo = session.effect_undo_len();
             self.observed_effect_redo = session.effect_redo_len();
@@ -372,6 +381,7 @@ impl EditorHistoryLedger {
         session.clear_effect_redo();
         self.observe_effect_history(session);
         self.undo.push(HistoryDomain::MaterialProgram);
+        self.trim_domain(HistoryDomain::MaterialProgram, MATERIAL_HISTORY_LIMIT);
         self.redo.clear();
     }
 
@@ -379,11 +389,29 @@ impl EditorHistoryLedger {
         !self.undo.is_empty()
     }
 
+    fn trim_domain(&mut self, domain: HistoryDomain, retained: usize) {
+        let mut excess = self
+            .undo
+            .iter()
+            .filter(|entry| **entry == domain)
+            .count()
+            .saturating_sub(retained);
+        self.undo.retain(|entry| {
+            if *entry == domain && excess > 0 {
+                excess -= 1;
+                false
+            } else {
+                true
+            }
+        });
+    }
+
     fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }
 
     fn observe_effect_history(&mut self, session: &EditorSession) {
+        self.observed_edit_serial = session.effect_edit_serial();
         self.observed_effect_undo = session.effect_undo_len();
         self.observed_effect_redo = session.effect_redo_len();
     }
@@ -545,13 +573,19 @@ fn history_keyboard_input(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     palette: Res<ModulePaletteState>,
+    shortcuts: crate::input::ShortcutContext,
 ) {
-    if palette.open {
+    if palette.open || shortcuts.blocked() {
         return;
     }
     let control = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     if control && keys.just_pressed(KeyCode::KeyZ) {
-        commands.trigger(HistoryAction::Undo);
+        commands.trigger(if shift {
+            HistoryAction::Redo
+        } else {
+            HistoryAction::Undo
+        });
     }
     if control && keys.just_pressed(KeyCode::KeyY) {
         commands.trigger(HistoryAction::Redo);
@@ -739,6 +773,11 @@ mod tests {
         let mut catalog = ProjectEffectCatalog::scan(temporary.path());
         let mut material_history = MaterialProgramEditHistory::default();
         let mut ledger = EditorHistoryLedger::default();
+        // Fill the bounded effect history before interleaving a material edit.
+        for index in 0..256 {
+            assert!(session.set_effect_name(format!("History {index}")));
+            ledger.capture_effect_changes(&session);
+        }
         material_history
             .execute_replacement(
                 &mut session,

@@ -487,7 +487,10 @@ fn spawn_settings_integer(
                     .insert((
                         SettingsNumberControl(setting),
                         AccessibleLabel(title.to_owned()),
-                    ));
+                    ))
+                    .insert_if(bevy::ui::InteractionDisabled, || {
+                        matches!(setting, SettingsNumber::PreviewParticleLimit)
+                    });
             });
         if let Some(unit) = unit {
             controls

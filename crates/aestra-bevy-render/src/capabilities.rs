@@ -79,10 +79,10 @@ impl GpuCapabilities {
 
     /// Converts Bevy/WGPU device discovery into the portable Aestra capability contract.
     pub fn backend_capabilities(&self, application_particle_budget: u32) -> BackendCapabilities {
-        const REQUIRED_WORKGROUP_SIZE: u32 = 64;
-        const REQUIRED_STORAGE_BINDINGS: u32 = 7;
+        const REQUIRED_WORKGROUP_SIZE: u32 = aestra_gpu::WORKGROUP_SIZE;
+        const REQUIRED_STORAGE_BINDINGS: u32 = aestra_gpu::SIMULATION_STORAGE_BINDING_COUNT;
         BackendCapabilities {
-            compute_shaders: self.compute_shaders,
+            compute_shaders: self.compute_shaders && self.compute_pipeline_supported,
             compute_workgroups: self.max_compute_invocations_per_workgroup
                 >= REQUIRED_WORKGROUP_SIZE
                 && self.max_compute_workgroup_size_x >= REQUIRED_WORKGROUP_SIZE,
@@ -283,8 +283,8 @@ mod tests {
             compute_pipeline_supported: compute,
             native_render_supported: native,
             max_bind_groups: if native { 2 } else { 1 },
-            max_bindings_per_bind_group: if compute { 7 } else { 0 },
-            max_storage_buffers_per_shader_stage: if compute { 7 } else { 0 },
+            max_bindings_per_bind_group: if compute { 8 } else { 0 },
+            max_storage_buffers_per_shader_stage: if compute { 8 } else { 0 },
             max_compute_invocations_per_workgroup: if compute { 64 } else { 0 },
             max_compute_workgroup_size_x: if compute { 64 } else { 0 },
             max_particles: 1000,
@@ -322,6 +322,22 @@ mod tests {
         assert_eq!(
             select_backend(PresentationMode::Auto, &capabilities(true, true)).active,
             ActiveBackend::Gpu
+        );
+    }
+
+    #[test]
+    fn auto_rejects_seven_storage_bindings_and_unavailable_compute_pipeline() {
+        let mut device = capabilities(true, true);
+        device.max_storage_buffers_per_shader_stage = 7;
+        assert_eq!(
+            select_backend(PresentationMode::Auto, &device).active,
+            ActiveBackend::CpuReference
+        );
+        device.max_storage_buffers_per_shader_stage = 8;
+        device.compute_pipeline_supported = false;
+        assert_eq!(
+            select_backend(PresentationMode::Auto, &device).active,
+            ActiveBackend::CpuReference
         );
     }
 

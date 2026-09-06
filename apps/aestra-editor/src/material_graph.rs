@@ -194,6 +194,12 @@ pub(crate) struct MaterialGraphPaletteState {
     query: String,
 }
 
+impl MaterialGraphPaletteState {
+    pub(crate) fn is_open(&self) -> bool {
+        self.open.is_some() || self.node_menu.is_some()
+    }
+}
+
 #[derive(Resource, Debug, Default)]
 pub(crate) struct MaterialGraphSelectionState {
     program: Option<MaterialProgramId>,

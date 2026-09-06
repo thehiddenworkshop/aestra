@@ -25,6 +25,7 @@ pub enum DiagnosticCode {
     ReferenceCycle,
     UnknownModule,
     UnsupportedRenderer,
+    UnsupportedEventLink,
     MissingAttribute,
     UnknownParameter,
     ParameterTypeMismatch,

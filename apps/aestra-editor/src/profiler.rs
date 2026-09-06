@@ -88,6 +88,11 @@ pub(crate) struct ProfilerState {
 }
 
 impl ProfilerState {
+    #[cfg(test)]
+    pub(crate) fn current_profile(&self) -> Option<&EffectProfile> {
+        self.profile.as_ref()
+    }
+
     pub(crate) fn ingest_project(
         &mut self,
         instances: Vec<ProjectInstanceProfile>,

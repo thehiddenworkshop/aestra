@@ -222,6 +222,11 @@ impl PresentedEffect {
         &self.gpu_samples
     }
 
+    /// Samples from the most recent CPU evaluation, independent of buffered GPU readback.
+    pub fn cpu_samples(&self) -> &[ParticleSample] {
+        &self.cpu_samples
+    }
+
     pub fn samples(&self) -> &[ParticleSample] {
         if self.gpu_samples.is_empty() {
             &self.cpu_samples

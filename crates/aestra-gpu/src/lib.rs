@@ -23,6 +23,8 @@ use glam::{Mat4, Quat, UVec2, UVec3, Vec2, Vec3, Vec4};
 use thiserror::Error;
 
 pub const MAX_CURVE_KEYS: usize = 8;
+/// Storage bindings used by the simulation shader and its host layout.
+pub const SIMULATION_STORAGE_BINDING_COUNT: u32 = 8;
 /// Samples in the per-emitter inverse-emission table used to seed curve-driven
 /// spawn-time reconstruction (see `aestra_simulation.wesl`). More samples give the
 /// GPU a tighter starting bracket, so fewer refinement iterations are needed.

@@ -160,6 +160,7 @@ fn transport_keyboard_input(
     palette: Res<ModulePaletteState>,
     focus: Option<Res<InputFocus>>,
     menu_items: Query<(), With<bevy::ui_widgets::MenuItem>>,
+    shortcuts: crate::input::ShortcutContext,
 ) {
     let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
     let repeated_steps = keyboard_events
@@ -170,7 +171,7 @@ fn transport_keyboard_input(
         .as_deref()
         .and_then(InputFocus::get)
         .is_some_and(|entity| menu_items.contains(entity));
-    if palette.open || menu_item_focused {
+    if palette.open || menu_item_focused || shortcuts.blocked() {
         return;
     }
     if keys.just_pressed(KeyCode::Space) {
@@ -683,5 +684,35 @@ mod tests {
         let mut ordinary = repeat;
         ordinary.repeat = false;
         assert_eq!(repeated_frame_step(&ordinary, false), None);
+    }
+
+    #[test]
+    fn editing_text_reserves_playback_and_frame_shortcuts() {
+        let mut app = App::new();
+        let mut session = test_support::session_with_timing_slack();
+        session.seek_time(0.5);
+        let frame = session.frame();
+        let playing = session.playing;
+        app.insert_resource(session)
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ModulePaletteState>()
+            .add_message::<KeyboardInput>()
+            .add_observer(execute_transport_action)
+            .add_systems(Update, transport_keyboard_input);
+        let text = app
+            .world_mut()
+            .spawn(bevy::text::EditableText::new("typing R and spaces"))
+            .id();
+        let child = app.world_mut().spawn(ChildOf(text)).id();
+        app.insert_resource(InputFocus::from_entity(child));
+        for key in [KeyCode::Space, KeyCode::KeyR, KeyCode::ArrowRight] {
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(key);
+        }
+        app.update();
+        let session = app.world().resource::<EditorSession>();
+        assert_eq!(session.frame(), frame);
+        assert_eq!(session.playing, playing);
     }
 }

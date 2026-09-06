@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License: MIT OR Apache-2.0"></a>
-  <a href="#workspace"><img src="https://img.shields.io/badge/packages-11%20workspace-8a5cf6.svg" alt="11 workspace packages"></a>
+  <a href="#workspace"><img src="https://img.shields.io/badge/packages-12%20workspace-8a5cf6.svg" alt="12 workspace packages"></a>
   <a href="https://github.com/TheHiddenWorkshop/aestra/actions/workflows/ci.yml"><img src="https://github.com/TheHiddenWorkshop/aestra/actions/workflows/ci.yml/badge.svg" alt="Build status"></a>
 </p>
 
@@ -15,17 +15,23 @@
 
 ## Run
 
+Install Rust through rustup; `rust-toolchain.toml` selects the workspace toolchain.
+
 ```powershell
 cargo run -p aestra-editor
 ```
 
 The sample asset lives at [`assets/effects/prism_bloom.aestra.ron`](assets/effects/prism_bloom.aestra.ron).
+The editor starts with an embedded, untitled copy. Use Save As to create a document, or open
+the project source from the library. Saving an open document refuses to overwrite external
+changes; save a separate copy or reopen the disk version to resolve the conflict.
 
 ## Workspace
 
 ```text
 aestra/
 ├── apps/
+│   ├── aestra-bench/        Runtime and compiler benchmark harness
 │   ├── aestra-editor/       Bevy UI choreography editor
 │   └── aestra-viewer/       Viewer, frame capture, and contact-sheet binary
 ├── bevy/
@@ -132,7 +138,7 @@ alpha when particle color and opacity are both read. Layout identity participate
 pipeline caching; legacy and wireframe rendering use their separate compact interface.
 Native GPU presentation also unions live particle-attribute requirements across each emitter's
 renderers. Unused appearance calculations and vertex reads are skipped; geometry, lifetime-driven
-flipbook age, and wireframe color remain available where needed. The 64-byte particle storage ABI
+flipbook age, and wireframe color remain available where needed. The 48-byte particle storage ABI
 is unchanged, omitted fields receive deterministic defaults, and GPU-readback mode retains full
 CPU-reference data. The Compiler Inspector shows a rendered-mode attribute-count estimate;
 runtime material overrides and render modes may change the actual requirements.
