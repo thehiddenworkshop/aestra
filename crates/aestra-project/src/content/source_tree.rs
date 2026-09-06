@@ -62,6 +62,16 @@ pub struct ProjectSourceTree {
 }
 
 impl ProjectSourceTree {
+    /// Validate an explicitly selected root before a host canonicalizes it (which loses link
+    /// provenance). This checks the selected entry, not concurrent replacement or ancestor links.
+    pub fn validate_root(root: impl AsRef<Path>) -> Result<(), String> {
+        let metadata = fs::symlink_metadata(root.as_ref()).map_err(|error| error.to_string())?;
+        if !metadata.is_dir() || is_link(&metadata) {
+            return Err("Project root must be a directory, not a file or link".into());
+        }
+        Ok(())
+    }
+
     /// The caller supplies the asset root, not a directory to search for a project root.
     /// This performs no writes and does not follow links, including a linked root.
     pub fn scan(root: impl AsRef<Path>) -> Self {

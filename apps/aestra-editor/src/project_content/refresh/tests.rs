@@ -1,0 +1,312 @@
+use super::*;
+
+fn fixture(root: &Path) -> (World, ProjectEffectWatchState) {
+    let path = root.join("open.aestra.ron");
+    let session = crate::test_support::session_with_source_path(&path);
+    session.effect.save_ron(&path).unwrap();
+    let mut world = World::new();
+    world.insert_resource(EditorProjectContent::scan(root));
+    world.insert_resource(session);
+    let watch = ProjectEffectWatchState::from_world(&mut world);
+    (world, watch)
+}
+
+fn prepare(world: &World) -> RefreshResult {
+    let catalog = world.resource::<EditorProjectContent>();
+    prepare_refresh(
+        catalog.clone(),
+        RefreshInput::capture(catalog, world.resource::<EditorSession>()),
+        true,
+    )
+}
+
+fn finish(world: &mut World, watch: &mut ProjectEffectWatchState, result: RefreshResult) {
+    // Use actual system borrows: resource_scope removes/reinserts the resource and changes its
+    // ticks in Bevy 0.19, which would itself invalidate the UI regardless of this system.
+    let mut state = bevy::ecs::system::SystemState::<(
+        ResMut<EditorProjectContent>,
+        ResMut<EditorSession>,
+    )>::new(world);
+    let (mut catalog, mut session) = state.get_mut(world).unwrap();
+    finish_result(
+        result,
+        watch,
+        catalog.reborrow(),
+        session.reborrow(),
+        &Localizer::new("en-US").unwrap(),
+    );
+    state.apply(world);
+}
+
+fn settle(world: &mut World, watch: &mut ProjectEffectWatchState) {
+    for _ in 0..2 {
+        let result = prepare(world);
+        finish(world, watch, result);
+    }
+}
+
+#[test]
+fn generic_refresh_publishes_tree_without_bevy_ui_or_playback_invalidation() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut world, mut watch) = fixture(directory.path());
+    world.resource_mut::<EditorSession>().playing = true;
+    let revision = world.resource::<EditorSession>().ui_revision;
+    let content_revision = world.resource::<EditorProjectContent>().content_revision();
+    let preview = world
+        .resource::<EditorSession>()
+        .preview
+        .as_ref()
+        .unwrap()
+        .effect()
+        .clone();
+    let status = world.resource::<EditorSession>().status.clone();
+    fs::write(directory.path().join("notes.txt"), "notes").unwrap();
+    world.clear_trackers();
+    settle(&mut world, &mut watch);
+    let catalog = world.resource_ref::<EditorProjectContent>();
+    assert!(!catalog.is_changed());
+    assert_ne!(catalog.content_revision(), content_revision);
+    assert!(
+        catalog
+            .snapshot
+            .content
+            .source_tree()
+            .at_relative_path("notes.txt")
+            .is_some()
+    );
+    let session = world.resource_ref::<EditorSession>();
+    assert!(!session.is_changed());
+    assert_eq!(session.ui_revision, revision);
+    assert!(session.playing);
+    assert_eq!(session.status, status);
+    assert!(std::sync::Arc::ptr_eq(
+        &preview,
+        session.preview.as_ref().unwrap().effect()
+    ));
+}
+
+#[test]
+fn unchanged_refresh_does_not_publish_or_invalidate_resources() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut world, mut watch) = fixture(directory.path());
+    let version = world.resource::<EditorProjectContent>().content_revision();
+    world.clear_trackers();
+    settle(&mut world, &mut watch);
+    assert_eq!(
+        world.resource::<EditorProjectContent>().content_revision(),
+        version
+    );
+    assert!(!world.resource_ref::<EditorProjectContent>().is_changed());
+    assert!(!world.resource_ref::<EditorSession>().is_changed());
+}
+
+#[test]
+fn source_reload_is_prepared_off_thread_and_apply_uses_captured_bytes() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut world, mut watch) = fixture(directory.path());
+    let path = directory.path().join("open.aestra.ron");
+    let mut effect = world.resource::<EditorSession>().effect.clone();
+    effect.name = "External effect".into();
+    effect.save_ron(&path).unwrap();
+    let first = prepare(&world);
+    finish(&mut world, &mut watch, first);
+    let second = prepare(&world);
+    // Deliberately remove disk after the worker's coherent observation. Applying that result
+    // remains a memory-only operation; the next poll will report the subsequent deletion.
+    fs::remove_file(&path).unwrap();
+    finish(&mut world, &mut watch, second);
+    assert_eq!(world.resource::<EditorSession>().effect, effect);
+    assert!(!world.resource::<EditorSession>().dirty);
+    assert!(
+        world
+            .resource::<EditorProjectContent>()
+            .compile_project(&effect)
+            .is_ok()
+    );
+    assert!(
+        world
+            .resource::<EditorSession>()
+            .status
+            .contains("Reloaded externally changed")
+    );
+}
+
+#[test]
+fn stale_worker_cannot_overwrite_a_new_project_or_an_internal_save() {
+    let first_root = tempfile::tempdir().unwrap();
+    let second_root = tempfile::tempdir().unwrap();
+    let (mut world, mut watch) = fixture(first_root.path());
+    fs::write(first_root.path().join("notes.txt"), "old scan").unwrap();
+    let stale = prepare(&world);
+    world.resource_mut::<EditorProjectContent>().refresh();
+    let version = world.resource::<EditorProjectContent>().content_revision();
+    finish(&mut world, &mut watch, stale);
+    assert_eq!(
+        world.resource::<EditorProjectContent>().content_revision(),
+        version
+    );
+    let stale = prepare(&world);
+    world.insert_resource(EditorProjectContent::scan(second_root.path()));
+    finish(&mut world, &mut watch, stale);
+    assert_eq!(
+        world.resource::<EditorProjectContent>().root(),
+        second_root.path()
+    );
+}
+
+#[test]
+fn editing_while_worker_runs_discards_its_document_result() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut world, mut watch) = fixture(directory.path());
+    let path = directory.path().join("open.aestra.ron");
+    let mut effect = world.resource::<EditorSession>().effect.clone();
+    effect.name = "External".into();
+    effect.save_ron(&path).unwrap();
+    let first = prepare(&world);
+    finish(&mut world, &mut watch, first);
+    let stale = prepare(&world);
+    world.resource_mut::<EditorSession>().effect.name = "Unsaved local".into();
+    world.resource_mut::<EditorSession>().dirty = true;
+    finish(&mut world, &mut watch, stale);
+    assert_eq!(
+        world.resource::<EditorSession>().effect.name,
+        "Unsaved local"
+    );
+    assert!(
+        watch
+            .tracker
+            .observe(watch.version(), &ProjectTreeStamp::scan(directory.path()))
+            .is_none()
+    );
+}
+
+#[test]
+fn external_material_edit_preserves_draft_and_its_exact_byte_save_guard() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut world, mut watch) = fixture(directory.path());
+    let path = directory.path().join("program.aestra.material.ron");
+    let original = MaterialProgram::additive_sprite("Program");
+    original.save_ron(&path).unwrap();
+    world.resource_mut::<EditorProjectContent>().refresh();
+    watch.accept_current(world.resource::<EditorProjectContent>());
+    let mut edited = original.clone();
+    edited.name = "Unsaved shared program".into();
+    world
+        .resource_mut::<EditorProjectContent>()
+        .replace_material_program(&original, &edited)
+        .unwrap();
+    let drafts = world
+        .resource::<EditorProjectContent>()
+        .material_drafts
+        .clone();
+    world
+        .resource_mut::<EditorSession>()
+        .set_material_drafts(drafts.clone());
+    let external = format!("// External change\n{}", fs::read_to_string(&path).unwrap());
+    fs::write(&path, &external).unwrap();
+    settle(&mut world, &mut watch);
+    assert_eq!(
+        world.resource::<EditorProjectContent>().material_drafts,
+        drafts
+    );
+    assert_eq!(world.resource::<EditorSession>().material_drafts, drafts);
+    assert!(
+        world
+            .resource::<EditorSession>()
+            .status
+            .contains("Shared source conflict")
+    );
+    assert!(
+        world
+            .resource_mut::<EditorProjectContent>()
+            .save_material_drafts()
+            .is_err()
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), external);
+}
+
+#[test]
+fn unsaved_function_creation_survives_external_target_collision() {
+    use aestra_core::material::{
+        MaterialExpression, MaterialExpressionKind, MaterialFunctionOutput, MaterialSchemaVersion,
+        MaterialValue, MaterialValueType,
+    };
+    use aestra_core::{MaterialExpressionId, MaterialFunctionId, MaterialFunctionOutputId};
+    let directory = tempfile::tempdir().unwrap();
+    let (mut world, mut watch) = fixture(directory.path());
+    let expression = MaterialExpressionId::new();
+    let function = MaterialFunction {
+        schema_version: MaterialSchemaVersion::CURRENT,
+        id: MaterialFunctionId::new(),
+        name: "Unsaved function".into(),
+        inputs: vec![],
+        outputs: vec![MaterialFunctionOutput {
+            id: MaterialFunctionOutputId::new(),
+            name: "Value".into(),
+            value_type: MaterialValueType::Float,
+            expression,
+        }],
+        expressions: vec![MaterialExpression {
+            id: expression,
+            kind: MaterialExpressionKind::Constant(MaterialValue::Float(1.0)),
+        }],
+        custom_wesl: None,
+    };
+    world
+        .resource_mut::<EditorProjectContent>()
+        .create_material_function(&function)
+        .unwrap();
+    let drafts = world
+        .resource::<EditorProjectContent>()
+        .material_drafts
+        .clone();
+    let path = drafts.functions[&function.id].path.clone();
+    world
+        .resource_mut::<EditorSession>()
+        .set_material_drafts(drafts.clone());
+    fs::write(&path, "external bytes").unwrap();
+    settle(&mut world, &mut watch);
+    assert_eq!(
+        world.resource::<EditorProjectContent>().material_drafts,
+        drafts
+    );
+    assert_eq!(world.resource::<EditorSession>().material_drafts, drafts);
+    assert!(
+        world
+            .resource_mut::<EditorProjectContent>()
+            .save_material_drafts()
+            .is_err()
+    );
+    assert_eq!(fs::read_to_string(path).unwrap(), "external bytes");
+}
+
+#[test]
+fn generic_refresh_does_not_reset_or_rebase_existing_material_drafts() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut world, mut watch) = fixture(directory.path());
+    let path = directory.path().join("program.aestra.material.ron");
+    let original = MaterialProgram::additive_sprite("Program");
+    original.save_ron(&path).unwrap();
+    world.resource_mut::<EditorProjectContent>().refresh();
+    watch.accept_current(world.resource::<EditorProjectContent>());
+    let mut edited = original.clone();
+    edited.name = "Draft".into();
+    world
+        .resource_mut::<EditorProjectContent>()
+        .replace_material_program(&original, &edited)
+        .unwrap();
+    let drafts = world
+        .resource::<EditorProjectContent>()
+        .material_drafts
+        .clone();
+    world
+        .resource_mut::<EditorSession>()
+        .set_material_drafts(drafts.clone());
+    fs::create_dir(directory.path().join("empty")).unwrap();
+    settle(&mut world, &mut watch);
+    assert_eq!(
+        world.resource::<EditorProjectContent>().material_drafts,
+        drafts
+    );
+    assert_eq!(world.resource::<EditorSession>().material_drafts, drafts);
+}

@@ -9,7 +9,8 @@ architecture vision; this file is the shorter delivery plan.
 ## Current delivery status
 
 - Asset Browser track: AB0 contracts/inventory recorded and AB1 read-only source tree
-  and semantic join implemented; no UI migration yet. Next is AB2 coherent refresh.
+  and semantic join implemented. AB2a background refresh/editor adapter implemented;
+  AB2b cached reads/remaining foreground I/O removal next. No browser UI migration yet.
   Milestones and platform-verification caveats are in
   [`ASSET_BROWSER_IMPLEMENTATION_PLAN.md`](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 - M0 reference behavior and architecture decisions: complete.
@@ -756,8 +757,10 @@ authoritative delivery sequence and acceptance gates; preserve the proposal as U
 
 Status: AB0 inventory/contracts and AB1 project-content model implemented, including
 generic files/folders, duplicate-safe semantic joins and legacy-index compatibility.
-Native link/Unix acceptance caveats are tracked in the migration checklist. AB2–AB9
-are pending; there is no Library rename or graph/editor rewrite in this first slice.
+Native link/Unix acceptance caveats are tracked in the migration checklist. AB2a now
+adds coherent background refresh and a snapshot-owning editor adapter. AB2b must remove
+remaining foreground query/open scans before AB3; AB3–AB9 remain pending. The Library
+UI has not migrated; its catalog name temporarily aliases the new adapter.
 The editor must remain independent of the `bevy/aestra-bevy` runtime integration.
 
 ## Stability-hardening milestone

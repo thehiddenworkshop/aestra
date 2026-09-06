@@ -1,6 +1,6 @@
 # Asset Browser contracts and migration inventory
 
-Recorded for AB0/AB1, 2026-09-06. This is a parity inventory, **not** a claim that
+Recorded for AB0/AB1 and updated for AB2a, 2026-09-06. This is a parity inventory, **not** a claim that
 the Library UI has migrated. Follow [the delivery plan](ASSET_BROWSER_IMPLEMENTATION_PLAN.md).
 
 ## Implemented discovery contract
@@ -8,8 +8,8 @@ the Library UI has migrated. Follow [the delivery plan](ASSET_BROWSER_IMPLEMENTA
 `aestra-project::ProjectContent::scan(root)` builds a read-only source tree and the
 existing semantic index from one directory discovery. It does not choose a project
 root, mutate files, create metadata, load textures, watch changes or publish UI events.
-The caller is responsible for scheduling this synchronous scan outside the UI frame
-path when the editor adapter is introduced in AB2.
+The editor's AB2a adapter now schedules recurring discovery on an I/O worker. Explicit
+root-open/post-write scans and legacy read-through query helpers remain for AB2b.
 
 - `ProjectSourceTree` retains the root, nested/empty folders, ordinary files, native
   paths/names, metadata and discovery errors. Children are folders-first then native
@@ -42,13 +42,15 @@ path when the editor adapter is introduced in AB2.
   revisions; AB6 must separately preflight mutations and reference completeness.
 
 The editor's existing `project.rs` still chooses a conventional containing `assets/`
-directory or an explicit asset directory. AB1 does not change document/root routing.
-Its existing canonicalization can resolve a user-selected linked path before discovery;
-AB2 must make that policy explicit before adopting the browser's root state.
+directory or an explicit asset directory. AB2a rejects an explicitly selected link/reparse
+root (and a conventional linked `assets/` root) before canonicalization loses that
+information. This checks the selected entry, not every ancestor or concurrent replacement;
+mutation containment/preflight remains a separate AB6 requirement.
 
 ## Library parity inventory
 
-Every destination below is pending. Retain the existing workflow until its replacement
+UI destinations below are pending; the polling/catalog service has moved in AB2a.
+Retain each existing workflow until its replacement
 passes both command and interaction checks; AB8 is the removal gate.
 
 | Existing workflow / owner | Existing evidence to retain | Destination / acceptance |
@@ -66,7 +68,7 @@ passes both command and interaction checks; AB8 is the removal gate.
 | Search/filter/list activation/context menu — `library.rs`, shared Feathers list/focus controls | In-place filtering, live-search, semantic activation and keyboard-context tests | AB3 tree/grid/list parity, scroll isolation and keyboard-only workflow. |
 | Unsaved-change/migration/recovery dialogs — `persistence.rs` | Save/Discard/Cancel routing, failed navigation, external changes, autosave/cleanup and migration backup tests | AB2–AB5 shared document coordinator; keep source navigation and window-close protection. |
 | Docking/settings/localization — `docking.rs`, settings/persistence and locale resources | Persisted `DockPanel::Assets`, compact surfaces and localized Library tests | AB3/AB8 reuse dock identity; preserve closed/floating panels and restart state. |
-| Polling, clean reload, dirty conflicts, texture root — `library.rs` | Stable-observation debounce, project-switch baseline, internal-save echo and moved dirty source tests | AB2 one generic content refresh; no extra scanner or per-hover parsing. |
+| Polling, clean reload, dirty conflicts, texture root — `project_content/`, `library.rs` | Stable-observation debounce, project-switch baseline, internal-save echo and moved dirty source tests | AB2a background generic refresh implemented; texture-root sync retained. AB2b removes remaining foreground query/open reads. |
 
 There is no general project-file Duplicate action in the current Library action enum.
 Do not confuse duplicate-ID diagnostics or emitter duplication with source duplication.
@@ -86,9 +88,21 @@ AB6 adds source duplication with a fresh semantic identity and explicit remappin
   link traversal test reports this explicitly; real symlink/junction traversal and
   Unix-native-path validation remain platform acceptance checks, not local passes.
 - No browser UI or filesystem operation has been added. Manual browser acceptance,
-  asynchronous refresh, mutation preflight and migration checks remain in AB2–AB8.
+  remaining foreground-read removal, mutation preflight and migration checks remain in AB2–AB8.
 
-Local validation uses `+1.98.1-x86_64-pc-windows-msvc`: project tests (47 reported
+AB2a adds `project_content_refresh_contract` tests for generic changes, settling,
+same-size/restored-time edits, stale versions, folder relocation and unavailable roots.
+Editor refresh tests cover generic/unchanged Bevy change detection, captured-byte apply,
+stale document/project/write results, and preservation of program/function drafts and
+their exact-byte save guards. Background snapshots are observations, not filesystem
+transactions; changes after validation are reconciled by subsequent polls.
+
+AB0/AB1 local validation used `+1.98.1-x86_64-pc-windows-msvc`: project tests (47 reported
 passes, including the native-link capability skip above), compiler tests (102), editor
 binary tests (483), workspace/all-targets strict Clippy, formatting and diff whitespace
 checks. These are model/regression checks, not manual acceptance of a browser UI.
+
+AB2a local validation: project suite 54 reported passes (the native-link privilege
+caveat still applies), editor suite 491 passes, workspace/all-targets Clippy with
+warnings denied, formatting and diff whitespace checks. Windows dialog/verbatim path
+lookup is tested without I/O during lookup. No manual browser UI acceptance is claimed.

@@ -1,7 +1,8 @@
 # Asset Browser delivery plan
 
 Status: implementation started, 2026-09-06. AB0 contracts/inventory recorded and AB1
-read-only content model implemented. Platform verification caveats are recorded in
+read-only content model implemented. AB2a background refresh/editor adapter implemented;
+AB2b foreground-read removal remains before the browser UI. Platform caveats are recorded in
 [the migration checklist](ASSET_BROWSER_MIGRATION_CHECKLIST.md). No browser UI yet.
 
 This is the repository-specific delivery plan for
@@ -77,13 +78,14 @@ The first browser will not offer a warning-only “unsafe” bypass.
 
 Priorities are within this track: **P0** correctness/data-safety prerequisites,
 **P1** usable migration, **P2** subsequent polish. AB0/AB1 are the first implemented
-slice; AB2–AB9 are pending. Do not count unavailable platform tests as verified.
+slice; AB2 is in progress (AB2a implemented, AB2b pending), AB3–AB9 are pending.
+Do not count unavailable platform tests as verified.
 
 | Milestone | Priority | Depends on | Deliverable / exit gate |
 | --- | --- | --- | --- |
 | AB0 — Contracts and migration inventory | P0 | — | Contracts, characterization coverage and Library parity inventory recorded in the migration checklist. |
 | AB1 — Project content model | P0 | AB0 | Implemented: source tree joined to the existing semantic index, deterministic tests, no UI replacement. Native link/Unix verification caveats remain. |
-| AB2 — Coherent refresh and editor adapter | P0 | AB1 | One background/polled refresh path; external changes and dirty drafts handled safely. |
+| AB2 — Coherent refresh and editor adapter | P0 | AB1 | AB2a implemented: one background refresh path, revision guards and draft protection. AB2b cached read-only queries / remaining foreground scan removal pending. |
 | AB3 — Read-only Asset Browser | P1 | AB2 | Tree/grid/list/navigation/search/inspection and existing effect opening usable through retained Feathers UI. |
 | AB4 — Standalone material programs | P1 | AB3 | Open/edit/undo/save a project material without an effect prerequisite. |
 | AB5 — Standalone material functions | P1 | AB4 | Function inputs/outputs/body editing, validation and guarded persistence. |
@@ -141,6 +143,27 @@ source preserves its asset ID but updates its source-location handle. No editor
 UI change or file mutation in this PR.
 
 ### AB2 — Refresh and project coordination
+
+Delivered as two reviewable slices:
+
+- **AB2a implemented:** `content/refresh.rs` owns file stamps/fingerprints, diffs and
+  two-observation settling. `EditorProjectContent` owns one source-tree/index snapshot
+  plus shared-source drafts; `ProjectEffectCatalog` is a temporary type alias. A single
+  polled worker discovers generic content, prepares changed-source reload/compilation,
+  and validates its observation again before publication. Root generations, internal
+  write revisions and document/draft checks reject stale results. Generic-only updates
+  advance content revision without triggering legacy Bevy catalog/UI invalidation.
+  A localized Refresh action requests a full fingerprint check. Existing write/save
+  preflight remains exact-byte-based, never hash-authorized.
+- **AB2b next:** remove remaining foreground discovery/read-through parsing from explicit
+  project-open/post-write refresh and legacy panel/graph query paths. Read-only consumers
+  need cached semantic documents/resolution separate from disk-validating operation APIs;
+  do not weaken source-change checks just to remove I/O. Complete integration acceptance
+  for root switching, error recovery and cached dependent-preview/panel reads before AB3.
+
+The recurring refresh worker and its apply step do no filesystem discovery/parsing on
+the UI thread. This is not yet the broader no-foreground-I/O exit gate below: explicit
+operations and some legacy query helpers still use their existing synchronous paths.
 
 Move pure snapshot/diff/debounce logic out of Library into project-domain code.
 Keep scheduling/task execution in the editor; use bounded polling first. Discover
@@ -336,7 +359,7 @@ particular engine UI; each delivered feature needs a tested performance/correctn
   UI mutations, preserve unrelated assets, and update this plan's status only when its
   acceptance gate actually passes.
 
-**Immediate next step:** AB2 coherent refresh and the editor adapter, after reviewing
-the AB0/AB1 slice. Preserve the native-platform test caveats in the checklist until
+**Immediate next step:** AB2b cached semantic reads and removal of the remaining
+foreground scan/query paths. Preserve the native-platform test caveats in the checklist until
 verified on capable hosts. Do not begin by renaming `library.rs`, implementing
 thumbnails, or rewriting material editing; the browser UI starts in AB3.

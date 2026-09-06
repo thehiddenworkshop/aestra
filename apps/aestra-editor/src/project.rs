@@ -18,6 +18,10 @@ pub(crate) fn display_name(root: &Path) -> String {
 
 /// Accept either an asset directory or a conventional project containing `assets/`.
 pub(crate) fn catalog_for_folder(folder: &Path) -> Result<ProjectEffectCatalog, String> {
+    aestra_project::ProjectSourceTree::validate_root(folder)?;
+    if folder.join("assets").is_dir() {
+        aestra_project::ProjectSourceTree::validate_root(folder.join("assets"))?;
+    }
     let folder = folder.canonicalize().map_err(|error| error.to_string())?;
     if !folder.is_dir() {
         return Err(format!("{} is not a folder", folder.display()));

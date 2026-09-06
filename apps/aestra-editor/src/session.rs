@@ -529,9 +529,36 @@ impl EditorSession {
     }
 
     fn install_open_document(&mut self, path: &Path, effect: EffectAsset, preview: EffectInstance) {
+        let bytes = std::fs::read(path).ok();
+        self.install_open_document_with_bytes(path, effect, preview, bytes);
+    }
+
+    /// Background refresh already read and validated these bytes; do no filesystem I/O on apply.
+    pub(crate) fn open_refreshed_effect(
+        &mut self,
+        path: &Path,
+        effect: EffectAsset,
+        compiled: Arc<CompiledEffect>,
+        bytes: Vec<u8>,
+    ) {
+        self.install_open_document_with_bytes(
+            path,
+            effect,
+            EffectInstance::with_seed(compiled, self.preview_seed),
+            Some(bytes),
+        );
+    }
+
+    fn install_open_document_with_bytes(
+        &mut self,
+        path: &Path,
+        effect: EffectAsset,
+        preview: EffectInstance,
+        bytes: Option<Vec<u8>>,
+    ) {
         self.material_drafts = Default::default();
         self.interaction_source = None;
-        self.saved_source_bytes = std::fs::read(path).ok();
+        self.saved_source_bytes = bytes;
         self.saved_effect = Some(effect.clone());
         self.effect = effect;
         self.solo_emitter = None;

@@ -6,26 +6,20 @@ use crate::feathers::context_menu::{
 };
 use crate::timeline::TimelineState;
 use crate::*;
-use aestra_compiler::{
-    EffectCompiler, MaterialCompiler, MaterialFunctionLibrary, MaterialPresetCatalog,
-    MaterialPresetCategory, ProjectCompileError,
-};
+use aestra_compiler::{MaterialCompiler, MaterialPresetCategory};
 #[cfg(test)]
-use aestra_core::material::MaterialProgramRef;
-use aestra_core::material::{MaterialFunction, MaterialProgram};
+use aestra_core::material::{MaterialProgram, MaterialProgramRef};
 use aestra_core::{
-    AssetDefinition, AssetId, ChoreographyTrackId, CurveId, Diagnostic, EffectAsset,
-    EffectAssetRef, EffectClip, EffectClipId, EffectId, EffectParameter, Emitter, EmitterId,
-    EmitterTransform, EventId, EventLink, FlipbookDefinition, GradientId, MaterialDefinition,
-    MaterialId, MaterialInput, MaterialPresetId, ModuleParameters, ParameterId, RendererProperties,
-    SpriteColorSource, ValidationReport, Value,
+    AssetDefinition, AssetId, ChoreographyTrackId, CurveId, EffectAsset, EffectAssetRef,
+    EffectClip, EffectClipId, EffectId, EffectParameter, Emitter, EmitterId, EmitterTransform,
+    EventId, EventLink, FlipbookDefinition, GradientId, MaterialDefinition, MaterialId,
+    MaterialInput, MaterialPresetId, ModuleParameters, ParameterId, RendererProperties,
+    SpriteColorSource, Value,
 };
 use aestra_project::{
-    ProjectAssetIndex, ProjectAssetIndexAvailability, ProjectAssetOperationError,
-    ProjectDependencyDiagnosticCode, ProjectEffectDeletePolicy, ProjectEffectEntry,
-    ProjectEffectRelation, ProjectEffectStatus, ProjectEffectUsageGraph,
+    ProjectAssetIndexAvailability, ProjectEffectEntry, ProjectEffectRelation, ProjectEffectStatus,
+    ProjectEffectUsageGraph,
 };
-use aestra_runtime::CompiledEffectProject;
 #[cfg(test)]
 use bevy::ui_widgets::ScrollArea;
 use bevy::{
@@ -38,15 +32,13 @@ use bevy::{
     ui_widgets::{Activate, ActiveDescendant},
     window::SystemCursorIcon,
 };
+#[cfg(test)]
+use std::path::PathBuf;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::{Path, PathBuf},
-    time::UNIX_EPOCH,
+    path::Path,
 };
-
-const PROJECT_EFFECT_POLL_INTERVAL_SECONDS: f32 = 0.25;
-const PROJECT_EFFECT_STABLE_OBSERVATIONS: u8 = 2;
 
 pub(crate) struct EditorLibraryPlugin;
 
@@ -113,12 +105,10 @@ impl Plugin for EditorLibraryPlugin {
     }
 }
 
-#[derive(Resource)]
-pub(crate) struct ProjectEffectCatalog {
-    index: ProjectAssetIndex,
-    effect_root: PathBuf,
-    pub(crate) material_drafts: crate::material_drafts::MaterialDrafts,
-}
+pub(crate) use crate::project_content::EditorProjectContent as ProjectEffectCatalog;
+#[cfg(test)]
+use crate::project_content::apply_project_effect_catalog_refresh;
+use crate::project_content::{ProjectEffectWatchState, poll_project_effect_catalog};
 
 fn sync_project_texture_root(
     catalog: Res<ProjectEffectCatalog>,
@@ -131,652 +121,8 @@ fn sync_project_texture_root(
     }
 }
 
-impl Default for ProjectEffectCatalog {
-    fn default() -> Self {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-        let root = root.canonicalize().unwrap_or(root);
-        Self::scan_project(&root, root.join("effects"))
-    }
-}
-
-impl ProjectEffectCatalog {
-    pub(crate) fn try_scan_project(
-        project_root: impl AsRef<Path>,
-        effect_root: impl AsRef<Path>,
-    ) -> Result<Self, String> {
-        let catalog = Self::scan_project(project_root, effect_root);
-        if let ProjectAssetIndexAvailability::Unavailable { message, .. } =
-            catalog.index.availability()
-        {
-            return Err(message.clone());
-        }
-        Ok(catalog)
-    }
-    #[cfg(test)]
-    pub(crate) fn scan(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref();
-        Self::scan_project(root, root)
-    }
-
-    pub(crate) fn scan_project(
-        project_root: impl AsRef<Path>,
-        effect_root: impl AsRef<Path>,
-    ) -> Self {
-        Self {
-            index: ProjectAssetIndex::scan(project_root),
-            effect_root: effect_root.as_ref().to_owned(),
-            material_drafts: default(),
-        }
-    }
-
-    pub(crate) fn entries(&self) -> &[ProjectEffectEntry] {
-        self.index.effects()
-    }
-
-    pub(crate) fn root(&self) -> &Path {
-        self.index.root()
-    }
-
-    pub(crate) fn effect_root(&self) -> &Path {
-        &self.effect_root
-    }
-
-    pub(crate) fn refresh(&mut self) {
-        self.index.refresh();
-    }
-
-    pub(crate) fn create_effect_source(
-        &mut self,
-        effect: &EffectAsset,
-    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
-        if self.effect_root == self.index.root() {
-            return self.index.create_effect_source(effect);
-        }
-        ProjectAssetIndex::scan(&self.effect_root).create_effect_source(effect)?;
-        let reference = EffectAssetRef::new(effect.id);
-        self.index.refresh();
-        self.index.resolve(reference).cloned().map_err(|error| {
-            ProjectAssetOperationError::Refresh {
-                reference,
-                message: error.to_string(),
-            }
-        })
-    }
-
-    pub(crate) fn entry(&self, id: ProjectEffectEntryId) -> Option<&ProjectEffectEntry> {
-        self.index.entry(id)
-    }
-
-    pub(crate) fn openable_path(&self, reference: EffectAssetRef) -> Option<&Path> {
-        self.index
-            .resolve(reference)
-            .ok()
-            .map(|entry| entry.path.as_path())
-    }
-
-    pub(crate) fn effect_for_placement(
-        &self,
-        owner: &EffectAsset,
-        reference: EffectAssetRef,
-    ) -> Result<EffectAsset, String> {
-        if reference.id == owner.id {
-            return Err("an effect cannot reference itself".into());
-        }
-        let source = self
-            .index
-            .load_effect(reference)
-            .map_err(|error| error.to_string())?;
-        let project = self
-            .resolve_project(&source)
-            .map_err(|error| error.to_string())?;
-        if project.effect(owner.id).is_some() {
-            return Err("placing this effect would create a reference cycle".into());
-        }
-        Ok(source)
-    }
-
-    pub(crate) fn load_effect(&self, reference: EffectAssetRef) -> Result<EffectAsset, String> {
-        self.index
-            .load_effect(reference)
-            .map_err(|error| error.to_string())
-    }
-
-    pub(crate) fn material_programs_for_effect(
-        &self,
-        effect: &EffectAsset,
-    ) -> Result<Vec<aestra_core::material::MaterialProgram>, String> {
-        let mut programs = Vec::new();
-        for instance in &effect.material_instances {
-            if programs
-                .iter()
-                .any(|program: &aestra_core::material::MaterialProgram| {
-                    program.id == instance.program.id()
-                })
-            {
-                continue;
-            }
-            if matches!(
-                instance.program,
-                aestra_core::material::MaterialProgramRef::BuiltIn(_)
-            ) {
-                continue;
-            }
-            programs.push(
-                match self
-                    .material_drafts
-                    .programs
-                    .get(&instance.program.id())
-                    .and_then(|draft| draft.current.clone())
-                {
-                    Some(program) => program,
-                    None => self
-                        .index
-                        .load_material_program(instance.program)
-                        .map_err(|error| error.to_string())?,
-                },
-            );
-        }
-        Ok(programs)
-    }
-
-    pub(crate) fn material_functions(&self) -> Result<Vec<MaterialFunction>, String> {
-        let mut functions = self
-            .index
-            .load_material_functions()
-            .map_err(|error| error.to_string())?;
-        for (id, draft) in &self.material_drafts.functions {
-            if let Some(function) = &draft.current {
-                functions.insert(*id, function.clone());
-            } else {
-                functions.remove(id);
-            }
-        }
-        Ok(functions.into_values().collect())
-    }
-
-    pub(crate) fn material_function_library(&self) -> Result<MaterialFunctionLibrary, String> {
-        self.material_functions().map(MaterialFunctionLibrary::new)
-    }
-
-    pub(crate) fn material_preset_catalog(&self) -> Result<MaterialPresetCatalog, String> {
-        let presets = self
-            .index
-            .load_material_presets()
-            .map_err(|error| error.to_string())?;
-        MaterialPresetCatalog::with_project_presets(presets.into_values())
-            .map_err(|error| error.to_string())
-    }
-
-    pub(crate) fn create_material_function(
-        &mut self,
-        function: &MaterialFunction,
-    ) -> Result<(), String> {
-        self.material_drafts.create_function(&self.index, function)
-    }
-
-    pub(crate) fn delete_material_function(
-        &mut self,
-        function: &MaterialFunction,
-    ) -> Result<(), String> {
-        self.material_drafts.delete_function(&self.index, function)
-    }
-
-    pub(crate) fn next_material_function_name(&self, base: &str) -> String {
-        let functions = self.material_functions().unwrap_or_default();
-        let names = functions
-            .iter()
-            .map(|function| function.name.as_str())
-            .collect::<BTreeSet<_>>();
-        if !names.contains(base) {
-            return base.to_owned();
-        }
-        (2..)
-            .map(|suffix| format!("{base} {suffix}"))
-            .find(|candidate| !names.contains(candidate.as_str()))
-            .expect("the finite project index cannot exhaust function names")
-    }
-
-    pub(crate) fn replace_material_program(
-        &mut self,
-        expected: &MaterialProgram,
-        replacement: &MaterialProgram,
-    ) -> Result<(), String> {
-        self.material_drafts
-            .replace_program(&self.index, expected, replacement)
-    }
-
-    fn resolve_project(
-        &self,
-        root: &EffectAsset,
-    ) -> Result<aestra_project::ResolvedEffectProject, aestra_project::ProjectDependencyReport>
-    {
-        let overrides = self
-            .material_drafts
-            .programs
-            .iter()
-            .filter_map(|(id, draft)| draft.current.clone().map(|program| (*id, program)))
-            .collect();
-        let mut resolved = self
-            .index
-            .resolve_effect_project_with_materials(root, overrides)?;
-        for (id, draft) in &self.material_drafts.functions {
-            if let Some(function) = &draft.current {
-                resolved.material_functions.insert(*id, function.clone());
-            } else {
-                resolved.material_functions.remove(id);
-            }
-        }
-        Ok(resolved)
-    }
-
-    pub(crate) fn save_material_drafts(&mut self) -> Result<(), String> {
-        let result = self.material_drafts.save();
-        self.index.refresh();
-        result
-    }
-
-    pub(crate) fn compile_project(
-        &self,
-        root: &EffectAsset,
-    ) -> Result<CompiledEffectProject, String> {
-        self.resolve_project(root)
-            .map_err(ProjectCompileError::Dependencies)
-            .and_then(|resolved| EffectCompiler::default().compile_resolved_project(&resolved))
-            .map_err(|error| match error {
-                ProjectCompileError::Dependencies(report) => report
-                    .diagnostics
-                    .into_iter()
-                    .map(|diagnostic| diagnostic.message)
-                    .chain(
-                        report
-                            .material_diagnostics
-                            .into_iter()
-                            .map(|diagnostic| diagnostic.message),
-                    )
-                    .collect::<Vec<_>>()
-                    .join("; "),
-                error => error.to_string(),
-            })
-    }
-
-    pub(crate) fn dependency_validation_report(&self, effect: &EffectAsset) -> ValidationReport {
-        let mut validation = ValidationReport::default();
-        let Err(report) = self.resolve_project(effect) else {
-            return validation;
-        };
-        for diagnostic in report
-            .diagnostics
-            .into_iter()
-            .filter(|diagnostic| diagnostic.owner == effect.id)
-        {
-            let Some(index) = effect
-                .effect_clips
-                .iter()
-                .position(|clip| clip.id == diagnostic.clip)
-            else {
-                continue;
-            };
-            let code = match diagnostic.code {
-                ProjectDependencyDiagnosticCode::InvalidTiming => DiagnosticCode::InvalidTiming,
-                ProjectDependencyDiagnosticCode::Cycle => DiagnosticCode::ReferenceCycle,
-                ProjectDependencyDiagnosticCode::Missing
-                | ProjectDependencyDiagnosticCode::Duplicate
-                | ProjectDependencyDiagnosticCode::Unresolvable
-                | ProjectDependencyDiagnosticCode::IndexUnavailable
-                | ProjectDependencyDiagnosticCode::SourceChanged => {
-                    DiagnosticCode::InvalidReference
-                }
-            };
-            validation.push(Diagnostic::error(
-                code,
-                format!("effect.effect_clips[{index}].source"),
-                diagnostic.message,
-            ));
-        }
-        for diagnostic in report.material_diagnostics {
-            validation.push(Diagnostic::error(
-                DiagnosticCode::InvalidReference,
-                diagnostic.path,
-                diagnostic.message,
-            ));
-        }
-        validation
-    }
-
-    pub(crate) fn effect_clip_dependency_error(
-        &self,
-        effect: &EffectAsset,
-        clip: EffectClipId,
-    ) -> Option<String> {
-        self.dependency_validation_report(effect)
-            .diagnostics
-            .into_iter()
-            .find(|diagnostic| {
-                effect
-                    .effect_clips
-                    .iter()
-                    .position(|candidate| candidate.id == clip)
-                    .is_some_and(|index| {
-                        diagnostic.path == format!("effect.effect_clips[{index}].source")
-                    })
-            })
-            .map(|diagnostic| diagnostic.message)
-    }
-
-    fn availability(&self) -> &ProjectAssetIndexAvailability {
-        self.index.availability()
-    }
-
-    fn rename_effect_source(
-        &mut self,
-        source: ProjectEffectEntryId,
-        name: &str,
-    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
-        self.index.rename_effect_source(source, name)
-    }
-
-    fn move_effect_source(
-        &mut self,
-        source: ProjectEffectEntryId,
-        destination: &Path,
-    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
-        if !destination.is_dir() {
-            return Err(ProjectAssetOperationError::InvalidDestination {
-                path: destination.to_owned(),
-            });
-        }
-        let effect_root = fs::canonicalize(&self.effect_root).map_err(|error| {
-            ProjectAssetOperationError::FileSystem {
-                operation: "resolve project effect root",
-                path: self.effect_root.clone(),
-                message: error.to_string(),
-            }
-        })?;
-        let destination = fs::canonicalize(destination).map_err(|error| {
-            ProjectAssetOperationError::FileSystem {
-                operation: "resolve destination",
-                path: destination.to_owned(),
-                message: error.to_string(),
-            }
-        })?;
-        if !destination.starts_with(&effect_root) {
-            return Err(ProjectAssetOperationError::DestinationOutsideRoot {
-                destination,
-                root: effect_root,
-            });
-        }
-        self.index.move_effect_source(source, destination)
-    }
-
-    fn effect_usage_graph(
-        &self,
-        reference: EffectAssetRef,
-    ) -> Result<ProjectEffectUsageGraph, String> {
-        self.index
-            .effect_usage_graph(reference)
-            .map_err(|error| error.to_string())
-    }
-
-    fn delete_effect_source(
-        &mut self,
-        source: ProjectEffectEntryId,
-    ) -> Result<ProjectEffectEntry, ProjectAssetOperationError> {
-        self.index
-            .delete_effect_source(source, ProjectEffectDeletePolicy::AllowReferenced)
-    }
-
-    fn effect_name(&self, reference: EffectAssetRef) -> String {
-        self.index.resolve(reference).map_or_else(
-            |_| reference.to_string(),
-            |entry| entry.display_name.clone(),
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) fn from_entries(entries: Vec<ProjectEffectEntry>) -> Self {
-        Self {
-            index: ProjectAssetIndex::from_entries("virtual", entries),
-            effect_root: PathBuf::from("virtual"),
-            material_drafts: default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ProjectEffectFileStamp {
-    path: PathBuf,
-    length: u64,
-    modified_nanos: u128,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ProjectEffectTreeSnapshot {
-    available: bool,
-    diagnostic: Option<String>,
-    files: Vec<ProjectEffectFileStamp>,
-}
-
-impl ProjectEffectTreeSnapshot {
-    fn scan(root: &Path) -> Self {
-        let mut files = Vec::new();
-        let result = collect_project_effect_file_stamps(root, &mut files);
-        files.sort_by(|left, right| left.path.cmp(&right.path));
-        match result {
-            Ok(()) => Self {
-                available: true,
-                diagnostic: None,
-                files,
-            },
-            Err(error) => Self {
-                available: false,
-                diagnostic: Some(error.to_string()),
-                files,
-            },
-        }
-    }
-
-    fn file(&self, path: &Path) -> Option<&ProjectEffectFileStamp> {
-        self.files
-            .iter()
-            .find(|candidate| paths_refer_to_same_source(&candidate.path, path))
-    }
-}
-
-#[derive(Resource)]
-struct ProjectEffectWatchState {
-    root: PathBuf,
-    poll: Timer,
-    committed: ProjectEffectTreeSnapshot,
-    pending: Option<(ProjectEffectTreeSnapshot, u8)>,
-}
-
-impl FromWorld for ProjectEffectWatchState {
-    fn from_world(world: &mut World) -> Self {
-        let root = world.resource::<ProjectEffectCatalog>().root().to_owned();
-        Self {
-            poll: Timer::from_seconds(PROJECT_EFFECT_POLL_INTERVAL_SECONDS, TimerMode::Repeating),
-            committed: ProjectEffectTreeSnapshot::scan(&root),
-            pending: None,
-            root,
-        }
-    }
-}
-
-impl ProjectEffectWatchState {
-    fn observe(&mut self, snapshot: ProjectEffectTreeSnapshot) -> bool {
-        if snapshot == self.committed {
-            self.pending = None;
-            return false;
-        }
-        match self.pending.as_mut() {
-            Some((pending, observations)) if pending == &snapshot => {
-                *observations = observations.saturating_add(1);
-                if *observations < PROJECT_EFFECT_STABLE_OBSERVATIONS {
-                    return false;
-                }
-            }
-            _ => {
-                self.pending = Some((snapshot, 1));
-                return PROJECT_EFFECT_STABLE_OBSERVATIONS <= 1;
-            }
-        }
-        self.committed = snapshot;
-        self.pending = None;
-        true
-    }
-
-    fn accept_current(&mut self, root: &Path) {
-        self.root = root.to_owned();
-        self.committed = ProjectEffectTreeSnapshot::scan(root);
-        self.pending = None;
-        self.poll.reset();
-    }
-}
-
-fn collect_project_effect_file_stamps(
-    directory: &Path,
-    files: &mut Vec<ProjectEffectFileStamp>,
-) -> std::io::Result<()> {
-    for entry in fs::read_dir(directory)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        let path = entry.path();
-        if file_type.is_dir() {
-            if path.file_name().is_some_and(|name| name == ".aestra") {
-                continue;
-            }
-            collect_project_effect_file_stamps(&path, files)?;
-            continue;
-        }
-        let project_source = aestra_project::is_project_asset_source(&path);
-        if !file_type.is_file() || !project_source {
-            continue;
-        }
-        let metadata = entry.metadata()?;
-        let modified_nanos = metadata
-            .modified()
-            .ok()
-            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-            .map_or(0, |duration| duration.as_nanos());
-        files.push(ProjectEffectFileStamp {
-            path,
-            length: metadata.len(),
-            modified_nanos,
-        });
-    }
-    Ok(())
-}
-
-fn poll_project_effect_catalog(
-    time: Option<Res<Time>>,
-    mut watch: ResMut<ProjectEffectWatchState>,
-    mut catalog: ResMut<ProjectEffectCatalog>,
-    mut session: ResMut<EditorSession>,
-    localizer: Res<Localizer>,
-) {
-    if watch.root != catalog.root() {
-        watch.accept_current(catalog.root());
-        return;
-    }
-    let Some(time) = time else {
-        return;
-    };
-    if !watch.poll.tick(time.delta()).just_finished() {
-        return;
-    }
-    let snapshot = ProjectEffectTreeSnapshot::scan(catalog.root());
-    let previous = watch.committed.clone();
-    if !watch.observe(snapshot.clone()) {
-        return;
-    }
-    apply_project_effect_catalog_refresh(
-        &mut catalog,
-        &mut session,
-        &previous,
-        &snapshot,
-        &localizer,
-    );
-}
-
-fn apply_project_effect_catalog_refresh(
-    catalog: &mut ProjectEffectCatalog,
-    session: &mut EditorSession,
-    previous: &ProjectEffectTreeSnapshot,
-    current: &ProjectEffectTreeSnapshot,
-    localizer: &Localizer,
-) {
-    let source_path = session.source_path.clone();
-    let source_changed = source_path.as_deref().is_some_and(|path| {
-        previous.file(path) != current.file(path)
-            && (previous.file(path).is_some() || current.file(path).is_some())
-    });
-    catalog.refresh();
-
-    let revision = session.ui_revision;
-    let mut status_set = false;
-    if source_changed && let Some(source_path) = source_path {
-        let resolved_path = catalog
-            .openable_path(EffectAssetRef::new(session.effect.id))
-            .map(Path::to_owned);
-        let path = resolved_path.as_deref().unwrap_or(&source_path);
-        if session.dirty {
-            if resolved_path.is_some() && path != source_path {
-                session.source_path = Some(path.to_owned());
-                let mut args = FluentArgs::new();
-                args.set("path", path.display().to_string());
-                session.status = localizer.text_with("library-status-source-moved-dirty", &args);
-            } else if current.file(path).is_some() {
-                session.status = localizer.text("library-status-source-conflict");
-            } else {
-                session.status = localizer.text("library-status-open-source-missing");
-            }
-            status_set = true;
-        } else if current.file(path).is_some() {
-            let matches_clean_session = path == source_path
-                && EffectAsset::load_ron(path)
-                    .ok()
-                    .is_some_and(|effect| effect == session.effect);
-            // An editor save changes the filesystem stamp too. When the session already owns
-            // these exact bytes, retain its more useful save status and playback state.
-            if !matches_clean_session {
-                let reloaded = EffectAsset::load_ron(path)
-                    .map_err(|error| error.to_string())
-                    .and_then(|effect| {
-                        catalog
-                            .compile_project(&effect)
-                            .map(|project| (effect, project))
-                    });
-                match reloaded {
-                    Ok((effect, project)) => {
-                        session.open_compiled_effect(path, effect, project.root);
-                        let mut args = FluentArgs::new();
-                        args.set("path", path.display().to_string());
-                        session.status =
-                            localizer.text_with("library-status-source-reloaded", &args);
-                    }
-                    Err(error) => {
-                        let mut args = FluentArgs::new();
-                        args.set("message", error.to_string());
-                        session.status =
-                            localizer.text_with("library-status-source-reload-failed", &args);
-                    }
-                }
-            }
-            status_set = true;
-        } else {
-            session.status = localizer.text("library-status-open-source-missing");
-            status_set = true;
-        }
-    }
-    if session.ui_revision == revision {
-        session.ui_revision += 1;
-    }
-    if !status_set {
-        let mut args = FluentArgs::new();
-        args.set("count", catalog.entries().len());
-        session.status = localizer.text_with("library-status-catalog-refreshed", &args);
-    }
-}
+#[cfg(test)]
+use aestra_project::ProjectTreeStamp as ProjectEffectTreeSnapshot;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[cfg_attr(
@@ -856,6 +202,7 @@ impl LibraryState {
 
 #[derive(Component, Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LibraryAction {
+    RefreshProject,
     AddSpriteMaterial,
     AddGridFlipbook,
     RenameProjectEffect(ProjectEffectEntryId),
@@ -2907,6 +2254,11 @@ pub(crate) fn spawn_library(
                         DocumentAction::OpenProject,
                     );
                     spawn_project_effects(panel, catalog, state, localizer);
+                    library_toolbar_button(
+                        panel,
+                        &localizer.text("library-refresh"),
+                        LibraryAction::RefreshProject,
+                    );
                     spawn_material_presets(panel, catalog, state, localizer);
                     spawn_current_document_resources(panel, session, localizer);
                 },
@@ -3056,6 +2408,7 @@ fn execute_library_action(
     localizer: Res<Localizer>,
 ) {
     match *action {
+        LibraryAction::RefreshProject => watch.request_refresh(),
         LibraryAction::AddSpriteMaterial => session.add_sprite_material(),
         LibraryAction::AddGridFlipbook => session.add_grid_flipbook(),
         LibraryAction::RenameProjectEffect(source) => {
@@ -3096,7 +2449,7 @@ fn execute_library_action(
             };
             match catalog.move_effect_source(source, &destination) {
                 Ok(moved) => {
-                    watch.accept_current(catalog.root());
+                    watch.accept_current(&catalog);
                     if is_current {
                         session.source_path = Some(moved.path.clone());
                     }
@@ -3259,7 +2612,7 @@ fn resolve_library_asset_operation(
             }
             match catalog.delete_effect_source(deletion.source) {
                 Ok(entry) => {
-                    watch.accept_current(catalog.root());
+                    watch.accept_current(&catalog);
                     state.close_all();
                     session.ui_revision += 1;
                     let mut args = FluentArgs::new();
@@ -3286,7 +2639,7 @@ fn resolve_library_asset_operation(
                 &localizer,
             ) {
                 Ok(()) => {
-                    watch.accept_current(catalog.root());
+                    watch.accept_current(&catalog);
                     state.extraction = None;
                     if let Some(timeline) = timeline.as_deref_mut() {
                         timeline.clear_emitter_selection();
@@ -3323,7 +2676,7 @@ fn resolve_library_asset_operation(
     }
     match catalog.rename_effect_source(rename.source, &rename.draft) {
         Ok(renamed) => {
-            watch.accept_current(catalog.root());
+            watch.accept_current(&catalog);
             if is_current {
                 session.accept_external_source_rename(
                     renamed.path.clone(),
@@ -5611,18 +4964,17 @@ mod tests {
     fn project_effect_watch_requires_two_stable_observations() {
         let temporary = tempfile::tempdir().unwrap();
         let initial = ProjectEffectTreeSnapshot::scan(temporary.path());
-        let mut watch = ProjectEffectWatchState {
-            root: temporary.path().to_owned(),
-            poll: Timer::from_seconds(PROJECT_EFFECT_POLL_INTERVAL_SECONDS, TimerMode::Repeating),
-            committed: initial,
-            pending: None,
+        let version = aestra_project::ProjectContentVersion {
+            generation: 1,
+            revision: 0,
         };
+        let mut watch = aestra_project::ProjectContentRefresh::new(version, initial);
         write_effect(&temporary.path().join("new.aestra.ron"), "New");
         let changed = ProjectEffectTreeSnapshot::scan(temporary.path());
 
-        assert!(!watch.observe(changed.clone()));
-        assert!(watch.observe(changed.clone()));
-        assert!(!watch.observe(changed));
+        assert!(watch.observe(version, &changed).is_none());
+        assert!(watch.observe(version, &changed).is_some());
+        assert!(watch.observe(version, &changed).is_none());
     }
 
     #[test]
@@ -5641,12 +4993,12 @@ mod tests {
         app.insert_resource(ProjectEffectCatalog::scan(second.path()));
         app.update();
         let watch = app.world().resource::<ProjectEffectWatchState>();
-        assert_eq!(watch.root, second.path());
         assert_eq!(
-            watch.committed,
-            ProjectEffectTreeSnapshot::scan(second.path())
+            watch.version(),
+            app.world()
+                .resource::<ProjectEffectCatalog>()
+                .content_revision()
         );
-        assert!(watch.pending.is_none());
         assert_eq!(app.world().resource::<EditorSession>().effect, original);
     }
 

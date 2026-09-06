@@ -412,6 +412,7 @@ fn missing_or_file_root_is_unavailable_not_an_empty_ready_project() {
         temporary.path().join("file.ron"),
     ] {
         let content = ProjectContent::scan(&root);
+        assert!(ProjectSourceTree::validate_root(&root).is_err());
         assert!(content.asset_index().effects().is_empty());
         assert!(ProjectAssetIndex::scan(&root).effects().is_empty());
         assert!(matches!(
@@ -519,6 +520,7 @@ fn links_and_linked_roots_are_not_followed_or_semantically_indexed() {
             .is_empty()
     );
     let linked_root = ProjectContent::scan(&link);
+    assert!(ProjectSourceTree::validate_root(&link).is_err());
     assert!(matches!(
         linked_root.source_tree().availability(),
         ProjectAssetIndexAvailability::Unavailable { .. }

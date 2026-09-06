@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Draft<T> {
     pub path: PathBuf,
     original: Option<T>,
@@ -20,7 +20,7 @@ pub(crate) struct Draft<T> {
     pub current: Option<T>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct MaterialDrafts {
     pub root: Option<PathBuf>,
     pub programs: BTreeMap<MaterialProgramId, Draft<MaterialProgram>>,

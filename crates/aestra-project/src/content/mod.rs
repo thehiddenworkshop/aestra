@@ -1,9 +1,11 @@
 //! Read-only project content. Paths locate sources; typed asset IDs identify semantic assets.
 mod classification;
+mod refresh;
 mod source_tree;
 
 use crate::{ProjectAssetId, ProjectAssetIndex, ProjectSourceId};
 pub use classification::*;
+pub use refresh::*;
 pub use source_tree::*;
 use std::{collections::BTreeMap, path::Path};
 
@@ -16,7 +18,11 @@ pub struct ProjectContent {
 
 impl ProjectContent {
     pub fn scan(root: impl AsRef<Path>) -> Self {
-        let mut source_tree = ProjectSourceTree::scan(root);
+        Self::from_source_tree(ProjectSourceTree::scan(root))
+    }
+
+    /// Build the semantic join from an existing discovery, without walking the root again.
+    pub fn from_source_tree(mut source_tree: ProjectSourceTree) -> Self {
         let asset_index = ProjectAssetIndex::from_source_tree(&source_tree, false);
         for entry in asset_index.effects() {
             source_tree

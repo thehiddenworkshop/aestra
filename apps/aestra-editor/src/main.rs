@@ -19,6 +19,7 @@ mod menus;
 mod persistence;
 mod profiler;
 mod project;
+mod project_content;
 mod properties;
 mod recovery;
 mod session;
